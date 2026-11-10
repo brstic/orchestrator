@@ -31,7 +31,7 @@ Next steps:
 - **Per-client preferences**: graphics, keys, office extras per computer; everyone can change their own.
 - Local office (one machine) as before: 3D office, real Claude Code sessions in tmux, tasks, reviews/merges, meetings, questions and approvals, self-improvement, XP.
 - Other shared machines: enrolled hosts, servers linked over SSH, adoption of running Claude sessions.
-- Claude usage per account (CEO desk, wall clocks); foreman role with rounds (off until hired and enabled; shared employees only).
+- Claude usage per account: the office's accounts as wall clocks in the CEO room and at the CEO desk, each member's own account as a clock in their room; foreman role with rounds (off until hired and enabled; shared employees only).
 - Extras: radio, TV, whip, seating editor, sleeping pose. Storage: SQLite (default) and PostgreSQL.
 
 ## Not verified / known problems

@@ -272,6 +272,11 @@ try {
   check('her session runs on this computer, in this folder, and talks to the office through the relay', wrote, why);
   const room = await p2.until('the room in the 3D office', `(window.__orchScene.memberRooms || []).some((r) => r.hostId === ${JSON.stringify(mineHost.id)})`, 15000).then(() => p2.js(`JSON.stringify(window.__orchScene.memberRooms.map((r) => [r.memberName, r.desks]))`), (e) => `MISSING: ${e.message}`);
   check('the member’s room is attached to the office while they are in it', !/^MISSING/.test(room), room);
+  // Her Claude account has a clock in her own room; the office's own accounts hang in the CEO room.
+  await p2.until('her clock', `(window.__orchScene.memberClocks || {})[${JSON.stringify(mineHost.id)}]?.length === 1`, 20000).then(
+    async () => check('the member’s own Claude account has its usage clock in their room, not in the CEO room', (await p2.js(`!(window.__orchScene.clocks || []).some((c) => /Mila/.test(c.name))`)) === true, await p2.js(`JSON.stringify([window.__orchScene.memberClocks, (window.__orchScene.clocks || []).map((c) => c.name)])`)),
+    (e) => check('the member’s own Claude account has its usage clock in their room', false, e.message),
+  );
   // Arranging the room: a name of its own, more desks and open floor — saved by the office, drawn at once.
   await p2.until('the room editor', `[...document.querySelectorAll('.win .room-editor')].length === 1`, 10000);
   const before = await p2.js(`JSON.stringify(window.__orchScene.memberRooms.map((r) => [r.desks.length, r.w, r.d]))`);

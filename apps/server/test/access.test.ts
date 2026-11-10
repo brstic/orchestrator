@@ -37,7 +37,7 @@ test('the three roles', () => {
 });
 
 test('requests: shared work for colleagues, a member’s computer for that member, the office for owners', () => {
-  assert.ok(call(mila, 'GET', '/state') && call(mila, 'GET', '/employees/e-shared/docs'));
+  assert.ok(call(mila, 'GET', '/state') && call(mila, 'GET', '/employees/e-shared/docs') && call(mila, 'GET', '/usage'));
   assert.ok(!call(mila, 'POST', '/employees/e-shared/message') && !call(mila, 'GET', '/employees/e-jovan/docs') && !call(mila, 'POST', '/me/host'));
   assert.ok(call(ana, 'POST', '/employees/e-shared/stop') && call(ana, 'POST', '/questions/q-shared/answer') && call(ana, 'PATCH', '/tasks/t-shared'));
   for (const [m, r, b] of [
@@ -59,7 +59,7 @@ test('requests: shared work for colleagues, a member’s computer for that membe
     assert.equal(call(jovan, m, r, b), true, `Jovan: ${m} ${r}`);
     assert.equal(call(vera, m, r, b), true, `Vera: ${m} ${r}`);
   }
-  for (const [m, r] of [['PATCH', '/settings'], ['PUT', '/layout'], ['POST', '/guests'], ['GET', '/audit'], ['GET', '/usage'], ['POST', '/ssh-links'], ['POST', '/hosts/enroll-token'], ['POST', '/hosts/h-jovan/revoke'], ['POST', '/commands/execute'], ['POST', '/projects/p-shared/promote']] as const) {
+  for (const [m, r] of [['PATCH', '/settings'], ['PUT', '/layout'], ['POST', '/guests'], ['GET', '/audit'], ['POST', '/ssh-links'], ['POST', '/hosts/enroll-token'], ['POST', '/hosts/h-jovan/revoke'], ['POST', '/commands/execute'], ['POST', '/projects/p-shared/promote']] as const) {
     assert.equal(call(jovan, m, r), false, `${m} ${r} needs an owner`);
     assert.equal(call(vera, m, r), true);
   }

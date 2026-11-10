@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-10
+- Usage clocks: the CEO room shows the Claude accounts of the office's own (shared) machines; each member's own account hangs as a clock on a wall of their room. Everyone may read the percentages (`GET /api/usage` is now a *read*); the account's e-mail and organisation are sent only to those who may work on that machine.
 - `office.sparkcan.com` is live (Let's Encrypt certificate on the server's nginx). The office window's WebSocket now presents its token as a subprotocol instead of in the address; the proxy does not log office requests.
 - `office.sparkcan.com`: CloudPanel reverse-proxy site in front of the office's door; the desktop app now also accepts an office whose certificate is publicly trusted for its name (pinning stays for addresses with the office's own certificate).
 - `pnpm deploy:server` (`scripts/deploy-server.sh`: build, copy, swap, restart, `--status`, `--rollback`) and `docs/OPERATIONS.md` (where everything runs, how to update server and clients, backup, troubleshooting).

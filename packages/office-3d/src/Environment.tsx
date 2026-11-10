@@ -184,7 +184,7 @@ function CanvasPanel({ width, height, px = 1024, draw, deps, emissive = true, ..
 
 // ───────────────────────────── building ─────────────────────────────
 
-export function Building({ world, cutaway, quality }: { world: World; cutaway: boolean; quality: Quality }) {
+export function Building({ world, cutaway, quality, memberClocks }: { world: World; cutaway: boolean; quality: Quality; memberClocks?: Record<string, UsageClockView[]> }) {
   // The building itself is drawn from the stored office; the rooms of connected members are added to it below.
   // `base` stays the same object while members come and go, so nothing of the building is made again then.
   const base = world.base;
@@ -285,8 +285,9 @@ export function Building({ world, cutaway, quality }: { world: World; cutaway: b
   annexRef.current = annex;
   // For the UI tests: which member rooms stand, and where.
   useEffect(() => {
+    sceneProbe().memberClocks = Object.fromEntries(Object.entries(memberClocks ?? {}).map(([hostId, list]) => [hostId, list.map((c) => ({ name: c.name, week: c.week, five: c.five }))]));
     sceneProbe().memberRooms = world.memberRooms.map((r) => ({ hostId: r.hostId, memberName: r.memberName, desks: r.desks, side: r.side, x: r.x, z: r.z, w: r.w, d: r.d, door: { x: r.door.x, z: r.door.z } }));
-  }, [world.memberRooms]);
+  }, [world.memberRooms, memberClocks]);
 
   // Walls drop to a cut-away height for overhead cameras and rise for first-person views.
   useFrame((_s, dt) => {
@@ -347,6 +348,7 @@ export function Building({ world, cutaway, quality }: { world: World; cutaway: b
               <planeGeometry args={[r.door.width - 0.2, 0.3]} />
             </mesh>
             <MemberSigns room={r} />
+            <MemberClocks room={r} clocks={memberClocks?.[r.hostId]} />
           </group>
         );
       })}
@@ -424,6 +426,32 @@ export function Building({ world, cutaway, quality }: { world: World; cutaway: b
 }
 
 /** A member room's name: on a plaque by its door (or over it), and painted on its floor for the cameras that look down. */
+/**
+ * The member's own Claude accounts as wall clocks, in their room: on the side wall just inside the door, one after
+ * another going into the room. (The office's shared accounts hang in the CEO room.)
+ */
+function MemberClocks({ room, clocks }: { room: MemberRoom; clocks?: UsageClockView[] }) {
+  if (!clocks?.length) return null;
+  // As many as the wall has room for between the door end and the back of the room.
+  const along = room.side === 'n' ? room.d : room.w;
+  const shown = clocks.slice(0, Math.max(1, Math.min(3, Math.floor((along - 1.6) / 1.5))));
+  return (
+    <>
+      {shown.map((c, n) => {
+        const step = 1.3 + n * 1.5;
+        // West and east rooms: the wall at the room's north side, facing into the room (the way a clock faces by itself).
+        // North rooms: the wall at the room's west side, turned a quarter to face east into the room.
+        const at: [number, number, number] = room.side === 'w' ? [room.x + room.w - step, 2.0, room.z + 0.1] : room.side === 'e' ? [room.x + step, 2.0, room.z + 0.1] : [room.x + 0.1, 2.0, room.z + room.d - step];
+        return (
+          <group key={c.key} position={at} rotation={[0, room.side === 'n' ? Math.PI / 2 : 0, 0]}>
+            <UsageClock position={[0, 0, 0]} account={c} />
+          </group>
+        );
+      })}
+    </>
+  );
+}
+
 function MemberSigns({ room }: { room: MemberRoom }) {
   const title = room.title;
   // Away: the signs lose their colour with the room.

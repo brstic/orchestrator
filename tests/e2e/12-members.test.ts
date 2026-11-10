@@ -147,7 +147,7 @@ test('a visitor reads what is shared and changes nothing', async () => {
     assert.equal(r.status, 403, `${method} ${p} as a visitor`);
     assert.match(r.body.error, /You are visiting this office: you can look, not change anything/);
   }
-  for (const [method, p, body] of [['GET', '/api/audit', undefined], ['PATCH', '/api/settings', { ownerName: 'Mila' }], ['POST', '/api/guests', { name: 'Friend' }], ['GET', '/api/usage', undefined]] as const) assert.equal((await door(mila, method, p, body)).status, 403, `${method} ${p} as a visitor`);
+  for (const [method, p, body] of [['GET', '/api/audit', undefined], ['PATCH', '/api/settings', { ownerName: 'Mila' }], ['POST', '/api/guests', { name: 'Friend' }]] as const) assert.equal((await door(mila, method, p, body)).status, 403, `${method} ${p} as a visitor`);
 });
 
 test('a colleague works on everything shared, and does not run the office', async () => {

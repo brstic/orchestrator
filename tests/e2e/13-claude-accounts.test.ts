@@ -136,5 +136,22 @@ test('only a session of ours can report, and guests are not told about the accou
     });
   assert.equal(await post('not-the-token'), 403);
   assert.equal((await usage()).find((r) => r.configDir === null).sevenDay.usedPercent, 85);
-  for (const role of ['visitor', 'colleague'] as const) assert.equal(mayCall(h.server.engine, { kind: 'guest', id: 'm1', name: 'M', role }, 'GET', '/usage', null).ok, false);
+  // Everyone in the office may read how much is used (the clocks on the walls); whose account it is, only those who
+  // may work on the machine it lives on.
+  await h.api('POST', '/sharing', { open: true, port: 20000 + Math.floor(Math.random() * 20000) });
+  const tokenOf = (invite: string) => JSON.parse(Buffer.from(invite.replace(/^orch-invite-v1\./, ''), 'base64url').toString('utf8')).t as string;
+  const as = async (role: string) => {
+    const made = await h.api<any>('POST', '/guests', { name: `Usage ${role}`, role });
+    const r = await fetch(`${h.url}/api/usage`, { headers: { authorization: `Bearer ${tokenOf(made.invite)}` } });
+    return { status: r.status, rows: (await r.json()) as any[] };
+  };
+  const visitor = await as('visitor');
+  assert.equal(visitor.status, 200);
+  assert.ok(visitor.rows.length >= 1 && visitor.rows.every((a) => a.email === null && a.organization === null), 'percentages, but not whose account');
+  assert.equal(visitor.rows.find((a) => a.configDir === null).sevenDay.usedPercent, 85);
+  const colleague = await as('colleague');
+  assert.equal(colleague.rows.find((a) => a.configDir === null).email, 'owner@example.test', 'a colleague works on the shared machine and sees its account');
+  assert.equal((await as('owner')).rows.find((a) => a.configDir === null).email, 'owner@example.test');
+  await h.api('POST', '/sharing', { open: false });
+  assert.equal(mayCall(h.server.engine, { kind: 'guest', id: 'm1', name: 'M', role: 'visitor' }, 'GET', '/usage', null).ok, true);
 });

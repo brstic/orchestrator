@@ -1,6 +1,6 @@
 import { Door, inviteCode } from './door.ts';
 import { Guests, whoIs, type Who } from './guests.ts';
-import { mayCall } from './access.ts';
+import { allowed, mayCall } from './access.ts';
 import { nowPlaying } from './radio.ts';
 import { SshLinks } from './ssh-links.ts';
 import fs from 'node:fs';
@@ -237,7 +237,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     const query = (req: FastifyRequest) => (req.query ?? {}) as Record<string, string>;
 
     api.get('/state', async () => engine.state());
-    api.get('/usage', async () => engine.sessions.accountUsage());
+    // The percentages are for everyone in the office (the clocks on the walls); the account's e-mail and organisation
+    // only for those who may work on the machine it lives on — its member and owners, or colleagues for a shared machine.
+    api.get('/usage', async (req) => engine.sessions.accountUsage().map((a) => (allowed(whoOf(req), 'work', engine.hosts.memberOfHost(a.hostId)) ? a : { ...a, email: null, organization: null })));
     // The foreman: who it is, the round in flight and the last ones, and what needs attention right now (owner only).
     api.get('/foreman', async () => engine.foreman.status());
     api.get('/me', async (req) => ({ kind: whoOf(req).kind, role: whoOf(req).role, name: whoOf(req).name, id: whoOf(req).id, office: engine.core.settings.companyName }));

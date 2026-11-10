@@ -49,6 +49,8 @@ const RULES: Rule[] = [
   rule('GET', '/performance', 'read'),
   rule('GET', '/layout/capacity', 'read'),
   rule('GET', '/radio/now', 'read'),
+  // How much of each Claude account is used (the clocks). Whose account it is, is told only to those who may work on that machine.
+  rule('GET', '/usage', 'read'),
   // ── looking closer at one thing ──
   rule('GET', '/employees/:id/docs', 'read', path('employee')),
   rule('GET', '/employees/:id/docs/file', 'read', path('employee')),

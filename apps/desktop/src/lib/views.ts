@@ -1,5 +1,5 @@
 import { ACTIVITY_LABEL, formatDuration, roleByKey } from '@orchestrator/contracts';
-import { deskPods, withMemberRooms, type MemberOffice, type BoardView, type CeoView, type HostView, type PersonView, type WalkRequest, type WallView, type WhiteboardView, type ZoneView } from '@orchestrator/office-3d';
+import { deskPods, withMemberRooms, type MemberOffice, type BoardView, type CeoView, type HostView, type UsageClockView, type PersonView, type WalkRequest, type WallView, type WhiteboardView, type ZoneView } from '@orchestrator/office-3d';
 import { activityOf, currentTaskOf, sessionOfEmployee, type OfficeState } from './store.ts';
 
 /**
@@ -234,6 +234,43 @@ export function accountName(a: { email: string | null; configDir: string | null 
   return a.email ?? `${a.configDir ?? 'default login'} on ${hostName ?? 'a machine'}`;
 }
 
+/** One account as a wall clock: the big hand is the week, the small dial the 5-hour window. */
+function clockOf(s: OfficeState, a: OfficeState['accounts'][number]): UsageClockView {
+  const left = (w: { usedPercent: number; resetsAt: string | null } | null, label: string): string => {
+    if (!w) return `${label}: not reported`;
+    const text = limitText(w) ?? '';
+    const resets = text.includes('·') ? ` · ${text.split('·')[1]!.trim()}` : '';
+    return `${label}: ${Math.max(0, 100 - Math.round(w.usedPercent))}% left${resets}`;
+  };
+  const host = s.hosts[a.hostId];
+  // Who is logged in is not told to everyone; a member's account is then simply theirs.
+  const name = a.email ?? (host?.memberId ? `${host.memberName ?? 'Member'}'s Claude${a.configDir ? ` (${a.configDir})` : ''}` : accountName(a, host?.name));
+  return {
+    key: a.key,
+    name,
+    week: a.sevenDay ? a.sevenDay.usedPercent : null,
+    five: a.fiveHour ? a.fiveHour.usedPercent : null,
+    lines: a.reportedAt ? [left(a.sevenDay, 'Week'), left(a.fiveHour, '5 hours')] : ['Not reported yet', 'shows when a session starts'],
+  };
+}
+
+const NO_CLOCKS: Record<string, UsageClockView[]> = {};
+let lastClocks: { key: string; value: Record<string, UsageClockView[]> } | null = null;
+
+/** The usage clocks in members' rooms: for each member computer, the Claude accounts used on it. The same object while nothing changed. */
+export function memberClocks(s: OfficeState): Record<string, UsageClockView[]> {
+  const out: Record<string, UsageClockView[]> = {};
+  for (const a of s.accounts) {
+    if (!s.hosts[a.hostId]?.memberId) continue;
+    (out[a.hostId] ??= []).push(clockOf(s, a));
+  }
+  if (!Object.keys(out).length) return NO_CLOCKS;
+  const key = JSON.stringify(out);
+  if (lastClocks?.key === key) return lastClocks.value;
+  lastClocks = { key, value: out };
+  return out;
+}
+
 export function ceoView(s: OfficeState): CeoView {
   const c = s.company;
   const open = Object.values(s.questions).filter((q) => q.status === 'open').length;
@@ -250,20 +287,9 @@ export function ceoView(s: OfficeState): CeoView {
     const ts = Object.values(s.tasks).filter((t) => t.projectId === p.id && t.kind !== 'review');
     lines.push(`${p.name}: ${ts.filter((t) => t.status === 'DONE').length}/${ts.length} done`);
   }
-  // How much Claude is left: one clock per account on the wall, from what Claude Code itself last reported.
-  const left = (w: { usedPercent: number; resetsAt: string | null } | null, label: string): string => {
-    if (!w) return `${label}: not reported`;
-    const text = limitText(w) ?? '';
-    const resets = text.includes('·') ? ` · ${text.split('·')[1]!.trim()}` : '';
-    return `${label}: ${Math.max(0, 100 - Math.round(w.usedPercent))}% left${resets}`;
-  };
-  const accounts = s.accounts.map((a) => ({
-    key: a.key,
-    name: accountName(a, s.hosts[a.hostId]?.name),
-    week: a.sevenDay ? a.sevenDay.usedPercent : null,
-    five: a.fiveHour ? a.fiveHour.usedPercent : null,
-    lines: a.reportedAt ? [left(a.sevenDay, 'Week'), left(a.fiveHour, '5 hours')] : ['Not reported yet', 'shows when a session starts'],
-  }));
+  // How much Claude is left on the office's own accounts (the machines everyone shares): one clock each, on this
+  // room's wall. A member's own account hangs in their own room (`memberClocks`).
+  const accounts = s.accounts.filter((a) => !s.hosts[a.hostId]?.memberId).map((a) => clockOf(s, a));
   return { company: s.settings?.companyName ?? 'My Company', tagline: 'Your code. Your company. Your world.', lines, accounts };
 }
 

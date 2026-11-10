@@ -13,7 +13,7 @@ import { TV as TVPart, type TvFrames, type TvView } from './TV.tsx';
 import { Building as BuildingPart, Desks as DesksPart, Lights as LightsPart, Near, Rooms as RoomsPart, Zones as ZonesPart, sceneProbe } from './Environment.tsx';
 import { People as PeoplePart } from './People.tsx';
 import { Rig as RigPart, type Keymap } from './Rig.tsx';
-import type { BoardView, CameraMode, CeoView, HostView, NearbyTarget, PersonView, Quality, RadioView, ScreenSubscribe, WalkRequest, WallView, WhiteboardView, ZoneView } from './types.ts';
+import type { UsageClockView, BoardView, CameraMode, CeoView, HostView, NearbyTarget, PersonView, Quality, RadioView, ScreenSubscribe, WalkRequest, WallView, WhiteboardView, ZoneView } from './types.ts';
 import { buildWorld } from './world.ts';
 import { usePacedLoop } from './pace.ts';
 
@@ -64,6 +64,8 @@ export interface OfficeSceneProps {
   board: BoardView;
   wall: WallView;
   ceo: CeoView;
+  /** Usage clocks for members' rooms: by member computer (host id), that member's Claude accounts. */
+  memberClocks?: Record<string, UsageClockView[]>;
   /** What the meeting-room whiteboard says (the running meeting or the last decision), and what a click on it opens. */
   whiteboard: WhiteboardView;
   onOpenMeeting: (meetingId: string | null) => void;
@@ -162,7 +164,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       <Reflections />
       <PerfProbe />
       <Lights quality={props.quality} world={world} />
-      <Building world={world} cutaway={cutaway} quality={props.quality} />
+      <Building world={world} cutaway={cutaway} quality={props.quality} memberClocks={props.memberClocks} />
       <Desks desks={core.layout.desks} seats={seats} subscribe={props.subscribeScreen} />
       {world.memberDesks.length > 0 && <Desks desks={world.memberDesks} seats={memberSeats} subscribe={props.subscribeScreen} />}
       <Zones world={world} zones={props.zones} onOpen={props.onOpenProject} />

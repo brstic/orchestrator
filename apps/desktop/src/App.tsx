@@ -4,7 +4,7 @@ import { Button } from '@orchestrator/ui';
 import { api, connection, setToken } from './lib/api.ts';
 import { loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
 import { loadPrefs, usePrefs } from './lib/prefs.ts';
-import { boardView, ceoView, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
+import { boardView, ceoView, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
 import { CommandBar, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, SayBar, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
 import { onTvFrame } from './lib/tv.ts';
 import { TvLayer } from './hud/tv.tsx';
@@ -54,9 +54,9 @@ const PANEL_KEYS: Array<[string, PanelId]> = [
 const NO_ZONES: never[] = [];
 
 /** Tell the others in the office where this person's character is: when it moved, at most ten times a second. */
-/** The owner's office keeps an eye on how much of each Claude account is used (a guest is not told). */
+/** How much of each Claude account is used: for the clocks in the CEO room (the office's accounts) and in each member's room (theirs). */
 function useAccounts(): void {
-  const owner = useOffice((s) => s.me?.kind === 'owner');
+  const owner = useOffice((s) => !!s.me);
   // Asked again when someone starts or stops working, and every minute.
   const live = useOffice((s) => Object.values(s.sessions).filter((x) => x.status === 'running').length);
   useEffect(() => {
@@ -228,6 +228,7 @@ export function App() {
   const wall = useMemo(() => wallView(s, people), [people, s.hosts, s.tasks, s.questions]); // eslint-disable-line react-hooks/exhaustive-deps
   const whiteboard = useMemo(() => whiteboardView(s), [s.meetings, s.employees]); // eslint-disable-line react-hooks/exhaustive-deps
   const zones = useMemo(() => zoneViews(s, office), [s.layout, s.employees, s.projects, s.tasks, office]); // eslint-disable-line react-hooks/exhaustive-deps
+  const clocks = useMemo(() => memberClocks(s), [s.accounts, s.hosts]); // eslint-disable-line react-hooks/exhaustive-deps
   const ceo = useMemo(() => ceoView(s), [s.company, s.projects, s.tasks, s.questions, s.employees, s.accounts, s.hosts, s.settings?.companyName]); // eslint-disable-line react-hooks/exhaustive-deps
   // The folders on a desk stand for real files: one stack per employee whose folder has Markdown documents.
   const docViews = useMemo(
@@ -307,6 +308,7 @@ export function App() {
           board={board}
           wall={wall}
           ceo={ceo}
+          memberClocks={clocks}
           whiteboard={whiteboard}
           onOpenMeeting={on.openMeeting}
           zones={prefs.projectZones ? zones : NO_ZONES}

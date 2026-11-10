@@ -35,10 +35,10 @@ Other members still see that a personal employee exists and its state (name, act
 
 ### What each level covers
 
-- **read** — the office state, people, events, performance; documents, git view, XP of an employee; a task's diff; a project's integration status; a session's history; watching a terminal.
+- **read** — the office state, people, events, performance; how much of each Claude account is used (`GET /usage`: percentages for everyone; whose account it is only for those who may *work* on the machine it lives on); documents, git view, XP of an employee; a task's diff; a project's integration status; a session's history; watching a terminal.
 - **work** (own only) — `GET`/`PUT /me/room`: how one's own room looks. Nobody arranges someone else's.
 - **work** — employees: hire, edit, start/stop/pause/resume, talk, request a report; sessions: attach, adopt, bind; typing into and taking control of a terminal; browsing a machine's folders and its Claude processes; projects: create, edit, pause/resume, plan, integration sync/test; tasks: create, edit, delete, release, review, unblock, retry merge; answering questions **and deciding permission requests**; notifications; meetings; lessons; planning a command; `POST /me/host`.
-- **admin** — everything else, including: members and the door, settings and policies, layout, machines (enrollment tokens, revoke, rename, remove), SSH links, usage per Claude account, foreman status, audit log, improvements, promoting to the main branch, executing a command plan.
+- **admin** — everything else, including: members and the door, settings and policies, layout, machines (enrollment tokens, revoke, rename, remove), SSH links, foreman status, audit log, improvements, promoting to the main branch, executing a command plan.
 
 A route that is not listed in `access.ts` needs an owner.
 
