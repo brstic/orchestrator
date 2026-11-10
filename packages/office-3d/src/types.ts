@@ -67,6 +67,28 @@ export interface ZoneView {
   done: number;
 }
 
+/**
+ * The foreman: the office's supervisor. It has no desk; its character walks the floor (see `Foreman.tsx`).
+ * Everything here is recorded state: who it is, whether rounds are on, and who it is with during a round.
+ */
+export interface ForemanView {
+  id: string;
+  name: string;
+  appearance: Appearance;
+  level: number;
+  /** Its session is running. */
+  live: boolean;
+  /** Rounds are switched on: it walks from desk to desk. Off: it waits by the entrance. */
+  patrolling: boolean;
+  /** The employee it is with right now (it looked at them, answered them, gave them work), if any. */
+  visitingId: string | null;
+  /** What it supervises, for the name tag: "WHOLE OFFICE". */
+  space: string;
+  /** What it is doing, in a few words: "checking Alex", "round: 2 questions", "walking the floor". */
+  doing: string;
+  dimmed: boolean;
+}
+
 /** One avatar walks to another's desk: the visualisation of a real collaboration event. */
 export interface WalkRequest {
   id: string;

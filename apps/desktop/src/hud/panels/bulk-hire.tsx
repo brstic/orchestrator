@@ -160,7 +160,7 @@ export function BulkHire({ onDone, onlyHostId }: { onDone: () => void; onlyHostI
         </Field>
         <Field label="Role for all of them" hint="You can change anyone's role afterwards.">
           <select value={roleKey} onChange={(ev) => setRoleKey(ev.target.value)} aria-label="Role">
-            {ROLE_CATALOGUE.map((r) => (
+            {ROLE_CATALOGUE.filter((r) => r.key !== 'foreman').map((r) => (
               <option key={r.key} value={r.key}>
                 {r.title}
               </option>

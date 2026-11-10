@@ -361,6 +361,12 @@ async function defaultBehaviour(text) {
       else await orchestrator('answer_question', { question_id: m[1], answer: 'Go with the simplest option that meets the task, and note it in your summary.' });
       handled++;
     }
+    // Someone who stopped and is doing nothing: go and look, and tell them to carry on.
+    for (const m of now.matchAll(/^\d+\. IDLE (\S+) \(/gm)) {
+      await orchestrator('look_at', { employee: m[1] });
+      await orchestrator('tell_employee', { employee: m[1], message: 'Carry on with what you were asked to do, and report when it is done. @@fake: say carried-on@@' });
+      handled++;
+    }
     for (const m of now.matchAll(/^\d+\. UNASSIGNED (\S+) .* free now: ([^ (,]+)/gm)) {
       await orchestrator('assign_task', { task: m[1], employee: m[2] });
       handled++;

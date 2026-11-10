@@ -9,7 +9,7 @@ Orchestrator drives tools that edit files and run commands. These are the bounda
 | Owner (the office UI) | owner token — random, stored hashed; plaintext only in `~/.orchestrator/server/owner-token` (0600) | everything in the REST API and client WebSocket |
 | Host agent | host credential issued at enrollment — stored hashed on the server, plaintext only in the agent's `config.json` (0600) | report its own sessions and hooks, answer RPCs. It cannot read or change other hosts' sessions: every message is checked against the connection's host id |
 | Worker (a Claude Code session) | MCP bearer token — per launch, revoked when the session is relaunched | call the Orchestrator MCP tools **as its own employee**. Identity comes from the token, never from tool arguments |
-| Foreman (a worker whose employee has the `foreman` role) | the same per-launch MCP bearer token | additionally the foreman tools: read the office and employees' terminal screens, answer employees' questions, assign and create tasks, escalate to the owner. Never an approval — see [The foreman](#the-foreman) |
+| Foreman (the one worker whose employee has the `foreman` role) | the same per-launch MCP bearer token | additionally the foreman tools: read the office and employees' terminal screens (members' own employees included, while their computer is connected), answer employees' questions, tell them what to do next, assign and create tasks, escalate to the owner. Never an approval — see [The foreman](#the-foreman) |
 | Hook process | per-session hook token over a 0600 unix socket | post hook events for its own session |
 
 Unauthenticated requests get `401`; a client WebSocket without the owner token is closed (`4003`); an agent with an unknown or revoked credential is rejected.
@@ -57,13 +57,17 @@ Plus project `policy.allow` / `policy.deny`, plus the employee's own lists. `byp
 
 ## The foreman
 
-A foreman is an employee whose session supervises the others (role `foreman`; rounds are off until you switch them on in *Settings → Foreman*). It is a Claude Code session like any other, so everything above applies to it; in addition:
+The foreman is the office's supervisor: one Claude Code session, on one of the office's own machines, with the role `foreman` and no desk. It is a session like any other, so everything above applies to it. Only an owner can hire one or change who it is; hiring one switches its rounds on, and *Settings → Foreman* pauses them.
+
+**It supervises the whole office, members' own computers included.** While a member's computer is connected, the foreman sees that member's employees the way an owner does: `look_at` shows it the last lines of their real terminal, and it can answer their questions, tell them what to do next and give them tasks of projects on that same computer. Until this change only the member and the owners could look into a personal employee. A member who brings their computer into an office that has a foreman is therefore supervised by it; what it reads becomes part of its conversation with Claude on the office's account. Because of that, the foreman itself is the owners' alone: colleagues and visitors cannot watch or type into its terminal, read its documents or session history, talk to it, start or stop it, or change its profile (`access.ts`: `OWNERS_ONLY`). They still see that it exists, where it walks and what it is doing.
+
+*Records:* messages and questions follow the same rule as terminals — what is sent to the foreman, and its questions, are for owners; what the foreman tells an employee is read by whoever may read that employee. Of the foreman's own feed lines everyone receives only the outline (that a round started or ended and how many items of each kind, and whom it is with: `FOREMAN_PUBLIC` in `access.ts`); the items of a round — which quote questions, also of members' own employees — and its conclusion are sent to owners only.
 
 **What it may do**, through tools only a foreman's session can call (the server checks the caller's role on every call; the caller is identified by the session's bearer token, never by an argument):
 
 - read the office: every employee's role, activity, task and open question, every project's board, and — with `look_at` — the last 40 lines of an employee's **terminal screen**;
 - answer an employee's **question** on your behalf, if *the foreman answers employees' questions* is on;
-- assign tasks, create tasks, and message employees;
+- assign tasks, create tasks, and tell an employee what to do next (`tell_employee`: an ordinary message under its name) — never across the line between the shared office and a member's own computer;
 - put something in your inbox (`escalate_to_owner`).
 
 **What it may not do**, by construction rather than by instruction:
@@ -78,7 +82,7 @@ A foreman is an employee whose session supervises the others (role `foreman`; ro
 
 **What to keep in mind.**
 
-- *Terminal contents reach the foreman's model.* What `look_at` returns becomes part of the foreman's conversation with Claude, like anything a session reads. Values in known credential formats are redacted first; other sensitive text on a screen is not. Screen contents are not written to events or the audit log.
+- *Terminal contents reach the foreman's model — also those of members' own employees.* What `look_at` returns becomes part of the foreman's conversation with Claude, like anything a session reads. Values in known credential formats are redacted first; other sensitive text on a screen is not. Screen contents are not written to events or the audit log.
 - *An employee's words reach the foreman's prompt.* Questions, blocker reasons and task titles are quoted in the round digest, so a compromised or misled employee can try to steer the foreman. What that can achieve is bounded by the list above: tasks, assignments, messages and answers to questions — never an approval, a command or a file change.
 - *A wrong answer is still an answer.* The foreman can answer a question you would have answered differently. The answer is on the record with its author; turn off *the foreman answers employees' questions* if you want every question yourself.
 - *Each round uses Claude usage* on the account the foreman runs on. The office starts a round only for something new, never while one is running, and never sooner than the gap you set.

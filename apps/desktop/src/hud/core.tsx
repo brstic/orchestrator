@@ -6,7 +6,7 @@ import { api, connection } from '../lib/api.ts';
 import { usePrefs } from '../lib/prefs.ts';
 import { stopRadio } from '../lib/radio.ts';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice, type CameraMode, type PanelId } from '../lib/store.ts';
-import { may, memberOfHost, whyNot } from '../lib/access.ts';
+import { may, memberOfEmployee, whyNot } from '../lib/access.ts';
 import { TerminalView } from '../terminal/TerminalView.tsx';
 
 /** Run an API call and surface failures as a toast instead of swallowing them. */
@@ -561,7 +561,7 @@ export function EmployeeCard() {
   const questions = openQuestionsOf(s.questions, e.id);
   const live = !!session && session.status === 'running';
   // What this person may do with this employee (the office decides; this saves a refused click).
-  const member = memberOfHost(s.hosts, e.hostId);
+  const member = memberOfEmployee(s.hosts, e);
   const work = may(s.me, 'work', member);
   const read = may(s.me, 'read', member);
   const why = whyNot(s.me, 'work', member) ?? undefined;
@@ -796,7 +796,7 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState; onClose
   const live = !!session && session.status === 'running';
   const paused = session?.control === 'PAUSED';
   const q = openQuestionsOf(s.questions, e.id)[0];
-  const member = memberOfHost(s.hosts, e.hostId);
+  const member = memberOfEmployee(s.hosts, e);
   const work = may(s.me, 'work', member);
   const read = may(s.me, 'read', member);
   const admin = may(s.me, 'admin', null);
@@ -1181,8 +1181,8 @@ export function Workstation() {
           <div className="strong">{e.name}</div>
           <span className="muted small truncate grow mono">{session ? `${session.tmuxSession} · ${session.cwd}${session.branch ? ` · ${session.branch}` : ''}` : 'no session'}</span>
           <span className={`ws-state ws-state-${controlState}`}>{mine ? 'YOU ARE IN CONTROL' : controlState.replace(/_/g, ' ')}</span>
-          {session && live && !mine && !may(s.me, 'work', memberOfHost(s.hosts, e.hostId)) && <span className="small muted">watching only</span>}
-          {session && live && !mine && may(s.me, 'work', memberOfHost(s.hosts, e.hostId)) && (
+          {session && live && !mine && !may(s.me, 'work', memberOfEmployee(s.hosts, e)) && <span className="small muted">watching only</span>}
+          {session && live && !mine && may(s.me, 'work', memberOfEmployee(s.hosts, e)) && (
             <Button variant="primary" small onClick={() => connection.send({ t: 'control.acquire', sessionId: session.id })} title="Type directly into this exact tmux session">
               Take control
             </Button>

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { WebSocket } from 'ws';
-import { mayDrive, mayReadEvent, mayReadMessage, mayReadQuestion, maySee, stateFor } from './access.ts';
+import { eventFor, mayDrive, mayReadMessage, mayReadQuestion, maySee, stateFor } from './access.ts';
 import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, OrchestratorEvent, PersonPresence, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
 import { hueOf, type Who } from './guests.ts';
 import { PROTOCOL_VERSION, ROLE_CATALOGUE, matchRole, nowIso, roleByKey } from '@orchestrator/contracts';
@@ -368,13 +368,19 @@ export class ClientHub {
     }
   }
 
-  /** What is said on a member's own computer goes to that member and the owners only (see `access.ts`). */
-  private mayHear(c: ClientConn, msg: ServerToClient): boolean {
-    if (c.who.kind === 'owner') return true;
-    if (msg.t === 'event') return mayReadEvent(this.engine, c.who, msg.event);
-    if (msg.t === 'entity' && msg.op === 'upsert' && msg.kind === 'message') return mayReadMessage(this.engine, c.who, msg.data);
-    if (msg.t === 'entity' && msg.op === 'upsert' && msg.kind === 'question') return mayReadQuestion(this.engine, c.who, msg.data);
-    return true;
+  /**
+   * What is said on a member's own computer goes to that member and the owners only, and the foreman's rounds to
+   * everyone only in outline (see `access.ts`): the message as this connection gets it, or null for not at all.
+   */
+  private heardBy(c: ClientConn, msg: ServerToClient): ServerToClient | null {
+    if (c.who.kind === 'owner') return msg;
+    if (msg.t === 'event') {
+      const event = eventFor(this.engine, c.who, msg.event);
+      return event === msg.event ? msg : event ? { t: 'event', event } : null;
+    }
+    if (msg.t === 'entity' && msg.op === 'upsert' && msg.kind === 'message') return mayReadMessage(this.engine, c.who, msg.data) ? msg : null;
+    if (msg.t === 'entity' && msg.op === 'upsert' && msg.kind === 'question') return mayReadQuestion(this.engine, c.who, msg.data) ? msg : null;
+    return msg;
   }
 
   broadcast(msg: ServerToClient): void {
@@ -382,10 +388,11 @@ export class ClientHub {
     const text = JSON.stringify(msg);
     const scoped = msg.t === 'event' || (msg.t === 'entity' && (msg.kind === 'message' || msg.kind === 'question'));
     for (const c of this.clients.values()) {
-      if (scoped && !this.mayHear(c, msg)) continue;
+      const mine = scoped ? this.heardBy(c, msg) : msg;
+      if (!mine) continue;
       if (c.ws.readyState === 1) {
         try {
-          c.ws.send(text);
+          c.ws.send(mine === msg ? text : JSON.stringify(mine));
         } catch {
           /* ignore */
         }

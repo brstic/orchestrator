@@ -364,7 +364,7 @@ export const FOREMAN_TOOLS: McpToolSpec[] = [
   },
   {
     name: 'look_at',
-    description: "Foreman only. Walk over and look at one employee: the last lines of their real terminal screen, their current task with its description, their recent events and their open question. Says so when no screen is available.",
+    description: "Foreman only. Walk over and look at one employee (anyone in the office, on the office's machines or on a member's own computer): the last lines of their real terminal screen, their current task with its description, their recent events and their open question. Says so when no screen is available.",
     inputSchema: { type: 'object', properties: { employee: str('Employee name') }, required: ['employee'] },
   },
   {
@@ -397,6 +397,11 @@ export const FOREMAN_TOOLS: McpToolSpec[] = [
       },
       required: ['project', 'title', 'description'],
     },
+  },
+  {
+    name: 'tell_employee',
+    description: "Foreman only. Walk over and tell one employee what to do next — continue with something, how their blocker is resolved, what to pick up. It is delivered to their session under your name when they can read it, and is on the record. Not for answering a recorded question (use answer_question) and not a way to approve anything.",
+    inputSchema: { type: 'object', properties: { employee: str('Employee name'), message: str('What they should do, in full: they see only this') }, required: ['employee', 'message'] },
   },
   {
     name: 'escalate_to_owner',

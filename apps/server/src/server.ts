@@ -1,7 +1,7 @@
 import { Door, inviteCode } from './door.ts';
 import { Guests, whoIs, type Who } from './guests.ts';
 import { Knocks, type Admission } from './knocks.ts';
-import { allowed, mayCall, mayReadEvent, stateFor } from './access.ts';
+import { allowed, eventFor, mayCall, stateFor } from './access.ts';
 import { nowPlaying } from './radio.ts';
 import { SshLinks } from './ssh-links.ts';
 import fs from 'node:fs';
@@ -392,7 +392,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       const found = await store.queryEvents({ employeeId: q.employeeId, taskId: q.taskId, sessionId: q.sessionId, projectId: q.projectId, since: q.since, beforeSeq: q.before ? Number(q.before) : undefined, limit: q.limit ? Number(q.limit) : 200, excludeTypes: q.includeActivity ? undefined : ['session.activity', 'terminal.output'] });
       // What happened on a member's own computer is theirs and the owners' to read.
       const who = whoOf(req);
-      return who.kind === 'owner' ? found : found.filter((e) => mayReadEvent(engine, who, e));
+      return who.kind === 'owner' ? found : found.map((e) => eventFor(engine, who, e)).filter(Boolean);
     });
     api.post('/seen', async () => {
       engine.commands.touchLastSeen();

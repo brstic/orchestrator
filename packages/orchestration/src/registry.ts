@@ -360,6 +360,24 @@ export class EmployeeRegistry {
     }
   }
 
+  /**
+   * The foreman is one for the whole office, runs on one of the office's own machines, and has no desk.
+   * Throws when making `self` (or a new employee) the foreman would break that.
+   */
+  private assertCanBeForeman(hostId: string | null | undefined, selfId: string | null): void {
+    const other = this.core.employees.find((e) => !e.archived && e.roleKey === 'foreman' && e.id !== selfId);
+    if (other) throw new EngineError(`the office already has a foreman (${other.name}). There is one foreman, and it looks after the whole office: the shared floor and every member's room.`);
+    if (this.eng.hosts.memberOfHost(hostId)) throw new EngineError("the foreman runs on one of the office's own machines, not on a member's own computer: it looks after the whole office from there.");
+  }
+
+  /** Offices from before the foreman walked the floor: whoever has that role gives up their desk. */
+  unseatForemen(): void {
+    for (const e of this.core.employees.filter((x) => x.roleKey === 'foreman' && !!x.deskId)) {
+      e.deskId = null;
+      this.core.put('employee', e);
+    }
+  }
+
   create(input: EmployeeInput, actor = 'owner'): Employee {
     const name = input.name?.trim();
     if (!name) throw new EngineError('an employee needs a name');
@@ -370,6 +388,11 @@ export class EmployeeRegistry {
     // On a member's own computer: they sit in that member's room (at a seat of their choice there, or the next free
     // one), never at a desk of the shared office.
     const personal = !!this.eng.hosts.memberOfHost(input.hostId);
+    const foreman = role?.key === 'foreman';
+    if (foreman) {
+      this.assertCanBeForeman(input.hostId, null);
+      if (input.deskId) throw new EngineError('a foreman has no desk: it walks the floor');
+    }
     const seat = memberSeatOf(input.deskId);
     if (input.deskId && !personal && !this.core.layout.desks.find((d) => d.id === input.deskId)) throw new EngineError('unknown desk');
     if (input.deskId && personal && seat?.hostId !== input.hostId) throw new EngineError('that seat is not in this member\'s room');
@@ -396,7 +419,7 @@ export class EmployeeRegistry {
       executionMode: input.executionMode ?? 'interactive_cli',
       schedule: input.schedule ?? { available: true },
       alsoProjectIds: [...new Set((input.alsoProjectIds ?? []).map(String))].filter((p) => p !== input.projectId && !!this.core.projects.get(p)),
-      deskId: personal ? (seat ? input.deskId! : null) : (input.deskId ?? this.deskFor(input.projectId)),
+      deskId: foreman ? null : personal ? (seat ? input.deskId! : null) : (input.deskId ?? this.deskFor(input.projectId)),
       xp: 0,
       level: 1,
       badges: [],
@@ -407,6 +430,8 @@ export class EmployeeRegistry {
     this.core.put('employee', employee);
     this.core.audit(actor, 'employee.created', employee.id, { name, role: employee.roleKey });
     this.core.event({ type: 'employee.created', source: actor.startsWith('owner') ? 'owner' : 'server', summary: `${name} joined as ${employee.title}`, employeeId: employee.id, projectId: employee.projectId, data: { role: employee.roleKey } });
+    // Hiring a foreman is asking for its rounds.
+    if (foreman) this.eng.foreman.onHired();
     return employee;
   }
 
@@ -427,6 +452,7 @@ export class EmployeeRegistry {
       if (role && patch.skills === undefined) e.skills = role.skills;
       if (role && patch.specialization === undefined) e.specialization = role.specialization;
     }
+    if (patch.deskId && e.roleKey === 'foreman') throw new EngineError('a foreman has no desk: it walks the floor');
     if (patch.deskId !== undefined && patch.deskId !== e.deskId) {
       // A desk of the shared office, or — for someone on a member's own computer — a seat in that member's room.
       const seat = memberSeatOf(patch.deskId);
@@ -481,6 +507,13 @@ export class EmployeeRegistry {
       if (e.archived) e.deskId = null;
       else if (!e.deskId) e.deskId = this.freeDesk();
     }
+    // No longer the foreman: back at a desk like everyone else.
+    if (e.roleKey !== 'foreman' && this.core.employees.require(id).roleKey === 'foreman' && !e.archived && !e.deskId && !this.eng.hosts.memberOfHost(e.hostId)) e.deskId = this.freeDesk();
+    const becameForeman = e.roleKey === 'foreman' && (this.core.employees.require(id).roleKey !== 'foreman' || (patch.archived === false && this.core.employees.require(id).archived));
+    if (e.roleKey === 'foreman' && !e.archived) {
+      if (becameForeman || patch.hostId !== undefined) this.assertCanBeForeman(e.hostId, id);
+      e.deskId = null;
+    }
     this.assertSameComputer(e.hostId, [e.projectId, ...(e.alsoProjectIds ?? [])]);
     if (this.eng.hosts.memberOfHost(e.hostId) && memberSeatOf(e.deskId)?.hostId !== e.hostId) e.deskId = null;
     else if (!this.eng.hosts.memberOfHost(e.hostId) && memberSeatOf(e.deskId)) e.deskId = this.freeDesk();
@@ -488,6 +521,7 @@ export class EmployeeRegistry {
     // What an employee may do without asking is on the record in full, not just as a field name.
     this.core.audit(actor, 'employee.updated', id, { fields: Object.keys(patch), ...(patch.allowedTools !== undefined ? { allowedTools: e.allowedTools } : {}), ...(patch.disallowedTools !== undefined ? { disallowedTools: e.disallowedTools } : {}) });
     this.core.event({ type: 'employee.updated', source: 'owner', summary: `${e.name}'s profile was updated`, employeeId: id, data: { fields: Object.keys(patch), quiet: true } });
+    if (becameForeman && !e.archived) this.eng.foreman.onHired();
     return e;
   }
 

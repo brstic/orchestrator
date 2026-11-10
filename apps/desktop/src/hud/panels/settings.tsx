@@ -283,7 +283,7 @@ function ImproveSection({ settings }: { settings: OwnerSettings }) {
   );
 }
 
-const ATTENTION_LABEL: Record<string, string> = { question: 'question', blocked: 'blocked', stalled: 'stalled', unassigned: 'unassigned' };
+const ATTENTION_LABEL: Record<string, string> = { question: 'question', blocked: 'blocked', stalled: 'stalled', unassigned: 'unassigned', idle: 'idle' };
 const ROUND_OUTCOME: Record<string, string> = { running: 'in progress', finished: 'finished', turn_ended: 'ended without a summary', timed_out: 'gave up waiting', failed: 'could not be delivered', interrupted: 'interrupted' };
 
 function roundDid(a: ForemanStatus['rounds'][number]): string {
@@ -300,10 +300,12 @@ function roundDid(a: ForemanStatus['rounds'][number]): string {
 
 function ForemanSection({ settings, readOnly }: { settings: OwnerSettings; readOnly: boolean }) {
   // An office running an older server has no foreman settings yet: show them as off.
-  const f: ForemanSettings = settings.foreman ?? { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true };
+  const f: ForemanSettings = settings.foreman ? { ...settings.foreman, idleMinutes: settings.foreman.idleMinutes ?? 10 } : { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true, idleMinutes: 10 };
   const set = (patch: Partial<ForemanSettings>, ok?: string) => void save({ foreman: patch }, ok);
   const [gap, setGap] = useState(String(f.minGapSeconds));
   const [quiet, setQuiet] = useState(String(f.quietCheckMinutes));
+  const [idle, setIdle] = useState(String(f.idleMinutes));
+  useEffect(() => setIdle(String(f.idleMinutes)), [f.idleMinutes]);
   useEffect(() => setGap(String(f.minGapSeconds)), [f.minGapSeconds]);
   useEffect(() => setQuiet(String(f.quietCheckMinutes)), [f.quietCheckMinutes]);
   // The status is read again on a slow clock; what is shown stays in place while it loads.
@@ -329,8 +331,9 @@ function ForemanSection({ settings, readOnly }: { settings: OwnerSettings; readO
 
   const gapN = Number(gap);
   const quietN = Number(quiet);
-  const numbersValid = Number.isFinite(gapN) && gap.trim() !== '' && Number.isFinite(quietN) && quiet.trim() !== '';
-  const dirty = numbersValid && (Math.round(gapN) !== f.minGapSeconds || Math.round(quietN) !== f.quietCheckMinutes);
+  const idleN = Number(idle);
+  const numbersValid = Number.isFinite(gapN) && gap.trim() !== '' && Number.isFinite(quietN) && quiet.trim() !== '' && Number.isFinite(idleN) && idle.trim() !== '';
+  const dirty = numbersValid && (Math.round(gapN) !== f.minGapSeconds || Math.round(quietN) !== f.quietCheckMinutes || Math.round(idleN) !== f.idleMinutes);
   const off = !f.enabled;
   const last = st?.lastRound ?? null;
   const fresh = st?.attention.filter((i) => !i.seen) ?? [];
@@ -339,8 +342,9 @@ function ForemanSection({ settings, readOnly }: { settings: OwnerSettings; readO
   return (
     <div className="col" style={{ gap: 14, maxWidth: 680 }}>
       <Toggle checked={f.enabled} onChange={(enabled) => set({ enabled }, enabled ? 'Foreman rounds are on' : 'Foreman rounds are off')} title="Foreman rounds">
-        A foreman is an employee (hire one with the role <b>Foreman</b>) who goes round the office for you. When something needs attention — an employee's question nobody has answered, a blocked or stalled task, ready work next to a free employee — the
-        foreman is given one round: it looks at what people are really doing, answers, assigns, and comes to you only with what is yours to decide. Off: nothing is ever sent to the foreman automatically.
+        The foreman (hire one with the role <b>Foreman</b>; there is one for the whole office) has no desk: it walks the office — the shared floor and every member's room that is open — and keeps the work going. When something needs it — a
+        question nobody has answered, a blocked or stalled task, ready work next to someone free, someone who has stopped and is doing nothing — it is given one round: it goes over, looks at what they are really doing, answers, assigns, tells them
+        how to continue, and comes to you only with what is yours to decide. Hiring a foreman switches this on. Off: nothing is ever sent to the foreman automatically.
       </Toggle>
       <div className="pc-info">
         Each round is a real turn in the foreman's own Claude Code session, so it uses Claude usage on the account the foreman runs on. Whether a round is due is worked out by the office itself, without any model: a quiet office starts no round and costs
@@ -355,7 +359,7 @@ function ForemanSection({ settings, readOnly }: { settings: OwnerSettings; readO
         style={{ gap: 10 }}
         onSubmit={(ev) => {
           ev.preventDefault();
-          if (dirty) set({ minGapSeconds: Math.round(gapN), quietCheckMinutes: Math.round(quietN) });
+          if (dirty) set({ minGapSeconds: Math.round(gapN), quietCheckMinutes: Math.round(quietN), idleMinutes: Math.round(idleN) });
         }}
       >
         <div className="grid2">
@@ -364,6 +368,9 @@ function ForemanSection({ settings, readOnly }: { settings: OwnerSettings; readO
           </Field>
           <Field label="Quiet check every (minutes)" hint="With nothing waiting, the foreman still takes one look around this often — but only if tasks or sessions changed since its last round. 0 = never.">
             <input type="number" min={0} max={1440} step={5} value={quiet} disabled={off} onChange={(ev) => setQuiet(ev.target.value)} />
+          </Field>
+          <Field label="Someone idle for (minutes)" hint="A running session that has done nothing this long, with no task in progress, is put in front of the foreman once: it looks, and gets them going again or leaves them be. 0 = never.">
+            <input type="number" min={0} max={1440} step={1} value={idle} disabled={off} onChange={(ev) => setIdle(ev.target.value)} aria-label="Someone idle for (minutes)" />
           </Field>
         </div>
         <div className="row">
@@ -383,6 +390,7 @@ function ForemanSection({ settings, readOnly }: { settings: OwnerSettings; readO
               {st.foreman ? (
                 <>
                   <span className="strong">{st.foreman.name}</span> <Badge tone={st.foreman.session === 'running' ? 'good' : 'muted'}>{st.foreman.session === 'running' && st.foreman.activity ? (ACTIVITY_LABEL[st.foreman.activity] ?? st.foreman.activity).toLowerCase() : 'no session running'}</Badge>
+                  {st.visiting && <span className="muted"> — with {useOffice.getState().employees[st.visiting]?.name ?? 'someone'} right now</span>}
                   {st.otherForemen.length > 0 && <span className="faint"> — rounds go to {st.foreman.name}; {st.otherForemen.join(', ')} also {st.otherForemen.length === 1 ? 'has' : 'have'} the role</span>}
                 </>
               ) : (

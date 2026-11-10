@@ -3,13 +3,19 @@
  * so that controls they cannot use are hidden or explained instead of left to fail. The office decides;
  * this only saves a refused click.
  */
-import type { Host, Me } from '@orchestrator/contracts';
+import type { Employee, Host, Me } from '@orchestrator/contracts';
 import { useOffice } from './store.ts';
 
 type Hosts = Record<string, Host>;
 
 /** The member a machine belongs to; null for a shared machine. */
 export const memberOfHost = (hosts: Hosts, hostId: string | null | undefined): string | null => (hostId ? (hosts[hostId]?.memberId ?? null) : null);
+
+/** In place of a member's id: the foreman's own things, which only owners may look into or direct (as the office's `access.ts` has it). */
+export const OWNERS_ONLY = '#owners';
+
+/** Whose an employee is: a member's (their own computer), the owners' alone (the foreman), or null — shared. */
+export const memberOfEmployee = (hosts: Hosts, e: Pick<Employee, 'hostId' | 'roleKey'> | undefined): string | null => (e?.roleKey === 'foreman' ? OWNERS_ONLY : memberOfHost(hosts, e?.hostId));
 
 export function may(me: Me | null, need: 'read' | 'work' | 'admin', member: string | null): boolean {
   if (!me) return false;
@@ -23,6 +29,7 @@ export function may(me: Me | null, need: 'read' | 'work' | 'admin', member: stri
 export function whyNot(me: Me | null, need: 'read' | 'work' | 'admin', member: string | null): string | null {
   if (may(me, need, member)) return null;
   if (need === 'admin') return 'Only an owner of this office can do this.';
+  if (member === OWNERS_ONLY) return 'The foreman supervises the whole office: only its owners can look into it or direct it.';
   if (member) return "This is on another member's own computer.";
   return 'You are visiting this office: you can look, not change anything.';
 }

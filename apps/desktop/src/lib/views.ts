@@ -1,5 +1,5 @@
 import { ACTIVITY_LABEL, formatDuration, memberSeatOf, roleByKey } from '@orchestrator/contracts';
-import { deskPods, withMemberRooms, type MemberOffice, type BoardView, type CeoView, type HostView, type UsageClockView, type PersonView, type WalkRequest, type WallView, type WhiteboardView, type ZoneView } from '@orchestrator/office-3d';
+import { deskPods, withMemberRooms, type ForemanView, type MemberOffice, type BoardView, type CeoView, type HostView, type UsageClockView, type PersonView, type WalkRequest, type WallView, type WhiteboardView, type ZoneView } from '@orchestrator/office-3d';
 import { activityOf, currentTaskOf, sessionOfEmployee, type OfficeState } from './store.ts';
 
 /**
@@ -60,6 +60,8 @@ export function personViews(s: OfficeState, office?: OfficeWithRooms | null): Pe
   const out: PersonView[] = [];
   for (const e of Object.values(s.employees)) {
     if (e.archived) continue;
+    // The foreman has no desk: it walks the floor, drawn on its own (see `foremanView`).
+    if (e.roleKey === 'foreman') continue;
     // A member's own employees are in the office only while that member is: in their room, at a desk there.
     if (office?.away.has(e.id)) continue;
     const session = sessionOfEmployee(s.sessions, e.id);
@@ -111,9 +113,10 @@ const FOREMAN_DWELL_MS = 8000;
 const FOREMAN_STAY_MS = 40_000;
 
 /**
- * A foreman's `look_at` calls become visits: its character walks to the desk of each employee it
- * really looked at, in the order it looked, and goes back to its own desk when the round is over.
- * Looks that come in quick succession are shown one after the other, not only the last of them.
+ * What the foreman does during a round becomes visits: its character walks to the desk of each employee it
+ * really looked at, answered, gave work to or told something, in that order, and goes back to walking the
+ * floor when the round is over. Visits that come in quick succession are shown one after the other, not only
+ * the last of them.
  */
 export function foremanWalks(events: Array<{ id: string; type: string; ts: string; employeeId: string | null; data: Record<string, unknown> }>, now: number): WalkRequest[] {
   const visits = new Map<string, Array<{ id: string; toId: string; at: number }>>();
@@ -154,12 +157,58 @@ export function foremanWalks(events: Array<{ id: string; type: string; ts: strin
   return out;
 }
 
+const VISIT_VERB: Record<string, string> = { look: 'checking', answer: 'answering', assign: 'giving work to', tell: 'talking to' };
+const ROUND_NOUN: Array<[string, string, string]> = [
+  ['question', 'question', 'questions'],
+  ['blocked', 'blocked', 'blocked'],
+  ['stalled', 'stalled', 'stalled'],
+  ['unassigned', 'to assign', 'to assign'],
+  ['idle', 'idle', 'idle'],
+];
+
 /**
- * Recent collaboration events become short walks between desks, and a foreman's looks become visits.
- * The event is real; the walk only shows it.
+ * The foreman as the scene draws it: who it is, whether it is on its rounds, who it is with right now and what
+ * it is doing — all read from recorded state and events. Null while the office has no foreman.
+ */
+export function foremanView(s: OfficeState, now: number): ForemanView | null {
+  const e = Object.values(s.employees)
+    .filter((x) => !x.archived && x.roleKey === 'foreman')
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0];
+  if (!e) return null;
+  const session = sessionOfEmployee(s.sessions, e.id);
+  const live = !!session && (session.status === 'running' || session.status === 'starting');
+  const patrolling = !!s.settings?.foreman?.enabled;
+  const visit = foremanWalks(s.events, now).find((w) => w.fromId === e.id);
+  // The round in flight, if any: the latest "started" with no "finished" after it.
+  let round: Record<string, unknown> | null = null;
+  for (let i = s.events.length - 1; i >= 0 && i > s.events.length - 600; i--) {
+    const ev = s.events[i]!;
+    if (ev.employeeId !== e.id) continue;
+    if (ev.type === 'foreman.round.finished') break;
+    if (ev.type === 'foreman.round.started') {
+      if (now - Date.parse(ev.ts) < 15 * 60_000) round = ev.data;
+      break;
+    }
+  }
+  let doing = patrolling ? 'walking the floor' : 'rounds paused';
+  if (visit) {
+    const action = String(s.events.find((x) => x.id === visit.id)?.data.action ?? 'look');
+    doing = `${VISIT_VERB[action] ?? 'with'} ${s.employees[visit.toId]?.name ?? 'someone'}`;
+  } else if (round) {
+    const counts = (round.counts ?? {}) as Record<string, number>;
+    const parts = ROUND_NOUN.filter(([k]) => counts[k]! > 0).map(([k, one, many]) => `${counts[k]} ${counts[k] === 1 ? one : many}`);
+    doing = round.reason === 'quiet_check' || !parts.length ? 'round: a look around' : `round: ${parts.join(', ')}`;
+  }
+  const filtered = (s.filter.projectId && e.projectId !== s.filter.projectId) || (s.filter.hostId && e.hostId !== s.filter.hostId) || (s.filter.employeeId && e.id !== s.filter.employeeId);
+  return { id: e.id, name: e.name, appearance: e.appearance, level: e.level, live, patrolling, visitingId: visit?.toId ?? null, space: 'WHOLE OFFICE', doing, dimmed: !!filtered };
+}
+
+/**
+ * Recent collaboration events become short walks between desks. The event is real; the walk only shows it.
+ * (The foreman's visits are its own: see `foremanView`.)
  */
 export function walkRequests(s: OfficeState, now: number): WalkRequest[] {
-  const out: WalkRequest[] = foremanWalks(s.events, now);
+  const out: WalkRequest[] = [];
   for (let i = s.events.length - 1; i >= 0 && i > s.events.length - 80; i--) {
     const e = s.events[i]!;
     if (now - Date.parse(e.ts) > 9000) break;

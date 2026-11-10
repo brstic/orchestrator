@@ -39,6 +39,7 @@ test('an office backed by PostgreSQL runs real work and survives a restart', asy
   assert.equal(pg.psql("SELECT count(*) FROM orch_credentials WHERE kind = 'owner'"), '1');
 
   const sessionBefore = (await h.session(alex.id))!;
+  const restartedAt = new Date().toISOString();
   await h.restartServer();
 
   const after = await h.state();
@@ -57,7 +58,14 @@ test('an office backed by PostgreSQL runs real work and survives a restart', asy
   }, { label: 'host reconnected with its stored credential', timeout: 45000 });
   assert.equal(session.pid, sessionBefore.pid);
   // And work continues.
-  await waitFor(async () => (await h!.session(alex.id))!.inTurn === false, { label: 'idle' });
+  await waitFor(async () => (await h!.session(alex.id))!.inTurn === false, { label: 'idle' }).catch(async (e) => {
+    const x = (await h!.session(alex.id))!;
+    const evs = (await h!.api('GET', `/events?employeeId=${alex.id}&limit=500&includeActivity=1`)) as any[];
+    console.log('DIAG session', JSON.stringify({ status: x.status, activity: x.activity, inTurn: x.inTurn, turnStartedAt: (x as any).turnStartedAt, lastHookAt: (x as any).lastHookAt, updatedAt: (x as any).updatedAt }));
+    console.log('DIAG restart at', restartedAt);
+    console.log('DIAG events', evs.slice(-25).map((v) => `${v.ts.slice(11, 23)} ${v.type} ${v.source?.kind}`).join('\n'));
+    throw e;
+  });
   const next = await h.task({ projectId: project.id, title: 'After the restart', assigneeId: alex.id, description: '@@fake: write pg2.txt again; commit pg again; complete pg again@@' });
   assert.equal(next.key, 'T-2', 'counters continue from the database');
   await waitFor(async () => ((await h!.getTask(next.id)).status === 'DONE' ? true : null), { label: 'second task done', timeout: 45000 });

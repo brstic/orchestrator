@@ -1491,6 +1491,47 @@ async function scenario() {
     return `${avg.toFixed(1)} fps average over 6 s (${fps.join(', ')}); slowest frame ${Math.max(...samples.map((s) => s.worstFrameMs))} ms`;
   });
 
+  await step('The foreman: hired with no desk, shown apart from the team, and walking the floor from desk to desk', async () => {
+    await close();
+    const hired = await js(`(async () => {
+      const st = window.__office.getState();
+      const folder = Object.values(st.sessions).map((x) => x.cwd).find(Boolean) || '/tmp';
+      const r = await fetch('/api/employees', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + ((window.orchestrator && window.orchestrator.token) || localStorage.getItem('orch.token') || '') }, body: JSON.stringify({ name: 'Mira', roleKey: 'foreman', workingDir: folder }) });
+      return { status: r.status, body: await r.json() };
+    })()`);
+    if (hired.status !== 200 || hired.body.roleKey !== 'foreman') throw new Error(`hiring the foreman: ${JSON.stringify(hired).slice(0, 300)}`);
+    if (hired.body.deskId !== null) throw new Error(`the foreman was given a desk: ${hired.body.deskId}`);
+    const id = hired.body.id;
+    // Hiring it switched its rounds on, so it walks; it is not one of the seated people.
+    await waitFor(`window.__office.getState().settings.foreman.enabled === true && !!window.__orchScene.foreman && window.__orchScene.foreman().stops.length >= 3`, 12000);
+    await waitFor(`[...document.querySelectorAll('.tag-foreman')].some((e) => /Mira/.test(e.textContent) && /FOREMAN · WHOLE OFFICE/.test(e.textContent))`, 12000);
+    const seated = await js(`Object.keys(window.__orchScene.places || {}).includes(${JSON.stringify(id)})`);
+    if (seated) throw new Error('the foreman is among the seated people');
+    // It stands at somebody's desk, then goes on to the next one.
+    // (It may be on its way across the whole office to someone a round called it to: that takes a while.)
+    await waitFor(`(() => { const f = window.__orchScene.foreman(); return f.arrived && /^(stop|visit):/.test(f.key); })()`, 60000).catch(async (e) => {
+      throw new Error(`${e.message} — ${JSON.stringify(await js(`window.__orchScene.foreman()`))}`);
+    });
+    const first = await js(`(() => { const f = window.__orchScene.foreman(); return { key: f.key, x: f.x, z: f.z, stops: f.stops.length }; })()`);
+    await js(`window.__office.getState().setCameraMode('management'); true`);
+    await new Promise((r) => setTimeout(r, 1500));
+    await shot('foreman-walking');
+    await js(`window.__office.getState().setCameraMode('ceo'); true`);
+    await waitFor(`(() => { const f = window.__orchScene.foreman(); return f.arrived && /^(stop|visit):/.test(f.key) && f.key !== ${JSON.stringify(first.key)}; })()`, 75000);
+    const second = await js(`(() => { const f = window.__orchScene.foreman(); return { key: f.key, x: f.x, z: f.z }; })()`);
+    const walked = Math.hypot(second.x - first.x, second.z - first.z);
+    if (walked < 0.5) throw new Error(`the foreman did not move between two desks (${walked.toFixed(2)} m)`);
+    // In Team it has a line of its own, above the list — not a row among the employees.
+    await js(`window.__office.getState().openPanel('team'); true`);
+    await waitFor(`!!document.querySelector('[data-foreman=${JSON.stringify(id)}]')`, 8000);
+    const card = await js(`document.querySelector('[data-foreman]').textContent`);
+    if (!/Mira/.test(card) || !/no desk/.test(card)) throw new Error(`the foreman's line in Team: ${card.slice(0, 200)}`);
+    const inTable = await js(`[...document.querySelectorAll('.tbl tbody tr')].some((r) => /Mira/.test(r.textContent))`);
+    if (inTable) throw new Error('the foreman is also a row of the employee table');
+    await close();
+    return `${first.stops} desks on its walk; went from ${first.key} to ${second.key} (${walked.toFixed(1)} m)`;
+  });
+
   await step('this computer\'s preferences, as they are stored at the end', async () => {
     return js(`localStorage.getItem('orch.prefs')`);
   });

@@ -12,10 +12,15 @@
  * people see that a personal employee exists and what state it is in; its terminal, documents and
  * code are for its member and for owners.
  *
+ * One employee is nobody's and not shared either: the foreman. It supervises the whole office, members'
+ * own computers included, so what it sees is what an owner sees — its terminal, its documents and the
+ * conversation with it are for owners only, and only an owner can hire one or change who it is. Everyone
+ * still sees that it is there and what it is doing.
+ *
  * A route that is not listed here needs an owner: forgetting to list a new route fails closed.
  */
-import type { FullState, Message, OrchestratorEvent, Question } from '@orchestrator/contracts';
-import type { Engine } from '@orchestrator/orchestration';
+import { matchRole, roleByKey, type FullState, type Message, type OrchestratorEvent, type Question } from '@orchestrator/contracts';
+import { FOREMAN_ROLE, type Engine } from '@orchestrator/orchestration';
 
 export type Role = 'owner' | 'colleague' | 'visitor';
 
@@ -110,18 +115,30 @@ const RULES: Rule[] = [
   rule('POST', '/commands/plan', 'work'),
 ];
 
-/** The member a thing belongs to; null when it is shared (or does not exist: the route then answers 404 itself). */
+/** In place of a member's id: the thing is the foreman's (its profile, its session, its questions), which only owners may touch or look into. */
+export const OWNERS_ONLY = '#owners';
+
+/**
+ * The member a thing belongs to; null when it is shared (or does not exist: the route then answers 404 itself).
+ * What is the foreman's belongs to no member and is not shared: `OWNERS_ONLY`.
+ */
 export function memberOf(engine: Engine, thing: Thing, id: string | null | undefined): string | null {
   if (!id) return null;
   const core = engine.core;
   const ofHost = (hostId: string | null | undefined): string | null => (hostId ? (core.hosts.get(hostId)?.memberId ?? null) : null);
+  const ofEmployee = (employeeId: string | null | undefined): string | null => {
+    const e = employeeId ? core.employees.get(employeeId) : undefined;
+    return e?.roleKey === FOREMAN_ROLE ? OWNERS_ONLY : ofHost(e?.hostId);
+  };
   switch (thing) {
     case 'host':
       return ofHost(id);
     case 'employee':
-      return ofHost(core.employees.get(id)?.hostId);
-    case 'session':
-      return ofHost(core.sessions.get(id)?.hostId);
+      return ofEmployee(id);
+    case 'session': {
+      const s = core.sessions.get(id);
+      return s?.employeeId && core.employees.get(s.employeeId)?.roleKey === FOREMAN_ROLE ? OWNERS_ONLY : ofHost(s?.hostId);
+    }
     case 'project':
       return ofHost(core.projects.get(id)?.hostId);
     case 'task': {
@@ -160,7 +177,11 @@ export function mayCall(engine: Engine, who: Who, method: string, route: string,
       const raw = s.from === 'path' ? decodeURIComponent(m[1] ?? '') : body?.[s.field];
       const id = typeof raw === 'string' && raw ? raw : null;
       const member = memberOf(engine, s.thing, id);
-      if (!allowed(who, r.need, member)) return { ok: false, reason: "That is on another member's own computer; only they and the owners can use it." };
+      if (!allowed(who, r.need, member)) return { ok: false, reason: member === OWNERS_ONLY ? 'The foreman supervises the whole office, so only the owners can look into it or direct it.' : "That is on another member's own computer; only they and the owners can use it." };
+    }
+    // Hiring a foreman, or making someone the foreman, is an owner's act.
+    if (/^\/employees(\/[^/]+)?$/.test(route) && (method === 'POST' || method === 'PATCH') && typeof body?.roleKey === 'string' && (roleByKey(body.roleKey) ?? matchRole(body.roleKey))?.key === FOREMAN_ROLE) {
+      return { ok: false, reason: 'Only an owner of this office can hire a foreman.' };
     }
     return { ok: true };
   }
@@ -187,12 +208,33 @@ function memberOfEvent(engine: Engine, e: OrchestratorEvent): string | null {
   return memberOf(engine, 'host', e.hostId) ?? memberOf(engine, 'employee', e.employeeId) ?? memberOf(engine, 'session', e.sessionId) ?? memberOf(engine, 'project', e.projectId);
 }
 
-export function mayReadEvent(engine: Engine, who: Who, e: OrchestratorEvent): boolean {
-  return who.kind === 'owner' || allowed(who, 'read', memberOfEvent(engine, e));
+/**
+ * Where the foreman is and that a round is on is for everyone to see (its character walks the office in every
+ * window); what a round is about and what it concluded is the owners'. So these three are passed on with only that.
+ */
+const FOREMAN_PUBLIC: Record<string, (e: OrchestratorEvent) => Pick<OrchestratorEvent, 'summary' | 'data'>> = {
+  'foreman.visit': (e) => ({ summary: e.summary, data: { fromEmployeeId: e.data.fromEmployeeId, toEmployeeId: e.data.toEmployeeId, roundId: e.data.roundId, action: e.data.action, quiet: e.data.quiet } }),
+  'foreman.round.started': (e) => ({ summary: e.summary, data: { roundId: e.data.roundId, reason: e.data.reason, counts: e.data.counts } }),
+  'foreman.round.finished': (e) => ({ summary: 'The foreman finished a round', data: { roundId: e.data.roundId, quiet: true } }),
+};
+
+/** An event as this person may read it: whole, with only what is public in it, or not at all (null). */
+export function eventFor(engine: Engine, who: Who, e: OrchestratorEvent): OrchestratorEvent | null {
+  if (who.kind === 'owner') return e;
+  const pub = FOREMAN_PUBLIC[e.type];
+  if (pub) return { ...e, sessionId: null, taskId: null, projectId: null, ...pub(e) };
+  return allowed(who, 'read', memberOfEvent(engine, e)) ? e : null;
 }
 
+/**
+ * A message is read by whoever may read the one it was sent to. When another employee sent it, also by whoever may
+ * read that one — except that the foreman as sender hides nothing: what it tells an employee is that employee's.
+ */
 export function mayReadMessage(engine: Engine, who: Who, m: Message): boolean {
-  return who.kind === 'owner' || (allowed(who, 'read', memberOf(engine, 'employee', m.toEmployeeId)) && allowed(who, 'read', m.from.kind === 'employee' ? memberOf(engine, 'employee', m.from.id) : null));
+  if (who.kind === 'owner') return true;
+  if (!allowed(who, 'read', memberOf(engine, 'employee', m.toEmployeeId))) return false;
+  const sender = m.from.kind === 'employee' ? memberOf(engine, 'employee', m.from.id) : null;
+  return sender === OWNERS_ONLY || allowed(who, 'read', sender);
 }
 
 export function mayReadQuestion(engine: Engine, who: Who, q: Question): boolean {
@@ -202,5 +244,5 @@ export function mayReadQuestion(engine: Engine, who: Who, q: Question): boolean 
 /** The office's state as this person may read it. */
 export function stateFor(engine: Engine, who: Who, state: FullState): FullState {
   if (who.kind === 'owner') return state;
-  return { ...state, events: state.events.filter((e) => mayReadEvent(engine, who, e)), messages: state.messages.filter((m) => mayReadMessage(engine, who, m)), questions: state.questions.filter((q) => mayReadQuestion(engine, who, q)) };
+  return { ...state, events: state.events.map((e) => eventFor(engine, who, e)).filter((e): e is OrchestratorEvent => !!e), messages: state.messages.filter((m) => mayReadMessage(engine, who, m)), questions: state.questions.filter((q) => mayReadQuestion(engine, who, q)) };
 }

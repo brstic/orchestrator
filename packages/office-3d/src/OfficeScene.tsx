@@ -9,13 +9,14 @@ import { HiFi as HiFiPart } from './HiFi.tsx';
 import { Humans as HumansPart, type HumanView } from './Humans.tsx';
 import { SelfBubble } from './SelfBubble.tsx';
 import { TalkMarks, type TalkMark } from './TalkMarks.tsx';
+import { Foreman } from './Foreman.tsx';
 import { PodLabels as PodLabelsPart } from './PodLabels.tsx';
 import { SeatMarkers } from './Seats.tsx';
 import { TV as TVPart, type TvFrames, type TvView } from './TV.tsx';
 import { Building as BuildingPart, Desks as DesksPart, Lights as LightsPart, Near, Rooms as RoomsPart, Zones as ZonesPart, sceneProbe } from './Environment.tsx';
 import { People as PeoplePart } from './People.tsx';
 import { Rig as RigPart, type Keymap } from './Rig.tsx';
-import type { UsageClockView, BoardView, CameraMode, CeoView, HostView, NearbyTarget, PersonView, Quality, RadioView, ScreenSubscribe, WalkRequest, WallView, WhiteboardView, ZoneView } from './types.ts';
+import type { UsageClockView, BoardView, CameraMode, CeoView, HostView, NearbyTarget, PersonView, Quality, RadioView, ScreenSubscribe, WalkRequest, WallView, WhiteboardView, ZoneView, ForemanView } from './types.ts';
 import { buildWorld } from './world.ts';
 import { usePacedLoop } from './pace.ts';
 
@@ -49,6 +50,8 @@ export interface OfficeSceneProps {
   /** The employees this person is waiting to hear from, or whose answer is waiting: marks over their heads. */
   talkMarks?: TalkMark[];
   onOpenTalk?: (employeeId: string) => void;
+  /** The office's foreman, if it has one: it has no desk and walks the floor. */
+  foreman?: ForemanView | null;
   /** What the person at this computer has just said out loud: a bubble over their own character for a few seconds. */
   selfSaying?: string | null;
   /** Ease the camera in when the owner stands at a desk (an owner setting, off by default). */
@@ -189,6 +192,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       <SceneProbe zones={props.zones} />
       {props.talkMarks && props.talkMarks.length > 0 && props.cameraMode !== 'workstation' && <TalkMarks marks={props.talkMarks} positions={positions} onOpen={props.onOpenTalk ?? (() => undefined)} />}
       <People people={props.people} whips={props.whips} world={world} walks={props.walks} player={player} selectedId={props.selectedId} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />
+      {props.foreman && <Foreman foreman={props.foreman} people={props.people} world={world} selected={props.selectedId === props.foreman.id} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />}
       <Rig whipAt={props.whipAt} approachZoom={props.approachZoom} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} />
     </Canvas>
   );

@@ -1,5 +1,5 @@
 /**
- * The foreman: an employee whose own session supervises the office in rounds.
+ * The foreman: the office's one supervisor, with a session of its own and no desk, working in rounds.
  * The engine decides when a round is due (no model involved); the scripted
  * foreman then acts through the foreman-only MCP tools.
  */
@@ -33,25 +33,38 @@ const done = (id: string, label: string) =>
 
 before(async () => {
   // Fast clocks for the test; ask_boss waits long enough that the foreman's answer comes back as its result.
-  h = await createHarness({ timings: { askBossWaitMs: 45000, foremanTickMs: 150, foremanSettleMs: 250, foremanMinGapMs: 1000 } });
+  // ("Idle for ten minutes" is two and a half seconds on this clock.)
+  h = await createHarness({ timings: { askBossWaitMs: 45000, foremanTickMs: 150, foremanSettleMs: 250, foremanMinGapMs: 1000, foremanIdleMs: 2500 } });
   const repo = h.makeRepo('shop');
   // Work is assigned by hand in this project, so ready tasks stay unassigned until somebody assigns them.
   projectId = (await h.project('Shop', repo, { verifyCommand: 'npm test --silent', policy: { autoAssign: false } })).id;
   for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend']] as const) ids[name] = (await h.employee(name, role, { projectId, autonomy: 'autonomous' })).id;
   const home = path.join(fs.realpathSync(h.tmp), 'foreman-home');
   fs.mkdirSync(home);
-  const mira = await h.employee('Mira', 'foreman', { workingDir: home, ownFolderProject: false });
+  const mira = await h.employee('Mira', 'foreman', { workingDir: home });
   assert.deepEqual([mira.title, mira.department, mira.roleKey, mira.autonomy], ['Foreman', 'Management', 'foreman', 'restricted']);
   assert.ok(['Edit', 'Write'].every((t) => mira.disallowedTools.includes(t)), 'a foreman cannot edit files, whatever their autonomy');
   ids.Mira = mira.id;
+  // No desk: it walks the floor. And there is one for the whole office.
+  assert.equal(mira.deskId, null);
+  assert.ok((await h.state()).employees.filter((e) => e.id !== mira.id).every((e) => !!e.deskId), 'everyone else sits somewhere');
+  await assert.rejects(h.api('POST', '/employees', { name: 'Second', roleKey: 'foreman', workingDir: home }), /400: the office already has a foreman \(Mira\)/);
+  assert.equal((await h.state()).projects.length, 1, 'a refused hire leaves nothing behind — and a foreman\'s folder is never a project');
+  const state = await h.state();
+  const free = state.layout.desks.find((d) => d.kind !== 'executive' && !state.employees.some((e) => e.deskId === d.id))!;
+  await assert.rejects(h.api('PATCH', `/employees/${mira.id}`, { deskId: free.id }), /400: a foreman has no desk: it walks the floor/);
+  // Hiring a foreman is asking for its rounds. (Paused here so the first test can show what "off" means; the
+  // idle check stays off until the test that is about it.)
+  assert.equal((await h.state()).settings.foreman.enabled, true, 'hiring the foreman switched its rounds on');
+  await h.api('PATCH', '/settings', { foreman: { enabled: false, idleMinutes: 0 } });
 });
 after(async () => {
   await h.cleanup();
 });
 
-test('with rounds switched off, nothing is delivered to the foreman', async () => {
+test('with rounds paused, nothing is delivered to the foreman', async () => {
   const st = await foreman();
-  assert.deepEqual(st.settings, { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true }, 'off unless the owner switches it on');
+  assert.deepEqual(st.settings, { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true, idleMinutes: 0 });
   assert.equal(st.foreman.name, 'Mira');
   const task = await h.task({ projectId, title: 'Pick the dev server port', assigneeId: ids.Alex, description: '@@fake: ask Which port should the dev server use?; write port.txt 4000; commit port; complete port chosen@@' });
   ids.portTask = task.id;
@@ -71,7 +84,7 @@ test('with rounds switched off, nothing is delivered to the foreman', async () =
 
 test("an employee's question starts one round: the foreman looks, answers, and the answer reaches the employee", async () => {
   const settings = await h.api('PATCH', '/settings', { foreman: { enabled: true, minGapSeconds: 1 } });
-  assert.deepEqual(settings.foreman, { enabled: true, minGapSeconds: 1, quietCheckMinutes: 15, answersQuestions: true });
+  assert.deepEqual(settings.foreman, { enabled: true, minGapSeconds: 1, quietCheckMinutes: 15, answersQuestions: true, idleMinutes: 0 });
   const started = await waitFor(async () => (await rounds('started'))[0], { label: 'round started', timeout: 40000 });
   assert.equal(started.data.reason, 'attention');
   assert.equal(started.data.counts.question, 1);
@@ -91,7 +104,9 @@ test("an employee's question starts one round: the foreman looks, answers, and t
 
   // The foreman really looked: the overview, and Alex's real terminal screen.
   const visit = (await events(`employeeId=${ids.Mira}`)).find((e) => e.type === 'foreman.visit');
-  assert.deepEqual([visit.data.fromEmployeeId, visit.data.toEmployeeId, visit.data.screen], [ids.Mira, ids.Alex, true]);
+  assert.deepEqual([visit.data.fromEmployeeId, visit.data.toEmployeeId, visit.data.action, visit.data.screen], [ids.Mira, ids.Alex, 'look', true]);
+  // Looking, then answering: both are visits to Alex's desk, which is what the walking character shows.
+  assert.deepEqual((await events(`employeeId=${ids.Mira}`)).filter((e) => e.type === 'foreman.visit').map((e) => e.data.action).sort(), ['answer', 'look']);
   const seen = await pane(ids.Mira!);
   assert.match(seen, /Office overview — 2 employees, 1 project/);
   assert.match(seen, /Their terminal screen, captured .* ago/);
@@ -199,4 +214,33 @@ test('no further round while nothing new needs attention; the owner can still an
   await sleep(1500);
   assert.equal((await rounds('started')).length, n, 'and still no round');
   assert.equal((await foreman()).attention.length, 0);
+});
+
+test('someone who has stopped and is doing nothing: the foreman goes over and tells them to carry on — and then leaves them alone for longer', async () => {
+  const before = (await rounds('started')).length;
+  // Alex has a running session, no task in progress and no open question. With the idle check on, that calls the foreman.
+  assert.equal((await h.session(ids.Alex!))!.status, 'running');
+  await h.api('PATCH', '/settings', { foreman: { idleMinutes: 10 } });
+  const started = await waitFor(async () => (await rounds('started'))[before], { label: 'a round for someone idle', timeout: 40000 });
+  const item = started.data.items.find((i: any) => i.kind === 'idle' && /^Alex \(Senior Backend Engineer\) has been doing nothing for /.test(i.text));
+  assert.ok(item, JSON.stringify(started.data.items));
+  assert.ok(started.data.counts.idle >= 1);
+  const finished = await waitFor(async () => (await rounds('finished'))[before], { label: 'that round finished', timeout: 40000 });
+  assert.equal(finished.data.outcome, 'finished');
+  assert.ok(finished.data.messaged >= 1, 'it told someone something');
+  // Alex really got it, under the foreman's name, through the ordinary message queue — and carried on.
+  await turnEnded(ids.Alex!, /carried-on/, 'Alex did as the foreman said');
+  assert.match(await pane(ids.Alex!), /Mira \(the foreman\)/);
+  const told = (await h.state()).messages.find((m) => m.toEmployeeId === ids.Alex && m.from.id === ids.Mira && /Carry on with what you were asked/.test(m.body))!;
+  assert.deepEqual([told.from.kind, told.from.name, told.delivery.status], ['employee', 'Mira (the foreman)', 'confirmed']);
+  const visits = (await events(`employeeId=${ids.Mira}`)).filter((e) => e.type === 'foreman.visit' && e.data.roundId === started.data.roundId && e.data.toEmployeeId === ids.Alex).map((e) => e.data.action);
+  assert.deepEqual(visits.sort(), ['look', 'tell']);
+  assert.equal((await foreman()).visiting, null, 'the round is over: it is with nobody');
+  // Alex has stopped again, and only the foreman has spoken to him since: he is left alone for twice as long this
+  // time, so the two do not talk in circles. (Without that, the next round would start after two and a half seconds.)
+  const n = (await rounds('started')).length;
+  await sleep(3800);
+  assert.equal((await rounds('started')).filter((r) => r.data.items.some((i: any) => i.kind === 'idle' && i.text.startsWith('Alex '))).length, 1, 'not asked about again straight away');
+  assert.ok((await rounds('started')).length <= n + 1);
+  await h.api('PATCH', '/settings', { foreman: { idleMinutes: 0 } });
 });

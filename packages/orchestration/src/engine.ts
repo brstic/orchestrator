@@ -1,5 +1,5 @@
 import type { Artifact, Employee, FullState, OfficeLayout, Question } from '@orchestrator/contracts';
-import { newId, nowIso } from '@orchestrator/contracts';
+import { matchRole, newId, nowIso, roleByKey } from '@orchestrator/contracts';
 import type { McpServerOptions } from '@orchestrator/integrations';
 import { TerminalGateway, type GatewayDeps } from '@orchestrator/terminal';
 import { CommandCenter } from './commands.ts';
@@ -118,6 +118,7 @@ export class Engine {
       this.comms.prune();
     }, 3600_000);
     this.housekeeping.unref?.();
+    this.employees.unseatForemen();
     this.foreman.start();
     this.tasks.schedule();
   }
@@ -167,7 +168,9 @@ export class Engine {
    */
   async hire(input: EmployeeInput & { ownFolderProject?: boolean; verifyCommand?: string | null }, actor = 'owner'): Promise<Employee> {
     const folder = input.workingDir?.trim();
-    if (!folder || input.projectId || input.ownFolderProject === false) return this.employees.create(input, actor);
+    // (The foreman's folder is only where its session runs: it is not a project, and a refused hire must leave nothing behind.)
+    const foreman = !!input.roleKey && (roleByKey(input.roleKey) ?? matchRole(input.roleKey))?.key === 'foreman';
+    if (!folder || input.projectId || input.ownFolderProject === false || foreman) return this.employees.create(input, actor);
     const hostId = input.hostId ?? this.core.hosts.find((h) => h.local && h.status !== 'revoked')?.id ?? this.core.hosts.find((h) => h.status === 'online')?.id ?? null;
     if (!hostId || !this.core.agents.isOnline(hostId)) return this.employees.create({ ...input, hostId }, actor);
     const insp = await this.core.agents.rpc(hostId, { method: 'fs.inspect', params: { path: folder } }).catch((e) => {
@@ -385,7 +388,8 @@ export class Engine {
     }
     this.core.setLayout({ ...layout, version: (this.core.layout.version ?? 1) + 1 });
     this.core.audit(actor, 'office.layout_updated', 'office', { desks: layout.desks.length });
-    for (const e of this.core.employees.filter((x) => !x.archived && !x.deskId)) {
+    // (Not the foreman, who has no desk, and not someone on a member's own computer, who sits in that member's room.)
+    for (const e of this.core.employees.filter((x) => !x.archived && !x.deskId && x.roleKey !== 'foreman' && !this.hosts.memberOfHost(x.hostId))) {
       const desk = this.employees.freeDesk();
       if (!desk) break;
       e.deskId = desk;

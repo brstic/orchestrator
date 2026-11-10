@@ -775,12 +775,12 @@ export interface SelfImprovementSettings {
 // ──────────────────────────── Foreman ────────────────────────────
 
 /**
- * Rounds of the foreman (an employee with the `foreman` role). A round is one prompt delivered to the
- * foreman's own Claude Code session, so each one uses that account's Claude usage; the office decides
- * when one is due without any model.
+ * Rounds of the foreman: the office's one supervisor (an employee with the `foreman` role, on one of the
+ * office's own machines, with no desk). A round is one prompt delivered to the foreman's own Claude Code
+ * session, so each one uses that account's Claude usage; the office decides when one is due without any model.
  */
 export interface ForemanSettings {
-  /** Off by default: nothing is ever delivered to a foreman unless the owner switches this on. */
+  /** Nothing is ever delivered to a foreman while this is off. Hiring a foreman switches it on; the owner can pause it. */
   enabled: boolean;
   /** The shortest time between the end of one round and the start of the next. */
   minGapSeconds: number;
@@ -788,9 +788,15 @@ export interface ForemanSettings {
   quietCheckMinutes: number;
   /** Employees' questions go to the foreman first. Permission requests never do. */
   answersQuestions: boolean;
+  /** Someone whose session has sat between turns this long with nothing in progress is put in front of the foreman, once. 0 = never. */
+  idleMinutes: number;
 }
 
-export type ForemanAttentionKind = 'question' | 'blocked' | 'stalled' | 'unassigned';
+/**
+ * question: an employee asked and nobody answered. blocked: a blocked task. stalled: idle with a task in progress.
+ * unassigned: ready work next to someone free. idle: a live session with nothing in progress, doing nothing.
+ */
+export type ForemanAttentionKind = 'question' | 'blocked' | 'stalled' | 'unassigned' | 'idle';
 
 /** One thing that calls for the foreman, computed from recorded state. */
 export interface ForemanAttentionItem {
@@ -831,8 +837,10 @@ export interface ForemanStatus {
   settings: ForemanSettings;
   /** The employee who does the rounds, if there is one. */
   foreman: { id: ID; name: string; session: SessionStatus | null; activity: ActivityState | null } | null;
-  /** Further employees with the foreman role: they have the tools, but rounds go to one. */
+  /** Further employees with the foreman role, from before there could only be one: they have the tools, but rounds go to one. */
   otherForemen: string[];
+  /** Who the foreman is with right now (it looked at them, answered them, told them something) while a round runs. */
+  visiting: ID | null;
   /** A round could be handed over right now. */
   available: boolean;
   problem: string | null;

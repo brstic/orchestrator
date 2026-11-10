@@ -15,7 +15,7 @@ const SCREEN_LINES = 40;
 const BOARD: TaskStatus[] = ['BACKLOG', 'READY', 'IN_PROGRESS', 'REVIEW', 'BLOCKED', 'DONE'];
 const TASK_KINDS: TaskKind[] = ['feature', 'bug', 'test', 'review', 'research', 'planning', 'security', 'docs', 'ops', 'refactor', 'chore'];
 const PRIORITIES: TaskPriority[] = ['low', 'normal', 'high', 'urgent'];
-const KIND_LABEL: Record<ForemanAttentionKind, string> = { question: 'QUESTION', blocked: 'BLOCKED', stalled: 'STALLED', unassigned: 'UNASSIGNED' };
+const KIND_LABEL: Record<ForemanAttentionKind, string> = { question: 'QUESTION', blocked: 'BLOCKED', stalled: 'STALLED', unassigned: 'UNASSIGNED', idle: 'IDLE' };
 
 interface Persisted {
   /** Finished rounds, newest first. */
@@ -27,12 +27,21 @@ interface Persisted {
   /** What the office looked like when the foreman last looked (or when rounds were switched on), for the quiet check. */
   fingerprint: string | null;
   checkedAt: string | null;
+  /**
+   * Per employee: when "doing nothing" was last put in front of the foreman, and how many times in a row with
+   * nothing but the foreman's own words reaching them in between. Each such time doubles how long they are left
+   * alone, so a foreman and an employee with nothing to do never talk in circles.
+   */
+  idle: Record<string, { shownAt: string; streak: number }>;
 }
+
+/** The longest the wait for the next "doing nothing" grows to: 2^5 times the owner's setting. */
+const IDLE_BACKOFF_MAX = 5;
 
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
 const shortHash = (s: string): string => createHash('sha1').update(s).digest('hex').slice(0, 10);
 const err = (text: string): McpToolResult => ({ text, isError: true });
-const emptyCounts = (): Record<ForemanAttentionKind, number> => ({ question: 0, blocked: 0, stalled: 0, unassigned: 0 });
+const emptyCounts = (): Record<ForemanAttentionKind, number> => ({ question: 0, blocked: 0, stalled: 0, unassigned: 0, idle: 0 });
 
 /** A round in flight: the record, plus what the engine needs to know while it runs. */
 interface LiveRound extends ForemanRound {
@@ -41,6 +50,10 @@ interface LiveRound extends ForemanRound {
   keys: string[];
   /** The prompt reached the foreman's session. */
   delivered: boolean;
+  /** What was on record about idle employees before this round showed them, to put back if the round never arrives. */
+  idleBefore: Record<string, { shownAt: string; streak: number } | null>;
+  /** Who the foreman is with right now: the last employee it looked at, answered or told something. */
+  visiting: string | null;
 }
 /** How long a round may sit undelivered while the foreman has no running session at all. */
 const NO_SESSION_GRACE_MS = 60_000;
@@ -61,7 +74,9 @@ export function roundDecision(i: { now: number; inFlight: boolean; fresh: number
 }
 
 /**
- * The foreman: an employee whose own Claude Code session supervises the office.
+ * The foreman: the office's one supervisor. It has a Claude Code session of its own on one of the
+ * office's machines and no desk — it walks the floor. It looks after everyone: the shared office and
+ * the employees on members' own computers (while those computers are in the office).
  *
  * The engine works out, without any model, what needs attention (a question nobody answered, a
  * blocked or stalled task, ready work next to a free employee). Only when that list has something
@@ -90,7 +105,7 @@ export class Foreman {
   constructor(eng: Engine) {
     this.eng = eng;
     const saved = eng.core.store.kvGet<Partial<Persisted>>(KV, {});
-    this.state = { rounds: saved.rounds ?? [], seen: saved.seen ?? [], escalated: saved.escalated ?? [], fingerprint: saved.fingerprint ?? null, checkedAt: saved.checkedAt ?? null };
+    this.state = { rounds: saved.rounds ?? [], seen: saved.seen ?? [], escalated: saved.escalated ?? [], fingerprint: saved.fingerprint ?? null, checkedAt: saved.checkedAt ?? null, idle: saved.idle ?? {} };
   }
 
   private get core() {
@@ -129,9 +144,14 @@ export class Foreman {
     this.soon.unref?.();
   }
 
-  /** The employee who does the rounds: the longest-serving one with the foreman role. */
+  /** The employee who does the rounds. (An office from before there could only be one: the longest-serving of them.) */
   foreman(): Employee | undefined {
     return this.core.employees.filter((e) => !e.archived && e.roleKey === FOREMAN_ROLE).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))[0];
+  }
+
+  /** A foreman was just hired: that is the owner asking for rounds, so they are on from here (and can be paused in Settings). */
+  onHired(): void {
+    if (!this.core.settings.foreman.enabled) this.core.updateSettings({ foreman: { ...this.core.settings.foreman, enabled: true } });
   }
 
   private gapMs(): number {
@@ -160,20 +180,69 @@ export class Foreman {
     return !!this.eng.hosts.memberOfHost(hostId);
   }
 
+  /** On a member's own computer that is not in the office right now: nothing can be seen or delivered there, so they are passed by. */
+  private away(e: Employee | undefined): boolean {
+    return !!e && this.personal(e.hostId) && !this.core.agents.isOnline(e.hostId!);
+  }
+
+  /** Whose computer someone is on, in words: "" for the office's own machines. */
+  private where(e: Employee): string {
+    const host = this.personal(e.hostId) ? this.core.hosts.get(e.hostId!) : undefined;
+    return host ? ` · on ${host.memberName ?? host.name}'s own computer${this.core.agents.isOnline(host.id) ? '' : ' (away)'}` : '';
+  }
+
+  /**
+   * Work stays on the computer its project is on: a shared project's task never goes to an employee on a
+   * member's own computer, and a task of a project on a member's computer goes only to an employee there.
+   */
+  private sameComputer(e: Employee, projectId: string | null | undefined): boolean {
+    const projectHost = this.core.projects.get(projectId ?? '')?.hostId ?? null;
+    return !(this.personal(e.hostId) || this.personal(projectHost)) || e.hostId === projectHost;
+  }
+
+  /** How long doing nothing has to last before the foreman is called. 0: never (the owner's setting). */
+  private idleMs(): number {
+    const minutes = this.core.settings.foreman.idleMinutes;
+    return minutes > 0 ? (this.core.timings.foremanIdleMs ?? minutes * 60_000) : 0;
+  }
+
+  /** When something other than the foreman last gave this employee something to do: a message, an answer from the owner, a task that started. */
+  private lastOutsideInput(who: Employee, boss: Employee | undefined): string {
+    const core = this.core;
+    let last = '';
+    const at = (ts: string | null | undefined) => {
+      if (ts && ts > last) last = ts;
+    };
+    for (const m of core.messages.filter((x) => x.toEmployeeId === who.id && x.from.id !== boss?.id && x.from.kind !== 'system')) at(m.createdAt);
+    for (const t of core.tasks.filter((x) => x.assigneeId === who.id)) at(t.startedAt);
+    for (const q of core.questions.filter((x) => x.employeeId === who.id && x.answeredBy?.kind !== 'foreman')) at(q.answeredAt);
+    return last;
+  }
+
+  /** How many times in a row this employee's idleness was shown to the foreman with nothing from anyone else in between. */
+  private idleStreak(who: Employee, boss: Employee | undefined): number {
+    const rec = this.state.idle[who.id];
+    return rec && !(this.lastOutsideInput(who, boss) > rec.shownAt) ? rec.streak : 0;
+  }
+
   attention(now = Date.now(), boss: Employee | undefined = this.foreman()): ForemanAttentionItem[] {
     const core = this.core;
     const settle = core.timings.foremanSettleMs;
     const seen = new Set(this.state.seen);
     const out: ForemanAttentionItem[] = [];
     const add = (i: Omit<ForemanAttentionItem, 'seen' | 'escalated'>) => out.push({ ...i, seen: seen.has(i.key), escalated: !!i.questionId && this.state.escalated.includes(i.questionId) });
-    // The foreman runs the shared office: what is on a member's own computer is that member's business.
-    const active = (projectId: string | null) => !projectId || (core.projects.get(projectId)?.status === 'active' && !this.personal(core.projects.get(projectId)?.hostId));
+    // The whole office is the foreman's: the shared floor and members' rooms alike. A member's computer that is away is passed by.
+    const there = (projectId: string | null) => {
+      const host = core.projects.get(projectId ?? '')?.hostId;
+      return !this.personal(host) || core.agents.isOnline(host!);
+    };
+    const active = (projectId: string | null) => !projectId || (core.projects.get(projectId)?.status === 'active' && there(projectId));
 
     if (core.settings.foreman.answersQuestions) {
-      for (const q of core.questions.filter((x) => x.status === 'open' && x.kind === 'question' && !!x.employeeId && x.employeeId !== boss?.id && !this.personal(core.employees.get(x.employeeId)?.hostId) && (x.channel === 'mcp_tool' || x.channel === 'ask_user_question_hook'))) {
+      for (const q of core.questions.filter((x) => x.status === 'open' && x.kind === 'question' && !!x.employeeId && x.employeeId !== boss?.id && (x.channel === 'mcp_tool' || x.channel === 'ask_user_question_hook'))) {
         if (now - Date.parse(q.createdAt) < settle) continue;
         const asker = core.employees.get(q.employeeId);
-        if (!asker || asker.archived) continue;
+        if (!asker || asker.archived || this.away(asker)) continue;
         add({ key: `question:${q.id}`, kind: 'question', text: `${asker.name} asks: "${truncate(oneLine(q.text), 300)}"`, employeeId: asker.id, taskId: q.taskId, questionId: q.id, projectId: q.projectId, since: q.createdAt });
       }
     }
@@ -190,19 +259,36 @@ export class Foreman {
       const s = core.runningSessionOf(t.assigneeId);
       // Only what the session really reported: between turns, with nothing said to be going on.
       if (!who || !s || s.status !== 'running' || s.inTurn === true || (s.activity !== 'idle' && s.activity !== 'waiting_input')) continue;
-      if (core.gateway.isPaused(s.id) || core.gateway.isHumanControlled(s.id)) continue;
+      if (this.away(who) || core.gateway.isPaused(s.id) || core.gateway.isHumanControlled(s.id)) continue;
       if (core.questions.find((q) => q.employeeId === who.id && q.status === 'open')) continue;
       const since = s.activitySince > (t.startedAt ?? '') ? s.activitySince : t.startedAt!;
       if (now - Date.parse(since) < core.timings.foremanStalledMs) continue;
       add({ key: `stalled:${t.id}:${s.activitySince}`, kind: 'stalled', text: `${who.name} has been idle for ${formatDuration(now - Date.parse(since))} with ${t.key} "${truncate(t.title, 80)}" in progress`, employeeId: who.id, taskId: t.id, questionId: null, projectId: t.projectId, since });
     }
 
-    const free = core.employees.filter((e) => e.roleKey !== FOREMAN_ROLE && !this.personal(e.hostId) && this.eng.tasks.isFree(e));
+    // Doing nothing at all: a live session between turns with no task in progress. Each such spell is shown to the
+    // foreman once (the key carries when it began), so someone left alone on purpose is not asked about again.
+    const idleMs = this.idleMs();
+    if (idleMs > 0) {
+      for (const who of core.employees.filter((e) => !e.archived && e.roleKey !== FOREMAN_ROLE && !this.away(e))) {
+        const s = core.runningSessionOf(who.id);
+        if (!s || s.status !== 'running' || s.inTurn === true || (s.activity !== 'idle' && s.activity !== 'waiting_input' && s.activity !== 'task_complete')) continue;
+        if (core.gateway.isPaused(s.id) || core.gateway.isHumanControlled(s.id) || !this.eng.tasks.withinSchedule(who)) continue;
+        if (core.tasks.find((t) => t.assigneeId === who.id && t.status === 'IN_PROGRESS')) continue; // that is "stalled", above
+        if (core.questions.find((q) => q.employeeId === who.id && q.status === 'open')) continue;
+        // Left alone for twice as long each time the foreman was the only one who had anything for them.
+        if (now - Date.parse(s.activitySince) < idleMs * 2 ** Math.min(this.idleStreak(who, boss), IDLE_BACKOFF_MAX)) continue;
+        const waiting = core.tasks.filter((t) => t.assigneeId === who.id && (t.status === 'READY' || t.status === 'BLOCKED'));
+        add({ key: `idle:${who.id}:${s.activitySince}`, kind: 'idle', text: `${who.name} (${who.title}) has been doing nothing for ${formatDuration(now - Date.parse(s.activitySince))}: no task in progress${waiting.length ? `; assigned and waiting: ${waiting.map((t) => `${t.key} [${t.status}]`).join(', ')}` : ''}${this.where(who)}`, employeeId: who.id, taskId: null, questionId: null, projectId: who.projectId, since: s.activitySince });
+      }
+    }
+
+    const free = core.employees.filter((e) => e.roleKey !== FOREMAN_ROLE && !this.away(e) && this.eng.tasks.isFree(e));
     if (free.length) {
       for (const t of core.tasks.filter((x) => x.status === 'READY' && !x.assigneeId && x.kind !== 'review' && active(x.projectId))) {
         // Give the scheduler its turn first: where a project assigns automatically, this is only what it left over.
         if (now - Date.parse(t.updatedAt) < settle) continue;
-        const who = this.candidates(t, free);
+        const who = this.candidates(t, free.filter((e) => this.sameComputer(e, t.projectId)));
         if (!who.length) continue;
         add({ key: `unassigned:${t.id}`, kind: 'unassigned', text: `${t.key} "${truncate(t.title, 80)}" [${t.kind}, ${t.priority}] in ${core.projects.get(t.projectId)?.name ?? 'a project'} is ready and unassigned — free now: ${who.map((e) => `${e.name} (${e.title})`).join(', ')}`, employeeId: null, taskId: t.id, questionId: null, projectId: t.projectId, since: t.updatedAt });
       }
@@ -273,9 +359,13 @@ export class Foreman {
       // Forget what no longer exists, so the record of what was seen stays as small as the office's open issues.
       const present = new Set(items.map((i) => i.key));
       const openQuestions = new Set(core.questions.filter((q) => q.status === 'open').map((q) => q.id));
-      const seen = this.state.seen.filter((k) => present.has(k) || (k.startsWith('question:') && openQuestions.has(k.slice('question:'.length))));
+      // (A spell of doing nothing stays "seen" for as long as it lasts, also while the employee is being left alone.)
+      const spells = new Set(core.employees.filter((e) => !e.archived).map((e) => `idle:${e.id}:${core.runningSessionOf(e.id)?.activitySince ?? ''}`));
+      const seen = this.state.seen.filter((k) => present.has(k) || (k.startsWith('question:') && openQuestions.has(k.slice('question:'.length))) || spells.has(k));
       const escalated = this.state.escalated.filter((id) => openQuestions.has(id));
-      if (seen.length !== this.state.seen.length || escalated.length !== this.state.escalated.length) {
+      const gone = Object.keys(this.state.idle).filter((id) => core.employees.get(id)?.archived !== false);
+      for (const id of gone) delete this.state.idle[id];
+      if (seen.length !== this.state.seen.length || escalated.length !== this.state.escalated.length || gone.length) {
         this.state.seen = seen;
         this.state.escalated = escalated;
         this.save();
@@ -340,7 +430,14 @@ export class Foreman {
       actions: { answered: 0, assigned: 0, created: 0, escalated: 0, messaged: 0 },
       keys: fresh.map((i) => i.key),
       delivered: false,
+      visiting: null,
+      idleBefore: {},
     };
+    for (const i of fresh.filter((x) => x.kind === 'idle' && !!x.employeeId)) {
+      const who = core.employees.get(i.employeeId)!;
+      round.idleBefore[who.id] = this.state.idle[who.id] ?? null;
+      this.state.idle[who.id] = { shownAt: round.startedAt, streak: this.idleStreak(who, boss) + 1 };
+    }
     this.round = round;
     this.state.seen = [...new Set([...this.state.seen, ...round.keys])];
     this.state.fingerprint = this.fingerprint(boss);
@@ -363,6 +460,7 @@ export class Foreman {
       counts.blocked ? `${counts.blocked} blocked task${counts.blocked === 1 ? '' : 's'}` : '',
       counts.stalled ? `${counts.stalled} stalled` : '',
       counts.unassigned ? `${counts.unassigned} unassigned task${counts.unassigned === 1 ? '' : 's'}` : '',
+      counts.idle ? `${counts.idle} idle` : '',
     ].filter(Boolean);
     return parts.join(', ') || 'nothing new';
   }
@@ -383,18 +481,18 @@ export class Foreman {
       ].filter(Boolean);
       return `QUESTION ${q.id} from ${asker?.name ?? 'an employee'} (${[asker?.title, task?.key].filter(Boolean).join(', ')}): "${truncate(oneLine(q.text), 600)}" — waiting ${waited}${i.escalated ? ' — you escalated it to the boss' : ''}${extra.length ? `\n   ${extra.join('\n   ')}` : ''}`;
     }
-    return `${KIND_LABEL[i.kind]} ${i.text}${i.kind === 'stalled' ? '' : ` — for ${waited}`}`;
+    return `${KIND_LABEL[i.kind]} ${i.text}${i.kind === 'stalled' || i.kind === 'idle' ? '' : ` — for ${waited}`}`;
   }
 
   private teamLines(boss: Employee): string[] {
     const core = this.core;
     return core.employees
-      .filter((e) => !e.archived && e.id !== boss.id)
+      .filter((e) => !e.archived && e.id !== boss.id && !this.away(e))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((e) => {
         const s = core.runningSessionOf(e.id);
         const t = this.eng.tasks.currentTask(e.id);
-        return `- ${e.name} (${e.title}) — ${s ? (ACTIVITY_LABEL[s.activity] ?? s.activity) : 'no session'}${t ? ` · ${t.key} "${truncate(t.title, 50)}"` : ' · no task'}`;
+        return `- ${e.name} (${e.title}) — ${s ? (ACTIVITY_LABEL[s.activity] ?? s.activity) : 'no session'}${t ? ` · ${t.key} "${truncate(t.title, 50)}"` : ' · no task'}${this.where(e)}`;
       });
   }
 
@@ -412,8 +510,12 @@ export class Foreman {
       'What to do:',
       ...(reason === 'quiet_check' ? ['- Call office_overview, look_at anyone who seems stuck, and act only where something is wrong. If all is well, say so and finish.'] : []),
       ...(has('question') ? ["- QUESTION: if it is operational and you are sure, answer it with answer_question (use look_at first if you need to see what they are doing). If it is about direction, product or policy, about anything destructive or irreversible, or you are not sure: escalate_to_owner with its question_id and leave it open."] : []),
-      ...(has('blocked') || has('stalled') ? ['- BLOCKED / STALLED: look_at the employee, then tell them what to do with send_message, or escalate_to_owner.'] : []),
+      ...(has('blocked') || has('stalled') ? ['- BLOCKED / STALLED: look_at the employee, then tell them what to do with tell_employee, or escalate_to_owner.'] : []),
       ...(has('unassigned') ? ['- UNASSIGNED: give it to the most suitable free person with assign_task.'] : []),
+      ...(has('idle')
+        ? ['- IDLE: look_at them. If their screen shows work that stopped half-way, or a question to whoever is at the keyboard, tell_employee what to do next (or escalate_to_owner if it is not yours to decide). If there is ready work they can take, assign_task; if what they were asked for clearly needs a follow-up, create_task and assign it. If they finished what they were asked and nothing is left, leave them be and say so in your summary.']
+        : []),
+      ...(this.core.employees.find((e) => !e.archived && this.personal(e.hostId)) ? ['- People marked "on …\'s own computer" work on that member\'s own projects: they only take tasks of projects on that same computer, and nobody else takes those.'] : []),
       '- You never approve permission requests, and you do not write code.',
       'Finish with finish_round and a summary of one or two sentences. This is one round: when it is done, stop. Do not wait, poll or start another one yourself.',
     );
@@ -457,8 +559,12 @@ export class Foreman {
       this.eng.comms.cancelFor({ kind: 'round', id: r.id });
       const mine = new Set(r.keys);
       this.state.seen = this.state.seen.filter((k) => !mine.has(k));
+      for (const [id, before] of Object.entries(r.idleBefore)) {
+        if (before) this.state.idle[id] = before;
+        else delete this.state.idle[id];
+      }
     }
-    const { foremanId: _f, keys: _k, delivered: _d, ...record } = r;
+    const { foremanId: _f, keys: _k, delivered: _d, visiting: _v, idleBefore: _i, ...record } = r;
     const done: ForemanRound = { ...record, finishedAt: nowIso(), outcome, summary };
     this.state.rounds = [done, ...this.state.rounds].slice(0, ROUNDS_KEPT);
     if (r.delivered) {
@@ -485,17 +591,18 @@ export class Foreman {
     const now = Date.now();
     const s = boss ? core.runningSessionOf(boss.id) : undefined;
     const last = this.state.rounds[0] ?? null;
-    const why = boss ? this.unavailable(boss) : 'Nobody in the office has the Foreman role. Hire one (Team → Hire, role "Foreman") and give them a folder.';
+    const why = boss ? this.unavailable(boss) : 'The office has no foreman. Hire one (Team → Hire, role "Foreman") and give it a folder to run in.';
     const lastEnd = last ? Date.parse(last.finishedAt ?? last.startedAt) : null;
     let round: ForemanRound | null = null;
     if (this.round) {
-      const { foremanId: _f, keys: _k, delivered: _d, ...record } = this.round;
+      const { foremanId: _f, keys: _k, delivered: _d, visiting: _v, idleBefore: _i, ...record } = this.round;
       round = record;
     }
     return {
       settings: core.settings.foreman,
       foreman: boss ? { id: boss.id, name: boss.name, session: s?.status ?? null, activity: s?.activity ?? null } : null,
       otherForemen: core.employees.filter((e) => !e.archived && e.roleKey === FOREMAN_ROLE && e.id !== boss?.id).map((e) => e.name),
+      visiting: this.round?.visiting ?? null,
       available: !!boss && !why,
       problem: why ?? this.problem,
       round,
@@ -527,8 +634,8 @@ export class Foreman {
 
   private findEmployee(ref: string): Employee | undefined {
     const e = this.core.employeeByName(ref) ?? this.core.employees.get(ref.trim());
-    // Not someone on a member's own computer: the foreman neither looks at nor directs them.
-    return e && !e.archived && !this.personal(e.hostId) ? e : undefined;
+    // Everyone in the office, on the office's machines and on members' own computers alike.
+    return e && !e.archived ? e : undefined;
   }
 
   /** The round this foreman is on right now, if any. */
@@ -542,6 +649,19 @@ export class Foreman {
     if (r) r.actions[what]++;
   }
 
+  /**
+   * The foreman is with someone: it looked at them, answered them, gave them work or told them something. On the
+   * record as an event (which is also what makes its character walk over); what was on anyone's screen is not in it.
+   */
+  private visit(boss: Employee, target: Employee, sessionId: string | null, action: 'look' | 'answer' | 'assign' | 'tell', extra: Record<string, unknown> = {}): void {
+    const round = this.roundOf(boss);
+    const summary = action === 'look' ? `${boss.name} looked at what ${target.name} is doing` : action === 'answer' ? `${boss.name} went over to ${target.name} with an answer` : action === 'assign' ? `${boss.name} gave ${target.name} work` : `${boss.name} told ${target.name} what to do next`;
+    this.core.event({ type: 'foreman.visit', source: 'mcp', summary, employeeId: boss.id, sessionId, projectId: target.projectId, correlationId: round?.id ?? null, data: { fromEmployeeId: boss.id, toEmployeeId: target.id, roundId: round?.id ?? null, action, ...(action === 'look' ? {} : { quiet: true }), ...extra } });
+    if (!round) return;
+    round.visiting = target.id;
+    if (!round.visited.includes(target.id)) round.visited.push(target.id);
+  }
+
   /** Something the foreman may not do was asked for: said clearly, and kept on the record. */
   private refuse(employee: Employee, tool: string, reason: string, target = '-'): McpToolResult {
     this.core.audit(`foreman:${employee.name}`, 'foreman.refused', target, { tool, reason });
@@ -551,7 +671,7 @@ export class Foreman {
   private overview(boss: Employee): string {
     const core = this.core;
     const now = Date.now();
-    const people = core.employees.filter((e) => !e.archived && e.id !== boss.id && !this.personal(e.hostId)).sort((a, b) => a.name.localeCompare(b.name));
+    const people = core.employees.filter((e) => !e.archived && e.id !== boss.id).sort((a, b) => a.name.localeCompare(b.name));
     const projects = core.projects.filter((p) => p.status !== 'archived').sort((a, b) => a.name.localeCompare(b.name));
     const lines: string[] = [`Office overview — ${people.length} employee${people.length === 1 ? '' : 's'}, ${projects.length} project${projects.length === 1 ? '' : 's'}.`, '', 'People:'];
     if (!people.length) lines.push('- nobody else works here yet');
@@ -563,14 +683,15 @@ export class Foreman {
       const q = core.questions.find((x) => x.employeeId === e.id && x.status === 'open' && x.channel !== 'system');
       const state = !s ? 'no session yet' : !live ? `no running session (${s.status}${s.exitReason ? `: ${truncate(s.exitReason, 60)}` : ''})` : `${ACTIVITY_LABEL[s.activity] ?? s.activity} for ${formatDuration(now - Date.parse(s.activitySince))}${s.activityDetail ? ` ("${truncate(oneLine(s.activityDetail), 70)}")` : ''}`;
       lines.push(
-        `- ${e.name} — ${e.title} · ${core.projects.get(e.projectId)?.name ?? 'no project'} · ${state} · ${task ? `${task.key} [${task.status}] "${truncate(task.title, 60)}"${task.progress.percent != null ? ` ${task.progress.percent}%` : ''}` : 'no task in progress'}${waiting.length ? ` · also theirs: ${waiting.map((t) => `${t.key} [${t.status}]`).join(', ')}` : ''}${q ? ` · open ${q.kind === 'permission' || q.kind === 'trust_prompt' ? 'approval request (the boss decides)' : q.kind} ${q.id}: "${truncate(oneLine(q.text), 120)}"` : ''}`,
+        `- ${e.name} — ${e.title} · ${core.projects.get(e.projectId)?.name ?? 'no project'} · ${state} · ${task ? `${task.key} [${task.status}] "${truncate(task.title, 60)}"${task.progress.percent != null ? ` ${task.progress.percent}%` : ''}` : 'no task in progress'}${this.where(e)}${waiting.length ? ` · also theirs: ${waiting.map((t) => `${t.key} [${t.status}]`).join(', ')}` : ''}${q ? ` · open ${q.kind === 'permission' || q.kind === 'trust_prompt' ? 'approval request (the boss decides)' : q.kind} ${q.id}: "${truncate(oneLine(q.text), 120)}"` : ''}`,
       );
     }
     lines.push('', 'Projects:');
     if (!projects.length) lines.push('- no projects yet');
     for (const p of projects) {
       const tasks = core.tasks.filter((t) => t.projectId === p.id && t.kind !== 'review');
-      lines.push(`- ${p.name} (${p.status}${p.policy.autoAssign ? ', assigns ready work automatically' : ', work is assigned by hand'}): ${BOARD.map((st) => `${st} ${tasks.filter((t) => t.status === st).length}`).join(' · ')}`);
+      const owner = this.personal(p.hostId) ? core.hosts.get(p.hostId!) : undefined;
+      lines.push(`- ${p.name} (${p.status}${p.policy.autoAssign ? ', assigns ready work automatically' : ', work is assigned by hand'}${owner ? `, on ${owner.memberName ?? owner.name}'s own computer: only employees there work on it` : ''}): ${BOARD.map((st) => `${st} ${tasks.filter((t) => t.status === st).length}`).join(' · ')}`);
       const ready = tasks.filter((t) => t.status === 'READY' && !t.assigneeId);
       if (ready.length) lines.push(`  Ready and unassigned: ${ready.slice(0, 12).map((t) => `${t.key} [${t.kind}, ${t.priority}] "${truncate(t.title, 60)}"${t.roleHint ? ` (role: ${t.roleHint})` : ''}`).join('; ')}${ready.length > 12 ? `; … ${ready.length - 12} more` : ''}`);
       const held = tasks.filter((t) => t.status === 'BACKLOG' && !t.released);
@@ -586,7 +707,7 @@ export class Foreman {
     const s = core.sessionOf(target.id);
     const live = !!s && (s.status === 'running' || s.status === 'starting');
     const task = this.eng.tasks.currentTask(target.id);
-    const lines: string[] = [`${target.name} — ${target.title} · ${core.projects.get(target.projectId)?.name ?? 'no project'}`];
+    const lines: string[] = [`${target.name} — ${target.title} · ${core.projects.get(target.projectId)?.name ?? 'no project'}${this.where(target)}`];
     lines.push(!s ? 'Session: none yet.' : !live ? `Session: not running (${s.status}${s.exitReason ? `: ${s.exitReason}` : ''}).` : `Session: ${ACTIVITY_LABEL[s.activity] ?? s.activity} for ${formatDuration(now - Date.parse(s.activitySince))}${s.activityDetail ? ` — ${oneLine(s.activityDetail)}` : ''}${s.inTurn === true ? ' (in the middle of a turn)' : s.inTurn === false ? ' (between turns)' : ''}.`);
     if (task) {
       lines.push('', `Current task: ${task.key} [${task.status}] ${task.title} (${task.kind}, ${task.priority})`, truncate(task.description.trim() || '(no description)', 1500));
@@ -613,10 +734,7 @@ export class Foreman {
       }
     }
     if (!shown) lines.push('', live ? 'Their terminal screen: not available (no screen has been captured for this session yet).' : 'Their terminal screen: not available (no session is running).');
-    // The visit is on the record (and is what makes the foreman's character walk over); what was on the screen is not.
-    const round = this.roundOf(boss);
-    this.core.event({ type: 'foreman.visit', source: 'mcp', summary: `${boss.name} looked at what ${target.name} is doing`, employeeId: boss.id, sessionId, projectId: target.projectId, correlationId: round?.id ?? null, data: { fromEmployeeId: boss.id, toEmployeeId: target.id, roundId: round?.id ?? null, screen: shown } });
-    if (round && !round.visited.includes(target.id)) round.visited.push(target.id);
+    this.visit(boss, target, sessionId, 'look', { screen: shown });
     return lines.join('\n');
   }
 
@@ -647,7 +765,6 @@ export class Foreman {
       answer_question: async (a, { employee }) => {
         const q = this.findQuestion(String(a.question_id));
         if (!q) return err(`No question "${a.question_id}". Use office_overview to see the open ones.`);
-        if (this.personal(core.employees.get(q.employeeId ?? '')?.hostId)) return this.refuse(employee, 'answer_question', "That employee is on a member's own computer; their questions are for that member.", q.id);
         // The same line a colleague the owner invited is held to: a question may be answered, an action may not be approved.
         if (q.kind === 'permission' || q.kind === 'trust_prompt') return this.refuse(employee, 'answer_question', 'Only the owner can decide a permission request. Leave it with them; it is already in their inbox.', q.id);
         if (q.kind !== 'question') return this.refuse(employee, 'answer_question', `This is a ${q.kind.replace('_', ' ')} for the owner, not an operational question. Leave it with them (escalate_to_owner if it is urgent).`, q.id);
@@ -669,6 +786,8 @@ export class Foreman {
         }
         await this.eng.comms.answer(q.id, { answer, answers }, actor(employee), { kind: 'foreman', id: employee.id, name: employee.name });
         this.did(employee, 'answered');
+        const asker = core.employees.get(q.employeeId);
+        if (asker) this.visit(employee, asker, null, 'answer');
         return `Answered ${core.employees.get(q.employeeId)?.name ?? 'the employee'}'s question on the owner's behalf. It is on the record as answered by you.`;
       },
 
@@ -679,8 +798,10 @@ export class Foreman {
         if (!to) return err(`No employee matches "${a.employee}". Use office_overview to see who works here.`);
         if (to.roleKey === FOREMAN_ROLE) return err('A foreman supervises and does not take tasks. Assign it to someone who does the work.');
         if (task.assigneeId === to.id) return `${task.key} is already assigned to ${to.name}.`;
+        if (!this.sameComputer(to, task.projectId)) return this.refuse(employee, 'assign_task', this.notSameComputer(to, task.projectId), task.id);
         this.eng.tasks.updateTask(task.id, { assigneeId: to.id }, actor(employee));
         this.did(employee, 'assigned');
+        this.visit(employee, to, null, 'assign', { taskId: task.id });
         const next = task.status === 'READY' ? 'It is handed to them as soon as they are free.' : task.status === 'BACKLOG' ? (task.released ? 'It starts once its dependencies are done.' : 'It is not released yet: it starts once the owner releases it.') : `It is ${task.status}.`;
         return `${task.key} "${truncate(task.title, 80)}" is now assigned to ${to.name}. ${next}`;
       },
@@ -694,6 +815,7 @@ export class Foreman {
           const to = this.findEmployee(String(a.assignee));
           if (!to) return err(`No employee matches "${a.assignee}".`);
           if (to.roleKey === FOREMAN_ROLE) return err('A foreman supervises and does not take tasks.');
+          if (!this.sameComputer(to, project.id)) return this.refuse(employee, 'create_task', this.notSameComputer(to, project.id), project.id);
           assigneeId = to.id;
         }
         const task = this.eng.tasks.createTask(
@@ -709,7 +831,23 @@ export class Foreman {
           actor(employee),
         );
         this.did(employee, 'created');
+        if (assigneeId) this.visit(employee, core.employees.require(assigneeId), null, 'assign', { taskId: task.id });
         return `Created ${task.key} "${task.title}" in ${project.name}${assigneeId ? `, assigned to ${core.employees.get(assigneeId)?.name}` : ', unassigned'} (${task.status}).`;
+      },
+
+      tell_employee: async (a, { employee }) => {
+        const to = this.findEmployee(String(a.employee));
+        if (!to) return err(`No employee matches "${a.employee}". Use office_overview to see who works here.`);
+        if (to.id === employee.id) return err('That is you.');
+        if (to.roleKey === FOREMAN_ROLE) return err('That is another foreman, not someone you direct.');
+        const message = String(a.message ?? '').trim();
+        if (!message) return err('Say what they should do: "message" is empty.');
+        if (this.away(to)) return err(`${to.name} is on a member's own computer that is not in the office right now; nothing can be delivered there. Leave them until it is back.`);
+        // The ordinary message queue: it reaches their session when they can read it, under the foreman's name, and is on the record.
+        this.eng.comms.sendMessage({ from: { kind: 'employee', id: employee.id, name: `${employee.name} (the foreman)` }, toEmployeeId: to.id, body: truncate(message, 4000), taskId: this.eng.tasks.currentTask(to.id)?.id ?? null });
+        this.did(employee, 'messaged');
+        this.visit(employee, to, null, 'tell');
+        return `Told ${to.name}. It is delivered to their session ${core.runningSessionOf(to.id) ? 'when they can read it' : 'once it runs (they have no running session right now)'}.`;
       },
 
       escalate_to_owner: async (a, { employee, session }) => {
@@ -749,6 +887,13 @@ export class Foreman {
       },
     };
     return Object.fromEntries(Object.entries(tools).map(([name, fn]) => [name, only(name, fn)]));
+  }
+
+  private notSameComputer(to: Employee, projectId: string): string {
+    const project = this.core.projects.get(projectId);
+    return this.personal(to.hostId)
+      ? `${to.name} works on a member's own computer and only takes tasks of projects on that computer; "${project?.name ?? 'that project'}" is not one of them.`
+      : `"${project?.name ?? 'That project'}" is on a member's own computer; only employees on that computer can work on it, and ${to.name} is not one of them.`;
   }
 
   /** The foreman told someone something (the ordinary send_message tool): counted on the round. */
