@@ -3,6 +3,7 @@ import { correlationMarker, newId, nowIso, truncate } from '@orchestrator/contra
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
 import { DEFAULT_HIGH_RISK_PATTERNS } from './prompts.ts';
+import { applyDetectAction, mayPropose, runDetectors } from './learning/detect.ts';
 
 const MAX_LESSONS_IN_PROMPT = 12;
 /** Approvals of the same command shape before Orchestrator suggests pre-approving it. */
@@ -309,7 +310,8 @@ export class Improver {
   }
 
   private propose(p: { kind: ImprovementKind; key: string; title: string; rationale: string; evidence: EvidenceRef[]; projectId?: string | null; employeeId?: string | null; action: ImprovementAction }): Improvement | null {
-    if (this.core.improvements.find((i) => i.dedupeKey === p.key)) return null;
+    // Not while an earlier one is undecided, nor soon after it was decided (learning/detect.ts, mayPropose).
+    if (!mayPropose(this.core.improvements.filter((i) => i.dedupeKey === p.key), p.evidence)) return null;
     const imp: Improvement = { id: newId().slice(0, 8), kind: p.kind, title: p.title, rationale: p.rationale, evidence: p.evidence.slice(0, 12), projectId: p.projectId ?? null, employeeId: p.employeeId ?? null, action: p.action, status: 'proposed', dedupeKey: p.key, createdAt: nowIso(), decidedAt: null };
     this.core.put('improvement', imp);
     this.core.event({ type: 'improvement.proposed', source: 'server', summary: `Orchestrator suggests: ${p.title}`, projectId: imp.projectId, employeeId: imp.employeeId, data: { improvementId: imp.id, kind: imp.kind } });
@@ -497,6 +499,8 @@ export class Improver {
         );
       }
     }
+    // Further findings (learning/detect.ts): task size, dependencies, routing, repeated questions, stalls, weak verification, machine load, idle capacity.
+    for (const i of runDetectors(this.eng, (p) => this.propose(p))) out.push(i);
     if (out.length) this.core.broadcast('performance', this.performance());
     return out;
   }
@@ -527,6 +531,11 @@ export class Improver {
         this.eng.employees.update(a.employeeId, { autonomy: a.level }, actor);
         break;
       case 'advice':
+        break;
+      case 'task.dependsOn':
+      case 'project.routing':
+      case 'project.notes.append':
+        imp.previous = applyDetectAction(this.eng, a, actor);
         break;
     }
     imp.status = 'applied';

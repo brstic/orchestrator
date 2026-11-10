@@ -527,13 +527,49 @@ async function scenario() {
 
   await step('Growth: teaching a lesson through the form records it', async () => {
     await open('growth');
-    await clickText('Teach');
+    await clickText('What the team knows');
+    await clickText('Add a lesson');
     await type(`window.__t.field('Lesson')`, ctx.lesson);
     await type(`window.__t.field('Applies when')`, 'before a commit');
     await shot('growth-teach');
-    await click(`window.__t.submit('Teach')`, 'Teach (submit)');
+    await click(`window.__t.submit('Add')`, 'Add (submit)');
     await waitFor(`Object.values(window.__t.store().lessons).some((l) => l.text === ${JSON.stringify(ctx.lesson)})`, 8000);
+    // The form closes and the lesson is listed; searching for something else hides it, clearing the search brings it back.
+    const listed = `window.__t.scope().textContent.includes(${JSON.stringify(ctx.lesson)})`;
+    await waitFor(`${listed} && !window.__t.submit('Add')`, 8000);
+    await type(`window.__t.scope().querySelector('input[aria-label="Search lessons"]')`, 'zzzz-nothing');
+    await waitFor(`!(${listed}) && /No lesson matches/.test(window.__t.scope().textContent)`, 5000);
+    await type(`window.__t.scope().querySelector('input[aria-label="Search lessons"]')`, 'commit');
+    await waitFor(listed, 5000);
     await close();
+  });
+
+  await step('Growth: the top line says what the office does with what it learns, and its three choices change it', async () => {
+    await open('growth');
+    const dial = `window.__t.store().settings.selfImprovement.autopilot`;
+    const line = `window.__t.scope().querySelector('.gr-dial .strong').textContent`;
+    const was = await js(dial);
+    if (was !== 'safe') throw new Error(`the dial starts at "${was}", not at "safe"`);
+    await waitFor(`/applies by itself what cannot give agents more freedom/.test(${line})`, 5000);
+    await clickText('Ask me about everything');
+    await waitFor(`${dial} === 'off' && /asks you about everything/.test(${line})`, 8000);
+    // With the dial at "ask", the log of what it did by itself says so instead of promising entries.
+    await clickText('Done by itself');
+    await waitFor(`/set to ask you about everything/.test(window.__t.scope().textContent)`, 5000);
+    await shot('growth-done-by-itself');
+    await clickText('Also give more freedom when the record is clean');
+    await waitFor(`${dial} === 'trusted' && /never for risky commands/.test(${line})`, 8000);
+    await clickText('Apply what cannot give agents more freedom');
+    await waitFor(`${dial} === 'safe'`, 8000);
+    await clickText('Results');
+    await waitFor(`/Who delivers what/.test(window.__t.scope().textContent)`, 5000);
+    await shot('growth-results');
+    // The same control is in Settings, and "More settings" leads there.
+    await clickText('More settings');
+    await waitFor(`/Self-improvement/.test(window.__t.scope().textContent) && !!window.__t.byText('Ask me about everything')`, 8000);
+    await shot('settings-self-improvement');
+    await close();
+    return 'safe → off → trusted → safe';
   });
 
   await step('Meetings: a meeting started from the form runs to a recorded decision', async () => {
@@ -644,16 +680,10 @@ async function scenario() {
   await step('Growth: a lesson is retired and reactivated from its card', async () => {
     await open('growth');
     const status = `(Object.values(window.__t.store().lessons).find((l) => l.text === ${JSON.stringify(ctx.lesson)}) || {}).status`;
-    let found = false;
-    for (const tab of ['Playbooks', 'Team knowledge']) {
-      await clickText(tab);
-      await sleep(400);
-      if (await js(`!!window.__t.near(${JSON.stringify(ctx.lesson)}, 'Retire')`)) {
-        found = true;
-        break;
-      }
-    }
-    if (!found) throw new Error('the taught lesson is not listed with a Retire button in Playbooks or Team knowledge');
+    await clickText('What the team knows');
+    await waitFor(`!!window.__t.near(${JSON.stringify(ctx.lesson)}, 'Retire')`, 8000).catch(() => {
+      throw new Error('the taught lesson is not listed with a Retire button under "What the team knows"');
+    });
     await click(`window.__t.near(${JSON.stringify(ctx.lesson)}, 'Retire')`, 'Retire');
     await waitFor(`${status} === 'retired'`, 8000);
     await click(`window.__t.near(${JSON.stringify(ctx.lesson)}, 'Reactivate')`, 'Reactivate');
@@ -1010,21 +1040,19 @@ async function scenario() {
 
   await step('Growth: a suggestion that widens permissions is applied by the owner', async () => {
     await open('growth');
-    await clickText('Suggestions');
+    await clickText('Waiting for you');
     await waitFor(`/docker build/.test(window.__t.scope().textContent)`, 10000);
     await shot('growth-suggestion');
-    await click(`window.__t.near('docker build', 'Apply — I understand it widens permissions') || window.__t.near('docker build', 'Apply')`, 'Apply');
+    // Saying yes to something that lets agents do more is spelled out before the button.
+    await waitFor(`/This lets agents do more without asking you/.test(window.__t.scope().textContent)`, 5000);
+    await click(`window.__t.near('docker build', 'Yes, allow it')`, 'Yes, allow it');
     await waitFor(`Object.values(window.__t.store().improvements).some((i) => i.kind === 'allow_rule' && i.status === 'applied')`, 8000);
     await close();
   });
 
   await step('Growth: a lesson is edited in place', async () => {
     await open('growth');
-    for (const tab of ['Playbooks', 'Team knowledge']) {
-      await clickText(tab);
-      await sleep(400);
-      if (await js(`!!window.__t.near(${JSON.stringify(ctx.lesson)}, 'Edit')`)) break;
-    }
+    await clickText('What the team knows');
     await click(`window.__t.near(${JSON.stringify(ctx.lesson)}, 'Edit')`, 'Edit');
     await type(`window.__t.scope().querySelector('input[aria-label="Applies when"]')`, ctx.lessonWhen);
     await click(`window.__t.scope().querySelector('form textarea[aria-label="Lesson"]').closest('form').querySelector('button[type=submit]')`, 'Save');

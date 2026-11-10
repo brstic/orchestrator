@@ -541,6 +541,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/improvements/analyze', async () => engine.improver.analyze());
     api.post('/improvements/:id/apply', async (req) => engine.improver.apply(param(req, 'id')));
     api.post('/improvements/:id/dismiss', async (req) => engine.improver.dismiss(param(req, 'id')));
+    // What the office did by itself with what it learned: every `learning.*` event, newest first (the Growth window's "Done by itself").
+    api.get('/growth/log', async (req) => {
+      const found = (await store.queryEvents({ typePrefix: 'learning.', limit: Math.min(500, Number(query(req).limit) || 200) })).reverse();
+      const who = whoOf(req);
+      return who.kind === 'owner' ? found : found.map((e) => eventFor(engine, who, e)).filter(Boolean);
+    });
 
     // natural-language commands: plan first, execute only what the owner confirmed
     api.post('/commands/plan', async (req) => engine.commands.planWithFallback(String(body(req).input ?? '')));

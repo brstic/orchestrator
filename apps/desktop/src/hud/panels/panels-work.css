@@ -167,3 +167,55 @@
 .pw-chip > .truncate {
   min-width: 0;
 }
+
+/* Growth: the dial that says what the office does with what it learns, and the folded list of earlier decisions. */
+.gr-dial {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.gr-dial-plain {
+  padding: 0;
+  border-bottom: 0;
+}
+.gr-dial-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.gr-choice {
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.gr-choice:hover:not(:disabled) {
+  color: var(--text);
+}
+.gr-choice:disabled {
+  cursor: default;
+}
+.gr-choice:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.gr-choice-on {
+  border-color: var(--accent);
+  background: #1e2a40;
+  color: var(--text);
+  font-weight: 600;
+}
+.gr-details > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 0;
+}

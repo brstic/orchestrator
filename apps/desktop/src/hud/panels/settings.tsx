@@ -8,6 +8,7 @@ import { useOffice } from '../../lib/store.ts';
 import { act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { LoadState, fmtDateTime, keyLabel, useLoad, type PanelProps } from './company-shared.tsx';
+import { AutopilotDial } from './growth.tsx';
 
 type SectionId = 'company' | 'graphics' | 'controls' | 'game' | 'improve' | 'workers' | 'foreman' | 'commands' | 'audit';
 
@@ -256,6 +257,15 @@ function ImproveSection({ settings }: { settings: OwnerSettings }) {
         Lessons from verified work are kept in playbooks and included in future prompts, and Orchestrator proposes changes to its own way of working from its recorded history. When off, no lessons are recorded or included, nobody is asked to reflect, and
         nothing is proposed.
       </Toggle>
+      {!off && (
+        <div>
+          <div className="section-title">What the office does with what it learns</div>
+          <AutopilotDial inSettings />
+          <div className="small faint" style={{ marginTop: 6 }}>
+            Whatever it does by itself is listed in Growth → Done by itself, with the reason and an Undo. The same choice is at the top of the Growth window.
+          </div>
+        </div>
+      )}
       <div>
         <div className="section-title">Retrospectives</div>
         <div className="col" style={{ gap: 6 }} role="radiogroup" aria-label="Retrospectives">
@@ -274,7 +284,7 @@ function ImproveSection({ settings }: { settings: OwnerSettings }) {
         </div>
       </div>
       <Toggle checked={si.autoApproveSharedLessons} onChange={(autoApproveSharedLessons) => set({ autoApproveSharedLessons })} title="Auto-approve shared lessons" disabled={off}>
-        Lessons an employee proposes for a whole project or the company become active without your review. Off: they wait as proposals in Growth. An employee's lessons for their own playbook are always active.
+        Lessons an employee proposes for a whole project or the company become active without your review. Off: they wait for you in Growth. An employee's lessons for their own playbook are always active.
       </Toggle>
       <Toggle checked={si.learnedRouting} onChange={(learnedRouting) => set({ learnedRouting })} title="Learned routing" disabled={off}>
         Among equally suitable employees, the scheduler prefers the one whose measured first-pass record on that kind of task is better. It only has an opinion after at least two completed tasks of that kind.

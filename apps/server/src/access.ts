@@ -113,6 +113,8 @@ const RULES: Rule[] = [
   rule('POST', '/lessons', 'work'),
   rule('PATCH', '/lessons/:id', 'work'),
   rule('POST', '/commands/plan', 'work'),
+  // What the office did by itself with what it learned; each entry is filtered like any other event.
+  rule('GET', '/growth/log', 'read'),
 ];
 
 /** In place of a member's id: the thing is the foreman's (its profile, its session, its questions), which only owners may touch or look into. */

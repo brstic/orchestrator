@@ -138,6 +138,12 @@ export function sanitizeForeman(input: unknown, current: ForemanSettings, minGap
   };
 }
 
+/** The autopilot dial takes one of its three values; anything else leaves it as it was (or at the default, 'safe'). */
+export function sanitizeSelfImprovement(next: OwnerSettings['selfImprovement'], current: OwnerSettings['selfImprovement']): OwnerSettings['selfImprovement'] {
+  const dial = (v: unknown): v is OwnerSettings['selfImprovement']['autopilot'] => v === 'off' || v === 'safe' || v === 'trusted';
+  return { ...next, autopilot: dial(next.autopilot) ? next.autopilot : dial(current.autopilot) ? current.autopilot : 'safe' };
+}
+
 const DEFAULT_SETTINGS: OwnerSettings = {
   companyName: 'My Company',
   ownerName: 'Boss',
@@ -161,7 +167,7 @@ const DEFAULT_SETTINGS: OwnerSettings = {
     volume: 0.6,
     lastStationId: null,
   },
-  selfImprovement: { enabled: true, retrospectives: 'friction', autoApproveSharedLessons: false, learnedRouting: true },
+  selfImprovement: { enabled: true, retrospectives: 'friction', autoApproveSharedLessons: false, learnedRouting: true, autopilot: 'safe' },
   foreman: { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true, idleMinutes: 10 },
   quality: 'high',
   keybindings: {
@@ -252,7 +258,7 @@ export class Core {
       this._settings.keybindings = { ...DEFAULT_SETTINGS.keybindings, ...kb, strafeLeft: 'KeyQ', strafeRight: 'KeyE', ...(kb.interact === 'KeyE' ? { interact: 'Space' } : {}) };
     }
     this._settings.keybindings = { ...DEFAULT_SETTINGS.keybindings, ...(this._settings.keybindings ?? {}) };
-    this._settings.selfImprovement = { ...DEFAULT_SETTINGS.selfImprovement, ...(this._settings.selfImprovement ?? {}) };
+    this._settings.selfImprovement = sanitizeSelfImprovement({ ...DEFAULT_SETTINGS.selfImprovement, ...(this._settings.selfImprovement ?? {}) }, DEFAULT_SETTINGS.selfImprovement);
     this._settings.foreman = sanitizeForeman(this._settings.foreman, DEFAULT_SETTINGS.foreman, this.foremanGapFloor);
     this._layout = s.kvGet<OfficeLayout | null>('layout', null) ?? defaultLayout();
     this._milestones = s.kvGet<Milestone[] | null>('milestones', null) ?? initialMilestones();
@@ -364,7 +370,7 @@ export class Core {
       keybindings: { ...this._settings.keybindings, ...(patch.keybindings ?? {}) },
       ...(patch.radio ? { radio: sanitizeRadio(patch.radio, this._settings.radio) } : {}),
       ...(patch.tv ? { tv: sanitizeTv(patch.tv, this._settings.tv) } : {}),
-      selfImprovement: { ...this._settings.selfImprovement, ...(patch.selfImprovement ?? {}) },
+      selfImprovement: sanitizeSelfImprovement({ ...this._settings.selfImprovement, ...(patch.selfImprovement ?? {}) }, this._settings.selfImprovement),
       foreman: patch.foreman === undefined ? this._settings.foreman : sanitizeForeman(patch.foreman, this._settings.foreman, this.foremanGapFloor),
     };
     this.store.kvSet('settings', this._settings);

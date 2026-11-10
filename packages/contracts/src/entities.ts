@@ -359,6 +359,8 @@ export interface Project {
   /** Set once every released task of the project has been verified DONE. */
   deliveredAt: ISODate | null;
   createdAt: ISODate;
+  /** Routing preferences accepted from the record (learning/detect.ts): for a kind of task, the employee to prefer when free. */
+  detectRouting?: Partial<Record<TaskKind, ID>>;
 }
 
 // ───────────────────────────── Tasks ─────────────────────────────
@@ -731,7 +733,10 @@ export interface PerformanceStat {
   mergeConflicts: number;
 }
 
-export type ImprovementKind = 'allow_rule' | 'deny_rule' | 'autonomy' | 'review_policy' | 'verify_command' | 'verify_timeout' | 'sequencing' | 'acceptance_criteria' | 'routing';
+export type ImprovementKind =
+  | 'allow_rule' | 'deny_rule' | 'autonomy' | 'review_policy' | 'verify_command' | 'verify_timeout' | 'sequencing' | 'acceptance_criteria' | 'routing'
+  // Found by the detectors in orchestration/src/learning/detect.ts.
+  | 'task_size' | 'dependencies' | 'missing_context' | 'stall' | 'verify_quality' | 'machine_load' | 'idle_capacity';
 
 export type ImprovementAction =
   | { type: 'project.policy.allow'; projectId: ID; rule: string }
@@ -739,7 +744,14 @@ export type ImprovementAction =
   | { type: 'project.requireReview'; projectId: ID; value: boolean }
   | { type: 'project.verifyTimeout'; projectId: ID; seconds: number }
   | { type: 'employee.autonomy'; employeeId: ID; level: AutonomyLevel }
-  | { type: 'advice' };
+  | { type: 'advice' }
+  // learning/detect.ts — none of these lets an agent do more without asking.
+  /** `taskId` waits for `dependsOnTaskId`. Inverse: take that id out of the task's dependencies again. */
+  | { type: 'task.dependsOn'; taskId: ID; dependsOnTaskId: ID }
+  /** When free, `employeeId` is preferred for tasks of this kind in the project. Inverse: put back the earlier preference (or none). */
+  | { type: 'project.routing'; projectId: ID; kind: TaskKind; employeeId: ID }
+  /** Add `text` as a line of the project's documentation notes. Inverse: take the line out again. */
+  | { type: 'project.notes.append'; projectId: ID; text: string };
 
 /**
  * A change Orchestrator proposes to its own way of working, derived from its
@@ -760,6 +772,8 @@ export interface Improvement {
   dedupeKey: string;
   createdAt: ISODate;
   decidedAt: ISODate | null;
+  /** What applying replaced, kept so the change can be reversed (set when applied; shape depends on the action). */
+  previous?: unknown;
 }
 
 export interface SelfImprovementSettings {
@@ -770,6 +784,8 @@ export interface SelfImprovementSettings {
   autoApproveSharedLessons: boolean;
   /** Let measured outcomes influence which employee the scheduler picks. */
   learnedRouting: boolean;
+  /** What the office does by itself with what it learns: nothing, what cannot give agents more freedom, or also more freedom on a clean record. */
+  autopilot: 'off' | 'safe' | 'trusted';
 }
 
 // ──────────────────────────── Foreman ────────────────────────────

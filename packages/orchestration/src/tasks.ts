@@ -5,6 +5,7 @@ import { applyXp, evaluateMilestones, xpForCompletedTask, xpForReview } from '@o
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
 import { reviewPrompt, taskPrompt } from './prompts.ts';
+import { routingPreference } from './learning/detect.ts';
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
 const PROJECT_COLORS = ['#4f8cff', '#ff8c5a', '#5ad67d', '#c58cff', '#f5c542', '#ff5d73', '#3fd0c9', '#ff9ecb'];
@@ -432,7 +433,10 @@ export class TaskManager {
       // Measured track record on this kind of task breaks ties between suitable people.
       const learned = this.eng.improver.routingBonus(e, task.kind);
       score += learned.bonus;
-      if (!best || score > best.score) best = { e, score, reason: learned.reason };
+      // A preference the owner accepted from the record ("give this kind to X first") decides between suitable people.
+      const preferred = routingPreference(this.core.settings, this.core.projects.get(task.projectId), task.kind, e.id);
+      score += preferred.bonus;
+      if (!best || score > best.score) best = { e, score, reason: preferred.reason ?? learned.reason };
     }
     this.lastRoutingReason = best?.reason ?? null;
     return best?.e;

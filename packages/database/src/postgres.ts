@@ -281,6 +281,7 @@ export class PgStore implements Storage {
       if (q.projectId && e.projectId !== q.projectId) continue;
       if (types && !types.has(e.type)) continue;
       if (exclude && exclude.has(e.type)) continue;
+      if (q.typePrefix && !e.type.startsWith(q.typePrefix)) continue;
       out.push(e);
     }
     return out.reverse();
