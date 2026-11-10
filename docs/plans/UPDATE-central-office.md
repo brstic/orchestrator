@@ -69,7 +69,9 @@ Details and the route-by-route table: [../ACCESS.md](../ACCESS.md).
 - [x] Two members at once and real work, on the owner's server (2026-11-10): an owner and a colleague, each in their own desktop app, in the office on Sparkcan at the same time — they saw and heard each other; the owner gave a shared employee on the server one small real task and the colleague gave their own employee on the Mac one; **real Claude Code did both** (a file written on the server, a file written on the Mac), and both accounts' usage arrived at the office. Trial members and employees were removed afterwards.
 
 ## Handed over to the owner (not development)
-- Both people in that trial were this one Mac (two app instances, two invitations). A second **human** on their own computer has not come in yet: invite them (Menu → People, or `office-admin.mjs invite <name> --role colleague` on the server). On another operating system they need a desktop build for it (the bundles in `release/` are stale) or the repository.
+Everything that can be done without another human is done. For the collaborator to come in, the owner only has to pass on what is prepared:
+- `~/Desktop/Orchestrator-za-kolegu/` — a fresh macOS (Apple Silicon) installer, an invitation for "Fenix" as `colleague`, and instructions. The invitation is unused; it can be revoked or re-issued from Menu → People.
+- `~/Desktop/Orchestrator-moja-pozivnica-OWNER.txt` — the owner's own invitation to the office on the server.
 
 ## What "done" does not cover
 - The trials used one client computer (this Mac) for both people; the server was a separate machine. Real work was one trivial task per side.

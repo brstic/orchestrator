@@ -11,7 +11,9 @@ _Last updated: 2026-11-10. Update this file with every piece of work (see `CLAUD
 - Door: port 4610, TLS; addresses `https://<server-vpn-ip>:4610` (Tailscale) and `https://<server-lan-ip>:4610` (LAN); `ufw allow 4610/tcp` was added.
 - Manage: `cd ~/orchestrator-office/app && ORCH_SERVER_HOME=~/.orchestrator-office/server node scripts/office-admin.mjs status|invite|role|revoke`.
 - Update: build a package here (`node scripts/package.mjs --no-app`), copy `release/orchestrator-<version>.tar.gz`, unpack over `~/orchestrator-office/app`, `systemctl --user restart orchestrator-office`.
-- Members: Branko (owner; invitation made, not yet used).
+- Members: Branko (owner; invitation at `~/Desktop/Orchestrator-moja-pozivnica-OWNER.txt`) and Fenix (colleague; invitation, installer and instructions in `~/Desktop/Orchestrator-za-kolegu/`). Neither has been used by a person yet.
+
+**The owner's Mac app** (`release/Orchestrator.app`) is one small build behind: it was in use and declined to quit, so it was not replaced. A fresh build is in `release-next/` (`node scripts/package.mjs --out release-next`, smoke 15/15). To switch: quit the app, then `rm -rf release/Orchestrator.app && mv release-next/Orchestrator.app release/` and open it again.
 
 Next steps:
 1. The owner connects with their invitation; invites the collaborator as `colleague`.

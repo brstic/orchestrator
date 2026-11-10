@@ -34,6 +34,7 @@ The owner uses `release/Orchestrator.app` as their real office.
 2. `osascript -e 'quit app id "local.orchestrator.desktop"'` and wait until it is gone. **Never package while it runs.**
 3. `node scripts/package.mjs --no-dmg` → `node scripts/smoke-package.mjs` (15/15).
 4. `open --env ORCH_SKIP_START_SCREEN=1 release/Orchestrator.app`
+   If the app is in use and will not quit, do not force it: build next to it with `node scripts/package.mjs --out release-next` and `node scripts/smoke-package.mjs --out release-next`, and swap when it is closed.
 5. Check `http://127.0.0.1:4600/api/state` with `~/.orchestrator/server/owner-token`: hosts online, sessions re-adopted, `/api/ssh-links` connected.
 6. Update `docs/STATUS.md` and `docs/CHANGELOG.md`.
 
