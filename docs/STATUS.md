@@ -16,7 +16,7 @@ _Last updated: 2026-11-10. Update this file with every piece of work (see `CLAUD
 **The owner's Mac app** (`release/Orchestrator.app`) runs the latest build (replaced 2026-11-10 after the owner closed it; smoke 15/15, sessions re-adopted, SSH link connected). `release/` also holds the matching `.dmg` and portable tarball.
 
 Next steps:
-1. The collaborator needs access to the repository (their GitHub username is still needed to add them), builds the client from it (INSTALL.md, "Without an installer") and joins with the invitation in `~/Desktop/Orchestrator-za-kolegu/PROCITAJ.txt`. The owner connects with their own invitation.
+1. The collaborator (GitHub `fenixf4`, already has access to the repository) builds the client from it (INSTALL.md, "Without an installer") and joins with the invitation in `~/Desktop/Orchestrator-za-kolegu/PROCITAJ.txt`. The owner connects with their own invitation.
 3. Decide what moves from the Mac's local office to the server office (the two are separate offices; nothing was migrated).
 4. From real use: fix what breaks; extend the UI suite with role-by-role clicks.
 
@@ -41,7 +41,7 @@ Next steps:
 - "Janky" movement and flicker: measured causes fixed (CHANGELOG 2026-11-10); the owner has not yet confirmed on their machine.
 - Foreman, SSH links and usage reporting: scripted worker only (parts tried with the real CLI at zero tokens).
 - Windows and Linux desktop bundles and the `.dmg` are stale; Windows never ran on a real machine; no notarisation. A Windows client can connect but cannot host sessions (no tmux).
-- GitHub: `brstic/orchestrator` (private). The collaborator could not be added by e-mail; needs their GitHub username. This machine pushes over HTTPS through `gh` (its SSH key is a deploy key for another repository).
+- GitHub: `brstic/orchestrator` (private); collaborators: `fenixf4`, `nikolajanko`. This machine pushes over HTTPS through `gh` (its SSH key is a deploy key for another repository).
 
 ## How the owner runs it today
 The packaged app `release/Orchestrator.app` (Desktop shortcut is a symlink to it) as a local office, state in `~/.orchestrator`, one SSH-linked server ("Sparkcan"). Shipping procedure: `DEVELOPMENT.md`.
