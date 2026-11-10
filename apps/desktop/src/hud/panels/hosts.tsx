@@ -325,12 +325,12 @@ function HostCard({ host, startOpen }: { host: Host; startOpen: boolean }) {
           </Button>
         )}
         {open && host.status !== 'revoked' && (
-          <Button small variant="danger" onClick={() => setConfirm('revoke')} title="This machine can no longer connect to the office">
+          <Button small variant="ghost" onClick={() => setConfirm('revoke')} title="This machine can no longer connect to the office">
             Revoke…
           </Button>
         )}
         {open && host.status !== 'online' && (
-          <Button small onClick={() => setConfirm('remove')}>
+          <Button small variant="ghost" onClick={() => setConfirm('remove')}>
             Remove…
           </Button>
         )}
@@ -591,7 +591,7 @@ function HostsPanel({ onClose }: PanelProps) {
   return (
     <Window title="Machines" subtitle={`${online} of ${active.length} online`} onClose={onClose} width={1040}>
       <div className="col" style={{ gap: 14 }}>
-        {hosts.length === 0 ? <Empty title="No machines yet">Connect the machine your Claude Code sessions run on to bring the office to life.</Empty> : hosts.map((h) => <HostCard key={h.id} host={h} startOpen={active.length <= 2 && h.status !== 'revoked'} />)}
+        {hosts.length === 0 ? <Empty title="No machines yet">Connect the machine your Claude Code sessions run on to bring the office to life.</Empty> : hosts.map((h) => <HostCard key={h.id} host={h} startOpen={active.length <= 2 && h.status === 'online'} />)}
         <UnboundSessions />
         <SshLinks />
         <ConnectMachine />

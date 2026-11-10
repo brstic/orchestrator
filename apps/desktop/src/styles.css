@@ -984,9 +984,10 @@ table.tbl {
   padding: 12px;
 }
 .toasts {
-  /* At the foot of the window: a window's title and its close button are at the top, and a message must not cover them. */
+  /* At the foot of the window: a window's title and its close button are at the top, and a message must not cover them.
+     Low enough to sit on a tall window's bottom edge, not on the buttons above it. */
   position: absolute;
-  bottom: 16px;
+  bottom: 8px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -3097,6 +3098,8 @@ button.ops-row:hover {
 }
 .pc-more > summary:hover {
   color: var(--fg, #e8ecf2);
+}
+
 /* routines */
 .routine-list {
   flex: none;

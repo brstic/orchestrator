@@ -7,7 +7,7 @@ const RESTING = new Set(['idle', 'waiting_input', 'task_complete', 'blocked']);
 
 /**
  * Sleep: a Claude Code process that sits idle still holds a few hundred megabytes. On the office's own machines a
- * session that has had no work for a while (Settings → Workers) is stopped — the same clean stop as "Stop session",
+ * session that has had no work for a while (Settings → Employees) is stopped — the same clean stop as "Stop session",
  * so its conversation stays where Claude Code keeps it — and the employee is shown as sleeping. Whatever they are
  * next needed for starts the session again, in the folder it was in, continuing that conversation (`Comms.pump`,
  * `SessionRegistry.wake`).

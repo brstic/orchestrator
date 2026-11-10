@@ -586,24 +586,31 @@ async function scenario() {
     const line = `window.__t.scope().querySelector('.gr-dial .strong').textContent`;
     const was = await js(dial);
     if (was !== 'safe') throw new Error(`the dial starts at "${was}", not at "safe"`);
-    await waitFor(`/applies by itself what cannot give agents more freedom/.test(${line})`, 5000);
-    await clickText('Ask me about everything');
-    await waitFor(`${dial} === 'off' && /asks you about everything/.test(${line})`, 8000);
+    await waitFor(`/applies by itself what cannot give employees more freedom/.test(${line})`, 5000);
+    await clickText('Ask me first');
+    await waitFor(`${dial} === 'off' && /asks you before it changes anything/.test(${line})`, 8000);
     // With the dial at "ask", the log of what it did by itself says so instead of promising entries.
     await clickText('Done by itself');
-    await waitFor(`/set to ask you about everything/.test(window.__t.scope().textContent)`, 5000);
+    await waitFor(`/set to ask you first/.test(window.__t.scope().textContent)`, 5000);
     await shot('growth-done-by-itself');
-    await clickText('Also give more freedom when the record is clean');
+    await clickText('Apply more on a clean record');
     await waitFor(`${dial} === 'trusted' && /never for risky commands/.test(${line})`, 8000);
-    await clickText('Apply what cannot give agents more freedom');
+    await clickText('Apply what is safe');
     await waitFor(`${dial} === 'safe'`, 8000);
     await clickText('Results');
     await waitFor(`/Who delivers what/.test(window.__t.scope().textContent)`, 5000);
     await shot('growth-results');
     // The same control is in Settings, and "More settings" leads there.
     await clickText('More settings');
-    await waitFor(`/Self-improvement/.test(window.__t.scope().textContent) && !!window.__t.byText('Ask me about everything')`, 8000);
-    await shot('settings-self-improvement');
+    await waitFor(`/Growth/.test(window.__t.scope().textContent) && !!window.__t.byText('Ask me first')`, 8000);
+    await shot('settings-growth');
+    // The office's other settings: one section for the company, one for how employees run.
+    await clickText('Employees');
+    await waitFor(`!!window.__t.field('Put idle sessions to sleep after (minutes)') && /also get your MCP servers/.test(window.__t.scope().textContent)`, 5000);
+    await shot('settings-employees');
+    await clickText('Company');
+    await waitFor(`/XP, levels and milestones/.test(window.__t.scope().textContent) && /interpret commands/.test(window.__t.scope().textContent)`, 5000);
+    await shot('settings-company');
     await close();
     return 'safe → off → trusted → safe';
   });
@@ -783,6 +790,8 @@ async function scenario() {
 
   await step('Machines: a machine is renamed and then removed', async () => {
     await open('hosts');
+    // A machine that is not connected starts folded: there is little to show for it.
+    await click(`window.__t.near(${JSON.stringify(ctx.spareHost)}, 'Details')`, 'Details');
     await click(`window.__t.near(${JSON.stringify(ctx.spareHost)}, 'Rename')`, 'Rename');
     await type(`window.__t.scope().querySelector('input[aria-label="Machine name"]')`, ctx.spareRenamed);
     await click(`window.__t.submit('Save')`, 'Save');
@@ -1081,7 +1090,7 @@ async function scenario() {
     await waitFor(`/docker build/.test(window.__t.scope().textContent)`, 10000);
     await shot('growth-suggestion');
     // Saying yes to something that lets agents do more is spelled out before the button.
-    await waitFor(`/This lets agents do more without asking you/.test(window.__t.scope().textContent)`, 5000);
+    await waitFor(`/This lets employees do more without asking you/.test(window.__t.scope().textContent)`, 5000);
     await click(`window.__t.near('docker build', 'Yes, allow it')`, 'Yes, allow it');
     await waitFor(`Object.values(window.__t.store().improvements).some((i) => i.kind === 'allow_rule' && i.status === 'applied')`, 8000);
     await close();
@@ -1101,6 +1110,15 @@ async function scenario() {
     await open('overview');
     const rows = `window.__t.scope().querySelectorAll('tr.tbl-click').length`;
     await waitFor(`${rows} > 3`, 8000);
+    // One number for "needs you": this window's heading says what the Inbox button says.
+    const same = await js(`(() => {
+      const pill = [...document.querySelectorAll('button.pill')].find((b) => /^Inbox/.test(b.textContent.trim()));
+      const onButton = Number((pill.querySelector('.pill-count') || { textContent: '0' }).textContent);
+      const title = [...window.__t.scope().querySelectorAll('.section-title')].find((t) => /^Needs you/.test(t.textContent)).textContent;
+      const here = Number((title.match(/[(]([0-9]+)[)]/) || [0, 0])[1]);
+      return onButton === here ? '' : 'the Inbox button says ' + onButton + ', the Company window says ' + here;
+    })()`);
+    if (same) throw new Error(same);
     const all = await js(rows);
     await type(`window.__t.scope().querySelector('input[aria-label="Search employees"]')`, 'Sarah');
     await waitFor(`${rows} === 1 && /Sarah/.test(window.__t.scope().querySelector('tr.tbl-click').textContent)`, 5000);

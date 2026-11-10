@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import type { AutonomyLevel, Employee, EvidenceRef, Improvement, ImprovementAction, Lesson, LessonSource, OrchestratorEvent, OutcomesReport, Project, SelfImprovementSettings, Task } from '@orchestrator/contracts';
-import { Avatar, Badge, Button, Empty, Field, Provenance, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
+import { Avatar, Badge, Button, Empty, Field, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
 import { registerPanel } from './index.tsx';
@@ -14,14 +14,14 @@ type Dial = SelfImprovementSettings['autopilot'];
 
 /** The three positions of the dial, in the owner's words. `now` is what the office is doing in that position. */
 const DIAL: Array<{ value: Dial; label: string; now: string }> = [
-  { value: 'off', label: 'Ask me about everything', now: 'The office asks you about everything it learns. Nothing changes without you.' },
-  { value: 'safe', label: 'Apply what cannot give agents more freedom', now: 'The office applies by itself what cannot give agents more freedom, and asks you about the rest.' },
-  { value: 'trusted', label: 'Also give more freedom when the record is clean (never for risky commands)', now: 'The office applies what it learns by itself, also where agents get more freedom on a clean record — never for risky commands. It asks you about the rest.' },
+  { value: 'off', label: 'Ask me first', now: 'The office asks you before it changes anything. Nothing happens without you.' },
+  { value: 'safe', label: 'Apply what is safe', now: 'The office applies by itself what cannot give employees more freedom, and asks you about the rest.' },
+  { value: 'trusted', label: 'Apply more on a clean record', now: 'The office also gives employees more freedom by itself when their record is clean — never for risky commands. It asks you about the rest.' },
 ];
 
 /**
  * The one control for how much the office does by itself with what it learns. The same component is
- * the top line of the Growth window and the first thing under Settings → Self-improvement.
+ * the top line of the Growth window and the first thing under Settings → Growth.
  */
 export function AutopilotDial({ inSettings = false }: { inSettings?: boolean }) {
   const si = useOffice((s) => s.settings?.selfImprovement);
@@ -176,7 +176,7 @@ function Proposal({ imp }: { imp: Improvement }) {
         <div className={`pw-note ${widens ? 'pw-warn' : ''}`}>
           <span className="strong">If you say yes: </span>
           {text}
-          {widens && ' This lets agents do more without asking you.'}
+          {widens && ' This lets employees do more without asking you.'}
         </div>
       )}
       <div className="row">
@@ -428,7 +428,7 @@ function DoneByItself() {
       <div className="small muted">Everything the office changed by itself because of what it learned, newest first. Each entry says why, and can be undone.</div>
       {log.length === 0 ? (
         <Empty title="The office has done nothing by itself">
-          {!enabled ? 'Learning is switched off.' : dial === 'off' ? 'It is set to ask you about everything, so nothing will appear here.' : 'When it applies something it learned, it is listed here with the reason and an Undo.'}
+          {!enabled ? 'Learning is switched off.' : dial === 'off' ? 'It is set to ask you first, so nothing will appear here.' : 'When it applies something it learned, it is listed here with the reason and an Undo.'}
         </Empty>
       ) : (
         log.map((e) => <LogRow key={e.id} e={e} reverted={reverted} />)
@@ -834,14 +834,9 @@ function Results() {
     <div className="col" style={{ gap: 12 }}>
       <Outcomes />
       <div className="section-title">Who delivers what</div>
-      <div className="row row-wrap small">
-        <Provenance kind="measured" />
-        <span className="muted">Counted from the task records. “First time” means no failed verification and no review that sent it back.</span>
-      </div>
-      <div className={`pw-note ${routing ? '' : 'pw-warn'}`}>
-        {routing
-          ? 'These counts decide who gets a task when several people are equally suitable: the better first-time record wins, once someone has completed at least 2 tasks of that kind.'
-          : 'These counts do not influence who gets a task: learned routing is switched off in Settings.'}
+      <div className="small muted">
+        Counted from the task records. “First time” means no failed verification and no review that sent it back.{' '}
+        {routing ? 'Among equally suitable people, the better first-time record gets the task, once they have completed two of that kind.' : 'Learned routing is switched off in Settings, so these counts do not decide who gets a task.'}
         {routing && preferences.length > 0 && ` Preferences you accepted: ${preferences.join('; ')}.`}
       </div>
       {rows.length === 0 ? (

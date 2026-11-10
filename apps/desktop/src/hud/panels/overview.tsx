@@ -7,7 +7,8 @@ import { api } from '../../lib/api.ts';
 import { act } from '../core.tsx';
 import { ClaudeAccounts, Portfolio, Timeline, Usage } from './ceo.tsx';
 import { registerPanel } from './index.tsx';
-import { ActivityBadge, HostLabel, NOT_AVAILABLE, attentionOf, byName, fmtDateTime, fmtInt, humanize, isLive, isWorking, onActivate, useTick, type PanelProps } from './company-shared.tsx';
+import { ActivityBadge, HostLabel, NOT_AVAILABLE, attentionOf, byName, fmtDateTime, fmtInt, humanize, isLive, isWorking, onActivate, openNotificationTarget, useTick, type PanelProps } from './company-shared.tsx';
+import { needsYou } from '../../lib/attention.ts';
 
 interface AttentionItem {
   key: string;
@@ -19,22 +20,17 @@ interface AttentionItem {
   go: () => void;
 }
 
-/** Everything in this list is derived from recorded state; nothing is a guess about what might be wrong. */
+/** What needs you, by the one definition the Inbox and its button use (`lib/attention.ts`). */
 function useAttention(): AttentionItem[] {
   const employees = useOffice((s) => s.employees);
-  const sessions = useOffice((s) => s.sessions);
-  const hosts = useOffice((s) => s.hosts);
-  const tasks = useOffice((s) => s.tasks);
   const questions = useOffice((s) => s.questions);
+  const notifications = useOffice((s) => s.notifications);
+  const { questions: open, stuck } = useMemo(() => needsYou(questions, notifications), [questions, notifications]);
   return useMemo(() => {
     const st = useOffice.getState();
     const out: AttentionItem[] = [];
-    const allTasks = Object.values(tasks);
-    const team = Object.values(employees).filter((e) => !e.archived);
 
-    for (const q of Object.values(questions)
-      .filter((x) => x.status === 'open')
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+    for (const q of open) {
       const who = q.employeeId ? (employees[q.employeeId]?.name ?? 'An employee') : 'Orchestrator';
       out.push({
         key: `q:${q.id}`,
@@ -50,97 +46,20 @@ function useAttention(): AttentionItem[] {
       });
     }
 
-    for (const t of allTasks.filter((x) => x.status === 'BLOCKED')) {
+    // Whoever is stuck until a person acts: the same notifications the Inbox lists under "Needs you".
+    for (const n of stuck) {
       out.push({
-        key: `b:${t.id}`,
-        tone: 'bad',
-        tag: 'blocked',
-        text: (
-          <>
-            <span className="mono muted">{t.key}</span> {t.title}
-          </>
-        ),
-        sub: t.blockedReason ?? 'No reason was recorded.',
-        when: t.updatedAt,
-        go: () => st.openPanel('task', t.id),
-      });
-    }
-
-    // In review, with no employee review task still open: the review is waiting on the owner.
-    for (const t of allTasks.filter((x) => x.status === 'REVIEW')) {
-      const reviewing = allTasks.some((r) => r.kind === 'review' && r.reviewOf === t.id && r.status !== 'DONE');
-      if (reviewing) continue;
-      out.push({
-        key: `r:${t.id}`,
-        tone: 'info',
-        tag: 'review',
-        text: (
-          <>
-            <span className="mono muted">{t.key}</span> {t.title}
-          </>
-        ),
-        sub: 'In review and no employee is reviewing it — it waits for your verdict.',
-        when: t.updatedAt,
-        go: () => st.openPanel('task', t.id),
-      });
-    }
-
-    for (const e of team) {
-      const task = currentTaskOf(tasks, e.id);
-      if (!task) continue;
-      const session = sessionOfEmployee(sessions, e.id);
-      if (isLive(session)) continue;
-      const unobservable = session?.status === 'host_offline';
-      out.push({
-        key: `s:${e.id}`,
-        tone: unobservable ? 'warn' : 'bad',
-        tag: unobservable ? 'not observable' : 'session down',
-        text: (
-          <>
-            <span className="strong">{e.name}</span> {unobservable ? 'cannot be observed' : 'has no live session'} while <span className="mono muted">{task.key}</span> is in progress
-          </>
-        ),
-        sub: unobservable ? 'Their machine is offline. The session keeps running in tmux and reappears when the machine reconnects.' : session ? `Last session: ${humanize(session.status)}${session.exitReason ? ` — ${session.exitReason}` : ''}` : 'They have never had a session.',
-        when: session?.endedAt ?? null,
-        go: () => st.openPanel('employee', `${e.id}:session`),
-      });
-    }
-
-    for (const h of Object.values(hosts).filter((x) => x.status === 'offline')) {
-      const staff = team.filter((e) => e.hostId === h.id);
-      if (!staff.length) continue;
-      out.push({
-        key: `h:${h.id}`,
-        tone: 'bad',
-        tag: 'machine offline',
-        text: (
-          <>
-            <span className="strong">{h.name}</span> is offline
-          </>
-        ),
-        sub: `${staff.length} employee${staff.length === 1 ? '' : 's'} assigned: ${staff.map((e) => e.name).join(', ')}`,
-        when: h.lastSeenAt,
-        go: () => st.openPanel('hosts'),
-      });
-    }
-
-    const proposed = allTasks.filter((t) => !t.released && t.status !== 'DONE').length;
-    if (proposed) {
-      out.push({
-        key: 'proposed',
-        tone: 'info',
-        tag: 'proposed',
-        text: (
-          <>
-            <span className="strong">{proposed}</span> proposed task{proposed === 1 ? '' : 's'} not released yet
-          </>
-        ),
-        sub: 'Unreleased tasks are not scheduled until you give the go-ahead.',
-        go: () => st.openPanel('tasks'),
+        key: `n:${n.id}`,
+        tone: n.severity === 'critical' ? 'bad' : 'warn',
+        tag: humanize(n.kind).toLowerCase(),
+        text: n.title,
+        sub: n.body || undefined,
+        when: n.createdAt,
+        go: () => void openNotificationTarget(n),
       });
     }
     return out;
-  }, [employees, sessions, hosts, tasks, questions]);
+  }, [employees, open, stuck]);
 }
 
 const COMPANY_STATS: Array<{ key: keyof CompanyStats; label: string }> = [
@@ -183,6 +102,7 @@ function OverviewPanel({ arg, onClose }: PanelProps) {
   const company = useOffice((s) => s.company);
   const settings = useOffice((s) => s.settings);
   const attention = useAttention();
+  const proposed = useOffice((st) => Object.values(st.tasks).filter((t) => !t.released && t.status !== 'DONE').length);
   const [search, setSearch] = useState('');
   useTick(5000);
 
@@ -264,6 +184,11 @@ function OverviewPanel({ arg, onClose }: PanelProps) {
               ))}
             </div>
           )}
+          {proposed > 0 && (
+            <button className="pc-rowbtn small muted" style={{ marginTop: 6 }} onClick={() => useOffice.getState().openPanel('tasks')}>
+              {proposed} proposed task{proposed === 1 ? '' : 's'} in the backlog {proposed === 1 ? 'waits' : 'wait'} for you to release {proposed === 1 ? 'it' : 'them'} — open Tasks
+            </button>
+          )}
         </div>
         <div>
           <div className="row" style={{ marginBottom: 6 }}>
@@ -318,7 +243,7 @@ function OverviewPanel({ arg, onClose }: PanelProps) {
                               <span className="mono muted">{task.key}</span> {task.title}
                             </div>
                             {task.progress.percent != null ? (
-                              <div className="row" style={{ gap: 6 }} title={task.progress.note ?? 'Progress reported by the agent'}>
+                              <div className="row" style={{ gap: 6 }} title={task.progress.note ?? 'Progress reported by the employee'}>
                                 <Progress value={task.progress.percent} />
                                 <span className="small mono muted">{Math.round(task.progress.percent)}%</span>
                               </div>

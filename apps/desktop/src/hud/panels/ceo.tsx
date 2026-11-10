@@ -144,7 +144,7 @@ export function Timeline({ onClose }: { onClose: () => void }) {
       </div>
       {shown.length > 0 && (
         <div className="small faint" style={{ marginTop: 4 }}>
-          The last {shown.length} recorded event{shown.length === 1 ? '' : 's'}, newest first. Each comes from a hook, an agent's tool call, a machine observation or your own action.
+          The last {shown.length} recorded event{shown.length === 1 ? '' : 's'}, newest first. Each comes from a hook, an employee's tool call, a machine observation or your own action.
         </div>
       )}
     </div>

@@ -48,6 +48,7 @@ function MeetingCreate({ onCreated }: { onCreated: (id: string) => void }) {
   const [projectId, setProjectId] = useState(s.filter.projectId ?? '');
   const [picked, setPicked] = useState<string[]>([]);
   const [facilitatorId, setFacilitatorId] = useState('');
+  const [more, setMore] = useState(false);
 
   const present = picked.filter(live);
   const facilitators = employees.filter((e) => present.includes(e.id));
@@ -81,26 +82,6 @@ function MeetingCreate({ onCreated }: { onCreated: (id: string) => void }) {
       <Field label="Context" hint="Sent to every participant with the topic." wide>
         <textarea value={context} onChange={(e) => setContext(e.target.value)} placeholder="Background, constraints, what a good outcome looks like." />
       </Field>
-      <Field label="Project" hint="Follow-up tasks from the decision are created in this project.">
-        <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-          <option value="">The facilitator's project</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Facilitator" hint="Writes the decision in the last round.">
-        <select value={facilitatorId} onChange={(e) => setFacilitatorId(e.target.value)}>
-          <option value="">Automatic (architect, then project manager, then anyone present)</option>
-          {facilitators.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.name} — {e.title}
-            </option>
-          ))}
-        </select>
-      </Field>
       <div className="field field-wide">
         <span className="row spread">
           <span className="field-label">
@@ -131,6 +112,37 @@ function MeetingCreate({ onCreated }: { onCreated: (id: string) => void }) {
           </div>
         )}
       </div>
+      {/* Both have a sensible answer by themselves, so they stay folded until wanted. */}
+      <details className="pc-more field-wide" open={more} onToggle={(ev) => setMore((ev.currentTarget as HTMLDetailsElement).open)}>
+        <summary>
+          More options: project, facilitator
+          {!more && (projectId || facilitatorId) && (
+            <span className="small faint"> — {[projectId ? s.projects[projectId]?.name : '', facilitatorId ? `facilitated by ${s.employees[facilitatorId]?.name}` : ''].filter(Boolean).join(' · ')}</span>
+          )}
+        </summary>
+        <div className="pw-form" style={{ marginTop: 10 }}>
+          <Field label="Project" hint="Follow-up tasks from the decision are created in this project.">
+            <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">The facilitator's project</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Facilitator" hint="Writes the decision in the last round.">
+            <select value={facilitatorId} onChange={(e) => setFacilitatorId(e.target.value)}>
+              <option value="">Automatic (architect, then project manager, then anyone present)</option>
+              {facilitators.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name} — {e.title}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      </details>
       <div className="row field-wide">
         <Button variant="primary" type="submit" disabled={busy || !topic.trim() || !!problem}>
           Start meeting

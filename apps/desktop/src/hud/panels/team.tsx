@@ -63,7 +63,7 @@ const AUTONOMY: Array<{ id: AutonomyLevel; label: string; text: string; maps: st
   { id: 'supervised', label: 'Supervised', text: 'Every edit and every command needs your approval.', maps: 'Manual permission mode, nothing pre-approved', tone: 'info' },
   { id: 'standard', label: 'Standard', text: 'Edits and routine commands are allowed; everything else asks you.', maps: 'acceptEdits permission mode plus an allow-list of routine commands', tone: 'neutral' },
   { id: 'autonomous', label: 'Autonomous', text: 'Works end to end on its task; risky commands still ask you.', maps: 'acceptEdits permission mode plus a wider allow-list; high-risk commands always escalate', tone: 'accent' },
-  { id: 'auto', label: 'Auto', text: 'Works on their own and asks you only for decisions and direction, not for permission.', maps: "Claude Code's auto permission mode: its own safety check decides what may run. High-risk commands (push, sudo, deploy…) still ask you unless you turn that off in Settings → Workers", tone: 'good' },
+  { id: 'auto', label: 'Auto', text: 'Works on their own and asks you only for decisions and direction, not for permission.', maps: "Claude Code's auto permission mode: its own safety check decides what may run. High-risk commands (push, sudo, deploy…) still ask you unless you turn that off in Settings → Employees", tone: 'good' },
 ];
 
 const HIRE_NAMES = ['Alex', 'Sarah', 'Mike', 'Emma', 'David', 'Ava', 'Noah', 'Mia', 'Leo', 'Zoe', 'Ivan', 'Nina', 'Omar', 'Lena', 'Theo', 'Ruth'];
@@ -833,7 +833,7 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
               <div className="small faint">Level reflects verified, delivered work in this office — not the capability of the underlying model.</div>
             </>
           ) : (
-            <div className="small faint">Game mechanics are switched off in Settings; levels and XP are not shown.</div>
+            <div className="small faint">XP and levels are switched off in Settings.</div>
           )}
         </div>
       </div>

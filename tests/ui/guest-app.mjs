@@ -179,7 +179,7 @@ try {
   await guestPage.js(`[...document.querySelectorAll('button')].find((b) => /Menu/.test(b.textContent)).click()`);
   await guestPage.until('the menu', `${button('Settings', `document.querySelector('.dock')`)}`, 5000);
   await guestPage.js(`${button('Settings', `document.querySelector('.dock')`)}.click()`);
-  await guestPage.until('the Settings window', `document.querySelector('.win') && /Saved on this computer/.test(document.querySelector('.win').textContent)`, 15000);
+  await guestPage.until('the Settings window', `document.querySelector('.win') && /saved on this computer/i.test(document.querySelector('.win').textContent)`, 15000);
   const win = `document.querySelector('.win')`;
   const groups = await guestPage.js(`[...${win}.querySelectorAll('nav .section-title')].map((e) => e.textContent).join(' | ')`);
   check('a visitor opens Settings from the menu and lands on what is theirs: “This computer”, next to “The office”', groups === 'This computer | The office' && (await guestPage.js(`!!${win}.querySelector('[data-settings-scope=mine]')`)), groups);

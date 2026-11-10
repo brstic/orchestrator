@@ -155,7 +155,7 @@ export class Improver {
 
   /** A worker's own session records what it learned (the record_lesson tool). */
   recordFromAgent(employee: Employee, args: LessonArgs): string {
-    if (!this.on) return 'Self-improvement is switched off in this office; nothing was recorded.';
+    if (!this.on) return 'Learning is switched off in this office; nothing was recorded.';
     const retro = this.retros.get(employee.id);
     // The fixed shape of a lesson: a vague one is sent back here, with what is missing.
     const checked = this.capture.check(employee, args);

@@ -290,12 +290,22 @@ function TaskCreate({ employeeId, onClose }: { employeeId: string | null; onClos
   /** null = leave it to the project's review policy. */
   const [requiresReview, setRequiresReview] = useState<boolean | null>(null);
   const [released, setReleased] = useState(true);
+  const [more, setMore] = useState(false);
 
   const project = projectId ? s.projects[projectId] : undefined;
   const reviewDefault = !!project?.policy.requireReview && !NON_CODE_KINDS.includes(kind);
   const candidates = Object.values(s.tasks)
     .filter((t) => t.projectId === projectId && t.kind !== 'review')
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  /** What differs from the usual inside the folded part, so nothing set there goes unseen. */
+  const changed = [
+    acceptance.trim() ? 'acceptance criteria' : '',
+    kind !== 'feature' ? kind : '',
+    priority !== 'normal' ? `${priority} priority` : '',
+    dependsOn.length ? `depends on ${dependsOn.length}` : '',
+    requiresReview !== null ? (requiresReview ? 'review required' : 'no review') : '',
+    released ? '' : 'kept in the backlog',
+  ].filter(Boolean);
 
   const submit = async (ev: FormEvent) => {
     ev.preventDefault();
@@ -322,7 +332,7 @@ function TaskCreate({ employeeId, onClose }: { employeeId: string | null; onClos
   };
 
   return (
-    <Window title="New task" subtitle={preset ? `For ${preset.name} · ${preset.title}` : 'Given to an employee; done when the project\'s check passes'} onClose={onClose} width={780}>
+    <Window title="New task" subtitle={preset ? `For ${preset.name} · ${preset.title}` : 'Given to an employee; done when the project\'s check passes'} onClose={onClose} width={720}>
       {projects.length === 0 ? (
         <Empty title="No projects yet">
           A task needs a project.{' '}
@@ -376,73 +386,82 @@ function TaskCreate({ employeeId, onClose }: { employeeId: string | null; onClos
           <Field label="Description" wide>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Context, constraints, where to look. This goes into the prompt as written." />
           </Field>
-          <Field label="Acceptance criteria" wide>
-            <textarea value={acceptance} onChange={(e) => setAcceptance(e.target.value)} placeholder="How to tell it is done." style={{ minHeight: 56 }} />
-          </Field>
-          <Field label="Kind">
-            <select value={kind} onChange={(e) => setKind(e.target.value as TaskKind)}>
-              {CREATABLE_KINDS.map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Priority">
-            <select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)}>
-              {PRIORITIES.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </Field>
-          {!assigneeId && (
-            <Field label="Role hint" wide>
-              <select value={roleHint} onChange={(e) => setRoleHint(e.target.value)}>
-                <option value="">Any role that handles this kind of task</option>
-                {ROLE_CATALOGUE.map((r) => (
-                  <option key={r.key} value={r.key}>
-                    {r.title}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          )}
-          <div className="field field-wide">
-            <span className="field-label">Depends on{dependsOn.length ? ` (${dependsOn.length})` : ''}</span>
-            {candidates.length === 0 ? (
-              <span className="field-hint">{projectId ? 'This project has no other tasks yet.' : 'Choose a project to pick dependencies.'}</span>
-            ) : (
-              <div className="pw-picklist">
-                {candidates.map((t) => (
-                  <label key={t.id} className="check small">
-                    <input type="checkbox" checked={dependsOn.includes(t.id)} onChange={(e) => setDependsOn(e.target.checked ? [...dependsOn, t.id] : dependsOn.filter((d) => d !== t.id))} />
-                    <span className="mono muted">{t.key}</span>
-                    <span className="grow truncate">{t.title}</span>
-                    <Badge tone={STATUS_META[t.status].tone}>{STATUS_META[t.status].label}</Badge>
-                  </label>
-                ))}
+          {/* What most tasks leave as it is stays folded away; the line says what it holds. */}
+          <details className="pc-more field-wide" open={more} onToggle={(ev) => setMore((ev.currentTarget as HTMLDetailsElement).open)}>
+            <summary>
+              More options: how to tell it is done, kind, priority, dependencies, review
+              {!more && changed.length > 0 && <span className="small faint"> — {changed.join(' · ')}</span>}
+            </summary>
+            <div className="pw-form" style={{ marginTop: 10 }}>
+              <Field label="Acceptance criteria" wide>
+                <textarea value={acceptance} onChange={(e) => setAcceptance(e.target.value)} placeholder="How to tell it is done." style={{ minHeight: 56 }} />
+              </Field>
+              <Field label="Kind">
+                <select value={kind} onChange={(e) => setKind(e.target.value as TaskKind)}>
+                  {CREATABLE_KINDS.map((k) => (
+                    <option key={k} value={k}>
+                      {k}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Priority">
+                <select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)}>
+                  {PRIORITIES.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {!assigneeId && (
+                <Field label="Role hint" wide>
+                  <select value={roleHint} onChange={(e) => setRoleHint(e.target.value)}>
+                    <option value="">Any role that handles this kind of task</option>
+                    {ROLE_CATALOGUE.map((r) => (
+                      <option key={r.key} value={r.key}>
+                        {r.title}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              <div className="field field-wide">
+                <span className="field-label">Depends on{dependsOn.length ? ` (${dependsOn.length})` : ''}</span>
+                {candidates.length === 0 ? (
+                  <span className="field-hint">{projectId ? 'This project has no other tasks yet.' : 'Choose a project to pick dependencies.'}</span>
+                ) : (
+                  <div className="pw-picklist">
+                    {candidates.map((t) => (
+                      <label key={t.id} className="check small">
+                        <input type="checkbox" checked={dependsOn.includes(t.id)} onChange={(e) => setDependsOn(e.target.checked ? [...dependsOn, t.id] : dependsOn.filter((d) => d !== t.id))} />
+                        <span className="mono muted">{t.key}</span>
+                        <span className="grow truncate">{t.title}</span>
+                        <Badge tone={STATUS_META[t.status].tone}>{STATUS_META[t.status].label}</Badge>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <span className="field-hint">The task becomes READY only when all of these are DONE.</span>
               </div>
-            )}
-            <span className="field-hint">The task becomes READY only when all of these are DONE.</span>
-          </div>
-          <label className="check">
-            <input type="checkbox" checked={requiresReview ?? reviewDefault} onChange={(e) => setRequiresReview(e.target.checked)} />
-            <span>
-              Requires review
-              <br />
-              <span className="field-hint">{requiresReview === null ? `Following the project policy (${reviewDefault ? 'on' : 'off'} for this kind).` : 'Set by you for this task.'}</span>
-            </span>
-          </label>
-          <label className="check">
-            <input type="checkbox" checked={released} onChange={(e) => setReleased(e.target.checked)} />
-            <span>
-              Release immediately
-              <br />
-              <span className="field-hint">{released ? 'Scheduled as soon as its dependencies are done.' : 'Stays in the backlog as proposed until you release it.'}</span>
-            </span>
-          </label>
+              <label className="check">
+                <input type="checkbox" checked={requiresReview ?? reviewDefault} onChange={(e) => setRequiresReview(e.target.checked)} />
+                <span>
+                  Requires review
+                  <br />
+                  <span className="field-hint">{requiresReview === null ? `Following the project policy (${reviewDefault ? 'on' : 'off'} for this kind).` : 'Set by you for this task.'}</span>
+                </span>
+              </label>
+              <label className="check">
+                <input type="checkbox" checked={released} onChange={(e) => setReleased(e.target.checked)} />
+                <span>
+                  Release immediately
+                  <br />
+                  <span className="field-hint">{released ? 'Scheduled as soon as its dependencies are done.' : 'Stays in the backlog as proposed until you release it.'}</span>
+                </span>
+              </label>
+            </div>
+          </details>
           <div className="row field-wide">
             <Button variant="primary" type="submit" disabled={busy || !projectId || !title.trim()}>
               Create task
@@ -568,10 +587,10 @@ function TaskOverview({ task, onClose, onShowChanges }: { task: Task; onClose: (
         </div>
         <div>
           <div className="section-title">
-            Progress <span style={{ textTransform: 'none', letterSpacing: 0 }}>— reported by the agent</span>
+            Progress <span style={{ textTransform: 'none', letterSpacing: 0 }}>— reported by the employee</span>
           </div>
           {task.progress.percent == null && !task.progress.note ? (
-            <div className="muted">Not available: the agent has not reported progress.</div>
+            <div className="muted">Not available: the employee has not reported progress.</div>
           ) : (
             <div className="col" style={{ gap: 4 }}>
               {task.progress.percent != null && (
@@ -761,11 +780,11 @@ function TaskEvidence({ task }: { task: Task }) {
         )}
       </Section>
 
-      <Section title="Agent's completion report" provenance="reported">
-        {ev.summary ? <Markdown text={ev.summary} /> : <div className="muted">Not available: the agent has not submitted a result.</div>}
+      <Section title="What the employee reported" provenance="reported">
+        {ev.summary ? <Markdown text={ev.summary} /> : <div className="muted">Not available: the employee has not submitted a result.</div>}
         {ev.reportedTests && (
           <div style={{ marginTop: 8 }}>
-            <div className="small faint">Tests, as described by the agent:</div>
+            <div className="small faint">Tests, as described by the employee:</div>
             <div className="small pre">{ev.reportedTests}</div>
           </div>
         )}

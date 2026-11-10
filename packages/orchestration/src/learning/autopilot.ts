@@ -298,7 +298,7 @@ export class Autopilot {
       }
     }
 
-    if (mode !== 'trusted') return no(`It widens what agents may do without asking (${cls.why}); on "safe" that waits for you.`);
+    if (mode !== 'trusted') return no(`It widens what employees may do without asking (${cls.why}); on "safe" that waits for you.`);
     if (!cls.known) return no(cls.why);
     switch (a.type) {
       case 'project.policy.allow':

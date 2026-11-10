@@ -38,10 +38,10 @@ export function CapabilityBadges({ capabilities }: { capabilities: SessionCapabi
 }
 
 export const CONTROL_STATES: Array<{ id: ControlState; label: string; text: string }> = [
-  { id: 'AGENT_CONTROLLED', label: 'Agent controlled', text: 'Nobody is watching the terminal; the Claude Code session works on its own.' },
-  { id: 'HUMAN_OBSERVING', label: 'Human observing', text: 'You are watching the live terminal read-only. Keystrokes are dropped by the server; the agent keeps working.' },
+  { id: 'AGENT_CONTROLLED', label: 'Working on its own', text: 'Nobody is watching the terminal; the Claude Code session works on its own.' },
+  { id: 'HUMAN_OBSERVING', label: 'Human observing', text: 'You are watching the live terminal read-only. Keystrokes are dropped by the server; the employee keeps working.' },
   { id: 'HUMAN_CONTROLLED', label: 'Human controlled', text: 'You hold the keyboard: what you type goes into that exact tmux session. Orchestrator holds back its own deliveries until you return control.' },
-  { id: 'PAUSED', label: 'Paused', text: 'You interrupted the agent (Escape, or the SDK interrupt for an SDK-managed worker) and have not resumed it. Nothing new is delivered until you do.' },
+  { id: 'PAUSED', label: 'Paused', text: 'You interrupted the employee (Escape, or the SDK interrupt for an SDK-managed worker) and have not resumed it. Nothing new is delivered until you do.' },
   { id: 'DISCONNECTED', label: 'Disconnected', text: 'The machine or the session terminal is unreachable. Nothing can be observed or sent.' },
 ];
 

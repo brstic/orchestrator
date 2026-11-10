@@ -168,7 +168,7 @@ test('"safe" applies a deny rule by itself â€” recorded, explained, reversible â
   const allowRule = imp(o.eng, (i) => i.kind === 'allow_rule');
   assert.equal(allowRule.status, 'proposed');
   assert.deepEqual(project(o).policy.allow, []);
-  assert.match((o.eng.improver.autopilot.verdict(allowRule) as any).why, /widens what agents may do without asking/);
+  assert.match((o.eng.improver.autopilot.verdict(allowRule) as any).why, /widens what employees may do without asking/);
   assert.equal(notes.find((n) => n.title === `Suggestion: ${allowRule.title}`)?.resolvedAt, null);
   // And nothing answered the request that was pending.
   assert.deepEqual([waiting.status, waiting.decision], ['open', null]);

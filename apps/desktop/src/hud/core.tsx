@@ -733,10 +733,8 @@ export function CommandCenter() {
       return { e, session, activity, questions, live, task: currentTaskOf(s.tasks, e.id), rank };
     })
     .sort((a, b) => a.rank - b.rank || a.e.name.localeCompare(b.e.name));
-  const waiting = Object.values(s.questions)
-    .filter((q) => q.status === 'open')
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const blocked = Object.values(s.tasks).filter((t) => t.status === 'BLOCKED');
+  // The same list as the Inbox and the number on its button: open questions, then whoever is stuck.
+  const { questions: waiting, stuck, count: needs } = needsYou(s.questions, s.notifications);
   const hosts = Object.values(s.hosts)
     .filter((h) => h.status !== 'revoked')
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -756,9 +754,9 @@ export function CommandCenter() {
       <div className="cc-body col">
         <div className="col" style={{ gap: 4 }}>
           <div className="cc-label">
-            Needs you <span className={waiting.length ? 'cc-count cc-count-warn' : 'cc-count'}>{waiting.length}</span>
+            Needs you <span className={needs ? 'cc-count cc-count-warn' : 'cc-count'}>{needs}</span>
           </div>
-          {waiting.length === 0 && <div className="small muted">Nothing is waiting on you.</div>}
+          {needs === 0 && <div className="small muted">Nothing is waiting on you.</div>}
           {waiting.slice(0, 6).map((q) => (
             <button key={q.id} className="cc-row" onClick={() => s.openPanel('question', q.id)} title="Open and answer">
               <Badge tone={q.kind === 'permission' ? 'warn' : 'accent'}>{q.kind === 'permission' ? 'approval' : q.kind === 'trust_prompt' ? 'trust' : 'question'}</Badge>
@@ -768,17 +766,16 @@ export function CommandCenter() {
               <span className="small faint">{timeAgo(q.createdAt)}</span>
             </button>
           ))}
-          {waiting.length > 6 && (
-            <button className="cc-row" onClick={() => s.openPanel('notifications')}>
-              <span className="small muted">…and {waiting.length - 6} more in the inbox</span>
+          {stuck.slice(0, Math.max(0, 6 - waiting.length)).map((n) => (
+            <button key={n.id} className="cc-row" onClick={() => s.openPanel('notifications')} title="Open the inbox">
+              <Badge tone="bad">{n.kind.replace(/_/g, ' ')}</Badge>
+              <span className="small truncate grow">{n.title}</span>
+              <span className="small faint">{timeAgo(n.createdAt)}</span>
             </button>
-          )}
-          {blocked.length > 0 && (
-            <button className="cc-row" onClick={() => s.openPanel('tasks')} title="Open the task board">
-              <Badge tone="bad">blocked</Badge>
-              <span className="small truncate grow">
-                {blocked.length} task{blocked.length === 1 ? '' : 's'}: {blocked.map((t) => t.key).join(', ')}
-              </span>
+          ))}
+          {needs > 6 && (
+            <button className="cc-row" onClick={() => s.openPanel('notifications')}>
+              <span className="small muted">…and {needs - 6} more in the inbox</span>
             </button>
           )}
         </div>
@@ -1171,7 +1168,7 @@ export function QuestionBody({ q, onDone }: { q: Question; onDone?: () => void }
       )}
       {open && q.kind === 'permission' && (
         <div className="col">
-          <input placeholder="Optional note to the agent if you deny" value={text} onChange={(ev) => setText(ev.target.value)} />
+          <input placeholder="Optional note to them if you deny" value={text} onChange={(ev) => setText(ev.target.value)} />
           <div className="row">
             <Button variant="success" disabled={busy} onClick={() => send({ decision: 'allow' })}>
               Allow this once

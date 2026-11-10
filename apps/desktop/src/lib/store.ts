@@ -404,8 +404,9 @@ export const useOffice = create<OfficeState>((set, get) => ({
   setCommandOpen: (open) => set({ commandOpen: open }),
   toast: (text, kind = 'info') => {
     const id = ++toastId;
-    // Three at most: more than that is a wall nobody reads, and the newest say what just happened.
-    set((s) => ({ toasts: [...s.toasts.slice(-2), { id, kind, text }] }));
+    // One message at a time: a newer one takes the place of the last, so a stack never grows over the
+    // buttons at the foot of a window. Only an error that is still showing stays, above the newer message.
+    set((s) => ({ toasts: [...s.toasts.filter((t) => t.kind === 'error' && t.text !== text).slice(-1), { id, kind, text }] }));
     window.setTimeout(() => get().dismissToast(id), kind === 'error' ? 7000 : 4000);
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),

@@ -274,7 +274,7 @@ function ProjectPolicyTab({ project }: { project: Project }) {
       ...p.deny.filter((r) => !deny.includes(r)).map((r) => `no longer denied  ${r}`),
       ...p.highRiskPatterns.filter((r) => !highRisk.includes(r)).map((r) => `no longer needs approval  ${r}`),
     ];
-    if (widening.length && !(await ask({ title: `Let agents on "${project.name}" do more without asking?`, body: `${widening.join('\n')}\n\nThis takes effect for sessions started from now on.`, ok: 'Save the rules' }))) return;
+    if (widening.length && !(await ask({ title: `Let employees on "${project.name}" do more without asking?`, body: `${widening.join('\n')}\n\nThis takes effect for sessions started from now on.`, ok: 'Save the rules' }))) return;
     void run(
       () =>
         api('PATCH', `/projects/${project.id}`, {

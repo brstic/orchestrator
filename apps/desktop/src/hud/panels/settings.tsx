@@ -10,18 +10,16 @@ import { registerPanel } from './index.tsx';
 import { LoadState, fmtDateTime, keyLabel, useLoad, type PanelProps } from './company-shared.tsx';
 import { AutopilotDial } from './growth.tsx';
 
-type SectionId = 'company' | 'graphics' | 'controls' | 'game' | 'improve' | 'workers' | 'foreman' | 'commands' | 'audit';
+type SectionId = 'company' | 'graphics' | 'controls' | 'improve' | 'workers' | 'foreman' | 'audit';
 
 /** 'mine': kept on this computer, for whoever sits at it. 'office': the office's own settings, which its owners change. */
 const SECTIONS: Array<{ id: SectionId; label: string; group: 'mine' | 'office'; ownerOnly?: boolean }> = [
   { id: 'graphics', label: 'Graphics', group: 'mine' },
   { id: 'controls', label: 'Controls', group: 'mine' },
   { id: 'company', label: 'Company', group: 'office' },
-  { id: 'game', label: 'Game mechanics', group: 'office' },
-  { id: 'improve', label: 'Self-improvement', group: 'office' },
-  { id: 'workers', label: 'Workers', group: 'office' },
+  { id: 'improve', label: 'Growth', group: 'office' },
+  { id: 'workers', label: 'Employees', group: 'office' },
   { id: 'foreman', label: 'Foreman', group: 'office' },
-  { id: 'commands', label: 'Commands', group: 'office' },
   // The audit log is read from the office on request, and only owners may read it.
   { id: 'audit', label: 'Audit log', group: 'office', ownerOnly: true },
 ];
@@ -80,7 +78,7 @@ function CompanySection({ settings }: { settings: OwnerSettings }) {
   return (
     <form
       className="col"
-      style={{ gap: 12, maxWidth: 460 }}
+      style={{ gap: 12, maxWidth: 640 }}
       onSubmit={(ev) => {
         ev.preventDefault();
         if (dirty) void save({ companyName: companyName.trim(), ownerName: ownerName.trim() });
@@ -97,6 +95,12 @@ function CompanySection({ settings }: { settings: OwnerSettings }) {
           Save
         </Button>
       </div>
+      <Toggle checked={settings.gamification} onChange={(gamification) => void save({ gamification })} title="XP, levels and milestones">
+        Employees earn XP and levels, and the company reaches milestones that unlock things for the office — only for work that was checked. A level is a record of delivered work; it changes nothing about how work is handed out.
+      </Toggle>
+      <Toggle checked={settings.nlFallback} onChange={(nlFallback) => void save({ nlFallback })} title="Let Claude interpret commands the rules cannot">
+        The command bar understands common instructions by itself. For the rest it can ask Claude on one of your machines, which uses tokens. Either way you see a plan first; nothing changes until you confirm.
+      </Toggle>
     </form>
   );
 }
@@ -254,8 +258,7 @@ function ImproveSection({ settings }: { settings: OwnerSettings }) {
   return (
     <div className="col" style={{ gap: 14, maxWidth: 640 }}>
       <Toggle checked={si.enabled} onChange={(enabled) => set({ enabled })} title="Learn from real work">
-        Lessons from verified work are kept in playbooks and included in future prompts, and Orchestrator proposes changes to its own way of working from its recorded history. When off, no lessons are recorded or included, nobody is asked to reflect, and
-        nothing is proposed.
+        The office keeps what it learns from finished work, gives it to employees with their next tasks, and looks for better ways of working. Off: nothing is learned, used or suggested.
       </Toggle>
       {!off && (
         <div>
@@ -327,10 +330,10 @@ function SleepSetting({ settings }: { settings: OwnerSettings }) {
   };
   return (
     <Field
-      label="Put sessions to sleep after (minutes without work)"
-      hint="A Claude Code session that sits idle still holds memory. On the office's own machines, one that has had no work this long — between turns, no task in hand, no question open, nobody at its terminal — is stopped, and the employee is shown as sleeping. Anything they are needed for (a message, a task, a routine that is due, a meeting) starts it again in the same folder, continuing the same conversation. 0 = never; otherwise at least 5. Sessions on members' own computers are left alone."
+      label="Put idle sessions to sleep after (minutes)"
+      hint="An idle Claude Code session still holds memory. On the office's own machines, a session with no work for this long is stopped and its employee is shown as sleeping. A message, a task, a routine or a meeting wakes it, in the same folder and the same conversation. 0 = never; otherwise at least 5."
     >
-      <input type="number" min={0} max={1440} step={5} value={minutes} style={{ maxWidth: 120 }} aria-label="Put sessions to sleep after (minutes without work)" onChange={(ev) => setMinutes(ev.target.value)} onBlur={commit} onKeyDown={(ev) => ev.key === 'Enter' && (ev.target as HTMLInputElement).blur()} />
+      <input type="number" min={0} max={1440} step={5} value={minutes} style={{ maxWidth: 120 }} aria-label="Put idle sessions to sleep after (minutes)" onChange={(ev) => setMinutes(ev.target.value)} onBlur={commit} onKeyDown={(ev) => ev.key === 'Enter' && (ev.target as HTMLInputElement).blur()} />
     </Field>
   );
 }
@@ -577,47 +580,21 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
             // A disabled fieldset switches off every control inside it at once.
             <fieldset className="pc-plain" disabled={readOnly}>
               {section === 'company' && <CompanySection settings={settings} />}
-              {section === 'game' && (
-                <div className="col" style={{ gap: 12, maxWidth: 640 }}>
-                  <Toggle checked={settings.gamification} onChange={(gamification) => void save({ gamification })} title="XP, levels and milestones">
-                    Employees earn XP and levels, and the company reaches milestones that unlock things for the office — only for work that was checked. Off: none of it is counted or shown.</Toggle>
-                  <div className="pc-info">
-                    A level is a record of delivered work. It changes nothing about how work is handed out or checked, and says nothing about the model.</div>
-                </div>
-              )}
               {section === 'improve' && <ImproveSection settings={settings} />}
               {section === 'workers' && (
                 <div className="col" style={{ gap: 12, maxWidth: 640 }}>
-                  <Toggle checked={settings.workersInheritMcp} onChange={(workersInheritMcp) => void save({ workersInheritMcp })} title="Workers inherit your MCP servers and connectors">
-                    Which MCP servers a worker session loads when it starts.
+                  <Toggle checked={settings.workersInheritMcp} onChange={(workersInheritMcp) => void save({ workersInheritMcp })} title="Employees also get your MCP servers and connectors">
+                    Off: employees get only the office's own tools — cheaper per request, and they reach their folder and the office, nothing else of yours. On: they also get your own MCP servers and connectors and whatever those can reach. Takes effect
+                    for a session the next time it starts.
                   </Toggle>
-                  <dl className="kv small">
-                    <dt>
-                      <Badge tone={settings.workersInheritMcp ? 'muted' : 'good'}>off</Badge>
-                    </dt>
-                    <dd>Employees get only the office's own tools: cheaper per request, and they can reach their folder and the office, nothing else of yours.</dd>
-                    <dt>
-                      <Badge tone={settings.workersInheritMcp ? 'warn' : 'muted'}>on</Badge>
-                    </dt>
-                    <dd>Employees also get your own MCP servers and connectors and whatever those can reach. More tools, more tokens per request.</dd>
-                  </dl>
-                  <div className="pc-info">Takes effect for a session the next time it starts.</div>
                   <Toggle checked={settings.autoAsksHighRisk !== false} onChange={(autoAsksHighRisk) => void save({ autoAsksHighRisk })} title="On Auto, still ask me before high-risk commands">
-                    Employees on <b>Auto</b> do not ask for permission; Claude Code's own auto mode decides what is safe to run. With this on, commands on the high-risk list — pushing, sudo, deploying, publishing, broad deletions, reading
-                    credential files — still come to you first. Turn it off and those are left to Claude Code's auto mode as well.
+                    Employees on <b>Auto</b> do not ask for permission; Claude Code's own auto mode decides what is safe. With this on, high-risk commands — pushing, sudo, deploying, publishing, broad deletions, reading credential files — still
+                    come to you first.
                   </Toggle>
                   <SleepSetting settings={settings} />
                 </div>
               )}
               {section === 'foreman' && <ForemanSection settings={settings} readOnly={readOnly} />}
-              {section === 'commands' && (
-                <div className="col" style={{ gap: 12, maxWidth: 640 }}>
-                  <Toggle checked={settings.nlFallback} onChange={(nlFallback) => void save({ nlFallback })} title="Let Claude interpret commands the rules cannot">
-                    The command bar understands common instructions by itself. For the rest it can ask Claude on one of your machines, which uses tokens.</Toggle>
-                  <div className="pc-info">
-                    Whatever it understands is shown to you as a plan first; nothing changes until you confirm.</div>
-                </div>
-              )}
               {section === 'audit' && <AuditSection />}
             </fieldset>
           )}

@@ -197,7 +197,6 @@ function RadioPanel({ onClose }: { arg: string | null; onClose: () => void }) {
           ) : (
             <div className="row">
               <Button onClick={() => setAdding(true)}>Add a station</Button>
-              <span className="small faint">Its speakers move in everyone's window while something is playing.</span>
             </div>
           ))}
         {maySwitch && !can.admin && <div className="small faint">Only an owner of the office adds or removes stations.</div>}
