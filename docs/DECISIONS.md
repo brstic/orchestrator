@@ -37,6 +37,16 @@ Newest first. Each entry: what was decided, why, and what was rejected. Add one 
 - A room grows only away from the building (more desks, open floor), never along the wall: neighbours never move. Width along the wall stays fixed at 6.8 m.
 - An away computer with nobody on it gets no room when its member has another computer: a re-enrollment would otherwise leave an empty room behind.
 
+## 2026-11-10 — Growth (the owner: "an almost fully autonomous system that learns incredibly well")
+The reasons behind each part are on its page under `docs/learning/`. What was decided across them:
+- **The default is `safe`, also for offices that existed before**: the office applies by itself what cannot let agents do more without asking. Giving more freedom by itself (`trusted`) is the owner's explicit choice, needs a clean record, starts on probation and is taken back on a counter-signal. High-risk commands and pending permission requests are outside all of it.
+- **Learning costs no Claude turns**, except the retrospective that already existed and keeps its setting: everything else reads the office's own records.
+- **Wording, not meaning.** Fitting a lesson to a task, spotting a duplicate, a repeated question or a correction are word comparisons (English first). They are conservative on purpose and every automatic step from them can be undone; they will miss things a reader would see.
+- **Verdicts wait for enough tasks** (eight comparable ones a side) and say so. A before/after comparison is not an experiment: what else changed at the same time is not separated out.
+- **The owner's own lessons are never retired by the office.**
+- **Advice is never "applied" by the office**: there is nothing to apply, and marking it so would hide it.
+- When the five parts were joined: the detectors' three kinds of change (a task waits for another, who a kind of task goes to, a sentence added to a project's notes) count as not widening and may be applied on `safe`; they are undone from the record the change itself keeps.
+
 ## 2026-11-10 — Words and windows
 - One name per action in the whole interface, chosen for what the person sees happen: *Open terminal*, *Pause*, *Ask for a report*, *Take the keyboard*. Internal state names (AGENT_CONTROLLED…) are not shown; a tooltip says what the state means.
 - "Needs you" has one definition (`apps/desktop/src/lib/attention.ts`): open questions and approvals plus unresolved notifications of the kinds that stop work. Unread informational notifications are not part of it — they made the number on the Inbox button mean something else than the Inbox said.
