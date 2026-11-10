@@ -13,11 +13,10 @@ _Last updated: 2026-11-10. Update this file with every piece of work (see `CLAUD
 - Update: build a package here (`node scripts/package.mjs --no-app`), copy `release/orchestrator-<version>.tar.gz`, unpack over `~/orchestrator-office/app`, `systemctl --user restart orchestrator-office`.
 - Members: Branko (owner; invitation at `~/Desktop/Orchestrator-moja-pozivnica-OWNER.txt`) and Fenix (colleague; invitation, installer and instructions in `~/Desktop/Orchestrator-za-kolegu/`). Neither has been used by a person yet.
 
-**The owner's Mac app** (`release/Orchestrator.app`) is one small build behind: it was in use and declined to quit, so it was not replaced. A fresh build is in `release-next/` (`node scripts/package.mjs --out release-next`, smoke 15/15). To switch: quit the app, then `rm -rf release/Orchestrator.app && mv release-next/Orchestrator.app release/` and open it again.
+**The owner's Mac app** (`release/Orchestrator.app`) runs the latest build (replaced 2026-11-10 after the owner closed it; smoke 15/15, sessions re-adopted, SSH link connected). `release/` also holds the matching `.dmg` and portable tarball.
 
 Next steps:
-1. The owner connects with their invitation; invites the collaborator as `colleague`.
-2. Rebuild the desktop bundles for the collaborator's platform (`.dmg`, Linux/Windows bundles are stale) — or they build from the repository.
+1. The owner connects with their invitation and passes `~/Desktop/Orchestrator-za-kolegu/` to the collaborator (macOS Apple Silicon installer + invitation). For another platform, build the bundle (`node scripts/package.mjs --linux --windows`; those in `release/` are stale).
 3. Decide what moves from the Mac's local office to the server office (the two are separate offices; nothing was migrated).
 4. From real use: fix what breaks; extend the UI suite with role-by-role clicks.
 
