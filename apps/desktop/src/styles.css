@@ -398,8 +398,7 @@ input[type='checkbox'] {
 .win-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(5, 8, 13, 0.55);
-  backdrop-filter: blur(3px);
+  background: rgba(5, 8, 13, 0.62);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -715,7 +714,8 @@ table.tbl {
   background: var(--panel);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
-  backdrop-filter: blur(14px) saturate(1.2);
+  /* No backdrop blur: the 3D office behind redraws every frame, and blurring it again under each panel on every
+     frame costs more than the whole scene does while the picture moves (the panels are 92% opaque anyway). */
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 .brand {

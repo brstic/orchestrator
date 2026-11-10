@@ -1333,6 +1333,8 @@ async function scenario() {
     await open('ceo');
     await waitFor(`(() => { const c = ${card('dev@example.test')}; return !!c && /42% used/.test(c.textContent) && /85% used/.test(c.textContent) && /Dev Org/.test(c.textContent); })()`, 20000);
     const before = await js(`window.__t.scope().querySelectorAll('.claude-account').length`);
+    // The same reading hangs on the CEO room wall as a clock: the big hand is the week, the small dial the 5 hours.
+    await waitFor(`(window.__orchScene.clocks || []).some((c) => c.name === 'dev@example.test' && Math.round(c.week) === 85 && Math.round(c.five) === 42 && /Week: 15% left/.test(c.lines.join(' ')) && /5 hours: 58% left/.test(c.lines.join(' ')))`, 10000);
     await shot('ceo-claude');
     await close();
     await open('employee', `window.__t.emp('Ava').id`);
@@ -1346,6 +1348,11 @@ async function scenario() {
     const after = await js(`window.__t.scope().querySelectorAll('.claude-account').length`);
     await shot('ceo-claude-two');
     await close();
+    // The second account gets a clock of its own at once, with its hands at rest until something is reported.
+    await waitFor(`(window.__orchScene.clocks || []).length === ${after} && window.__orchScene.clocks.some((c) => c.week === null && /Not reported yet/.test(c.lines.join(' ')))`, 10000);
+    // The office is drawn at an even rhythm: on every refresh of the display, or on every second one.
+    const pace = await js(`window.__orchPace`);
+    if (!pace || ![1, 2].includes(pace.every) || !(pace.fps > 20)) throw new Error(`the render loop reports ${JSON.stringify(pace)}`);
     return `${before} account → ${after}; the first shows 42% of 5 hours and 85% of the week`;
   });
 

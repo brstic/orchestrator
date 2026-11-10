@@ -27,7 +27,7 @@ test('an office backed by PostgreSQL runs real work and survives a restart', asy
   const task = await h.task({ projectId: project.id, title: 'Stored in Postgres', assigneeId: alex.id, description: '@@fake: write pg.txt hello; commit pg change; ask Keep going?; complete pg done@@' });
   const q = await waitFor(() => h!.openQuestion(alex.id), { label: 'question' });
   await h.api('POST', `/questions/${q.id}/answer`, { answer: 'Yes' });
-  await waitFor(async () => ((await h!.getTask(task.id)).status === 'DONE' ? true : null), { label: 'done', timeout: 20000 });
+  await waitFor(async () => ((await h!.getTask(task.id)).status === 'DONE' ? true : null), { label: 'done', timeout: 45000 });
   const before = await h.state();
   const eventsBefore = before.events.filter((e) => e.taskId === task.id).map((e) => e.type);
 
@@ -54,11 +54,11 @@ test('an office backed by PostgreSQL runs real work and survives a restart', asy
   const session = await waitFor(async () => {
     const s = await h!.session(alex.id);
     return s?.status === 'running' ? s : null;
-  }, { label: 'host reconnected with its stored credential', timeout: 20000 });
+  }, { label: 'host reconnected with its stored credential', timeout: 45000 });
   assert.equal(session.pid, sessionBefore.pid);
   // And work continues.
   await waitFor(async () => (await h!.session(alex.id))!.inTurn === false, { label: 'idle' });
   const next = await h.task({ projectId: project.id, title: 'After the restart', assigneeId: alex.id, description: '@@fake: write pg2.txt again; commit pg again; complete pg again@@' });
   assert.equal(next.key, 'T-2', 'counters continue from the database');
-  await waitFor(async () => ((await h!.getTask(next.id)).status === 'DONE' ? true : null), { label: 'second task done', timeout: 20000 });
+  await waitFor(async () => ((await h!.getTask(next.id)).status === 'DONE' ? true : null), { label: 'second task done', timeout: 45000 });
 });

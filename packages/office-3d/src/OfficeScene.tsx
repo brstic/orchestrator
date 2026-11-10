@@ -1,19 +1,36 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { useEffect, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { OfficeLayout } from '@orchestrator/contracts';
-import { Documents, type DocsView } from './Documents.tsx';
-import { HiFi } from './HiFi.tsx';
-import { Humans, type HumanView } from './Humans.tsx';
-import { PodLabels } from './PodLabels.tsx';
+import { Documents as DocumentsPart, type DocsView } from './Documents.tsx';
+import { HiFi as HiFiPart } from './HiFi.tsx';
+import { Humans as HumansPart, type HumanView } from './Humans.tsx';
+import { PodLabels as PodLabelsPart } from './PodLabels.tsx';
 import { SeatMarkers } from './Seats.tsx';
-import { TV, type TvFrames, type TvView } from './TV.tsx';
-import { Building, Desks, Lights, Near, Rooms, Zones, sceneProbe } from './Environment.tsx';
-import { People } from './People.tsx';
-import { Rig, type Keymap } from './Rig.tsx';
+import { TV as TVPart, type TvFrames, type TvView } from './TV.tsx';
+import { Building as BuildingPart, Desks as DesksPart, Lights as LightsPart, Near, Rooms as RoomsPart, Zones as ZonesPart, sceneProbe } from './Environment.tsx';
+import { People as PeoplePart } from './People.tsx';
+import { Rig as RigPart, type Keymap } from './Rig.tsx';
 import type { BoardView, CameraMode, CeoView, HostView, NearbyTarget, PersonView, Quality, RadioView, ScreenSubscribe, WalkRequest, WallView, WhiteboardView, ZoneView } from './types.ts';
 import { buildWorld } from './world.ts';
+import { usePacedLoop } from './pace.ts';
+
+// Each part of the office is gone through by React again only when what it shows has changed. The office's state
+// changes many times a second while people work (and something always does); without this every such change
+// walked the whole scene, and the frame it landed in took two or three times as long — felt as a stutter when moving.
+const Documents = memo(DocumentsPart);
+const HiFi = memo(HiFiPart);
+const Humans = memo(HumansPart);
+const PodLabels = memo(PodLabelsPart);
+const TV = memo(TVPart);
+const Building = memo(BuildingPart);
+const Desks = memo(DesksPart);
+const Lights = memo(LightsPart);
+const Rooms = memo(RoomsPart);
+const Zones = memo(ZonesPart);
+const People = memo(PeoplePart);
+const Rig = memo(RigPart);
 
 export interface OfficeSceneProps {
   layout: OfficeLayout;
@@ -86,7 +103,7 @@ function Reflections() {
  * the application derives from real orchestration state, and everything the
  * owner does here goes back out through callbacks.
  */
-export function OfficeScene(props: OfficeSceneProps) {
+export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
   const unlocked = useMemo(() => new Set(props.unlocked), [props.unlocked.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
   const world = useMemo(() => buildWorld(props.layout, unlocked), [props.layout, unlocked]);
   const player = useMemo(() => new THREE.Vector3(world.spawn.x, 0, world.spawn.z), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -114,9 +131,11 @@ export function OfficeScene(props: OfficeSceneProps) {
     sceneProbe().lazy = props.quality === 'low';
   }, [props.quality]);
   const dpr: [number, number] = props.quality === 'low' ? [1, 1] : props.quality === 'medium' ? [1, 1.5] : [1, 2];
+  usePacedLoop();
 
   return (
     <Canvas
+      frameloop="never"
       shadows={props.quality !== 'low'}
       dpr={dpr}
       camera={{ fov: 50, near: 0.1, far: 260, position: [world.spawn.x + 2, 9, world.spawn.z + 10] }}
@@ -153,7 +172,7 @@ export function OfficeScene(props: OfficeSceneProps) {
       <Rig whipAt={props.whipAt} approachZoom={props.approachZoom} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} />
     </Canvas>
   );
-}
+});
 
 /**
  * For the UI tests, next to `window.__orchPerf`: `window.__orchScene` says which room interiors

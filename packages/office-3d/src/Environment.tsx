@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { Desk, RoomDef, TerminalScreen } from '@orchestrator/contracts';
 import { drawScreen } from './terminal-texture.ts';
-import type { BoardView, CeoView, HostView, Quality, ScreenSubscribe, WallView, WhiteboardView, ZoneView } from './types.ts';
+import type { BoardView, CeoView, HostView, Quality, ScreenSubscribe, UsageClockView, WallView, WhiteboardView, ZoneView } from './types.ts';
 import { DESK_SIZE, WALL_T, deskBox, deskSeat, type Box, type World } from './world.ts';
 import { ON_SURFACE } from './surface.ts';
 
@@ -926,6 +926,148 @@ function drawLines(ctx: CanvasRenderingContext2D, w: number, h: number, title: s
   });
 }
 
+/** Clockwise from twelve o'clock, as a canvas angle: 0% is at the top, 25% at three, 50% at six, 75% at nine. */
+const dialAngle = (percent: number) => (percent / 100) * Math.PI * 2 - Math.PI / 2;
+
+/** The face of a usage clock: the week around the rim (the last tenth in red), and a small dial for the 5-hour window. */
+function drawClockFace(ctx: CanvasRenderingContext2D, w: number, h: number, hasFive: boolean) {
+  const c = w / 2;
+  const R = w * 0.485;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#f3efe6';
+  ctx.beginPath();
+  ctx.arc(c, c, R, 0, Math.PI * 2);
+  ctx.fill();
+  const dial = (cx: number, cy: number, r: number, numerals: boolean) => {
+    // the last tenth is where it runs out
+    ctx.strokeStyle = '#d9434e';
+    ctx.lineWidth = r * 0.075;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.93, dialAngle(90), dialAngle(100));
+    ctx.stroke();
+    for (let p = 0; p < 100; p += numerals ? 5 : 25) {
+      const a = dialAngle(p);
+      const major = p % 25 === 0;
+      ctx.strokeStyle = '#20242c';
+      ctx.lineWidth = r * (major ? 0.035 : 0.016);
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * r * (major ? 0.8 : 0.87), cy + Math.sin(a) * r * (major ? 0.8 : 0.87));
+      ctx.lineTo(cx + Math.cos(a) * r * 0.97, cy + Math.sin(a) * r * 0.97);
+      ctx.stroke();
+    }
+    if (!numerals) return;
+    ctx.fillStyle = '#20242c';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = font(r * 0.15, 700);
+    for (const p of [0, 25, 50, 75]) {
+      const a = dialAngle(p);
+      ctx.fillText(p === 0 ? '0' : String(p), cx + Math.cos(a) * r * 0.66, cy + Math.sin(a) * r * 0.66);
+    }
+  };
+  dial(c, c, R, true);
+  ctx.fillStyle = '#6b7280';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = font(R * 0.1, 700);
+  ctx.fillText('WEEK · % USED', c, c - R * 0.36);
+  if (hasFive) {
+    const sy = c + R * 0.44;
+    const sr = R * 0.31;
+    ctx.fillStyle = '#e7e1d4';
+    ctx.beginPath();
+    ctx.arc(c, sy, sr, 0, Math.PI * 2);
+    ctx.fill();
+    dial(c, sy, sr, false);
+    ctx.fillStyle = '#6b7280';
+    ctx.font = font(sr * 0.3, 700);
+    ctx.fillText('5 H', c, sy + sr * 0.42);
+  }
+  ctx.textAlign = 'left';
+}
+
+const CLOCK_R = 0.5;
+const CLOCK_MAT = {
+  rim: new THREE.MeshStandardMaterial({ color: '#232830', roughness: 0.35, metalness: 0.6 }),
+  hand: new THREE.MeshStandardMaterial({ color: '#15181e', roughness: 0.5 }),
+  five: new THREE.MeshStandardMaterial({ color: '#c2410c', roughness: 0.5 }),
+  hub: new THREE.MeshStandardMaterial({ color: '#8f2738', roughness: 0.4, metalness: 0.3 }),
+};
+
+/**
+ * A wall clock for one Claude account. The big hand shows how much of the week is used (straight up: nothing; all the
+ * way round: everything), the small dial does the same for the 5-hour window. The hands sweep to a new reading rather
+ * than jump; with nothing reported they rest at twelve and the label says so.
+ */
+function UsageClock({ position, account }: { position: [number, number, number]; account: UsageClockView }) {
+  const big = useRef<THREE.Group>(null);
+  const small = useRef<THREE.Group>(null);
+  const shown = useRef({ week: 0, five: 0 });
+  const hasFive = account.five !== null;
+  const face = useCanvasTexture(1, 1, 768, (ctx, w, h) => drawClockFace(ctx, w, h, hasFive), [hasFive]);
+  const label = [account.name, ...account.lines];
+  useFrame((_s, dt) => {
+    const k = 1 - Math.exp(-Math.min(dt, 0.1) * 2.2);
+    const s = shown.current;
+    s.week += ((account.week ?? 0) - s.week) * k;
+    s.five += ((account.five ?? 0) - s.five) * k;
+    if (big.current) big.current.rotation.z = -(s.week / 100) * Math.PI * 2;
+    if (small.current) small.current.rotation.z = -(s.five / 100) * Math.PI * 2;
+  });
+  return (
+    <group position={position}>
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0.03]} material={CLOCK_MAT.rim}>
+        <cylinderGeometry args={[CLOCK_R + 0.045, CLOCK_R + 0.045, 0.06, 48]} />
+      </mesh>
+      <mesh position={[0, 0, 0.066]}>
+        <circleGeometry args={[CLOCK_R, 48]} />
+        <meshStandardMaterial map={face} roughness={0.7} {...ON_SURFACE} />
+      </mesh>
+      {/* the week: the big hand */}
+      <group ref={big} position={[0, 0, 0.085]}>
+        <mesh position={[0, CLOCK_R * 0.36, 0]} material={CLOCK_MAT.hand}>
+          <boxGeometry args={[0.028, CLOCK_R * 0.92, 0.012]} />
+        </mesh>
+      </group>
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0.09]} material={CLOCK_MAT.hub}>
+        <cylinderGeometry args={[0.035, 0.035, 0.03, 20]} />
+      </mesh>
+      {/* the 5-hour window: the small dial */}
+      {hasFive && (
+        <group position={[0, -CLOCK_R * 0.44 * 0.97, 0.085]}>
+          <group ref={small}>
+            <mesh position={[0, CLOCK_R * 0.115, 0]} material={CLOCK_MAT.five}>
+              <boxGeometry args={[0.02, CLOCK_R * 0.27, 0.01]} />
+            </mesh>
+          </group>
+          <mesh rotation={[Math.PI / 2, 0, 0]} material={CLOCK_MAT.five}>
+            <cylinderGeometry args={[0.018, 0.018, 0.02, 14]} />
+          </mesh>
+        </group>
+      )}
+      <CanvasPanel
+        width={1.3}
+        height={0.42}
+        px={640}
+        position={[0, -CLOCK_R - 0.34, 0.03]}
+        deps={[label.join('|')]}
+        draw={(ctx, w, h) => {
+          ctx.fillStyle = '#0b0f17';
+          ctx.fillRect(0, 0, w, h);
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          label.slice(0, 3).forEach((line, i) => {
+            ctx.fillStyle = i === 0 ? '#ffffff' : /\b[0-9]% left|\b1[0-4]% left/.test(line) ? '#ff8a98' : '#b9c3d3';
+            ctx.font = font(h * (i === 0 ? 0.24 : 0.2), i === 0 ? 700 : 500);
+            ctx.fillText(clip(ctx, line, w * 0.94), w / 2, h * (0.2 + i * 0.3));
+          });
+          ctx.textAlign = 'left';
+        }}
+      />
+    </group>
+  );
+}
+
 function Chair({ x, z, rot, color = '#39424f' }: { x: number; z: number; rot: number; color?: string }) {
   return (
     <group position={[x, 0, z]} rotation={[0, rot, 0]}>
@@ -1277,6 +1419,11 @@ export function Rooms({
     reception: useNear('reception', useMemo(() => roomBox(rr), [rr]), player, overview),
   };
 
+  // For the UI tests: what the usage clocks on the CEO room wall are showing.
+  useEffect(() => {
+    sceneProbe().clocks = ceo.accounts.map((a) => ({ name: a.name, week: a.week, five: a.five, lines: a.lines }));
+  }, [ceo.accounts]);
+
   return (
     <group>
       {/* project board */}
@@ -1357,6 +1504,18 @@ export function Rooms({
           <mesh position={[cr.x + cr.w / 2, 1.75, cr.z + 0.1]} material={dark}>
             <boxGeometry args={[5.2, 2.0, 0.05]} />
           </mesh>
+          {/* How much Claude is left: a clock per account, to the right of the company board and then to its left. */}
+          {near.ceo &&
+            (() => {
+              const cx = cr.x + cr.w / 2;
+              const step = 1.5;
+              const perSide = Math.max(1, Math.floor((cr.w / 2 - 2.6 - 0.35) / step));
+              return ceo.accounts.slice(0, perSide * 2).map((a, i) => {
+                const side = i < perSide ? 1 : -1;
+                const n = i < perSide ? i : i - perSide;
+                return <UsageClock key={a.key} account={a} position={[cx + side * (2.6 + 0.85 + n * step), 2.0, cr.z + 0.1]} />;
+              });
+            })()}
           {near.ceo && <CanvasPanel width={5.0} height={1.8} px={1536} position={[cr.x + cr.w / 2, 1.75, cr.z + 0.13]} deps={[ceo.company, ceo.lines.join('|')]} draw={(ctx, w, h) => drawLines(ctx, w, h, ceo.company, ceo.lines)} />}
           <mesh position={[cr.x + 1.3, 0.3, cr.z + cr.d - 2.2]} material={fabric} castShadow>
             <boxGeometry args={[0.9, 0.6, 2.2]} />

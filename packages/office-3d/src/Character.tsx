@@ -2320,6 +2320,27 @@ const GREY = new THREE.Color('#6b7280');
 const WHITE = new THREE.Color('#ffffff');
 const BLACK = new THREE.Color('#000000');
 const MATS = new Map<string, THREE.MeshStandardMaterial>();
+const SKINNED = new WeakMap<THREE.Material, THREE.Material>();
+
+/**
+ * The same material, for a part that bends (a skinned mesh). The renderer compiles a material differently for skinned
+ * and rigid meshes, and a material shared by both is looked up again at every switch between them — about 150 times a
+ * frame in a full office, a fifth of the time spent drawing. One twin per material, shared by everyone, avoids that.
+ */
+/**
+ * The shadow of a part that bends is drawn with a depth material of its own, for the same reason: the renderer's one
+ * built-in depth material would be recompiled-by-lookup at every switch between a bending and a rigid part.
+ */
+const SKINNED_DEPTH = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+
+function skinned<T extends THREE.Material>(m: T): T {
+  let twin = SKINNED.get(m) as T | undefined;
+  if (!twin) {
+    twin = m.clone() as T;
+    SKINNED.set(m, twin);
+  }
+  return twin;
+}
 
 /** How far someone without a live session is washed toward grey: dimmed, but still plainly themselves. */
 const DIM = 0.26;
@@ -2831,7 +2852,8 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
         <skinnedMesh
           ref={skin}
           geometry={look3d.longSleeves ? (side > 0 ? g.sleeveL : g.sleeveR) : side > 0 ? g.armL : g.armR}
-          material={look3d.longSleeves ? look3d.shirt : look3d.skin}
+          material={skinned(look3d.longSleeves ? look3d.shirt : look3d.skin)}
+          customDepthMaterial={SKINNED_DEPTH}
           castShadow
         />
         {!look3d.longSleeves && <mesh geometry={g.sleeveShort} material={look3d.shirt} />}
@@ -2849,7 +2871,7 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
   const leg = (ref: React.RefObject<THREE.Group | null>, knee: React.RefObject<THREE.Group | null>, ankle: React.RefObject<THREE.Group | null>, skin: React.RefObject<THREE.SkinnedMesh | null>, side: 1 | -1) => (
     <group position={[HIP_X * side, 0, 0]}>
       <group ref={ref}>
-        <skinnedMesh ref={skin} geometry={side > 0 ? g.legL : g.legR} material={look3d.pants} castShadow />
+        <skinnedMesh ref={skin} geometry={side > 0 ? g.legL : g.legR} material={skinned(look3d.pants)} customDepthMaterial={SKINNED_DEPTH} castShadow />
         <group ref={knee} position={[0, -THIGH, 0]}>
           <group ref={ankle} name={side > 0 ? 'foot-l' : 'foot-r'} position={[0, -SHIN, 0]}>
             <group rotation={[0, 0.08 * side, 0]}>

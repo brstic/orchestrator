@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { OfficeScene, ownerPosition } from '@orchestrator/office-3d';
 import { Button } from '@orchestrator/ui';
 import { api, connection, setToken } from './lib/api.ts';
@@ -67,6 +67,16 @@ function useAccounts(): void {
   }, [owner, live]);
 }
 
+/**
+ * The same function objects on every render, always calling the latest version. The 3D scene is redrawn by React
+ * only when its inputs change; handlers written inline would look new each time and defeat that.
+ */
+function useStable<T extends Record<string, (...args: any[]) => any>>(fns: T): T {
+  const latest = useRef(fns);
+  latest.current = fns;
+  return useMemo(() => Object.fromEntries(Object.keys(fns).map((k) => [k, (...args: any[]) => latest.current[k]!(...args)])) as T, []); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 function usePresence(): void {
   useEffect(() => {
     let last = { x: NaN, z: NaN, rot: NaN, moving: false };
@@ -100,6 +110,20 @@ export function App() {
     return () => window.clearTimeout(t);
   }, [s.chat.length]);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  // What the 3D office calls back with.
+  const on = useStable({
+    openDocs: (id: string) => useOffice.getState().openPanel('docs', id),
+    openRadio: () => useOffice.getState().openPanel('radio'),
+    openTv: () => useOffice.getState().openPanel('tv'),
+    pickSeat: (deskId: string) => {
+      const moving = useOffice.getState().movingEmployeeId;
+      if (moving) void seatAt(moving, deskId);
+    },
+    openMeeting: (id: string) => useOffice.getState().openPanel('meetings', id),
+    openProject: (id: string) => useOffice.getState().openPanel('projects', id),
+    select: (id: string | null) => useOffice.getState().selectEmployee(id),
+    context: (employeeId: string, x: number, y: number) => setMenu({ employeeId, x, y }),
+  });
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -261,14 +285,14 @@ export function App() {
           people={people}
           humans={humans}
           docs={docViews}
-          onOpenDocs={(id) => s.openPanel('docs', id)}
+          onOpenDocs={on.openDocs}
           radio={radioView}
-          onOpenRadio={() => s.openPanel('radio')}
+          onOpenRadio={on.openRadio}
           tv={tvView}
           tvFrames={onTvFrame}
-          onOpenTv={() => s.openPanel('tv')}
+          onOpenTv={on.openTv}
           freeSeats={freeSeats}
-          onPickSeat={(deskId) => s.movingEmployeeId && void seatAt(s.movingEmployeeId, deskId)}
+          onPickSeat={on.pickSeat}
           whips={s.whips}
           whipAt={s.whipAt}
           walks={walks}
@@ -277,10 +301,10 @@ export function App() {
           wall={wall}
           ceo={ceo}
           whiteboard={whiteboard}
-          onOpenMeeting={(id) => s.openPanel('meetings', id)}
+          onOpenMeeting={on.openMeeting}
           zones={s.settings?.projectZones ? zones : NO_ZONES}
           approachZoom={s.settings?.approachZoom === true}
-          onOpenProject={(id) => s.openPanel('projects', id)}
+          onOpenProject={on.openProject}
           cameraMode={s.cameraMode}
           quality={s.settings.quality}
           keymap={keymap}
@@ -289,8 +313,8 @@ export function App() {
           focus={s.focusRequest}
           subscribeScreen={onScreen}
           onNearby={s.setNearby}
-          onSelect={(id) => s.selectEmployee(id)}
-          onContext={(employeeId, x, y) => setMenu({ employeeId, x, y })}
+          onSelect={on.select}
+          onContext={on.context}
           onLeaveWorkstation={s.leaveWorkstation}
         />
       </div>

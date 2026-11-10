@@ -383,18 +383,25 @@ export class ClientHub {
     for (const c of this.clients.values()) if (c.who.kind === 'guest' && c.who.id === guestId) c.ws.close(4003, 'access revoked');
   }
 
-  private peopleDirty = false;
+  /** Whose movement (or arrival, or leaving: '*') has not been passed on yet. */
+  private peopleMoved = new Set<string>();
   private peopleTimer: NodeJS.Timeout | null = null;
 
-  /** Tell everyone where everyone is, at most ten times a second and only when something moved. */
-  private schedulePeople(): void {
-    this.peopleDirty = true;
+  /**
+   * Tell everyone where everyone else is, at most ten times a second and only when something moved.
+   * Nobody is told about their own movement: their own window already knows, and an office with one
+   * person in it would otherwise hear its own steps back several times a second.
+   */
+  private schedulePeople(mover: string = '*'): void {
+    this.peopleMoved.add(mover);
     if (this.peopleTimer) return;
     this.peopleTimer = setTimeout(() => {
       this.peopleTimer = null;
-      if (!this.peopleDirty) return;
-      this.peopleDirty = false;
-      this.broadcast({ t: 'people', people: this.people() });
+      const moved = this.peopleMoved;
+      this.peopleMoved = new Set();
+      if (!moved.size) return;
+      const people = this.people();
+      for (const id of this.clients.keys()) if (moved.has('*') || moved.size > 1 || !moved.has(id)) this.send(id, { t: 'people', people });
     }, 100);
     this.peopleTimer.unref();
   }
@@ -429,8 +436,10 @@ export class ClientHub {
         switch (msg.t) {
           case 'presence': {
             const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-500, Math.min(500, v)) : 0);
+            const first = !conn.presence;
             conn.presence = { x: n(msg.x), z: n(msg.z), rot: n(msg.rot), moving: msg.moving === true };
-            this.schedulePeople();
+            // The first report is news for everyone (the list each client keeps includes itself); after that, only for the others.
+            this.schedulePeople(first ? '*' : id);
             break;
           }
           case 'say': {

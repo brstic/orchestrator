@@ -342,9 +342,14 @@ function handle(msg: ServerToClient): void {
       applyFull(msg.state, msg.clientId);
       useOffice.setState({ me: msg.me ?? { kind: 'owner', role: 'owner', name: msg.state.settings.ownerName }, clientId: msg.clientId, people: [] });
       break;
-    case 'people':
+    case 'people': {
+      // Only the others are drawn from this list; if just my own entry moved, nothing on screen changes.
+      const st = useOffice.getState();
+      const others = (list: typeof msg.people) => JSON.stringify(list.filter((p) => p.id !== st.clientId));
+      if (st.people.length === msg.people.length && others(st.people) === others(msg.people)) break;
       useOffice.setState({ people: msg.people });
       break;
+    }
     case 'said':
       useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), { id: `${msg.ts}-${msg.from.id}-${s.chat.length}`, fromId: msg.from.id, name: msg.from.name, role: msg.from.role, text: msg.text, ts: msg.ts }] }));
       break;

@@ -1,6 +1,6 @@
 import { Html } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Character, type PoseName } from './Character.tsx';
 import type { PersonView, WalkRequest } from './types.ts';
@@ -91,7 +91,8 @@ const BOARD_DWELL_MS = 3000;
 
 const OUCH = ['JAO!', 'AU!', 'JOJ!', 'AJOJ!', 'OPA!', 'EJ!'];
 
-function Person({
+// One person is gone through again only when something about that person changed, not whenever anyone's did.
+const Person = memo(function Person({
   v,
   whippedAt,
   world,
@@ -125,6 +126,10 @@ function Person({
   const tag = useRef<HTMLDivElement>(null);
   const phase = useMemo(() => (hash(v.id) % 628) / 100, [v.id]);
   const frame = useRef(0);
+  /** How much of this person is drawn: 0 everything, 1 without the smallest parts, 2 from far away. */
+  const detail = useRef(0);
+  /** So that not everyone is looked at in the same frame. */
+  const detailTurn = useRef(Math.floor(Math.random() * 12));
   // HTML overlays mounted in the scene's very first commit sometimes never appear (a name tag that is
   // simply missing); they are added once this person has been drawn.
   const [drawn, setDrawn] = useState(false);
@@ -206,6 +211,33 @@ function Person({
       const d = camera.position.distanceTo(g.position);
       tag.current.style.transform = `translateY(-50%) scale(${THREE.MathUtils.clamp((cutaway ? 15 : 9) / d, 0.42, 1.1).toFixed(3)})`;
     }
+    // From across the office the smallest parts of a person (eyes, cuffs, buttons) are thinner than a pixel, and their
+    // shadows smaller still. They are left out there: in a full office people are two thirds of everything drawn, and
+    // every part drawn costs the same whether it can be seen or not. Closer than a few desks, everything is back.
+    if (frame.current % 12 === detailTurn.current && g) {
+      const d = camera.position.distanceTo(g.position);
+      const was = detail.current;
+      const tier = was === 0 ? (d > 16 ? 1 : 0) : was === 1 ? (d < 14 ? 0 : d > 30 ? 2 : 1) : d < 27 ? 1 : 2;
+      // Applied again every time even when the tier has not changed: a change of clothes brings new parts.
+      detail.current = tier;
+      const hideBelow = tier === 0 ? 0 : tier === 1 ? 0.045 : 0.062;
+      const shadowFrom = tier === 0 ? 0 : tier === 1 ? 0.12 : 0.25;
+      g.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || !m.geometry) return;
+        if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+        const size = m.geometry.boundingSphere?.radius ?? 1;
+        if (m.userData.casts === undefined) m.userData.casts = m.castShadow;
+        // Hidden by layer, not by `visible`: whether a part is shown at all stays the character's own business.
+        const hide = size < hideBelow;
+        if (hide !== (m.userData.left === true)) {
+          m.userData.left = hide;
+          m.layers.set(hide ? 1 : 0);
+        }
+        const casts = m.userData.casts === true && size >= shadowFrom;
+        if (m.castShadow !== casts) m.castShadow = casts;
+      });
+    }
     if (frame.current % 30 === 0) {
       const limit = cutaway ? 95 : 38;
       const isFar = camera.position.distanceToSquared(g.position) > limit * limit;
@@ -274,7 +306,7 @@ function Person({
       )}
     </group>
   );
-}
+});
 
 /**
  * All employees in the office. Where an avatar is and how it moves is a

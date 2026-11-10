@@ -160,13 +160,21 @@ export function ceoView(s: OfficeState): CeoView {
     const ts = Object.values(s.tasks).filter((t) => t.projectId === p.id && t.kind !== 'review');
     lines.push(`${p.name}: ${ts.filter((t) => t.status === 'DONE').length}/${ts.length} done`);
   }
-  // How much Claude is left, per account, as Claude Code itself last reported it.
-  for (const a of s.accounts.slice(0, 3)) {
-    const parts = [a.fiveHour ? `5 h ${Math.round(a.fiveHour.usedPercent)}%` : null, a.sevenDay ? `week ${Math.round(a.sevenDay.usedPercent)}%` : null].filter(Boolean);
-    const hot = Math.max(a.fiveHour?.usedPercent ?? 0, a.sevenDay?.usedPercent ?? 0) >= 90;
-    lines.push(`${hot ? '! ' : ''}Claude ${accountName(a, s.hosts[a.hostId]?.name)}: ${parts.length ? `${parts.join(' · ')} used` : 'not reported yet'}`);
-  }
-  return { company: s.settings?.companyName ?? 'My Company', tagline: 'Your code. Your company. Your world.', lines };
+  // How much Claude is left: one clock per account on the wall, from what Claude Code itself last reported.
+  const left = (w: { usedPercent: number; resetsAt: string | null } | null, label: string): string => {
+    if (!w) return `${label}: not reported`;
+    const text = limitText(w) ?? '';
+    const resets = text.includes('·') ? ` · ${text.split('·')[1]!.trim()}` : '';
+    return `${label}: ${Math.max(0, 100 - Math.round(w.usedPercent))}% left${resets}`;
+  };
+  const accounts = s.accounts.map((a) => ({
+    key: a.key,
+    name: accountName(a, s.hosts[a.hostId]?.name),
+    week: a.sevenDay ? a.sevenDay.usedPercent : null,
+    five: a.fiveHour ? a.fiveHour.usedPercent : null,
+    lines: a.reportedAt ? [left(a.sevenDay, 'Week'), left(a.fiveHour, '5 hours')] : ['Not reported yet', 'shows when a session starts'],
+  }));
+  return { company: s.settings?.companyName ?? 'My Company', tagline: 'Your code. Your company. Your world.', lines, accounts };
 }
 
 /** Markdown line → what someone would write on a whiteboard (no heading marks, bullets or emphasis). */

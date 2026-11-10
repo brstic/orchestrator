@@ -94,10 +94,25 @@ export interface WallView {
   stats: string[];
 }
 
+/** One Claude account on the CEO room wall: a clock whose big hand is the week and whose small dial is the 5-hour window. */
+export interface UsageClockView {
+  key: string;
+  /** Who the account belongs to (or where it lives, when that is not known). */
+  name: string;
+  /** Percent of the week used, 0–100; null when Claude Code has not reported it. */
+  week: number | null;
+  /** Percent of the 5-hour window used; null when not reported (or the account has no such window). */
+  five: number | null;
+  /** What is written under the clock. */
+  lines: string[];
+}
+
 export interface CeoView {
   company: string;
   tagline: string;
   lines: string[];
+  /** One clock per Claude account the employees run on. */
+  accounts: UsageClockView[];
 }
 
 /** What the office hi-fi is doing right now (it really is playing in the owner's window, or it is not). */
