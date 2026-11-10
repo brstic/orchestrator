@@ -46,7 +46,8 @@
     "package:notarize": "node scripts/notarize.mjs",
     "test:real:auto": "node tests/real/auto.ts",
     "serve": "node scripts/start-local.mjs --door",
-    "office": "node scripts/office-admin.mjs"
+    "office": "node scripts/office-admin.mjs",
+    "test:central": "node tests/linux/central-office.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

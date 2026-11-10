@@ -25,6 +25,7 @@ tests/linux containers (multi-machine, SSH)                 tests/real the real 
 | `pnpm build:ui` then `node tests/ui/run.mjs` | UI suite in Electron against a dev office |
 | `node tests/ui/guest-app.mjs`, `node tests/ui/tv-app.mjs` | desktop join flow, TV |
 | `pnpm test:ssh`, `pnpm test:machines` | containers; need Docker/Colima |
+| `pnpm test:central` | the office on a Linux container from the portable package (`pnpm package` first), two desktop apps from this machine; starts the real `claude` on the member's side without sending anything (`--no-real-cli` to avoid) |
 | `node scripts/dev-office.ts --port N [--ui <dist>]` | a populated office with scripted workers for manual work and probes |
 
 ## Shipping to the owner's machine

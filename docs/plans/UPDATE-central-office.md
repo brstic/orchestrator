@@ -64,10 +64,11 @@ Details and the route-by-route table: [../ACCESS.md](../ACCESS.md).
 ### 7 — Verification and shipping
 - [x] Unit 62/62, e2e 117/117 (`12-members` replaces `12-guests`), UI 146/146, desktop join test 27/27 (a colleague's own computer through the real relay and agent)
 - [x] Docs: STATUS, CHANGELOG, ACCESS, ARCHITECTURE, SECURITY, INSTALL, DECISIONS
-- [ ] Tried for real: office on the owner's server, two people from two computers *(needs the owner: a server to install on and a second person)*
+- [x] Tried on a real Linux server: `pnpm test:central` (23/23) installs the portable package in a Debian container as INSTALL.md says, starts `--door`, invites an owner and a colleague from the server's terminal, and connects two real desktop apps from this Mac across the VM's network. The colleague's own session is the **real Claude Code CLI** (started, nothing sent: hooks and the worker endpoint reach the server through the relay); the server's worker is the scripted one (a container has no Claude account). Includes a restart of the office on the server.
+- [ ] On the owner's own server, with a second person on a physically separate computer and real work by real Claude Code on both sides *(needs the owner: which server and address, and the second person; nothing to build — follow INSTALL.md section 0)*
 
 ## What "done" does not cover
-- Everything above was verified on one machine with the scripted worker. The real thing — a Linux server, two people, two computers, real Claude Code — has not been tried (last box of phase 7).
+- The Linux-server trial runs the server in a container on this Mac and both people's apps on this Mac; the two "computers" are one. Real Claude Code was started on the member's side but given no work (zero tokens). The last box of phase 7 is the part only the owner can do.
 - The People panel's owner role and the role-dependent controls were checked by type and by the API tests, not by a UI test that clicks them as each role.
 - Member rooms were verified on the default layout at High quality.
 

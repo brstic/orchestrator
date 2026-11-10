@@ -3,7 +3,7 @@
 _Last updated: 2026-11-10. Update this file with every piece of work (see `CLAUDE.md`)._
 
 ## Now
-**Plan:** [UPDATE — central office](plans/UPDATE-central-office.md) — all phases built and passing the automated suites. **One item is open: trying it for real** (a Linux server, two people on two computers, real Claude Code). That needs the owner: where to install it, and a second person.
+**Plan:** [UPDATE — central office](plans/UPDATE-central-office.md) — all phases built, passing the automated suites, and tried against a real Linux server in a container (`pnpm test:central`, 23/23, with the real Claude Code CLI started on the member's side). **One item is open and needs the owner:** the same on their own server with a second person on another computer.
 
 Next steps, in order:
 1. Install on the owner's Linux server following `INSTALL.md` section 0; invite the owner as `owner` and the collaborator as `colleague`; note what breaks.
@@ -21,7 +21,8 @@ Next steps, in order:
 - Extras: radio, TV, whip, seating editor, sleeping pose. Storage: SQLite (default) and PostgreSQL.
 
 ## Not verified / known problems
-- **Nothing in the UPDATE plan has run on a real server or between two real computers**, and not with the real Claude Code CLI. The desktop join test does run the real Electron app, the real relay and a real host agent — on one machine, with the scripted worker.
+- The UPDATE plan has run against a Linux server only as a container on this Mac, with both people's desktop apps on this Mac. Real Claude Code was started on the member's computer (hooks and MCP reached the server) but did no work; on the server the worker was the scripted one. Not yet: the owner's server, a physically separate second computer, real work.
+- Usage per account did not arrive from a real CLI session that had made no request yet (Claude Code gives the status line no limits until it knows them); it does once the session has worked.
 - Role-dependent controls (People panel with the owner role, hidden/disabled buttons for visitors and for other members' employees) are covered by API tests and type checks, not by UI tests that click as each role. Hi-fi and TV panels are not role-aware (a visitor can try to add a station and is refused by the office).
 - Member rooms: default layout and High quality only; more than 10 members online get no room; places are per position (when someone leaves, later members move up one).
 - A personal host's default allowed root is the member's home folder.
@@ -35,4 +36,4 @@ Next steps, in order:
 The packaged app `release/Orchestrator.app` (Desktop shortcut is a symlink to it) as a local office, state in `~/.orchestrator`, one SSH-linked server ("Sparkcan"). Shipping procedure: `DEVELOPMENT.md`.
 
 ## Suites (last full run, working tree after the UPDATE plan)
-unit 62/62 · e2e 117/117 · UI 146/146 · desktop join (`tests/ui/guest-app.mjs`) 27/27 · TV (`tests/ui/tv-app.mjs`) 12/12.
+unit 62/62 · e2e 117/117 · UI 146/146 · desktop join (`tests/ui/guest-app.mjs`) 27/27 · Linux server trial (`pnpm test:central`) 23/23 · TV (`tests/ui/tv-app.mjs`) 12/12.
