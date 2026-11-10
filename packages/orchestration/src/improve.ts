@@ -2,6 +2,7 @@ import type { Employee, EvidenceRef, Improvement, ImprovementAction, Improvement
 import { correlationMarker, newId, nowIso, truncate } from '@orchestrator/contracts';
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
+import { Autopilot, AUTOPILOT_ACTOR } from './learning/autopilot.ts';
 import { DEFAULT_HIGH_RISK_PATTERNS } from './prompts.ts';
 import { Playbook } from './learning/playbook.ts';
 import { Capture, type LessonArgs } from './learning/capture.ts';
@@ -23,8 +24,10 @@ const APPROVALS_BEFORE_SUGGESTING = 3;
  *
  * Orchestrator improves by reading its own history: it routes work using
  * measured outcomes per employee and task kind, and proposes changes to
- * policy and process when the record supports them. Changes that widen what
- * agents may do without asking always wait for the owner.
+ * policy and process when the record supports them. Which of those it may apply
+ * by itself is the autopilot's decision (`learning/autopilot.ts`): changes that
+ * widen what agents may do without asking wait for the owner unless the dial is
+ * on `trusted`, and then only under evidence thresholds and on probation.
  */
 export class Improver {
   private eng: Engine;
@@ -37,12 +40,15 @@ export class Improver {
   readonly capture: Capture;
   /** Whether what was learned helped: outcomes, trends, verdicts on lessons and applied improvements (learning/outcomes.ts). */
   readonly outcomes: Outcomes;
+  /** Applies what the dial allows by itself, keeps undo records, and takes its own changes back on a counter-signal. */
+  readonly autopilot: Autopilot;
 
   constructor(eng: Engine) {
     this.eng = eng;
     this.playbook = new Playbook(eng, (p) => this.propose(p));
     this.capture = new Capture(eng);
     this.outcomes = new Outcomes(eng);
+    this.autopilot = new Autopilot(eng);
   }
 
   private get core() {
@@ -509,6 +515,8 @@ export class Improver {
     // 8. Did what was learned help? Retire lessons the record is against, mark the proven ones, suggest undoing a change that made things worse.
     for (const i of this.outcomes.act()) add(i);
     if (out.length) this.core.broadcast('performance', this.performance());
+    // Every open proposal is looked at again, not only the new ones: evidence grows and the daily allowance refills.
+    this.autopilot.run();
     return out;
   }
 
@@ -517,6 +525,7 @@ export class Improver {
     const imp = this.core.improvements.require(id);
     if (imp.status !== 'proposed') throw new EngineError(`this suggestion was already ${imp.status}`, 409);
     const a = imp.action;
+    const undoTicket = this.autopilot.before(imp);
     switch (a.type) {
       case 'project.policy.allow': {
         const p = this.core.projects.require(a.projectId);
@@ -538,13 +547,18 @@ export class Improver {
         this.eng.employees.update(a.employeeId, { autonomy: a.level }, actor);
         break;
       case 'advice':
+        // "Take back the change that made things worse" (learning/outcomes.ts): accepting the suggestion does it.
+        if (imp.kind === 'revert_improvement' && imp.outcomesRevertOf && this.core.improvements.get(imp.outcomesRevertOf)?.status === 'applied') this.autopilot.revert(imp.outcomesRevertOf, actor);
         break;
     }
     imp.status = 'applied';
     imp.decidedAt = nowIso();
+    this.autopilot.after(imp, undoTicket, actor);
     this.core.put('improvement', imp);
     this.core.audit(actor, 'improvement.applied', id, { kind: imp.kind, action: a });
-    this.core.event({ type: 'improvement.applied', source: 'owner', summary: `Applied: ${imp.title}`, projectId: imp.projectId, employeeId: imp.employeeId, data: { improvementId: id, kind: imp.kind, action: a.type } });
+    // (When the office applied it by itself, the line for the feed is the autopilot's `learning.applied`, which carries the evidence.)
+    const auto = actor === AUTOPILOT_ACTOR;
+    this.core.event({ type: 'improvement.applied', source: auto ? 'server' : 'owner', summary: `Applied: ${imp.title}`, projectId: imp.projectId, employeeId: imp.employeeId, data: { improvementId: id, kind: imp.kind, action: a.type, ...(auto ? { by: actor, quiet: true } : {}) } });
     return imp;
   }
 

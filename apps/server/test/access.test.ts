@@ -63,6 +63,8 @@ test('requests: shared work for colleagues, a member’s computer for that membe
     assert.equal(call(jovan, m, r), false, `${m} ${r} needs an owner`);
     assert.equal(call(vera, m, r), true);
   }
+  // Undoing an applied improvement needs what applying one needs: an owner.
+  for (const r of ['/improvements/i1/apply', '/improvements/i1/revert']) assert.deepEqual([call(jovan, 'POST', r), call(mila, 'POST', r), call(vera, 'POST', r)], [false, false, true], r);
   // A route nobody listed needs an owner: forgetting to list one fails closed.
   assert.equal(call(jovan, 'POST', '/something/new'), false);
   assert.equal(call(jovan, 'GET', '/something/new'), false);

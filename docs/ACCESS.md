@@ -52,6 +52,13 @@ There is one foreman, on one of the office's own machines, never on a member's c
 
 A route that is not listed in `access.ts` needs an owner.
 
+### What the office changes by itself (the autopilot)
+Applying an improvement, and undoing one (`POST /api/improvements/:id/apply`, `/revert`), are **admin**: owners only. Under the autopilot dial ([learning/autopilot.md](learning/autopilot.md)) the office applies some improvements itself. It keeps the line between shared and personal:
+
+- on **shared** machines, the permission decisions of anyone who may make them (owners and colleagues) count as evidence;
+- on **a member's own computer**, allow rules, deny rules and a higher autonomy level are applied only on decisions that member made themselves (each decision records who made it). An owner's approvals there do not count, and changes that rest on nobody's decision (lower autonomy, review off) are never automatic there;
+- the **foreman** is never changed by it.
+
 ### The door bell (knocking)
 A person with no invitation can knock at the office's door — the office's page in a browser, or the desktop app given only the address. Knocking grants nothing; it puts a name and a four-digit code in front of the people inside.
 

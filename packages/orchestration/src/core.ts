@@ -21,6 +21,7 @@ import type {
   OwnerSettings,
   Project,
   Question,
+  SelfImprovementSettings,
   Task,
   XpEntry,
   EventSourceKind,
@@ -62,6 +63,18 @@ export interface Timings {
   foremanMinGapMs: number;
   /** A round that was neither finished nor ended with its turn is given up on after this long. */
   foremanRoundTimeoutMs: number;
+  /** autopilot (trusted): approvals of one command shape, with no denial, before its allow rule is applied by itself. */
+  autopilotAllowApprovals: number;
+  /** autopilot (trusted): those approvals must span at least this long, unless they come from two different tasks. */
+  autopilotAllowSpreadMs: number;
+  /** autopilot (trusted): the employee's last this-many completed tasks must all be clean before autonomy is raised by itself. */
+  autopilotAutonomyTasks: number;
+  /** autopilot (trusted): the project's last this-many reviewed tasks must all have been approved first time before review is switched off by itself. */
+  autopilotReviewOffTasks: number;
+  /** autopilot: a change the office made by itself is on probation for this long… */
+  autopilotProbationMs: number;
+  /** …or until this many tasks of the affected project or employee have finished, whichever comes first. */
+  autopilotProbationTasks: number;
 }
 
 export const DEFAULT_TIMINGS: Timings = {
@@ -77,6 +90,12 @@ export const DEFAULT_TIMINGS: Timings = {
   foremanIdleMs: null,
   foremanMinGapMs: 30_000,
   foremanRoundTimeoutMs: 10 * 60_000,
+  autopilotAllowApprovals: 5,
+  autopilotAllowSpreadMs: 24 * 3600_000,
+  autopilotAutonomyTasks: 5,
+  autopilotReviewOffTasks: 10,
+  autopilotProbationMs: 7 * 86400_000,
+  autopilotProbationTasks: 5,
 };
 
 export interface EngineOptions {
@@ -138,6 +157,16 @@ export function sanitizeForeman(input: unknown, current: ForemanSettings, minGap
   };
 }
 
+/** The autopilot's dial and its daily limit come from the owner's typing: one of three words, and a whole number from 1 to 20. */
+export function sanitizeAutopilot(si: SelfImprovementSettings, fallback: Pick<SelfImprovementSettings, 'autopilot' | 'autopilotMaxPerDay'>): SelfImprovementSettings {
+  const n = si.autopilotMaxPerDay;
+  return {
+    ...si,
+    autopilot: si.autopilot === 'off' || si.autopilot === 'safe' || si.autopilot === 'trusted' ? si.autopilot : fallback.autopilot,
+    autopilotMaxPerDay: typeof n === 'number' && Number.isFinite(n) ? Math.min(20, Math.max(1, Math.round(n))) : fallback.autopilotMaxPerDay,
+  };
+}
+
 const DEFAULT_SETTINGS: OwnerSettings = {
   companyName: 'My Company',
   ownerName: 'Boss',
@@ -161,7 +190,7 @@ const DEFAULT_SETTINGS: OwnerSettings = {
     volume: 0.6,
     lastStationId: null,
   },
-  selfImprovement: { enabled: true, retrospectives: 'friction', autoApproveSharedLessons: false, learnedRouting: true, outcomesAutoRetire: true },
+  selfImprovement: { enabled: true, retrospectives: 'friction', autoApproveSharedLessons: false, learnedRouting: true, outcomesAutoRetire: true, autopilot: 'safe', autopilotMaxPerDay: 3 },
   foreman: { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true, idleMinutes: 10 },
   quality: 'high',
   keybindings: {
@@ -253,6 +282,7 @@ export class Core {
     }
     this._settings.keybindings = { ...DEFAULT_SETTINGS.keybindings, ...(this._settings.keybindings ?? {}) };
     this._settings.selfImprovement = { ...DEFAULT_SETTINGS.selfImprovement, ...(this._settings.selfImprovement ?? {}) };
+    this._settings.selfImprovement = sanitizeAutopilot(this._settings.selfImprovement, DEFAULT_SETTINGS.selfImprovement);
     this._settings.foreman = sanitizeForeman(this._settings.foreman, DEFAULT_SETTINGS.foreman, this.foremanGapFloor);
     this._layout = s.kvGet<OfficeLayout | null>('layout', null) ?? defaultLayout();
     this._milestones = s.kvGet<Milestone[] | null>('milestones', null) ?? initialMilestones();
@@ -358,6 +388,7 @@ export class Core {
   }
 
   updateSettings(patch: Partial<OwnerSettings>): OwnerSettings {
+    const autopilotBefore = this._settings.selfImprovement;
     this._settings = {
       ...this._settings,
       ...patch,
@@ -367,6 +398,7 @@ export class Core {
       selfImprovement: { ...this._settings.selfImprovement, ...(patch.selfImprovement ?? {}) },
       foreman: patch.foreman === undefined ? this._settings.foreman : sanitizeForeman(patch.foreman, this._settings.foreman, this.foremanGapFloor),
     };
+    this._settings.selfImprovement = sanitizeAutopilot(this._settings.selfImprovement, autopilotBefore);
     this.store.kvSet('settings', this._settings);
     this.bus.emit('entity', 'settings', 'upsert', this._settings);
     return this._settings;
