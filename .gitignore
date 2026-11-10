@@ -8,3 +8,4 @@ apps/desktop/release/
 coverage/
 release/
 release-next/
+.claude/worktrees/
