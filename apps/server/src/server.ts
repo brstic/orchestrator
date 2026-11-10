@@ -559,6 +559,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/improvements/analyze', async () => engine.improver.analyze());
     api.post('/improvements/:id/apply', async (req) => engine.improver.apply(param(req, 'id')));
     api.post('/improvements/:id/dismiss', async (req) => engine.improver.dismiss(param(req, 'id')));
+    // the playbook: undo an automatic merge or promotion, by the id of the learning.* event that recorded it (owners only)
+    api.post('/playbook/revert', async (req) => engine.improver.playbook.revert(String(body(req).eventId ?? '')));
 
     // natural-language commands: plan first, execute only what the owner confirmed
     api.post('/commands/plan', async (req) => engine.commands.planWithFallback(String(body(req).input ?? '')));

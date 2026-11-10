@@ -90,7 +90,9 @@ export type EventType =
   | 'foreman.escalated'
   | 'ops.deployment'
   | 'security.alert'
-  | 'owner.command';
+  | 'owner.command'
+  // What the office changed or chose by itself while learning: `learning.<verb>`, with data { auto, area, what, why, evidence, undo }.
+  | `learning.${string}`;
 
 export type EventSourceKind = 'hook' | 'mcp' | 'host' | 'server' | 'owner' | 'sdk';
 

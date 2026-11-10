@@ -573,14 +573,14 @@ export class TaskManager {
       if (task.kind === 'review' && task.reviewOf) {
         const target = this.core.tasks.require(task.reviewOf);
         text = reviewPrompt(task, target, project, this.core.employees.get(target.assigneeId)?.name ?? 'a teammate');
-        const playbook = this.eng.improver.playbookBlock(employee, project.id);
+        const playbook = this.eng.improver.playbookBlock(employee, project.id, true, task);
         if (playbook) text += `\n\n${playbook}`;
       } else {
         const deps = task.dependsOn.map((id) => this.core.tasks.get(id)).filter((t): t is Task => !!t);
         const fb: string[] = [];
         if (task.evidence.review?.verdict === 'changes_requested') fb.push(`Review (${task.evidence.review.by === 'owner' ? 'the boss' : (this.core.employees.get(task.evidence.review.reviewerId)?.name ?? 'reviewer')}): ${task.evidence.review.comments}`);
         if (task.evidence.merge && !task.evidence.merge.ok) fb.push(`Merge into ${task.evidence.merge.into} conflicted: ${task.evidence.merge.detail}\nIn your worktree run "git merge ${project.integrationBranch}", resolve the conflicts, commit, re-run the tests and call complete_task again.`);
-        text = taskPrompt(task, project, deps, fb.length ? fb.join('\n\n') : null, this.eng.improver.playbookBlock(employee, project.id));
+        text = taskPrompt(task, project, deps, fb.length ? fb.join('\n\n') : null, this.eng.improver.playbookBlock(employee, project.id, true, task));
       }
       this.eng.comms.deliver(employee.id, 'TASK', task.id, { kind: 'task', id: task.id }, text);
     } catch (e) {
