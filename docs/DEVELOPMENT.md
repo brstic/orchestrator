@@ -28,18 +28,22 @@ tests/linux containers (multi-machine, SSH)                 tests/real the real 
 | `pnpm test:central` | the office on a Linux container from the portable package (`pnpm package` first), two desktop apps from this machine; starts the real `claude` on the member's side without sending anything (`--no-real-cli` to avoid) |
 | `node scripts/dev-office.ts --port N [--ui <dist>]` | a populated office with scripted workers for manual work and probes |
 
-## Shipping to the owner's machine
-The owner uses `release/Orchestrator.app` as their real office.
+## Shipping
+The owner's Mac runs `release/Orchestrator.app` as a client of the office on the server ("Sparkcan"); there is no local office any more.
+
+**The desktop app (client):**
 1. All suites green.
-2. `osascript -e 'quit app id "local.orchestrator.desktop"'` and wait until it is gone. **Never package while it runs.**
-3. `node scripts/package.mjs --no-dmg` → `node scripts/smoke-package.mjs` (15/15).
-4. `open --env ORCH_SKIP_START_SCREEN=1 release/Orchestrator.app`
-   If the app is in use and will not quit, do not force it: build next to it with `node scripts/package.mjs --out release-next` and `node scripts/smoke-package.mjs --out release-next`, and swap when it is closed.
-5. Check `http://127.0.0.1:4600/api/state` with `~/.orchestrator/server/owner-token`: hosts online, sessions re-adopted, `/api/ssh-links` connected.
-6. Update `docs/STATUS.md` and `docs/CHANGELOG.md`.
+2. The app must not be running (`pgrep -f release/Orchestrator.app/Contents/MacOS`). Ask it to quit (`osascript -e 'quit app id "local.orchestrator.desktop"'`); it asks the person to confirm, so it may stay open. Never force it: build next to it with `node scripts/package.mjs --out release-next` and swap when it is closed.
+3. `node scripts/package.mjs` → `node scripts/smoke-package.mjs` (15/15).
+4. `open release/Orchestrator.app` — it walks into the server office by itself.
+5. Check on the server that the owner and their computer are in (`/api/people`, hosts).
+
+**The office on the server:** `node scripts/package.mjs --no-app`, copy `release/orchestrator-<version>.tar.gz` to the server, unpack over `~/orchestrator-office/app`, `systemctl --user restart orchestrator-office` (employees' tmux sessions survive; invitations stay valid). Details and addresses: `STATUS.md`.
+
+Then update `docs/STATUS.md` and `docs/CHANGELOG.md`.
 
 ## Rules that protect the live office
-- Do not touch `~/.orchestrator`, the default tmux server or `orch-*` sessions. Tests make their own tmux sockets and temp dirs.
+- Do not touch `~/.orchestrator` (the Mac's personal host lives in `~/.orchestrator/offices/`), `~/.orchestrator-office` on the server, the default tmux servers or `orch-*` sessions on either machine. Tests make their own tmux sockets and temp dirs.
 - No `pkill` / `killall`. Stop only processes you started, by pid.
 - The real `claude` CLI spends the owner's subscription. Use the scripted worker; zero-token probes of the real CLI (start it, send no prompt) are fine.
 - A UI test run and a packaging run both use `apps/desktop/dist`; do not run them at the same time, and do not start a UI run while the app is starting.

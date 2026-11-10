@@ -13,11 +13,13 @@ _Last updated: 2026-11-10. Update this file with every piece of work (see `CLAUD
 - Update: build a package here (`node scripts/package.mjs --no-app`), copy `release/orchestrator-<version>.tar.gz`, unpack over `~/orchestrator-office/app`, `systemctl --user restart orchestrator-office`.
 - Members: Branko (owner; invitation at `~/Desktop/Orchestrator-moja-pozivnica-OWNER.txt`) and Fenix (colleague; invitation, installer and instructions in `~/Desktop/Orchestrator-za-kolegu/`). Neither has been used by a person yet.
 
-**The owner's Mac app** (`release/Orchestrator.app`) runs the latest build (replaced 2026-11-10 after the owner closed it; smoke 15/15, sessions re-adopted, SSH link connected). `release/` also holds the matching `.dmg` and portable tarball.
+**The owner works in the server office only (since 2026-11-10).** At their request the local office on the Mac was shut down and cleared:
+- Its five running Claude sessions were asked to exit (`/exit`; the conversations remain resumable with `claude --continue` in their folders) and its tmux sessions removed.
+- Its state was moved, not deleted: `~/.orchestrator-local-office-backup-2026-11-10/` on the Mac (server database + agent), and `~/.orchestrator-mac-link-backup-2026-11-10/` on Sparkcan (the SSH-link agent of that office, stopped). Nothing was migrated to the server office — the owner chose to start from zero. Delete the backups when they are no longer wanted.
+- The desktop app (`release/Orchestrator.app`, latest build) now opens the server office by itself at start ("open at start" on the saved office; Office → Switch office… shows the start screen). The owner comes in as *Branko · owner*, and the Mac joins as "Branko's computer" with its room; local Claude sessions are added from Menu → My room.
 
 Next steps:
 1. The collaborator (GitHub `fenixf4`, already has access to the repository) builds the client from it (INSTALL.md, "Without an installer") and joins with the invitation in `~/Desktop/Orchestrator-za-kolegu/PROCITAJ.txt`. The owner connects with their own invitation.
-3. Decide what moves from the Mac's local office to the server office (the two are separate offices; nothing was migrated).
 4. From real use: fix what breaks; extend the UI suite with role-by-role clicks.
 
 ## What exists (verified by the automated suites)
@@ -32,7 +34,6 @@ Next steps:
 
 ## Not verified / known problems
 - On the real server both trial members were app instances on this one Mac; the real work was one trivial task per side. Not yet: a second human on another computer, sustained work (tasks, reviews, merges) through the server office, a server restart while real sessions are working.
-- The server office and the owner's local Mac office are two separate offices; the Mac office still reaches the same server through its SSH link, so two agents run on Sparkcan side by side (they do not share sessions).
 - Usage per account did not arrive from a real CLI session that had made no request yet (Claude Code gives the status line no limits until it knows them); it does once the session has worked.
 - Role-dependent controls (People panel with the owner role, hidden/disabled buttons for visitors and for other members' employees) are covered by API tests and type checks, not by UI tests that click as each role. Hi-fi and TV panels are not role-aware (a visitor can try to add a station and is refused by the office).
 - Member rooms: default layout and High quality only; more than 10 members online get no room; places are per position (when someone leaves, later members move up one).
@@ -44,7 +45,7 @@ Next steps:
 - GitHub: `brstic/orchestrator` (private); collaborators: `fenixf4`, `nikolajanko`. This machine pushes over HTTPS through `gh` (its SSH key is a deploy key for another repository).
 
 ## How the owner runs it today
-The packaged app `release/Orchestrator.app` (Desktop shortcut is a symlink to it) as a local office, state in `~/.orchestrator`, one SSH-linked server ("Sparkcan"). Shipping procedure: `DEVELOPMENT.md`.
+The packaged app `release/Orchestrator.app` (Desktop shortcut is a symlink to it) as a **client of the office on Sparkcan**; the Mac's own state is only `~/.orchestrator/offices/<id>/agent` (its personal host) and the app's data folder. Shipping procedure: `DEVELOPMENT.md`.
 
 ## Suites (last full run, working tree after the UPDATE plan)
-unit 62/62 · e2e 117/117 · UI 146/146 · desktop join (`tests/ui/guest-app.mjs`) 27/27 · Linux server trial (`pnpm test:central`) 23/23 · TV (`tests/ui/tv-app.mjs`) 12/12.
+unit 62/62 · e2e 117/117 · UI 146/146 · desktop join (`tests/ui/guest-app.mjs`) 29/29 · Linux server trial (`pnpm test:central`) 23/23 · TV (`tests/ui/tv-app.mjs`) 12/12.

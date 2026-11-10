@@ -349,7 +349,7 @@ ipcMain.handle('orch:connect-context', () => ({
   canStartLocal,
   // A saved connection made with an owner token (an office of your own on another machine).
   ownRemote: (loadConnection() || {}).url || null,
-  joined: readJoined().map((j) => ({ id: j.id, office: j.office, guest: j.guest, role: j.role, lastUsedAt: j.lastUsedAt, usable: tokenOfJoined(j) !== null })),
+  joined: readJoined().map((j) => ({ id: j.id, office: j.office, guest: j.guest, role: j.role, lastUsedAt: j.lastUsedAt, usable: tokenOfJoined(j) !== null, atStart: j.atStart === true })),
 }));
 ipcMain.handle('orch:join', async (_event, input) => {
   let invite;
@@ -367,6 +367,12 @@ ipcMain.handle('orch:join-saved', async (_event, input) => {
   const res = await joinOffice({ office: j.office, guest: j.guest, role: j.role, token, addresses: j.addresses, fingerprint: j.fingerprint }, false);
   if (res.ok) writeJoined(readJoined().map((x) => (x.id === j.id ? { ...x, lastUsedAt: new Date().toISOString() } : x)));
   return res;
+});
+// One saved office may be the one the app walks into by itself when it starts (the usual case: the office on a server).
+ipcMain.handle('orch:joined-at-start', (_event, input) => {
+  const id = String((input && input.id) || '');
+  writeJoined(readJoined().map((x) => ({ ...x, atStart: x.id === id && input.on === true })));
+  return true;
 });
 ipcMain.handle('orch:forget-joined', (_event, input) => {
   writeJoined(readJoined().filter((x) => x.id !== String(input && input.id)));
@@ -629,6 +635,18 @@ const closeNeedsConfirming = () => !(process.env.ORCH_SERVER_URL || process.env.
 
 async function start() {
   if (scripted()) return startOwn();
+  // The office this person chose to open at start (Office → Switch office… still leads to the start screen).
+  const usual = readJoined().find((j) => j.atStart === true);
+  const token = usual ? tokenOfJoined(usual) : null;
+  if (usual && token) {
+    openConnect(`Connecting to ${usual.office}…`);
+    const res = await joinOffice({ office: usual.office, guest: usual.guest, role: usual.role, token, addresses: usual.addresses, fingerprint: usual.fingerprint }, false);
+    if (res.ok) {
+      writeJoined(readJoined().map((x) => (x.id === usual.id ? { ...x, lastUsedAt: new Date().toISOString() } : x)));
+      return;
+    }
+    return openConnect(`${usual.office} could not be opened.\n${res.error}`);
+  }
   return openConnect('');
 }
 

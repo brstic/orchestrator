@@ -47,7 +47,7 @@ If the machine already runs an Orchestrator agent for another office (for exampl
 
 A restart of the service does not stop anyone's work: employees' tmux sessions keep running and are picked up again. The door keeps its certificate, so invitations stay valid.
 
-**On each person's computer:** install the desktop app, choose **Connect to an office**, paste the invitation. The office is remembered on the start screen. A colleague or owner whose computer has tmux, Node.js and Claude Code also gets **Menu → My room**: folders on their own computer become employees that run there, under their own Claude account, visible in their room while they are connected (see [ACCESS.md](ACCESS.md)).
+**On each person's computer:** install the desktop app, choose **Connect to an office**, paste the invitation. The office is remembered on the start screen; tick **open at start** there and the app walks into it by itself from then on (Office → Switch office… brings the start screen back). A colleague or owner whose computer has tmux, Node.js and Claude Code also gets **Menu → My room**: folders on their own computer become employees that run there, under their own Claude account, visible in their room while they are connected (see [ACCESS.md](ACCESS.md)).
 
 **Without an installer (from the repository):** on macOS or Linux with Node.js 22.18+ and pnpm:
 

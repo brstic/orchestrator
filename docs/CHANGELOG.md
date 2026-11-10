@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-10
+- A saved office can be marked "open at start": the app walks into it without the start screen. The owner's local office was shut down and set aside (see STATUS); they now work in the server office.
 - Trial on the owner's server with two members at once and real Claude Code doing one small task on the server and one on a member's computer; usage of both accounts reported. UPDATE plan closed.
 - The office is installed and running on the owner's server (see STATUS). Invitations no longer list container bridge addresses or duplicates; in server mode the start script no longer prints the owner token to the log; the generated systemd unit carries the office's state folders.
 - `pnpm test:central`: the office installed from the portable package on a Linux container, two desktop apps connecting from this computer, the real Claude Code CLI on the member's side (zero tokens).

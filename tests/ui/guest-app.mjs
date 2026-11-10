@@ -305,6 +305,24 @@ try {
   await p3.until('this computer’s preferences', `window.__orchPrefs.getState().ready`);
   check('preferences are read back when the app is opened again; what the office has by then is ignored', (await p3.js(`window.__orchPrefs.getState().prefs.quality`)) === 'medium' && JSON.parse(fs.readFileSync(path.join(tmp, 'guest2', 'prefs.json'), 'utf8')).quality === 'medium', `this computer: ${await p3.js(`window.__orchPrefs.getState().prefs.quality`)}; the office: ${(await api('GET', '/state')).settings.quality}`);
   p3.close();
+  third.child.kill('SIGTERM');
+  await sleep(1500);
+
+  // ── "open at start": the office on a server is where the app goes by itself ──
+  const fourth = await launch('guest2', { ORCH_PORT: String(await freePort()) });
+  const fourthStart = await fourth.page(/connect\.html/);
+  await fourthStart.until('the remembered office', `document.querySelector('#joined .joined .at-start input')`, 15000);
+  await fourthStart.js(`document.querySelector('#joined .joined .at-start input').click()`);
+  await fourthStart.until('ticked', `document.querySelector('#joined .joined .at-start input').checked`, 5000);
+  check('a saved office can be marked to open at start', JSON.parse(fs.readFileSync(path.join(tmp, 'guest2', 'joined.json'), 'utf8'))[0].atStart === true);
+  fourthStart.close();
+  fourth.child.kill('SIGTERM');
+  await sleep(1500);
+  const fifth = await launch('guest2', { ORCH_PORT: String(await freePort()) });
+  const p5 = await fifth.page(new RegExp(`^https://[\\d.]+:${doorPort}/`), 40000).catch((e) => null);
+  if (p5) await p5.until('the office', `window.__office && window.__office.getState().me && window.__office.getState().me.role === 'colleague'`, 30000);
+  check('started again, the app walks straight into that office — no start screen, nothing to click', !!p5 && !(await fifth.targets()).some((t) => t.type === 'page' && /connect\.html/.test(t.url)));
+  p5?.close();
   exit = checks.every(Boolean) ? 0 : 1;
 } catch (e) {
   console.log(`✖ ${e.message}`);

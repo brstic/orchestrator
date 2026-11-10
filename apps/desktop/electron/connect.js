@@ -57,7 +57,19 @@ function showJoined(list) {
       await window.orchConnect.forgetJoined(j.id);
       showJoined((await window.orchConnect.context()).joined);
     });
-    row.append(text, go, forget);
+    // The office to walk into when the app starts, without this screen.
+    const auto = document.createElement('label');
+    auto.className = 'at-start';
+    auto.title = 'Open this office by itself when the app starts';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = j.atStart === true;
+    box.addEventListener('change', async () => {
+      await window.orchConnect.joinedAtStart(j.id, box.checked);
+      showJoined((await window.orchConnect.context()).joined);
+    });
+    auto.append(box, document.createTextNode(' open at start'));
+    row.append(text, auto, go, forget);
     joined.append(row);
   }
 }

@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld(
     openOwn: () => ipcRenderer.invoke('orch:open-own'),
     join: (invite) => ipcRenderer.invoke('orch:join', { invite: String(invite ?? '') }),
     joinSaved: (id) => ipcRenderer.invoke('orch:join-saved', { id: String(id ?? '') }),
+    joinedAtStart: (id, on) => ipcRenderer.invoke('orch:joined-at-start', { id: String(id ?? ''), on: on === true }),
     forgetJoined: (id) => ipcRenderer.invoke('orch:forget-joined', { id: String(id ?? '') }),
   }),
 );
