@@ -8,6 +8,7 @@ import { Documents as DocumentsPart, type DocsView } from './Documents.tsx';
 import { HiFi as HiFiPart } from './HiFi.tsx';
 import { Humans as HumansPart, type HumanView } from './Humans.tsx';
 import { SelfBubble } from './SelfBubble.tsx';
+import { TalkMarks, type TalkMark } from './TalkMarks.tsx';
 import { PodLabels as PodLabelsPart } from './PodLabels.tsx';
 import { SeatMarkers } from './Seats.tsx';
 import { TV as TVPart, type TvFrames, type TvView } from './TV.tsx';
@@ -45,6 +46,9 @@ export interface OfficeSceneProps {
   onOpenDocs: (employeeId: string) => void;
   /** The other people who are in the office right now (not the person at this computer). */
   humans: HumanView[];
+  /** The employees this person is waiting to hear from, or whose answer is waiting: marks over their heads. */
+  talkMarks?: TalkMark[];
+  onOpenTalk?: (employeeId: string) => void;
   /** What the person at this computer has just said out loud: a bubble over their own character for a few seconds. */
   selfSaying?: string | null;
   /** Ease the camera in when the owner stands at a desk (an owner setting, off by default). */
@@ -183,6 +187,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       </Near>
       <Rooms world={world} board={props.board} wall={props.wall} ceo={props.ceo} hosts={props.hosts} subscribe={props.subscribeScreen} unlocked={unlocked} whiteboard={props.whiteboard} onOpenMeeting={props.onOpenMeeting} player={player} overview={overview} />
       <SceneProbe zones={props.zones} />
+      {props.talkMarks && props.talkMarks.length > 0 && props.cameraMode !== 'workstation' && <TalkMarks marks={props.talkMarks} positions={positions} onOpen={props.onOpenTalk ?? (() => undefined)} />}
       <People people={props.people} whips={props.whips} world={world} walks={props.walks} player={player} selectedId={props.selectedId} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />
       <Rig whipAt={props.whipAt} approachZoom={props.approachZoom} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} />
     </Canvas>

@@ -10,6 +10,7 @@ import type {
   FullState,
   Host,
   Improvement,
+  KnockView,
   Lesson,
   Meeting,
   Message,
@@ -29,7 +30,7 @@ import type {
 } from '@orchestrator/contracts';
 import { b64decode } from '@orchestrator/contracts';
 import { api, connection, type ConnState } from './api.ts';
-import { playOuch, playWhip } from './sfx.ts';
+import { playKnock, playOuch, playReply, playWhip } from './sfx.ts';
 
 export type PanelId =
   | 'tasks'
@@ -108,6 +109,19 @@ export interface OfficeState {
   /** `at` is when the line arrived at this computer (0: it was said before this window came in). */
   /** What people said (and did: `emote` lines read "<name> cracks the whip at …"), oldest first. */
   chat: Array<{ id: string; fromId: string; name: string; role: Me['role']; text: string; ts: string; emote?: boolean; hue?: number; at: number }>;
+  /**
+   * My own conversations with employees (this computer's, kept across a reload): whom I have told or asked
+   * something and not heard back from yet, and whose answer is waiting for me to read. Only what I said
+   * myself — not what employees say to each other, nor what other people ask.
+   */
+  asks: Record<string, { messageId: string | null; at: number }>;
+  replies: Record<string, { text: string; ts: string }>;
+  /** I said something to this employee (the message as the office recorded it). */
+  asked: (employeeId: string, messageId: string | null) => void;
+  /** I have seen what they answered (or no longer wait for it). */
+  readReply: (employeeId: string) => void;
+  /** Who is at the office's door asking to be let in (told to owners and colleagues). */
+  knocks: KnockView[];
   /** When each other person in the office last cracked the whip (by their window id): their character swings. */
   peopleWhips: Record<string, number>;
   say: (text: string) => void;
@@ -197,6 +211,50 @@ function index<T extends { id: string }>(list: T[]): ById<T> {
 let toastId = 0;
 let focusN = 0;
 
+const WAITING_KEY = 'orch.talk-waiting';
+/** What I am waiting to hear, and what I have not read yet, as this computer remembers it. */
+function loadWaiting(): Pick<OfficeState, 'asks' | 'replies'> {
+  try {
+    const j = JSON.parse(localStorage.getItem(WAITING_KEY) ?? '{}');
+    // Nobody waits for an answer for days: what is older is forgotten.
+    const fresh = Date.now() - 24 * 3600_000;
+    const asks = Object.fromEntries(Object.entries((j.asks ?? {}) as OfficeState['asks']).filter(([, a]) => a && a.at > fresh));
+    const replies = Object.fromEntries(Object.entries((j.replies ?? {}) as OfficeState['replies']).filter(([, r]) => r && Date.parse(r.ts) > fresh));
+    return { asks, replies };
+  } catch {
+    return { asks: {}, replies: {} };
+  }
+}
+function saveWaiting(): void {
+  try {
+    const s = useOffice.getState();
+    localStorage.setItem(WAITING_KEY, JSON.stringify({ asks: s.asks, replies: s.replies }));
+  } catch {
+    /* no storage: remembered until the window is reloaded */
+  }
+}
+
+/**
+ * An employee I spoke to has finished a turn: that is their answer. It counts only once my message has
+ * actually reached their session (a turn that ends while my message is still queued is the previous one's).
+ */
+function noteReply(ev: OrchestratorEvent): void {
+  if (ev.type !== 'agent.turn_finished' || !ev.employeeId) return;
+  const s = useOffice.getState();
+  const ask = s.asks[ev.employeeId];
+  if (!ask) return;
+  const delivery = ask.messageId ? s.messages[ask.messageId]?.delivery.status : 'sent';
+  if (delivery === 'queued' || delivery === 'failed') return;
+  const text = String((ev.data as { lastMessage?: unknown })?.lastMessage ?? '').trim();
+  const asks = { ...s.asks };
+  delete asks[ev.employeeId];
+  // Looking at the conversation already: nothing to announce.
+  const watching = (s.panel === 'talk' && s.panelArg === ev.employeeId) || (s.cameraMode === 'workstation' && s.workstationId === ev.employeeId);
+  useOffice.setState(watching ? { asks } : { asks, replies: { ...s.replies, [ev.employeeId]: { text, ts: ev.ts } } });
+  saveWaiting();
+  if (!watching) playReply();
+}
+
 export const useOffice = create<OfficeState>((set, get) => ({
   conn: 'connecting',
   ready: false,
@@ -230,6 +288,24 @@ export const useOffice = create<OfficeState>((set, get) => ({
   myHost: { state: 'none', reason: null, hostId: null },
   chat: [],
   peopleWhips: {},
+  knocks: [],
+  ...loadWaiting(),
+  asked: (employeeId, messageId) => {
+    set((s) => {
+      const replies = { ...s.replies };
+      delete replies[employeeId];
+      return { asks: { ...s.asks, [employeeId]: { messageId, at: Date.now() } }, replies };
+    });
+    saveWaiting();
+  },
+  readReply: (employeeId) => {
+    const s = get();
+    if (!s.replies[employeeId]) return;
+    const replies = { ...s.replies };
+    delete replies[employeeId];
+    set({ replies });
+    saveWaiting();
+  },
   say: (text) => {
     const t = text.trim();
     if (t) connection.send({ t: 'say', text: t.slice(0, 300) });
@@ -266,7 +342,11 @@ export const useOffice = create<OfficeState>((set, get) => ({
   filter: { projectId: null, hostId: null, employeeId: null },
   focusRequest: null,
 
-  openPanel: (panel, arg = null) => set({ panel, panelArg: arg }),
+  openPanel: (panel, arg = null) => {
+    set({ panel, panelArg: arg });
+    // Opening the conversation is reading the answer.
+    if (panel === 'talk' && arg) get().readReply(arg);
+  },
   setCameraMode: (mode) => set((s) => (s.cameraMode === mode ? s : { cameraMode: mode, workstationId: mode === 'workstation' ? s.workstationId : null })),
   selectEmployee: (id) => set({ selectedEmployeeId: id }),
   enterWorkstation: (employeeId) =>
@@ -351,7 +431,9 @@ function handle(msg: ServerToClient): void {
   switch (msg.t) {
     case 'ready':
       applyFull(msg.state, msg.clientId);
-      useOffice.setState({ me: msg.me ?? { kind: 'owner', role: 'owner', name: msg.state.settings.ownerName }, clientId: msg.clientId, people: [] });
+      // Answers that came while this window was away (a reload, a lost connection).
+      for (const ev of msg.state.events ?? []) if (ev.employeeId && Date.parse(ev.ts) > (useOffice.getState().asks[ev.employeeId]?.at ?? Infinity)) noteReply(ev);
+      useOffice.setState({ me: msg.me ?? { kind: 'owner', role: 'owner', name: msg.state.settings.ownerName }, clientId: msg.clientId, people: [], knocks: [] });
       break;
     case 'people': {
       // Only the others are drawn from this list; if just my own entry moved, nothing on screen changes.
@@ -359,6 +441,13 @@ function handle(msg: ServerToClient): void {
       const others = (list: typeof msg.people) => JSON.stringify(list.filter((p) => p.id !== st.clientId));
       if (st.people.length === msg.people.length && others(st.people) === others(msg.people)) break;
       useOffice.setState({ people: msg.people });
+      break;
+    }
+    case 'knocks': {
+      // A knock on the door is heard, once per new person.
+      const had = new Set(useOffice.getState().knocks.map((k) => k.id));
+      if (msg.knocks.some((k) => !had.has(k.id))) playKnock();
+      useOffice.setState({ knocks: msg.knocks });
       break;
     }
     case 'chat.history':
@@ -410,6 +499,7 @@ function handle(msg: ServerToClient): void {
     }
     case 'event':
       useOffice.setState((s) => ({ events: s.events.length > 700 ? [...s.events.slice(-500), msg.event] : [...s.events, msg.event] }));
+      noteReply(msg.event);
       break;
     case 'term.screen': {
       screens.set(msg.sessionId, msg.screen);

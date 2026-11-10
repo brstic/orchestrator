@@ -45,9 +45,9 @@ const tmuxSocket = `orch-guestapp-${process.pid}`;
 let sandbox = {};
 let offices = null;
 
-async function launch(name, env = {}) {
+async function launch(name, env = {}, script = path.join(root, 'apps/desktop/electron/main.cjs')) {
   const debugPort = await freePort();
-  const child = spawn(electron, [path.join(root, 'apps/desktop/electron/main.cjs'), `--remote-debugging-port=${debugPort}`], {
+  const child = spawn(electron, [script, `--remote-debugging-port=${debugPort}`], {
     stdio: 'ignore',
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '', ORCH_USER_DATA: path.join(tmp, name), ORCH_NO_KEYCHAIN: '1', ORCH_HIDDEN: '1', ORCH_NO_CLOSE_CONFIRM: '1', ...sandbox, ORCH_SERVER_HOME: path.join(tmp, `${name}-server`), ORCH_AGENT_HOME: path.join(tmp, `${name}-agent`), ...env },
   });
@@ -72,7 +72,11 @@ async function launch(name, env = {}) {
         await sleep(250);
       }
     };
-    const shot = async (file) => fs.writeFileSync(file, Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'));
+    // A window that was never shown may never answer this: give up rather than wait for ever.
+    const shot = async (file) => {
+      const res = await Promise.race([send('Page.captureScreenshot', { format: 'png' }), sleep(8000)]);
+      if (res?.result?.data) fs.writeFileSync(file, Buffer.from(res.result.data, 'base64'));
+    };
     const errors = [];
     void send('Runtime.enable');
     const prev = ws.onmessage;
@@ -146,6 +150,14 @@ try {
   check('something that is not an invitation is refused with an explanation', /does not look like an invitation/.test(await tryInvite('hello')));
   const wrongCert = await tryInvite(tampered);
   check('an invitation that names a different certificate is refused before anything is sent', /is not the one this invitation was made for/.test(wrongCert), wrongCert.slice(0, 90));
+  // With only an address: the app knocks — but never at a door whose certificate this computer has no reason to trust.
+  await start.js(`(() => { const i = document.getElementById('invite'); i.value = '127.0.0.1:${doorPort}'; i.dispatchEvent(new Event('input')); })()`);
+  const asksName = await start.js(`!document.getElementById('knock-who').hidden && document.getElementById('join').textContent`);
+  await start.js(`(() => { document.getElementById('knock-name').value = 'Mallory'; document.getElementById('join').click(); })()`);
+  await start.until('an answer', `document.getElementById('join-error').style.display === 'block'`, 30000);
+  const untrusted = await start.js(`document.getElementById('join-error').textContent`);
+  check('an address instead of an invitation: the app asks for a name and knocks — but not at a door with a certificate it cannot trust', asksName === 'Ask to come in' && /no certificate this computer trusts/.test(untrusted) && (await api('GET', '/knocks')).length === 0, untrusted.slice(0, 80));
+  await start.js(`(() => { document.getElementById('join-error').style.display = 'none'; const i = document.getElementById('invite'); i.value = ''; i.dispatchEvent(new Event('input')); })()`);
   await start.js(`(() => { document.getElementById('invite').value = ${JSON.stringify(invite)}; document.getElementById('join').click(); })()`);
   const guestPage = await guest.page(new RegExp(`^https://[\\d.]+:${doorPort}/`));
   await guestPage.until('the office as a guest', `window.__office && window.__office.getState().me && window.__office.getState().settings`, 40000);
@@ -228,6 +240,57 @@ try {
     await ownerPage.shot(path.join(process.env.ORCH_SHOT_DIR, 'chat-owner.png'));
     await guestPage.shot(path.join(process.env.ORCH_SHOT_DIR, 'chat-guest.png'));
   }
+  // ── knocking: someone with only the office's address ──
+  // From the desktop app (here the office's own certificate is named to the app, as a real office's name would be trusted).
+  const knocker = await launch('knocker', { ORCH_PORT: String(await freePort()), ORCH_KNOCK_PIN: decoded.f, ORCH_NO_PERSONAL_HOST: '1' });
+  const kStart = await knocker.page(/connect\.html/);
+  await kStart.until('the start screen', `document.getElementById('join')`);
+  await kStart.js(`(() => { const i = document.getElementById('invite'); i.value = 'https://127.0.0.1:${doorPort}/'; i.dispatchEvent(new Event('input')); document.getElementById('knock-name').value = 'Petar'; document.getElementById('join').click(); })()`);
+  await kStart.until('waiting at the door', `!document.getElementById('knock-wait').hidden && /^\\d{4}$/.test(document.getElementById('knock-code').textContent)`, 20000);
+  const kCode = await kStart.js(`document.getElementById('knock-code').textContent`);
+  await ownerPage.until('the door bell', `[...document.querySelectorAll('.doorbell-card')].some((c) => /Petar is at the door/.test(c.textContent))`, 10000);
+  const bell = await ownerPage.js(`(() => { const c = document.querySelector('.doorbell-card'); return c.querySelector('.doorbell-code').textContent + ' | ' + [...c.querySelectorAll('button')].map((b) => b.textContent.trim()).join(',') + ' | ' + /with the Orchestrator app/.test(c.textContent); })()`);
+  check('a knock from the app rings inside: the owner sees who, the same code, and chooses as what', bell === `${kCode} | Visitor,Colleague,Owner,Not now | true`, bell);
+  check('a visitor inside is not asked', (await guestPage.js(`document.querySelectorAll('.doorbell-card').length + window.__office.getState().knocks.length`)) === 0);
+  await ownerPage.js(`[...document.querySelectorAll('.doorbell-card button')].find((b) => b.textContent.trim() === 'Colleague').click()`);
+  const petar = await knocker.page(new RegExp(`^https://[\\d.]+:${doorPort}/`));
+  await petar.until('the office', `window.__office && window.__office.getState().ready && window.__office.getState().me`, 40000);
+  const petarMe = await petar.js(`JSON.stringify([window.__office.getState().me.name, window.__office.getState().me.role])`);
+  const petarSaved = JSON.parse(fs.readFileSync(path.join(tmp, 'knocker', 'joined.json'), 'utf8'));
+  check('let in as a colleague, the app walks into the office and keeps the invitation it was given', petarMe === '["Petar","colleague"]' && petarSaved.length === 1 && petarSaved[0].guest === 'Petar' && petarSaved[0].addresses[0] === `https://127.0.0.1:${doorPort}`, `${petarMe} saved: ${petarSaved.map((j) => `${j.guest}/${j.role}`)}`);
+  await ownerPage.until('the bell quiet', `document.querySelectorAll('.doorbell-card').length === 0`, 8000);
+  // From a browser: the office's address shows a place to knock; whoever is let in can only look.
+  const plain = path.join(tmp, 'plain-browser.cjs');
+  fs.writeFileSync(plain, `const { app, BrowserWindow } = require('electron');\napp.commandLine.appendSwitch('ignore-certificate-errors');\napp.setPath('userData', ${JSON.stringify(path.join(tmp, 'plain-browser'))});\napp.whenReady().then(() => new BrowserWindow({ show: false, width: 1280, height: 820, webPreferences: { backgroundThrottling: false } }).loadURL(${JSON.stringify(`https://127.0.0.1:${doorPort}/`)}));\napp.on('window-all-closed', () => app.quit());\n`);
+  const browser = await launch('browser', {}, plain);
+  const tab = await browser.page(new RegExp(`^https://127\\.0\\.0\\.1:${doorPort}/`));
+  await tab.until('the place to knock', `document.querySelector('.knock-card input')`, 30000);
+  const doorText = await tab.js(`document.querySelector('.knock-card').textContent`);
+  check('in a browser the office’s address is a door to knock on: its name, and what you will be able to do', doorText.includes(info.company ?? 'Northwind Labs') && /look around/.test(doorText) && !(await tab.js(`!!window.__office?.getState().ready`)), doorText.slice(0, 70));
+  await tab.js(`(() => { const i = document.querySelector('.knock-card input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Zora'); i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await tab.js(`[...document.querySelectorAll('.knock-card button')].find((b) => /Ask to come in/.test(b.textContent)).click()`);
+  await tab.until('the code', `document.querySelector('.knock-code')`, 10000);
+  const tabCode = await tab.js(`document.querySelector('.knock-code').textContent.trim()`);
+  await ownerPage.until('the door bell', `[...document.querySelectorAll('.doorbell-card')].some((c) => /Zora is at the door/.test(c.textContent))`, 10000);
+  const bell2 = await ownerPage.js(`(() => { const c = document.querySelector('.doorbell-card'); return c.querySelector('.doorbell-code').textContent + ' | ' + [...c.querySelectorAll('button')].map((b) => b.textContent.trim()).join(',') + ' | ' + /from a browser/.test(c.textContent); })()`);
+  check('a knock from a browser: the same code inside, and the only way in is to look around', bell2 === `${tabCode} | Let in to look around,Not now | true`, bell2);
+  if (process.env.ORCH_SHOT_DIR) {
+    await tab.shot(path.join(process.env.ORCH_SHOT_DIR, 'knock-browser.png'));
+    await ownerPage.shot(path.join(process.env.ORCH_SHOT_DIR, 'knock-bell.png'));
+    await kStart.shot(path.join(process.env.ORCH_SHOT_DIR, 'knock-app.png')).catch(() => undefined);
+  }
+  await ownerPage.js(`[...document.querySelectorAll('.doorbell-card button')].find((b) => /Let in to look around/.test(b.textContent)).click()`);
+  await tab.until('the office', `window.__office && window.__office.getState().ready && window.__office.getState().me && document.querySelector('canvas')`, 40000);
+  const zora = await tab.js(`JSON.stringify([window.__office.getState().me.name, window.__office.getState().me.role, Object.keys(window.__office.getState().employees).length > 0])`);
+  const zoraTries = await tab.js(`fetch('/api/employees', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + localStorage.getItem('orch.token') }, body: JSON.stringify({ name: 'Intruder' }) }).then((r) => r.status)`);
+  check('let in, the browser shows the office — read-only: the office refuses any change', zora === '["Zora","visitor",true]' && zoraTries === 403, `${zora} · POST → ${zoraTries}`);
+  if (process.env.ORCH_SHOT_DIR) await tab.shot(path.join(process.env.ORCH_SHOT_DIR, 'knock-browser-in.png'));
+  tab.close();
+  petar.close();
+  browser.child.kill();
+  knocker.child.kill();
+  // Those two were only here for this: their access is taken away again.
+  for (const g of (await api('GET', '/sharing')).guests) if (['Petar', 'Zora'].includes(g.name) && !g.revokedAt) await api('DELETE', `/guests/${g.id}`);
   // The owner takes the access away: the guest's window loses the office at once.
   const guests = (await api('GET', '/sharing')).guests;
   await api('DELETE', `/guests/${guests.find((g) => g.name === 'Mila').id}`);

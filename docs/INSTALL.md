@@ -207,6 +207,9 @@ Agent settings live in `~/.orchestrator/agent/config.json`:
 | `sdkPath` | where the Claude Agent SDK is, if not installed with `sdk install` (the package directory or its `sdk.mjs`) |
 | `hookEvents` | override the hook events to install (default: detected from the CLI version) |
 
+### Coming in without an invitation
+If the office has an address with a trusted certificate (a domain behind a reverse proxy, as in `OPERATIONS.md`), nobody needs to be sent anything: they type the address into the desktop app's start screen with their name and wait; whoever is in the office lets them in and chooses as what. In a browser the same address shows a page to ask for a read-only visit.
+
 ### Inviting people into an office that runs on your own computer
 
 The same members and roles work for a local office: **Menu → People → Open the office to its members**, invite with a role (*visitor*, *colleague*, *owner*), send the invitation. People on the same network can come in as they are; for someone elsewhere give the office an address they can reach (a VPN name such as a Tailscale address, or a forwarded port) under *Another address people can reach you at*. The office is only there while your app is open — for something that stays up, use a server (section 0).

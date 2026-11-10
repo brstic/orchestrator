@@ -279,6 +279,17 @@ export interface PersonPresence {
   hue: number;
 }
 
+/** Someone at the office's door, asking to be let in (see the server's `knocks.ts`). */
+export interface KnockView {
+  id: string;
+  name: string;
+  /** 'browser': the office's page in a browser — they can only be let in to look. 'app': the desktop app. */
+  via: 'browser' | 'app';
+  /** Four digits the person at the door sees too. */
+  code: string;
+  at: string;
+}
+
 /** Who said or did something in the office chat: their window, name, role and the colour their character wears. */
 export interface ChatFrom {
   id: string;
@@ -290,6 +301,8 @@ export interface ChatFrom {
 export type ServerToClient =
   | { t: 'ready'; clientId: string; state: FullState; me: Me }
   | { t: 'people'; people: PersonPresence[] }
+  /** Who is at the door right now (sent to those who may let someone in: owners and colleagues). */
+  | { t: 'knocks'; knocks: KnockView[] }
   | { t: 'said'; from: ChatFrom; text: string; ts: string }
   /** What was said in the office lately, for someone who has just walked in. */
   | { t: 'chat.history'; lines: Array<{ from: ChatFrom; text: string; ts: string; emote?: boolean }> }

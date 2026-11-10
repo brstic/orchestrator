@@ -16,6 +16,8 @@ interface Guest {
   createdAt: string;
   lastSeenAt: string | null;
   revokedAt: string | null;
+  via?: 'knock-browser' | 'knock-app';
+  expiresAt?: string | null;
 }
 
 interface Sharing {
@@ -223,7 +225,9 @@ function GuestsAdmin() {
                 </option>
               ))}
             </select>
-            <span className="small faint grow truncate">{g.lastSeenAt ? `seen ${timeAgo(g.lastSeenAt)}` : 'has not come in yet'}</span>
+            <span className="small faint grow truncate">{g.lastSeenAt ? `seen ${timeAgo(g.lastSeenAt)}` : 'has not come in yet'}
+              {g.via ? ` · let in at the door (${g.via === 'knock-browser' ? 'browser' : 'app'})` : ''}
+              {g.expiresAt ? ` · until ${new Date(g.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
             <Button
               small
               disabled={busy || !open}

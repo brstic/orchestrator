@@ -109,3 +109,44 @@ export function playOuch(seed = 0.5, delay = 0.24, volume = 0.6): void {
   src.stop(t + dur + 0.02);
   vib.stop(t + dur + 0.02);
 }
+
+/** Three knocks on a wooden door: someone is asking to be let in. */
+export function playKnock(volume = 0.5): void {
+  const ac = audio();
+  if (!ac) return;
+  const start = ac.currentTime + 0.02;
+  for (let i = 0; i < 3; i++) {
+    const t = start + i * 0.17;
+    const osc = ac.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(190, t);
+    osc.frequency.exponentialRampToValueAtTime(70, t + 0.09);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(volume, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    osc.connect(g).connect(ac.destination);
+    osc.start(t);
+    osc.stop(t + 0.14);
+  }
+}
+
+/** Two soft rising notes: someone you asked has answered. */
+export function playReply(volume = 0.22): void {
+  const ac = audio();
+  if (!ac) return;
+  const start = ac.currentTime + 0.02;
+  [660, 880].forEach((hz, i) => {
+    const t = start + i * 0.13;
+    const osc = ac.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = hz;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(volume, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+    osc.connect(g).connect(ac.destination);
+    osc.start(t);
+    osc.stop(t + 0.35);
+  });
+}

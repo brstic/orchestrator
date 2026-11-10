@@ -44,13 +44,24 @@
 
       <section>
         <h2>Connect to an office</h2>
-        <p>An office runs on a server and stays open; you walk in from here. Paste the invitation you were sent. While you are in, your own computer has a room there for the sessions you run on it.</p>
+        <p>An office runs on a server and stays open; you walk in from here. Type its address and ask to be let in — or paste an invitation you were sent. While you are in, your own computer has a room there for the sessions you run on it.</p>
         <div id="joined"></div>
-        <textarea id="invite" placeholder="orch-invite-v1.…" spellcheck="false" autocomplete="off"></textarea>
+        <textarea id="invite" placeholder="office.example.com      or an invitation: orch-invite-v1.…" spellcheck="false" autocomplete="off"></textarea>
+        <div id="knock-who" hidden style="margin-top:8px">
+          <input id="knock-name" placeholder="Your name — the people inside see it when you knock" maxlength="40" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box" />
+        </div>
+        <div id="knock-wait" hidden style="margin-top:10px;padding:12px 14px;border-radius:10px;background:rgba(110,168,255,0.1);border:1px solid rgba(110,168,255,0.45)">
+          <div id="knock-text"></div>
+          <div style="display:flex;align-items:center;gap:14px;margin-top:8px">
+            <div id="knock-code" style="font:700 28px/1 ui-monospace,Menlo,monospace;letter-spacing:0.26em"></div>
+            <small style="flex:1">They see this code next to your name. Tell it to them if they ask whether it is really you.</small>
+            <button id="knock-cancel" type="button">Never mind</button>
+          </div>
+        </div>
         <div id="join-error" role="alert" style="display:none;margin-top:10px;padding:9px 11px;border-radius:8px;background:rgba(255,93,115,0.14);border:1px solid rgba(255,93,115,0.5);color:#ffb3bf"></div>
         <div class="row" style="margin-top:10px">
           <button class="primary big" id="join" type="button">Connect</button>
-          <small>The invitation names the exact computer to trust; nothing is sent anywhere else.</small>
+          <small id="join-note">An invitation names the exact computer to trust. An address is asked only if its certificate is one this computer trusts.</small>
         </div>
       </section>
 

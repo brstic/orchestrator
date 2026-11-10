@@ -14,6 +14,7 @@
  *
  * A route that is not listed here needs an owner: forgetting to list a new route fails closed.
  */
+import type { FullState, Message, OrchestratorEvent, Question } from '@orchestrator/contracts';
 import type { Engine } from '@orchestrator/orchestration';
 
 export type Role = 'owner' | 'colleague' | 'visitor';
@@ -63,6 +64,10 @@ const RULES: Rule[] = [
   rule('POST', '/me/host', 'work'),
   rule('GET', '/me/room', 'work'),
   rule('PUT', '/me/room', 'work'),
+  // ── the door bell: seeing who knocks and answering (a colleague may only let someone in to look: checked in the route) ──
+  rule('GET', '/knocks', 'work'),
+  rule('POST', '/knocks/:id/admit', 'work'),
+  rule('POST', '/knocks/:id/refuse', 'work'),
   // ── employees and their sessions ──
   rule('POST', '/employees', 'work', inBody('host', 'hostId'), inBody('project', 'projectId')),
   rule('PATCH', '/employees/:id', 'work', path('employee'), inBody('host', 'hostId'), inBody('project', 'projectId')),
@@ -170,4 +175,32 @@ export function maySee(engine: Engine, who: Who, sessionId: string): boolean {
 /** May this person type into, resize or take control of a session's terminal? */
 export function mayDrive(engine: Engine, who: Who, sessionId: string): boolean {
   return allowed(who, 'work', memberOf(engine, 'session', sessionId));
+}
+
+// ── what is said on a member's own computer ──
+// Everyone sees that a member's employee exists and what state it is in. What it says and is told — the feed lines about
+// it (which carry its replies), the messages to and from it, its questions — is content of that member's computer: for
+// the member and the owners.
+
+/** The member whose computer an event is about; null when it is about the shared office. */
+function memberOfEvent(engine: Engine, e: OrchestratorEvent): string | null {
+  return memberOf(engine, 'host', e.hostId) ?? memberOf(engine, 'employee', e.employeeId) ?? memberOf(engine, 'session', e.sessionId) ?? memberOf(engine, 'project', e.projectId);
+}
+
+export function mayReadEvent(engine: Engine, who: Who, e: OrchestratorEvent): boolean {
+  return who.kind === 'owner' || allowed(who, 'read', memberOfEvent(engine, e));
+}
+
+export function mayReadMessage(engine: Engine, who: Who, m: Message): boolean {
+  return who.kind === 'owner' || (allowed(who, 'read', memberOf(engine, 'employee', m.toEmployeeId)) && allowed(who, 'read', m.from.kind === 'employee' ? memberOf(engine, 'employee', m.from.id) : null));
+}
+
+export function mayReadQuestion(engine: Engine, who: Who, q: Question): boolean {
+  return who.kind === 'owner' || allowed(who, 'read', memberOf(engine, 'employee', q.employeeId));
+}
+
+/** The office's state as this person may read it. */
+export function stateFor(engine: Engine, who: Who, state: FullState): FullState {
+  if (who.kind === 'owner') return state;
+  return { ...state, events: state.events.filter((e) => mayReadEvent(engine, who, e)), messages: state.messages.filter((m) => mayReadMessage(engine, who, m)), questions: state.questions.filter((q) => mayReadQuestion(engine, who, q)) };
 }

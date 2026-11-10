@@ -42,6 +42,17 @@ Other members still see that a personal employee exists and its state (name, act
 
 A route that is not listed in `access.ts` needs an owner.
 
+### The door bell (knocking)
+A person with no invitation can knock at the office's door — the office's page in a browser, or the desktop app given only the address. Knocking grants nothing; it puts a name and a four-digit code in front of the people inside.
+
+- `GET /knock`, `POST /knock`, `GET /knock/:id`, `DELETE /knock/:id` — no credential; only through the door (404 on the office's own port). The knocker's poll is authorised by a secret only they hold (`x-knock-secret`); the credential they are given is handed over once.
+- `GET /api/knocks`, `POST /api/knocks/:id/admit`, `POST /api/knocks/:id/refuse` — **work**, so owners and colleagues; visitors are neither told about knocks nor able to answer.
+- Who may let whom in: an **owner** as visitor, colleague or owner; a **colleague** only as a visitor; **a knock from a browser only ever becomes a visitor**, whoever answers, and that member expires after 12 hours. A knock from the app becomes an ordinary member (shown in People as "let in at the door"), revocable like any other.
+- Limits: 2 waiting and 6 knocks per ten minutes per address, 10 waiting in all; a knocker who stops asking is gone after 25 s; nobody waits longer than 10 minutes; an admission nobody collects within a minute is revoked.
+
+### What is said on a member's own computer
+Feed events about a member's own employees (they carry what the employee replied), messages to and from them and their questions are sent only to that member and to owners: filtered in `GET /api/state`, `GET /api/events`, the `ready` state and the live `event` / `entity` messages (`stateFor`, `mayReadEvent`, `mayReadMessage`, `mayReadQuestion` in `access.ts`). Not yet filtered: their tasks, notifications and artifacts.
+
 ### Terminals (WebSocket)
 
 - `term.open`, monitor frames (`term.screen`), `screens.focus`: **read** on the session.

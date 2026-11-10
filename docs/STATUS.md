@@ -33,10 +33,15 @@ Next steps:
 - Local office (one machine) as before: 3D office, real Claude Code sessions in tmux, tasks, reviews/merges, meetings, questions and approvals, self-improvement, XP.
 - Other shared machines: enrolled hosts, servers linked over SSH, adoption of running Claude sessions.
 - Claude usage per account: the office's accounts as wall clocks in the CEO room and at the CEO desk, each member's own account as a clock in their room; foreman role with rounds (off until hired and enabled; shared employees only).
+- **Knocking**: with only the office's address, a browser (read-only visit, 12 h) or the desktop app asks to come in; owners and colleagues inside answer the door (`ACCESS.md`, "The door bell").
+- **Answer cue**: dots over an employee you spoke to, then a card and a bubble when they have answered (your own conversations only, per computer).
 - People in the office: characters with name tags, speech bubbles (also over one's own head), a chat box at the bottom left with the last hour of history, and the whip seen by everyone.
 - Extras: radio, TV, whip, seating editor, sleeping pose. Storage: SQLite (default) and PostgreSQL.
 
 ## Not verified / known problems
+- Knocking: tried with the real desktop app and a plain browser window against a test office; **not yet against `office.sparkcan.com` by a person on another network**. The app knocks only where the certificate is one the computer trusts (the domain); an office reached by IP address still needs an invitation. Whether the server's nginx reports the caller's address the way the per-address limit expects was checked on the server after deploy (see OPERATIONS.md).
+- Privacy of members' own employees: feed, messages and questions are filtered; their **tasks, notifications and artifacts are still in everyone's state** (titles and descriptions of a member's private tasks are visible to others).
+- The answer cue is per computer (browser storage): an answer that arrives while the app is closed for more than the feed's history is not announced.
 - On the real server both trial members were app instances on this one Mac; the real work was one trivial task per side. Not yet: a second human on another computer, sustained work (tasks, reviews, merges) through the server office, a server restart while real sessions are working.
 - Usage per account did not arrive from a real CLI session that had made no request yet (Claude Code gives the status line no limits until it knows them); it does once the session has worked.
 - Role-dependent controls (People panel with the owner role, hidden/disabled buttons for visitors and for other members' employees) are covered by API tests and type checks, not by UI tests that click as each role. Hi-fi and TV panels are not role-aware (a visitor can try to add a station and is refused by the office).
@@ -52,4 +57,4 @@ Next steps:
 The packaged app `release/Orchestrator.app` (Desktop shortcut is a symlink to it) as a **client of the office on Sparkcan**; the Mac's own state is only `~/.orchestrator/offices/<id>/agent` (its personal host) and the app's data folder. Shipping procedure: `DEVELOPMENT.md`.
 
 ## Suites (last full run, working tree after the UPDATE plan)
-unit 65/65 · e2e 119/119 · UI 146/146 · desktop join (`tests/ui/guest-app.mjs`) 37/37 · Linux server trial (`pnpm test:central`) 23/23 · TV (`tests/ui/tv-app.mjs`) 12/12.
+unit 68/68 · e2e 123/123 · UI 147/147 · desktop join (`tests/ui/guest-app.mjs`) 44/44 · Linux server trial (`pnpm test:central`) 23/23 · TV (`tests/ui/tv-app.mjs`) 12/12.

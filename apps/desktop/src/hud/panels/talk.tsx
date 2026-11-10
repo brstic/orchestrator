@@ -80,7 +80,9 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
         await api('POST', '/tasks', { projectId: e.projectId, title: first.length > 90 ? `${first.slice(0, 87)}…` : first, description: body, assigneeId: e.id });
         s.toast(`Task created for ${e.name}; it is handed over as soon as they are between turns.`, 'success');
       } else {
-        await api('POST', `/employees/${e.id}/message`, { body });
+        const sent = await api<{ id?: string }>('POST', `/employees/${e.id}/message`, { body });
+        // I am waiting for what they say back: their answer is announced if I have walked away by then.
+        s.asked(e.id, sent?.id ?? null);
       }
       setText('');
     } catch (err) {

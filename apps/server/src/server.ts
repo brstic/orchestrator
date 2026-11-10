@@ -1,6 +1,7 @@
 import { Door, inviteCode } from './door.ts';
 import { Guests, whoIs, type Who } from './guests.ts';
-import { allowed, mayCall } from './access.ts';
+import { Knocks, type Admission } from './knocks.ts';
+import { allowed, mayCall, mayReadEvent, stateFor } from './access.ts';
 import { nowPlaying } from './radio.ts';
 import { SshLinks } from './ssh-links.ts';
 import fs from 'node:fs';
@@ -174,6 +175,51 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
   app.get('/healthz', async () => ({ ok: true, name: 'orchestrator', version: '0.1.0' }));
 
+  // ───────────── Knocking at the door (no credential: nothing is granted here) ─────────────
+  /** How long someone let in from a browser may stay before they have to knock again. */
+  const BROWSER_VISIT_MS = 12 * 3600_000;
+  const showOut = (memberId: string) => {
+    const g = guests.get(memberId);
+    if (!g || g.revokedAt) return;
+    guests.revoke(memberId, 'system');
+    clients.dropGuest(memberId);
+    for (const x of engine.hosts.ofMember(memberId)) engine.hosts.revoke(x.id, 'system');
+  };
+  const knocks = new Knocks({ onChange: () => clients.knocks(knocks.list()), takeBack: showOut });
+  // Browser visits end by themselves.
+  const visits = setInterval(() => {
+    for (const g of guests.expired()) showOut(g.id);
+  }, 30_000);
+  visits.unref();
+  /** Knocking exists only where the office is open to people from outside: through its door. */
+  const atDoor = (req: FastifyRequest, reply: FastifyReply): boolean => {
+    if (viaDoor(req)) return true;
+    void reply.code(404).send({ error: 'not found' });
+    return false;
+  };
+  const knockSecret = (req: FastifyRequest): unknown => req.headers['x-knock-secret'];
+  app.get('/knock', async (req, reply) => {
+    if (!atDoor(req, reply)) return reply;
+    return { orchestrator: true, office: engine.core.settings.companyName };
+  });
+  app.post('/knock', { bodyLimit: 2048 }, async (req, reply) => {
+    if (!atDoor(req, reply)) return reply;
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const k = knocks.knock({ name: b.name, via: b.via, ip: String(req.headers['x-forwarded-for'] ?? req.ip) });
+    return { ...k, office: engine.core.settings.companyName, anyoneIn: clients.someoneToAnswer() };
+  });
+  app.get('/knock/:id', async (req, reply) => {
+    if (!atDoor(req, reply)) return reply;
+    void reply.header('cache-control', 'no-store');
+    const answer = knocks.poll(String((req.params as any).id), knockSecret(req));
+    return answer.status === 'waiting' ? { ...answer, anyoneIn: clients.someoneToAnswer() } : answer;
+  });
+  app.delete('/knock/:id', async (req, reply) => {
+    if (!atDoor(req, reply)) return reply;
+    knocks.leave(String((req.params as any).id), knockSecret(req));
+    return { ok: true };
+  });
+
   // ───────────── WebSockets ─────────────
   app.get('/ws/agent', { websocket: true }, (socket, req) => agents.handle(socket as any, isLoopbackAddress(req.socket.remoteAddress), viaDoor(req)));
   app.get('/ws/client', { websocket: true }, (socket, req) => {
@@ -236,7 +282,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     const param = (req: FastifyRequest, key: string) => String((req.params as any)[key]);
     const query = (req: FastifyRequest) => (req.query ?? {}) as Record<string, string>;
 
-    api.get('/state', async () => engine.state());
+    api.get('/state', async (req) => stateFor(engine, whoOf(req), engine.state()));
     // The percentages are for everyone in the office (the clocks on the walls); the account's e-mail and organisation
     // only for those who may work on the machine it lives on — its member and owners, or colleagues for a shared machine.
     api.get('/usage', async (req) => engine.sessions.accountUsage().map((a) => (allowed(whoOf(req), 'work', engine.hosts.memberOfHost(a.hostId)) ? a : { ...a, email: null, organization: null })));
@@ -291,6 +337,31 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       engine.core.audit('owner', open ? 'sharing.opened' : 'sharing.closed', 'door', { port, address });
       return sharing();
     });
+    // ── the door bell: who is waiting, and letting them in or not ──
+    // An owner lets someone in as anything; a colleague only to look around. Someone who came with a browser can only look.
+    api.get('/knocks', async () => knocks.list());
+    api.post('/knocks/:id/admit', async (req) => {
+      needDoor();
+      const who = whoOf(req);
+      const asked = String(body(req).role ?? 'visitor');
+      if (!['visitor', 'colleague', 'owner'].includes(asked)) throw new EngineError('let them in as a visitor, a colleague or an owner');
+      if (asked !== 'visitor' && who.kind !== 'owner') throw new EngineError('Only an owner of this office can let someone in to work; you can let them in to look around.', 403);
+      const actor = who.id === 'owner' ? 'owner' : `member:${who.name}`;
+      const k = knocks.admit(param(req, 'id'), (knock): Admission => {
+        const role = knock.via === 'browser' ? 'visitor' : (asked as Admission['role']);
+        const expiresAt = knock.via === 'browser' ? new Date(Date.now() + BROWSER_VISIT_MS).toISOString() : null;
+        const { guest, token } = guests.invite({ name: guests.freeName(knock.name), role, via: knock.via === 'browser' ? 'knock-browser' : 'knock-app', expiresAt }, actor);
+        return { role, name: guest.name, token, invite: invitation(guest, token), expiresAt, memberId: guest.id };
+      });
+      engine.core.audit(actor, 'knock.admitted', k.id, { name: k.name, via: k.via, as: k.via === 'browser' ? 'visitor' : asked });
+      return { ok: true };
+    });
+    api.post('/knocks/:id/refuse', async (req) => {
+      const who = whoOf(req);
+      const k = knocks.refuse(param(req, 'id'));
+      engine.core.audit(who.id === 'owner' ? 'owner' : `member:${who.name}`, 'knock.refused', k.id, { name: k.name, via: k.via });
+      return { ok: true };
+    });
     api.post('/guests', async (req) => {
       needDoor();
       const { guest, token } = guests.invite({ name: String(body(req).name ?? ''), role: body(req).role });
@@ -318,7 +389,10 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.get('/audit', async (req) => store.recentAudit(Number(query(req).limit) || 200));
     api.get('/events', async (req) => {
       const q = query(req);
-      return store.queryEvents({ employeeId: q.employeeId, taskId: q.taskId, sessionId: q.sessionId, projectId: q.projectId, since: q.since, beforeSeq: q.before ? Number(q.before) : undefined, limit: q.limit ? Number(q.limit) : 200, excludeTypes: q.includeActivity ? undefined : ['session.activity', 'terminal.output'] });
+      const found = await store.queryEvents({ employeeId: q.employeeId, taskId: q.taskId, sessionId: q.sessionId, projectId: q.projectId, since: q.since, beforeSeq: q.before ? Number(q.before) : undefined, limit: q.limit ? Number(q.limit) : 200, excludeTypes: q.includeActivity ? undefined : ['session.activity', 'terminal.output'] });
+      // What happened on a member's own computer is theirs and the owners' to read.
+      const who = whoOf(req);
+      return who.kind === 'owner' ? found : found.filter((e) => mayReadEvent(engine, who, e));
     });
     api.post('/seen', async () => {
       engine.commands.touchLastSeen();
@@ -526,6 +600,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     },
     close: async () => {
       sshLinks?.stop();
+      knocks.close();
+      clearInterval(visits);
       await door?.close();
       engine.stop();
       agents.close();

@@ -302,6 +302,105 @@ export function talk(): void {
   if (id) s.openPanel('talk', id);
 }
 
+/**
+ * The door bell: who is at the office's door asking to be let in, and the answer. An owner lets
+ * someone in as a visitor, a colleague or an owner; a colleague can let them in to look around.
+ * Someone who came with a browser can only ever look. It stays until somebody answers or they leave.
+ */
+export function DoorBell() {
+  const knocks = useOffice((s) => s.knocks);
+  const me = useOffice((s) => s.me);
+  const [busy, setBusy] = useState<string | null>(null);
+  if (!knocks.length || !me || me.role === 'visitor') return null;
+  const owner = me.kind === 'owner';
+  const answer = async (id: string, what: 'refuse' | 'visitor' | 'colleague' | 'owner', name: string) => {
+    setBusy(id);
+    try {
+      if (what === 'refuse') await api('POST', `/knocks/${id}/refuse`, {});
+      else await api('POST', `/knocks/${id}/admit`, { role: what });
+      useOffice.getState().toast(what === 'refuse' ? `${name} was not let in` : `${name} is let in${what === 'visitor' ? ' to look around' : ` as ${what === 'owner' ? 'an owner' : 'a colleague'}`}`, what === 'refuse' ? 'info' : 'success');
+    } catch (e) {
+      useOffice.getState().toast((e as Error).message, 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <>
+      {knocks.map((k) => (
+        <div key={k.id} className="glass doorbell-card" role="alertdialog" aria-label={`${k.name} is at the door`}>
+          <div className="doorbell-head">
+            <span className="doorbell-icon" aria-hidden>
+              🚪
+            </span>
+            <div className="grow">
+              <div>
+                <b>{k.name}</b> is at the door
+              </div>
+              <div className="small muted">
+                {k.via === 'browser' ? 'from a browser — can only look around' : 'with the Orchestrator app'} · code <span className="doorbell-code">{k.code}</span>
+              </div>
+            </div>
+          </div>
+          <div className="doorbell-actions">
+            <Button small variant="primary" disabled={busy === k.id} onClick={() => void answer(k.id, 'visitor', k.name)} title="Read-only: they can watch what happens, not change anything">
+              {k.via === 'browser' || !owner ? 'Let in to look around' : 'Visitor'}
+            </Button>
+            {owner && k.via === 'app' && (
+              <>
+                <Button small disabled={busy === k.id} onClick={() => void answer(k.id, 'colleague', k.name)} title="Works on everything shared, and has a room for their own computer">
+                  Colleague
+                </Button>
+                <Button small disabled={busy === k.id} onClick={() => void answer(k.id, 'owner', k.name)} title="Everything, including other members' own employees and running the office">
+                  Owner
+                </Button>
+              </>
+            )}
+            <Button small variant="ghost" disabled={busy === k.id} onClick={() => void answer(k.id, 'refuse', k.name)}>
+              Not now
+            </Button>
+          </div>
+          {owner && k.via === 'app' && <div className="small faint">Let in as… Anyone can type any name: if you are not expecting them, ask for the code.</div>}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Answers that are waiting for me: employees I said something to who have since finished their turn.
+ * One card each, until I open the conversation (or wave it away). Only my own conversations.
+ */
+export function Replies() {
+  const replies = useOffice((s) => s.replies);
+  const employees = useOffice((s) => s.employees);
+  const list = Object.entries(replies)
+    .map(([id, r]) => ({ id, ...r, employee: employees[id] }))
+    .filter((r) => r.employee && !r.employee.archived)
+    .sort((a, b) => (a.ts < b.ts ? -1 : 1));
+  if (!list.length) return null;
+  return (
+    <>
+      {list.map((r) => (
+        <div key={r.id} className="glass reply-card" role="status">
+          <button type="button" className="reply-main" onClick={() => useOffice.getState().openPanel('talk', r.id)} title="Open the conversation">
+            <Avatar appearance={r.employee!.appearance} size={30} />
+            <span className="grow" style={{ minWidth: 0 }}>
+              <span className="reply-head">
+                <b>{r.employee!.name}</b> answered you <span className="faint">· {clock(r.ts)}</span>
+              </span>
+              <span className="reply-text">{r.text ? r.text.replace(/[#*_`>]+/g, '').replace(/\s+/g, ' ').slice(0, 140) : 'Finished what you asked — open to see.'}</span>
+            </span>
+          </button>
+          <button type="button" className="reply-x" onClick={() => useOffice.getState().readReply(r.id)} aria-label={`Dismiss ${r.employee!.name}'s answer`} title="Dismiss">
+            ×
+          </button>
+        </div>
+      ))}
+    </>
+  );
+}
+
 /** How long a new line keeps the chat box lit before it fades back (it stays readable on hover and while typing). */
 const CHAT_FRESH_MS = 20_000;
 

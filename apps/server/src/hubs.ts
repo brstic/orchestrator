@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type { WebSocket } from 'ws';
-import { mayDrive, maySee } from './access.ts';
-import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, OrchestratorEvent, PersonPresence, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
+import { mayDrive, mayReadEvent, mayReadMessage, mayReadQuestion, maySee, stateFor } from './access.ts';
+import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, OrchestratorEvent, PersonPresence, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
 import { hueOf, type Who } from './guests.ts';
 import { PROTOCOL_VERSION, ROLE_CATALOGUE, matchRole, nowIso, roleByKey } from '@orchestrator/contracts';
 import { EngineError, type AgentLink, type Engine } from '@orchestrator/orchestration';
@@ -368,10 +368,21 @@ export class ClientHub {
     }
   }
 
+  /** What is said on a member's own computer goes to that member and the owners only (see `access.ts`). */
+  private mayHear(c: ClientConn, msg: ServerToClient): boolean {
+    if (c.who.kind === 'owner') return true;
+    if (msg.t === 'event') return mayReadEvent(this.engine, c.who, msg.event);
+    if (msg.t === 'entity' && msg.op === 'upsert' && msg.kind === 'message') return mayReadMessage(this.engine, c.who, msg.data);
+    if (msg.t === 'entity' && msg.op === 'upsert' && msg.kind === 'question') return mayReadQuestion(this.engine, c.who, msg.data);
+    return true;
+  }
+
   broadcast(msg: ServerToClient): void {
     if (!this.clients.size) return;
     const text = JSON.stringify(msg);
+    const scoped = msg.t === 'event' || (msg.t === 'entity' && (msg.kind === 'message' || msg.kind === 'question'));
     for (const c of this.clients.values()) {
+      if (scoped && !this.mayHear(c, msg)) continue;
       if (c.ws.readyState === 1) {
         try {
           c.ws.send(text);
@@ -390,6 +401,20 @@ export class ClientHub {
   /** Close every window of a guest whose access was revoked. */
   dropGuest(guestId: string): void {
     for (const c of this.clients.values()) if (c.who.id === guestId) c.ws.close(4003, 'access revoked');
+  }
+
+  /** Who is at the door: told to those who may let someone in (owners and colleagues), now and when they walk in. */
+  private atDoor: KnockView[] = [];
+  private answers(c: ClientConn): boolean {
+    return c.who.kind === 'owner' || c.who.role === 'colleague';
+  }
+  knocks(list: KnockView[]): void {
+    this.atDoor = list;
+    for (const c of this.clients.values()) if (this.answers(c)) this.send(c.id, { t: 'knocks', knocks: list });
+  }
+  /** Is anyone inside who could answer the door? */
+  someoneToAnswer(): boolean {
+    return [...this.clients.values()].some((c) => this.answers(c));
   }
 
   /** The last things said in the office (kept in memory only): shown to whoever walks in. */
@@ -428,7 +453,7 @@ export class ClientHub {
     const conn: ClientConn = { id, ws, who, presence: null, said: [] };
     this.clients.set(id, conn);
     const gateway = this.engine.core.gateway;
-    this.send(id, { t: 'ready', clientId: id, state: this.engine.state(), me: { kind: who.kind, role: who.role, name: who.name, id: who.id } });
+    this.send(id, { t: 'ready', clientId: id, state: stateFor(this.engine, who, this.engine.state()), me: { kind: who.kind, role: who.role, name: who.name, id: who.id } });
     // Everyone gets the live monitors of what they may see (`send` leaves out the rest: other members' own computers).
     gateway.registerClient(id);
     const actor = who.id === 'owner' ? `owner:${id.slice(0, 8)}` : `member:${who.name}`;
@@ -442,6 +467,7 @@ export class ClientHub {
     const since = Date.now() - 3600_000;
     const lines = this.recent.filter((l) => Date.parse(l.ts) > since);
     if (lines.length) this.send(id, { t: 'chat.history', lines });
+    if (this.atDoor.length && this.answers(conn)) this.send(id, { t: 'knocks', knocks: this.atDoor });
 
     ws.on('message', (data) => {
       let msg: ClientToServer;

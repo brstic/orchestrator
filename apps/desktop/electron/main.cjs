@@ -353,6 +353,108 @@ ipcMain.handle('orch:connect-context', () => ({
   ownRemote: (loadConnection() || {}).url || null,
   joined: readJoined().map((j) => ({ id: j.id, office: j.office, guest: j.guest, role: j.role, lastUsedAt: j.lastUsedAt, usable: tokenOfJoined(j) !== null, atStart: j.atStart === true })),
 }));
+// ───────────── knocking: only the office's address is known ─────────────
+// The app asks at the door; someone inside lets the person in and says as what. What comes back is an
+// invitation like any other, kept on this computer, so the next time there is nothing to ask.
+
+/** An https origin from what was typed ("office.example.com", "https://office.example.com/"), or null if it is not an address. */
+function addressOf(text) {
+  const t = String(text || '').trim().replace(/\/+$/, '');
+  if (!t || /\s/.test(t) || /^orch-invite-v1\./.test(t)) return null;
+  const m = /^(?:https:\/\/)?([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)(:\d{1,5})?$/.exec(t);
+  return m ? `https://${m[1].toLowerCase()}${m[2] || ''}` : null;
+}
+
+/**
+ * One request to an office's door, made only after its certificate has been checked: it must be one this computer
+ * trusts for that name. (ORCH_KNOCK_PIN names one exact certificate to accept as well — for an office that has only
+ * its own certificate, in tests.) Nothing — not even the name — is sent to anything else.
+ */
+function askDoor(origin, method, pathname, headers, body) {
+  return new Promise((resolve) => {
+    const u = new URL(origin);
+    const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
+    const req = https.request({ host: u.hostname, port: u.port || 443, path: pathname, method, rejectUnauthorized: false, timeout: 10000, agent: false });
+    let checked = false;
+    req.on('socket', (socket) => {
+      socket.on('secureConnect', () => {
+        const pin = process.env.ORCH_KNOCK_PIN;
+        if (!socket.authorized && !(pin && socket.getPeerCertificate().fingerprint256 === pin)) return req.destroy(new Error('TRUST'));
+        checked = true;
+        for (const [k, v] of Object.entries(headers || {})) req.setHeader(k, v);
+        if (payload) {
+          req.setHeader('content-type', 'application/json');
+          req.setHeader('content-length', payload.length);
+        }
+        req.end(payload || undefined);
+      });
+    });
+    req.on('response', (res) => {
+      let text = '';
+      res.on('data', (d) => (text += d));
+      res.on('end', () => {
+        if (!checked) return resolve({ error: 'The certificate was not checked.' });
+        let json = null;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          /* not an office */
+        }
+        resolve({ status: res.statusCode, json });
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', (e) =>
+      resolve({
+        error:
+          e.message === 'TRUST'
+            ? `The office at ${u.host} has no certificate this computer trusts, so it cannot be asked by its address alone. Ask someone inside for an invitation: it names the exact computer to trust.`
+            : `Could not reach ${u.host}.`,
+      }),
+    );
+  });
+}
+
+let knocking = null;
+ipcMain.handle('orch:knock', async (_event, input) => {
+  const origin = addressOf(input && input.address);
+  const name = String((input && input.name) || '').trim().slice(0, 40);
+  if (!origin) return { error: 'Type the address of the office, for example office.example.com — or paste an invitation.' };
+  if (name.length < 2) return { error: 'Say who you are: the people inside see this name when you knock.' };
+  const res = await askDoor(origin, 'POST', '/knock', {}, { name, via: 'app' });
+  if (res.error) return { error: res.error };
+  if (res.status !== 200 || !res.json || !res.json.id || !res.json.secret) return { error: res.json && res.json.error && res.status !== 404 ? res.json.error : `There is no Orchestrator office at ${new URL(origin).host}, or it is not open to people from outside.` };
+  knocking = { origin, id: res.json.id, secret: res.json.secret, name };
+  return { ok: true, code: res.json.code, office: res.json.office || 'the office', anyoneIn: !!res.json.anyoneIn };
+});
+ipcMain.handle('orch:knock-poll', async () => {
+  const k = knocking;
+  if (!k) return { status: 'gone' };
+  const res = await askDoor(k.origin, 'GET', `/knock/${k.id}`, { 'x-knock-secret': k.secret });
+  if (knocking !== k) return { status: 'gone' };
+  // The office did not answer this once: still waiting, ask again.
+  if (res.error || res.status !== 200 || !res.json) return { status: 'waiting' };
+  const a = res.json;
+  if (a.status === 'waiting') return { status: 'waiting', anyoneIn: !!a.anyoneIn };
+  knocking = null;
+  if (a.status !== 'admitted') return { status: a.status === 'refused' ? 'refused' : 'gone' };
+  let invite;
+  try {
+    invite = parseInvite(a.invite);
+  } catch (e) {
+    return { status: 'admitted', error: e.message };
+  }
+  // The address that was knocked on is known to work from here: try it first.
+  const joinedRes = await joinOffice({ ...invite, addresses: [k.origin, ...invite.addresses.filter((x) => x !== k.origin)] }, true);
+  return { status: 'admitted', role: a.role, error: joinedRes.error };
+});
+ipcMain.handle('orch:knock-cancel', async () => {
+  const k = knocking;
+  knocking = null;
+  if (k) await askDoor(k.origin, 'DELETE', `/knock/${k.id}`, { 'x-knock-secret': k.secret });
+  return true;
+});
+
 ipcMain.handle('orch:join', async (_event, input) => {
   let invite;
   try {

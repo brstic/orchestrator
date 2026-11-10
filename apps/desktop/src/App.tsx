@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { OfficeScene, ownerPosition } from '@orchestrator/office-3d';
 import { Button } from '@orchestrator/ui';
-import { api, connection, setToken } from './lib/api.ts';
+import { api, connection, serverBase, setToken } from './lib/api.ts';
+import { Knock } from './Knock.tsx';
 import { loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
 import { loadPrefs, usePrefs } from './lib/prefs.ts';
 import { boardView, ceoView, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
-import { ChatBox, CommandBar, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
+import { ChatBox, CommandBar, DoorBell, Replies, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
 import { onTvFrame } from './lib/tv.ts';
 import { TvLayer } from './hud/tv.tsx';
 import { PanelHost } from './hud/panels/index.tsx';
@@ -40,6 +41,28 @@ function Login() {
       </div>
     </div>
   );
+}
+
+/**
+ * Nobody is signed in. In the desktop app, or at an office's own address on its own computer, that
+ * means the owner token is asked for. At an office's door on the network (a browser at its public
+ * address) it is the place to knock.
+ */
+function Entrance() {
+  const [door, setDoor] = useState<{ office: string } | null | 'none'>(window.orchestrator ? 'none' : null);
+  const [ownToken, setOwnToken] = useState(false);
+  useEffect(() => {
+    if (window.orchestrator) return;
+    let live = true;
+    fetch(`${serverBase}/knock`, { cache: 'no-store' })
+      .then(async (r) => (r.ok ? await r.json() : null))
+      .then((j) => live && setDoor(j?.orchestrator ? { office: String(j.office || 'An office') } : 'none'))
+      .catch(() => live && setDoor('none'));
+    return () => void (live = false);
+  }, []);
+  if (door === null) return <div className="login" />;
+  if (door === 'none' || ownToken) return <Login />;
+  return <Knock office={door.office} onOwnToken={() => setOwnToken(true)} />;
 }
 
 const PANEL_KEYS: Array<[string, PanelId]> = [
@@ -117,6 +140,7 @@ export function App() {
   // What the 3D office calls back with.
   const on = useStable({
     openDocs: (id: string) => useOffice.getState().openPanel('docs', id),
+    openTalk: (id: string) => useOffice.getState().openPanel('talk', id),
     openRadio: () => useOffice.getState().openPanel('radio'),
     openTv: () => useOffice.getState().openPanel('tv'),
     pickSeat: (deskId: string) => {
@@ -259,6 +283,16 @@ export function App() {
         return { ...p, saying: last && now - last.at < 7000 ? last.text : null, whipAt: s.peopleWhips[p.id] };
       });
   }, [s.people, s.clientId, s.chat, s.peopleWhips, sayTick]);
+  // My own conversations: dots over whoever is working on what I said, a bubble over whoever has answered.
+  const talkMarks = useMemo(
+    () => [
+      ...Object.keys(s.replies).map((id) => ({ id, kind: 'answered' as const })),
+      ...Object.keys(s.asks)
+        .filter((id) => !s.replies[id])
+        .map((id) => ({ id, kind: 'waiting' as const })),
+    ],
+    [s.asks, s.replies],
+  );
   // What I said myself: the same bubble, over my own character.
   const selfSaying = useMemo(() => {
     const last = [...s.chat].reverse().find((c) => c.fromId === s.clientId && !c.emote);
@@ -276,7 +310,7 @@ export function App() {
     return { forward: kb.forward ?? 'KeyW', back: kb.back ?? 'KeyS', left: kb.left ?? 'KeyA', right: kb.right ?? 'KeyD', strafeLeft: kb.strafeLeft ?? 'KeyQ', strafeRight: kb.strafeRight ?? 'KeyE' };
   }, [prefs.keybindings]);
 
-  if (s.conn === 'unauthorized') return <Login />;
+  if (s.conn === 'unauthorized') return <Entrance />;
   if (!s.ready || !s.layout || !s.settings || !prefsReady) {
     return (
       <div className="login">
@@ -298,6 +332,8 @@ export function App() {
           people={people}
           humans={humans}
           selfSaying={selfSaying}
+          talkMarks={talkMarks}
+          onOpenTalk={on.openTalk}
           docs={docViews}
           onOpenDocs={on.openDocs}
           radio={radioView}
@@ -358,6 +394,10 @@ export function App() {
         )}
         <PanelHost />
         <TvLayer />
+        <div className="notice-stack">
+          <DoorBell />
+          <Replies />
+        </div>
         <CommandBar />
         {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
         <Toasts />

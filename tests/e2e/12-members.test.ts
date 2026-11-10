@@ -301,6 +301,19 @@ test('another colleague sees that she is there and nothing more; an owner can wo
   const ana = invites.Ana!.t;
   const state = (await door(ana, 'GET', '/api/state')).body;
   assert.ok(state.employees.some((e: any) => e.id === lola), 'listed, with her state');
+  // What she was told and what she answered is not Ana's to read: not in the state, not in the feed.
+  const all = await h.state();
+  assert.ok(all.events.some((e) => e.employeeId === lola) && all.messages.some((m) => m.toEmployeeId === lola), 'there is something to keep private');
+  assert.equal(state.events.filter((e: any) => e.employeeId === lola).length, 0, 'no feed lines about her');
+  assert.equal(state.messages.filter((m: any) => m.toEmployeeId === lola).length, 0, 'no messages to her');
+  assert.ok(state.events.some((e: any) => e.employeeId === alex), 'the shared office’s feed is there');
+  assert.deepEqual((await door(ana, 'GET', `/api/events?employeeId=${lola}`)).body, []);
+  assert.equal((await door(invites.Mila!.t, 'GET', '/api/state')).body.events.filter((e: any) => e.employeeId === lola).length, 0, 'nor for a visitor');
+  for (const [name, t] of [['her member', invites.Jovan!.t], ['an owner', invites.Vera!.t]] as const) {
+    const theirs = (await door(t, 'GET', '/api/state')).body;
+    assert.ok(theirs.events.some((e: any) => e.employeeId === lola) && theirs.messages.some((m: any) => m.toEmployeeId === lola), `${name} reads it all`);
+    assert.ok((await door(t, 'GET', `/api/events?employeeId=${lola}`)).body.length > 0);
+  }
   for (const [method, p, body] of [
     ['GET', `/api/employees/${lola}/docs`, undefined],
     ['GET', `/api/employees/${lola}/git`, undefined],
@@ -325,6 +338,14 @@ test('another colleague sees that she is there and nothing more; an owner can wo
   const j = join(invites.Jovan!.t);
   const v = join(invites.Vera!.t);
   await Promise.all([a.until('ready'), m.until('ready'), j.until('ready'), v.until('ready')]);
+  // Live too: something said to her reaches her member's window and an owner's, and nobody else's.
+  const whisper = await h.api<any>('POST', `/employees/${lola}/message`, { body: 'For Lola only @@fake: say noted@@' });
+  const isWhisper = (x: any) => x.t === 'entity' && x.kind === 'message' && x.data.id === whisper.id;
+  await waitFor(async () => j.got.some(isWhisper) && v.got.some(isWhisper), { label: 'her member and an owner hear it' });
+  await sleep(200);
+  assert.ok(!a.got.some(isWhisper) && !m.got.some(isWhisper), 'another colleague and a visitor do not');
+  assert.ok(!a.got.some((x: any) => x.t === 'event' && x.event.employeeId === lola) && !m.got.some((x: any) => x.t === 'event' && x.event.employeeId === lola), 'nor the feed lines about her');
+  assert.ok(!(a.got.find((x) => x.t === 'ready') as any).state.messages.some((x: any) => x.toEmployeeId === lola));
   for (const c of [a, m]) {
     c.send({ t: 'term.open', sessionId: sLola.id });
     assert.match((await c.until('term.closed', (x) => x.sessionId === sLola.id)).reason, /another member's own computer/);

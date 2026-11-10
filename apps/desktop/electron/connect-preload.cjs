@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld(
     startLocal: () => ipcRenderer.invoke('orch:start-local'),
     openOwn: () => ipcRenderer.invoke('orch:open-own'),
     join: (invite) => ipcRenderer.invoke('orch:join', { invite: String(invite ?? '') }),
+    // With only the office's address: ask at its door and wait for someone inside to answer.
+    knock: (address, name) => ipcRenderer.invoke('orch:knock', { address: String(address ?? ''), name: String(name ?? '') }),
+    knockPoll: () => ipcRenderer.invoke('orch:knock-poll'),
+    knockCancel: () => ipcRenderer.invoke('orch:knock-cancel'),
     joinSaved: (id) => ipcRenderer.invoke('orch:join-saved', { id: String(id ?? '') }),
     joinedAtStart: (id, on) => ipcRenderer.invoke('orch:joined-at-start', { id: String(id ?? ''), on: on === true }),
     forgetJoined: (id) => ipcRenderer.invoke('orch:forget-joined', { id: String(id ?? '') }),

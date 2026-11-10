@@ -32,7 +32,7 @@ export interface DoorStatus {
 
 /** What may pass. Everything else is answered 404 at the door. */
 // `/mcp` is how a worker on a member's own computer talks to the office; it answers only to a session's own token.
-const ALLOWED = [/^\/$/, /^\/index\.html$/, /^\/assets\/[A-Za-z0-9._-]+$/, /^\/favicon\.[a-z]+$/, /^\/healthz$/, /^\/api\/[^?#]*$/, /^\/mcp$/];
+const ALLOWED = [/^\/$/, /^\/index\.html$/, /^\/assets\/[A-Za-z0-9._-]+$/, /^\/favicon\.[a-z]+$/, /^\/healthz$/, /^\/api\/[^?#]*$/, /^\/mcp$/, /^\/knock(\/[A-Za-z0-9-]{1,64})?$/];
 // `/ws/agent`: the office accepts only a member's own computer there when the connection comes through the door.
 const ALLOWED_UPGRADE = /^\/ws\/(client|agent)$/;
 
@@ -124,7 +124,11 @@ export class Door {
     // Whatever the caller claims, the mark is ours; and the office sees who is really calling.
     delete headers['x-orch-door'];
     headers['x-orch-door'] = this.secret;
-    headers['x-forwarded-for'] = req.socket.remoteAddress ?? '';
+    // Behind a reverse proxy on this same computer the caller is the proxy; the address it reports (the last one
+    // in its list — the one it saw itself) is who is really calling. From anywhere else, only the socket counts.
+    const peer = req.socket.remoteAddress ?? '';
+    const reported = String(req.headers['x-forwarded-for'] ?? '').split(',').pop()!.trim();
+    headers['x-forwarded-for'] = /^(127\.|::1$|::ffff:127\.)/.test(peer) && /^[0-9a-fA-F:.]{3,45}$/.test(reported) ? reported : peer;
     headers.host = `127.0.0.1:${this.opts.hubPort}`;
     return headers;
   }

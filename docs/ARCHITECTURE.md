@@ -193,6 +193,12 @@ While a member's own computer (a personal host, `Host.memberId`) is online, a ro
 - `apps/desktop/electron/personal-host.cjs` — started by the desktop app after joining as a colleague or owner: a loopback relay that pins the door's certificate, and a host agent (state under `~/.orchestrator/offices/<hash of the fingerprint>/agent`) pointed at the relay. Both stop when the office window closes.
 - `scripts/start-local.mjs --door` (`pnpm serve`) is the server entry point; `scripts/office-admin.mjs` (`pnpm office`) manages members from the server's own terminal with the root owner token.
 
+### Knocking
+`apps/server/src/knocks.ts` holds the doorstep in memory: `POST /knock` (through the door only) makes a pending knock with a secret for the knocker and a code for both sides; the client hub tells owners and colleagues (`{ t: 'knocks' }`, also when they walk in); `POST /api/knocks/:id/admit` makes a member through `Guests.invite` (a free name, `via`, and `expiresAt` for a browser) and parks the credential for the knocker's next poll. The browser side is `apps/desktop/src/Knock.tsx` (shown by `Entrance` in `App.tsx` when there is no token and the page came through a door); the app side is `orch:knock*` in `electron/main.cjs` and the start screen, ending in the same `joinOffice` an invitation uses. The bell inside is `DoorBell` in `hud/core.tsx`.
+
+### The answer cue
+`store.ts` keeps `asks` (I said something to this employee: the message id) and `replies` (their turn has ended since: the text), in `localStorage`. `noteReply` moves an ask to a reply on `agent.turn_finished` once the message's delivery is no longer queued. Shown by `Replies` (cards, top right) and `TalkMarks.tsx` in the 3D scene (dots / bubble over the employee, placed from the people's shared `positions` map).
+
 ## Persistence and recovery
 
 SQLite (`node:sqlite`), WAL mode, file mode 0600: entity documents, the event store, processed-hook ids, credentials (SHA-256 hashes only) and the audit log. With `--database postgres://…` the same data lives in PostgreSQL instead (`PgStore`, behind the same `Storage` interface); an advisory lock allows one server per database.

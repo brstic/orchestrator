@@ -36,6 +36,15 @@ Newest first. Each entry: what was decided, why, and what was rejected. Add one 
 - Rounds are started by the engine from a zero-token digest; a quiet office costs nothing. Off by default.
 - The foreman answers questions, never permission requests; cannot edit files; is never given tasks.
 
+## 2026-11-10 — Knocking, the answer cue, private feed
+- **A browser is a window to look through, never a seat.** The owner asked for a page where visitors ask to come in and can only watch; so a knock from a browser becomes a visitor whoever answers, and expires (12 h) so the member list does not fill with one-off visits. Working in the office is done with the desktop app.
+- **Everyone inside who could work is asked; only owners hand out work.** The owner's words were "everyone who has access gets the notification and can let the person in" (read-only) and, for the app, "whoever is inside chooses: read-only, owner or colleague". Letting a colleague grant colleague or owner would let them raise someone above themselves, so a colleague's answer is limited to a visit; visitors are not asked.
+- **A code instead of trust in a name.** There are no accounts; a knock is a typed name. The same four digits on both screens let two people who are talking confirm it is the same knock.
+- **The app keeps the result as an invitation.** After being let in once, the app has an ordinary saved office; no second mechanism.
+- **By address only where the certificate proves the address.** Typing an IP address of an office with its own certificate cannot be verified without the fingerprint an invitation carries, so the app refuses rather than trust on first use.
+- **The answer cue is the asker's own, kept on their computer.** "I asked, they answered" is about one person's attention; the office does not need to know who is waiting for whom. A turn that ends while the message is still queued does not count as the answer.
+- **Feed lines about a member's employee are that member's.** They carry the employee's replies; sending them to everyone contradicted "others see that it exists and its state". Dropped per connection rather than redacted: a line with its content removed says nothing useful.
+
 ## 2026-11-10 — Per-client preferences
 - Graphics, keys and extras belong to the computer, not the office: one `prefs.json` in the app's data folder, shared by every office that computer opens (a preference about your GPU and your keyboard does not depend on whose office you are in).
 - First run copies the office's values, so the owner's existing choices carry over; afterwards the office's values for those four fields are ignored. The fields stay in `OwnerSettings` for that reason only.

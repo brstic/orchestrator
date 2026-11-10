@@ -28,6 +28,10 @@ export interface Guest {
   createdAt: string;
   lastSeenAt: string | null;
   revokedAt: string | null;
+  /** Let in at the door rather than invited: from the office's page in a browser, or from the desktop app. */
+  via?: 'knock-browser' | 'knock-app';
+  /** When this access ends by itself (a browser visit); null or absent: until revoked. */
+  expiresAt?: string | null;
 }
 
 /** A member as the rest of the server sees whoever is making a request. */
@@ -71,18 +75,35 @@ export class Guests {
   }
 
   /** Invite someone. The token is returned once, here; only its hash is stored. */
-  invite(input: { name: string; role?: string }, actor = 'owner'): { guest: Guest; token: string } {
+  invite(input: { name: string; role?: string; via?: Guest['via']; expiresAt?: string | null }, actor = 'owner'): { guest: Guest; token: string } {
     const name = String(input.name ?? '').trim().replace(/\s+/g, ' ').slice(0, 40);
     if (!name) throw new EngineError('a guest needs a name');
     const role: GuestRole = roleOf(input.role) ?? 'visitor';
-    if ([...this.guests.values()].some((g) => !g.revokedAt && g.name.toLowerCase() === name.toLowerCase())) throw new EngineError(`there is already a guest called "${name}"`);
-    const guest: Guest = { id: newId(), name, role, createdAt: nowIso(), lastSeenAt: null, revokedAt: null };
+    if (this.taken(name)) throw new EngineError(`there is already a guest called "${name}"`);
+    const guest: Guest = { id: newId(), name, role, createdAt: nowIso(), lastSeenAt: null, revokedAt: null, ...(input.via ? { via: input.via } : {}), ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}) };
     const token = generateToken('orch_guest');
     this.engine.core.store.addCredential('guest', token, { refId: guest.id, label: name });
     this.guests.set(guest.id, guest);
     this.save();
     this.engine.core.audit(actor, 'guest.invited', guest.id, { name, role });
     return { guest, token };
+  }
+
+  private taken(name: string): boolean {
+    return [...this.guests.values()].some((g) => !g.revokedAt && g.name.toLowerCase() === name.toLowerCase());
+  }
+
+  /** A name nobody in the office has: the one asked for, or that with a number after it. */
+  freeName(wanted: string): string {
+    const base = wanted.trim().replace(/\s+/g, ' ').slice(0, 36) || 'Guest';
+    if (!this.taken(base)) return base;
+    for (let n = 2; n < 100; n++) if (!this.taken(`${base} ${n}`)) return `${base} ${n}`;
+    return `${base} ${newId().slice(0, 4)}`;
+  }
+
+  /** Members whose time is up and who have not been shown out yet. */
+  expired(now = Date.now()): Guest[] {
+    return [...this.guests.values()].filter((g) => !g.revokedAt && !!g.expiresAt && Date.parse(g.expiresAt) <= now);
   }
 
   /** A new invitation for an existing guest; the old one stops working. */
@@ -130,7 +151,7 @@ export class Guests {
   byToken(token: string | null | undefined): Guest | null {
     const cred = this.engine.core.store.checkCredential('guest', token);
     const guest = cred?.refId ? this.guests.get(cred.refId) : undefined;
-    return guest && !guest.revokedAt ? guest : null;
+    return guest && !guest.revokedAt && !(guest.expiresAt && Date.parse(guest.expiresAt) <= Date.now()) ? guest : null;
   }
 
   seen(id: string): void {

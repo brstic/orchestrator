@@ -100,7 +100,95 @@ openOwn.addEventListener('click', async () => {
   }
 });
 
+// With an address instead of an invitation: knock, and wait for someone inside to answer.
+const knockWho = document.getElementById('knock-who');
+const knockName = document.getElementById('knock-name');
+const knockWait = document.getElementById('knock-wait');
+const knockText = document.getElementById('knock-text');
+const knockCode = document.getElementById('knock-code');
+const isAddress = (text) => {
+  const t = text.trim();
+  return !!t && !/^orch-invite/.test(t) && !/\s/.test(t) && /^(https:\/\/)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+(:\d{1,5})?\/?$/.test(t);
+};
+try {
+  knockName.value = localStorage.getItem('orch.knock-name') || '';
+} catch {
+  /* no storage */
+}
+const lookAtInvite = () => {
+  const address = isAddress(invite.value);
+  knockWho.hidden = !address;
+  if (!join.disabled) join.textContent = address ? 'Ask to come in' : 'Connect';
+};
+invite.addEventListener('input', lookAtInvite);
+let knockTimer = null;
+const stopKnocking = (text) => {
+  if (knockTimer) clearInterval(knockTimer);
+  knockTimer = null;
+  knockWait.hidden = true;
+  invite.disabled = false;
+  knockName.disabled = false;
+  join.disabled = false;
+  lookAtInvite();
+  say(joinError, text || '');
+};
+const waitingText = (office, anyoneIn) =>
+  anyoneIn ? `You knocked at ${office}. The people inside can see you at the door; one of them has to let you in.` : `You knocked at ${office}. Nobody who can open the door is inside right now — your knock stays up while this window is open.`;
+async function knock() {
+  say(joinError, '');
+  const name = knockName.value.trim();
+  if (name.length < 2) {
+    knockName.focus();
+    return say(joinError, 'Say who you are: the people inside see this name when you knock.');
+  }
+  const done = busy(join, 'Knocking…');
+  const res = await window.orchConnect.knock(invite.value, name);
+  done();
+  if (!res || res.error) return say(joinError, (res && res.error) || 'The office did not answer.');
+  try {
+    localStorage.setItem('orch.knock-name', name);
+  } catch {
+    /* no storage */
+  }
+  knockText.textContent = waitingText(res.office, res.anyoneIn);
+  knockCode.textContent = res.code;
+  knockWait.hidden = false;
+  invite.disabled = true;
+  knockName.disabled = true;
+  join.disabled = true;
+  let asking = false;
+  knockTimer = setInterval(async () => {
+    if (asking) return;
+    asking = true;
+    const a = await window.orchConnect.knockPoll();
+    asking = false;
+    if (!knockTimer) return;
+    if (a.status === 'waiting') {
+      if (a.anyoneIn !== undefined) knockText.textContent = waitingText(res.office, a.anyoneIn);
+    } else if (a.status === 'admitted') {
+      // The office opens by itself; this screen only has something to say if that failed.
+      if (a.error) stopKnocking(a.error);
+      else {
+        clearInterval(knockTimer);
+        knockTimer = null;
+        knockText.textContent = `You are let in${a.role ? ` as ${a.role === 'owner' ? 'an owner' : `a ${a.role}`}` : ''}. Opening the office…`;
+      }
+    } else stopKnocking(a.status === 'refused' ? 'They did not let you in this time.' : 'Nobody answered the door. You can knock again.');
+  }, 2000);
+}
+document.getElementById('knock-cancel').addEventListener('click', async () => {
+  await window.orchConnect.knockCancel();
+  stopKnocking('');
+});
+knockName.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    join.click();
+  }
+});
+
 join.addEventListener('click', async () => {
+  if (isAddress(invite.value)) return knock();
   say(joinError, '');
   const done = busy(join, 'Joining…');
   const res = await window.orchConnect.join(invite.value);

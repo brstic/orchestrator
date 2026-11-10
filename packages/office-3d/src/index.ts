@@ -8,3 +8,4 @@ export { ownerPosition } from './Rig.tsx';
 export { drawScreen, parseSgrLine } from './terminal-texture.ts';
 export type { TvFrames, TvView } from './TV.tsx';
 export type { HumanView } from './Humans.tsx';
+export type { TalkMark } from './TalkMarks.tsx';

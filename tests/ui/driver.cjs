@@ -349,6 +349,29 @@ async function scenario() {
     return 'reply shown in the conversation';
   });
 
+  await step('an answer that comes after I walked away is announced: dots while they work, then a card and a bubble over their head', async () => {
+    const ava = await js(`window.__t.emp('Ava').id`);
+    await js(`window.__t.store().openPanel('talk', ${JSON.stringify(ava)})`);
+    await type(`window.__t.scope().querySelector('textarea')`, 'And one more thing @@fake: sleep 2500; say later-answer-5512 is ready@@');
+    await clickText('Send');
+    await waitFor(`!!window.__t.store().asks[${JSON.stringify(ava)}]`, 8000);
+    // Walk away from the conversation before the answer is there.
+    await js(`window.__t.store().openPanel(null)`);
+    await waitFor(`!!document.querySelector('.talkmark-waiting')`, 6000);
+    const before = await js(`document.querySelectorAll('.reply-card').length`);
+    await waitFor(`[...document.querySelectorAll('.reply-card')].some((c) => /Ava answered you/.test(c.textContent) && /later-answer-5512/.test(c.textContent))`, 25000);
+    await waitFor(`!!document.querySelector('.talkmark-answered') && !document.querySelector('.talkmark-waiting')`, 6000);
+    await shot('answer-waiting');
+    // It is remembered by this computer across a reload of the window…
+    const kept = await js(`JSON.stringify(Object.keys(JSON.parse(localStorage.getItem('orch.talk-waiting')).replies))`);
+    // …and reading it is opening the conversation.
+    await js(`document.querySelector('.reply-card .reply-main').click()`);
+    await waitFor(`window.__t.store().panel === 'talk' && window.__t.store().panelArg === ${JSON.stringify(ava)} && document.querySelectorAll('.reply-card').length === 0 && !document.querySelector('.talkmark-answered')`, 6000);
+    await js(`window.__t.store().openPanel(null)`);
+    if (before !== 0 || kept !== JSON.stringify([ava])) throw new Error(`cards before the answer: ${before}; remembered: ${kept}`);
+    return 'dots → "Ava answered you" card and bubble → gone once the conversation is opened';
+  });
+
   await step('workstation: take control, type into the real terminal, return control', async () => {
     await js(`window.__t.store().enterWorkstation(window.__t.emp('Rev').id)`);
     await waitFor(`document.querySelector('.ws .xterm') && document.querySelector('.ws .xterm-rows') && document.querySelector('.ws .xterm-rows').textContent.length > 20`, 15000);
