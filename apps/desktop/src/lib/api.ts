@@ -101,11 +101,12 @@ export class Connection {
     this.closedByUs = false;
     if (!token) return this.setState('unauthorized');
     const base = serverBase || window.location.origin;
-    const url = `${base.replace(/^http/, 'ws')}/ws/client?token=${encodeURIComponent(token)}`;
+    // The token travels as a subprotocol, not in the address: addresses are written to proxies' access logs.
+    const url = `${base.replace(/^http/, 'ws')}/ws/client`;
     this.setState(this.state === 'online' ? 'offline' : 'connecting');
     let ws: WebSocket;
     try {
-      ws = new WebSocket(url);
+      ws = new WebSocket(url, ['orch.v1', `orch.token.${token}`]);
     } catch {
       return this.schedule();
     }

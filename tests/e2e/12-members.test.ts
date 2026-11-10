@@ -40,7 +40,8 @@ const door = async (token: string | null, method: string, p: string, body?: unkn
 };
 /** A guest's office window: the client WebSocket through the door. */
 function join(token: string) {
-  const ws = new WebSocket(`${doorUrl.replace('https', 'wss')}/ws/client?token=${token}`);
+  // As the office window does it: the token is a subprotocol, so it is in no address a proxy would log.
+  const ws = new WebSocket(`${doorUrl.replace('https', 'wss')}/ws/client`, ['orch.v1', `orch.token.${token}`]);
   const got: ServerToClient[] = [];
   let closed: number | null = null;
   ws.onmessage = (ev) => got.push(JSON.parse(String(ev.data)));
@@ -341,6 +342,25 @@ test('the foreman and the office’s own alerts leave a member’s computer alon
   await sleep(300);
   assert.ok(!(await h.state()).notifications.slice(before).some((n) => n.kind === 'host_disconnected'), 'no alarm for a member leaving');
   assert.equal((await h.session(lola))!.status, 'host_offline');
+});
+
+test('a window’s token is not in its address; a wrong one is turned away either way', async () => {
+  const outcome = (ws: WebSocket) =>
+    new Promise<string>((resolve) => {
+      ws.onmessage = (ev) => JSON.parse(String(ev.data)).t === 'ready' && resolve(`ready with protocol "${ws.protocol}"`);
+      ws.onclose = (ev) => resolve(`closed ${ev.code}`);
+      ws.onerror = () => undefined;
+    });
+  const base = `${doorUrl.replace('https', 'wss')}/ws/client`;
+  const good = new WebSocket(base, ['orch.v1', `orch.token.${invites.Vera!.t}`]);
+  assert.equal(await outcome(good), 'ready with protocol "orch.v1"');
+  good.close();
+  assert.equal(await outcome(new WebSocket(base, ['orch.v1', 'orch.token.orch_guest_nope'])), 'closed 4003');
+  assert.equal(await outcome(new WebSocket(base, ['orch.v1'])), 'closed 4003');
+  // Older clients put it in the address; that still works.
+  const old = new WebSocket(`${base}?token=${invites.Vera!.t}`);
+  assert.match(await outcome(old), /^ready/);
+  old.close();
 });
 
 test('people see each other in the office and can talk', async () => {

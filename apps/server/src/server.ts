@@ -119,11 +119,17 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     bodyLimit: 2 * 1024 * 1024,
     ...(opts.tls ? { https: { cert: fs.readFileSync(opts.tls.certFile), key: fs.readFileSync(opts.tls.keyFile) } } : {}),
   } as any) as unknown as FastifyInstance;
-  await app.register(fastifyWebsocket, { options: { maxPayload: 8 * 1024 * 1024 } });
+  // A window's WebSocket carries its token as a subprotocol ("orch.token.<token>") next to "orch.v1", which is the one
+  // the server agrees to: a browser cannot set headers on a WebSocket, and a token in the address would end up in the
+  // access log of every proxy on the way.
+  await app.register(fastifyWebsocket, { options: { maxPayload: 8 * 1024 * 1024, handleProtocols: (protocols: Set<string>) => (protocols.has('orch.v1') ? 'orch.v1' : false) } });
 
   const tokenOf = (req: FastifyRequest): string | null => {
     const h = req.headers.authorization;
     if (h?.startsWith('Bearer ')) return h.slice(7).trim();
+    const offered = String(req.headers['sec-websocket-protocol'] ?? '').split(',').map((p) => p.trim()).find((p) => p.startsWith('orch.token.'));
+    if (offered) return offered.slice('orch.token.'.length);
+    // In the address: the link a local office prints for a browser on the same computer, and older clients.
     const q = (req.query as any)?.token;
     return typeof q === 'string' ? q : null;
   };
