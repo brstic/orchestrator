@@ -6,6 +6,7 @@
 | [CHANGELOG.md](CHANGELOG.md) | What changed, newest first | Every shipped change |
 | [plans/](plans/) | One file per plan. The active one has checkboxes | A plan item starts or finishes |
 | [DECISIONS.md](DECISIONS.md) | Decision log: what was chosen, why, what was rejected | A decision is made |
+| [OPERATIONS.md](OPERATIONS.md) | Where the server and the clients are, how each is updated, backup, day-to-day commands, troubleshooting | Anything about deployment changes |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Build, test, ship; tools for measuring; rules | The workflow changes |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Processes, packages, protocols, data | Structure changes |
 | [ACCESS.md](ACCESS.md) | Members, roles, shared vs personal: who may do what | A permission changes |

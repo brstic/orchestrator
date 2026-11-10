@@ -29,18 +29,7 @@ tests/linux containers (multi-machine, SSH)                 tests/real the real 
 | `node scripts/dev-office.ts --port N [--ui <dist>]` | a populated office with scripted workers for manual work and probes |
 
 ## Shipping
-The owner's Mac runs `release/Orchestrator.app` as a client of the office on the server ("Sparkcan"); there is no local office any more.
-
-**The desktop app (client):**
-1. All suites green.
-2. The app must not be running (`pgrep -f release/Orchestrator.app/Contents/MacOS`). Ask it to quit (`osascript -e 'quit app id "local.orchestrator.desktop"'`); it asks the person to confirm, so it may stay open. Never force it: build next to it with `node scripts/package.mjs --out release-next` and swap when it is closed.
-3. `node scripts/package.mjs` → `node scripts/smoke-package.mjs` (15/15).
-4. `open release/Orchestrator.app` — it walks into the server office by itself.
-5. Check on the server that the owner and their computer are in (`/api/people`, hosts).
-
-**The office on the server:** `node scripts/package.mjs --no-app`, copy `release/orchestrator-<version>.tar.gz` to the server, unpack over `~/orchestrator-office/app`, `systemctl --user restart orchestrator-office` (employees' tmux sessions survive; invitations stay valid). Details and addresses: `STATUS.md`.
-
-Then update `docs/STATUS.md` and `docs/CHANGELOG.md`.
+See [OPERATIONS.md](OPERATIONS.md): `pnpm deploy:server` for the office on the server (most changes), and the packaging steps for the desktop app (only when `apps/desktop/electron/` or the bundled agent changed). Never replace a desktop app that is running, and never script its quit — it asks the person first. After shipping, update `STATUS.md` and `CHANGELOG.md`.
 
 ## Rules that protect the live office
 - Do not touch `~/.orchestrator` (the Mac's personal host lives in `~/.orchestrator/offices/`), `~/.orchestrator-office` on the server, the default tmux servers or `orch-*` sessions on either machine. Tests make their own tmux sockets and temp dirs.

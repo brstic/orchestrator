@@ -5,7 +5,7 @@ A 3D office in which real Claude Code CLI sessions (in tmux) are employees. pnpm
 ## Read before working
 1. `docs/STATUS.md` — what is shipped, what is in progress, known problems. **Start here.**
 2. The active plan under `docs/plans/` (currently `UPDATE-central-office.md`).
-3. `docs/DEVELOPMENT.md` — how to build, test and ship, and the rules that protect the owner's live office.
+3. `docs/OPERATIONS.md` — where the server and clients run and how each is updated (`pnpm deploy:server`). `docs/DEVELOPMENT.md` — how to build and test, and the rules that protect the live office.
 4. `docs/DECISIONS.md` — why things are the way they are. Add an entry when you decide something a later reader would otherwise have to guess.
 
 ## Keep the docs true (standing rule)

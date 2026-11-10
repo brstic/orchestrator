@@ -10,7 +10,7 @@ _Last updated: 2026-11-10. Update this file with every piece of work (see `CLAUD
 - Service: `systemctl --user status orchestrator-office` (linger on). Node from nvm (`~/.nvm/versions/node/v22.23.4`).
 - Door: port 4610, TLS; addresses `https://<server-vpn-ip>:4610` (Tailscale) and `https://<server-lan-ip>:4610` (LAN); `ufw allow 4610/tcp` was added.
 - Manage: `cd ~/orchestrator-office/app && ORCH_SERVER_HOME=~/.orchestrator-office/server node scripts/office-admin.mjs status|invite|role|revoke`.
-- Update: build a package here (`node scripts/package.mjs --no-app`), copy `release/orchestrator-<version>.tar.gz`, unpack over `~/orchestrator-office/app`, `systemctl --user restart orchestrator-office`.
+- Update: `pnpm deploy:server` (details, rollback, backup and everyday commands: `OPERATIONS.md`).
 - Members: Branko (owner; invitation at `~/Desktop/Orchestrator-moja-pozivnica-OWNER.txt`) and Fenix (colleague; invitation, installer and instructions in `~/Desktop/Orchestrator-za-kolegu/`). Neither has been used by a person yet.
 
 **The owner works in the server office only (since 2026-11-10).** At their request the local office on the Mac was shut down and cleared:

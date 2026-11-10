@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-10
+- `pnpm deploy:server` (`scripts/deploy-server.sh`: build, copy, swap, restart, `--status`, `--rollback`) and `docs/OPERATIONS.md` (where everything runs, how to update server and clients, backup, troubleshooting).
 - Members arrange their own room (Menu → My room → *Arrange my room*): name on the door, colour, number of desks (up to 20), open floor behind the desks, furniture. Kept by the office (`PUT /api/me/room`), drawn for everyone.
 - A member's room now stays in the office when they leave: grey, dark and locked, their employees asleep at their desks; it opens again when their computer reconnects. Rooms no longer change places when someone leaves.
 - A saved office can be marked "open at start": the app walks into it without the start screen. The owner's local office was shut down and set aside (see STATUS); they now work in the server office.

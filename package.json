@@ -47,7 +47,8 @@
     "test:real:auto": "node tests/real/auto.ts",
     "serve": "node scripts/start-local.mjs --door",
     "office": "node scripts/office-admin.mjs",
-    "test:central": "node tests/linux/central-office.mjs"
+    "test:central": "node tests/linux/central-office.mjs",
+    "deploy:server": "sh scripts/deploy-server.sh"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
