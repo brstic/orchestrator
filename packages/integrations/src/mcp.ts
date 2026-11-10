@@ -126,6 +126,7 @@ export async function handleMcpPost<Ctx>(body: unknown, opts: McpServerOptions<C
 // ───────────────────────── Tool catalogue ────────────────────────
 
 const str = (description: string) => ({ type: 'string', description });
+const WAIT = { type: 'boolean', description: 'true = you need the answer before you can go on: wait for it in this call instead of carrying on. They are told that you are waiting.' };
 
 export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
   {
@@ -222,8 +223,9 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
   },
   {
     name: 'request_collaboration',
-    description: 'Ask a teammate for something you need from them (an endpoint, a contract, a fix, information). They must respond: incorporate it, turn it into a task, report a dependency, or escalate.',
-    inputSchema: { type: 'object', properties: { to: str('Teammate name or role (e.g. "backend")'), summary: str('One-line request'), detail: str('Details: what exactly you need and why') }, required: ['to', 'summary'] },
+    description:
+      'Ask a teammate for something you need from them (an endpoint, a contract, a fix, information). They must respond: incorporate it, turn it into a task, report a dependency, or escalate. If you cannot go on without their answer, set wait to true: the call then stays open until they answer (a few minutes at most) and returns their answer.',
+    inputSchema: { type: 'object', properties: { to: str('Teammate name or role (e.g. "backend")'), summary: str('One-line request'), detail: str('Details: what exactly you need and why'), wait: WAIT }, required: ['to', 'summary'] },
   },
   {
     name: 'hand_off_task',
@@ -232,12 +234,12 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
   },
   {
     name: 'request_help',
-    description: 'Ask for help with a problem. Routed to the most relevant available teammate, or to the boss if nobody fits.',
-    inputSchema: { type: 'object', properties: { topic: str('What you need help with'), detail: str('What you tried and where you are stuck') }, required: ['topic'] },
+    description: 'Ask for help with a problem. Routed to the most relevant available teammate, or to the boss if nobody fits. Set wait to true to wait here for the teammate\'s answer.',
+    inputSchema: { type: 'object', properties: { topic: str('What you need help with'), detail: str('What you tried and where you are stuck'), wait: WAIT }, required: ['topic'] },
   },
   {
     name: 'respond_to_request',
-    description: 'Respond to a collaboration request another teammate sent you.',
+    description: 'Respond to a collaboration request another teammate sent you. If they are waiting for your answer, this is what lets them go on.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -247,6 +249,12 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
       },
       required: ['request_id', 'action', 'note'],
     },
+  },
+  {
+    name: 'wait_for_colleague',
+    description:
+      'Wait for a teammate: for their answer to a request you sent (request_id), or until a task is finished (task, e.g. "T-12"). Returns at once when the answer is already there or the task has already ended. Otherwise it blocks for a few minutes and then says it has not happened yet; call it again to keep waiting (with no arguments it continues the wait you were in). You are told what happened, not just "done": the answer, or whether the task is DONE or BLOCKED and why. Use it only when you cannot go on without it.',
+    inputSchema: { type: 'object', properties: { request_id: str('Id of a request you sent with request_collaboration or request_help'), task: str('Key of the task to wait for, e.g. "T-12"') } },
   },
   {
     name: 'check_messages',

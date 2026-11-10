@@ -15,6 +15,8 @@
  *
  * What it "does" is scripted by directives embedded in the prompt it receives:
  *   @@fake: write a.txt hello; commit add a; complete done@@
+ * (`mcp <tool> <json>` calls any Orchestrator tool; `result <file>` then writes what that call returned into a
+ * file, so a test can see what a tool call that was held open came back with, and that work went on after it.)
  *
  * Nothing in the application ever launches this file; tests point the agent's
  * `claudeBin` at it explicitly.
@@ -208,10 +210,14 @@ function bash(command) {
   });
 }
 
+/** What the last Orchestrator tool call returned (or how it failed). */
+let lastResult = { text: '', isError: false };
+
 async function orchestrator(tool, args) {
   let result = { text: '', isError: false };
+  lastResult = { text: '(the call did not come back)', isError: true };
   await useTool(`mcp__orchestrator__${tool}`, args, async () => {
-    result = await mcpCall(tool, args);
+    result = lastResult = await mcpCall(tool, args);
     say(`  ⎿ ${result.isError ? '\x1b[31m' : ''}${result.text.split('\n').join('\r\n    ')}\x1b[0m`);
     return { content: result.text, is_error: result.isError };
   });
@@ -285,6 +291,11 @@ async function runDirectives(text) {
           await orchestrator(tool, json ? JSON.parse(json) : {});
           break;
         }
+        case 'result':
+          // What the last Orchestrator tool call returned, into a file in the working directory.
+          fs.writeFileSync(path.join(cwd, rest), `${lastResult.isError ? 'ERROR ' : ''}${lastResult.text}\n`);
+          say(`result → ${rest}`);
+          break;
         case 'progress':
           await orchestrator('report_progress', { note: rest, percent: 50 });
           break;

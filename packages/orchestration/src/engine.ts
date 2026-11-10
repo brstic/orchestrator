@@ -14,6 +14,7 @@ import { EmployeeRegistry, HostRegistry, SessionRegistry, type EmployeeInput } f
 import { Routines } from './routines.ts';
 import { Sleeper } from './sleep.ts';
 import { TaskManager } from './tasks.ts';
+import { Waits } from './waits.ts';
 
 /**
  * The orchestration engine: the single source of truth the 3D office renders.
@@ -23,6 +24,7 @@ import { TaskManager } from './tasks.ts';
  *   tasks ─ meetings ─ commands       what work exists and how it moves
  *   foreman                           an employee who supervises the rest, in rounds
  *   routines ─ sleep                  what is repeated by the clock, and who rests meanwhile
+ *   waits                             who cannot go on until a colleague has answered or finished
  *
  * Nothing in here knows about rendering.
  */
@@ -40,6 +42,7 @@ export class Engine {
   readonly foreman: Foreman;
   readonly routines: Routines;
   readonly sleeper: Sleeper;
+  readonly waits: Waits;
   readonly mcp: McpServerOptions<McpContext>;
   private housekeeping: NodeJS.Timeout | null = null;
 
@@ -57,6 +60,7 @@ export class Engine {
     this.foreman = new Foreman(this);
     this.routines = new Routines(this);
     this.sleeper = new Sleeper(this);
+    this.waits = new Waits(this);
     this.core.gateway = new TerminalGateway({
       rpc: (hostId, rpc, timeoutMs) => this.core.agents.rpc(hostId, rpc, timeoutMs),
       locate: (sessionId) => {
@@ -94,6 +98,7 @@ export class Engine {
   /** Reconstruct runtime state from the database after a (re)start. */
   start(): void {
     this.sessions.restore();
+    this.waits.restore();
     this.comms.restore();
     this.meetings.restore();
     for (const h of this.core.hosts.filter((x) => x.status === 'online')) {

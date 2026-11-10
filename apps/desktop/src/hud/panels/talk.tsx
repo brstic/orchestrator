@@ -5,6 +5,7 @@ import { ACTIVITY_LABEL } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Markdown, Window, clock } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
+import { waitingForLines } from '../../lib/views.ts';
 import { QuestionBody, act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { RepeatChoice, RepeatHint, RoutineList, createRoutine } from './routines.tsx';
@@ -173,6 +174,9 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
           <div key={q.id} className="card" style={{ margin: '4px 0' }}>
             <QuestionBody q={q} />
           </div>
+        ))}
+        {waitingForLines(s, e.id).map((line) => (
+          <div key={line} className="talk-note talk-note-info">{line}</div>
         ))}
         {live && WORKING.has(activity) && (
           <div className="talk-row">

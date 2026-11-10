@@ -43,6 +43,10 @@ export interface AgentLink {
 export interface Timings {
   /** How long an ask_boss / wait_for_answer tool call blocks before returning "not answered yet". */
   askBossWaitMs: number;
+  /** How long a tool call that waits for a colleague (their answer, or the end of a task) blocks before returning "not yet". */
+  colleagueWaitMs: number;
+  /** While someone waits for a colleague: how long that colleague may be without a session (it is being moved or started) before the wait is cut short. */
+  waitGoneGraceMs: number;
   /** How long each meeting round waits for contributions. */
   meetingRoundMs: number;
   /** Delay between a session becoming idle and Orchestrator typing into it. */
@@ -60,6 +64,8 @@ export interface Timings {
   foremanStalledMs: number;
   /** Overrides the owner's "idle for … minutes" setting (tests run on faster clocks). */
   foremanIdleMs: number | null;
+  /** Someone has waited this long for a colleague who has been doing nothing for as long: the foreman is called. */
+  foremanWaitingMs: number;
   /** The shortest gap between two foreman rounds, whatever the owner's setting says. */
   foremanMinGapMs: number;
   /** A round that was neither finished nor ended with its turn is given up on after this long. */
@@ -90,6 +96,8 @@ export interface Timings {
 
 export const DEFAULT_TIMINGS: Timings = {
   askBossWaitMs: 240_000,
+  colleagueWaitMs: 240_000,
+  waitGoneGraceMs: 5000,
   meetingRoundMs: 8 * 60_000,
   deliverySettleMs: 350,
   deliveryConfirmMs: 20_000,
@@ -99,6 +107,7 @@ export const DEFAULT_TIMINGS: Timings = {
   foremanSettleMs: 4000,
   foremanStalledMs: 5 * 60_000,
   foremanIdleMs: null,
+  foremanWaitingMs: 2 * 60_000,
   foremanMinGapMs: 30_000,
   foremanRoundTimeoutMs: 10 * 60_000,
   autopilotAllowApprovals: 5,

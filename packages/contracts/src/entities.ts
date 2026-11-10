@@ -311,6 +311,28 @@ export interface AgentSession {
   asleepSince?: ISODate | null;
   /** Whether the launch now in force continued an earlier conversation (false: it began a new one). */
   resumed?: boolean;
+  /** What this session is waiting for from a colleague, if anything (see `SessionWait`). */
+  waitingOn?: SessionWait | null;
+}
+
+/**
+ * An employee asked a colleague for something and said they need it before they can go on (`request_collaboration`
+ * or `request_help` with `wait`), or is waiting for a task to be finished (`wait_for_colleague`). Kept on the
+ * waiting session's record, so it is in everyone's state and survives a restart of the office.
+ */
+export interface SessionWait {
+  /** The colleague whose answer or work is awaited; null when nobody has it right now (a task that waits for the owner's review). */
+  employeeId: ID | null;
+  /** The request whose answer is awaited (`CollabRequest.id`), or null. */
+  requestId: ID | null;
+  /** The task whose end is awaited, or null. */
+  taskId: ID | null;
+  since: ISODate;
+  /**
+   * true: a tool call of the session is being held open for it right now. false: that call returned "not yet"
+   * (or the office restarted); the wait stands, and the outcome reaches the session as a message.
+   */
+  held: boolean;
 }
 
 // ─────────────────────────── Projects ────────────────────────────
@@ -619,6 +641,10 @@ export interface CollabRequest {
   response: string | null;
   /** The responder's task at the time they agreed to help (assist XP is tied to its verified completion). */
   responderTaskId: ID | null;
+  /** The task the request became, when the answer was "a separate task" (`new_task`). */
+  createdTaskId?: ID | null;
+  /** The one who asked said they cannot go on without the answer, and waits for it. */
+  waited?: boolean;
   createdAt: ISODate;
   resolvedAt: ISODate | null;
 }
@@ -1179,8 +1205,9 @@ export interface ForemanSettings {
 /**
  * question: an employee asked and nobody answered. blocked: a blocked task. stalled: idle with a task in progress.
  * unassigned: ready work next to someone free. idle: a live session with nothing in progress, doing nothing.
+ * waiting: an employee who cannot go on until a colleague answers or finishes, while that colleague is doing nothing.
  */
-export type ForemanAttentionKind = 'question' | 'blocked' | 'stalled' | 'unassigned' | 'idle';
+export type ForemanAttentionKind = 'question' | 'blocked' | 'stalled' | 'unassigned' | 'idle' | 'waiting';
 
 /** One thing that calls for the foreman, computed from recorded state. */
 export interface ForemanAttentionItem {

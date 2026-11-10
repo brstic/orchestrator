@@ -19,6 +19,12 @@ test('hook payloads map to activity states', () => {
   assert.equal(act({ hook_event_name: 'PreToolUse', tool_name: 'Grep', tool_input: { pattern: 'x' } }, { ...ctx, taskKind: 'review' }), 'reviewing');
   assert.equal(act({ hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: {} }), 'waiting_answer');
   assert.equal(act({ hook_event_name: 'PreToolUse', tool_name: 'mcp__orchestrator__ask_boss', tool_input: {} }), 'waiting_answer');
+  // A call that is held open for a colleague: waiting, and not for a decision of the owner's. Without wait it is bookkeeping.
+  assert.equal(act({ hook_event_name: 'PreToolUse', tool_name: 'mcp__orchestrator__wait_for_colleague', tool_input: { task: 'T-1' } }), 'waiting_input');
+  assert.equal(act({ hook_event_name: 'PreToolUse', tool_name: 'mcp__orchestrator__request_collaboration', tool_input: { to: 'Sarah', summary: 'x', wait: true } }), 'waiting_input');
+  assert.equal(act({ hook_event_name: 'PreToolUse', tool_name: 'mcp__orchestrator__request_collaboration', tool_input: { to: 'Sarah', summary: 'x' } }), null);
+  assert.equal(act({ hook_event_name: 'PostToolUse', tool_name: 'mcp__orchestrator__wait_for_colleague', tool_input: {}, tool_response: {} }), 'thinking');
+  assert.equal(act({ hook_event_name: 'PostToolUse', tool_name: 'mcp__orchestrator__request_help', tool_input: { topic: 'x' }, tool_response: {} }), null);
   assert.equal(act({ hook_event_name: 'PreToolUse', tool_name: 'mcp__orchestrator__report_progress', tool_input: {} }), null, 'reporting is not a change of activity');
   assert.equal(act({ hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'rm x' } }), 'needs_approval');
   assert.equal(act({ hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'needs permission' }), 'needs_approval');

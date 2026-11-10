@@ -12,8 +12,9 @@ import type { Engine } from './engine.ts';
  * they already have. What this module decides is only *when*:
  *
  *   between turns, nothing waiting on the owner      → delivered
- *   mid-turn, a question or approval open, or the
- *   run before this one not yet delivered            → skipped; looked at again one interval later
+ *   mid-turn, a question or approval open, waiting
+ *   for a colleague, or the run before this one not
+ *   yet delivered                                    → skipped; looked at again one interval later
  *   no session                                       → their session is started (as talking to them does)
  *   their machine is away, they are paused,
  *   their project is paused, outside their hours     → held; it runs once when that is over
@@ -190,6 +191,8 @@ export class Routines {
     if (this.core.gateway.isHumanControlled(session.id)) return `someone is at ${employee.name}'s terminal`;
     const open = this.core.questions.find((q) => q.employeeId === employee.id && q.status === 'open' && q.channel !== 'system');
     if (open) return `${employee.name} is waiting for ${open.kind === 'permission' ? 'an approval' : 'an answer'} from you`;
+    // Waiting for a colleague (in a held tool call, or at the prompt until the answer comes) is not the moment either.
+    if (session.waitingOn) return `${employee.name} is waiting for ${this.eng.waits.words(session.waitingOn)}`;
     // With hooks the office knows when Claude is between turns; without them it cannot tell, and does not hold back.
     if (session.capabilities.hooks && session.inTurn !== false) return `${employee.name} was in the middle of something`;
     // (Another routine's run does not count: two that come due together are handed over one after the other.)

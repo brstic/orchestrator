@@ -241,7 +241,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     const session = engine.sessions.sessionByMcpToken(tokenOf(req));
     const employee = session ? engine.core.employees.get(session.employeeId) : undefined;
     if (!session || !employee) return reply.code(401).header('www-authenticate', 'Bearer').send({ jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Unauthorized: invalid or expired Orchestrator session token' } });
-    const res = await handleMcpPost(req.body, engine.mcp, { session, employee });
+    // A tool call can be held open for minutes (ask_boss, a wait for a colleague): if the caller hangs up first, say so.
+    const gone = new AbortController();
+    reply.raw.on('close', () => {
+      if (!reply.raw.writableFinished) gone.abort();
+    });
+    const res = await handleMcpPost(req.body, engine.mcp, { session, employee, signal: gone.signal });
     if (res.body === null) return reply.code(res.status).send();
     return reply.code(res.status).header('content-type', 'application/json').send(res.body);
   });

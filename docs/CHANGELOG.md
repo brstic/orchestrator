@@ -3,6 +3,12 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-11
+- **An employee can wait for a colleague.** Asking a teammate with `wait: true` (`request_collaboration`, `request_help`) keeps the tool call open until they answer with `respond_to_request`, and returns their answer. The new `wait_for_colleague` waits until a task somebody else has is finished — and says what happened: done, blocked and why, or removed — or picks a wait up again. A call waits four minutes at most; then it says "not yet" and how to keep waiting, and whatever comes later is delivered as a message.
+  - The colleague is told who is waiting ("Alex is waiting for your answer before going on"), is started for it if they have no session, and `respond_to_request` says whom it let go on.
+  - Someone who waits is shown as **WAITING** with *Waiting for Sarah (T-12)* or *Waiting for Sarah's answer*; the awaited one's card and Talk window say "Alex is waiting for an answer from them". While waiting they are not put to sleep, get no routine run and are not nudged to carry on.
+  - Refused or cut short, in words: waiting for oneself or in a circle, for someone archived, paused or out of reach, for a task one cannot see, and across the line between the shared office and a member's own computer.
+  - The foreman is not called about someone who stopped to wait — unless the colleague they wait for is doing nothing ("Alex has been waiting 12m for Sarah, who is doing nothing").
+  - Run with the scripted worker only; not yet with real Claude Code.
 - **A second pass over every window, after Growth, routines, sleep and the shared hi-fi were joined.**
   - **"Needs you" is one number everywhere.** The Company window's *Now* tab and the Command center counted it their own way (the Company window said 4 where the Inbox said 3; the Command center said 0 with a blocked task under it). Both now list exactly what the Inbox lists. Proposed tasks waiting in the backlog are a quiet line under the list, not part of the count. A UI check compares the Inbox button with the Company window.
   - **Settings has seven sections instead of nine.** *Game mechanics* and *Commands* held one switch each and are now in *Company*; *Self-improvement* is called *Growth*, like the window; *Workers* is called *Employees*. The MCP switch says both of its sides in one sentence instead of a switch, a two-row table and a note.

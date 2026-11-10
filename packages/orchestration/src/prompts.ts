@@ -184,6 +184,7 @@ export function systemPromptFor(employee: Employee, project: Project | undefined
         `  • ask_boss — when you need a decision or missing requirement. Do not guess, and do not ask what you can find out yourself.`,
         `  • report_blocker — when you cannot continue.`,
         `  • request_collaboration / send_message / get_team — to work with teammates. Answer requests you receive with respond_to_request.`,
+        `  • When you cannot go on without a teammate: request_collaboration with wait=true waits for their answer, and wait_for_colleague waits until a task of theirs is finished. Do not wait when you have other work that does not depend on it.`,
         `  • hand_off_task — when the rest of your task belongs with a teammate: commit, then hand it over with notes on where it stands.`,
         `  • complete_task — when the acceptance criteria are met and your work is committed. Orchestrator verifies independently; if verification fails, fix it and call complete_task again.`,
         `  • record_lesson / get_playbook — you keep a playbook of lessons from your own work here. When something goes wrong and you learn how to avoid it, record it; it is given back to you on future tasks.`,
@@ -257,7 +258,9 @@ export function messagePrompt(msg: Message, collab: CollabRequest | undefined): 
     return [
       `${correlationMarker('MSG', msg.id)} Request from ${from} (request id ${collab.id}): ${collab.summary}`,
       collab.detail ? `\n${collab.detail}` : '',
-      `\nEvaluate this against your current work, then call respond_to_request with request_id "${collab.id}" and one action: incorporated (you will do it within your current task), new_task (it should be separate work), needs_decision (the boss must prioritise), dependency (it depends on other work) or declined. Then carry on with your task.`,
+      // The one who asked holds a tool call open for the answer: say so, and ask for the answer first.
+      collab.waited ? `\n${from.replace(/ \(.*\)$/, '')} is waiting for your answer before going on.` : '',
+      `\n${collab.waited ? 'Answer before anything else: evaluate' : 'Evaluate'} this against your current work, then call respond_to_request with request_id "${collab.id}" and one action: incorporated (you will do it within your current task), new_task (it should be separate work), needs_decision (the boss must prioritise), dependency (it depends on other work) or declined.${collab.waited ? ' Put what they need to know in the note: it is handed to them at once.' : ''} Then carry on with your task.`,
     ].join('');
   }
   if (msg.routineId) return `${correlationMarker('MSG', msg.id)} ${msg.body}\n\n${ROUTINE_GUIDE}`;

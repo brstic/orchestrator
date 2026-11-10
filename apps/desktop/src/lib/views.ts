@@ -157,6 +157,22 @@ export function foremanWalks(events: Array<{ id: string; type: string; ts: strin
   return out;
 }
 
+/**
+ * Who cannot go on until this employee has answered or finished, one plain line each. Read from the waiting
+ * sessions' own records (`AgentSession.waitingOn`), which the office keeps true.
+ */
+export function waitingForLines(s: Pick<OfficeState, 'sessions' | 'employees' | 'tasks'>, employeeId: string): string[] {
+  const out: string[] = [];
+  for (const x of Object.values(s.sessions)) {
+    const w = x.waitingOn;
+    if (!w || w.employeeId !== employeeId || (x.status !== 'running' && x.status !== 'starting')) continue;
+    const who = s.employees[x.employeeId ?? '']?.name;
+    if (!who) continue;
+    out.push(w.requestId ? `${who} is waiting for an answer from them` : `${who} is waiting for them to finish ${s.tasks[w.taskId ?? '']?.key ?? 'a task'}`);
+  }
+  return out;
+}
+
 const VISIT_VERB: Record<string, string> = { look: 'checking', answer: 'answering', assign: 'giving work to', tell: 'talking to' };
 const ROUND_NOUN: Array<[string, string, string]> = [
   ['question', 'question', 'questions'],
@@ -164,6 +180,7 @@ const ROUND_NOUN: Array<[string, string, string]> = [
   ['stalled', 'stalled', 'stalled'],
   ['unassigned', 'to assign', 'to assign'],
   ['idle', 'idle', 'idle'],
+  ['waiting', 'waiting', 'waiting'],
 ];
 
 /**
