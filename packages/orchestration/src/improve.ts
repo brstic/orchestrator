@@ -3,6 +3,7 @@ import { correlationMarker, newId, nowIso, truncate } from '@orchestrator/contra
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
 import { DEFAULT_HIGH_RISK_PATTERNS } from './prompts.ts';
+import { Outcomes, routingEvidence } from './learning/outcomes.ts';
 
 const MAX_LESSONS_IN_PROMPT = 12;
 /** Approvals of the same command shape before Orchestrator suggests pre-approving it. */
@@ -28,9 +29,12 @@ export class Improver {
   /** Retrospective in progress per employee: lessons they record are tied to that task. */
   private retros = new Map<string, { taskId: string; recorded: number }>();
   private analyzeTimer: NodeJS.Timeout | null = null;
+  /** Whether what was learned helped: outcomes, trends, verdicts on lessons and applied improvements (learning/outcomes.ts). */
+  readonly outcomes: Outcomes;
 
   constructor(eng: Engine) {
     this.eng = eng;
+    this.outcomes = new Outcomes(eng);
   }
 
   private get core() {
@@ -277,20 +281,19 @@ export class Improver {
       row.mergeConflicts += t.friction.mergeConflicts;
       if (t.friction.failedVerifications === 0 && t.friction.reviewRejections === 0) row.firstPass++;
     }
-    return [...table.values()];
+    // Each row also carries the same record with recent work counting more (`outcomes`).
+    return this.outcomes.decorate([...table.values()]);
   }
 
   /**
    * Learned routing: among equally suitable employees, prefer the one whose
    * record on this kind of task is better. Needs at least two completed tasks
-   * of that kind before it has an opinion.
+   * of that kind before it has an opinion. The record it reads is the decayed
+   * one (old tasks fade, a short record speaks quietly): see `routingEvidence`.
    */
   routingBonus(employee: Employee, kind: TaskKind): { bonus: number; reason: string | null } {
     if (!this.on || !this.core.settings.selfImprovement.learnedRouting) return { bonus: 0, reason: null };
-    const row = this.performance().find((r) => r.employeeId === employee.id && r.kind === kind);
-    if (!row || row.completed < 2) return { bonus: 0, reason: null };
-    const rate = row.firstPass / row.completed;
-    return { bonus: (rate - 0.5) * 4, reason: `${row.firstPass}/${row.completed} ${kind} tasks passed first time` };
+    return routingEvidence(this.performance().find((r) => r.employeeId === employee.id && r.kind === kind), kind);
   }
 
   // ───────────────────── orchestrator proposals ────────────────────
@@ -497,6 +500,8 @@ export class Improver {
         );
       }
     }
+    // 8. Did what was learned help? Retire lessons the record is against, mark the proven ones, suggest undoing a change that made things worse.
+    for (const i of this.outcomes.act()) add(i);
     if (out.length) this.core.broadcast('performance', this.performance());
     return out;
   }

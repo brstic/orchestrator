@@ -20,7 +20,7 @@
  * A route that is not listed here needs an owner: forgetting to list a new route fails closed.
  */
 import { matchRole, roleByKey, type FullState, type Message, type OrchestratorEvent, type Question } from '@orchestrator/contracts';
-import { FOREMAN_ROLE, type Engine } from '@orchestrator/orchestration';
+import { FOREMAN_ROLE, type Engine, type OutcomesScope } from '@orchestrator/orchestration';
 
 export type Role = 'owner' | 'colleague' | 'visitor';
 
@@ -113,6 +113,8 @@ const RULES: Rule[] = [
   rule('POST', '/lessons', 'work'),
   rule('PATCH', '/lessons/:id', 'work'),
   rule('POST', '/commands/plan', 'work'),
+  // Whether what the office learned helped. Counted, for anyone but an owner, only from what they may see (`outcomesScopeFor`).
+  rule('GET', '/growth/outcomes', 'read'),
 ];
 
 /** In place of a member's id: the thing is the foreman's (its profile, its session, its questions), which only owners may touch or look into. */
@@ -245,4 +247,15 @@ export function mayReadQuestion(engine: Engine, who: Who, q: Question): boolean 
 export function stateFor(engine: Engine, who: Who, state: FullState): FullState {
   if (who.kind === 'owner') return state;
   return { ...state, events: state.events.map((e) => eventFor(engine, who, e)).filter((e): e is OrchestratorEvent => !!e), messages: state.messages.filter((m) => mayReadMessage(engine, who, m)), questions: state.questions.filter((q) => mayReadQuestion(engine, who, q)) };
+}
+
+/**
+ * What of the office's measured outcomes (GET /growth/outcomes) this person may see. An owner: everything (null).
+ * Anyone else: what is shared and what is on their own computer — so the figures they get are counted without the
+ * tasks, employees and projects of other members' computers, and the lessons and improvements about those are left out.
+ */
+export function outcomesScopeFor(engine: Engine, who: Who): OutcomesScope | null {
+  if (who.kind === 'owner') return null;
+  const reads = (thing: Thing) => (id: string) => allowed(who, 'read', memberOf(engine, thing, id));
+  return { task: (t) => reads('task')(t.id), employee: reads('employee'), project: reads('project') };
 }

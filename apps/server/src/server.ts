@@ -1,7 +1,7 @@
 import { Door, inviteCode } from './door.ts';
 import { Guests, whoIs, type Who } from './guests.ts';
 import { Knocks, type Admission } from './knocks.ts';
-import { allowed, eventFor, mayCall, stateFor } from './access.ts';
+import { allowed, eventFor, mayCall, outcomesScopeFor, stateFor } from './access.ts';
 import { nowPlaying } from './radio.ts';
 import { SshLinks } from './ssh-links.ts';
 import fs from 'node:fs';
@@ -541,6 +541,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/improvements/analyze', async () => engine.improver.analyze());
     api.post('/improvements/:id/apply', async (req) => engine.improver.apply(param(req, 'id')));
     api.post('/improvements/:id/dismiss', async (req) => engine.improver.dismiss(param(req, 'id')));
+    // Whether what was learned helped: trends, and a verdict per lesson and per applied improvement — from what the asker may see.
+    api.get('/growth/outcomes', async (req) => engine.improver.outcomes.report(outcomesScopeFor(engine, whoOf(req))));
 
     // natural-language commands: plan first, execute only what the owner confirmed
     api.post('/commands/plan', async (req) => engine.commands.planWithFallback(String(body(req).input ?? '')));

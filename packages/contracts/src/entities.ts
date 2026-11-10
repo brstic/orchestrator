@@ -717,6 +717,13 @@ export interface Lesson {
   appliedCount: number;
   createdAt: ISODate;
   updatedAt: ISODate;
+  /** Outcomes: tasks given this lesson measurably went better than comparable tasks without it (docs/learning/outcomes.md). Retrieval may prefer these. */
+  proven?: boolean;
+  /**
+   * Outcomes: set when the office retired this lesson by itself because the record showed it was not helping.
+   * It stays on the lesson after someone re-activates it, and such a lesson is never retired automatically again.
+   */
+  outcomesRetired?: { at: ISODate; verdict: 'harmful' | 'not_helping'; why: string } | null;
 }
 
 /** Measured outcome for an employee on one kind of task. Counts, never estimates. */
@@ -729,9 +736,16 @@ export interface PerformanceStat {
   failedVerifications: number;
   reviewRejections: number;
   mergeConflicts: number;
+  /**
+   * Outcomes: the same record with recent work counting more — what learned routing reads.
+   * `weight` is the effective number of tasks after decay (a task loses half its weight every 45 days);
+   * `firstPassRate` and `meanFriction` are weighted the same way; `routingRate` is that first-pass rate
+   * with one pass and one fail added, so a short record speaks more quietly than a long one.
+   */
+  outcomes?: { weight: number; firstPassRate: number; routingRate: number; meanFriction: number; lastCompletedAt: ISODate | null };
 }
 
-export type ImprovementKind = 'allow_rule' | 'deny_rule' | 'autonomy' | 'review_policy' | 'verify_command' | 'verify_timeout' | 'sequencing' | 'acceptance_criteria' | 'routing';
+export type ImprovementKind = 'allow_rule' | 'deny_rule' | 'autonomy' | 'review_policy' | 'verify_command' | 'verify_timeout' | 'sequencing' | 'acceptance_criteria' | 'routing' | 'revert_improvement';
 
 export type ImprovementAction =
   | { type: 'project.policy.allow'; projectId: ID; rule: string }
@@ -760,6 +774,8 @@ export interface Improvement {
   dedupeKey: string;
   createdAt: ISODate;
   decidedAt: ISODate | null;
+  /** Outcomes: for kind `revert_improvement`, the applied improvement the record says made things worse. */
+  outcomesRevertOf?: ID | null;
 }
 
 export interface SelfImprovementSettings {
@@ -770,6 +786,158 @@ export interface SelfImprovementSettings {
   autoApproveSharedLessons: boolean;
   /** Let measured outcomes influence which employee the scheduler picks. */
   learnedRouting: boolean;
+  /** Outcomes: retire a lesson by itself once the record shows, with enough tasks, that it is not helping or is making things worse. */
+  outcomesAutoRetire: boolean;
+}
+
+// ── Outcomes: did what the office learned help? (docs/learning/outcomes.md) ──
+
+/** What one task cost on its way to done. Derived from the task's own record; nothing is estimated. */
+export interface TaskOutcome {
+  taskId: ID;
+  key: string;
+  projectId: ID;
+  employeeId: ID | null;
+  kind: TaskKind;
+  startedAt: ISODate | null;
+  completedAt: ISODate | null;
+  /** Done with no failed verification and no review rejection. */
+  firstPass: boolean;
+  /** Orchestrator ran a verification command itself and it passed (not only the employee's word). */
+  verified: boolean;
+  failedVerifications: number;
+  reviewRejections: number;
+  mergeConflicts: number;
+  blockers: number;
+  /** Questions put to the owner (permission requests are counted separately). */
+  questions: number;
+  approvalsAsked: number;
+  approvalsDenied: number;
+  /** Times the employee stopped without finishing and was told to continue, in the last hand-over (the counter restarts with each hand-over). */
+  nudges: number;
+  /** Times the work came back to the employee: after a failed verification or a review that asked for changes. */
+  sentBack: number;
+  /** Wall time from the first start to done, waiting included. Null when either end was not recorded. */
+  cycleMs: number | null;
+  /** Tokens used on the task, when the task record carries them (it does not today). */
+  tokens: number | null;
+  /** The counts above as one number; the weights are in `FRICTION_WEIGHTS` (docs/learning/outcomes.md). 0 is a clean run. */
+  frictionScore: number;
+}
+
+/** A group of finished tasks in numbers. Rates and means are null for an empty group. */
+export interface OutcomeStats {
+  tasks: number;
+  firstPass: number;
+  firstPassRate: number | null;
+  meanFriction: number | null;
+  questionsPerTask: number | null;
+  approvalsPerTask: number | null;
+  /** Median wall time from start to done, over the tasks where both were recorded. */
+  medianCycleMs: number | null;
+}
+
+/** One row of a trend table or one point of a trend chart. */
+export interface OutcomeTrendRow extends OutcomeStats {
+  /** Project id, employee id, task kind, or the Monday (UTC, YYYY-MM-DD) a week starts on. */
+  key: string;
+  label: string;
+}
+
+export interface OutcomeTrends {
+  overall: OutcomeStats;
+  /** The last `window` finished tasks against the `window` before them. */
+  recent: { window: number; last: OutcomeStats; previous: OutcomeStats };
+  /** Oldest first, one row per week, weeks without finished tasks included. */
+  byWeek: OutcomeTrendRow[];
+  byProject: OutcomeTrendRow[];
+  byEmployee: OutcomeTrendRow[];
+  byKind: OutcomeTrendRow[];
+}
+
+/**
+ * helping       — measurably better, with enough tasks on both sides.
+ * no_effect_yet — nothing can be said yet (`reason` says why; `needed` says how many more tasks).
+ * not_helping   — enough tasks, there was room to improve, and a worthwhile improvement is ruled out.
+ * harmful       — measurably worse, with enough tasks on both sides.
+ */
+export type OutcomeVerdict = 'helping' | 'no_effect_yet' | 'not_helping' | 'harmful';
+/** Why a verdict is `no_effect_yet`: too few comparable tasks, a difference that is not clear, measures that disagree, or nothing to improve on. */
+export type OutcomeUndecided = 'too_few' | 'unclear' | 'mixed' | 'no_room';
+
+/** One measure compared between two groups of comparable tasks (same project, kind and employee). */
+export interface OutcomeComparison {
+  /** Tasks on each side that have a comparable task on the other side. */
+  tasksA: number;
+  tasksB: number;
+  /** Mean (or rate) on side A; side B's is re-weighted to A's mix of project, kind and employee. */
+  a: number | null;
+  b: number | null;
+  /** a − b, its standard error, and the two divided. Null when there is nothing to compare. */
+  diff: number | null;
+  se: number | null;
+  z: number | null;
+}
+
+export interface LessonOutcome {
+  lessonId: ID;
+  text: string;
+  scope: Lesson['scope'];
+  employeeId: ID | null;
+  projectId: ID | null;
+  status: Lesson['status'];
+  proven: boolean;
+  /** recorded: the tasks say which lessons they were given. inferred: worked out from dates (every lesson in scope that existed when the task started). */
+  basis: 'recorded' | 'inferred';
+  /** Every finished task that was given it / that could have been and was not (the tasks it was learned from are in neither). */
+  given: number;
+  notGiven: number;
+  /** A = tasks given the lesson, B = comparable tasks without it. */
+  firstPass: OutcomeComparison;
+  friction: OutcomeComparison;
+  verdict: OutcomeVerdict;
+  reason: OutcomeUndecided | null;
+  /** How many more comparable tasks each side needs before there can be a verdict; null when there are enough. */
+  needed: { with: number; without: number } | null;
+  /** The verdict as one line of plain English, ready to show. */
+  line: string;
+}
+
+export interface ImprovementOutcome {
+  improvementId: ID;
+  kind: ImprovementKind;
+  title: string;
+  decidedAt: ISODate;
+  /** Whose tasks are compared: one project's, one employee's, or (both null) the whole office's. */
+  projectId: ID | null;
+  employeeId: ID | null;
+  /** What this kind of change is judged on, e.g. approvals asked per task for an allow rule. */
+  metric: { key: string; label: string; better: 'higher' | 'lower'; before: number | null; after: number | null };
+  /** The last tasks finished before the change and the first ones started after it. */
+  before: OutcomeStats;
+  after: OutcomeStats;
+  /** A = after, B = before. */
+  comparison: OutcomeComparison;
+  /** For changes that widen what agents may do: the first-pass rate must not fall. Null for other kinds. */
+  guard: OutcomeComparison | null;
+  verdict: OutcomeVerdict;
+  reason: OutcomeUndecided | null;
+  needed: { before: number; after: number } | null;
+  line: string;
+  /** The `revert_improvement` suggestion raised because of this, if any. */
+  revertProposalId: ID | null;
+}
+
+/** GET /api/growth/outcomes */
+export interface OutcomesReport {
+  generatedAt: ISODate;
+  /** Finished tasks the figures are counted from. */
+  tasks: number;
+  /** The rules behind every verdict, so a screen can explain them. */
+  thresholds: { minTasksPerSide: number; minTasksToRetire: number; minTasksForNoBenefit: number; minFirstPassDifference: number; confidence: number; confidenceNoBenefit: number; window: number };
+  trends: OutcomeTrends;
+  lessons: LessonOutcome[];
+  improvements: ImprovementOutcome[];
 }
 
 // ──────────────────────────── Foreman ────────────────────────────

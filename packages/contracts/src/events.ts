@@ -90,7 +90,10 @@ export type EventType =
   | 'foreman.escalated'
   | 'ops.deployment'
   | 'security.alert'
-  | 'owner.command';
+  | 'owner.command'
+  | 'learning.retired'
+  | 'learning.proven'
+  | 'learning.unproven';
 
 export type EventSourceKind = 'hook' | 'mcp' | 'host' | 'server' | 'owner' | 'sdk';
 
