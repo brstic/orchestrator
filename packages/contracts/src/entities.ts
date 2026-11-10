@@ -908,10 +908,22 @@ export interface RadioStation {
 
 export interface RadioSettings {
   stations: RadioStation[];
-  /** 0–1. */
+  /** 0–1. Only where a computer's own volume starts from: how loud each person hears the hi-fi is theirs (the app's preferences). */
   volume: number;
-  /** The station that was last played; nothing starts by itself. */
+  /** The station that was last played (the office notes it when someone switches one on); nothing starts by itself. */
   lastStationId: string | null;
+}
+
+/**
+ * What the office's hi-fi is playing right now, for everyone in the office. Kept by the server in memory: after a
+ * restart the hi-fi is off. Each window plays the stream itself; the office only says what is on.
+ */
+export interface RadioNow {
+  /** One of the office's saved stations, as it was when it was switched on. */
+  station: RadioStation;
+  since: ISODate;
+  /** Who switched it on: the member's id ('owner' for the root owner) and their name. */
+  by: { id: string; name: string };
 }
 
 /** One rate-limit window as Claude Code reports it for a subscription account. */
@@ -955,7 +967,7 @@ export interface TvSettings {
 export interface OwnerSettings {
   /** The office TV. Browsing happens in the owner's own window; employees have nothing to do with it. */
   tv: TvSettings;
-  /** The office hi-fi. Playback happens in the owner's own window; nothing is sent to employees. */
+  /** The office hi-fi's stations. What is playing is the office's too (`RadioNow`), heard by everyone in it; nothing is sent to employees. */
   radio: RadioSettings;
   companyName: string;
   ownerName: string;

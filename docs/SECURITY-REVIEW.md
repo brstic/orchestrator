@@ -15,7 +15,7 @@ Reviewed by reading the code paths below and exercising them in tests (the test 
 | Filesystem reads (documents, folder browsing) | `packages/execution/src/files.ts`, agent `assertAllowed` | e2e `10` (path escape, symlink, non-Markdown refused) |
 | Git operations (merge, promote) | `packages/execution/src/git.ts` | e2e `03`, `11` (dirty tree, non-fast-forward, failing tests refused) |
 | SSH links | `apps/server/src/ssh-links.ts` | `tests/linux/ssh-link.ts`; UI test (invalid target, refused connection) |
-| Radio | `apps/server/src/radio.ts`, page CSP | e2e `10` (only http(s) stations, size and length limits, saved stations only) |
+| Radio | `apps/server/src/radio.ts`, page CSP | e2e `10` (only http(s) stations, size and length limits, saved stations only), e2e `22` (office-wide: only saved stations are played, visitors cannot switch) |
 | Secrets in records | `packages/contracts/src/util.ts` | e2e `11` (key never stored), unit tests |
 | Desktop connect screen, token storage | `apps/desktop/electron` | `scripts/smoke-package.mjs` |
 

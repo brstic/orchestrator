@@ -1420,28 +1420,52 @@ async function scenario() {
     return `${before} account → ${after}; the first shows 42% of 5 hours and 85% of the week`;
   });
 
-  await step('Hi-fi: a station is added, plays, says what is on air, and is stopped from the top bar', async () => {
-
+  await step('Hi-fi: a station is switched on for the office and says what is on air; it is quieter far from the hi-fi; volume and mute are this computer\'s; the top bar stops it for everyone', async () => {
     await open('radio');
     await waitFor(`!!document.querySelector('.win .radio-now')`, 8000);
     const builtIn = await js(`window.__t.store().settings.radio.stations.map((x) => x.name).join(', ')`);
+    const officeVolume = await js(`window.__t.store().settings.radio.volume`);
     await clickText('Add a station');
     await type(`window.__t.field('Name')`, ctx.radioName);
     await type(`window.__t.field('Stream address')`, ctx.radioUrl);
     await type(`window.__t.field('Now-playing address')`, ctx.radioNow);
     await click(`window.__t.submit('Add and play')`, 'Add and play');
-    await waitFor(`window.__t.store().radio.status === 'playing' && window.__t.store().radio.name === ${JSON.stringify(ctx.radioName)}`, 15000);
+    // The office has it on (its state, as the server told every window), and this window plays its own copy.
+    const name = JSON.stringify(ctx.radioName);
+    await waitFor(`(() => { const s = window.__t.store(); return !!s.hifi && s.hifi.station.name === ${name} && s.radio.status === 'playing' && s.radio.name === ${name}; })()`, 15000);
     await waitFor(`window.__t.store().radio.nowPlaying === ${JSON.stringify(ctx.radioTitle)}`, 10000);
-    // Volume: a real click in the middle of the slider.
+    await waitFor(`/Switched on by you/.test(window.__t.scope().textContent) && /Playing on this computer/.test(window.__t.scope().textContent)`, 5000);
+    // My volume: a real click in the middle of the slider. It is this computer's, not the office's.
     await click(`window.__t.scope().querySelector('.radio-volume input[type=range]')`, 'volume slider');
-    await waitFor(`Math.abs(window.__t.store().settings.radio.volume - 0.5) < 0.1`, 8000);
+    await waitFor(`Math.abs(window.__orchPrefs.getState().prefs.radioVolume - 0.5) < 0.1`, 8000);
+    const mine = await js(`window.__orchPrefs.getState().prefs.radioVolume`);
+    if ((await js(`window.__t.store().settings.radio.volume`)) !== officeVolume) throw new Error('my volume was written into the office\'s settings');
     await shot('hifi-playing');
     await clickText('✕');
     await waitFor(`!document.querySelector('.win')`, 5000);
     await waitFor(`!!document.querySelector('.radio-mini') && document.querySelector('.radio-mini').textContent.includes(${JSON.stringify(ctx.radioTitle)})`, 5000);
-    await click(`document.querySelector('.radio-mini button[aria-label="Stop the radio"]')`, 'the stop button in the top bar');
-    await waitFor(`window.__t.store().radio.status === 'idle' && !document.querySelector('.radio-mini')`, 5000);
-    return `stations before: ${builtIn}; "${ctx.radioName}" played "${ctx.radioTitle}", volume set to ${await js(`window.__t.store().settings.radio.volume`)}`;
+    // Next to the hi-fi it is as loud as my volume; at the far end of the office it is quiet, not silent.
+    const was = await js(`({ x: window.__orchPlayer.x, z: window.__orchPlayer.z, rot: window.__orchPlayer.rot })`);
+    const spots = await js(`window.__orchPlayer.spots || []`);
+    const hifi = spots.find((s) => s.kind === 'hifi');
+    if (!hifi) throw new Error('the office has no hi-fi to walk up to');
+    const far = spots.filter((s) => s.kind !== 'hifi').sort((p, q) => Math.hypot(q.x - hifi.x, q.z - hifi.z) - Math.hypot(p.x - hifi.x, p.z - hifi.z))[0];
+    await js(`window.__orchPlayer.goto = { x: ${hifi.x}, z: ${hifi.z}, rot: 0 }; true`);
+    await waitFor(`(() => { const r = window.__orchRadio(); return r.loudness === 1 && Math.abs(r.volume - ${mine}) < 0.01; })()`, 8000);
+    await js(`window.__orchPlayer.goto = { x: ${far.x}, z: ${far.z}, rot: 0 }; true`);
+    await waitFor(`(() => { const r = window.__orchRadio(); return r.loudness < 0.6 && r.loudness >= 0.14 && Math.abs(r.volume - ${mine} * r.loudness) < 0.01; })()`, 8000);
+    const heard = await js(`window.__orchRadio()`);
+    if (!(heard.volume > 0.05) || heard.paused) throw new Error(`far from the hi-fi the music is gone: ${JSON.stringify(heard)}`);
+    // Mute is for this computer only: the office's hi-fi stays on, this window stops playing its copy.
+    await click(`document.querySelector('.radio-mini button[aria-label="Mute the hi-fi on this computer"]')`, 'Mute in the top bar');
+    await waitFor(`window.__orchPrefs.getState().prefs.radioMuted === true && window.__orchRadio().loaded === null && !!window.__t.store().hifi && !!document.querySelector('.radio-mini')`, 5000);
+    await click(`document.querySelector('.radio-mini button[aria-label="Unmute the hi-fi on this computer"]')`, 'Unmute in the top bar');
+    await waitFor(`window.__orchPrefs.getState().prefs.radioMuted === false && window.__t.store().radio.status === 'playing'`, 15000);
+    // The stop button says what it does, and does it for the office.
+    await click(`document.querySelector('.radio-mini button[aria-label="Stop the hi-fi for everyone"]')`, 'the stop button in the top bar');
+    await waitFor(`!window.__t.store().hifi && window.__t.store().radio.status === 'idle' && !document.querySelector('.radio-mini') && window.__orchRadio().loaded === null`, 5000);
+    await js(`window.__orchPlayer.goto = { x: ${was.x}, z: ${was.z}, rot: ${was.rot} }; true`);
+    return `stations before: ${builtIn}; "${ctx.radioName}" played "${ctx.radioTitle}" for the office; my volume ${mine} (the office's stays ${officeVolume}); at the ${far.kind} spot ${Math.hypot(far.x - hifi.x, far.z - hifi.z).toFixed(0)} m away it was heard at ${(heard.loudness * 100).toFixed(0)}%`;
   });
 
   await step('Machines: "Connect a server over SSH" checks a server with the real ssh client and says plainly why it cannot connect', async () => {

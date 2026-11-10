@@ -6,6 +6,7 @@ import type { Desk, OfficeLayout } from '@orchestrator/contracts';
 import type { EffectiveLayout } from './member-rooms.ts';
 import { Documents as DocumentsPart, type DocsView } from './Documents.tsx';
 import { HiFi as HiFiPart } from './HiFi.tsx';
+import { hifiPosition } from './hifi-sound.ts';
 import { Humans as HumansPart, type HumanView } from './Humans.tsx';
 import { SelfBubble } from './SelfBubble.tsx';
 import { TalkMarks, type TalkMark } from './TalkMarks.tsx';
@@ -124,6 +125,8 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
   const stored = (props.layout as Partial<EffectiveLayout>).base ?? props.layout;
   const core = useMemo(() => buildWorld(stored, unlocked), [stored, unlocked]);
   const world = useMemo(() => (stored === props.layout ? core : buildWorld(props.layout, unlocked, core)), [core, props.layout, unlocked, stored]);
+  // Where the hi-fi stands, for whoever works out how loud it is at a distance (the application's player).
+  hifiPosition.at = world.hifi ? { x: world.hifi.x, z: world.hifi.z } : null;
   const player = useMemo(() => new THREE.Vector3(world.spawn.x, 0, world.spawn.z), []); // eslint-disable-line react-hooks/exhaustive-deps
   const positions = useRef(new Map<string, THREE.Vector3>()).current;
   // Where everyone stands or sits right now, for tests and captures that look at one person.

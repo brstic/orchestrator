@@ -4,7 +4,7 @@ import { useOffice } from './store.ts';
 
 /**
  * What belongs to this person on this computer, not to the office: how the 3D office is drawn, which keys
- * do what, and the optional extras. Everyone may change their own, whatever their role in the office.
+ * do what, the optional extras, and how loud they hear the office hi-fi. Everyone may change their own, whatever their role in the office.
  *
  * In the desktop app they live in a file next to the app's other data, so they are the same in every office
  * this computer connects to. In a plain browser tab they live in that page's localStorage.
@@ -16,6 +16,10 @@ export interface ClientPrefs {
   projectZones: boolean;
   /** Move the camera in closer at an employee's desk. */
   approachZoom: boolean;
+  /** How loud this person hears the office hi-fi, 0–1 (the distance to the hi-fi is counted on top of it). */
+  radioVolume: number;
+  /** This person has switched their own copy of the hi-fi off; the office's hi-fi plays on for the others. */
+  radioMuted: boolean;
 }
 
 export const DEFAULT_KEYS: Record<string, string> = {
@@ -38,7 +42,7 @@ export const DEFAULT_KEYS: Record<string, string> = {
   exit: 'Escape',
 };
 
-export const DEFAULT_PREFS: ClientPrefs = { quality: 'medium', keybindings: DEFAULT_KEYS, projectZones: false, approachZoom: false };
+export const DEFAULT_PREFS: ClientPrefs = { quality: 'medium', keybindings: DEFAULT_KEYS, projectZones: false, approachZoom: false, radioVolume: 0.6, radioMuted: false };
 
 export type PrefsPatch = Partial<ClientPrefs>;
 
@@ -64,13 +68,32 @@ function clean(raw: unknown, base: ClientPrefs = DEFAULT_PREFS): ClientPrefs | n
     keybindings: keys,
     projectZones: typeof r.projectZones === 'boolean' ? r.projectZones : base.projectZones,
     approachZoom: typeof r.approachZoom === 'boolean' ? r.approachZoom : base.approachZoom,
+    radioVolume: typeof r.radioVolume === 'number' && Number.isFinite(r.radioVolume) ? Math.min(1, Math.max(0, r.radioVolume)) : base.radioVolume,
+    radioMuted: typeof r.radioMuted === 'boolean' ? r.radioMuted : base.radioMuted,
   };
+}
+
+/**
+ * A desktop app installed before the hi-fi played for the whole office keeps only the fields it knows in its file.
+ * So that "my volume" and "mute" still hold there after a restart, they are also kept in this page's own storage.
+ */
+const RADIO_KEY = 'orch.prefs.radio';
+function radioFallback(): Record<string, unknown> {
+  try {
+    const kept = JSON.parse(window.localStorage.getItem(RADIO_KEY) ?? 'null');
+    return kept && typeof kept === 'object' ? { radioVolume: kept.radioVolume, radioMuted: kept.radioMuted } : {};
+  } catch {
+    return {};
+  }
 }
 
 async function read(): Promise<ClientPrefs | null> {
   try {
     const b = bridge();
-    if (b) return clean(await b.get());
+    if (b) {
+      const stored = await b.get();
+      return stored && typeof stored === 'object' ? clean({ ...radioFallback(), ...(stored as Record<string, unknown>) }) : null;
+    }
     const text = window.localStorage.getItem(STORAGE_KEY);
     return text ? clean(JSON.parse(text)) : null;
   } catch {
@@ -82,8 +105,10 @@ async function read(): Promise<ClientPrefs | null> {
 function write(prefs: ClientPrefs): void {
   try {
     const b = bridge();
-    if (b) void b.set(prefs).catch(() => undefined);
-    else window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    if (b) {
+      void b.set(prefs).catch(() => undefined);
+      window.localStorage.setItem(RADIO_KEY, JSON.stringify({ radioVolume: prefs.radioVolume, radioMuted: prefs.radioMuted }));
+    } else window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
   } catch {
     /* storage is not available (a private window): the choice still holds until the page is closed */
   }
@@ -107,7 +132,7 @@ export function setPrefs(patch: PrefsPatch): void {
 
 /** First run on this computer: start from what the office has in its settings, and keep that here from now on. */
 function adopt(office: OwnerSettings): void {
-  const prefs = clean({ quality: office.quality, keybindings: office.keybindings, projectZones: office.projectZones, approachZoom: office.approachZoom }) ?? DEFAULT_PREFS;
+  const prefs = clean({ quality: office.quality, keybindings: office.keybindings, projectZones: office.projectZones, approachZoom: office.approachZoom, radioVolume: office.radio?.volume }) ?? DEFAULT_PREFS;
   usePrefs.setState({ prefs, ready: true });
   write(prefs);
 }

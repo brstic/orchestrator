@@ -22,6 +22,7 @@ import type {
   PerformanceStat,
   Project,
   Question,
+  RadioNow,
   ServerToClient,
   Me,
   PersonPresence,
@@ -92,8 +93,14 @@ type ById<T> = Record<string, T>;
 export interface OfficeState {
   /** Per employee: the documents last seen in their folder. */
   docs: ById<DocListing>;
-  /** The hi-fi: what is playing in this window right now. */
-  radio: { stationId: string | null; name: string | null; status: 'idle' | 'loading' | 'playing' | 'error'; error: string | null; nowPlaying: string | null };
+  /** The office's hi-fi, as the office says it is: what is on for everyone, since when and who switched it. Null: it is off. */
+  hifi: RadioNow | null;
+  /**
+   * This window's own copy of it (see `lib/radio.ts`): the station the office has on, and whether it is heard here —
+   * `idle` (the hi-fi is off, or this computer has muted its copy), `loading`, `playing`, `blocked` (the browser
+   * wants a click before any sound) or `error` (the stream cannot be played here).
+   */
+  radio: { stationId: string | null; name: string | null; status: 'idle' | 'loading' | 'playing' | 'blocked' | 'error'; error: string | null; nowPlaying: string | null };
   /** The office TV (a browser in this window): whether it is on, where it was asked to go, and what its page reports. */
   tv: { on: boolean; goto: { url: string; n: number } | null; page: { url: string; title: string; audible: boolean; loading: boolean; canGoBack: boolean; canGoForward: boolean } | null };
   tvOpen: (url?: string) => void;
@@ -280,6 +287,7 @@ export const useOffice = create<OfficeState>((set, get) => ({
   events: [],
   control: {},
   docs: {},
+  hifi: null,
   radio: { stationId: null, name: null, status: 'idle', error: null, nowPlaying: null },
   tv: { on: false, goto: null, page: null },
   me: null,
@@ -450,6 +458,10 @@ function handle(msg: ServerToClient): void {
       useOffice.setState({ knocks: msg.knocks });
       break;
     }
+    case 'radio':
+      // The office's hi-fi was switched (or this window has just come in): `lib/radio.ts` plays what it says.
+      useOffice.setState({ hifi: msg.radio });
+      break;
     case 'chat.history':
       // What was said before this window walked in (only if nothing has been heard here yet).
       if (!useOffice.getState().chat.length) useOffice.setState({ chat: msg.lines.map((l, i) => ({ id: `h-${l.ts}-${i}`, fromId: l.from.id, name: l.from.name, role: l.from.role, hue: l.from.hue, text: l.text, ts: l.ts, emote: l.emote, at: 0 })) });

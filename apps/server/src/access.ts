@@ -55,6 +55,10 @@ const RULES: Rule[] = [
   rule('GET', '/performance', 'read'),
   rule('GET', '/layout/capacity', 'read'),
   rule('GET', '/radio/now', 'read'),
+  // The hi-fi plays for the whole office: everyone hears what is on; switching a station on or off is for those who work here.
+  rule('GET', '/radio', 'read'),
+  rule('POST', '/radio/play', 'work'),
+  rule('POST', '/radio/stop', 'work'),
   // How much of each Claude account is used (the clocks). Whose account it is, is told only to those who may work on that machine.
   rule('GET', '/usage', 'read'),
   // ── looking closer at one thing ──

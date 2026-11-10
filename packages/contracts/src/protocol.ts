@@ -20,6 +20,7 @@ import type {
   OwnerSettings,
   PerformanceStat,
   Project,
+  RadioNow,
   Question,
   SessionCapabilities,
   SessionOrigin,
@@ -303,6 +304,8 @@ export type ServerToClient =
   | { t: 'people'; people: PersonPresence[] }
   /** Who is at the door right now (sent to those who may let someone in: owners and colleagues). */
   | { t: 'knocks'; knocks: KnockView[] }
+  /** What the office's hi-fi is playing (null: it is off). Sent to everyone when they come in and whenever it changes. */
+  | { t: 'radio'; radio: RadioNow | null }
   | { t: 'said'; from: ChatFrom; text: string; ts: string }
   /** What was said in the office lately, for someone who has just walked in. */
   | { t: 'chat.history'; lines: Array<{ from: ChatFrom; text: string; ts: string; emote?: boolean }> }

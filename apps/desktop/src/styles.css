@@ -1959,6 +1959,36 @@ table.tbl {
 .radio-volume {
   gap: 10px;
 }
+.radio-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 4px;
+}
+.radio-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: #8fbaff;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+}
+.radio-notice-listen {
+  flex: 1;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.radio-notice-listen:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
 .radio-volume input {
   flex: 1;
 }

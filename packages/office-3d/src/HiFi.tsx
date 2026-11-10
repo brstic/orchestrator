@@ -14,8 +14,8 @@ const BARS = 9;
 
 /**
  * The office hi-fi: a sideboard with a receiver and a turntable between two floor speakers.
- * It is a view of the real player — the speaker cones, the level meter and the turning record
- * move only while a station is actually playing in the owner's window.
+ * It is a view of the office's real hi-fi — the speaker cones, the level meter and the turning record
+ * move in every window while a station is on for the office.
  */
 export function HiFi({ world, radio, onOpen }: { world: World; radio: RadioView; onOpen: () => void }) {
   const [hover, setHover] = useState(false);
