@@ -91,6 +91,24 @@ const BOARD_DWELL_MS = 3000;
 
 const OUCH = ['JAO!', 'AU!', 'JOJ!', 'AJOJ!', 'OPA!', 'EJ!'];
 
+/**
+ * How employees get about: a brisk walk (units per second), reached and left over a step or so (units per second
+ * squared), turning toward where they are going at up to this many radians per second.
+ */
+const WALK_SPEED = 1.9;
+const WALK_ACCEL = 5.5;
+const WALK_TURN = 5.5;
+
+/** Turn `r.rot` toward `want`, eased and no faster than a person turns; returns what is left of the turn. */
+function turnToward(r: { rot: number }, want: number, dt: number): number {
+  let diff = want - r.rot;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  const by = THREE.MathUtils.clamp(diff * (1 - Math.exp(-dt * 9)), -WALK_TURN * dt, WALK_TURN * dt);
+  r.rot += by;
+  return Math.abs(diff - by);
+}
+
 // One person is gone through again only when something about that person changed, not whenever anyone's did.
 const Person = memo(function Person({
   v,
@@ -119,7 +137,7 @@ const Person = memo(function Person({
 }) {
   const group = useRef<THREE.Group>(null);
   const { camera } = useThree();
-  const rt = useRef({ x: dest.x, z: dest.z, rot: dest.rot, path: [] as Array<[number, number]>, key: dest.key, tx: dest.x, tz: dest.z, arrived: true });
+  const rt = useRef({ x: dest.x, z: dest.z, rot: dest.rot, v: 0, path: [] as Array<[number, number]>, key: dest.key, tx: dest.x, tz: dest.z, arrived: true });
   const [moving, setMoving] = useState(false);
   const [far, setFar] = useState(false);
   const look = useRef(0);
@@ -159,35 +177,46 @@ const Person = memo(function Person({
     setMoving(true);
   }, [dest.key, dest.x, dest.z, world]);
 
-  useFrame((_s, dt) => {
+  useFrame((_s, rawDt) => {
     const r = rt.current;
     const g = group.current;
     if (!g) return;
     if (!r.arrived) {
-      const next = r.path[0];
-      if (!next) {
-        r.arrived = true;
+      const dt = Math.min(rawDt, 0.05);
+      if (!r.path.length) {
+        // There: turn to face the way this place is used before sitting down (or standing) at it.
         r.x = dest.x;
         r.z = dest.z;
-        r.rot = dest.rot;
-        setMoving(false);
+        r.v = 0;
+        if (turnToward(r, dest.rot, dt) < 0.04) {
+          r.arrived = true;
+          r.rot = dest.rot;
+          setMoving(false);
+        }
       } else {
-        const dx = next[0] - r.x;
-        const dz = next[1] - r.z;
-        const d = Math.hypot(dx, dz);
-        const step = 1.7 * Math.min(dt, 0.05);
-        if (d <= step) {
-          r.x = next[0];
-          r.z = next[1];
-          r.path.shift();
-        } else {
-          r.x += (dx / d) * step;
-          r.z += (dz / d) * step;
-          const want = Math.atan2(dx, dz);
-          let diff = want - r.rot;
-          while (diff > Math.PI) diff -= Math.PI * 2;
-          while (diff < -Math.PI) diff += Math.PI * 2;
-          r.rot += diff * Math.min(1, dt * 10);
+        // Up to pace over the first step, and down again over the last one before the place they are going to.
+        const p0 = r.path[0]!;
+        const p1 = r.path[1];
+        const left = r.path.length > 2 ? Infinity : Math.hypot(p0[0] - r.x, p0[1] - r.z) + (p1 ? Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) : 0);
+        r.v = Math.min(WALK_SPEED, Math.sqrt(2 * WALK_ACCEL * left) + 0.3, r.v + WALK_ACCEL * dt);
+        let step = r.v * dt;
+        while (step > 0 && r.path.length) {
+          const next = r.path[0]!;
+          const dx = next[0] - r.x;
+          const dz = next[1] - r.z;
+          const d = Math.hypot(dx, dz);
+          if (d <= step) {
+            // Past a corner of the route without losing the rest of this frame's step.
+            r.x = next[0];
+            r.z = next[1];
+            r.path.shift();
+            step -= d;
+          } else {
+            r.x += (dx / d) * step;
+            r.z += (dz / d) * step;
+            turnToward(r, Math.atan2(dx, dz), dt);
+            step = 0;
+          }
         }
       }
     }
@@ -201,7 +230,7 @@ const Person = memo(function Person({
       let a = Math.atan2(player.x - r.x, player.z - r.z) - r.rot;
       while (a > Math.PI) a -= Math.PI * 2;
       while (a < -Math.PI) a += Math.PI * 2;
-      look.current += (THREE.MathUtils.clamp(a, -1.1, 1.1) - look.current) * Math.min(1, dt * 4);
+      look.current += (THREE.MathUtils.clamp(a, -1.1, 1.1) - look.current) * Math.min(1, rawDt * 4);
     } else look.current *= 0.9;
     frame.current++;
     if (!drawn) setDrawn(true);
@@ -243,7 +272,8 @@ const Person = memo(function Person({
       const isFar = camera.position.distanceToSquared(g.position) > limit * limit;
       if (isFar !== far) setFar(isFar);
     }
-  });
+    // Before the character animates (see `motion` in Character.tsx): its feet are then placed for this frame's position.
+  }, -1);
 
   // No session and no desk to sleep at: dozing on their feet.
   const usual: PoseName = moving ? 'walk' : dest.sit ? seatedPose(v, dest.place) : v.live ? 'stand' : 'doze';
