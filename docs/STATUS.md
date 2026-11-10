@@ -3,7 +3,7 @@
 _Last updated: 2026-11-10. Update this file with every piece of work (see `CLAUDE.md`)._
 
 ## Now
-**Plan:** [UPDATE — central office](plans/UPDATE-central-office.md) — built, tested, and **running on the owner's server**. What is left is not development: a second person joining from their own computer, and giving the employees real work.
+**Plan:** [UPDATE — central office](plans/UPDATE-central-office.md) — **finished**: built, tested, running on the owner's server, and tried there with two members at once and real Claude Code doing a small real task on the server and on a member's computer. Handed over: a second human joining from their own computer (see the plan's "Handed over" section).
 
 **The office on the server ("Sparkcan", Ubuntu 22.04):**
 - Program: `~/orchestrator-office/app` (portable package). State: `~/.orchestrator-office/{server,agent}` — separate from `~/.orchestrator`, where the agent of the owner's Mac office (the SSH link) lives.
@@ -30,7 +30,7 @@ Next steps:
 - Extras: radio, TV, whip, seating editor, sleeping pose. Storage: SQLite (default) and PostgreSQL.
 
 ## Not verified / known problems
-- On the real server the trial was one person from one Mac, and real Claude Code was only started (no prompt sent) on both sides. Not yet: a second person on another computer, real work through the server office, a server restart with real sessions.
+- On the real server both trial members were app instances on this one Mac; the real work was one trivial task per side. Not yet: a second human on another computer, sustained work (tasks, reviews, merges) through the server office, a server restart while real sessions are working.
 - The server office and the owner's local Mac office are two separate offices; the Mac office still reaches the same server through its SSH link, so two agents run on Sparkcan side by side (they do not share sessions).
 - Usage per account did not arrive from a real CLI session that had made no request yet (Claude Code gives the status line no limits until it knows them); it does once the session has worked.
 - Role-dependent controls (People panel with the owner role, hidden/disabled buttons for visitors and for other members' employees) are covered by API tests and type checks, not by UI tests that click as each role. Hi-fi and TV panels are not role-aware (a visitor can try to add a station and is refused by the office).
