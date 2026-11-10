@@ -8,9 +8,10 @@ _Last updated: 2026-11-10. Update this file with every piece of work (see `CLAUD
 **The office on the server ("Sparkcan", Ubuntu 22.04):**
 - Program: `~/orchestrator-office/app` (portable package). State: `~/.orchestrator-office/{server,agent}` — separate from `~/.orchestrator`, where the agent of the owner's Mac office (the SSH link) lives.
 - Service: `systemctl --user status orchestrator-office` (linger on). Node from nvm (`~/.nvm/versions/node/v22.23.4`).
-- Door: port 4610, TLS; addresses `https://office.sparkcan.com` (CloudPanel reverse proxy → the door; **waiting for the DNS record in Cloudflare**, see OPERATIONS.md "The domain"), `https://<server-vpn-ip>:4610` (Tailscale) and `https://<server-lan-ip>:4610` (LAN); `ufw allow 4610/tcp` was added.
+- Door: port 4610, TLS; addresses `https://office.sparkcan.com` (DNS → nginx/CloudPanel reverse proxy with a Let's Encrypt certificate → the door; see OPERATIONS.md "The domain"), `https://<server-vpn-ip>:4610` (Tailscale) and `https://<server-lan-ip>:4610` (LAN); `ufw allow 4610/tcp` was added.
 - Manage: `cd ~/orchestrator-office/app && ORCH_SERVER_HOME=~/.orchestrator-office/server node scripts/office-admin.mjs status|invite|role|revoke`.
 - Update: `pnpm deploy:server` (details, rollback, backup and everyday commands: `OPERATIONS.md`).
+- The owner's Mac is connected through the domain (verified 2026-11-10).
 - Members: Branko (owner; invitation at `~/Desktop/Orchestrator-moja-pozivnica-OWNER.txt`) and Fenix (colleague; invitation, installer and instructions in `~/Desktop/Orchestrator-za-kolegu/`). Neither has been used by a person yet.
 
 **The owner works in the server office only (since 2026-11-10).** At their request the local office on the Mac was shut down and cleared:

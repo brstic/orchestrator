@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-10
+- `office.sparkcan.com` is live (Let's Encrypt certificate on the server's nginx). The office window's WebSocket now presents its token as a subprotocol instead of in the address; the proxy does not log office requests.
 - `office.sparkcan.com`: CloudPanel reverse-proxy site in front of the office's door; the desktop app now also accepts an office whose certificate is publicly trusted for its name (pinning stays for addresses with the office's own certificate).
 - `pnpm deploy:server` (`scripts/deploy-server.sh`: build, copy, swap, restart, `--status`, `--rollback`) and `docs/OPERATIONS.md` (where everything runs, how to update server and clients, backup, troubleshooting).
 - Members arrange their own room (Menu → My room → *Arrange my room*): name on the door, colour, number of desks (up to 20), open floor behind the desks, furniture. Kept by the office (`PUT /api/me/room`), drawn for everyone.
