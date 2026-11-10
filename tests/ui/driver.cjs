@@ -239,6 +239,10 @@ async function scenario() {
 
   await step('hiring an employee into a folder through the hire form', async () => {
     await js(`window.__t.store().openPanel('team', 'hire')`);
+    // Step one: where they work. Nothing is chosen for the person when there is more than one place.
+    await waitFor(`document.querySelectorAll('.win .hire-place').length >= 1`, 8000);
+    if (await js(`document.querySelectorAll('.win .hire-place').length > 1 && !!document.querySelector('.win form')`)) throw new Error('a place was chosen without asking');
+    await js(`[...document.querySelectorAll('.win .hire-place')].find((b) => /dev-mac/.test(b.textContent)).click()`);
     await type(`window.__t.field('Name')`, ctx.hireName);
     // No path typing: browse the machine's folders and choose one.
     await clickText('Browse…');
@@ -246,9 +250,16 @@ async function scenario() {
     await shot('hire-browse');
     await click(`window.__t.near(${JSON.stringify(ctx.hireFolderName)}, 'Choose')`, 'Choose');
     await waitFor(`window.__t.field('Folder they live in').value === ${JSON.stringify(ctx.hireFolder)}`, 5000);
+    // Step three is the desk: a free one, picked by hand.
+    const where = await js(`[...window.__t.scope().querySelectorAll('.hire-place')].map((b) => [b.dataset.place, b.getAttribute('aria-checked')]).join('|')`);
+    if (!/shared,true/.test(where) || /mine/.test(where)) throw new Error(`the places to hire in were ${where}`);
+    const pickedDesk = await js(`(() => { const free = [...window.__t.scope().querySelectorAll('.desk-seat:not(.taken)')]; const b = free[free.length - 1]; b.click(); return b.dataset.desk; })()`);
+    await waitFor(`window.__t.scope().querySelector('.desk-seat.on')?.dataset.desk === ${JSON.stringify(pickedDesk)}`, 3000);
+    ctx.hireDesk = pickedDesk;
     await shot('hire-form');
     await clickText('Hire');
     await waitFor(`!!window.__t.emp(${JSON.stringify(ctx.hireName)})`, 10000);
+    if ((await js(`window.__t.emp(${JSON.stringify(ctx.hireName)}).deskId`)) !== ctx.hireDesk) throw new Error(`hired at ${await js(`window.__t.emp(${JSON.stringify(ctx.hireName)}).deskId`)} instead of the chosen desk ${ctx.hireDesk}`);
     // Hiring does not start a session: it starts when the owner first talks to them.
     const hasSession = `Object.values(window.__t.store().sessions).some((s) => s.employeeId === window.__t.emp(${JSON.stringify(ctx.hireName)}).id)`;
     await sleep(2500);
@@ -264,6 +275,10 @@ async function scenario() {
 
   await step('hiring for several project folders at once: one employee per folder, named after it, nobody started', async () => {
     await js(`window.__t.store().openPanel('team', 'hire-many')`);
+    // Step one: where they work. Nothing is chosen for the person when there is more than one place.
+    await waitFor(`document.querySelectorAll('.win .hire-place').length >= 1`, 8000);
+    if (await js(`document.querySelectorAll('.win .hire-place').length > 1 && !!document.querySelector('.win .bulk-item')`)) throw new Error('a place was chosen without asking');
+    await js(`[...document.querySelectorAll('.win .hire-place')].find((b) => /dev-mac/.test(b.textContent)).click()`);
     await waitFor(`!!window.__t.near('portfolio', 'open ›', window.__t.scope())`, 10000).catch(() => undefined);
     await click(`[...window.__t.scope().querySelectorAll('.bulk-item')].find((r) => r.textContent.includes('portfolio')).querySelector('.fp-link')`, 'open portfolio');
     await waitFor(`[...window.__t.scope().querySelectorAll('.bulk-item')].some((r) => r.textContent.includes('xagio-panel'))`, 8000);

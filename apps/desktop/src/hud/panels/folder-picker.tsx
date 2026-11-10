@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { Host } from '@orchestrator/contracts';
 import { Badge, Button } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
+import { isThisComputer } from '../../lib/access.ts';
+import { useOffice } from '../../lib/store.ts';
 
 interface FolderEntry {
   name: string;
@@ -28,7 +30,10 @@ const nativePicker = (): (() => Promise<string | null>) | null => (window as any
  */
 export function FolderField({ value, onChange, host, disabled, placeholder }: { value: string; onChange: (path: string) => void; host: Host | undefined; disabled?: boolean; placeholder?: string }) {
   const [browsing, setBrowsing] = useState(false);
-  const native = host?.local ? nativePicker() : null;
+  // The system's folder dialog shows this computer's disk: offered only when that is the machine in question.
+  // (An office on a server is "local" to itself, not to the person looking at it.)
+  const myHostId = useOffice((s) => s.myHost.hostId);
+  const native = isThisComputer(host, myHostId) ? nativePicker() : null;
   const canBrowse = !!host && host.status === 'online';
   const browse = async () => {
     if (native) {

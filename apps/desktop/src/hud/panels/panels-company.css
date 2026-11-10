@@ -452,3 +452,82 @@ fieldset.pc-plain {
   border-color: #fff;
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5);
 }
+
+/* Hiring: where they work, and which desk */
+.hire-where {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+.hire-place {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+  color: inherit;
+  cursor: pointer;
+}
+.hire-place:hover {
+  border-color: rgba(110, 168, 255, 0.6);
+}
+.hire-place.on {
+  border-color: #6ea8ff;
+  box-shadow: 0 0 0 2px rgba(110, 168, 255, 0.35);
+  background: var(--panel-3);
+}
+.desk-tables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-height: 230px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.desk-table {
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 6px 8px 8px;
+  background: var(--panel-2);
+  min-width: 108px;
+  max-width: 150px;
+}
+.desk-seats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 4px;
+}
+.desk-seat,
+.desk-auto {
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  padding: 5px 6px;
+  cursor: pointer;
+  min-width: 40px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.desk-seat:hover:not(:disabled),
+.desk-auto:hover {
+  border-color: #3ddc84;
+}
+.desk-seat.on,
+.desk-auto.on {
+  background: #3ddc84;
+  border-color: #3ddc84;
+  color: #062414;
+  font-weight: 700;
+}
+.desk-seat.taken {
+  opacity: 0.55;
+  cursor: default;
+  font-size: 10px;
+}

@@ -14,7 +14,7 @@ import type {
   TerminalScreen,
   ActivityState,
 } from '@orchestrator/contracts';
-import { ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify } from '@orchestrator/contracts';
+import { memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
 import { trustPromptKeys } from './comms.ts';
 import { EngineError } from './core.ts';
@@ -367,9 +367,13 @@ export class EmployeeRegistry {
     const role = input.roleKey ? (roleByKey(input.roleKey) ?? matchRole(input.roleKey)) : undefined;
     if (input.hostId && !this.core.hosts.get(input.hostId)) throw new EngineError('unknown host');
     if (input.projectId && !this.core.projects.get(input.projectId)) throw new EngineError('unknown project');
-    if (input.deskId && this.core.employees.find((e) => !e.archived && e.deskId === input.deskId)) throw new EngineError('that desk is taken');
-    // On a member's own computer: they sit in that member's room, never at a desk of the shared office.
+    // On a member's own computer: they sit in that member's room (at a seat of their choice there, or the next free
+    // one), never at a desk of the shared office.
     const personal = !!this.eng.hosts.memberOfHost(input.hostId);
+    const seat = memberSeatOf(input.deskId);
+    if (input.deskId && !personal && !this.core.layout.desks.find((d) => d.id === input.deskId)) throw new EngineError('unknown desk');
+    if (input.deskId && personal && seat?.hostId !== input.hostId) throw new EngineError('that seat is not in this member\'s room');
+    if (input.deskId && this.core.employees.find((e) => !e.archived && e.deskId === input.deskId)) throw new EngineError('that desk is taken');
     this.assertSameComputer(input.hostId ?? null, [input.projectId, ...(input.alsoProjectIds ?? [])]);
     const employee: Employee = {
       id: newId(),
@@ -392,7 +396,7 @@ export class EmployeeRegistry {
       executionMode: input.executionMode ?? 'interactive_cli',
       schedule: input.schedule ?? { available: true },
       alsoProjectIds: [...new Set((input.alsoProjectIds ?? []).map(String))].filter((p) => p !== input.projectId && !!this.core.projects.get(p)),
-      deskId: personal ? null : (input.deskId ?? this.deskFor(input.projectId)),
+      deskId: personal ? (seat ? input.deskId! : null) : (input.deskId ?? this.deskFor(input.projectId)),
       xp: 0,
       level: 1,
       badges: [],
@@ -407,7 +411,8 @@ export class EmployeeRegistry {
   }
 
   update(id: string, patch: Partial<EmployeeInput> & { archived?: boolean }, actor = 'owner'): Employee {
-    const e = this.core.employees.require(id);
+    // Worked out on a copy and stored at the end: a change that is refused half-way leaves the employee as they were.
+    const e = structuredClone(this.core.employees.require(id));
     if (patch.name !== undefined) {
       const name = patch.name.trim();
       if (!name) throw new EngineError('name cannot be empty');
@@ -423,7 +428,10 @@ export class EmployeeRegistry {
       if (role && patch.specialization === undefined) e.specialization = role.specialization;
     }
     if (patch.deskId !== undefined && patch.deskId !== e.deskId) {
-      if (patch.deskId && !this.core.layout.desks.find((d) => d.id === patch.deskId)) throw new EngineError('unknown desk');
+      // A desk of the shared office, or — for someone on a member's own computer — a seat in that member's room.
+      const seat = memberSeatOf(patch.deskId);
+      const mine = !!this.eng.hosts.memberOfHost(e.hostId);
+      if (patch.deskId && (mine ? seat?.hostId !== e.hostId : !this.core.layout.desks.find((d) => d.id === patch.deskId))) throw new EngineError(mine ? 'that seat is not in this member\'s room' : 'unknown desk');
       const occupant = patch.deskId ? this.core.employees.find((x) => x.id !== id && !x.archived && x.deskId === patch.deskId) : undefined;
       if (occupant) {
         // Changing workstation with someone sitting there: they swap desks.
@@ -474,7 +482,8 @@ export class EmployeeRegistry {
       else if (!e.deskId) e.deskId = this.freeDesk();
     }
     this.assertSameComputer(e.hostId, [e.projectId, ...(e.alsoProjectIds ?? [])]);
-    if (this.eng.hosts.memberOfHost(e.hostId)) e.deskId = null;
+    if (this.eng.hosts.memberOfHost(e.hostId) && memberSeatOf(e.deskId)?.hostId !== e.hostId) e.deskId = null;
+    else if (!this.eng.hosts.memberOfHost(e.hostId) && memberSeatOf(e.deskId)) e.deskId = this.freeDesk();
     this.core.put('employee', e);
     // What an employee may do without asking is on the record in full, not just as a field name.
     this.core.audit(actor, 'employee.updated', id, { fields: Object.keys(patch), ...(patch.allowedTools !== undefined ? { allowedTools: e.allowedTools } : {}), ...(patch.disallowedTools !== undefined ? { disallowedTools: e.disallowedTools } : {}) });

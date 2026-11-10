@@ -245,3 +245,17 @@ test('a member who is away keeps their room where it is: locked, dark, no way in
   const inside = moveWithCollision(world, a!.x + a!.w / 2, a!.z + a!.d / 2, 0, 0);
   assert.ok(inside[0] !== a!.x + a!.w / 2 || inside[1] !== a!.z + a!.d / 2 || true);
 });
+
+test('chosen seats in a member room: honoured first, the rest fill in order, and the room grows to the furthest one', () => {
+  const h0 = { ...host(0, 3), seats: { 'emp-0-2': 1, 'emp-0-0': 7 } };
+  const office = withMemberRooms(layout, [h0]);
+  const room = office.rooms[0]!;
+  assert.equal(room.desks.length, 8, 'room for seat 7');
+  assert.equal(office.deskOf.get('emp-0-2'), 'm:host-0:1');
+  assert.equal(office.deskOf.get('emp-0-0'), 'm:host-0:7');
+  assert.equal(office.deskOf.get('emp-0-1'), 'm:host-0:2', 'the one without a chosen seat takes the first free');
+  // Two people on one seat, or a seat that is not there: the first keeps it, the other is seated like anyone else.
+  const clash = withMemberRooms(layout, [{ ...host(0, 2), seats: { 'emp-0-0': 2, 'emp-0-1': 2 } }]);
+  assert.deepEqual([clash.deskOf.get('emp-0-0'), clash.deskOf.get('emp-0-1')], ['m:host-0:2', 'm:host-0:1']);
+  assert.equal(new Set(office.deskOf.values()).size, office.deskOf.size);
+});

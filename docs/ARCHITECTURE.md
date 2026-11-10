@@ -170,6 +170,8 @@ While a member's own computer (a personal host, `Host.memberId`) is online, a ro
 - **For tests** — `window.__orchScene.memberRooms` = `[{ hostId, memberName, desks, side, x, z, w, d, door }]`. `node scripts/dev-office.ts --member-room "Mila:3"` (repeatable, dev only) adds a member with a personal host and employees; `kill -USR1 <pid>` disconnects/reconnects those hosts, `-USR2` only the last.
 
 
+**Seats:** an employee on a member's computer may carry `deskId = m:<hostId>:<n>` (`memberSeatId` / `memberSeatOf` in contracts); `withMemberRooms` seats those first and the rest in order, and sizes the room to the furthest chosen seat. A shared employee's `deskId` is always a desk of the stored layout.
+
 **Since 2026-11-10:** a room is derived for every member computer the office knows (not only the connected ones); `MemberHost.locked` makes it dark and doorless, and `MemberHost.prefs` (from `Host.room`, set with `PUT /api/me/room`, validated by `sanitizeMemberRoom` in contracts) decides its title, colour, minimum desks, extra depth and furniture. `apps/desktop/src/lib/views.ts: officeWithRooms` builds that list.
 
 ## People, the door and personal hosts

@@ -1,3 +1,4 @@
+import { DeskPicker, WherePicker, useHirePlaces, type HirePlace } from './hire-where.tsx';
 import { BulkHire } from './bulk-hire.tsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentSession, Appearance, AutonomyLevel, CommunicationStyle, DeliveryStatus, Employee, ExecutionMode, Host, OrchestratorEvent, XpEntry } from '@orchestrator/contracts';
@@ -121,11 +122,12 @@ function LevelCell({ e }: { e: Employee }) {
 
 // ───────────────────────────── Hire ─────────────────────────────
 
-function HireForm({ onDone }: { onDone: () => void }) {
+function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
   const hostsById = useOffice((s) => s.hosts);
   const projectsById = useOffice((s) => s.projects);
   const hosts = useMemo(() => Object.values(hostsById).filter((h) => h.status !== 'revoked').sort(byName), [hostsById]);
-  const projects = useMemo(() => Object.values(projectsById).filter((p) => p.status !== 'archived').sort(byName), [projectsById]);
+  // Work stays on the machine its project is on: only projects that live where this employee will.
+  const projects = useMemo(() => Object.values(projectsById).filter((p) => p.status !== 'archived' && (place.mine ? p.hostId === place.host.id : !hostsById[p.hostId ?? '']?.memberId)).sort(byName), [projectsById, place, hostsById]);
   const employeesNow = useOffice((st) => st.employees);
   const taken = new Set(Object.values(employeesNow).map((x) => x.name.toLowerCase()));
   // A name nobody here has yet, so the form can be submitted with just a folder.
@@ -136,7 +138,9 @@ function HireForm({ onDone }: { onDone: () => void }) {
   const [department, setDepartment] = useState('');
   const [specialization, setSpecialization] = useState('');
   const [skills, setSkills] = useState('');
-  const [hostId, setHostId] = useState(() => hosts.find((h) => h.local)?.id ?? hosts[0]?.id ?? '');
+  const hostId = place.host.id;
+  // Which desk: null lets the office choose (with their project's people; in a room, the next free seat).
+  const [deskId, setDeskId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState('');
   const [workingDir, setWorkingDir] = useState('');
   const [autonomy, setAutonomy] = useState<AutonomyLevel | null>(null);
@@ -166,7 +170,8 @@ function HireForm({ onDone }: { onDone: () => void }) {
         name: name.trim(),
         roleKey: custom ? null : roleKey,
         ...(custom ? { title: title.trim(), department: department.trim() || undefined, specialization: specialization.trim(), skills: parseSkills(skills) } : {}),
-        hostId: hostId || undefined,
+        hostId,
+        ...(deskId ? { deskId } : {}),
         projectId: projectId || null,
         // A folder with no shared project becomes this employee's own in-place project (server side).
         workingDir: projectId ? null : workingDir.trim() || null,
@@ -228,9 +233,17 @@ function HireForm({ onDone }: { onDone: () => void }) {
           </Field>
         </div>
       )}
+      <div className="section-title" style={{ margin: 0 }}>
+        2 · Their folder {place.mine ? 'on your computer' : `on ${place.host.name}`}
+      </div>
       <Field label="Folder they live in" hint={projectId ? `They join the shared project "${project?.name}", so they get their own worktree instead of a folder.` : undefined} wide>
         <FolderField value={workingDir} onChange={setWorkingDir} host={host} disabled={!!projectId} />
       </Field>
+
+      <div className="section-title" style={{ margin: 0 }}>
+        3 · Their desk {place.mine ? 'in your room' : 'in the office'}
+      </div>
+      <DeskPicker place={place} value={deskId} onChange={setDeskId} />
 
       <div className="small muted">
         {!hasCwd ? 'Choose the folder they live in' : startNow && canStart ? 'Their session starts right away' : 'Hired without starting a session — it starts when you first talk to them or give them a task'}
@@ -243,17 +256,7 @@ function HireForm({ onDone }: { onDone: () => void }) {
       {more && (
         <div className="col hire-more" style={{ gap: 14 }}>
           <div className="grid2">
-            <Field label="Machine" hint={host && host.status !== 'online' ? `${host.name} is offline — a session cannot start there yet.` : undefined}>
-              <select value={hostId} onChange={(ev) => setHostId(ev.target.value)}>
-                <option value="">Automatic (the local machine, if there is one)</option>
-                {hosts.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.name} ({h.status})
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="…or a shared project" hint={project && !project.repoPath ? 'This project has no repository path; give them a folder instead.' : 'Instead of their own folder: an isolated worktree, merged when work is verified.'}>
+            <Field label="…or an existing project there" hint={project && !project.repoPath ? 'This project has no repository path; give them a folder instead.' : 'Instead of their own folder: an isolated worktree, merged when work is verified.'}>
               <select value={projectId} onChange={(ev) => setProjectId(ev.target.value)}>
                 <option value="">None — they own the folder above</option>
                 {projects.map((p) => (
@@ -325,6 +328,10 @@ function TeamPanel({ arg, onClose }: PanelProps) {
   const [hostId, setHostId] = useState('');
   // `openPanel('team', 'hire')` goes straight to the hiring form.
   const [hiring, setHiring] = useState<false | 'one' | 'many'>(arg === 'hire' ? 'one' : arg === 'hire-many' ? 'many' : false);
+  // Step one of hiring: the shared office or my own room. Chosen by the person, unless there is only one place.
+  const { places } = useHirePlaces();
+  const [where, setWhere] = useState('');
+  const place = places.find((p) => p.host.id === where) ?? (places.length === 1 ? places[0] : undefined);
 
   const all = useMemo(() => Object.values(employeesById).sort(byName), [employeesById]);
   const active = all.filter((e) => !e.archived);
@@ -346,7 +353,17 @@ function TeamPanel({ arg, onClose }: PanelProps) {
             One per project folder
           </button>
         </div>
-        {hiring === 'many' ? <BulkHire onDone={() => setHiring(false)} /> : <HireForm onDone={() => setHiring(false)} />}
+        <div className="section-title" style={{ marginTop: 0 }}>
+          1 · Where do they work?
+        </div>
+        <WherePicker value={place?.host.id ?? where} onChange={setWhere} />
+        <div style={{ height: 14 }} />
+        {!place ? (
+          <div className="card small muted">Choose where they work first: in the shared office on the server, or in your own room on your computer. The folder and the desk follow from that.</div>
+        ) : place.problem && !place.mine ? (
+          <div className="card small bad">{place.problem}. They can be hired now and started when it is back.</div>
+        ) : null}
+        {place && (hiring === 'many' ? <BulkHire key={place.host.id} onlyHostId={place.host.id} onDone={() => setHiring(false)} /> : <HireForm key={place.host.id} place={place} onDone={() => setHiring(false)} />)}
       </Window>
     );
   }

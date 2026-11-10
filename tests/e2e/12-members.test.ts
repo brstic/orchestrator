@@ -260,6 +260,29 @@ test('a member arranges their own room; it is kept by the office and shown on th
   // Out of range is brought into range; nonsense is dropped.
   assert.deepEqual((await door(jovan, 'PUT', '/api/me/room', { desks: 999, extraDepth: 999, color: 'purple', title: 42 })).body, { desks: 20, extraDepth: 12 });
   await door(jovan, 'PUT', '/api/me/room', wanted);
+  // Seats: someone hired on his computer can be given a seat in his room; not a desk of the shared office, not a seat in
+  // another room; and a shared employee cannot be given a seat in a room.
+  const seat = `m:${jovanHost.hostId}:3`;
+  const seated = await door(jovan, 'POST', '/api/employees', { name: 'Seated', roleKey: 'qa', hostId: jovanHost.hostId, workingDir: path.join(jovanHost.root, 'side-project'), deskId: seat });
+  assert.equal(seated.status, 200);
+  assert.equal(seated.body.deskId, seat);
+  assert.match((await door(jovan, 'POST', '/api/employees', { name: 'Twice', hostId: jovanHost.hostId, deskId: seat })).body.error, /desk is taken/);
+  assert.match((await door(jovan, 'POST', '/api/employees', { name: 'Elsewhere', hostId: jovanHost.hostId, deskId: 'a-a' })).body.error, /not in this member's room/);
+  assert.match((await door(jovan, 'POST', '/api/employees', { name: 'Wrong Room', hostId: jovanHost.hostId, deskId: 'm:someone-else:1' })).body.error, /not in this member's room/);
+  assert.match((await h.apiRaw('POST', '/employees', { name: 'Shared In A Room', deskId: seat })).body.error, /unknown desk/);
+  assert.match((await h.apiRaw('POST', '/employees', { name: 'Nowhere', deskId: 'zz-z' })).body.error, /unknown desk/);
+  // Lola moves to seat 1; then swaps with Seated by taking seat 3.
+  const moved = await door(jovan, 'PATCH', `/api/employees/${lola}`, { deskId: `m:${jovanHost.hostId}:1` });
+  assert.equal(moved.body.deskId, `m:${jovanHost.hostId}:1`, JSON.stringify(moved.body).slice(0, 300));
+  assert.equal((await door(jovan, 'PATCH', `/api/employees/${lola}`, { deskId: seat })).body.deskId, seat);
+  assert.equal((await h.state()).employees.find((e) => e.id === seated.body.id)!.deskId, `m:${jovanHost.hostId}:1`, 'they swapped');
+  assert.match((await door(jovan, 'PATCH', `/api/employees/${lola}`, { deskId: 'a-a' })).body.error, /not in this member's room/);
+  // A shared employee's chosen desk is honoured, and must exist.
+  const free = (await h.state()).layout.desks.filter((d) => d.kind !== 'executive' && !(h as any).__taken?.has(d.id)).map((d) => d.id);
+  const takenNow = new Set((await h.state()).employees.filter((e) => !e.archived && e.deskId).map((e) => e.deskId));
+  const pick = free.reverse().find((id) => !takenNow.has(id))!;
+  assert.equal((await door(jovan, 'POST', '/api/employees', { name: 'Picked A Desk', roleKey: 'docs', deskId: pick })).body.deskId, pick);
+
   // Only one's own: a visitor has no room, and the office's own computer has none either.
   assert.equal((await door(invites.Mila!.t, 'PUT', '/api/me/room', { desks: 4 })).status, 403);
   assert.match((await h.apiRaw('PUT', '/me/room', { desks: 4 })).body.error, /no room of its own/);

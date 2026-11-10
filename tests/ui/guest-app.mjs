@@ -272,6 +272,26 @@ try {
   check('her session runs on this computer, in this folder, and talks to the office through the relay', wrote, why);
   const room = await p2.until('the room in the 3D office', `(window.__orchScene.memberRooms || []).some((r) => r.hostId === ${JSON.stringify(mineHost.id)})`, 15000).then(() => p2.js(`JSON.stringify(window.__orchScene.memberRooms.map((r) => [r.memberName, r.desks]))`), (e) => `MISSING: ${e.message}`);
   check('the member’s room is attached to the office while they are in it', !/^MISSING/.test(room), room);
+  // Hiring asks where first: the shared office on the server, or her own room — and then for the folder and the seat.
+  await p2.js(`window.__office.getState().openPanel('team', 'hire')`);
+  await p2.until('the two places', `document.querySelectorAll('.win .hire-place').length === 2`, 10000);
+  const asked = await p2.js(`JSON.stringify([...document.querySelectorAll('.win .hire-place')].map((b) => [b.dataset.place, b.getAttribute('aria-checked')]))`);
+  const formBefore = await p2.js(`!!document.querySelector('.win form')`);
+  check('hiring first asks where: the shared office or my room, with nothing chosen for me', asked === '[["shared","false"],["mine","false"]]' && !formBefore, asked);
+  await p2.js(`document.querySelector('.win .hire-place[data-place="mine"]').click()`);
+  await p2.until('the form for my room', `document.querySelector('.win form') && /on your computer/.test(document.querySelector('.win').textContent) && document.querySelectorAll('.win .desk-seat').length >= 4`, 10000);
+  const folder2 = path.join(tmp, 'milas-second');
+  fs.mkdirSync(folder2, { recursive: true });
+  const seatWanted = `m:${mineHost.id}:4`;
+  await p2.js(`(() => { const set = (el, v) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); }; const w = document.querySelector('.win'); set(w.querySelector('input[placeholder="e.g. Alex"]'), 'Olga'); set(w.querySelector('input.mono.grow'), ${JSON.stringify(fs.realpathSync(folder2))}); w.querySelector('.desk-seat[data-desk="${seatWanted}"]').click(); })()`);
+  await p2.until('the seat chosen', `document.querySelector('.win .desk-seat.on')?.dataset.desk === ${JSON.stringify(seatWanted)}`, 5000);
+  await p2.js(`[...document.querySelectorAll('.win form button[type=submit]')].find((b) => b.textContent.trim() === 'Hire').click()`);
+  await p2.until('Olga hired', `Object.values(window.__office.getState().employees).some((e) => e.name === 'Olga')`, 15000);
+  const olga = await p2.js(`(() => { const e = Object.values(window.__office.getState().employees).find((e) => e.name === 'Olga'); return { hostId: e.hostId, deskId: e.deskId, dir: e.workingDir }; })()`);
+  await p2.until('Olga at her seat in the room', `window.__orchScene.memberRooms.some((r) => r.desks.includes(${JSON.stringify(seatWanted)}))`, 10000);
+  check('the hire lands on my computer, in the folder given, at the seat picked in my room', olga.hostId === mineHost.id && olga.deskId === seatWanted && olga.dir === fs.realpathSync(folder2), JSON.stringify(olga));
+  await p2.js(`window.__office.getState().openPanel('myroom')`);
+
   // Her Claude account has a clock in her own room; the office's own accounts hang in the CEO room.
   await p2.until('her clock', `(window.__orchScene.memberClocks || {})[${JSON.stringify(mineHost.id)}]?.length === 1`, 20000).then(
     async () => check('the member’s own Claude account has its usage clock in their room, not in the CEO room', (await p2.js(`!(window.__orchScene.clocks || []).some((c) => /Mila/.test(c.name))`)) === true, await p2.js(`JSON.stringify([window.__orchScene.memberClocks, (window.__orchScene.clocks || []).map((c) => c.name)])`)),

@@ -26,6 +26,7 @@ Next steps:
 ## What exists (verified by the automated suites)
 - **Office on a server**: `pnpm serve` (server + shared host agent + TLS door), `pnpm office …` to invite and manage members from the server's terminal, a systemd unit generator.
 - **Members and roles**: visitor (reads shared), colleague (works on shared, own computer), owner (everything). One access module (`apps/server/src/access.ts`); see `ACCESS.md`.
+- **Hiring asks where**: shared office or my room, then the folder on that machine, then the desk or seat (Team → Hire; both the single form and "one per project folder").
 - **Rooms are permanent and arrangeable**: each member's room stays in the office when they are away (grey, locked, employees asleep) and the member sets its name, colour, desks, open floor and furniture from Menu → My room.
 - **Personal hosts and member rooms**: the desktop app of a colleague/owner enrolls their computer through the door (pinned relay + host agent); their employees run there and sit in a room attached to the office while they are connected. "My room" panel to add folders and adopt local Claude sessions.
 - **Per-client preferences**: graphics, keys, office extras per computer; everyone can change their own.

@@ -3,7 +3,7 @@ import { ROLE_CATALOGUE, type Employee, type Host } from '@orchestrator/contract
 import { Badge, Button, Field } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
-import { useAccess } from '../../lib/access.ts';
+import { isThisComputer, useAccess } from '../../lib/access.ts';
 
 interface FolderEntry {
   name: string;
@@ -85,7 +85,7 @@ export function BulkHire({ onDone, onlyHostId }: { onDone: () => void; onlyHostI
   const [filter, setFilter] = useState('');
   const [busy, setBusy] = useState(false);
   // The system's own folder dialog shows this computer: right when the machine is the one this window is on.
-  const native = (host?.local && !thisComputer && can.root) || (!!host && host.id === thisComputer) ? nativeFolders() : null;
+  const native = isThisComputer(host, thisComputer) ? nativeFolders() : null;
 
   const load = (path: string | null) => {
     if (!hostId) return;

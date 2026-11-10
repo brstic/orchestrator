@@ -1,4 +1,4 @@
-import { ACTIVITY_LABEL, formatDuration, roleByKey } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, formatDuration, memberSeatOf, roleByKey } from '@orchestrator/contracts';
 import { deskPods, withMemberRooms, type MemberOffice, type BoardView, type CeoView, type HostView, type UsageClockView, type PersonView, type WalkRequest, type WallView, type WhiteboardView, type ZoneView } from '@orchestrator/office-3d';
 import { activityOf, currentTaskOf, sessionOfEmployee, type OfficeState } from './store.ts';
 
@@ -41,7 +41,7 @@ export function officeWithRooms(s: OfficeState, unlocked: string[]): OfficeWithR
   // when they have another: an old enrollment would otherwise leave an empty room behind.)
   const hasStaff = (id: string) => staff.some((e) => e.hostId === id);
   const shown = personal.filter((h) => h.status === 'online' || hasStaff(h.id) || !personal.some((o) => o.id !== h.id && o.memberId === h.memberId));
-  const online = shown.map((h) => ({ hostId: h.id, memberId: h.memberId!, memberName: h.memberName ?? h.name, prefs: h.room ?? null, locked: h.status !== 'online', employeeIds: staff.filter((e) => e.hostId === h.id).map((e) => e.id) }));
+  const online = shown.map((h) => ({ hostId: h.id, memberId: h.memberId!, memberName: h.memberName ?? h.name, prefs: h.room ?? null, locked: h.status !== 'online', seats: Object.fromEntries(staff.filter((e) => e.hostId === h.id && memberSeatOf(e.deskId)?.hostId === h.id).map((e) => [e.id, memberSeatOf(e.deskId)!.n])), employeeIds: staff.filter((e) => e.hostId === h.id).map((e) => e.id) }));
   const theirs = staff.filter((e) => personal.some((h) => h.id === e.hostId)).map((e) => e.id);
   const key = JSON.stringify([online, theirs, [...unlocked].sort()]);
   if (lastOffice && lastOffice.layout === s.layout && lastOffice.key === key) return lastOffice.value;

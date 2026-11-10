@@ -74,6 +74,14 @@ export interface MemberRoomPrefs {
   /** What stands in the room. */
   furniture?: MemberRoomFurniture[] | null;
 }
+/** The id of a seat in a member's room: `m:<host id>:<n>`, n from 1. (The room itself is drawn by each client; see office-3d/member-rooms.) */
+export const memberSeatId = (hostId: ID, n: number): string => `m:${hostId}:${n}`;
+/** Which seat of which member computer a desk id names, or null when it is a desk of the shared office. */
+export function memberSeatOf(deskId: string | null | undefined): { hostId: ID; n: number } | null {
+  const m = /^m:([^:]+):(\d{1,2})$/.exec(deskId ?? '');
+  const n = m ? Number(m[2]) : 0;
+  return m && n >= 1 && n <= 20 ? { hostId: m[1]!, n } : null;
+}
 export type MemberRoomFurniture = 'plant' | 'bookshelf' | 'sofa' | 'floor_lamp';
 export const MEMBER_ROOM_FURNITURE: MemberRoomFurniture[] = ['plant', 'bookshelf', 'sofa', 'floor_lamp'];
 export const MEMBER_ROOM_LIMITS = { desks: 20, extraDepth: 12 } as const;

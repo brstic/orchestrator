@@ -3,6 +3,9 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-10
+- Hiring is three steps: **where** (the shared office on the server, or my own room on my computer — asked, not assumed), **the folder** on that machine (the system folder dialog only when the machine is the one the window is on; otherwise the machine's own folder list), **the desk** (any free desk in the office, or a seat in my room; "Automatic" stays). Fixes hiring from a client into the server office, which offered the client's folder dialog for the server's disk.
+- Seats in a member's room can be chosen and are kept (`deskId` `m:<host>:<n>`); the room grows to the furthest chosen seat.
+- A refused change to an employee no longer leaves them half-changed in memory until the next restart.
 - Usage clocks: the CEO room shows the Claude accounts of the office's own (shared) machines; each member's own account hangs as a clock on a wall of their room. Everyone may read the percentages (`GET /api/usage` is now a *read*); the account's e-mail and organisation are sent only to those who may work on that machine.
 - `office.sparkcan.com` is live (Let's Encrypt certificate on the server's nginx). The office window's WebSocket now presents its token as a subprotocol instead of in the address; the proxy does not log office requests.
 - `office.sparkcan.com`: CloudPanel reverse-proxy site in front of the office's door; the desktop app now also accepts an office whose certificate is publicly trusted for its name (pinning stays for addresses with the office's own certificate).

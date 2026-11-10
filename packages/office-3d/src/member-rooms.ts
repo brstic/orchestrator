@@ -19,6 +19,8 @@ export interface MemberHost {
   prefs?: MemberRoomPrefs | null;
   /** The member is not in the office right now: their room stands where it is, dark and locked. */
   locked?: boolean;
+  /** Seats chosen for employees (employee id → seat number from 1); the others take the free seats in order. */
+  seats?: Record<string, number>;
 }
 
 export type MemberSide = 'n' | 'e' | 'w';
@@ -224,7 +226,8 @@ function slotsOf(layout: OfficeLayout, unlocked: Set<string>): { core: World; sl
 function buildRoom(core: Box, slot: Slot, host: MemberHost): { room: MemberRoom; def: RoomDef; desks: Desk[]; decorations: OfficeLayout['decorations'] } {
   const at = frame(core, slot.side);
   const prefs = host.prefs ?? {};
-  const count = memberDeskCount(host.employeeIds.length, prefs.desks ?? 0);
+  // Room for every employee, for as many desks as the member asked for, and for the furthest seat anyone chose.
+  const count = memberDeskCount(host.employeeIds.length, Math.max(prefs.desks ?? 0, ...Object.values(host.seats ?? {})));
   // The open floor the member asked for is behind the desks, at the far end from the door.
   const lounge = Math.max(0, Math.min(MEMBER_ROOM_LIMITS.extraDepth, prefs.extraDepth ?? 0));
   const depth = memberRoomDepth(count) + lounge;
@@ -336,7 +339,22 @@ export function withMemberRooms(layout: OfficeLayout, hosts: MemberHost[], unloc
     defs.push(built.def);
     desks.push(...built.desks);
     decorations.push(...built.decorations);
-    host.employeeIds.slice(0, built.desks.length).forEach((id, n) => deskOf.set(id, built.desks[n]!.id));
+    // Chosen seats first (one employee per seat, inside the room); everyone else takes the free seats in order.
+    const taken = new Map<number, string>();
+    for (const id of host.employeeIds) {
+      const n = host.seats?.[id];
+      if (n && n >= 1 && n <= built.desks.length && !taken.has(n)) taken.set(n, id);
+    }
+    const placed = new Set(taken.values());
+    for (const [n, id] of taken) deskOf.set(id, built.desks[n - 1]!.id);
+    let next = 1;
+    for (const id of host.employeeIds) {
+      if (placed.has(id)) continue;
+      while (next <= built.desks.length && taken.has(next)) next++;
+      if (next > built.desks.length) break;
+      deskOf.set(id, built.desks[next - 1]!.id);
+      taken.set(next, id);
+    }
   });
   if (!rooms.length) return { layout, rooms, deskOf, unplaced };
   const effective: EffectiveLayout = { ...layout, rooms: [...layout.rooms, ...defs], desks: [...layout.desks, ...desks], decorations: [...layout.decorations, ...decorations], base: layout, memberRooms: rooms };

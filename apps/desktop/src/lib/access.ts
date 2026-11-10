@@ -45,3 +45,13 @@ export function useAccess() {
     usable: (h: Host) => may(me, 'work', h.memberId ?? null),
   };
 }
+
+/**
+ * Is this machine the computer this window is on? Then the system's own folder dialog shows the right disk. True for
+ * the member's own host that the desktop app brought into the office, and for an office that runs on this very computer.
+ */
+export function isThisComputer(host: Host | undefined, myHostId: string | null): boolean {
+  if (!host) return false;
+  if (host.memberId) return host.id === myHostId;
+  return host.local && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+}
