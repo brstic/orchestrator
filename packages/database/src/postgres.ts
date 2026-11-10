@@ -183,7 +183,12 @@ export class PgStore implements Storage {
 
   async close(): Promise<void> {
     if (this.closed) return;
-    await this.flush();
+    // Changes made while the earlier ones are still being written are waited for too: the office keeps recording
+    // (a turn that ends, a host going offline) until the moment it stops, and none of that may be dropped.
+    for (let seen = this.chain; ; seen = this.chain) {
+      await seen;
+      if (seen === this.chain) break;
+    }
     this.closed = true;
     await this.client.end().catch(() => undefined);
   }
