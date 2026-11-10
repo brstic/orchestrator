@@ -131,6 +131,27 @@ The Orchestrator MCP server is an HTTP endpoint on the server (`POST /mcp`, JSON
 
 `ask_boss` holds the tool call open for up to four minutes (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` and `MCP_TOOL_TIMEOUT` are raised in the worker's environment). If you answer later, the answer is delivered into the session as a message, and `wait_for_answer` lets the agent keep waiting.
 
+### Waiting for a colleague
+
+Three things a model sees in its tool list:
+
+- `request_collaboration { to, summary, detail?, wait? }` and `request_help { topic, detail?, wait? }` — with `wait: true` the call stays open until the colleague answers with `respond_to_request`, and returns the answer: `Sarah answered your request "…" — Sarah will do it as part of their current task: <their note>`. When the answer is "part of my task" or "a separate task", the result names the task and how to wait for it.
+- `wait_for_colleague { request_id? | task? }` — waits for the answer to a request already sent, or until a task (by key, `T-12`) is finished. With no arguments it continues the wait the session was in. It returns at once when the answer is there or the task has ended, and says what happened: `T-12 "…" is DONE (Sarah). It is merged into …. Their summary: …`, `T-12 "…" is BLOCKED, not finished (Sarah): <reason>…`, or that the task was removed.
+
+What the session gets back in the other cases:
+
+| Case | Result of the call |
+| --- | --- |
+| Four minutes pass (`timings.colleagueWaitMs`) | not an error: `Sarah has not answered yet (request 1a2b3c4d): they have your request; Sarah is at work (coding). … call wait_for_colleague with request_id "1a2b3c4d" to keep waiting.` The wait stands; a later answer is typed into the session as a message, the end of a task as a message from the office |
+| Not allowed: oneself, a circle, the foreman, someone archived, paused or out of reach, the other side of the shared / own-computer line, a task that cannot be seen or that nobody has | an error result that says which, and `Nothing was sent.` |
+| The colleague is paused or archived, their session stops or their machine stays away while the call is open | returned at once (a vanished session or machine after five seconds, `timings.waitGoneGraceMs`), saying so; the request stays open |
+| The office restarts | the HTTP request is cut. The scripted worker sees a failed call; **what the real client reports is not verified.** The wait is on the session's record, so `wait_for_colleague` with no arguments picks it up; an answer that came meanwhile is returned at once |
+| The session closes the call itself (its own time limit, an interrupt) | the office notices the closed connection; the wait stands |
+
+The colleague's side: the request typed into their session says `Alex is waiting for your answer before going on.` and asks for the answer first; someone with no session is started for it. `respond_to_request` returns `Alex was waiting for it and has it now: they can go on.` (a held call took the answer) or `… sent to Alex, who is waiting for it.` (it goes as a message).
+
+While a call is held the hooks see an ordinary tool call in the middle of a turn; the office shows the session as WAITING with `Waiting for Sarah's answer` / `Waiting for Sarah (T-12)`, and keeps that caption when the turn ends with the wait still standing. `MCP_TOOL_TIMEOUT` and `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` are raised for this as for `ask_boss`. None of this has run with real Claude Code.
+
 Sessions that were not launched with the MCP server (attached sessions) simply lack these tools; everything terminal-based still works. To give one the tools, add the server to it yourself:
 
 ```
@@ -149,6 +170,7 @@ The foreman is a real Claude Code session with the Orchestrator MCP server, like
 | `BLOCKED` | a task in `BLOCKED` on an active project |
 | `STALLED` | a task `IN_PROGRESS` whose assignee's session is between turns and reported idle / waiting for five minutes, with no open question and not paused or controlled by you |
 | `UNASSIGNED` | a `READY` task with no assignee while an employee who could take it is free (after the scheduler has had its turn). Only people on the same computer as the task's project are offered: see *Members' computers* below |
+| `WAITING` | an employee waits for a colleague's answer or task (`AgentSession.waitingOn`) while that colleague has no session, or sits between turns idle or blocked — once the wait and that idleness have both lasted two minutes (`timings.foremanWaitingMs`). One item per wait. Someone who waits is never `STALLED` or `IDLE` |
 | `IDLE` | a running session that has been between turns for `idleMinutes` (default 10, `0` = never) with **no** task in progress, no open question, not paused and not controlled by a person. One item per spell of doing nothing (the key carries when the spell began). If nothing but the foreman's own words reached that employee since they were last shown as idle, the wait doubles each time (10, 20, 40 … up to 32×), and goes back to normal as soon as anyone else gives them something — a message, an answer from the owner, a task that starts — so a foreman and an employee with nothing to do never talk in circles |
 
 Permission requests, trust prompts, and questions an employee marked as a decision, a priority or a deployment are never in that list: they are the owner's.

@@ -28,6 +28,9 @@ export function trustPromptKeys(lines: string[]): string[] | null {
   return keys;
 }
 
+/** How a message is marked that reached its reader as the result of the tool call that was waiting for it. */
+const RETURNED = 'Returned as the result of the tool call that was waiting for it';
+
 /** Something waiting to be typed (or hook-fed) into an employee's real session. */
 export interface Delivery {
   id: string;
@@ -484,6 +487,14 @@ export class Comms {
       else if (q.channel === 'mcp_tool' && (signal.orchestratorTool === 'ask_boss' || signal.orchestratorTool === 'wait_for_answer')) this.setStatus(q, 'confirmed', 'The tool result reached the agent');
       else if (q.channel === 'terminal' && signal.sessionStarted) this.setStatus(q, 'confirmed', 'The session started after the prompt was accepted');
     }
+    // A colleague's answer that was returned by the tool call that waited for it: that call has now come back.
+    if (signal.orchestratorTool === 'request_collaboration' || signal.orchestratorTool === 'request_help' || signal.orchestratorTool === 'wait_for_colleague') {
+      const employeeId = this.core.sessions.get(sessionId)?.employeeId;
+      for (const m of this.core.messages.filter((x) => x.toEmployeeId === employeeId && x.delivery.status === 'sent' && x.delivery.via === 'mcp_pull')) {
+        m.delivery = { status: 'confirmed', via: 'mcp_pull', ts: nowIso(), detail: 'The tool result reached the agent' };
+        this.core.put('message', m);
+      }
+    }
   }
 
   /** A session ended: nothing can be delivered to it any more. */
@@ -495,7 +506,8 @@ export class Comms {
 
   // ─────────────────────────── messages ────────────────────────────
 
-  sendMessage(input: { from: Message['from']; toEmployeeId: string; body: string; kind?: MessageKind; taskId?: string | null; threadId?: string | null; routineId?: string | null }): Message {
+  /** `returned`: it is handed to the recipient as the result of a tool call of theirs that is waiting for it, so nothing is typed into their terminal. */
+  sendMessage(input: { from: Message['from']; toEmployeeId: string; body: string; kind?: MessageKind; taskId?: string | null; threadId?: string | null; routineId?: string | null; returned?: boolean }): Message {
     const to = this.core.employees.require(input.toEmployeeId);
     const msg: Message = {
       id: newId(),
@@ -505,9 +517,9 @@ export class Comms {
       body: input.body,
       taskId: input.taskId ?? null,
       threadId: input.threadId ?? null,
-      delivery: { status: 'queued', via: null, ts: nowIso(), detail: null },
+      delivery: input.returned ? { status: 'sent', via: 'mcp_pull', ts: nowIso(), detail: RETURNED } : { status: 'queued', via: null, ts: nowIso(), detail: null },
       createdAt: nowIso(),
-      readAt: null,
+      readAt: input.returned ? nowIso() : null,
       ...(input.routineId ? { routineId: input.routineId } : {}),
     };
     this.core.put('message', msg);
@@ -521,7 +533,7 @@ export class Comms {
       correlationId: msg.threadId ?? msg.id,
       data: { messageId: msg.id, toEmployeeId: to.id, fromEmployeeId: input.from.kind === 'employee' ? input.from.id : null, kind: msg.kind, ...(msg.routineId ? { routineId: msg.routineId } : {}) },
     });
-    this.enqueueMessage(msg, true);
+    if (!input.returned) this.enqueueMessage(msg, true);
     // A message that reads as a standing rule ("don't…", "from now on…") is kept as a lesson candidate.
     this.eng.improver.capture.onMessage(msg);
     return msg;
@@ -542,7 +554,8 @@ export class Comms {
         sentAt: null,
         via: null,
         stopRequestId: null,
-        wake: !!msg.routineId,
+        // A run of a routine, and a request whose sender cannot go on without the answer, start the session of someone who has none.
+        wake: !!msg.routineId || (msg.kind === 'collab_request' && !!collab?.waited),
       },
       pump,
     );
@@ -595,8 +608,9 @@ export class Comms {
     return pool.find((e) => !!this.core.runningSessionOf(e.id)) ?? pool[0];
   }
 
-  requestCollaboration(from: Employee, toRef: string, summary: string, detail: string): CollabRequest {
-    const to = this.resolveTeammate(from, toRef);
+  /** `waited`: the one who asks cannot go on without the answer and waits for it; the colleague is told so, and is started for it if they have no session. */
+  requestCollaboration(from: Employee, toRef: string | Employee, summary: string, detail: string, opts: { waited?: boolean } = {}): CollabRequest {
+    const to = typeof toRef === 'string' ? this.resolveTeammate(from, toRef) : toRef;
     if (!to) throw new EngineError(`no teammate matches "${toRef}". Use get_team to see who is available, or ask_boss.`);
     const task = this.eng.tasks.currentTask(from.id);
     const collab: CollabRequest = {
@@ -612,32 +626,67 @@ export class Comms {
       responderTaskId: null,
       createdAt: nowIso(),
       resolvedAt: null,
+      ...(opts.waited ? { waited: true } : {}),
     };
     this.core.put('collab', collab);
     this.core.event({
       type: 'agent.collaboration_requested',
       source: 'mcp',
-      summary: `${from.name} asked ${to.name}: ${truncate(summary, 120)}`,
+      summary: `${from.name} asked ${to.name}${collab.waited ? ' and is waiting for the answer' : ''}: ${truncate(summary, 120)}`,
       employeeId: from.id,
       taskId: collab.taskId,
       projectId: collab.projectId,
       correlationId: collab.id,
-      data: { collabId: collab.id, fromEmployeeId: from.id, toEmployeeId: to.id },
+      data: { collabId: collab.id, fromEmployeeId: from.id, toEmployeeId: to.id, ...(collab.waited ? { waited: true } : {}) },
     });
     this.sendMessage({ from: { kind: 'employee', id: from.id, name: `${from.name} (${from.title})` }, toEmployeeId: to.id, body: `${summary}\n${detail}`.trim(), kind: 'collab_request', taskId: collab.taskId, threadId: collab.id });
     return collab;
   }
 
-  respondToRequest(responder: Employee, requestId: string, action: CollabRequest['status'], note: string): CollabRequest {
+  /**
+   * A colleague's answer to a request was handed to the one who asked as the result of a tool call (they came back
+   * to wait for an answer that was already there): the copy queued for their terminal is not needed any more.
+   */
+  responseReturnedByTool(requestId: string, employeeId: string): void {
+    for (const m of this.core.messages.filter((x) => x.threadId === requestId && x.toEmployeeId === employeeId && x.delivery.status === 'queued')) {
+      this.dropQueued((d) => d.ref.kind === 'message' && d.ref.id === m.id);
+      m.delivery = { status: 'sent', via: 'mcp_pull', ts: nowIso(), detail: RETURNED };
+      m.readAt = nowIso();
+      this.core.put('message', m);
+    }
+  }
+
+  /** Answer a request. The result says whether the one who asked was waiting in a held tool call and has the answer now. */
+  respondToRequest(responder: Employee, requestId: string, action: CollabRequest['status'], note: string): { collab: CollabRequest; unblocked: boolean } {
     const collab = this.core.collabs.get(requestId) ?? this.core.collabs.find((c) => c.id.startsWith(requestId));
     if (!collab) throw new EngineError(`no collaboration request "${requestId}"`);
     if (collab.toEmployeeId !== responder.id) throw new EngineError('that request was not addressed to you');
     if (collab.status !== 'open') throw new EngineError(`that request was already answered (${collab.status})`);
     const requester = this.core.employees.require(collab.fromEmployeeId);
+    // Is a tool call of the one who asked being held open for this answer? Then the answer goes back through it.
+    const held = this.eng.waits.holding(collab.id);
     collab.status = action;
     collab.response = note;
     collab.resolvedAt = nowIso();
     collab.responderTaskId = this.eng.tasks.currentTask(responder.id)?.id ?? null;
+    // "A separate task" becomes one on the board before the answer is recorded: the answer names it.
+    if (action === 'new_task' && collab.projectId) {
+      const project = this.core.projects.get(collab.projectId);
+      if (project) {
+        collab.createdTaskId = this.eng.tasks.createTask(
+          {
+            projectId: project.id,
+            title: truncate(collab.summary, 90),
+            description: `Requested by ${requester.name} from ${responder.name}.\n\n${collab.detail}\n\n${responder.name}'s note: ${note}`,
+            roleHint: responder.roleKey,
+            assigneeId: responder.id,
+            kind: 'feature',
+            released: project.policy.autoAssign,
+          },
+          `employee:${responder.name}`,
+        ).id;
+      }
+    }
     this.core.put('collab', collab);
     this.core.event({
       type: 'agent.collaboration_resolved',
@@ -664,24 +713,8 @@ export class Comms {
       taskId: collab.taskId,
       // The answer belongs to the same thread as the request it answers.
       threadId: collab.id,
+      returned: held,
     });
-    if (action === 'new_task' && collab.projectId) {
-      const project = this.core.projects.get(collab.projectId);
-      if (project) {
-        this.eng.tasks.createTask(
-          {
-            projectId: project.id,
-            title: truncate(collab.summary, 90),
-            description: `Requested by ${requester.name} from ${responder.name}.\n\n${collab.detail}\n\n${responder.name}'s note: ${note}`,
-            roleHint: responder.roleKey,
-            assigneeId: responder.id,
-            kind: 'feature',
-            released: project.policy.autoAssign,
-          },
-          `employee:${responder.name}`,
-        );
-      }
-    }
     if (action === 'needs_decision') {
       this.createQuestion({
         kind: 'priority',
@@ -699,7 +732,8 @@ export class Comms {
         projectId: collab.projectId,
       });
     }
-    return collab;
+    // Everything about the answer is on record: whoever was waiting for it has it now.
+    return { collab, unblocked: this.eng.waits.answered(collab) };
   }
 
   /** Assist XP is granted only once the helper's own task passed verification. */
@@ -773,6 +807,7 @@ export class Comms {
   private whatFor(d: Delivery): string {
     if (d.ref.kind === 'message') {
       const m = this.core.messages.get(d.ref.id);
+      if (m?.kind === 'collab_request' && this.core.collabs.get(m.threadId)?.waited) return `a request from ${m.from.name}, who is waiting for the answer`;
       return m?.routineId ? 'a routine that was due' : `a message from ${m?.from.kind === 'owner' ? 'the boss' : (m?.from.name ?? 'a teammate')}`;
     }
     return { task: 'a task', question: 'the answer to their question', meeting: 'a meeting', report: 'a report the boss asked for', retro: 'a look back at their last task', round: 'a round' }[d.ref.kind];

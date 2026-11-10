@@ -13,8 +13,8 @@ const RESTING = new Set(['idle', 'waiting_input', 'task_complete', 'blocked']);
  * `SessionRegistry.wake`).
  *
  * A session is only put to sleep when nothing can be lost by it: it is between turns, has no task in hand, no
- * question or approval open, nothing on its way to it, nobody at its terminal, is not in a meeting, and (the
- * foreman's) is not in the middle of a round.
+ * question or approval open, is not waiting for a colleague, nothing on its way to it, nobody at its terminal, is
+ * not in a meeting, and (the foreman's) is not in the middle of a round.
  */
 export class Sleeper {
   private eng: Engine;
@@ -64,6 +64,7 @@ export class Sleeper {
     if (s.control !== 'AGENT_CONTROLLED') return 'its terminal cannot be reached';
     if (this.eng.tasks.currentTask(employee.id) || this.eng.tasks.isStarting(employee.id)) return 'they have a task in hand';
     if (core.questions.find((q) => q.employeeId === employee.id && (q.status === 'open' || q.status === 'answered') && q.channel !== 'system')) return 'a question of theirs is open';
+    if (s.waitingOn) return 'they are waiting for a colleague';
     if (this.eng.comms.pending(employee.id)) return 'something is on its way to them';
     if (this.eng.meetings.isBusy(employee.id) || this.eng.meetings.activeFor(employee.id)) return 'they are in a meeting';
     if (employee.roleKey === FOREMAN_ROLE && this.eng.foreman.inRound()) return 'a round is in progress';

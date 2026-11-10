@@ -990,9 +990,9 @@ export class SessionRegistry {
         ORCH_EMPLOYEE: slugify(employee.name),
         // Their own Claude login, if they were given one.
         ...(employee.claudeConfigDir ? { CLAUDE_CONFIG_DIR: employee.claudeConfigDir } : {}),
-        // Let ask_boss hold a tool call open while the owner decides.
-        CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: String(Math.max(600_000, this.core.timings.askBossWaitMs * 2)),
-        MCP_TOOL_TIMEOUT: String(Math.max(900_000, this.core.timings.askBossWaitMs * 3)),
+        // Let ask_boss hold a tool call open while the owner decides, and a wait for a colleague while they work.
+        CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: String(Math.max(600_000, Math.max(this.core.timings.askBossWaitMs, this.core.timings.colleagueWaitMs) * 2)),
+        MCP_TOOL_TIMEOUT: String(Math.max(900_000, Math.max(this.core.timings.askBossWaitMs, this.core.timings.colleagueWaitMs) * 3)),
       },
       cols: 120,
       rows: 34,

@@ -15,7 +15,7 @@ const SCREEN_LINES = 40;
 const BOARD: TaskStatus[] = ['BACKLOG', 'READY', 'IN_PROGRESS', 'REVIEW', 'BLOCKED', 'DONE'];
 const TASK_KINDS: TaskKind[] = ['feature', 'bug', 'test', 'review', 'research', 'planning', 'security', 'docs', 'ops', 'refactor', 'chore'];
 const PRIORITIES: TaskPriority[] = ['low', 'normal', 'high', 'urgent'];
-const KIND_LABEL: Record<ForemanAttentionKind, string> = { question: 'QUESTION', blocked: 'BLOCKED', stalled: 'STALLED', unassigned: 'UNASSIGNED', idle: 'IDLE' };
+const KIND_LABEL: Record<ForemanAttentionKind, string> = { question: 'QUESTION', blocked: 'BLOCKED', stalled: 'STALLED', unassigned: 'UNASSIGNED', idle: 'IDLE', waiting: 'WAITING' };
 
 interface Persisted {
   /** Finished rounds, newest first. */
@@ -41,7 +41,7 @@ const IDLE_BACKOFF_MAX = 5;
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
 const shortHash = (s: string): string => createHash('sha1').update(s).digest('hex').slice(0, 10);
 const err = (text: string): McpToolResult => ({ text, isError: true });
-const emptyCounts = (): Record<ForemanAttentionKind, number> => ({ question: 0, blocked: 0, stalled: 0, unassigned: 0, idle: 0 });
+const emptyCounts = (): Record<ForemanAttentionKind, number> => ({ question: 0, blocked: 0, stalled: 0, unassigned: 0, idle: 0, waiting: 0 });
 
 /** A round in flight: the record, plus what the engine needs to know while it runs. */
 interface LiveRound extends ForemanRound {
@@ -177,8 +177,9 @@ export class Foreman {
 
   /**
    * Everything that currently calls for the foreman, computed from recorded state alone:
-   * an employee's open question, a blocked task, someone idle with a task in progress, and
-   * ready work nobody has while somebody is free. Permission requests are never in this list.
+   * an employee's open question, a blocked task, someone idle with a task in progress, someone
+   * waiting for a colleague who is doing nothing, and ready work nobody has while somebody is free.
+   * Permission requests are never in this list.
    */
   /** Is this host a member's own computer? */
   private personal(hostId: string | null | undefined): boolean {
@@ -266,6 +267,8 @@ export class Foreman {
       if (!who || !s || s.status !== 'running' || s.inTurn === true || (s.activity !== 'idle' && s.activity !== 'waiting_input')) continue;
       if (this.away(who) || core.gateway.isPaused(s.id) || core.gateway.isHumanControlled(s.id)) continue;
       if (core.questions.find((q) => q.employeeId === who.id && q.status === 'open')) continue;
+      // Stopped because a colleague has not answered or finished: that is "waiting", below, and only when the colleague is not at it.
+      if (s.waitingOn) continue;
       const since = s.activitySince > (t.startedAt ?? '') ? s.activitySince : t.startedAt!;
       if (now - Date.parse(since) < core.timings.foremanStalledMs) continue;
       add({ key: `stalled:${t.id}:${s.activitySince}`, kind: 'stalled', text: `${who.name} has been idle for ${formatDuration(now - Date.parse(since))} with ${t.key} "${truncate(t.title, 80)}" in progress`, employeeId: who.id, taskId: t.id, questionId: null, projectId: t.projectId, since });
@@ -282,11 +285,29 @@ export class Foreman {
         if (core.gateway.isPaused(s.id) || core.gateway.isHumanControlled(s.id) || !this.eng.tasks.withinSchedule(who)) continue;
         if (core.tasks.find((t) => t.assigneeId === who.id && t.status === 'IN_PROGRESS')) continue; // that is "stalled", above
         if (core.questions.find((q) => q.employeeId === who.id && q.status === 'open')) continue;
+        if (s.waitingOn) continue; // "waiting", below
         // Left alone for twice as long each time the foreman was the only one who had anything for them.
         if (now - Date.parse(s.activitySince) < idleMs * 2 ** Math.min(this.idleStreak(who, boss), IDLE_BACKOFF_MAX)) continue;
         const waiting = core.tasks.filter((t) => t.assigneeId === who.id && (t.status === 'READY' || t.status === 'BLOCKED'));
         add({ key: `idle:${who.id}:${s.activitySince}`, kind: 'idle', text: `${who.name} (${who.title}) has been doing nothing for ${formatDuration(now - Date.parse(s.activitySince))}: no task in progress${waiting.length ? `; assigned and waiting: ${waiting.map((t) => `${t.key} [${t.status}]`).join(', ')}` : ''}${this.where(who)}`, employeeId: who.id, taskId: null, questionId: null, projectId: who.projectId, since: s.activitySince });
       }
+    }
+
+    // Someone who cannot go on until a colleague has answered or finished, while that colleague is not at it (no
+    // session, or between turns with nothing going on). While the colleague works on it, a wait is nobody's problem.
+    for (const s of core.sessions.filter((x) => !!x.waitingOn && x.status === 'running')) {
+      const w = s.waitingOn!;
+      const waiter = core.employees.get(s.employeeId);
+      if (!waiter || waiter.archived || waiter.id === boss?.id || this.away(waiter) || core.gateway.isPaused(s.id)) continue;
+      const lazy = this.eng.waits.idleTarget(w);
+      if (!lazy || lazy.who.id === boss?.id || this.away(lazy.who)) continue;
+      // Both must have lasted: the wait, and the colleague's doing nothing.
+      const since = lazy.since > w.since ? lazy.since : w.since;
+      if (now - Date.parse(since) < core.timings.foremanWaitingMs) continue;
+      const c = core.collabs.get(w.requestId);
+      const t = core.tasks.get(w.taskId);
+      const what = c ? `an answer to "${truncate(oneLine(c.summary), 100)}" (request ${c.id})` : `${t?.key ?? 'a task'} "${truncate(t?.title ?? '', 80)}" [${t?.status ?? 'gone'}] to be finished`;
+      add({ key: `waiting:${waiter.id}:${w.requestId ?? w.taskId}`, kind: 'waiting', text: `${waiter.name} has been waiting ${formatDuration(now - Date.parse(w.since))} for ${lazy.who.name}, who ${lazy.words}: ${what}${this.where(lazy.who)}`, employeeId: waiter.id, taskId: w.taskId, questionId: null, projectId: waiter.projectId, since });
     }
 
     const free = core.employees.filter((e) => e.roleKey !== FOREMAN_ROLE && !e.selfDriven && !this.away(e) && this.eng.tasks.isFree(e));
@@ -367,7 +388,9 @@ export class Foreman {
       const openQuestions = new Set(core.questions.filter((q) => q.status === 'open').map((q) => q.id));
       // (A spell of doing nothing stays "seen" for as long as it lasts, also while the employee is being left alone.)
       const spells = new Set(core.employees.filter((e) => !e.archived).map((e) => `idle:${e.id}:${core.runningSessionOf(e.id)?.activitySince ?? ''}`));
-      const seen = this.state.seen.filter((k) => present.has(k) || (k.startsWith('question:') && openQuestions.has(k.slice('question:'.length))) || spells.has(k));
+      // (And a wait stays "seen" for as long as it stands, also while the colleague is at work on it again.)
+      const waits = new Set(core.sessions.filter((x) => !!x.waitingOn).map((x) => `waiting:${x.employeeId}:${x.waitingOn!.requestId ?? x.waitingOn!.taskId}`));
+      const seen = this.state.seen.filter((k) => present.has(k) || (k.startsWith('question:') && openQuestions.has(k.slice('question:'.length))) || spells.has(k) || waits.has(k));
       const escalated = this.state.escalated.filter((id) => openQuestions.has(id));
       const gone = Object.keys(this.state.idle).filter((id) => core.employees.get(id)?.archived !== false);
       for (const id of gone) delete this.state.idle[id];
@@ -467,6 +490,7 @@ export class Foreman {
       counts.stalled ? `${counts.stalled} stalled` : '',
       counts.unassigned ? `${counts.unassigned} unassigned task${counts.unassigned === 1 ? '' : 's'}` : '',
       counts.idle ? `${counts.idle} idle` : '',
+      counts.waiting ? `${counts.waiting} waiting for a colleague` : '',
     ].filter(Boolean);
     return parts.join(', ') || 'nothing new';
   }
@@ -487,7 +511,7 @@ export class Foreman {
       ].filter(Boolean);
       return `QUESTION ${q.id} from ${asker?.name ?? 'an employee'} (${[asker?.title, task?.key].filter(Boolean).join(', ')}): "${truncate(oneLine(q.text), 600)}" — waiting ${waited}${i.escalated ? ' — you escalated it to the boss' : ''}${extra.length ? `\n   ${extra.join('\n   ')}` : ''}`;
     }
-    return `${KIND_LABEL[i.kind]} ${i.text}${i.kind === 'stalled' || i.kind === 'idle' ? '' : ` — for ${waited}`}`;
+    return `${KIND_LABEL[i.kind]} ${i.text}${i.kind === 'stalled' || i.kind === 'idle' || i.kind === 'waiting' ? '' : ` — for ${waited}`}`;
   }
 
   private teamLines(boss: Employee): string[] {
@@ -520,6 +544,9 @@ export class Foreman {
       ...(has('unassigned') ? ['- UNASSIGNED: give it to the most suitable free person with assign_task.'] : []),
       ...(has('idle')
         ? ['- IDLE: look_at them. If their screen shows work that stopped half-way, or a question to whoever is at the keyboard, tell_employee what to do next (or escalate_to_owner if it is not yours to decide). If there is ready work they can take, assign_task; if what they were asked for clearly needs a follow-up, create_task and assign it. If they finished what they were asked and nothing is left, leave them be and say so in your summary.']
+        : []),
+      ...(has('waiting')
+        ? ['- WAITING: someone cannot go on until a colleague has answered or finished, and that colleague is not at it. look_at the colleague, then tell_employee them what is wanted of them (answer the request with respond_to_request; pick the task up) — or tell the one who waits to carry on without it. escalate_to_owner if it is not yours to decide.']
         : []),
       ...(this.core.employees.find((e) => !e.archived && this.personal(e.hostId)) ? ['- People marked "on …\'s own computer" work on that member\'s own projects: they only take tasks of projects on that same computer, and nobody else takes those.'] : []),
       '- You never approve permission requests, and you do not write code.',

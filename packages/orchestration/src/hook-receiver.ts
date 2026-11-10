@@ -164,6 +164,8 @@ export class HookReceiver {
     const task = this.eng.tasks.currentTask(employee.id);
     if (!task || task.delivery.status !== 'confirmed') return null;
     if (this.core.gateway.isHumanControlled(session.id) || this.core.gateway.isPaused(session.id)) return null;
+    // Stopped because a colleague has not answered or finished yet: there is nothing to be nudged on with.
+    if (session.waitingOn) return null;
     if (this.core.questions.find((q) => q.employeeId === employee.id && (q.status === 'open' || q.status === 'answered') && q.channel !== 'system')) return null;
     const limit = NUDGE_LIMIT[employee.autonomy] ?? 0;
     if (task.nudges >= limit) return null;
@@ -189,6 +191,9 @@ export class HookReceiver {
       // Keep the more specific state that a real report put there.
     } else if (openQuestion) {
       this.eng.sessions.setActivity(session, openQuestion.kind === 'permission' ? 'needs_approval' : 'waiting_answer', truncate(openQuestion.text, 120));
+    } else if (session.waitingOn) {
+      // The turn ended while what they asked a colleague for has not come: they are waiting for that colleague.
+      this.eng.sessions.setActivity(session, 'waiting_input', this.eng.waits.detail(session.waitingOn));
     } else if (task && task.delivery.status === 'confirmed') {
       // Stopped mid-task without completing or asking through Orchestrator: it is waiting on something.
       this.eng.sessions.setActivity(session, 'waiting_input', truncate(String(payload.last_assistant_message ?? '').replace(/\s+/g, ' '), 140) || `Stopped while working on ${task.key}`);
@@ -324,8 +329,17 @@ export class HookReceiver {
     }
 
     if (interp.activity) {
-      // A paused employee stays visibly paused until the owner resumes them.
-      if (!(session.activity === 'paused' && this.core.gateway.isPaused(session.id))) {
+      const wait = session.waitingOn;
+      const toolHook = payload.hook_event_name === 'PreToolUse' || payload.hook_event_name === 'PostToolUse' || payload.hook_event_name === 'PostToolUseFailure';
+      if (session.activity === 'paused' && this.core.gateway.isPaused(session.id)) {
+        // A paused employee stays visibly paused until the owner resumes them.
+      } else if (wait?.held && toolHook) {
+        // A call is being held open for a colleague: hooks of tool calls that arrive meanwhile (they travel separately
+        // from the call itself) do not change what is shown. The call sets the state again when it returns.
+      } else if (wait && interp.activity.state === 'waiting_input' && !interp.activity.detail) {
+        // At the prompt while a colleague has not answered or finished yet: waiting, and for whom.
+        this.eng.sessions.setActivity(session, 'waiting_input', this.eng.waits.detail(wait));
+      } else {
         this.eng.sessions.setActivity(session, interp.activity.state, interp.activity.detail);
       }
     }

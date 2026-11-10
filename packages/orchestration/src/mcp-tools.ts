@@ -10,6 +10,8 @@ import { answerLine } from './prompts.ts';
 export interface McpContext {
   session: AgentSession;
   employee: Employee;
+  /** Aborted when the caller closes the connection before the tool has answered (a held call that nobody listens to any more). */
+  signal?: AbortSignal;
 }
 
 function describeTask(eng: Engine, t: Task): string {
@@ -153,13 +155,29 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
 
     hand_off_task: async (a, { employee }) => eng.tasks.handOff(employee, String(a.to), String(a.notes ?? '')),
 
-    request_collaboration: async (a, { employee }) => {
-      const collab = eng.comms.requestCollaboration(employee, String(a.to), String(a.summary), a.detail ? String(a.detail) : '');
+    request_collaboration: async (a, { employee, session, signal }) => {
+      const wait = a.wait === true;
+      const target = eng.comms.resolveTeammate(employee, String(a.to));
+      // Refused before anything is sent: a request that says "I am waiting" must be one that can be waited for.
+      const no = wait && target ? eng.waits.cannotWaitFor(employee, session, target, 'answer') : null;
+      if (no) return { text: `${no} Nothing was sent. If they only need to know, send it without wait.`, isError: true };
+      const collab = eng.comms.requestCollaboration(employee, target ?? String(a.to), String(a.summary), a.detail ? String(a.detail) : '', { waited: wait });
+      if (wait) return eng.waits.forRequest(employee, session, collab, signal);
       const to = core.employees.get(collab.toEmployeeId);
       return `Request ${collab.id} sent to ${to?.name} (${to?.title}). They will respond; the response is delivered to you. Continue with what you can in the meantime.`;
     },
 
-    request_help: async (a, { employee, session }) => {
+    wait_for_colleague: async (a, { employee, session, signal }) => {
+      const request = a.request_id ? String(a.request_id).trim() : '';
+      const task = a.task ? String(a.task).trim() : '';
+      if (request && task) return { text: 'Pass request_id or task, not both: one wait at a time.', isError: true };
+      if (task) return eng.waits.forTask(employee, session, task, signal);
+      if (!request) return eng.waits.resume(employee, session, signal);
+      const collab = eng.waits.findRequest(employee, request);
+      return collab ? eng.waits.forRequest(employee, session, collab, signal) : { text: `No request "${request}" of yours. It is the id you were given when you sent it.`, isError: true };
+    },
+
+    request_help: async (a, { employee, session, signal }) => {
       const task = eng.tasks.currentTask(employee.id);
       const roleOrder = ['architect', 'fullstack', 'backend', 'frontend', 'qa', 'security', 'devops'];
       const helper = core.employees
@@ -167,7 +185,11 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
         .sort((x, y) => roleOrder.indexOf(x.roleKey) - roleOrder.indexOf(y.roleKey))
         .find((e) => roleOrder.includes(e.roleKey));
       if (helper) {
-        const collab = eng.comms.requestCollaboration(employee, helper.name, `Help needed: ${String(a.topic)}`, a.detail ? String(a.detail) : '');
+        const wait = a.wait === true;
+        const no = wait ? eng.waits.cannotWaitFor(employee, session, helper, 'answer') : null;
+        if (no) return { text: `${no} Nothing was sent. Ask without wait, or ask the boss (ask_boss).`, isError: true };
+        const collab = eng.comms.requestCollaboration(employee, helper, `Help needed: ${String(a.topic)}`, a.detail ? String(a.detail) : '', { waited: wait });
+        if (wait) return eng.waits.forRequest(employee, session, collab, signal);
         return `Help request ${collab.id} sent to ${helper.name} (${helper.title}).`;
       }
       const q = eng.comms.createQuestion({ kind: 'question', channel: 'mcp_tool', employee, session, text: `${employee.name} needs help: ${String(a.topic)}`, context: a.detail ? String(a.detail) : '', why: task ? `They are working on ${task.key}.` : '' });
@@ -175,8 +197,11 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     respond_to_request: async (a, { employee }) => {
-      const collab = eng.comms.respondToRequest(employee, String(a.request_id), a.action, String(a.note));
-      return `Response recorded (${collab.status}) and sent to ${core.employees.get(collab.fromEmployeeId)?.name}.`;
+      const { collab, unblocked } = eng.comms.respondToRequest(employee, String(a.request_id), a.action, String(a.note));
+      const asker = core.employees.get(collab.fromEmployeeId)?.name ?? 'your colleague';
+      // Who this let go on: someone held a tool call open for it, or said they would wait and is told by a message.
+      if (unblocked) return `Response recorded (${collab.status}). ${asker} was waiting for it and has it now: they can go on.`;
+      return `Response recorded (${collab.status}) and sent to ${asker}${collab.waited ? ', who is waiting for it' : ''}.`;
     },
 
     check_messages: async (_a, { employee }) => {
@@ -194,7 +219,8 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
           const t = eng.tasks.currentTask(e.id);
           // What their finished work here shows (counted, not declared): whom to ask about what.
           const record = eng.improver.capture.skillsLine(e);
-          return `- ${e.name} — ${e.title}${e.projectId === employee.projectId ? '' : ' (other project)'} · ${s ? (ACTIVITY_LABEL[s.activity] ?? s.activity) : 'OFFLINE'}${t ? ` · working on ${t.key} "${truncate(t.title, 50)}"` : ''}${record ? ` · ${record}` : ''}`;
+          const waiting = s?.waitingOn ? ` · waiting for ${eng.waits.words(s.waitingOn)}` : '';
+          return `- ${e.name} — ${e.title}${e.projectId === employee.projectId ? '' : ' (other project)'} · ${s ? (ACTIVITY_LABEL[s.activity] ?? s.activity) : 'OFFLINE'}${waiting}${t ? ` · working on ${t.key} "${truncate(t.title, 50)}"` : ''}${record ? ` · ${record}` : ''}`;
         })
         .join('\n');
     },

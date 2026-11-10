@@ -71,11 +71,14 @@ One outbound WebSocket per host, authenticated by its first message. Non-blockin
 | Self-improvement | `improve.ts` | playbooks, project knowledge, routing, proposals |
 | Routines | `routines.ts` | standing instructions repeated for one employee: when a run is due, delivered, skipped or held |
 | Sleep | `sleep.ts`, `registry.ts` (`wake`), `comms.ts` (`pump`) | stopping sessions that have no work; starting them again for what they are needed for |
+| Waiting for a colleague | `waits.ts` | tool calls held open for a colleague's answer or the end of a task; what may be waited for, when a wait is cut short, what stands after the call |
 | Persistence & recovery | `core.ts`, `engine.ts` | everything is rebuilt from the database on start |
 
 ### Activity state
 
 An employee's visible state is derived in exactly one place — `interpretHook`, a pure function over the real hook payload — plus MCP reports and process state. Tool → state: Read/Grep/Glob → `reading`; Edit/Write → `coding` (or `debugging` after a failed test run); a test command → `testing`; `ask_boss`/`AskUserQuestion` → `waiting_answer`; `PermissionRequest` → `needs_approval`; and so on. Unknown hook → no change. No hooks → `unknown`.
+
+One state is set by the office rather than read from a hook: while a tool call is held open for a colleague (`waits.ts`), and when a turn ends with that wait still standing, the session is `waiting_input` with the caption "Waiting for Sarah (T-12)". The hook of that call says `waiting_input` too, without knowing for whom; hooks of other tool calls that arrive while the call is held do not change it.
 
 Separately, `session.inTurn` records whether Claude is mid-turn (`UserPromptSubmit` … `Stop`). It — not the display state — decides when Orchestrator may hand the session a prompt.
 
@@ -135,7 +138,7 @@ A host that stays at or above 95% memory or CPU for 30 seconds is exhausted (`ch
 
 ### MCP server
 
-`POST /mcp` — Streamable HTTP, JSON responses, stateless; authenticated by the session's bearer token, which resolves to the employee (identity never comes from tool arguments). Tools: `get_current_task`, `get_project_context`, `report_status`, `report_progress`, `ask_boss`, `wait_for_answer`, `report_blocker`, `complete_task`, `submit_result`, `request_review`, `submit_review`, `send_message`, `request_collaboration`, `request_help`, `respond_to_request`, `check_messages`, `get_team`, `get_available_tasks`, `claim_task`, `propose_tasks`, `meeting_contribute`, `meeting_conclude`, `record_lesson`, `get_playbook`.
+`POST /mcp` — Streamable HTTP, JSON responses, stateless; authenticated by the session's bearer token, which resolves to the employee (identity never comes from tool arguments). Tools: `get_current_task`, `get_project_context`, `report_status`, `report_progress`, `ask_boss`, `wait_for_answer`, `report_blocker`, `complete_task`, `submit_result`, `request_review`, `submit_review`, `send_message`, `request_collaboration`, `request_help`, `respond_to_request`, `wait_for_colleague`, `check_messages`, `get_team`, `get_available_tasks`, `claim_task`, `propose_tasks`, `meeting_contribute`, `meeting_conclude`, `record_lesson`, `get_playbook`.
 
 ### Normalized events
 
@@ -155,12 +158,29 @@ A `Routine` (`employeeId`, `instruction`, `everyMinutes`, `enabled`, `nextRunAt`
 | Outcome | When | Next look |
 | --- | --- | --- |
 | `delivered` | the session is between turns with nothing waiting on the owner — or there is no session and the machine is there (the session is then started for it) | one interval after this look |
-| `skipped_busy` | mid-turn; a question or approval open; someone at the terminal; other things queued for them; the run before this one not delivered yet | one interval after this look |
+| `skipped_busy` | mid-turn; a question or approval open; waiting for a colleague; someone at the terminal; other things queued for them; the run before this one not delivered yet | one interval after this look |
 | `not_run` | the employee or the project is paused, the employee is archived or outside working hours | unchanged: it runs once when the hold is over |
 | `skipped_offline` | no session and the machine is away (or out of resources, or there is no folder) | unchanged: once when it is back |
 | `failed` | the session could not be started for a run that is still waiting | one interval after this look |
 
 A run is `Comms.sendMessage` with `routineId` set: the message body is `Routine (every N min): <instruction>`, and the prompt typed into the session adds `ROUTINE_GUIDE` (use `propose_tasks` with a `dedupe_key` for what is found; one line when there is nothing new). `propose_tasks` with a `dedupe_key` adds nothing when the project already has a task with that key (`TaskManager.propose`), and holds what it adds for the owner's release.
+
+### Waiting for a colleague (`waits.ts`)
+
+`request_collaboration` / `request_help` with `wait: true`, and `wait_for_colleague`, end in `Waits.forRequest` or `Waits.forTask`. Both first decide whether waiting is allowed (`cannotWaitFor`: oneself, a circle through calls held right now, the foreman, archived, paused, a machine that is away, a session without the office's tools, the shared / own-computer line; for a task also `canSee`, an assignee, and that it is released), return at once when the answer or the end is already there, and otherwise `hold`: a promise per waiting employee, a timer for the bound (`timings.colleagueWaitMs`), and `AgentSession.waitingOn = { employeeId, requestId | taskId, since, held: true }`.
+
+A held call ends in one of four ways:
+
+| | What ends it | The wait afterwards |
+| --- | --- | --- |
+| the answer | `Comms.respondToRequest` calls `Waits.answered` once the answer, the task it may have created and the reply message are on record; the reply is marked as returned by the tool (`delivery.via: 'mcp_pull'`) instead of being queued for the terminal | over |
+| the task ended | any change to a task is looked at (`bus` `entity` events for tasks, sessions, employees and hosts trigger `sweep`): `DONE`, `BLOCKED` or removed | over |
+| cut short | the same sweep finds the awaited colleague paused or archived, or — after `timings.waitGoneGraceMs` — still without a session that can be started | over; the request stays open |
+| the bound, or the caller hung up | the timer; or the HTTP connection of `POST /mcp` closed before the reply (`McpContext.signal`) | stands: `held: false` |
+
+A wait that stands is settled by the same sweep: when its task ends the office sends the waiting employee a message; when its request is answered the ordinary reply message is on its way already. `Waits.restore` (on start) turns every `held` into `false` — the calls are gone — so `wait_for_colleague` with no arguments (`Waits.resume`) can continue from the record.
+
+Who reads `waitingOn`: the hook receiver (the caption at the end of a turn; no "you stopped" nudge), `Sleeper.keptAwake`, `Routines.busy`, `get_team`, the foreman's attention list (never `stalled` / `idle`; `waiting` when `Waits.idleTarget` says the awaited colleague is not at it), and the windows (`waitingForLines` in `apps/desktop/src/lib/views.ts`). A request that is waited for is delivered with `wake: true`, so `Comms.pump` starts the colleague's session if there is none.
 
 ### Sleep and wake (`sleep.ts`, `registry.ts`, `comms.ts`)
 
@@ -247,6 +267,7 @@ SQLite (`node:sqlite`), WAL mode, file mode 0600: entity documents, the event st
 | Network drop | Agent reconnects with backoff; queued hook events are flushed; viewers get a fresh snapshot |
 | Claude process exits | Pane is kept (`remain-on-exit`), session `exited`, employee `OFFLINE`; "Resume session" respawns the pane with `--resume` |
 | Session put to sleep | The tmux session and the process are ended on purpose; the record keeps the folder and the Claude conversation id. The next thing the employee is needed for starts a new tmux session of the same name with `--resume` |
+| Server restart while someone waits for a colleague | The held tool call is cut. What the session waits for is on its record (`waitingOn`, now `held: false`): the answer arrives as a message, or `wait_for_colleague` picks the wait up |
 | Server restart with routines | Routines and their `nextRunAt` are stored; one that came due meanwhile runs once (after its machine has reconnected) |
 | Duplicate events | Ignored by id |
 | Merge conflict | Aborted; task blocked; owner decides |

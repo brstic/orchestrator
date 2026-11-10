@@ -8,6 +8,7 @@ import { RadioPillButtons } from './radio-bits.tsx';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice, type Ask, type CameraMode, type PanelId } from '../lib/store.ts';
 import { may, memberOfEmployee, whyNot } from '../lib/access.ts';
 import { needsYou } from '../lib/attention.ts';
+import { waitingForLines } from '../lib/views.ts';
 import { TerminalView } from '../terminal/TerminalView.tsx';
 
 /** Run an API call and surface failures as a toast instead of swallowing them. */
@@ -668,6 +669,9 @@ export function EmployeeCard() {
         <Badge tone={questions.length ? 'warn' : activity === 'blocked' ? 'bad' : live ? 'info' : 'muted'}>{ACTIVITY_LABEL[activity] ?? activity}</Badge>
       </div>
       {session?.activityDetail && live && <div className="small muted truncate mono">{session.activityDetail}</div>}
+      {waitingForLines(s, e.id).map((line) => (
+        <div key={line} className="small truncate">{line}</div>
+      ))}
       {task ? (
         <div className="col" style={{ gap: 4 }}>
           <div className="small truncate">

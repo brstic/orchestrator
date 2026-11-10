@@ -65,6 +65,8 @@ export type EventType =
   | 'agent.status_report'
   | 'agent.collaboration_requested'
   | 'agent.collaboration_resolved'
+  // An employee began waiting for a colleague's answer or task, or stopped: data { phase: 'began' | 'ended', … }.
+  | 'agent.waiting'
   | 'agent.result_submitted'
   | 'meeting.created'
   | 'meeting.round_started'

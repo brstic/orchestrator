@@ -19,7 +19,7 @@ A machine (host) is either **shared** or **a member's own computer** (`Host.memb
 
 - The office server's own machine, enrolled machines and SSH-linked servers are shared.
 - A member's own computer joins while their desktop app has the office open, and only through the door. Its employees sit in the member's room.
-- Work does not cross: a personal employee works only on projects on the same computer; a shared employee is never put on a project that lives on someone's computer; the scheduler never routes shared work to a personal employee, and the foreman — which supervises everyone — never assigns across that line either.
+- Work does not cross: a personal employee works only on projects on the same computer; a shared employee is never put on a project that lives on someone's computer; the scheduler never routes shared work to a personal employee, and the foreman — which supervises everyone — never assigns across that line either. An employee cannot wait for a colleague on the other side either (`wait: true`, `wait_for_colleague`), and a task on the other side is answered like one that does not exist.
 
 ## The rules
 

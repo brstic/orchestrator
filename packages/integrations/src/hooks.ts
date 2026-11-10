@@ -109,12 +109,19 @@ export function summarizeToolInput(name: string, input: any, cwd?: string): Reco
   return out;
 }
 
+/** An Orchestrator tool call that is held open until a colleague has answered or finished. */
+export function waitsForColleague(tool: string | null, input: any): boolean {
+  return tool === 'wait_for_colleague' || ((tool === 'request_collaboration' || tool === 'request_help') && input?.wait === true);
+}
+
 function toolActivity(name: string, input: any, ctx: HookContext, cwd?: string): { state: ActivityState; detail: string | null } | null {
   const detail = describeTool(name, input, cwd);
   if (name === 'AskUserQuestion') return { state: 'waiting_answer', detail: 'Asking a question' };
   if (name.startsWith('mcp__orchestrator__')) {
     const tool = name.slice('mcp__orchestrator__'.length);
     if (tool === 'ask_boss' || tool === 'wait_for_answer') return { state: 'waiting_answer', detail: 'Waiting for the boss' };
+    // (Who and what for is filled in by the office, which knows; this is what shows until it has.)
+    if (waitsForColleague(tool, input)) return { state: 'waiting_input', detail: 'Waiting for a colleague' };
     // Reporting to Orchestrator is bookkeeping, not a change in what the employee is doing.
     return null;
   }
@@ -243,7 +250,7 @@ export function interpretHook(payload: HookPayload, ctx: HookContext): HookInter
           quiet: true,
         });
       }
-      if (!out.orchestratorTool || out.orchestratorTool === 'ask_boss' || out.orchestratorTool === 'wait_for_answer') {
+      if (!out.orchestratorTool || out.orchestratorTool === 'ask_boss' || out.orchestratorTool === 'wait_for_answer' || waitsForColleague(out.orchestratorTool, input)) {
         out.activity = { state: ctx.activeSubagents > 0 ? 'delegating' : 'thinking', detail: null };
       }
       deployed(!failed);
