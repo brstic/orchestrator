@@ -10,6 +10,7 @@ import type {
   FullState,
   Host,
   Improvement,
+  Routine,
   KnockView,
   Lesson,
   Meeting,
@@ -151,6 +152,7 @@ export interface OfficeState {
   artifacts: ById<Artifact>;
   lessons: ById<Lesson>;
   improvements: ById<Improvement>;
+  routines: ById<Routine>;
   milestones: Milestone[];
   company: CompanyStats | null;
   performance: PerformanceStat[];
@@ -200,6 +202,7 @@ const KIND_TO_KEY: Record<string, keyof OfficeState> = {
   artifact: 'artifacts',
   lesson: 'lessons',
   improvement: 'improvements',
+  routine: 'routines',
 };
 
 function index<T extends { id: string }>(list: T[]): ById<T> {
@@ -274,6 +277,7 @@ export const useOffice = create<OfficeState>((set, get) => ({
   artifacts: {},
   lessons: {},
   improvements: {},
+  routines: {},
   milestones: [],
   company: null,
   performance: [],
@@ -419,6 +423,7 @@ function applyFull(state: FullState, clientId: string): void {
     artifacts: index(state.artifacts),
     lessons: index(state.lessons ?? []),
     improvements: index(state.improvements ?? []),
+    routines: index(state.routines ?? []),
     milestones: state.milestones,
     company: state.company,
     performance: state.performance ?? [],

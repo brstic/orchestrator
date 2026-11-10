@@ -144,6 +144,11 @@ export class Foreman {
     this.soon.unref?.();
   }
 
+  /** Is a round in flight right now? */
+  inRound(): boolean {
+    return !!this.round;
+  }
+
   /** The employee who does the rounds. (An office from before there could only be one: the longest-serving of them.) */
   foreman(): Employee | undefined {
     return this.core.employees.filter((e) => !e.archived && e.roleKey === FOREMAN_ROLE).sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))[0];
@@ -847,7 +852,7 @@ export class Foreman {
         this.eng.comms.sendMessage({ from: { kind: 'employee', id: employee.id, name: `${employee.name} (the foreman)` }, toEmployeeId: to.id, body: truncate(message, 4000), taskId: this.eng.tasks.currentTask(to.id)?.id ?? null });
         this.did(employee, 'messaged');
         this.visit(employee, to, null, 'tell');
-        return `Told ${to.name}. It is delivered to their session ${core.runningSessionOf(to.id) ? 'when they can read it' : 'once it runs (they have no running session right now)'}.`;
+        return `Told ${to.name}. It is delivered to their session ${core.runningSessionOf(to.id) ? 'when they can read it' : this.eng.sessions.asleep(to.id) ? 'as soon as their session is up again (they were asleep and are being woken for it)' : 'once it runs (they have no running session right now)'}.`;
       },
 
       escalate_to_owner: async (a, { employee, session }) => {

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { WebSocket } from 'ws';
-import { eventFor, mayDrive, mayReadMessage, mayReadQuestion, maySee, stateFor } from './access.ts';
+import { eventFor, mayDrive, mayReadMessage, mayReadQuestion, mayReadRoutine, maySee, stateFor } from './access.ts';
 import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, OrchestratorEvent, PersonPresence, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
 import { hueOf, type Who } from './guests.ts';
 import { PROTOCOL_VERSION, ROLE_CATALOGUE, matchRole, nowIso, roleByKey } from '@orchestrator/contracts';
@@ -380,13 +380,14 @@ export class ClientHub {
     }
     if (msg.t === 'entity' && msg.op === 'upsert' && msg.kind === 'message') return mayReadMessage(this.engine, c.who, msg.data) ? msg : null;
     if (msg.t === 'entity' && msg.op === 'upsert' && msg.kind === 'question') return mayReadQuestion(this.engine, c.who, msg.data) ? msg : null;
+    if (msg.t === 'entity' && msg.op === 'upsert' && msg.kind === 'routine') return mayReadRoutine(this.engine, c.who, msg.data) ? msg : null;
     return msg;
   }
 
   broadcast(msg: ServerToClient): void {
     if (!this.clients.size) return;
     const text = JSON.stringify(msg);
-    const scoped = msg.t === 'event' || (msg.t === 'entity' && (msg.kind === 'message' || msg.kind === 'question'));
+    const scoped = msg.t === 'event' || (msg.t === 'entity' && (msg.kind === 'message' || msg.kind === 'question' || msg.kind === 'routine'));
     for (const c of this.clients.values()) {
       const mine = scoped ? this.heardBy(c, msg) : msg;
       if (!mine) continue;

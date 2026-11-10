@@ -63,13 +63,15 @@ export class MeetingManager {
     if (!topic) throw new EngineError('a meeting needs a topic');
     const participants = [...new Set(input.participantIds)].map((id) => this.core.employees.require(id)).filter((e) => !e.archived);
     if (participants.length < 2) throw new EngineError('a meeting needs at least two participants');
-    const unavailable = participants.filter((e) => !this.core.runningSessionOf(e.id));
+    // Someone asleep can take part: the invitation wakes them. Someone who was never started, or was stopped, cannot.
+    const here = (e: Employee) => this.eng.sessions.present(e.id);
+    const unavailable = participants.filter((e) => !here(e));
     if (unavailable.length === participants.length) throw new EngineError('none of the invited employees has a running session');
     const facilitator =
       (input.facilitatorId ? this.core.employees.get(input.facilitatorId) : undefined) ??
-      participants.find((e) => e.roleKey === 'architect' && this.core.runningSessionOf(e.id)) ??
-      participants.find((e) => e.roleKey === 'pm' && this.core.runningSessionOf(e.id)) ??
-      participants.find((e) => this.core.runningSessionOf(e.id))!;
+      participants.find((e) => e.roleKey === 'architect' && here(e)) ??
+      participants.find((e) => e.roleKey === 'pm' && here(e)) ??
+      participants.find((e) => here(e))!;
     const meeting: Meeting = {
       id: newId().slice(0, 8),
       projectId: input.projectId ?? facilitator.projectId ?? null,
@@ -78,7 +80,7 @@ export class MeetingManager {
       status: 'proposals',
       facilitatorId: facilitator.id,
       participantIds: participants.map((e) => e.id),
-      // People without a running session cannot take part; that is recorded up front.
+      // People without a session (other than asleep) cannot take part; that is recorded up front.
       absent: unavailable.map((e) => e.id),
       contributions: [],
       decisionDoc: null,

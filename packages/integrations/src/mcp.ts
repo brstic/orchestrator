@@ -271,7 +271,7 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
   {
     name: 'propose_tasks',
     description:
-      'Propose a breakdown of work as concrete tasks with dependencies. Used for planning. Tasks become real items on the project board (released automatically or after the boss approves, depending on project policy).',
+      'Propose a breakdown of work as concrete tasks with dependencies. Used for planning, and for putting something you found on the task board. Tasks become real items on the project board (released automatically or after the boss approves, depending on project policy).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -289,6 +289,7 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
               role: str('Role best suited: backend, frontend, fullstack, qa, security, devops, database, docs, architect, reviewer …'),
               priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] },
               depends_on: { type: 'array', items: { type: 'integer' }, description: 'Zero-based indexes of earlier tasks in this list that must be done first' },
+              dedupe_key: str('For an item found by a check you repeat (a support ticket, an alert): what identifies the item itself, e.g. its id or URL. If the project already has a task with this key, nothing is added. Tasks with a key always wait for the boss to release them.'),
             },
             required: ['title', 'description'],
           },

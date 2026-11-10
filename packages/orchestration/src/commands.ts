@@ -183,8 +183,8 @@ export class CommandCenter {
       const topic = capitalise(teamReview ? `${teamReview[1]} ${teamReview[2]}` : meetingVerb![1]!);
       const project = this.projectMentioned(text) ?? this.defaultProject();
       const named = this.employeesMentioned(text);
-      const pool = named.length >= 2 ? named : this.employees().filter((e) => !!this.core.runningSessionOf(e.id) && (!project || e.projectId === project.id || e.projectId === null));
-      const participants = pool.length >= 2 ? pool : this.employees().filter((e) => !!this.core.runningSessionOf(e.id));
+      const pool = named.length >= 2 ? named : this.employees().filter((e) => this.eng.sessions.present(e.id) && (!project || e.projectId === project.id || e.projectId === null));
+      const participants = pool.length >= 2 ? pool : this.employees().filter((e) => this.eng.sessions.present(e.id));
       if (participants.length < 2) problems.push('A meeting needs at least two employees with running sessions.');
       else {
         const facilitator = participants.find((e) => e.roleKey === 'architect') ?? participants.find((e) => e.roleKey === 'pm') ?? participants[0]!;
@@ -387,7 +387,8 @@ export class CommandCenter {
         await this.eng.sessions.resume(op.employeeId);
         return { detail: 'Resumed', ref: { kind: 'employee', id: op.employeeId } };
       case 'employee.report': {
-        if (!this.core.runningSessionOf(op.employeeId)) throw new EngineError('that employee has no running session');
+        // (Someone asleep is woken for it.)
+        if (!this.eng.sessions.present(op.employeeId)) throw new EngineError('that employee has no running session');
         const id = newId().slice(0, 8);
         this.eng.comms.deliver(op.employeeId, 'REPORT', id, { kind: 'report', id }, reportPrompt(id));
         return { detail: 'Report requested from their session; it will appear in the feed', ref: { kind: 'employee', id: op.employeeId } };

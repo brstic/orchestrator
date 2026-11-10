@@ -640,6 +640,8 @@ export class SessionRegistry {
     if (existing && existing.hostId !== hostId) throw new EngineError('session belongs to another host');
     // A report about a launch that has since been replaced (stop followed by start) says nothing about the current one.
     if (existing?.launchId && r.launchId && r.launchId !== existing.launchId) return existing;
+    // Put to sleep by the office and not started since: the host saying that it has ended is not news.
+    if (existing?.asleepSince && !r.alive && existing.status === 'exited') return existing;
     const s = this.fromReport(hostId, r, existing);
     const wasRunning = existing && (existing.status === 'running' || existing.status === 'starting');
     const sizeChanged = !!existing && (existing.cols !== r.cols || existing.rows !== r.rows);
@@ -702,6 +704,8 @@ export class SessionRegistry {
       this.onGone(hostId, s.id, 'the host no longer has this session');
     }
     void this.core.gateway.hostReconnected([...seen]);
+    // Whoever on this machine has something waiting and no session is looked at again now that it is back.
+    this.eng.comms.hostBack(hostId);
     this.eng.tasks.schedule();
   }
 
@@ -723,6 +727,8 @@ export class SessionRegistry {
     const s = this.core.sessions.get(sessionId);
     if (!s || s.hostId !== hostId) return;
     const wasRunning = s.status === 'running' || s.status === 'starting' || s.status === 'host_offline';
+    // The office put this one to sleep itself: the host confirming that it is gone changes nothing about why.
+    if (s.asleepSince && !wasRunning) return;
     s.status = 'lost';
     s.exitReason = reason;
     s.endedAt = nowIso();
@@ -732,6 +738,25 @@ export class SessionRegistry {
     this.core.put('session', s);
     this.core.gateway.sessionClosed(sessionId, reason);
     if (wasRunning) this.sessionDied(s, this.core.employees.get(s.employeeId), reason);
+  }
+
+  /** A session the office stopped because it sat idle: ended cleanly, nothing lost, nobody alerted. */
+  private fellAsleep(s: AgentSession, employee: Employee, reason: string): void {
+    const now = nowIso();
+    s.status = 'exited';
+    s.exitReason = reason;
+    s.endedAt = now;
+    s.asleepSince = now;
+    s.activity = 'offline';
+    s.activityDetail = reason;
+    s.activitySince = now;
+    s.inTurn = null;
+    this.resumeProbes.delete(s.id);
+    this.core.put('session', s);
+    this.core.gateway.sessionClosed(s.id, reason);
+    this.eng.comms.sessionEnded(s.id);
+    this.eng.comms.employeeSessionGone(employee.id);
+    this.core.event({ type: 'session.asleep', source: 'server', summary: `${employee.name} is ${reason}: the session was stopped to free memory and starts again, where it left off, when they are needed`, hostId: s.hostId, sessionId: s.id, employeeId: employee.id, data: { reason } });
   }
 
   private outputSeen = new Map<string, { since: number; bytes: number; chunks: number }>();
@@ -754,7 +779,25 @@ export class SessionRegistry {
     this.outputSeen.set(sessionId, { since: now, bytes: 0, chunks: 0 });
   }
 
+  /**
+   * Sessions started as a continuation of an earlier conversation, with the last sign of life they had shown before
+   * the start. One that ends without any new sign never got going: Claude Code could not continue that conversation.
+   */
+  private resumeProbes = new Map<string, string | null>();
+
   private sessionDied(s: AgentSession, employee: Employee | undefined, reason: string): void {
+    if (this.resumeProbes.has(s.id)) {
+      const before = this.resumeProbes.get(s.id) ?? null;
+      this.resumeProbes.delete(s.id);
+      if (s.lastEventAt === before) {
+        // Not tried again with the same conversation: the next start begins a new one, and says so.
+        s.lastEventAt = null;
+        this.core.put('session', s);
+        this.core.event({ type: 'session.stopped', source: 'server', summary: `${employee?.name ?? 'A session'}'s earlier conversation could not be continued (Claude Code ended before it started: ${reason}). The next start begins a new conversation.`, hostId: s.hostId, sessionId: s.id, employeeId: s.employeeId, data: { resumeFailed: true, reason } });
+        // Whatever they were woken for is still waiting: one more try, from a clean start.
+        if (employee) this.eng.comms.schedulePump(employee.id, 300);
+      }
+    }
     this.core.company.sessionsLost++;
     this.core.saveCompany();
     this.core.event({
@@ -961,7 +1004,9 @@ export class SessionRegistry {
    */
   start(employeeId: string, opts: { cwd?: string | null; resume?: boolean; continueLast?: boolean; actor?: string } = {}): Promise<AgentSession> {
     const inFlight = this.starting.get(employeeId);
-    if (inFlight) return inFlight;
+    // Two things that need the same employee at once share one start. One that needs a particular folder (the
+    // folder of a task) looks again once that start is through: the session is moved there if it came up elsewhere.
+    if (inFlight) return opts.cwd ? inFlight.then(() => undefined, () => undefined).then(() => this.start(employeeId, opts)) : inFlight;
     const p = this.doStart(employeeId, opts).finally(() => this.starting.delete(employeeId));
     this.starting.set(employeeId, p);
     return p;
@@ -1009,6 +1054,10 @@ export class SessionRegistry {
     session.endedAt = null;
     session.exitReason = null;
     session.lastEventAt = resume ? session.lastEventAt : null;
+    session.asleepSince = null;
+    session.resumed = resume;
+    if (resume) this.resumeProbes.set(session.id, session.lastEventAt);
+    else this.resumeProbes.delete(session.id);
     this.trustAsked.delete(session.id);
 
     // A fresh bearer token per launch; older tokens for this session stop working.
@@ -1040,20 +1089,92 @@ export class SessionRegistry {
     }
   }
 
-  async stop(employeeId: string, opts: { actor?: string; reason?: string } = {}): Promise<void> {
+  async stop(employeeId: string, opts: { actor?: string; reason?: string; asleep?: boolean } = {}): Promise<void> {
     const employee = this.core.employees.require(employeeId);
     const s = this.core.runningSessionOf(employeeId);
     if (!s) return;
     if (!this.core.agents.isOnline(s.hostId)) throw new EngineError('the host is offline; the session cannot be stopped from here');
-    this.core.audit(opts.actor ?? 'owner', s.origin === 'managed' ? 'session.stopped' : 'session.detached', s.id, { employee: employee.name, reason: opts.reason ?? null });
+    if (opts.asleep && s.origin !== 'managed') throw new EngineError('only a session the office started can be put to sleep');
+    this.core.audit(opts.actor ?? 'owner', opts.asleep ? 'session.asleep' : s.origin === 'managed' ? 'session.stopped' : 'session.detached', s.id, { employee: employee.name, reason: opts.reason ?? null });
     if (s.origin === 'managed') {
       await this.core.agents.rpc(s.hostId, { method: 'session.kill', params: { sessionId: s.id } });
-      this.onGone(s.hostId, s.id, opts.reason ?? 'stopped by the owner');
+      if (opts.asleep) this.fellAsleep(s, employee, opts.reason ?? 'asleep');
+      else this.onGone(s.hostId, s.id, opts.reason ?? 'stopped by the owner');
     } else {
       // Sessions we did not start are only ever detached, never killed.
       await this.core.agents.rpc(s.hostId, { method: 'session.detach', params: { sessionId: s.id } });
       this.onGone(s.hostId, s.id, 'detached from the office (the tmux session is still running)');
     }
+  }
+
+  /** Asleep: their last session was stopped by the office for sitting idle, and nothing has started them since. */
+  asleep(employeeId: string | null | undefined): boolean {
+    const s = this.core.sessionOf(employeeId);
+    return !!s && !!s.asleepSince && s.status !== 'running' && s.status !== 'starting';
+  }
+
+  /** Why this employee's session cannot be started right now, in words; null when it can. */
+  cannotStart(employee: Employee | undefined): string | null {
+    if (!employee || employee.archived) return 'they are no longer employed here';
+    if (!employee.hostId) return `${employee.name} is not assigned to a machine`;
+    const host = this.core.hosts.get(employee.hostId);
+    if (!host || !this.core.agents.isOnline(employee.hostId)) return `${host?.name ?? 'their machine'} is offline`;
+    // A session that was running when its machine dropped off is still running there: it is reported again in a
+    // moment, and a second one must not be started beside it meanwhile.
+    if (this.core.sessions.find((x) => x.employeeId === employee.id && x.status === 'host_offline')) return `${employee.name}'s session is still running on ${host.name}, which is reconnecting`;
+    const pressure = this.eng.hosts.exhausted(employee.hostId);
+    if (pressure) return `${host.name} is out of resources (${pressure})`;
+    if (!employee.workingDir && !this.core.projects.get(employee.projectId)?.repoPath && !this.wakeCwd(employee)) return `${employee.name} has no folder to work in`;
+    return null;
+  }
+
+  /** At their desk, or asleep and able to be woken: someone who can be given something right now. */
+  present(employeeId: string): boolean {
+    if (this.core.runningSessionOf(employeeId)) return true;
+    return this.asleep(employeeId) && !this.cannotStart(this.core.employees.get(employeeId));
+  }
+
+  /**
+   * Where a woken employee continues: the folder of the task they have in hand, else the folder they last worked in
+   * if it is still theirs (their own folder, their project's, or the folder of a task of theirs in that project).
+   * Null: wherever a fresh start would put them.
+   */
+  private wakeCwd(employee: Employee): string | null {
+    const inHand = this.eng.tasks.currentTask(employee.id);
+    if (inHand?.worktree) return inHand.worktree;
+    const last = this.core.sessions
+      .filter((x) => x.employeeId === employee.id && x.origin === 'managed' && x.hostId === employee.hostId && (x.status === 'exited' || x.status === 'lost'))
+      .sort((a, b) => ((b.endedAt ?? b.startedAt) > (a.endedAt ?? a.startedAt) ? 1 : -1))[0];
+    if (!last) return null;
+    const at = path.resolve(last.cwd);
+    const project = this.core.projects.get(employee.projectId);
+    const own = [employee.workingDir, project?.repoPath].filter((x): x is string => !!x).map((x) => path.resolve(x));
+    if (own.includes(at)) return last.cwd;
+    return this.core.tasks.find((t) => t.assigneeId === employee.id && t.projectId === employee.projectId && !!t.worktree && path.resolve(t.worktree) === at) ? last.cwd : null;
+  }
+
+  /**
+   * Start the session of someone who is needed and has none: where they last worked, continuing the conversation
+   * they had there. `why` is what they are needed for, for the record ("a message from the boss").
+   */
+  async wake(employeeId: string, why: string): Promise<AgentSession> {
+    const employee = this.core.employees.require(employeeId);
+    const running = this.core.runningSessionOf(employeeId);
+    if (running) return running;
+    const no = this.cannotStart(employee);
+    if (no) throw new EngineError(no, 409);
+    const wasAsleep = this.asleep(employeeId);
+    const s = await this.start(employeeId, { cwd: this.wakeCwd(employee), actor: 'office' });
+    this.core.event({
+      type: 'session.woken',
+      source: 'server',
+      summary: `${employee.name} ${wasAsleep ? 'was woken' : 'was started'} for ${why} — ${s.resumed ? 'continuing where they left off' : 'in a new conversation (there was none to continue)'}`,
+      hostId: s.hostId,
+      sessionId: s.id,
+      employeeId,
+      data: { why, resumed: !!s.resumed, wasAsleep, cwd: s.cwd },
+    });
+    return s;
   }
 
   /**

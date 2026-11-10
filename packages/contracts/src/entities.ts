@@ -295,6 +295,13 @@ export interface AgentSession {
   endedAt: ISODate | null;
   lastEventAt: ISODate | null;
   exitReason: string | null;
+  /**
+   * Set when the office itself stopped this session because it sat idle (see `OwnerSettings.sleepAfterMinutes`):
+   * the conversation is kept and anything that needs the employee starts it again. Cleared when it is started.
+   */
+  asleepSince?: ISODate | null;
+  /** Whether the launch now in force continued an earlier conversation (false: it began a new one). */
+  resumed?: boolean;
 }
 
 // ─────────────────────────── Projects ────────────────────────────
@@ -449,6 +456,11 @@ export interface Task {
   completedAt: ISODate | null;
   /** Delivery of the task prompt to the session: confirmed only by a real hook. */
   delivery: DeliveryState;
+  /**
+   * What the task is about, as whoever proposed it named it (a ticket's id, a URL). A proposal that carries the key of
+   * a task this project already has adds nothing: a check that repeats every few minutes must not add the same item twice.
+   */
+  dedupeKey?: string | null;
 }
 
 // ───────────────────── Questions / approvals ─────────────────────
@@ -532,7 +544,43 @@ export interface Message {
   delivery: DeliveryState;
   createdAt: ISODate;
   readAt: ISODate | null;
+  /** Set when the office sent this as one run of a routine (see `Routine`). */
+  routineId?: ID | null;
 }
+
+// ───────────────────────────── Routines ──────────────────────────
+
+export type RoutineOutcome = 'delivered' | 'skipped_busy' | 'skipped_offline' | 'not_run' | 'failed';
+
+/**
+ * A standing instruction for one employee that the office repeats: "check the support desk every five minutes".
+ * Each run is delivered into the employee's real session like a message from the owner, when they are between
+ * turns; a run that finds them busy is skipped, never queued behind the one before.
+ */
+export interface Routine {
+  id: ID;
+  employeeId: ID;
+  instruction: string;
+  /** Minutes between two runs: a whole number, 1 to 1440. */
+  everyMinutes: number;
+  enabled: boolean;
+  createdAt: ISODate;
+  /** Who set it up ("owner", "member:Mila"). */
+  createdBy: string;
+  /** When it was last handed to the employee. */
+  lastRunAt: ISODate | null;
+  nextRunAt: ISODate | null;
+  /** How many times it was handed to the employee. */
+  runs: number;
+  /** What the last look at it came to, when, and why in words. */
+  lastOutcome: RoutineOutcome | null;
+  lastOutcomeAt: ISODate | null;
+  lastNote: string | null;
+  /** The message of the last run, to see whether it has been delivered yet. */
+  lastMessageId: ID | null;
+}
+
+export const ROUTINE_LIMITS = { minMinutes: 1, maxMinutes: 1440, defaultMinutes: 5, instruction: 2000, perEmployee: 10 };
 
 export type CollabStatus = 'open' | 'incorporated' | 'new_task' | 'needs_decision' | 'dependency' | 'declined' | 'resolved';
 
@@ -981,6 +1029,11 @@ export interface OwnerSettings {
   projectZones: boolean;
   /** Move the camera in closer when the owner stands at an employee's desk. Off unless the owner switches it on. */
   approachZoom: boolean;
+  /**
+   * Sessions on the office's own machines that have had no work for this many minutes are stopped to free memory
+   * ("asleep"); what they are next needed for starts them again, continuing the same conversation. 0: never.
+   */
+  sleepAfterMinutes: number;
   quality: 'low' | 'medium' | 'high';
   keybindings: Record<string, string>;
   lastSeenAt: ISODate | null;

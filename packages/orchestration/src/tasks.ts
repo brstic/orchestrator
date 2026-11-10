@@ -61,6 +61,13 @@ export interface TaskInput {
   reviewOf?: string | null;
   verifyCommand?: string | null;
   released?: boolean;
+  dedupeKey?: string | null;
+}
+
+/** A key as it is compared: trimmed, case-insensitive, bounded. */
+export function dedupeKeyOf(raw: unknown): string | null {
+  const k = typeof raw === 'string' ? raw.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 200) : '';
+  return k || null;
 }
 
 export interface ProposedTask {
@@ -71,6 +78,8 @@ export interface ProposedTask {
   role?: string;
   priority?: string;
   depends_on?: number[];
+  /** What the task is about (a ticket id, a URL): a task of this project with the same key is not added again. */
+  dedupe_key?: string;
 }
 
 function emptyEvidence(): Task['evidence'] {
@@ -278,6 +287,7 @@ export class TaskManager {
       startedAt: null,
       completedAt: null,
       delivery: { status: 'none', via: null, ts: null, detail: null },
+      ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
     };
     if (task.released && this.depsDone(task)) task.status = 'READY';
     this.history(task, 'Created', by);
@@ -392,6 +402,11 @@ export class TaskManager {
     const now = new Date();
     const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     return e.schedule.from <= e.schedule.to ? hm >= e.schedule.from && hm < e.schedule.to : hm >= e.schedule.from || hm < e.schedule.to;
+  }
+
+  /** A task is being handed to them this very moment (their session may be starting for it). */
+  isStarting(employeeId: string): boolean {
+    return this.startingEmployees.has(employeeId);
   }
 
   /** Is this employee genuinely able to take a new task right now? */
@@ -1179,28 +1194,50 @@ export class TaskManager {
 
   /** Real tasks created from an agent's plan or a meeting's outcome. */
   proposeTasks(by: Employee, projectId: string, specs: ProposedTask[], rationale: string | undefined, origin: string): Task[] {
+    return this.propose(by, projectId, specs, rationale, origin).created;
+  }
+
+  /**
+   * Tasks proposed by an employee. One that carries a `dedupe_key` this project already has a task for (whatever
+   * became of that task) is not added again. One that carries a new key waits in the backlog for the owner's
+   * go-ahead even where the project assigns work automatically: such tasks come from checks that repeat by
+   * themselves, and a check that misreads a page must not start work on its own.
+   */
+  propose(by: Employee, projectId: string, specs: ProposedTask[], rationale: string | undefined, origin: string): { created: Task[]; existing: Task[] } {
     const project = this.core.projects.require(projectId);
-    if (!specs.length) throw new EngineError('propose at least one task');
+    if (!Array.isArray(specs) || !specs.length) throw new EngineError('propose at least one task');
     if (specs.length > 40) throw new EngineError('too many tasks in one proposal (max 40)');
     const created: Task[] = [];
-    const released = project.policy.autoAssign;
+    const existing: Task[] = [];
+    // By position in the proposal, so "after the second task" still means that one when another was already there.
+    const at: Task[] = [];
+    const auto = project.policy.autoAssign;
     for (const [i, spec] of specs.entries()) {
       if (!spec?.title?.trim()) throw new EngineError(`task ${i} has no title`);
-      const deps = (spec.depends_on ?? []).filter((d) => Number.isInteger(d) && d >= 0 && d < i).map((d) => created[d]!.id);
+      const key = dedupeKeyOf(spec.dedupe_key);
+      const had = key ? this.core.tasks.find((t) => t.projectId === projectId && t.dedupeKey === key) : undefined;
+      if (had) {
+        existing.push(had);
+        at.push(had);
+        continue;
+      }
+      const deps = (spec.depends_on ?? []).filter((d) => Number.isInteger(d) && d >= 0 && d < i).map((d) => at[d]!.id);
       const role = spec.role ? (roleByKey(spec.role) ?? matchRole(spec.role)) : undefined;
       const kind = TASK_KINDS.includes(spec.kind as TaskKind) ? (spec.kind as TaskKind) : 'feature';
       const priority = (['low', 'normal', 'high', 'urgent'] as const).includes(spec.priority as TaskPriority) ? (spec.priority as TaskPriority) : 'normal';
-      created.push(
-        this.createTask({ projectId, title: spec.title.trim(), description: spec.description ?? '', acceptance: spec.acceptance ?? '', kind, priority, roleHint: role?.key ?? null, dependsOn: deps, released }, `employee:${by.name}`),
-      );
+      const task = this.createTask({ projectId, title: spec.title.trim(), description: spec.description ?? '', acceptance: spec.acceptance ?? '', kind, priority, roleHint: role?.key ?? null, dependsOn: deps, released: auto && !key, dedupeKey: key }, `employee:${by.name}`);
+      created.push(task);
+      at.push(task);
     }
-    if (rationale?.trim()) {
+    const released = !created.some((t) => !t.released);
+    if (rationale?.trim() && created.length) {
       this.eng.addArtifact({ kind: 'plan', title: `Plan by ${by.name} (${origin})`, content: `${rationale.trim()}\n\n${created.map((t) => `- **${t.key}** ${t.title}${t.roleHint ? ` _(${t.roleHint})_` : ''}${t.dependsOn.length ? ` — after ${t.dependsOn.map((d) => this.core.tasks.get(d)?.key).join(', ')}` : ''}`).join('\n')}`, projectId, employeeId: by.id });
     }
     if (!released) {
-      this.eng.comms.notify({ kind: 'info', severity: 'warning', title: `${by.name} proposed ${created.length} tasks`, body: `They are in the backlog of ${project.name} until you release them.`, projectId, employeeId: by.id });
+      const waiting = created.filter((t) => !t.released);
+      this.eng.comms.notify({ kind: 'info', severity: 'warning', title: `${by.name} proposed ${waiting.length} tasks`, body: `They are in the backlog of ${project.name} until you release them.`, projectId, employeeId: by.id });
     }
-    return created;
+    return { created, existing };
   }
 
   /** Ask a planner (typically the architect) to break an objective into tasks. */

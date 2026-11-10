@@ -244,6 +244,8 @@ try {
   for (let i = 0; i < 40 && pipeline && !(wrote = fs.existsSync(pipeline)); i++) await sleep(250);
   check('the approval let the real write happen', !!perm && wrote, `${perm?.tool?.name ?? '?'} → ${pipeline ?? 'no worktree'}`);
   check('the approval is in the audit log', audit.some((a) => a.action === 'approval.decide'));
+  const routineRuns = s.messages.filter((m) => m.routineId && m.toEmployeeId === by('Ava').id);
+  check('the routine made in the Talk window was a real one: created, run once into Ava\'s session, paused and removed, all on the record', routineRuns.length === 1 && routineRuns[0].delivery.status === 'confirmed' && /^Routine \(every 5 min\): Check the queue/.test(routineRuns[0].body) && (s.routines ?? []).length === 0 && ['routine.created', 'routine.updated', 'routine.removed'].every((x) => audit.some((a) => a.action === x)), `${routineRuns.length} run(s), ${routineRuns[0]?.delivery.status}; ${(s.routines ?? []).length} routines left`);
   const quinn = by('Quinn');
   const quinnSession = s.sessions.find((x) => x.employeeId === quinn?.id);
   const quinnProject = s.projects.find((p) => p.id === quinn?.projectId);

@@ -43,6 +43,8 @@ export interface Delivery {
   via: 'terminal_paste' | 'stop_hook' | 'sdk' | null;
   /** Stop-hook request this delivery rode on, until the host settles it. */
   stopRequestId: string | null;
+  /** Start the employee's session for this if they have none (a routine that is due), as talking to them does. */
+  wake?: boolean;
 }
 
 interface HookPending {
@@ -68,6 +70,8 @@ export class Comms {
   private requestToQuestion = new Map<string, string>();
   private waiters = new Map<string, Set<(q: Question) => void>>();
   private stopBatches = new Map<string, Delivery[]>();
+  /** Per employee: when the office last tried to start their session for something waiting, and what went wrong if it did. */
+  private wakes = new Map<string, { at: number; problem: string | null; running: boolean }>();
 
   constructor(eng: Engine) {
     this.eng = eng;
@@ -487,7 +491,7 @@ export class Comms {
 
   // ─────────────────────────── messages ────────────────────────────
 
-  sendMessage(input: { from: Message['from']; toEmployeeId: string; body: string; kind?: MessageKind; taskId?: string | null; threadId?: string | null }): Message {
+  sendMessage(input: { from: Message['from']; toEmployeeId: string; body: string; kind?: MessageKind; taskId?: string | null; threadId?: string | null; routineId?: string | null }): Message {
     const to = this.core.employees.require(input.toEmployeeId);
     const msg: Message = {
       id: newId(),
@@ -500,6 +504,7 @@ export class Comms {
       delivery: { status: 'queued', via: null, ts: nowIso(), detail: null },
       createdAt: nowIso(),
       readAt: null,
+      ...(input.routineId ? { routineId: input.routineId } : {}),
     };
     this.core.put('message', msg);
     this.core.event({
@@ -510,7 +515,7 @@ export class Comms {
       taskId: msg.taskId,
       projectId: to.projectId,
       correlationId: msg.threadId ?? msg.id,
-      data: { messageId: msg.id, toEmployeeId: to.id, fromEmployeeId: input.from.kind === 'employee' ? input.from.id : null, kind: msg.kind },
+      data: { messageId: msg.id, toEmployeeId: to.id, fromEmployeeId: input.from.kind === 'employee' ? input.from.id : null, kind: msg.kind, ...(msg.routineId ? { routineId: msg.routineId } : {}) },
     });
     this.enqueueMessage(msg, true);
     return msg;
@@ -531,6 +536,7 @@ export class Comms {
         sentAt: null,
         via: null,
         stopRequestId: null,
+        wake: !!msg.routineId,
       },
       pump,
     );
@@ -757,10 +763,75 @@ export class Comms {
     return null;
   }
 
+  /** What a queued delivery is, in words, for the record of why someone was woken. */
+  private whatFor(d: Delivery): string {
+    if (d.ref.kind === 'message') {
+      const m = this.core.messages.get(d.ref.id);
+      return m?.routineId ? 'a routine that was due' : `a message from ${m?.from.kind === 'owner' ? 'the boss' : (m?.from.name ?? 'a teammate')}`;
+    }
+    return { task: 'a task', question: 'the answer to their question', meeting: 'a meeting', report: 'a report the boss asked for', retro: 'a look back at their last task', round: 'a round' }[d.ref.kind];
+  }
+
+  /** Why the office could not start this employee's session for what is waiting for them; null when nothing went wrong. */
+  wakeProblem(employeeId: string): string | null {
+    return this.wakes.get(employeeId)?.problem ?? null;
+  }
+
+  /**
+   * Something is waiting for an employee who has no session. Someone the office itself put to sleep is started
+   * again for anything; someone who was never started, or whom the owner stopped, only for what asks for it.
+   * One attempt at a time, and after a failed one not again for a while.
+   */
+  private wakeFor(employeeId: string, list: Delivery[]): void {
+    // (Someone the office has already begun to wake for what is waiting stays wanted until it has been handed over.)
+    if (!this.eng.sessions.asleep(employeeId) && !list.some((d) => d.wake) && !this.wakes.has(employeeId)) return;
+    const now = Date.now();
+    const last = this.wakes.get(employeeId);
+    if (last?.running || (last?.problem && now - last.at < this.core.timings.wakeRetryMs)) return;
+    const employee = this.core.employees.get(employeeId);
+    const no = this.eng.sessions.cannotStart(employee);
+    if (no) {
+      // Nothing to try (their machine is away): said once, tried again when the machine is back or something new arrives.
+      this.wakes.set(employeeId, { at: now, problem: no, running: false });
+      return;
+    }
+    this.wakes.set(employeeId, { at: now, problem: null, running: true });
+    void this.eng.sessions
+      .wake(employeeId, this.whatFor(list.find((d) => d.wake) ?? list[0]!))
+      .then(() => this.wakes.set(employeeId, { at: Date.now(), problem: null, running: false }))
+      .catch((e: Error) => {
+        const again = last?.problem === e.message;
+        this.wakes.set(employeeId, { at: Date.now(), problem: e.message, running: false });
+        if (!again) this.core.event({ type: 'session.lost', source: 'server', summary: `${employee?.name ?? 'An employee'} could not be woken for ${this.whatFor(list[0]!)}: ${truncate(e.message, 160)}`, employeeId, data: { wake: true, reason: e.message } });
+      });
+  }
+
+  /** A machine is back: whoever on it has something waiting gets another look. */
+  hostBack(hostId: string): void {
+    for (const [employeeId, list] of this.queue) {
+      if (!list.length || this.core.employees.get(employeeId)?.hostId !== hostId) continue;
+      this.wakes.delete(employeeId);
+      this.schedulePump(employeeId, 500);
+    }
+  }
+
+  /**
+   * Is anything on its way to this employee: queued, or handed over and still waiting to be acknowledged?
+   * `exceptRoutines`: runs of routines do not count (two routines of one employee that come due together are both
+   * handed over, one after the other — neither holds the other back for good).
+   */
+  pending(employeeId: string, exceptRoutines = false): boolean {
+    const counts = (d: Delivery) => !exceptRoutines || d.ref.kind !== 'message' || !this.core.messages.get(d.ref.id)?.routineId;
+    if (this.queue.get(employeeId)?.some(counts)) return true;
+    const flying = this.inflight.get(employeeId);
+    return !!flying && counts(flying) && Date.now() - (flying.sentAt ?? 0) < this.core.timings.deliveryConfirmMs;
+  }
+
   async pump(employeeId: string): Promise<void> {
     const list = this.queue.get(employeeId);
     if (!list?.length) return;
     const session = this.core.runningSessionOf(employeeId);
+    if (!session) return this.wakeFor(employeeId, list);
     const flying = this.inflight.get(employeeId);
     if (flying) {
       // One prompt at a time: wait for the hook that confirms it (or give up waiting).
@@ -781,6 +852,7 @@ export class Comms {
     try {
       const sent = await this.core.agents.rpc<{ via?: string }>(session!.hostId, { method: 'session.paste', params: { sessionId: session!.id, text: d.text, submit: true } }, 15000);
       d.sentAt = Date.now();
+      this.wakes.delete(employeeId);
       if (sent?.via === 'sdk' || sent?.via === 'terminal') d.via = sent.via === 'sdk' ? 'sdk' : 'terminal_paste';
       if (hooks) {
         // Still waiting for the acknowledgement? Then it is "sent". (If the hook already came, it is confirmed.)

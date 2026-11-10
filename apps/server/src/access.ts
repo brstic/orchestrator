@@ -19,7 +19,7 @@
  *
  * A route that is not listed here needs an owner: forgetting to list a new route fails closed.
  */
-import { matchRole, roleByKey, type FullState, type Message, type OrchestratorEvent, type Question } from '@orchestrator/contracts';
+import { matchRole, roleByKey, type FullState, type Message, type OrchestratorEvent, type Question, type Routine } from '@orchestrator/contracts';
 import { FOREMAN_ROLE, type Engine } from '@orchestrator/orchestration';
 
 export type Role = 'owner' | 'colleague' | 'visitor';
@@ -30,7 +30,7 @@ export type Who = { kind: 'owner'; id: string; name: string; role: 'owner' } | {
 /** read: look at it. work: change it, or reach into a machine. admin: run the office. */
 export type Need = 'read' | 'work' | 'admin';
 
-type Thing = 'employee' | 'task' | 'project' | 'session' | 'question' | 'host';
+type Thing = 'employee' | 'task' | 'project' | 'session' | 'question' | 'host' | 'routine';
 /** Whose a request is about: a thing named in the path (`:id`), or one named in the body. */
 type Scope = { thing: Thing; from: 'path' } | { thing: Thing; from: 'body'; field: string };
 
@@ -82,6 +82,12 @@ const RULES: Rule[] = [
   rule('POST', '/employees/:id/resume', 'work', path('employee')),
   rule('POST', '/employees/:id/message', 'work', path('employee')),
   rule('POST', '/employees/:id/report', 'work', path('employee')),
+  // Routines: standing instructions repeated for one employee. Whoever may work with the employee may set them.
+  rule('GET', '/routines', 'read'),
+  rule('POST', '/routines', 'work', inBody('employee', 'employeeId')),
+  rule('PATCH', '/routines/:id', 'work', path('routine')),
+  rule('DELETE', '/routines/:id', 'work', path('routine')),
+  rule('POST', '/routines/:id/run', 'work', path('routine')),
   rule('POST', '/sessions/attach', 'work', inBody('host', 'hostId'), inBody('employee', 'employeeId')),
   rule('POST', '/sessions/:id/adopt', 'work', path('session')),
   rule('POST', '/sessions/:id/bind', 'work', path('session'), inBody('employee', 'employeeId')),
@@ -147,6 +153,8 @@ export function memberOf(engine: Engine, thing: Thing, id: string | null | undef
     }
     case 'question':
       return memberOf(engine, 'employee', core.questions.get(id)?.employeeId);
+    case 'routine':
+      return memberOf(engine, 'employee', core.routines.get(id)?.employeeId);
   }
 }
 
@@ -241,8 +249,13 @@ export function mayReadQuestion(engine: Engine, who: Who, q: Question): boolean 
   return who.kind === 'owner' || allowed(who, 'read', memberOf(engine, 'employee', q.employeeId));
 }
 
+/** A routine says what an employee is told to do: read by whoever may read that employee. */
+export function mayReadRoutine(engine: Engine, who: Who, r: Pick<Routine, 'employeeId'>): boolean {
+  return who.kind === 'owner' || allowed(who, 'read', memberOf(engine, 'employee', r.employeeId));
+}
+
 /** The office's state as this person may read it. */
 export function stateFor(engine: Engine, who: Who, state: FullState): FullState {
   if (who.kind === 'owner') return state;
-  return { ...state, events: state.events.map((e) => eventFor(engine, who, e)).filter((e): e is OrchestratorEvent => !!e), messages: state.messages.filter((m) => mayReadMessage(engine, who, m)), questions: state.questions.filter((q) => mayReadQuestion(engine, who, q)) };
+  return { ...state, events: state.events.map((e) => eventFor(engine, who, e)).filter((e): e is OrchestratorEvent => !!e), messages: state.messages.filter((m) => mayReadMessage(engine, who, m)), questions: state.questions.filter((q) => mayReadQuestion(engine, who, q)), routines: (state.routines ?? []).filter((r) => mayReadRoutine(engine, who, r)) };
 }

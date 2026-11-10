@@ -2911,3 +2911,84 @@ button.ops-row:hover {
   font-family: var(--sans);
   text-transform: none;
 }
+
+/* routines */
+.routine-list {
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 168px;
+  overflow-y: auto;
+}
+.routine-head {
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  font-size: 11px;
+}
+.routine-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.routine-off .routine-text {
+  color: var(--muted);
+}
+.routine-main {
+  flex: 1;
+  min-width: 0;
+}
+.routine-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.routine-good {
+  color: var(--good);
+}
+.routine-warn {
+  color: var(--warn);
+}
+.routine-bad {
+  color: var(--bad);
+}
+.routine-muted {
+  color: var(--muted);
+}
+.routine-every {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.routine-every input,
+.routine-minutes {
+  width: 58px;
+  padding: 3px 6px;
+  text-align: right;
+}
+.routine-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.routine-choice .check {
+  margin: 0;
+}
+.routine-hint {
+  line-height: 1.45;
+}
+.talk-compose .row.spread {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+/* When the two choices take a line of their own, the send controls stay at the right. */
+.talk-compose .row.spread > .row {
+  margin-left: auto;
+}
