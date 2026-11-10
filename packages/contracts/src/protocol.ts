@@ -251,6 +251,8 @@ export type ClientToServer =
   | { t: 'presence'; x: number; z: number; rot: number; moving: boolean }
   /** Something said out loud to the other people in the office (not to employees). */
   | { t: 'say'; text: string }
+  /** Cracking the whip at an employee (a visual gag): everyone in the office sees it. */
+  | { t: 'whip'; employeeId: string }
   | { t: 'ping' };
 
 /** Who a connected person is: the owner, or a guest with a role. */
@@ -277,10 +279,22 @@ export interface PersonPresence {
   hue: number;
 }
 
+/** Who said or did something in the office chat: their window, name, role and the colour their character wears. */
+export interface ChatFrom {
+  id: string;
+  name: string;
+  role: Me['role'];
+  hue?: number;
+}
+
 export type ServerToClient =
   | { t: 'ready'; clientId: string; state: FullState; me: Me }
   | { t: 'people'; people: PersonPresence[] }
-  | { t: 'said'; from: { id: string; name: string; role: Me['role'] }; text: string; ts: string }
+  | { t: 'said'; from: ChatFrom; text: string; ts: string }
+  /** What was said in the office lately, for someone who has just walked in. */
+  | { t: 'chat.history'; lines: Array<{ from: ChatFrom; text: string; ts: string; emote?: boolean }> }
+  /** Someone cracked the whip at an employee. */
+  | { t: 'whipped'; from: ChatFrom; employeeId: string; ts: string }
   | { t: 'entity'; kind: EntityKind; op: 'upsert' | 'remove'; data: any }
   | { t: 'event'; event: OrchestratorEvent }
   | { t: 'term.snapshot'; snapshot: TerminalSnapshot }

@@ -3,6 +3,8 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-10
+- Chat box at the bottom left, as in an online game: what people said and did (`[19:37] [Name] says: …`, emotes in orange), lit for 20 s after a new line and on hover, with the last hour told to whoever walks in (`chat.history`). Enter always opens the line. What you say is also a bubble over **your own** character (not in first person).
+- A crack of the whip is seen by everyone in the office: the person's character swings, the employee flinches, and it is in the chat (`whip` → `whipped`; one crack per 600 ms per person). Still only a gag: nothing reaches the employee's session.
 - Hiring is three steps: **where** (the shared office on the server, or my own room on my computer — asked, not assumed), **the folder** on that machine (the system folder dialog only when the machine is the one the window is on; otherwise the machine's own folder list), **the desk** (any free desk in the office, or a seat in my room; "Automatic" stays). Fixes hiring from a client into the server office, which offered the client's folder dialog for the server's disk.
 - Seats in a member's room can be chosen and are kept (`deskId` `m:<host>:<n>`); the room grows to the furthest chosen seat.
 - A refused change to an employee no longer leaves them half-changed in memory until the next restart.

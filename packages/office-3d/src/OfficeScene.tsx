@@ -7,6 +7,7 @@ import type { EffectiveLayout } from './member-rooms.ts';
 import { Documents as DocumentsPart, type DocsView } from './Documents.tsx';
 import { HiFi as HiFiPart } from './HiFi.tsx';
 import { Humans as HumansPart, type HumanView } from './Humans.tsx';
+import { SelfBubble } from './SelfBubble.tsx';
 import { PodLabels as PodLabelsPart } from './PodLabels.tsx';
 import { SeatMarkers } from './Seats.tsx';
 import { TV as TVPart, type TvFrames, type TvView } from './TV.tsx';
@@ -44,6 +45,8 @@ export interface OfficeSceneProps {
   onOpenDocs: (employeeId: string) => void;
   /** The other people who are in the office right now (not the person at this computer). */
   humans: HumanView[];
+  /** What the person at this computer has just said out loud: a bubble over their own character for a few seconds. */
+  selfSaying?: string | null;
   /** Ease the camera in when the owner stands at a desk (an owner setting, off by default). */
   approachZoom?: boolean;
   /** The TV: whether it is on and what it reports; its picture arrives through `tvFrames`. */
@@ -171,6 +174,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       <Documents world={world} docs={props.docs} onOpen={props.onOpenDocs} />
       <TV world={world} tv={props.tv} frames={props.tvFrames} onOpen={props.onOpenTv} />
       <Humans humans={props.humans} />
+      <SelfBubble player={player} text={props.cameraMode === 'first' || props.cameraMode === 'workstation' ? null : (props.selfSaying ?? null)} />
       <PodLabels world={world} />
       {props.freeSeats && <SeatMarkers desks={world.layout.desks.filter((d) => props.freeSeats!.includes(d.id))} onPick={props.onPickSeat} />}
       {/* The hi-fi belongs to the break room's interior: mounted while someone is near that room. */}

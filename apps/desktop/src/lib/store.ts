@@ -105,7 +105,11 @@ export interface OfficeState {
   /** This computer's own host in an office someone else runs (from the desktop app); `none` in one's own office or a browser. */
   myHost: { state: 'none' | 'starting' | 'online' | 'unavailable' | 'stopped'; reason: string | null; hostId: string | null };
   /** What people said to each other, most recent last. */
-  chat: Array<{ id: string; fromId: string; name: string; role: Me['role']; text: string; ts: string }>;
+  /** `at` is when the line arrived at this computer (0: it was said before this window came in). */
+  /** What people said (and did: `emote` lines read "<name> cracks the whip at …"), oldest first. */
+  chat: Array<{ id: string; fromId: string; name: string; role: Me['role']; text: string; ts: string; emote?: boolean; hue?: number; at: number }>;
+  /** When each other person in the office last cracked the whip (by their window id): their character swings. */
+  peopleWhips: Record<string, number>;
   say: (text: string) => void;
   /** The employee the owner is carrying to another desk (walk to a desk and press the interact key), or null. */
   movingEmployeeId: string | null;
@@ -225,6 +229,7 @@ export const useOffice = create<OfficeState>((set, get) => ({
   accounts: [],
   myHost: { state: 'none', reason: null, hostId: null },
   chat: [],
+  peopleWhips: {},
   say: (text) => {
     const t = text.trim();
     if (t) connection.send({ t: 'say', text: t.slice(0, 300) });
@@ -240,6 +245,8 @@ export const useOffice = create<OfficeState>((set, get) => ({
     // Not too fast: one crack has to land before the next.
     if (now - get().whipAt < 650) return;
     set((s) => ({ whipAt: now, whips: { ...s.whips, [employeeId]: now + 230 } }));
+    // Everyone in the office sees it (and it goes in the chat as what it is).
+    connection.send({ t: 'whip', employeeId });
     playWhip();
     // Everyone yelps in their own voice.
     let h = 0;
@@ -354,8 +361,29 @@ function handle(msg: ServerToClient): void {
       useOffice.setState({ people: msg.people });
       break;
     }
+    case 'chat.history':
+      // What was said before this window walked in (only if nothing has been heard here yet).
+      if (!useOffice.getState().chat.length) useOffice.setState({ chat: msg.lines.map((l, i) => ({ id: `h-${l.ts}-${i}`, fromId: l.from.id, name: l.from.name, role: l.from.role, hue: l.from.hue, text: l.text, ts: l.ts, emote: l.emote, at: 0 })) });
+      break;
+    case 'whipped': {
+      const st = useOffice.getState();
+      const victim = st.employees[msg.employeeId];
+      const line = { id: `w-${msg.ts}-${msg.from.id}`, fromId: msg.from.id, name: msg.from.name, role: msg.from.role, hue: msg.from.hue, text: `cracks the whip at ${victim?.name ?? 'someone'}`, ts: msg.ts, emote: true, at: Date.now() };
+      if (msg.from.id === st.clientId) {
+        // My own crack: already swung and heard here; only the line for the chat.
+        useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), line] }));
+        break;
+      }
+      const now = Date.now();
+      useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), line], peopleWhips: { ...s.peopleWhips, [msg.from.id]: now }, whips: { ...s.whips, [msg.employeeId]: now + 230 } }));
+      playWhip();
+      let h = 0;
+      for (const ch of msg.employeeId) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      playOuch((h % 1000) / 1000);
+      break;
+    }
     case 'said':
-      useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), { id: `${msg.ts}-${msg.from.id}-${s.chat.length}`, fromId: msg.from.id, name: msg.from.name, role: msg.from.role, text: msg.text, ts: msg.ts }] }));
+      useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), { id: `${msg.ts}-${msg.from.id}-${s.chat.length}`, fromId: msg.from.id, name: msg.from.name, role: msg.from.role, hue: msg.from.hue, text: msg.text, ts: msg.ts, at: Date.now() }] }));
       break;
     case 'entity': {
       const key = KIND_TO_KEY[msg.kind];

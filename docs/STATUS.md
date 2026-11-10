@@ -33,6 +33,7 @@ Next steps:
 - Local office (one machine) as before: 3D office, real Claude Code sessions in tmux, tasks, reviews/merges, meetings, questions and approvals, self-improvement, XP.
 - Other shared machines: enrolled hosts, servers linked over SSH, adoption of running Claude sessions.
 - Claude usage per account: the office's accounts as wall clocks in the CEO room and at the CEO desk, each member's own account as a clock in their room; foreman role with rounds (off until hired and enabled; shared employees only).
+- People in the office: characters with name tags, speech bubbles (also over one's own head), a chat box at the bottom left with the last hour of history, and the whip seen by everyone.
 - Extras: radio, TV, whip, seating editor, sleeping pose. Storage: SQLite (default) and PostgreSQL.
 
 ## Not verified / known problems
@@ -51,4 +52,4 @@ Next steps:
 The packaged app `release/Orchestrator.app` (Desktop shortcut is a symlink to it) as a **client of the office on Sparkcan**; the Mac's own state is only `~/.orchestrator/offices/<id>/agent` (its personal host) and the app's data folder. Shipping procedure: `DEVELOPMENT.md`.
 
 ## Suites (last full run, working tree after the UPDATE plan)
-unit 62/62 · e2e 117/117 · UI 146/146 · desktop join (`tests/ui/guest-app.mjs`) 30/30 · Linux server trial (`pnpm test:central`) 23/23 · TV (`tests/ui/tv-app.mjs`) 12/12.
+unit 65/65 · e2e 119/119 · UI 146/146 · desktop join (`tests/ui/guest-app.mjs`) 37/37 · Linux server trial (`pnpm test:central`) 23/23 · TV (`tests/ui/tv-app.mjs`) 12/12.

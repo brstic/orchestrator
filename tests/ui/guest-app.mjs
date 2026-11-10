@@ -206,6 +206,28 @@ try {
   await guestPage.until('what the owner said', `window.__office.getState().chat.some((c) => c.text === 'Welcome to the office' && c.role === 'owner')`, 10000);
   await guestPage.until('the speech bubble', `[...document.querySelectorAll('.human-says')].some((e) => e.textContent === 'Welcome to the office')`, 8000);
   check('what one says, the other hears — as a bubble over their head', true);
+  // The same line: over the speaker's own head in their own window, and in the chat box at the bottom left of both.
+  const ownBubble = await ownerPage.until('the owner’s own bubble', `[...document.querySelectorAll('.self-says .human-says')].some((e) => e.textContent === 'Welcome to the office')`, 8000).then(() => true, () => false);
+  check('the one who speaks sees the bubble over their own character', ownBubble);
+  const lineOf = (page) => page.js(`[...document.querySelectorAll('.chatbox.awake .chat-line')].map((e) => e.textContent).find((t) => /Welcome to the office/.test(t)) || ''`);
+  const [ownLine, guestLine] = [await lineOf(ownerPage), await lineOf(guestPage)];
+  check('what was said is in the chat box of both, with the time and who said it', /^\[\d\d:\d\d\] \[.+\] says: Welcome to the office$/.test(ownLine) && ownLine === guestLine, `${ownLine} | ${guestLine}`);
+  await ownerPage.js(`document.activeElement && document.activeElement.blur(); window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter', key: 'Enter', bubbles: true }))`);
+  const typed = await ownerPage.until('the chat line', `!!document.querySelector('.chatbox-form input')`, 5000).then(() => true, () => false);
+  check('Enter opens the chat line, also for the owner', typed);
+  await ownerPage.js(`document.querySelector('.chatbox-form input')?.blur()`);
+  // The whip: everyone sees who swung and at whom.
+  const victim = await ownerPage.js(`(() => { const e = Object.values(window.__office.getState().employees).find((x) => !x.archived); window.__office.getState().whip(e.id); return e.id + '|' + e.name; })()`);
+  const [victimId, victimName] = victim.split('|');
+  const seen = await guestPage.until('the crack of the whip', `Object.keys(window.__office.getState().peopleWhips).length === 1 && window.__office.getState().whips[${JSON.stringify(victimId)}] > 0`, 8000).then(() => true, () => false);
+  const emote = await guestPage.js(`[...document.querySelectorAll('.chat-line.chat-emote')].map((e) => e.textContent).pop() || ''`);
+  check('a crack of the whip is seen by the others, and is in the chat', seen && emote.endsWith(`cracks the whip at ${victimName}.`), emote);
+  if (process.env.ORCH_SHOT_DIR) {
+    await ownerPage.js(`window.__office.getState().say('Second line, to see the bubble')`);
+    await new Promise((r) => setTimeout(r, 900));
+    await ownerPage.shot(path.join(process.env.ORCH_SHOT_DIR, 'chat-owner.png'));
+    await guestPage.shot(path.join(process.env.ORCH_SHOT_DIR, 'chat-guest.png'));
+  }
   // The owner takes the access away: the guest's window loses the office at once.
   const guests = (await api('GET', '/sharing')).guests;
   await api('DELETE', `/guests/${guests.find((g) => g.name === 'Mila').id}`);

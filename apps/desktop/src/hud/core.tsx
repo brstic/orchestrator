@@ -302,56 +302,91 @@ export function talk(): void {
   if (id) s.openPanel('talk', id);
 }
 
+/** How long a new line keeps the chat box lit before it fades back (it stays readable on hover and while typing). */
+const CHAT_FRESH_MS = 20_000;
+
 /**
- * Saying something out loud to the other people in the office: Enter opens a one-line box,
- * Enter again says it. The last lines people said stay on screen for a few seconds.
+ * The office chat, bottom left, as in an online game: what people said and did, oldest at the top.
+ * Enter opens the line to say something; Enter again says it. New lines light the box up for a
+ * while, then it fades so the office stays in view — pointing at it brings it back to scroll.
+ * `quiet` (at a workstation): only fresh lines, nothing to click.
  */
-export function SayBar({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function ChatBox({ open, onOpen, onClose, quiet }: { open: boolean; onOpen: () => void; onClose: () => void; quiet?: boolean }) {
   const chat = useOffice((s) => s.chat);
   const [text, setText] = useState('');
+  const [hover, setHover] = useState(false);
   const [, tick] = useState(0);
+  const log = useRef<HTMLDivElement>(null);
+  const last = chat[chat.length - 1];
   useEffect(() => {
-    if (!chat.length) return;
-    const t = window.setTimeout(() => tick((n) => n + 1), 8200);
+    if (!last) return;
+    const t = window.setTimeout(() => tick((n) => n + 1), CHAT_FRESH_MS + 100);
     return () => window.clearTimeout(t);
-  }, [chat.length]);
-  const recent = chat.filter((c) => Date.now() - Date.parse(c.ts) < 8000).slice(-3);
-  if (!open && !recent.length) return null;
+  }, [last?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The newest line is the one in view.
+  useEffect(() => {
+    const el = log.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [last?.id, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fresh = !!last && Date.now() - last.at < CHAT_FRESH_MS;
+  const held = open || hover;
+  if (quiet && !fresh) return null;
   return (
-    <div className="saybar">
-      {recent.map((c) => (
-        <div key={c.id} className="glass saybar-line">
-          <span className="strong">{c.name}</span> {c.text}
-        </div>
-      ))}
-      {open && (
-        <form
-          className="glass saybar-form"
-          onSubmit={(ev) => {
-            ev.preventDefault();
-            useOffice.getState().say(text);
-            setText('');
-            onClose();
-          }}
-        >
-          <input
-            autoFocus
-            value={text}
-            maxLength={300}
-            placeholder="Say something to the people here… (Enter to say, Esc to cancel)"
-            aria-label="Say something to the people here"
-            onChange={(ev) => setText(ev.target.value)}
-            onBlur={onClose}
-            onKeyDown={(ev) => {
-              if (ev.key === 'Escape') {
-                ev.stopPropagation();
-                setText('');
-                onClose();
-              }
+    <div className={`chatbox${held || fresh ? ' awake' : ''}${held ? ' held' : ''}`} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <div ref={log} className="chatbox-log" role="log" aria-label="Office chat">
+        {chat.length === 0 && <div className="chat-line chat-system">Nothing said yet. What you say here is heard by the people in the office, not by the employees.</div>}
+        {chat.map((c) => (
+          <div key={c.id} className={`chat-line${c.emote ? ' chat-emote' : ''}`}>
+            <span className="chat-time">[{new Date(c.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}]</span>{' '}
+            {c.emote ? (
+              <>
+                {c.name} {c.text}.
+              </>
+            ) : (
+              <>
+                <span className="chat-name" style={{ color: `hsl(${c.hue ?? 210} 75% 70%)` }}>
+                  [{c.name}]
+                </span>{' '}
+                says: {c.text}
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+      {!quiet &&
+        (open ? (
+          <form
+            className="chatbox-form"
+            onSubmit={(ev) => {
+              ev.preventDefault();
+              useOffice.getState().say(text);
+              setText('');
+              onClose();
             }}
-          />
-        </form>
-      )}
+          >
+            <span className="chat-say">Say:</span>
+            <input
+              autoFocus
+              value={text}
+              maxLength={300}
+              placeholder="Enter to say, Esc to cancel"
+              aria-label="Say something to the people here"
+              onChange={(ev) => setText(ev.target.value)}
+              onBlur={onClose}
+              onKeyDown={(ev) => {
+                if (ev.key === 'Escape') {
+                  ev.stopPropagation();
+                  setText('');
+                  onClose();
+                }
+              }}
+            />
+          </form>
+        ) : (
+          <button type="button" className="chatbox-tab" onClick={onOpen} title="Say something to the people in the office">
+            Chat <span className="kbd">Enter</span>
+          </button>
+        ))}
     </div>
   );
 }

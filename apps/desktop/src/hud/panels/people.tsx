@@ -70,7 +70,7 @@ function PeoplePanel({ onClose }: { arg: string | null; onClose: () => void }) {
               {chat.map((c) => (
                 <div key={c.id} className="small">
                   <span className="strong">{c.name}</span> <span className="faint">{new Date(c.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  <div>{c.text}</div>
+                  <div className={c.emote ? 'chat-emote' : undefined}>{c.emote ? `${c.name} ${c.text}.` : c.text}</div>
                 </div>
               ))}
             </div>

@@ -2474,33 +2474,128 @@ button.ops-row:hover {
   line-height: 1.3;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
 }
-.saybar {
-  position: fixed;
-  left: 50%;
-  bottom: 96px;
-  transform: translateX(-50%);
+.self-says {
+  position: relative;
+  width: 0;
+  height: 0;
+}
+
+/* ───────────── bottom left: the chat, then the feed ───────────── */
+.left-dock {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
   z-index: 45;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
-  width: min(560px, 80vw);
   pointer-events: none;
 }
-.saybar-line {
-  padding: 6px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  max-width: 100%;
-}
-.saybar-form {
-  width: 100%;
-  padding: 6px;
-  border-radius: 12px;
+.left-dock > .feed,
+.left-dock > .feed-pill {
+  position: static;
   pointer-events: auto;
 }
-.saybar-form input {
+.chatbox {
+  width: 420px;
+  max-width: 44vw;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  pointer-events: none;
+}
+.chatbox-log {
   width: 100%;
+  max-height: 196px;
+  overflow-y: auto;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: rgba(8, 11, 17, 0.55);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.42;
+  color: #f2f4f8;
+  text-shadow:
+    0 1px 2px #000,
+    0 0 4px rgba(0, 0, 0, 0.9);
+  opacity: 0;
+  transition:
+    opacity 0.7s ease,
+    background 0.25s ease,
+    border-color 0.25s ease;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+.chatbox.awake .chatbox-log {
+  opacity: 1;
+}
+.chatbox.held .chatbox-log {
+  background: rgba(8, 11, 17, 0.8);
+  border-color: var(--line);
+  pointer-events: auto;
+}
+.chat-line {
+  overflow-wrap: anywhere;
+}
+.chat-time {
+  color: #8f99aa;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.chat-name {
+  font-weight: 700;
+}
+.chat-emote {
+  color: #ff9a4d;
+}
+.chat-system {
+  color: #ffd75e;
+}
+.chatbox-tab {
+  margin-top: 4px;
+  padding: 3px 9px;
+  border-radius: 7px 7px 7px 7px;
+  border: 1px solid var(--line);
+  background: rgba(14, 19, 28, 0.72);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0.6;
+  transition: opacity 0.25s ease;
+}
+.chatbox.awake .chatbox-tab,
+.chatbox-tab:hover {
+  opacity: 1;
+}
+.chatbox-form {
+  width: 100%;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(110, 168, 255, 0.55);
+  background: rgba(8, 11, 17, 0.88);
+  pointer-events: auto;
+}
+.chat-say {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f2f4f8;
+}
+.chatbox-form input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 4px 2px;
+  outline: none;
+  box-shadow: none;
 }
 .people-cols {
   display: grid;

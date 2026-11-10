@@ -311,6 +311,8 @@ interface ClientConn {
   who: Who;
   /** Where their character is, once they have said so. */
   presence: { x: number; z: number; rot: number; moving: boolean } | null;
+  /** When this window last cracked the whip. */
+  whippedAt?: number;
   /** When they last spoke (for the rate limit). */
   said: number[];
 }
@@ -390,6 +392,13 @@ export class ClientHub {
     for (const c of this.clients.values()) if (c.who.id === guestId) c.ws.close(4003, 'access revoked');
   }
 
+  /** The last things said in the office (kept in memory only): shown to whoever walks in. */
+  private recent: Array<{ from: { id: string; name: string; role: Who['role']; hue: number }; text: string; ts: string; emote?: boolean }> = [];
+  private remember(line: (typeof this.recent)[number]): void {
+    this.recent.push(line);
+    if (this.recent.length > 40) this.recent.shift();
+  }
+
   /** Whose movement (or arrival, or leaving: '*') has not been passed on yet. */
   private peopleMoved = new Set<string>();
   private peopleTimer: NodeJS.Timeout | null = null;
@@ -429,6 +438,10 @@ export class ClientHub {
       return false;
     };
     if (this.clients.size > 1) this.send(id, { t: 'people', people: this.people() });
+    // What was said in the last hour, so the chat is not empty for someone who has just walked in.
+    const since = Date.now() - 3600_000;
+    const lines = this.recent.filter((l) => Date.parse(l.ts) > since);
+    if (lines.length) this.send(id, { t: 'chat.history', lines });
 
     ws.on('message', (data) => {
       let msg: ClientToServer;
@@ -455,7 +468,21 @@ export class ClientHub {
             conn.said = conn.said.filter((t) => now - t < 10_000);
             if (!text || conn.said.length >= 8) break;
             conn.said.push(now);
-            this.broadcast({ t: 'said', from: { id, name: who.name, role: who.role }, text, ts: new Date(now).toISOString() });
+            const line = { from: { id, name: who.name, role: who.role, hue: hueOf(who.id) }, text, ts: new Date(now).toISOString() };
+            this.remember(line);
+            this.broadcast({ t: 'said', ...line });
+            break;
+          }
+          case 'whip': {
+            // A gag everyone sees: the person swings, the employee yelps. One crack has to land before the next.
+            const employee = this.engine.core.employees.get(String(msg.employeeId ?? ''));
+            const now = Date.now();
+            if (!employee || employee.archived || now - (conn.whippedAt ?? 0) < 600) break;
+            conn.whippedAt = now;
+            const from = { id, name: who.name, role: who.role, hue: hueOf(who.id) };
+            const ts = new Date(now).toISOString();
+            this.remember({ from, text: `cracks the whip at ${employee.name}`, ts, emote: true });
+            this.broadcast({ t: 'whipped', from, employeeId: employee.id, ts });
             break;
           }
           case 'term.open':

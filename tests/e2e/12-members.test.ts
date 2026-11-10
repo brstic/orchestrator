@@ -401,13 +401,30 @@ test('people see each other in the office and can talk', async () => {
   assert.deepEqual([by('Mila').role, by('Mila').x, by('Mila').z, by('Mila').moving, by('Mila').memberId], ['visitor', -3, 4, true, guestIds.Mila]);
   assert.deepEqual([by('Jovan').x, by('Jovan').z], [500, 0], 'positions are kept within bounds');
   assert.equal(people.people.find((p) => p.memberId === 'owner')!.x, 1);
-  assert.equal(new Set(people.people.map((p) => p.hue)).size, 3, 'each person has a colour of their own');
+  // A colour per person, from who they are (two people can by chance share one: 360 hues).
+  assert.ok(people.people.every((p) => Number.isInteger(p.hue) && p.hue >= 0 && p.hue < 360), 'each person has a colour');
   mila.send({ t: 'say', text: '  Hello from the visitor\u0007  ' });
   const said = await waitFor(async () => boss.messages.find((m: any) => m.t === 'said') as any, { label: 'the owner hears it' });
   assert.deepEqual([said.from.name, said.from.role, said.text], ['Mila', 'visitor', 'Hello from the visitor']);
   for (let i = 0; i < 20; i++) mila.send({ t: 'say', text: `spam ${i}` });
   await sleep(600);
   assert.ok(jovan.got.filter((m) => m.t === 'said' && /^spam/.test((m as any).text)).length <= 8, 'at most eight lines in ten seconds');
+  // The whip is a gag everyone sees, and it goes in the chat as what it is. One crack has to land before the next.
+  assert.equal(said.from.hue, by('Mila').hue, 'a line carries the colour of who said it');
+  for (let i = 0; i < 3; i++) jovan.send({ t: 'whip', employeeId: alex });
+  jovan.send({ t: 'whip', employeeId: 'nobody' });
+  const cracked = (await mila.until('whipped')) as any;
+  assert.deepEqual([cracked.from.name, cracked.from.role, cracked.employeeId], ['Jovan', 'colleague', alex]);
+  await waitFor(async () => boss.messages.some((m: any) => m.t === 'whipped'), { label: 'the owner sees it too' });
+  await sleep(300);
+  assert.equal(jovan.got.filter((m) => m.t === 'whipped').length, 1, 'the one who swung is told as well, once: no machine-gun whip');
+  // Whoever walks in afterwards finds what was said and done lately.
+  const late = join(invites.Jovan!.t);
+  const history = (await late.until('chat.history')) as any;
+  assert.equal(history.lines[0].text, 'Hello from the visitor');
+  assert.deepEqual([history.lines.at(-1).emote, history.lines.at(-1).from.name], [true, 'Jovan']);
+  assert.match(history.lines.at(-1).text, /^cracks the whip at /);
+  late.ws.close();
   mila.ws.close();
   await waitFor(async () => (jovan.got.filter((m) => m.t === 'people').pop() as any)?.people.length === 2, { label: 'Mila left' });
   jovan.ws.close();

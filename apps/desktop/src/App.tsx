@@ -5,7 +5,7 @@ import { api, connection, setToken } from './lib/api.ts';
 import { loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
 import { loadPrefs, usePrefs } from './lib/prefs.ts';
 import { boardView, ceoView, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
-import { CommandBar, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, SayBar, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
+import { ChatBox, CommandBar, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
 import { onTvFrame } from './lib/tv.ts';
 import { TvLayer } from './hud/tv.tsx';
 import { PanelHost } from './hud/panels/index.tsx';
@@ -112,7 +112,7 @@ export function App() {
     if (!s.chat.length) return;
     const t = window.setTimeout(() => setSayTick((n) => n + 1), 7200);
     return () => window.clearTimeout(t);
-  }, [s.chat.length]);
+  }, [s.chat[s.chat.length - 1]?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   // What the 3D office calls back with.
   const on = useStable({
@@ -182,8 +182,8 @@ export function App() {
         interact();
         return;
       }
-      // Enter: say something out loud to the other people here (when there is anyone to hear it).
-      if (e.code === 'Enter' && !st.panel && !st.commandOpen && st.cameraMode !== 'workstation' && (st.people.length > 1 || st.me?.kind === 'guest')) {
+      // Enter: say something out loud — the chat box opens its line.
+      if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !st.panel && !st.commandOpen && st.cameraMode !== 'workstation') {
         e.preventDefault();
         setSaying(true);
         return;
@@ -255,10 +255,15 @@ export function App() {
     return s.people
       .filter((p) => p.id !== s.clientId)
       .map((p) => {
-        const last = [...s.chat].reverse().find((c) => c.fromId === p.id);
-        return { ...p, saying: last && now - Date.parse(last.ts) < 7000 ? last.text : null };
+        const last = [...s.chat].reverse().find((c) => c.fromId === p.id && !c.emote);
+        return { ...p, saying: last && now - last.at < 7000 ? last.text : null, whipAt: s.peopleWhips[p.id] };
       });
-  }, [s.people, s.clientId, s.chat, sayTick]);
+  }, [s.people, s.clientId, s.chat, s.peopleWhips, sayTick]);
+  // What I said myself: the same bubble, over my own character.
+  const selfSaying = useMemo(() => {
+    const last = [...s.chat].reverse().find((c) => c.fromId === s.clientId && !c.emote);
+    return last && Date.now() - last.at < 7000 ? last.text : null;
+  }, [s.chat, s.clientId, sayTick]);
   const tvView = useMemo(() => ({ on: s.tv.on, title: s.tv.page?.title ?? null, audible: !!s.tv.page?.audible }), [s.tv.on, s.tv.page?.title, s.tv.page?.audible]);
   // While someone is being moved: the desks nobody sits at.
   const freeSeats = useMemo(() => {
@@ -292,6 +297,7 @@ export function App() {
           unlocked={unlocked}
           people={people}
           humans={humans}
+          selfSaying={selfSaying}
           docs={docViews}
           onOpenDocs={on.openDocs}
           radio={radioView}
@@ -331,10 +337,19 @@ export function App() {
         <TopBar />
         {s.conn !== 'online' && <div className="glass banner">Connection to the server lost — the office is frozen at its last known state. Reconnecting…</div>}
         {inWorkstation ? (
+          <div className="left-dock">
+            <ChatBox open={saying} onOpen={() => setSaying(true)} onClose={() => setSaying(false)} quiet />
+          </div>
+        ) : (
+          <div className="left-dock">
+            <ChatBox open={saying} onOpen={() => setSaying(true)} onClose={() => setSaying(false)} />
+            <Feed />
+          </div>
+        )}
+        {inWorkstation ? (
           <Workstation />
         ) : (
           <>
-            <Feed />
             <Prompt />
             <EmployeeCard />
             <CommandCenter />
@@ -343,7 +358,6 @@ export function App() {
         )}
         <PanelHost />
         <TvLayer />
-        <SayBar open={saying} onClose={() => setSaying(false)} />
         <CommandBar />
         {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
         <Toasts />

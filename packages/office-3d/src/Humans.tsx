@@ -1,6 +1,6 @@
 import { Html } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type * as THREE from 'three';
 import type { Appearance } from '@orchestrator/contracts';
 import { Character, type PoseName } from './Character.tsx';
@@ -17,6 +17,8 @@ export interface HumanView {
   hue: number;
   /** What they last said out loud, shown for a few seconds. */
   saying: string | null;
+  /** When they last cracked the whip (ms); their character swings each time it changes. */
+  whipAt?: number;
 }
 
 const SKIN = ['#f1c9a5', '#e0ac69', '#c68642', '#8d5524', '#ffdbac'];
@@ -55,6 +57,16 @@ function Human({ h }: { h: HumanView }) {
   // here when the office loaded) it never appears, so it is added once this character has been drawn.
   const [drawn, setDrawn] = useState(false);
   const look = useMemo(() => lookOf(h), [h.hue]);
+  // A whip crack: the swing plays once each time `whipAt` changes (as the owner's own character does).
+  const [swing, setSwing] = useState(0);
+  const seenWhip = useRef(h.whipAt ?? 0);
+  useEffect(() => {
+    if (!h.whipAt || h.whipAt === seenWhip.current) return;
+    seenWhip.current = h.whipAt;
+    setSwing(h.whipAt);
+    const id = setTimeout(() => setSwing(0), 700);
+    return () => clearTimeout(id);
+  }, [h.whipAt]);
   useFrame((_, dt) => {
     const g = group.current;
     if (!g) return;
@@ -74,10 +86,10 @@ function Human({ h }: { h: HumanView }) {
     const moving = h.moving || Math.hypot(h.x - a.x, h.z - a.z) > 0.08;
     if (moving !== walking) setWalking(moving);
   });
-  const pose: PoseName = walking ? 'walk' : 'stand';
+  const pose: PoseName = swing ? 'whip' : walking ? 'walk' : 'stand';
   return (
     <group ref={group} position={[h.x, 0, h.z]} rotation={[0, h.rot, 0]}>
-      <Character appearance={look} pose={pose} level={h.role === 'owner' ? 9 : 1} />
+      <Character appearance={look} pose={pose} cue={swing || undefined} whip={!!swing} level={h.role === 'owner' ? 9 : 1} />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <ringGeometry args={[0.36, 0.44, 32]} />
         <meshBasicMaterial color={`hsl(${h.hue} 80% 60%)`} transparent opacity={0.9} toneMapped={false} />
