@@ -1,0 +1,39 @@
+{
+  "name": "@orchestrator/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "description": "ORCHESTRATOR — Your code. Your company. Your world.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "electron": "electron .",
+    "electron:dev": "ORCH_UI_DEV_URL=http://127.0.0.1:5173 electron .",
+    "package": "electron-builder --dir"
+  },
+  "dependencies": {
+    "@orchestrator/contracts": "workspace:*",
+    "@orchestrator/office-3d": "workspace:*",
+    "@orchestrator/ui": "workspace:*",
+    "@react-three/drei": "^10.0.0",
+    "@react-three/fiber": "^9.0.0",
+    "@tanstack/react-query": "^5.60.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.172.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.172.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "electron": "^33.0.0",
+    "vite": "^6.0.0"
+  }
+}

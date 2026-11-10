@@ -1,0 +1,8 @@
+{
+  "name": "@anthropic-ai/claude-agent-sdk",
+  "version": "0.0.0-test-fixture",
+  "description": "TEST FIXTURE — not the Claude Agent SDK. See sdk.mjs.",
+  "private": true,
+  "type": "module",
+  "main": "sdk.mjs"
+}

@@ -1,0 +1,1033 @@
+import path from 'node:path';
+import type {
+  AccountUsage,
+  AgentSession,
+  AgentSessionReport,
+  Appearance,
+  Employee,
+  Host,
+  HostInfo,
+  HostResources,
+  LaunchSpec,
+  SessionUsage,
+  TerminalScreen,
+  ActivityState,
+} from '@orchestrator/contracts';
+import { ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, slugify } from '@orchestrator/contracts';
+import { generateToken } from '@orchestrator/database';
+import { trustPromptKeys } from './comms.ts';
+import { EngineError } from './core.ts';
+import type { Engine } from './engine.ts';
+import { DEFAULT_HIGH_RISK_PATTERNS, permissionsFor, systemPromptFor } from './prompts.ts';
+
+const SKINS = ['#f1c9a5', '#e0ac69', '#c68642', '#8d5524', '#ffdbac', '#a9745a'];
+const HAIRS = ['#2b1d0e', '#4a2f1b', '#0f0f0f', '#b5651d', '#d9b380', '#6b6b6b', '#7a3b1d'];
+const SHIRTS = ['#4f8cff', '#ff8c5a', '#5ad67d', '#c58cff', '#f5c542', '#ff5d73', '#3fd0c9', '#9aa7b8', '#e6d3a3', '#7fd1ff'];
+const PANTS = ['#2d3748', '#1f2937', '#3b3f5c', '#4a4238', '#27364a'];
+const HAIR_STYLES: Appearance['hairStyle'][] = ['short', 'long', 'bun', 'curly', 'short', 'bald'];
+const ACCESSORIES: Appearance['accessory'][] = ['none', 'glasses', 'headphones', 'none', 'cap', 'none'];
+
+function hashString(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** A stable default look derived from the employee's name; fully editable afterwards. */
+export function defaultAppearance(name: string, roleColor?: string): Appearance {
+  const h = hashString(name);
+  return {
+    skin: SKINS[h % SKINS.length]!,
+    hair: HAIRS[(h >>> 3) % HAIRS.length]!,
+    hairStyle: HAIR_STYLES[(h >>> 6) % HAIR_STYLES.length]!,
+    shirt: roleColor ?? SHIRTS[(h >>> 9) % SHIRTS.length]!,
+    pants: PANTS[(h >>> 12) % PANTS.length]!,
+    accessory: ACCESSORIES[(h >>> 15) % ACCESSORIES.length]!,
+    build: 0.94 + ((h >>> 18) % 13) / 100,
+  };
+}
+
+// ───────────────────────────── Hosts ─────────────────────────────
+
+/** How long a host must stay above the limit before it counts as exhausted (ORCH_RESOURCE_PRESSURE_MS, for tests). */
+const resourcePressureMs = (): number => Number(process.env.ORCH_RESOURCE_PRESSURE_MS) || 30_000;
+
+/** How often, at most, a session's terminal output is summarised as an event. */
+const TERMINAL_OUTPUT_EVERY_MS = 60_000;
+
+/** The pod a desk belongs to: desks are named `<pod>-a` … `<pod>-d`. */
+const podOf = (deskId: string): string => deskId.replace(/-[a-z]$/, '');
+
+export class HostRegistry {
+  private eng: Engine;
+  private lastResourcePersist = new Map<string, number>();
+
+  constructor(eng: Engine) {
+    this.eng = eng;
+  }
+
+  private get core() {
+    return this.eng.core;
+  }
+
+  /** One-time token an operator pastes into `orchestrator-agent login`. Stored only as a hash. */
+  createEnrollmentToken(label: string, ttlMs = 60 * 60_000, actor = 'owner'): { token: string; expiresAt: string } {
+    const token = generateToken('orch_enroll');
+    this.core.store.addCredential('enrollment', token, { label, ttlMs });
+    this.core.audit(actor, 'host.enrollment_token_created', label, { ttlMs });
+    return { token, expiresAt: new Date(Date.now() + ttlMs).toISOString() };
+  }
+
+  private uniqueName(wanted: string): string {
+    const base = wanted.trim() || 'host';
+    let name = base;
+    for (let i = 2; this.core.hosts.find((h) => h.name === name && h.status !== 'revoked'); i++) name = `${base}-${i}`;
+    return name;
+  }
+
+  /** Authenticate a connecting agent: an existing credential, or a fresh enrollment. */
+  authenticate(hello: { hostId?: string | null; credential?: string | null; enrollmentToken?: string | null; name?: string | null; info: HostInfo }, local = false): { host: Host; credential?: string } | { error: string } {
+    if (hello.credential && hello.hostId) {
+      const cred = this.core.store.checkCredential('host', hello.credential);
+      const host = this.core.hosts.get(hello.hostId);
+      if (!cred || cred.refId !== hello.hostId || !host) return { error: 'unknown or revoked host credential; enroll this machine again' };
+      if (host.status === 'revoked') return { error: 'this host has been revoked' };
+      return { host };
+    }
+    if (hello.enrollmentToken) {
+      const cred = this.core.store.checkCredential('enrollment', hello.enrollmentToken);
+      if (!cred) return { error: 'invalid or expired enrollment token' };
+      if (cred.usedAt) return { error: 'this enrollment token was already used' };
+      this.core.store.markCredentialUsed(hello.enrollmentToken);
+      this.core.store.revokeCredential(hello.enrollmentToken);
+      const host: Host = {
+        id: newId(),
+        name: this.uniqueName(hello.name || hello.info.hostname.replace(/\.local$/, '')),
+        status: 'offline',
+        info: hello.info,
+        resources: null,
+        enrolledAt: nowIso(),
+        lastSeenAt: null,
+        revokedAt: null,
+        // A machine linked over SSH arrives through a tunnel that ends on this computer's loopback; it is still a remote machine.
+        local: (local && !cred.label?.startsWith('ssh:')) || cred.label === 'local',
+      };
+      const credential = generateToken('orch_host');
+      this.core.store.addCredential('host', credential, { refId: host.id, label: host.name });
+      this.core.put('host', host);
+      this.core.audit('system', 'host.enrolled', host.id, { name: host.name, hostname: hello.info.hostname });
+      this.core.event({ type: 'host.enrolled', source: 'server', summary: `Host "${host.name}" was enrolled`, hostId: host.id, data: { hostname: hello.info.hostname, platform: hello.info.platform } });
+      return { host, credential };
+    }
+    return { error: 'no credential presented; run `orchestrator-agent login` first' };
+  }
+
+  connected(hostId: string, info: HostInfo): void {
+    const host = this.core.hosts.require(hostId);
+    host.status = 'online';
+    host.info = info;
+    host.lastSeenAt = nowIso();
+    this.core.put('host', host);
+    this.core.event({ type: 'worker.connected', source: 'host', summary: `Host "${host.name}" connected`, hostId, data: { claude: info.claudeVersion, tmux: info.tmuxVersion } });
+    this.eng.comms.resolveNotifications((n) => n.kind === 'host_disconnected' && n.hostId === hostId);
+  }
+
+  disconnected(hostId: string): void {
+    const host = this.core.hosts.get(hostId);
+    if (!host) return;
+    if (host.status !== 'revoked') host.status = 'offline';
+    host.lastSeenAt = nowIso();
+    this.core.put('host', host);
+    const sessions = this.core.sessions.filter((s) => s.hostId === hostId && (s.status === 'running' || s.status === 'starting'));
+    for (const s of sessions) this.eng.sessions.hostWentOffline(s);
+    this.core.company.hostDisconnects++;
+    this.core.saveCompany();
+    this.core.event({ type: 'worker.disconnected', source: 'server', summary: `Host "${host.name}" disconnected`, hostId, data: { sessions: sessions.length } });
+    if (sessions.length && host.status !== 'revoked') {
+      this.eng.comms.notify({
+        kind: 'host_disconnected',
+        severity: 'critical',
+        title: `Host "${host.name}" is offline`,
+        body: `${sessions.length} session${sessions.length === 1 ? '' : 's'} on it cannot be observed right now. They keep running in tmux and will reappear when the host reconnects.`,
+        hostId,
+      });
+    }
+  }
+
+  resources(hostId: string, r: HostResources): void {
+    const host = this.core.hosts.get(hostId);
+    if (!host) return;
+    host.resources = r;
+    host.lastSeenAt = r.ts;
+    this.checkPressure(host, r);
+    const last = this.lastResourcePersist.get(hostId) ?? 0;
+    if (Date.now() - last > 60_000) {
+      this.lastResourcePersist.set(hostId, Date.now());
+      this.core.put('host', host);
+    } else this.core.broadcast('host', host);
+  }
+
+  private pressure = new Map<string, { since: number; what: string; warned: boolean }>();
+
+  /** Why this host should not be given more work right now (it has been out of memory or CPU for a while), or null. */
+  exhausted(hostId: string | null | undefined): string | null {
+    const p = hostId ? this.pressure.get(hostId) : undefined;
+    return p?.warned ? p.what : null;
+  }
+
+  /**
+   * A host that stays above 95% memory or CPU for half a minute is exhausted: the owner is warned,
+   * and no new work is started there until it recovers. What is already running is left alone.
+   */
+  private checkPressure(host: Host, r: HostResources): void {
+    const mem = r.memUsedBytes != null && r.memTotalBytes ? r.memUsedBytes / r.memTotalBytes : null;
+    const what = mem != null && mem >= 0.95 ? `memory is ${Math.round(mem * 100)}% used` : r.cpuPercent != null && r.cpuPercent >= 95 ? `CPU is at ${Math.round(r.cpuPercent)}%` : null;
+    const p = this.pressure.get(host.id);
+    if (!what) {
+      if (p?.warned) {
+        this.core.event({ type: 'host.resource_warning', source: 'host', summary: `Host "${host.name}" has recovered`, hostId: host.id, data: { recovered: true } });
+        this.eng.comms.resolveNotifications((n) => n.kind === 'host_resources' && n.hostId === host.id);
+        this.pressure.delete(host.id);
+        this.eng.tasks.schedule(); // work that was held back can start now
+        return;
+      }
+      this.pressure.delete(host.id);
+      return;
+    }
+    if (!p) return void this.pressure.set(host.id, { since: Date.now(), what, warned: false });
+    p.what = what;
+    if (p.warned || Date.now() - p.since < resourcePressureMs()) return;
+    p.warned = true;
+    this.core.event({ type: 'host.resource_warning', source: 'host', summary: `Host "${host.name}" is running out of resources: ${what}`, hostId: host.id, data: { memUsed: mem, cpuPercent: r.cpuPercent, loadAvg1: r.loadAvg1, sessions: r.sessionCount } });
+    this.eng.comms.notify({ kind: 'host_resources', severity: 'warning', title: `Host "${host.name}" is running out of resources`, body: `Its ${what}. No new work will be started on it until it recovers; the ${r.sessionCount} session${r.sessionCount === 1 ? '' : 's'} already running there are left alone.`, hostId: host.id });
+  }
+
+  revoke(hostId: string, actor = 'owner'): void {
+    const host = this.core.hosts.require(hostId);
+    this.core.store.revokeCredentialsFor('host', hostId);
+    host.status = 'revoked';
+    host.revokedAt = nowIso();
+    this.core.put('host', host);
+    this.core.audit(actor, 'host.revoked', hostId, { name: host.name });
+    this.core.event({ type: 'host.revoked', source: 'owner', summary: `Host "${host.name}" was revoked`, hostId, data: {} });
+    this.core.agents.disconnect(hostId, 'this host has been revoked');
+  }
+
+  rename(hostId: string, name: string): Host {
+    const host = this.core.hosts.require(hostId);
+    host.name = this.uniqueName(name);
+    return this.core.put('host', host);
+  }
+
+  remove(hostId: string): void {
+    const host = this.core.hosts.require(hostId);
+    if (host.status === 'online') throw new EngineError('revoke the host before removing it');
+    if (this.core.employees.find((e) => e.hostId === hostId && !e.archived)) throw new EngineError('employees are still assigned to this host');
+    for (const s of this.core.sessions.filter((x) => x.hostId === hostId)) this.core.remove('session', s.id);
+    this.core.remove('host', hostId);
+  }
+}
+
+// ─────────────────────────── Employees ───────────────────────────
+
+export interface EmployeeInput {
+  name: string;
+  claudeConfigDir?: string | null;
+  alsoProjectIds?: string[];
+  roleKey?: string | null;
+  title?: string;
+  department?: string;
+  specialization?: string;
+  skills?: string[];
+  appearance?: Partial<Appearance>;
+  style?: Employee['style'];
+  hostId?: string | null;
+  model?: string | null;
+  projectId?: string | null;
+  workingDir?: string | null;
+  instructions?: string;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  autonomy?: Employee['autonomy'];
+  executionMode?: Employee['executionMode'];
+  schedule?: Employee['schedule'];
+  deskId?: string | null;
+}
+
+export class EmployeeRegistry {
+  private eng: Engine;
+
+  constructor(eng: Engine) {
+    this.eng = eng;
+  }
+
+  private get core() {
+    return this.eng.core;
+  }
+
+  freeDesk(preferZone?: string): string | null {
+    const taken = new Set(this.core.employees.filter((e) => !e.archived && !!e.deskId).map((e) => e.deskId));
+    const desks = this.core.layout.desks.filter((d) => !taken.has(d.id));
+    return (preferZone ? desks.find((d) => d.zone === preferZone) : undefined)?.id ?? desks[0]?.id ?? null;
+  }
+
+  /**
+   * A desk for someone on a project: next to their project colleagues if there is room, otherwise
+   * in a part of the floor nobody else has claimed, so each project gathers in its own area.
+   */
+  deskFor(projectId: string | null | undefined, exceptEmployeeId?: string): string | null {
+    if (!projectId) return this.freeDesk();
+    const seated = this.core.employees.filter((e) => !e.archived && !!e.deskId && e.id !== exceptEmployeeId);
+    const taken = new Set(seated.map((e) => e.deskId));
+    const byId = new Map(this.core.layout.desks.map((d) => [d.id, d]));
+    const free = this.core.layout.desks.filter((d) => !taken.has(d.id) && d.kind !== 'executive');
+    if (!free.length) return null;
+    const colleagues = seated.filter((e) => e.projectId === projectId).map((e) => byId.get(e.deskId!)).filter((d): d is NonNullable<typeof d> => !!d);
+    // How many people of other projects already sit in each pod.
+    const strangers = new Map<string, number>();
+    for (const e of seated) {
+      const d = byId.get(e.deskId!);
+      if (d && e.projectId !== projectId) strangers.set(podOf(d.id), (strangers.get(podOf(d.id)) ?? 0) + 1);
+    }
+    const cx = colleagues.length ? colleagues.reduce((n, d) => n + d.x, 0) / colleagues.length : 0;
+    const cz = colleagues.length ? colleagues.reduce((n, d) => n + d.z, 0) / colleagues.length : 0;
+    // With colleagues: as close to them as possible, and rather not in another project's pod.
+    // Without: the pod with the fewest other people (an empty one first), in layout order.
+    const cost = (d: { id: string; x: number; z: number }): number => (colleagues.length ? Math.hypot(d.x - cx, d.z - cz) : 0) + (strangers.get(podOf(d.id)) ?? 0) * 4;
+    return free.map((d, i) => ({ d, c: cost(d), i })).sort((a, b) => a.c - b.c || a.i - b.i)[0]!.d.id;
+  }
+
+  create(input: EmployeeInput, actor = 'owner'): Employee {
+    const name = input.name?.trim();
+    if (!name) throw new EngineError('an employee needs a name');
+    if (this.core.employees.find((e) => !e.archived && e.name.toLowerCase() === name.toLowerCase())) throw new EngineError(`an employee named "${name}" already exists`);
+    const role = input.roleKey ? (roleByKey(input.roleKey) ?? matchRole(input.roleKey)) : undefined;
+    if (input.hostId && !this.core.hosts.get(input.hostId)) throw new EngineError('unknown host');
+    if (input.projectId && !this.core.projects.get(input.projectId)) throw new EngineError('unknown project');
+    if (input.deskId && this.core.employees.find((e) => !e.archived && e.deskId === input.deskId)) throw new EngineError('that desk is taken');
+    const employee: Employee = {
+      id: newId(),
+      name,
+      title: input.title?.trim() || role?.title || 'Engineer',
+      department: input.department?.trim() || role?.department || 'Engineering',
+      roleKey: role?.key ?? 'custom',
+      specialization: input.specialization ?? role?.specialization ?? '',
+      skills: input.skills ?? role?.skills ?? [],
+      appearance: { ...defaultAppearance(name, role?.color), ...(input.appearance ?? {}) },
+      style: input.style ?? 'concise',
+      hostId: input.hostId ?? this.core.hosts.find((h) => h.local && h.status !== 'revoked')?.id ?? null,
+      model: input.model ?? null,
+      projectId: input.projectId ?? null,
+      workingDir: input.workingDir ?? null,
+      instructions: input.instructions ?? '',
+      allowedTools: input.allowedTools ?? [],
+      disallowedTools: input.disallowedTools ?? role?.disallowedTools ?? [],
+      autonomy: input.autonomy ?? role?.defaultAutonomy ?? 'standard',
+      executionMode: input.executionMode ?? 'interactive_cli',
+      schedule: input.schedule ?? { available: true },
+      alsoProjectIds: [...new Set((input.alsoProjectIds ?? []).map(String))].filter((p) => p !== input.projectId && !!this.core.projects.get(p)),
+      deskId: input.deskId ?? this.deskFor(input.projectId),
+      xp: 0,
+      level: 1,
+      badges: [],
+      stats: { tasksCompleted: 0, testsPassed: 0, bugsFixed: 0, reviewsCompleted: 0, assists: 0, deliverablesAccepted: 0 },
+      createdAt: nowIso(),
+      archived: false,
+    };
+    this.core.put('employee', employee);
+    this.core.audit(actor, 'employee.created', employee.id, { name, role: employee.roleKey });
+    this.core.event({ type: 'employee.created', source: actor.startsWith('owner') ? 'owner' : 'server', summary: `${name} joined as ${employee.title}`, employeeId: employee.id, projectId: employee.projectId, data: { role: employee.roleKey } });
+    return employee;
+  }
+
+  update(id: string, patch: Partial<EmployeeInput> & { archived?: boolean }, actor = 'owner'): Employee {
+    const e = this.core.employees.require(id);
+    if (patch.name !== undefined) {
+      const name = patch.name.trim();
+      if (!name) throw new EngineError('name cannot be empty');
+      if (this.core.employees.find((x) => x.id !== id && !x.archived && x.name.toLowerCase() === name.toLowerCase())) throw new EngineError(`an employee named "${name}" already exists`);
+      e.name = name;
+    }
+    if (patch.roleKey !== undefined && patch.roleKey) {
+      const role = roleByKey(patch.roleKey);
+      e.roleKey = role?.key ?? 'custom';
+      if (role && patch.title === undefined) e.title = role.title;
+      if (role && patch.department === undefined) e.department = role.department;
+      if (role && patch.skills === undefined) e.skills = role.skills;
+      if (role && patch.specialization === undefined) e.specialization = role.specialization;
+    }
+    if (patch.deskId !== undefined && patch.deskId !== e.deskId) {
+      if (patch.deskId && !this.core.layout.desks.find((d) => d.id === patch.deskId)) throw new EngineError('unknown desk');
+      const occupant = patch.deskId ? this.core.employees.find((x) => x.id !== id && !x.archived && x.deskId === patch.deskId) : undefined;
+      if (occupant) {
+        // Changing workstation with someone sitting there: they swap desks.
+        occupant.deskId = e.deskId;
+        this.core.put('employee', occupant);
+      }
+      e.deskId = patch.deskId ?? null;
+    }
+    if (patch.hostId !== undefined && patch.hostId !== e.hostId) {
+      if (patch.hostId && !this.core.hosts.get(patch.hostId)) throw new EngineError('unknown host');
+      if (this.core.runningSessionOf(id)) throw new EngineError('stop the running session before moving this employee to another machine');
+      e.hostId = patch.hostId;
+    }
+    if (patch.projectId !== undefined) {
+      if (patch.projectId && !this.core.projects.get(patch.projectId)) throw new EngineError('unknown project');
+      const moved = patch.projectId !== e.projectId;
+      e.projectId = patch.projectId;
+      // Moved to another project by the owner: sit with the new colleagues, unless a desk was chosen by hand.
+      if (moved && patch.projectId && patch.deskId === undefined && e.deskId) {
+        const pods = new Set(this.core.employees.filter((x) => !x.archived && x.id !== id && x.projectId === patch.projectId && !!x.deskId).map((x) => podOf(x.deskId!)));
+        const taken = new Set(this.core.employees.filter((x) => !x.archived && !!x.deskId).map((x) => x.deskId));
+        const seat = pods.has(podOf(e.deskId)) ? undefined : this.core.layout.desks.find((d) => pods.has(podOf(d.id)) && !taken.has(d.id) && d.kind !== 'executive');
+        if (seat) e.deskId = seat.id;
+      }
+    }
+    for (const key of ['title', 'department', 'specialization', 'skills', 'style', 'model', 'workingDir', 'instructions', 'allowedTools', 'disallowedTools', 'autonomy', 'executionMode', 'schedule'] as const) {
+      if (patch[key] !== undefined) (e as any)[key] = patch[key];
+    }
+    if (patch.claudeConfigDir !== undefined) {
+      const dir = String(patch.claudeConfigDir ?? '').trim().replace(/\/+$/, '');
+      if (dir && (!/^(~\/|\/)[A-Za-z0-9._ \/@+-]+$/.test(dir) || dir.includes('..'))) throw new EngineError('the Claude account folder must be a path like ~/.claude-work');
+      e.claudeConfigDir = dir || null;
+    }
+    if (patch.alsoProjectIds !== undefined) {
+      const ids = [...new Set((Array.isArray(patch.alsoProjectIds) ? patch.alsoProjectIds : []).map(String))].filter((p) => p !== e.projectId);
+      for (const p of ids) if (!this.core.projects.get(p)) throw new EngineError('unknown project in the additional assignments');
+      e.alsoProjectIds = ids;
+    } else if (e.alsoProjectIds?.includes(e.projectId ?? '')) e.alsoProjectIds = e.alsoProjectIds.filter((p) => p !== e.projectId);
+    // Permission rules are typed by the owner: keep only short, single-line strings.
+    const rules = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter((x) => x && x.length <= 200 && !/[\r\n]/.test(x)))].slice(0, 100) : []);
+    if (patch.allowedTools !== undefined) e.allowedTools = rules(patch.allowedTools);
+    if (patch.disallowedTools !== undefined) e.disallowedTools = rules(patch.disallowedTools);
+    if (patch.appearance) e.appearance = { ...e.appearance, ...patch.appearance };
+    if (patch.archived !== undefined) {
+      if (patch.archived && this.core.runningSessionOf(id)) throw new EngineError('stop the running session before archiving this employee');
+      e.archived = patch.archived;
+      if (e.archived) e.deskId = null;
+      else if (!e.deskId) e.deskId = this.freeDesk();
+    }
+    this.core.put('employee', e);
+    // What an employee may do without asking is on the record in full, not just as a field name.
+    this.core.audit(actor, 'employee.updated', id, { fields: Object.keys(patch), ...(patch.allowedTools !== undefined ? { allowedTools: e.allowedTools } : {}), ...(patch.disallowedTools !== undefined ? { disallowedTools: e.disallowedTools } : {}) });
+    this.core.event({ type: 'employee.updated', source: 'owner', summary: `${e.name}'s profile was updated`, employeeId: id, data: { fields: Object.keys(patch), quiet: true } });
+    return e;
+  }
+
+  /** Find by name, or create with the given role (used when attaching sessions from the CLI). */
+  findOrCreate(name: string, roleRef: string | null | undefined, hostId: string): { employee: Employee; created: boolean } {
+    const existing = this.core.employeeByName(name);
+    if (existing) return { employee: existing, created: false };
+    const role = roleRef ? (roleByKey(roleRef) ?? matchRole(roleRef)) : undefined;
+    if (roleRef && !role) throw new EngineError(`unknown role "${roleRef}". Known roles: ${ROLE_CATALOGUE.map((r) => r.key).join(', ')}`);
+    return { employee: this.create({ name, roleKey: role?.key ?? null, hostId }, 'system'), created: true };
+  }
+}
+
+// ─────────────────────────── Sessions ────────────────────────────
+
+const TRUST_PROMPT = /(do you trust the files in this folder|trust this folder|is this a project you (created|trust))/i;
+
+export class SessionRegistry {
+  private eng: Engine;
+  private trustAsked = new Set<string>();
+  private starting = new Map<string, Promise<AgentSession>>();
+
+  constructor(eng: Engine) {
+    this.eng = eng;
+  }
+
+  private get core() {
+    return this.eng.core;
+  }
+
+  /** Re-derive state after a server restart: nothing is assumed to be running until a host says so. */
+  restore(): void {
+    for (const s of this.core.sessions.all()) {
+      if (s.status === 'running' || s.status === 'starting') {
+        s.status = 'host_offline';
+        s.activity = 'unknown';
+        s.activityDetail = 'Waiting for the host to reconnect';
+        s.control = 'DISCONNECTED';
+        s.controllerId = null;
+        this.core.sessions.put(s);
+      }
+    }
+  }
+
+  setActivity(session: AgentSession, state: ActivityState, detail: string | null, opts: { silent?: boolean } = {}): void {
+    if (session.activity === state && session.activityDetail === detail) return;
+    const changed = session.activity !== state;
+    session.activity = state;
+    session.activityDetail = detail;
+    if (changed) session.activitySince = nowIso();
+    this.core.put('session', session);
+    if (changed && !opts.silent) {
+      const emp = this.core.employees.get(session.employeeId);
+      this.core.event({
+        type: 'session.activity',
+        source: 'server',
+        summary: `${emp?.name ?? 'Session'} → ${state}`,
+        sessionId: session.id,
+        employeeId: session.employeeId,
+        hostId: session.hostId,
+        data: { state, detail, quiet: true },
+      });
+    }
+  }
+
+  hostWentOffline(s: AgentSession): void {
+    s.status = 'host_offline';
+    s.activity = 'unknown';
+    s.activityDetail = 'Host is offline — the tmux session keeps running';
+    s.activitySince = nowIso();
+    this.core.put('session', s);
+    this.core.gateway.refresh(s.id);
+  }
+
+  private fromReport(hostId: string, r: AgentSessionReport, existing?: AgentSession): AgentSession {
+    const now = nowIso();
+    const base: AgentSession =
+      existing ??
+      ({
+        id: r.sessionId,
+        employeeId: null,
+        hostId,
+        origin: r.origin,
+        mode: r.mode,
+        tmuxSession: r.tmuxSession,
+        tmuxPane: r.tmuxPane,
+        cwd: r.cwd,
+        repoRoot: r.repoRoot,
+        branch: r.branch,
+        claudeSessionId: r.claudeSessionId,
+        status: 'starting',
+        activity: 'unknown',
+        activityDetail: null,
+        activitySince: now,
+        inTurn: null,
+        control: 'AGENT_CONTROLLED',
+        controllerId: null,
+        capabilities: r.capabilities,
+        permissionMode: r.permissionMode,
+        model: r.model,
+        cols: r.cols,
+        rows: r.rows,
+        pid: r.pid,
+        usage: null,
+        startedAt: r.startedAt,
+        endedAt: null,
+        lastEventAt: null,
+        exitReason: null,
+      } satisfies AgentSession);
+    return base;
+  }
+
+  /** A host reported the state of one of its sessions. */
+  onReport(hostId: string, r: AgentSessionReport): AgentSession {
+    const existing = this.core.sessions.get(r.sessionId);
+    if (existing && existing.hostId !== hostId) throw new EngineError('session belongs to another host');
+    // A report about a launch that has since been replaced (stop followed by start) says nothing about the current one.
+    if (existing?.launchId && r.launchId && r.launchId !== existing.launchId) return existing;
+    const s = this.fromReport(hostId, r, existing);
+    const wasRunning = existing && (existing.status === 'running' || existing.status === 'starting');
+    const sizeChanged = !!existing && (existing.cols !== r.cols || existing.rows !== r.rows);
+    const wasOffline = existing?.status === 'host_offline';
+    s.tmuxSession = r.tmuxSession;
+    s.tmuxPane = r.tmuxPane;
+    s.cwd = r.cwd;
+    s.repoRoot = r.repoRoot;
+    s.branch = r.branch;
+    s.pid = r.pid;
+    s.cols = r.cols;
+    s.rows = r.rows;
+    s.capabilities = r.capabilities;
+    s.mode = r.mode;
+    s.permissionMode = r.permissionMode ?? s.permissionMode;
+    s.model = r.model ?? s.model;
+    s.claudeSessionId = r.claudeSessionId ?? s.claudeSessionId;
+    s.startedAt = r.startedAt;
+    const employee = this.core.employees.get(s.employeeId);
+    if (r.alive) {
+      const wasDead = !existing || existing.status === 'exited' || existing.status === 'lost';
+      s.status = 'running';
+      s.endedAt = null;
+      s.exitReason = null;
+      if (wasDead || wasOffline || s.activity === 'offline') {
+        // We just (re)gained sight of this session; do not guess what it is doing.
+        s.activity = 'unknown';
+        s.activityDetail = s.capabilities.hooks ? 'Waiting for the next signal from Claude Code' : 'No hooks on this session — activity cannot be observed, only the terminal';
+        s.activitySince = nowIso();
+      }
+      if (!existing && r.origin === 'attached') {
+        this.core.event({ type: 'session.attached', source: 'host', summary: `Existing tmux session "${r.tmuxSession}" was connected`, hostId, sessionId: s.id, employeeId: s.employeeId, data: { tmuxSession: r.tmuxSession, cwd: r.cwd } });
+      }
+    } else {
+      s.status = 'exited';
+      s.exitReason = r.exitReason ?? 'process exited';
+      s.endedAt = s.endedAt ?? nowIso();
+      s.activity = 'offline';
+      s.activityDetail = s.exitReason;
+      if (wasRunning) this.sessionDied(s, employee, s.exitReason);
+    }
+    this.core.put('session', s);
+    this.core.gateway.refresh(s.id);
+    if (sizeChanged || wasOffline) void this.core.gateway.resync(s.id);
+    if (r.alive && employee) this.eng.comms.schedulePump(employee.id);
+    return s;
+  }
+
+  /** Full sync after a host (re)connects: anything it no longer reports is gone. */
+  onSync(hostId: string, reports: AgentSessionReport[]): void {
+    const seen = new Set(reports.map((r) => r.sessionId));
+    for (const r of reports) {
+      try {
+        this.onReport(hostId, r);
+      } catch (e) {
+        this.core.log('warn', `session report rejected: ${(e as Error).message}`);
+      }
+    }
+    for (const s of this.core.sessions.filter((x) => x.hostId === hostId && !seen.has(x.id) && (x.status === 'running' || x.status === 'starting' || x.status === 'host_offline'))) {
+      this.onGone(hostId, s.id, 'the host no longer has this session');
+    }
+    void this.core.gateway.hostReconnected([...seen]);
+    this.eng.tasks.schedule();
+  }
+
+  /**
+   * A host says one of its sessions ended. Such a report can be about a previous incarnation
+   * (the employee was stopped and started again in the meantime), so it only counts when it is
+   * about the launch the office currently knows, and never while a start is in flight —
+   * the start's own result says what is running.
+   */
+  onHostReportedGone(hostId: string, sessionId: string, reason: string, launchId?: string | null): void {
+    const s = this.core.sessions.get(sessionId);
+    if (!s || s.hostId !== hostId) return;
+    if (s.employeeId && this.starting.has(s.employeeId)) return;
+    if (launchId && s.launchId && launchId !== s.launchId) return;
+    this.onGone(hostId, sessionId, reason);
+  }
+
+  onGone(hostId: string, sessionId: string, reason: string): void {
+    const s = this.core.sessions.get(sessionId);
+    if (!s || s.hostId !== hostId) return;
+    const wasRunning = s.status === 'running' || s.status === 'starting' || s.status === 'host_offline';
+    s.status = 'lost';
+    s.exitReason = reason;
+    s.endedAt = nowIso();
+    s.activity = 'offline';
+    s.activityDetail = reason;
+    s.activitySince = nowIso();
+    this.core.put('session', s);
+    this.core.gateway.sessionClosed(sessionId, reason);
+    if (wasRunning) this.sessionDied(s, this.core.employees.get(s.employeeId), reason);
+  }
+
+  private outputSeen = new Map<string, { since: number; bytes: number; chunks: number }>();
+
+  /**
+   * Terminal output passed through for a session. Its content is never stored; at most once a
+   * minute per session the office records how much there was, as a `terminal.output` event.
+   */
+  noteOutput(sessionId: string, bytes: number): void {
+    const now = Date.now();
+    let o = this.outputSeen.get(sessionId);
+    if (!o) this.outputSeen.set(sessionId, (o = { since: now - TERMINAL_OUTPUT_EVERY_MS, bytes: 0, chunks: 0 }));
+    o.bytes += bytes;
+    o.chunks++;
+    if (now - o.since < TERMINAL_OUTPUT_EVERY_MS) return;
+    const s = this.core.sessions.get(sessionId);
+    if (!s) return void this.outputSeen.delete(sessionId);
+    const who = this.core.employees.get(s.employeeId)?.name ?? s.tmuxSession;
+    this.core.event({ type: 'terminal.output', source: 'host', summary: `${who}'s terminal printed ${o.bytes} bytes`, hostId: s.hostId, sessionId, employeeId: s.employeeId ?? null, data: { bytes: o.bytes, chunks: o.chunks, sinceMs: now - o.since, quiet: true } });
+    this.outputSeen.set(sessionId, { since: now, bytes: 0, chunks: 0 });
+  }
+
+  private sessionDied(s: AgentSession, employee: Employee | undefined, reason: string): void {
+    this.core.company.sessionsLost++;
+    this.core.saveCompany();
+    this.core.event({
+      type: 'session.lost',
+      source: 'host',
+      summary: `${employee?.name ?? `Session ${s.tmuxSession}`}'s session stopped (${reason})`,
+      hostId: s.hostId,
+      sessionId: s.id,
+      employeeId: s.employeeId,
+      data: { reason, origin: s.origin },
+    });
+    this.eng.comms.sessionEnded(s.id);
+    if (employee) {
+      this.eng.comms.employeeSessionGone(employee.id);
+      const task = this.eng.tasks.currentTask(employee.id);
+      this.eng.comms.notify({
+        kind: 'session_lost',
+        severity: task ? 'critical' : 'warning',
+        title: `${employee.name} went offline`,
+        body: task ? `Their session stopped while working on ${task.key} (${reason}). Restart the session to resume the same conversation.` : `Their session stopped (${reason}).`,
+        employeeId: employee.id,
+        sessionId: s.id,
+        taskId: task?.id ?? null,
+      });
+    }
+  }
+
+  /** Claude accounts and what Claude Code last said about their limits, by `<host>|<config folder>`. */
+  private accounts = new Map<string, AccountUsage>();
+  private accountsLoaded = false;
+
+  private loadAccounts(): void {
+    if (this.accountsLoaded) return;
+    this.accountsLoaded = true;
+    for (const a of this.core.store.kvGet<AccountUsage[]>('accounts', [])) this.accounts.set(a.key, a);
+  }
+
+  /** A session's status line reported its account's rate limits. */
+  onLimits(hostId: string, msg: { sessionId: string; configDir: string | null; email: string | null; organization: string | null; fiveHour: AccountUsage['fiveHour']; sevenDay: AccountUsage['sevenDay'] }): void {
+    const s = this.core.sessions.get(msg.sessionId);
+    if (!s || s.hostId !== hostId) return;
+    this.loadAccounts();
+    const key = `${hostId}|${msg.configDir ?? 'default'}`;
+    this.accounts.set(key, { key, hostId, configDir: msg.configDir, email: msg.email, organization: msg.organization, fiveHour: msg.fiveHour, sevenDay: msg.sevenDay, reportedAt: nowIso(), reportedBy: s.employeeId ?? null, employeeIds: [] });
+    this.core.store.kvSet('accounts', [...this.accounts.values()]);
+  }
+
+  /**
+   * Every Claude account the office's employees use, with the last figures Claude Code reported for
+   * each. An account nobody has run a session on yet is listed without figures, not left out.
+   */
+  accountUsage(): AccountUsage[] {
+    this.loadAccounts();
+    const out = new Map<string, AccountUsage>();
+    for (const e of this.core.employees.filter((x) => !x.archived && !!x.hostId)) {
+      const key = `${e.hostId}|${e.claudeConfigDir ?? 'default'}`;
+      const known = this.accounts.get(key);
+      const row = out.get(key) ?? { ...(known ?? { key, hostId: e.hostId!, configDir: e.claudeConfigDir ?? null, email: null, organization: null, fiveHour: null, sevenDay: null, reportedAt: null, reportedBy: null }), employeeIds: [] };
+      row.employeeIds.push(e.id);
+      out.set(key, row);
+    }
+    // A window whose reset time has passed is no longer what the figure says.
+    const now = Date.now();
+    for (const row of out.values()) {
+      for (const k of ['fiveHour', 'sevenDay'] as const) if (row[k]?.resetsAt && Date.parse(row[k]!.resetsAt!) < now) row[k] = { usedPercent: 0, resetsAt: null };
+    }
+    return [...out.values()].sort((a, b) => (b.sevenDay?.usedPercent ?? -1) - (a.sevenDay?.usedPercent ?? -1));
+  }
+
+  onUsage(hostId: string, sessionId: string, usage: SessionUsage): void {
+    const s = this.core.sessions.get(sessionId);
+    if (!s || s.hostId !== hostId) return;
+    s.usage = usage;
+    this.core.put('session', s);
+  }
+
+  /**
+   * Monitor frames double as a way to notice Claude Code's workspace-trust
+   * prompt, which appears before any hook can fire.
+   */
+  onScreen(sessionId: string, screen: TerminalScreen): void {
+    if (this.trustAsked.has(sessionId)) return;
+    const s = this.core.sessions.get(sessionId);
+    // Only the interactive CLI shows a trust prompt; an SDK-managed worker's pane is a transcript.
+    if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || s.lastEventAt) return;
+    const text = screen.lines.join('\n').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+    if (!TRUST_PROMPT.test(text)) return;
+    this.trustAsked.add(sessionId);
+    const employee = this.core.employees.get(s.employeeId) ?? null;
+    if (employee?.autonomy === 'auto') {
+      // The owner put this employee in this folder and asked not to be asked: answer "yes" for them, on the record.
+      const keys = trustPromptKeys(screen.lines);
+      if (keys) {
+        void this.core.agents
+          .rpc(s.hostId, { method: 'session.keys', params: { sessionId: s.id, keys } })
+          .then(() => {
+            this.core.audit('system', 'trust.auto_accepted', s.id, { employee: employee.name, cwd: s.cwd });
+            this.core.event({ type: 'session.started', source: 'server', summary: `${employee.name} is on auto: the folder ${s.cwd} was trusted for Claude Code without asking you`, sessionId: s.id, employeeId: employee.id, hostId: s.hostId, data: { trust: 'auto', cwd: s.cwd } });
+          })
+          .catch(() => this.trustAsked.delete(sessionId));
+        return;
+      }
+    }
+    this.setActivity(s, 'needs_approval', 'Claude Code is asking whether to trust this folder');
+    this.eng.comms.createQuestion({
+      kind: 'trust_prompt',
+      channel: 'terminal',
+      employee,
+      session: s,
+      text: `Claude Code is asking whether to trust the folder ${s.cwd} before ${employee?.name ?? 'this session'} can start.`,
+      context: 'This prompt comes from Claude Code itself and appears once per folder. Trusting lets Claude Code read project settings and run in that directory.',
+      why: 'The session cannot start working until it is answered.',
+      options: [
+        { label: 'Trust this folder', description: 'Press Enter on the prompt', consequence: 'Claude Code starts in this directory.' },
+        { label: 'Decide in the terminal', description: 'Leave the prompt for you to answer at the workstation' },
+      ],
+    });
+  }
+
+  // ───────────── launching ─────────────
+
+  private newSessionRecord(employee: Employee, hostId: string, cwd: string): AgentSession {
+    const now = nowIso();
+    return {
+      id: newId(),
+      employeeId: employee.id,
+      hostId,
+      origin: 'managed',
+      mode: 'interactive_cli',
+      tmuxSession: '',
+      tmuxPane: null,
+      cwd,
+      repoRoot: null,
+      branch: null,
+      claudeSessionId: newId(),
+      status: 'starting',
+      activity: 'unknown',
+      activityDetail: 'Starting Claude Code',
+      activitySince: now,
+      inTurn: null,
+      control: 'AGENT_CONTROLLED',
+      controllerId: null,
+      capabilities: { terminal: true, hooks: true, mcp: true, structuredApproval: true, structuredMessaging: true, usage: false },
+      permissionMode: null,
+      model: employee.model,
+      cols: 120,
+      rows: 34,
+      pid: null,
+      usage: null,
+      startedAt: now,
+      endedAt: null,
+      lastEventAt: null,
+      exitReason: null,
+    };
+  }
+
+  buildSpec(employee: Employee, session: AgentSession, cwd: string, resume: boolean, mcpToken: string, mode: Employee['executionMode'] = 'interactive_cli'): LaunchSpec {
+    const project = this.core.projects.get(employee.projectId);
+    const host = this.core.hosts.get(session.hostId);
+    const perms = permissionsFor(employee.autonomy, project, employee, host?.info?.claudeVersion ?? null);
+    return {
+      displayName: employee.name,
+      cwd,
+      mode,
+      model: employee.model,
+      permissionMode: perms.permissionMode,
+      permissions: { allow: perms.allow, deny: perms.deny, ask: perms.ask },
+      allowedTools: [],
+      disallowedTools: [],
+      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false)),
+      mcp: { url: `${this.core.publicUrl}/mcp`, token: mcpToken },
+      strictMcp: !this.core.settings.workersInheritMcp,
+      // On `auto` the owner can choose to leave even these to Claude Code's auto mode.
+      highRiskPatterns: employee.autonomy === 'auto' && !this.core.settings.autoAsksHighRisk ? [] : [...DEFAULT_HIGH_RISK_PATTERNS, ...(project?.policy.highRiskPatterns ?? [])],
+      claudeSessionId: session.claudeSessionId!,
+      resume,
+      // A project's other repositories, when they are on the machine this employee works on.
+      addDirs: project && (!project.hostId || project.hostId === session.hostId) ? (project.extraRepos ?? []).map((x) => x.path).filter((p) => p !== cwd) : [],
+      env: {
+        ORCH_EMPLOYEE: slugify(employee.name),
+        // Their own Claude login, if they were given one.
+        ...(employee.claudeConfigDir ? { CLAUDE_CONFIG_DIR: employee.claudeConfigDir } : {}),
+        // Let ask_boss hold a tool call open while the owner decides.
+        CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: String(Math.max(600_000, this.core.timings.askBossWaitMs * 2)),
+        MCP_TOOL_TIMEOUT: String(Math.max(900_000, this.core.timings.askBossWaitMs * 3)),
+      },
+      cols: 120,
+      rows: 34,
+    };
+  }
+
+  /**
+   * Start (or restart) the real Claude Code process for an employee. Restarting
+   * an exited session resumes the same Claude conversation in the same tmux
+   * session; a different working directory starts a fresh one.
+   */
+  start(employeeId: string, opts: { cwd?: string | null; resume?: boolean; continueLast?: boolean; actor?: string } = {}): Promise<AgentSession> {
+    const inFlight = this.starting.get(employeeId);
+    if (inFlight) return inFlight;
+    const p = this.doStart(employeeId, opts).finally(() => this.starting.delete(employeeId));
+    this.starting.set(employeeId, p);
+    return p;
+  }
+
+  private async doStart(employeeId: string, opts: { cwd?: string | null; resume?: boolean; continueLast?: boolean; actor?: string }): Promise<AgentSession> {
+    const employee = this.core.employees.require(employeeId);
+    if (employee.archived) throw new EngineError(`${employee.name} is archived`);
+    const hostId = employee.hostId;
+    if (!hostId) throw new EngineError(`${employee.name} is not assigned to a machine`);
+    const host = this.core.hosts.require(hostId);
+    if (!this.core.agents.isOnline(hostId)) throw new EngineError(`host "${host.name}" is offline`);
+    const project = this.core.projects.get(employee.projectId);
+    const cwd = opts.cwd ?? employee.workingDir ?? project?.repoPath ?? null;
+    if (!cwd) throw new EngineError(`${employee.name} has no working directory: assign a project with a repository, or set a working directory`);
+
+    const current = this.core.runningSessionOf(employeeId);
+    if (current) {
+      if (path.resolve(current.cwd) === path.resolve(cwd)) return current;
+      if (current.origin !== 'managed') throw new EngineError(`${employee.name} is attached to an existing session in ${current.cwd}; detach it before starting a managed one elsewhere`);
+      await this.stop(employeeId, { actor: opts.actor ?? 'system', reason: 'moving to another working directory' });
+    }
+    const previous = this.core.sessions
+      .filter((s) => s.employeeId === employeeId && s.origin === 'managed' && s.hostId === hostId && (s.status === 'exited' || s.status === 'lost') && path.resolve(s.cwd) === path.resolve(cwd))
+      .sort((a, b) => (b.startedAt > a.startedAt ? 1 : -1))[0];
+    const resume = opts.resume !== false && !!previous && !!previous.claudeSessionId && !!previous.lastEventAt;
+    // A previous attempt that never got as far as a first event (it exited right away) is retried in the
+    // same record and the same tmux session, with a fresh Claude session id — not piled up as new ones.
+    const retry = !resume && !!previous && !previous.lastEventAt;
+    if (retry) previous!.claudeSessionId = this.newSessionRecord(employee, hostId, cwd).claudeSessionId;
+    const session = resume || retry ? previous! : this.newSessionRecord(employee, hostId, cwd);
+    // Capability detection with an explicit fallback: a host without the Agent SDK only provides
+    // the interactive CLI runtime, so the employee runs as one — and the office says so.
+    const mode: Employee['executionMode'] = employee.executionMode === 'managed_sdk' && host.info?.runtimes?.includes('managed_sdk') ? 'managed_sdk' : 'interactive_cli';
+    if (employee.executionMode === 'managed_sdk' && mode !== 'managed_sdk') {
+      this.core.event({ type: 'session.started', source: 'server', summary: `${employee.name} is configured for the SDK-managed runtime, which host "${host.name}" does not provide; starting as an interactive Claude Code worker instead`, employeeId, hostId, data: { requested: 'managed_sdk', actual: 'interactive_cli', fallback: true } });
+      this.eng.comms.notify({ kind: 'info', severity: 'warning', title: `${employee.name}: runtime fallback`, body: `The SDK-managed runtime is not available on "${host.name}" (install it there with \`orchestrator-agent sdk install\` and restart the agent). ${employee.name} was started as an interactive Claude Code worker (full terminal takeover; approvals and messages go through hooks and the terminal).`, employeeId, hostId });
+    }
+    session.status = 'starting';
+    session.activity = 'unknown';
+    session.mode = mode;
+    session.activityDetail = mode === 'managed_sdk' ? (resume ? 'Resuming the SDK-managed worker' : 'Starting the SDK-managed worker') : resume ? 'Resuming Claude Code session' : 'Starting Claude Code';
+    session.activitySince = nowIso();
+    session.inTurn = null;
+    session.endedAt = null;
+    session.exitReason = null;
+    session.lastEventAt = resume ? session.lastEventAt : null;
+    this.trustAsked.delete(session.id);
+
+    // A fresh bearer token per launch; older tokens for this session stop working.
+    this.core.store.revokeCredentialsFor('mcp', session.id);
+    const mcpToken = generateToken('orch_mcp');
+    this.core.store.addCredential('mcp', mcpToken, { refId: session.id, label: employee.name });
+    const spec = this.buildSpec(employee, session, cwd, resume, mcpToken, mode);
+    // Asked to pick up the conversation Claude Code already has in this folder (one begun outside the office).
+    if (opts.continueLast && !resume && mode === 'interactive_cli') spec.continueLast = true;
+    session.launchId = spec.launchId = newId();
+    this.core.put('session', session);
+    try {
+      const report = await this.core.agents.rpc<AgentSessionReport>(hostId, { method: 'session.create', params: { sessionId: session.id, spec } }, 45000);
+      const s = this.onReport(hostId, report);
+      // They are back: earlier "went offline" notices about this employee are no longer something to act on.
+      this.eng.comms.resolveNotifications((n) => n.kind === 'session_lost' && n.employeeId === employee.id);
+      this.core.company.sessionsStarted++;
+      this.core.saveCompany();
+      this.core.audit(opts.actor ?? 'owner', resume ? 'session.resumed' : 'session.started', s.id, { employee: employee.name, cwd, host: host.name, permissionMode: spec.permissionMode, runtime: mode });
+      return s;
+    } catch (e) {
+      session.status = 'exited';
+      session.activity = 'offline';
+      session.exitReason = (e as Error).message;
+      session.activityDetail = session.exitReason;
+      session.endedAt = nowIso();
+      this.core.put('session', session);
+      throw new EngineError(`could not start ${employee.name}'s session on ${host.name}: ${(e as Error).message}`, 502);
+    }
+  }
+
+  async stop(employeeId: string, opts: { actor?: string; reason?: string } = {}): Promise<void> {
+    const employee = this.core.employees.require(employeeId);
+    const s = this.core.runningSessionOf(employeeId);
+    if (!s) return;
+    if (!this.core.agents.isOnline(s.hostId)) throw new EngineError('the host is offline; the session cannot be stopped from here');
+    this.core.audit(opts.actor ?? 'owner', s.origin === 'managed' ? 'session.stopped' : 'session.detached', s.id, { employee: employee.name, reason: opts.reason ?? null });
+    if (s.origin === 'managed') {
+      await this.core.agents.rpc(s.hostId, { method: 'session.kill', params: { sessionId: s.id } });
+      this.onGone(s.hostId, s.id, opts.reason ?? 'stopped by the owner');
+    } else {
+      // Sessions we did not start are only ever detached, never killed.
+      await this.core.agents.rpc(s.hostId, { method: 'session.detach', params: { sessionId: s.id } });
+      this.onGone(s.hostId, s.id, 'detached from the office (the tmux session is still running)');
+    }
+  }
+
+  /**
+   * Turn an attached, terminal-only session into a full employee session: Claude Code in that
+   * pane is asked to exit (its own /exit command — nothing is killed), and the employee is then
+   * started by the office in the same folder, continuing the same conversation, with hooks and tools.
+   * If it does not exit (it is in the middle of something), nothing else is changed.
+   */
+  async adopt(sessionId: string, actor = 'owner'): Promise<AgentSession> {
+    const s = this.core.sessions.require(sessionId);
+    if (s.origin !== 'attached') throw new EngineError('only a session that was attached from outside can be taken over this way');
+    if (s.status !== 'running') throw new EngineError('that session is not running');
+    const employee = this.core.employees.get(s.employeeId);
+    if (!employee) throw new EngineError('bind the session to an employee first');
+    if (!this.core.agents.isOnline(s.hostId)) throw new EngineError('the machine is offline');
+    const cwd = s.cwd;
+    this.core.audit(actor, 'session.adopted', s.id, { employee: employee.name, tmuxSession: s.tmuxSession, cwd });
+    await this.core.agents.rpc(s.hostId, { method: 'session.keys', params: { sessionId: s.id, keys: ['Escape'] } }).catch(() => undefined);
+    await this.core.agents.rpc(s.hostId, { method: 'session.paste', params: { sessionId: s.id, text: '/exit', submit: true } });
+    // The host notices the process ending and reports the session gone.
+    for (let i = 0; i < 80 && this.core.sessions.get(sessionId)?.status === 'running'; i++) await new Promise((r) => setTimeout(r, 250));
+    if (this.core.sessions.get(sessionId)?.status === 'running') throw new EngineError('Claude Code in that session did not exit (it may be in the middle of something). Nothing else was changed; try again when it is idle, or exit it yourself.', 409);
+    if (!employee.workingDir && !employee.projectId) {
+      employee.workingDir = cwd;
+      this.core.put('employee', employee);
+    }
+    return this.start(employee.id, { cwd, continueLast: true, resume: false, actor });
+  }
+
+  /** Bind a session to an employee (attached sessions arrive unbound). */
+  bind(sessionId: string, employeeId: string, actor = 'owner'): AgentSession {
+    const s = this.core.sessions.require(sessionId);
+    const employee = this.core.employees.require(employeeId);
+    const other = this.core.runningSessionOf(employeeId);
+    if (other && other.id !== sessionId) throw new EngineError(`${employee.name} already has a running session; stop or detach it first`);
+    s.employeeId = employee.id;
+    if (employee.hostId !== s.hostId) {
+      employee.hostId = s.hostId;
+    }
+    if (!employee.workingDir && !employee.projectId) employee.workingDir = s.cwd;
+    this.core.put('employee', employee);
+    this.core.put('session', s);
+    this.core.audit(actor, 'session.bound', sessionId, { employee: employee.name });
+    this.core.event({ type: 'session.attached', source: 'server', summary: `${employee.name} is now represented by tmux session "${s.tmuxSession}"`, sessionId, employeeId, hostId: s.hostId, data: { origin: s.origin } });
+    return s;
+  }
+
+  /** Attach an already-running tmux session on a host, from the office UI. */
+  async attach(hostId: string, tmuxSession: string, tmuxPane: string | null, employeeId: string | null, actor = 'owner'): Promise<AgentSession> {
+    if (!this.core.agents.isOnline(hostId)) throw new EngineError('that host is offline');
+    const sessionId = newId();
+    const report = await this.core.agents.rpc<AgentSessionReport>(hostId, { method: 'session.attach', params: { sessionId, tmuxSession, tmuxPane } });
+    const s = this.onReport(hostId, report);
+    this.core.audit(actor, 'session.attached', s.id, { tmuxSession, host: hostId });
+    return employeeId ? this.bind(s.id, employeeId, actor) : s;
+  }
+
+  /** Interrupt the current turn (Escape) and hold the employee until resumed. */
+  async pause(employeeId: string, actor = 'owner'): Promise<void> {
+    const s = this.core.runningSessionOf(employeeId);
+    if (!s) throw new EngineError('no running session to pause');
+    const sent = await this.core.agents.rpc<{ via?: string }>(s.hostId, { method: 'session.interrupt', params: { sessionId: s.id } });
+    this.core.gateway.setPaused(s.id, true);
+    // The interrupt ended the turn; no Stop hook is guaranteed after one.
+    s.inTurn = s.capabilities.hooks ? false : null;
+    this.setActivity(s, 'paused', 'Interrupted by the owner');
+    const emp = this.core.employees.get(employeeId);
+    this.core.audit(actor, 'session.interrupted', s.id, { employee: emp?.name });
+    this.core.event({ type: 'terminal.interrupt', source: 'owner', summary: `Boss interrupted ${emp?.name ?? 'the session'} (${sent?.via === 'sdk' ? 'through the Agent SDK' : 'Escape sent to the terminal'})`, sessionId: s.id, employeeId, hostId: s.hostId, data: { via: sent?.via ?? 'terminal' } });
+  }
+
+  async resume(employeeId: string, actor = 'owner'): Promise<void> {
+    const s = this.core.runningSessionOf(employeeId);
+    if (!s) throw new EngineError('no running session to resume');
+    this.core.gateway.setPaused(s.id, false);
+    const emp = this.core.employees.get(employeeId);
+    this.core.audit(actor, 'session.resumed_by_owner', s.id, { employee: emp?.name });
+    const task = this.eng.tasks.currentTask(employeeId);
+    // The next hook sets the real state; until then the employee is between turns.
+    if (s.capabilities.hooks) s.inTurn = false;
+    this.setActivity(s, 'idle', null);
+    if (task) {
+      this.eng.comms.sendMessage({ from: { kind: 'owner', id: null, name: 'the boss' }, toEmployeeId: employeeId, body: `Please resume your work on ${task.key} "${task.title}" from where you were interrupted.`, kind: 'system', taskId: task.id });
+    }
+    this.eng.comms.schedulePump(employeeId, 100);
+    this.eng.tasks.schedule();
+  }
+
+  sessionByMcpToken(token: string | null | undefined): AgentSession | undefined {
+    const cred = this.core.store.checkCredential('mcp', token);
+    return cred?.refId ? this.core.sessions.get(cred.refId) : undefined;
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": [
+    "packages/contracts/**/*.ts",
+    "packages/database/**/*.ts",
+    "packages/execution/**/*.ts",
+    "packages/orchestration/**/*.ts",
+    "packages/terminal/**/*.ts",
+    "packages/integrations/**/*.ts",
+    "packages/game-systems/**/*.ts",
+    "apps/server/**/*.ts",
+    "apps/host-agent/**/*.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": ["**/node_modules", "**/dist"]
+}

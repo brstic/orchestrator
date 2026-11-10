@@ -1,0 +1,11 @@
+{
+  "name": "@orchestrator/host-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "orchestrator-agent": "./bin/orchestrator-agent.mjs" },
+  "dependencies": {
+    "@orchestrator/contracts": "workspace:*",
+    "@orchestrator/execution": "workspace:*"
+  }
+}

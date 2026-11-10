@@ -1,0 +1,347 @@
+/**
+ * A small Model Context Protocol server over Streamable HTTP (JSON responses,
+ * stateless). It implements exactly what a tools-only server needs:
+ * initialize, ping, tools/list, tools/call and notifications.
+ *
+ * Transport and authentication are the HTTP server's job; this module turns a
+ * parsed JSON-RPC body into a JSON-RPC response.
+ */
+
+export interface McpToolSpec {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface McpToolResult {
+  text: string;
+  isError?: boolean;
+}
+
+export type McpToolHandler<Ctx> = (args: Record<string, any>, ctx: Ctx) => Promise<McpToolResult | string>;
+
+export interface McpServerOptions<Ctx> {
+  name: string;
+  version: string;
+  instructions: string;
+  tools: McpToolSpec[];
+  handlers: Record<string, McpToolHandler<Ctx>>;
+}
+
+const SUPPORTED_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
+const LATEST = '2025-06-18';
+
+interface JsonRpcRequest {
+  jsonrpc: '2.0';
+  id?: string | number | null;
+  method: string;
+  params?: any;
+}
+
+function rpcError(id: unknown, code: number, message: string) {
+  return { jsonrpc: '2.0', id: id ?? null, error: { code, message } };
+}
+
+function validateArgs(schema: any, args: Record<string, any>): string | null {
+  if (!schema || schema.type !== 'object') return null;
+  for (const key of schema.required ?? []) {
+    if (args[key] === undefined || args[key] === null || args[key] === '') return `missing required argument "${key}"`;
+  }
+  for (const [key, def] of Object.entries<any>(schema.properties ?? {})) {
+    const v = args[key];
+    if (v === undefined || v === null) continue;
+    const t = def.type;
+    if (t === 'string' && typeof v !== 'string') return `argument "${key}" must be a string`;
+    if ((t === 'number' || t === 'integer') && typeof v !== 'number') return `argument "${key}" must be a number`;
+    if (t === 'boolean' && typeof v !== 'boolean') return `argument "${key}" must be a boolean`;
+    if (t === 'array' && !Array.isArray(v)) return `argument "${key}" must be an array`;
+    if (def.enum && !def.enum.includes(v)) return `argument "${key}" must be one of: ${def.enum.join(', ')}`;
+  }
+  return null;
+}
+
+async function handleOne<Ctx>(req: JsonRpcRequest, opts: McpServerOptions<Ctx>, ctx: Ctx): Promise<object | null> {
+  const isNotification = req.id === undefined;
+  if (!req || req.jsonrpc !== '2.0' || typeof req.method !== 'string') return rpcError(req?.id, -32600, 'Invalid Request');
+  if (isNotification) return null;
+  switch (req.method) {
+    case 'initialize': {
+      const requested = String(req.params?.protocolVersion ?? '');
+      return {
+        jsonrpc: '2.0',
+        id: req.id,
+        result: {
+          protocolVersion: SUPPORTED_VERSIONS.includes(requested) ? requested : LATEST,
+          capabilities: { tools: { listChanged: false } },
+          serverInfo: { name: opts.name, version: opts.version },
+          instructions: opts.instructions,
+        },
+      };
+    }
+    case 'ping':
+      return { jsonrpc: '2.0', id: req.id, result: {} };
+    case 'tools/list':
+      return { jsonrpc: '2.0', id: req.id, result: { tools: opts.tools } };
+    case 'tools/call': {
+      const name = String(req.params?.name ?? '');
+      const spec = opts.tools.find((t) => t.name === name);
+      const handler = opts.handlers[name];
+      if (!spec || !handler) return rpcError(req.id, -32602, `Unknown tool: ${name}`);
+      const args = (req.params?.arguments ?? {}) as Record<string, any>;
+      const invalid = validateArgs(spec.inputSchema, args);
+      if (invalid) return { jsonrpc: '2.0', id: req.id, result: { content: [{ type: 'text', text: `Invalid arguments: ${invalid}` }], isError: true } };
+      try {
+        const res = await handler(args, ctx);
+        const result = typeof res === 'string' ? { text: res } : res;
+        return { jsonrpc: '2.0', id: req.id, result: { content: [{ type: 'text', text: result.text }], isError: result.isError === true } };
+      } catch (e) {
+        return { jsonrpc: '2.0', id: req.id, result: { content: [{ type: 'text', text: `Error: ${(e as Error).message}` }], isError: true } };
+      }
+    }
+    case 'resources/list':
+      return { jsonrpc: '2.0', id: req.id, result: { resources: [] } };
+    case 'prompts/list':
+      return { jsonrpc: '2.0', id: req.id, result: { prompts: [] } };
+    default:
+      return rpcError(req.id, -32601, `Method not found: ${req.method}`);
+  }
+}
+
+/** Returns the HTTP status and JSON body for a POSTed MCP message (or batch). */
+export async function handleMcpPost<Ctx>(body: unknown, opts: McpServerOptions<Ctx>, ctx: Ctx): Promise<{ status: number; body: unknown | null }> {
+  if (Array.isArray(body)) {
+    const results = (await Promise.all(body.map((r) => handleOne(r, opts, ctx)))).filter((r) => r !== null);
+    return results.length ? { status: 200, body: results } : { status: 202, body: null };
+  }
+  if (!body || typeof body !== 'object') return { status: 400, body: rpcError(null, -32700, 'Parse error') };
+  const res = await handleOne(body as JsonRpcRequest, opts, ctx);
+  return res ? { status: 200, body: res } : { status: 202, body: null };
+}
+
+// ───────────────────────── Tool catalogue ────────────────────────
+
+const str = (description: string) => ({ type: 'string', description });
+
+export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
+  {
+    name: 'get_current_task',
+    description: 'Get the task currently assigned to you: description, acceptance criteria, branch, dependencies and reviewer feedback.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_project_context',
+    description: 'Get the project you are working on: goals, requirements, documentation notes, teammates and the state of related tasks.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'report_status',
+    description: 'Tell the office what you are doing right now in one short sentence. Shown above your desk and in the office feed.',
+    inputSchema: { type: 'object', properties: { status: str('Short present-tense status, e.g. "Implementing password reset endpoint"'), detail: str('Optional extra detail') }, required: ['status'] },
+  },
+  {
+    name: 'report_progress',
+    description: 'Report real progress on your current task at meaningful milestones (not on every step).',
+    inputSchema: { type: 'object', properties: { note: str('What was just accomplished'), percent: { type: 'number', description: 'Your honest estimate of completion, 0-100 (optional)' } }, required: ['note'] },
+  },
+  {
+    name: 'ask_boss',
+    description:
+      'Ask the owner (the boss) a question or for a decision when you genuinely need one: unclear requirements, architecture choices, priority conflicts, risky or irreversible actions. This blocks until the boss answers or a few minutes pass. Do not guess instead of asking; do not ask about things you can determine yourself.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        question: str('The question, phrased so it can be answered without reading your terminal'),
+        context: str('Relevant technical context'),
+        why: str('Why this matters / what depends on the answer'),
+        kind: { type: 'string', enum: ['question', 'decision', 'priority', 'deployment'], description: 'Type of question' },
+        options: {
+          type: 'array',
+          description: 'Suggested answers, if any',
+          items: { type: 'object', properties: { label: str('Short option label'), description: str('What this option means'), consequence: str('Known consequence of choosing it') }, required: ['label'] },
+        },
+      },
+      required: ['question'],
+    },
+  },
+  {
+    name: 'wait_for_answer',
+    description: 'Keep waiting for the boss to answer a question you asked earlier with ask_boss. Blocks for a few minutes.',
+    inputSchema: { type: 'object', properties: { question_id: str('The question id returned by ask_boss') }, required: ['question_id'] },
+  },
+  {
+    name: 'report_blocker',
+    description: 'Report that you cannot continue your current task. Marks the task BLOCKED and alerts the boss. Use ask_boss instead if a simple answer would unblock you.',
+    inputSchema: { type: 'object', properties: { reason: str('What is blocking you'), needs: str('What you need in order to continue') }, required: ['reason'] },
+  },
+  {
+    name: 'complete_task',
+    description:
+      'Declare your current task complete. Commit your work first. Orchestrator then independently verifies it (clean working tree, commits on your branch, the project verification command) and tells you the result — if verification fails you must fix the problem and call this again.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        summary: str('What you did and how it meets the acceptance criteria'),
+        tests_run: str('Exact test commands you ran and their real outcome'),
+        no_code_changes: { type: 'boolean', description: 'Set true only if the task legitimately required no changes to the repository (research, review, planning)' },
+      },
+      required: ['summary'],
+    },
+  },
+  {
+    name: 'submit_result',
+    description: 'Store a deliverable document (report, plan, findings, review notes) so the boss and teammates can read it.',
+    inputSchema: {
+      type: 'object',
+      properties: { title: str('Document title'), content: str('Markdown content'), kind: { type: 'string', enum: ['report', 'plan', 'summary', 'review'], description: 'Document type' } },
+      required: ['title', 'content'],
+    },
+  },
+  {
+    name: 'request_review',
+    description: 'Ask for a review of your current task branch before completing it. Optionally name a reviewer (teammate name or role).',
+    inputSchema: { type: 'object', properties: { reviewer: str('Teammate name or role, optional'), notes: str('What the reviewer should focus on') } },
+  },
+  {
+    name: 'submit_review',
+    description: 'Give your verdict on a task you were asked to review.',
+    inputSchema: {
+      type: 'object',
+      properties: { task: str('Key of the task under review, e.g. "T-12"'), verdict: { type: 'string', enum: ['approve', 'request_changes'], description: 'Your verdict' }, comments: str('Specific, actionable review comments') },
+      required: ['task', 'verdict', 'comments'],
+    },
+  },
+  {
+    name: 'send_message',
+    description: 'Send a message to a teammate. It is delivered to their real session when they can read it.',
+    inputSchema: { type: 'object', properties: { to: str('Teammate name'), message: str('The message') }, required: ['to', 'message'] },
+  },
+  {
+    name: 'request_collaboration',
+    description: 'Ask a teammate for something you need from them (an endpoint, a contract, a fix, information). They must respond: incorporate it, turn it into a task, report a dependency, or escalate.',
+    inputSchema: { type: 'object', properties: { to: str('Teammate name or role (e.g. "backend")'), summary: str('One-line request'), detail: str('Details: what exactly you need and why') }, required: ['to', 'summary'] },
+  },
+  {
+    name: 'hand_off_task',
+    description: 'Hand the task you are working on over to a teammate who should finish it (it needs their speciality, or you cannot continue it). Commit your work first: they continue from your branch. Your notes travel with the task.',
+    inputSchema: { type: 'object', properties: { to: str('Teammate name or role (e.g. "frontend")'), notes: str('Where the task stands: what is done, what remains, anything they must know') }, required: ['to', 'notes'] },
+  },
+  {
+    name: 'request_help',
+    description: 'Ask for help with a problem. Routed to the most relevant available teammate, or to the boss if nobody fits.',
+    inputSchema: { type: 'object', properties: { topic: str('What you need help with'), detail: str('What you tried and where you are stuck') }, required: ['topic'] },
+  },
+  {
+    name: 'respond_to_request',
+    description: 'Respond to a collaboration request another teammate sent you.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        request_id: str('The request id'),
+        action: { type: 'string', enum: ['incorporated', 'new_task', 'needs_decision', 'dependency', 'declined'], description: 'incorporated: you will do it as part of your current task. new_task: it should be a separate task. needs_decision: the boss must prioritise. dependency: it depends on other work. declined: not applicable.' },
+        note: str('Explanation, including contract details if you incorporated it'),
+      },
+      required: ['request_id', 'action', 'note'],
+    },
+  },
+  {
+    name: 'check_messages',
+    description: 'Read messages and requests waiting for you.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_team',
+    description: 'List your teammates, their roles and what they are doing right now.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_available_tasks',
+    description: 'List tasks in your project that are ready and not assigned to anyone.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'claim_task',
+    description: 'Claim an unassigned READY task (only allowed when the project permits self-assignment and you have no task in progress).',
+    inputSchema: { type: 'object', properties: { task: str('Task key, e.g. "T-7"') }, required: ['task'] },
+  },
+  {
+    name: 'propose_tasks',
+    description:
+      'Propose a breakdown of work as concrete tasks with dependencies. Used for planning. Tasks become real items on the project board (released automatically or after the boss approves, depending on project policy).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rationale: str('Why the work is split this way'),
+        tasks: {
+          type: 'array',
+          description: 'Tasks in dependency order',
+          items: {
+            type: 'object',
+            properties: {
+              title: str('Short imperative title'),
+              description: str('What to do'),
+              acceptance: str('Verifiable acceptance criteria'),
+              kind: { type: 'string', enum: ['feature', 'bug', 'test', 'review', 'research', 'planning', 'security', 'docs', 'ops', 'refactor', 'chore'] },
+              role: str('Role best suited: backend, frontend, fullstack, qa, security, devops, database, docs, architect, reviewer …'),
+              priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] },
+              depends_on: { type: 'array', items: { type: 'integer' }, description: 'Zero-based indexes of earlier tasks in this list that must be done first' },
+            },
+            required: ['title', 'description'],
+          },
+        },
+      },
+      required: ['tasks'],
+    },
+  },
+  {
+    name: 'record_lesson',
+    description:
+      'Record a reusable lesson you learned from real work here (a mistake you fixed, review feedback, a decision by the boss). It goes into your playbook and is given back to you on future tasks. Use scope "project" to propose it for the whole team. Call with none=true when asked to reflect and there is nothing worth keeping.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        lesson: str('An instruction to your future self, e.g. "Run the full test script before complete_task, not just the file you changed"'),
+        applies_when: str('When this matters, e.g. "when changing shared configuration"'),
+        scope: { type: 'string', enum: ['self', 'project'], description: 'self = your own playbook (default); project = propose as team knowledge' },
+        none: { type: 'boolean', description: 'Set true if there is no lesson worth recording' },
+      },
+    },
+  },
+  {
+    name: 'get_playbook',
+    description: 'Read the lessons in your playbook and the shared team knowledge that applies to you.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'meeting_contribute',
+    description: 'Submit your contribution to a meeting you were invited to (your proposal in the first round, your response to others in the second).',
+    inputSchema: {
+      type: 'object',
+      properties: { meeting_id: str('Meeting id'), body: str('Your contribution (markdown)'), disagreements: { type: 'array', items: { type: 'string' }, description: 'Specific points where you disagree with other proposals' } },
+      required: ['meeting_id', 'body'],
+    },
+  },
+  {
+    name: 'meeting_conclude',
+    description: 'As facilitator, conclude a meeting with a decision document and follow-up tasks.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        meeting_id: str('Meeting id'),
+        decision_doc: str('Markdown decision document: context, options considered, decision, unresolved disagreements'),
+        tasks: {
+          type: 'array',
+          description: 'Actionable follow-up tasks',
+          items: {
+            type: 'object',
+            properties: { title: str('Title'), description: str('What to do'), acceptance: str('Acceptance criteria'), kind: str('Task kind'), role: str('Suggested role'), priority: str('Priority'), depends_on: { type: 'array', items: { type: 'integer' } } },
+            required: ['title', 'description'],
+          },
+        },
+        lessons: { type: 'array', items: { type: 'string' }, description: 'Lessons the team agreed on that should become shared project knowledge' },
+      },
+      required: ['meeting_id', 'decision_doc'],
+    },
+  },
+];
+
+export type OrchestratorToolName = (typeof ORCHESTRATOR_TOOLS)[number]['name'];

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+out/
+*.log
+.DS_Store
+.orchestrator-dev/
+apps/desktop/release/
+coverage/
+release/

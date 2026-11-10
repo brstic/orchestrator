@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'" />
+    <title>Orchestrator</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0d1118; color: #e6eaf2; font: 14px/1.5 -apple-system, 'Segoe UI', Inter, system-ui, sans-serif; }
+      main { width: min(560px, calc(100vw - 48px)); background: #151b26; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 12px; padding: 26px 28px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45); }
+      h1 { margin: 0 0 4px; font-size: 19px; letter-spacing: 0.02em; }
+      p { margin: 0 0 14px; color: #9aa7b8; }
+      label { display: block; margin: 14px 0 5px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: #9aa7b8; }
+      input { width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.18); background: #0d1118; color: inherit; font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      input:focus { outline: 2px solid #4f8cff; outline-offset: 1px; }
+      .row { display: flex; gap: 10px; align-items: center; margin-top: 18px; }
+      button { padding: 9px 16px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.18); background: #232c3e; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+      button.primary { background: #3d7bfd; border-color: #3d7bfd; color: #fff; }
+      button:disabled { opacity: 0.55; cursor: default; }
+      #error { display: none; margin-top: 14px; padding: 9px 11px; border-radius: 8px; background: rgba(255, 93, 115, 0.14); border: 1px solid rgba(255, 93, 115, 0.5); color: #ffb3bf; }
+      #reason { display: none; margin: 0 0 14px; padding: 9px 11px; border-radius: 8px; background: rgba(245, 197, 66, 0.12); border: 1px solid rgba(245, 197, 66, 0.4); color: #f3dc9a; white-space: pre-wrap; }
+      small { color: #7b8798; }
+      h2 { margin: 0 0 3px; font-size: 15px; }
+      section { padding: 16px 0; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+      section:first-of-type { border-top: 0; padding-top: 6px; }
+      .big { width: 100%; padding: 13px 16px; font-size: 15px; }
+      textarea { width: 100%; box-sizing: border-box; min-height: 64px; padding: 9px 11px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.18); background: #0d1118; color: inherit; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+      textarea:focus { outline: 2px solid #4f8cff; outline-offset: 1px; }
+      .joined { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-top: 8px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; }
+      .joined .grow { flex: 1; min-width: 0; }
+      .joined b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .joined span { color: #9aa7b8; font-size: 12px; }
+      .link { background: none; border: 0; padding: 0; color: #7fb0ff; font-weight: 500; cursor: pointer; }
+      details summary { cursor: pointer; color: #9aa7b8; }
+      details[open] summary { margin-bottom: 4px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>ORCHESTRATOR</h1>
+      <p>Whose office do you want to walk into?</p>
+      <div id="reason"></div>
+
+      <section id="own">
+        <h2>My office</h2>
+        <p id="own-what">Your own company on this computer: your employees, your projects.</p>
+        <button class="primary big" id="open-own" type="button">Open my office</button>
+      </section>
+
+      <section>
+        <h2>Join someone's office</h2>
+        <p>Paste the invitation they sent you. You walk around their office as a guest; what you may do there is up to them.</p>
+        <div id="joined"></div>
+        <textarea id="invite" placeholder="orch-invite-v1.…" spellcheck="false" autocomplete="off"></textarea>
+        <div id="join-error" role="alert" style="display:none;margin-top:10px;padding:9px 11px;border-radius:8px;background:rgba(255,93,115,0.14);border:1px solid rgba(255,93,115,0.5);color:#ffb3bf"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="join" type="button">Join</button>
+          <small>The invitation names the exact computer to trust; nothing is sent anywhere else.</small>
+        </div>
+      </section>
+
+      <section>
+        <details id="advanced">
+          <summary>An office of my own on another machine (owner token)</summary>
+          <form id="form">
+            <label for="url">Server address</label>
+            <input id="url" name="url" placeholder="https://office.example.com   or   http://localhost:4600" autocomplete="off" spellcheck="false" required />
+            <label for="token">Owner token</label>
+            <input id="token" name="token" type="password" placeholder="orch_owner_…" autocomplete="off" spellcheck="false" required />
+            <small>The token is in <code>~/.orchestrator/server/owner-token</code> on the machine that runs the server. It is stored on this computer, encrypted by the operating system where that is available.</small>
+            <div id="error" role="alert"></div>
+            <div class="row">
+              <button class="primary" id="connect" type="submit">Connect</button>
+              <button id="local" type="button" hidden>Start a local office instead</button>
+            </div>
+          </form>
+        </details>
+      </section>
+    </main>
+    <script src="connect.js"></script>
+  </body>
+</html>

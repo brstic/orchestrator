@@ -1,0 +1,16 @@
+{
+  "name": "@orchestrator/orchestration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@orchestrator/contracts": "workspace:*",
+    "@orchestrator/database": "workspace:*",
+    "@orchestrator/terminal": "workspace:*",
+    "@orchestrator/integrations": "workspace:*",
+    "@orchestrator/game-systems": "workspace:*"
+  }
+}

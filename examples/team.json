@@ -1,0 +1,21 @@
+{
+  "$comment": "Example multi-agent configuration. Apply it to a running office with: node scripts/apply-config.mjs examples/team.json --repo /path/to/your/repo",
+  "company": { "companyName": "Northwind Labs", "ownerName": "Boss" },
+  "project": {
+    "name": "Customer Management Platform",
+    "description": "Customer authentication and management.",
+    "requirements": "Customers can sign up, log in, reset their password and manage their profile. Admins can list and deactivate customers.",
+    "verifyCommand": "npm test",
+    "policy": { "autoAssign": true, "requireReview": true, "autoMerge": true }
+  },
+  "employees": [
+    { "name": "Ava", "role": "architect", "autonomy": "standard", "style": "architecture-focused" },
+    { "name": "Alex", "role": "backend", "autonomy": "standard", "style": "concise" },
+    { "name": "Sarah", "role": "frontend", "autonomy": "standard", "style": "detail-oriented" },
+    { "name": "Mike", "role": "qa", "autonomy": "standard", "style": "analytical" },
+    { "name": "Emma", "role": "security", "autonomy": "standard", "style": "cautious" },
+    { "name": "Rev", "role": "reviewer", "autonomy": "restricted", "style": "review-focused" },
+    { "name": "David", "role": "devops", "autonomy": "supervised", "style": "cautious" }
+  ],
+  "objective": "Build the customer authentication and management system. Split the work between backend, frontend, QA, and security. Ask me only when necessary."
+}

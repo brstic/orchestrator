@@ -1,0 +1,320 @@
+import { useEffect, useMemo, useState } from 'react';
+import { OfficeScene, ownerPosition } from '@orchestrator/office-3d';
+import { Button } from '@orchestrator/ui';
+import { api, connection, setToken } from './lib/api.ts';
+import { loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
+import { boardView, ceoView, hostViews, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
+import { CommandBar, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, SayBar, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
+import { onTvFrame } from './lib/tv.ts';
+import { TvLayer } from './hud/tv.tsx';
+import { PanelHost } from './hud/panels/index.tsx';
+import './hud/panels/all.ts';
+
+function typing(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement | null;
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable || !!el.closest?.('.xterm'));
+}
+
+function Login() {
+  const [value, setValue] = useState('');
+  return (
+    <div className="login">
+      <div className="glass login-card col" style={{ gap: 14 }}>
+        <h1>ORCHESTRATOR</h1>
+        <p className="muted">Your code. Your company. Your world.</p>
+        <p className="small">
+          Enter the owner token to open your office. The server prints a link containing it at startup, and stores it in <span className="mono">~/.orchestrator/server/owner-token</span>.
+        </p>
+        <input type="password" placeholder="orch_owner_…" value={value} onChange={(e) => setValue(e.target.value)} autoFocus onKeyDown={(e) => e.key === 'Enter' && value.trim() && (setToken(value), connection.connect())} />
+        <Button
+          variant="primary"
+          disabled={!value.trim()}
+          onClick={() => {
+            setToken(value);
+            connection.connect();
+          }}
+        >
+          Enter the office
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const PANEL_KEYS: Array<[string, PanelId]> = [
+  ['overview', 'overview'],
+  ['map', 'map'],
+  ['tasks', 'tasks'],
+  ['projects', 'projects'],
+  ['notifications', 'notifications'],
+];
+
+/** Project areas are marked on the floor only when the owner switched that on. */
+const NO_ZONES: never[] = [];
+
+/** Tell the others in the office where this person's character is: when it moved, at most ten times a second. */
+/** The owner's office keeps an eye on how much of each Claude account is used (a guest is not told). */
+function useAccounts(): void {
+  const owner = useOffice((s) => s.me?.kind === 'owner');
+  // Asked again when someone starts or stops working, and every minute.
+  const live = useOffice((s) => Object.values(s.sessions).filter((x) => x.status === 'running').length);
+  useEffect(() => {
+    if (!owner) return;
+    const load = () => void loadAccounts();
+    load();
+    const t = window.setInterval(load, 60_000);
+    return () => window.clearInterval(t);
+  }, [owner, live]);
+}
+
+function usePresence(): void {
+  useEffect(() => {
+    let last = { x: NaN, z: NaN, rot: NaN, moving: false };
+    let still = 0;
+    const timer = window.setInterval(() => {
+      const st = useOffice.getState();
+      if (st.conn !== 'online') return;
+      const { x, z, rot } = ownerPosition;
+      const moved = Math.abs(x - last.x) > 0.01 || Math.abs(z - last.z) > 0.01 || Math.abs(rot - last.rot) > 0.01;
+      still = moved ? 0 : still + 1;
+      const moving = still < 3 && !Number.isNaN(last.x);
+      // Also say so once when coming to a stop, and every few seconds so newcomers see everyone.
+      if (!moved && moving === last.moving && still % 30 !== 3) return;
+      last = { x, z, rot, moving };
+      connection.send({ t: 'presence', x, z, rot, moving });
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, []);
+}
+
+export function App() {
+  const s = useOffice();
+  usePresence();
+  useAccounts();
+  const [saying, setSaying] = useState(false);
+  // Speech bubbles fade on their own: look again a moment after someone spoke.
+  const [sayTick, setSayTick] = useState(0);
+  useEffect(() => {
+    if (!s.chat.length) return;
+    const t = window.setTimeout(() => setSayTick((n) => n + 1), 7200);
+    return () => window.clearTimeout(t);
+  }, [s.chat.length]);
+  const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    startConnection();
+  }, []);
+
+  // Walk animations expire with time, so re-derive them on a slow clock.
+  useEffect(() => {
+    const t = window.setInterval(() => setTick((n) => n + 1), 2500);
+    return () => window.clearInterval(t);
+  }, []);
+
+  // Tell the server the owner is here (drives "what happened while I was away").
+  useEffect(() => {
+    if (!s.ready) return;
+    const leave = () => void api('POST', '/seen', {}).catch(() => undefined);
+    window.addEventListener('beforeunload', leave);
+    return () => window.removeEventListener('beforeunload', leave);
+  }, [s.ready]);
+
+  useEffect(() => {
+    const kb = s.settings?.keybindings ?? {};
+    const onKey = (e: KeyboardEvent) => {
+      const st = useOffice.getState();
+      if (e.code === (kb.exit ?? 'Escape')) {
+        if (typing(e) && !(e.target as HTMLElement).closest?.('.xterm')) (e.target as HTMLElement).blur();
+        // In a terminal, Escape belongs to the terminal (it is Claude Code's interrupt key).
+        if ((e.target as HTMLElement)?.closest?.('.xterm')) return;
+        if (st.commandOpen) st.setCommandOpen(false);
+        else if (st.panel) st.openPanel(null);
+        else if (st.movingEmployeeId) st.setMoving(null);
+        else if (st.cameraMode === 'workstation') {
+          const emp = st.workstationId;
+          const session = emp ? Object.values(st.sessions).find((x) => x.employeeId === emp && st.control[x.id]?.you) : undefined;
+          if (session) connection.send({ t: 'control.release', sessionId: session.id });
+          st.leaveWorkstation();
+        } else if (st.selectedEmployeeId) st.selectEmployee(null);
+        return;
+      }
+      if (typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.code === (kb.command ?? 'KeyG')) {
+        e.preventDefault();
+        st.setCommandOpen(true);
+        return;
+      }
+      if (st.commandOpen) return;
+      if (e.code === (kb.interact ?? 'Space') && !st.panel && st.cameraMode !== 'free') {
+        // Space would otherwise also "click" whatever HUD button was used last.
+        e.preventDefault();
+        (document.activeElement as HTMLElement | null)?.blur?.();
+        interact();
+        return;
+      }
+      // Enter: say something out loud to the other people here (when there is anyone to hear it).
+      if (e.code === 'Enter' && !st.panel && !st.commandOpen && st.cameraMode !== 'workstation' && (st.people.length > 1 || st.me?.kind === 'guest')) {
+        e.preventDefault();
+        setSaying(true);
+        return;
+      }
+      // The whip: a sound and an animation, nothing more. Only at someone the owner is standing next to.
+      if (e.code === (kb.whip ?? 'KeyR') && !st.panel && st.nearby?.kind === 'employee' && (st.cameraMode === 'ceo' || st.cameraMode === 'first')) {
+        e.preventDefault();
+        st.whip(st.nearby.id);
+        return;
+      }
+      if (e.code === (kb.talk ?? 'KeyF') && !st.panel && st.cameraMode !== 'free' && st.cameraMode !== 'workstation') {
+        e.preventDefault();
+        talk();
+        return;
+      }
+      if (e.code === (kb.camera ?? 'KeyC') && !st.panel) {
+        const order = ['ceo', 'first', 'management', 'free', 'command'] as const;
+        const i = order.indexOf(st.cameraMode as any);
+        st.setCameraMode(order[(i + 1) % order.length]!);
+        return;
+      }
+      for (const [bind, panel] of PANEL_KEYS) {
+        if (e.code === kb[bind]) {
+          e.preventDefault();
+          st.openPanel(st.panel === panel ? null : panel);
+          return;
+        }
+      }
+      if (e.key === '?') st.openPanel('help');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [s.settings?.keybindings]);
+
+  const people = useMemo(() => personViews(s), [s.employees, s.sessions, s.tasks, s.questions, s.meetings, s.projects, s.filter, s.control]); // eslint-disable-line react-hooks/exhaustive-deps
+  const walks = useMemo(() => walkRequests(s, Date.now()), [s.events, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hosts = useMemo(() => hostViews(s), [s.hosts, s.sessions]); // eslint-disable-line react-hooks/exhaustive-deps
+  const board = useMemo(() => boardView(s), [s.tasks, s.projects, s.employees, s.filter]); // eslint-disable-line react-hooks/exhaustive-deps
+  const wall = useMemo(() => wallView(s, people), [people, s.hosts, s.tasks, s.questions]); // eslint-disable-line react-hooks/exhaustive-deps
+  const whiteboard = useMemo(() => whiteboardView(s), [s.meetings, s.employees]); // eslint-disable-line react-hooks/exhaustive-deps
+  const zones = useMemo(() => zoneViews(s), [s.layout, s.employees, s.projects, s.tasks]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ceo = useMemo(() => ceoView(s), [s.company, s.projects, s.tasks, s.questions, s.employees, s.accounts, s.hosts, s.settings?.companyName]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The folders on a desk stand for real files: one stack per employee whose folder has Markdown documents.
+  const docViews = useMemo(
+    () => people.filter((p) => p.deskId && (s.docs[p.id]?.files.length ?? 0) > 0).map((p) => ({ employeeId: p.id, name: p.name, deskId: p.deskId!, count: s.docs[p.id]!.files.length })),
+    [people, s.docs],
+  );
+  // Look into everyone's folder when they appear, when their session changes, and every minute.
+  const docKey = Object.values(s.employees)
+    .filter((e) => !e.archived)
+    .map((e) => `${e.id}:${e.workingDir ?? ''}:${e.projectId ?? ''}:${sessionOfEmployee(s.sessions, e.id)?.cwd ?? ''}:${e.hostId ? s.hosts[e.hostId]?.status : ''}`)
+    .join('|');
+  useEffect(() => {
+    if (!s.ready) return;
+    const ids = Object.values(useOffice.getState().employees).filter((e) => !e.archived).map((e) => e.id);
+    const read = () => ids.forEach((id) => void loadDocs(id));
+    read();
+    const timer = setInterval(read, 60_000);
+    return () => clearInterval(timer);
+  }, [docKey, s.ready]);
+  const radioView = useMemo(() => ({ playing: s.radio.status === 'playing', station: s.radio.name }), [s.radio.status, s.radio.name]);
+  // The other people in the office (not this window), each with what they last said for a few seconds.
+  const humans = useMemo(() => {
+    const now = Date.now();
+    return s.people
+      .filter((p) => p.id !== s.clientId)
+      .map((p) => {
+        const last = [...s.chat].reverse().find((c) => c.fromId === p.id);
+        return { ...p, saying: last && now - Date.parse(last.ts) < 7000 ? last.text : null };
+      });
+  }, [s.people, s.clientId, s.chat, sayTick]);
+  const tvView = useMemo(() => ({ on: s.tv.on, title: s.tv.page?.title ?? null, audible: !!s.tv.page?.audible }), [s.tv.on, s.tv.page?.title, s.tv.page?.audible]);
+  // While someone is being moved: the desks nobody sits at.
+  const freeSeats = useMemo(() => {
+    if (!s.movingEmployeeId) return null;
+    const taken = new Set(Object.values(s.employees).filter((e) => !e.archived && e.deskId).map((e) => e.deskId));
+    return (s.layout?.desks ?? []).filter((d) => !taken.has(d.id) && d.kind !== 'executive').map((d) => d.id);
+  }, [s.movingEmployeeId, s.employees, s.layout]);
+  const unlocked = useMemo(() => s.milestones.filter((m) => m.unlockedAt && m.unlocks).map((m) => m.unlocks!), [s.milestones]);
+  const keymap = useMemo(() => {
+    const kb = s.settings?.keybindings ?? {};
+    return { forward: kb.forward ?? 'KeyW', back: kb.back ?? 'KeyS', left: kb.left ?? 'KeyA', right: kb.right ?? 'KeyD', strafeLeft: kb.strafeLeft ?? 'KeyQ', strafeRight: kb.strafeRight ?? 'KeyE' };
+  }, [s.settings?.keybindings]);
+
+  if (s.conn === 'unauthorized') return <Login />;
+  if (!s.ready || !s.layout || !s.settings) {
+    return (
+      <div className="login">
+        <div className="glass login-card col">
+          <h1>ORCHESTRATOR</h1>
+          <p className="muted">{s.conn === 'offline' ? 'Cannot reach the Orchestrator server. Retrying…' : 'Opening your office…'}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const inWorkstation = s.cameraMode === 'workstation';
+  return (
+    <div className="app">
+      <div className="scene">
+        <OfficeScene
+          layout={s.layout}
+          unlocked={unlocked}
+          people={people}
+          humans={humans}
+          docs={docViews}
+          onOpenDocs={(id) => s.openPanel('docs', id)}
+          radio={radioView}
+          onOpenRadio={() => s.openPanel('radio')}
+          tv={tvView}
+          tvFrames={onTvFrame}
+          onOpenTv={() => s.openPanel('tv')}
+          freeSeats={freeSeats}
+          onPickSeat={(deskId) => s.movingEmployeeId && void seatAt(s.movingEmployeeId, deskId)}
+          whips={s.whips}
+          whipAt={s.whipAt}
+          walks={walks}
+          hosts={hosts}
+          board={board}
+          wall={wall}
+          ceo={ceo}
+          whiteboard={whiteboard}
+          onOpenMeeting={(id) => s.openPanel('meetings', id)}
+          zones={s.settings?.projectZones ? zones : NO_ZONES}
+          approachZoom={s.settings?.approachZoom === true}
+          onOpenProject={(id) => s.openPanel('projects', id)}
+          cameraMode={s.cameraMode}
+          quality={s.settings.quality}
+          keymap={keymap}
+          selectedId={s.selectedEmployeeId}
+          workstationId={s.workstationId}
+          focus={s.focusRequest}
+          subscribeScreen={onScreen}
+          onNearby={s.setNearby}
+          onSelect={(id) => s.selectEmployee(id)}
+          onContext={(employeeId, x, y) => setMenu({ employeeId, x, y })}
+          onLeaveWorkstation={s.leaveWorkstation}
+        />
+      </div>
+      <div className="hud">
+        <TopBar />
+        {s.conn !== 'online' && <div className="glass banner">Connection to the server lost — the office is frozen at its last known state. Reconnecting…</div>}
+        {inWorkstation ? (
+          <Workstation />
+        ) : (
+          <>
+            <Feed />
+            <Prompt />
+            <EmployeeCard />
+            <CommandCenter />
+            <Welcome />
+          </>
+        )}
+        <PanelHost />
+        <TvLayer />
+        <SayBar open={saying} onClose={() => setSaying(false)} />
+        <CommandBar />
+        {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
+        <Toasts />
+      </div>
+    </div>
+  );
+}

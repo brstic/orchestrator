@@ -1,0 +1,94 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { parseArgs } from 'node:util';
+import { fileURLToPath } from 'node:url';
+import { defaultDataDir, startServer } from './server.ts';
+
+const HELP = `orchestrator-server — the Orchestrator control server
+
+USAGE
+  orchestrator-server [options]
+
+OPTIONS
+  --host <addr>            Address to listen on (default 127.0.0.1 — local only)
+  --port <n>               Port (default 4600)
+  --data <dir>             Data directory (default ~/.orchestrator/server, or $ORCH_SERVER_HOME)
+  --database <url>         Use PostgreSQL (postgres://user:pass@host/db) instead of SQLite;
+                           also $ORCH_DATABASE_URL. One server per database.
+  --public-url <url>       URL that workers and remote hosts use to reach this server
+  --tls-cert <file>        TLS certificate (required to listen on a non-loopback address)
+  --tls-key <file>         TLS private key
+  --allow-insecure-remote  Listen on a non-loopback address without TLS (only behind a TLS proxy)
+  --ui <dir>               Directory with the built office UI
+  --print-enroll-token     Print a one-time enrollment token for a new host, then keep running
+  --quiet                  Only log errors
+`;
+
+export async function main(argv: string[]): Promise<void> {
+  const { values } = parseArgs({
+    args: argv,
+    options: {
+      host: { type: 'string' },
+      port: { type: 'string' },
+      data: { type: 'string' },
+      database: { type: 'string' },
+      'public-url': { type: 'string' },
+      'tls-cert': { type: 'string' },
+      'tls-key': { type: 'string' },
+      'allow-insecure-remote': { type: 'boolean' },
+      ui: { type: 'string' },
+      'print-enroll-token': { type: 'boolean' },
+      quiet: { type: 'boolean' },
+      help: { type: 'boolean', short: 'h' },
+    },
+  });
+  if (values.help) {
+    console.log(HELP);
+    return;
+  }
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const uiCandidates = [values.ui, process.env.ORCH_UI_DIR, path.join(here, '..', '..', 'desktop', 'dist'), path.join(here, '..', 'ui')].filter((p): p is string => !!p);
+  const uiDir = uiCandidates.find((p) => fs.existsSync(path.join(p, 'index.html'))) ?? null;
+  if ((values['tls-cert'] && !values['tls-key']) || (!values['tls-cert'] && values['tls-key'])) {
+    console.error('error: --tls-cert and --tls-key must be given together');
+    process.exit(1);
+  }
+  let server;
+  try {
+    server = await startServer({
+      dataDir: values.data ? path.resolve(values.data) : defaultDataDir(),
+      database: values.database ?? process.env.ORCH_DATABASE_URL ?? null,
+      host: values.host ?? process.env.ORCH_HOST ?? '127.0.0.1',
+      port: Number(values.port ?? process.env.ORCH_PORT ?? 4600),
+      publicUrl: values['public-url'] ?? process.env.ORCH_PUBLIC_URL,
+      tls: values['tls-cert'] ? { certFile: values['tls-cert'], keyFile: values['tls-key']! } : null,
+      allowInsecureRemote: values['allow-insecure-remote'],
+      uiDir,
+      quiet: values.quiet,
+    });
+  } catch (e) {
+    console.error(`error: ${(e as Error).message}`);
+    process.exit(1);
+  }
+  if (!values.quiet) {
+    console.error(`  Office UI:   ${server.url}/?token=${server.ownerToken}`);
+    console.error(`  Owner token: stored in ${path.join(values.data ? path.resolve(values.data) : defaultDataDir(), 'owner-token')}`);
+  }
+  if (values['print-enroll-token']) console.log(server.localEnrollToken());
+  const shutdown = () => {
+    void server.close().then(() => process.exit(0));
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
+/** Started directly (not imported)? Compared through realpath: the install may sit behind a symlink. */
+function isEntryPoint(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+if (isEntryPoint()) void main(process.argv.slice(2));

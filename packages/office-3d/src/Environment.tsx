@@ -1,0 +1,1446 @@
+import { useFrame, useThree } from '@react-three/fiber';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import type { Desk, RoomDef, TerminalScreen } from '@orchestrator/contracts';
+import { drawScreen } from './terminal-texture.ts';
+import type { BoardView, CeoView, HostView, Quality, ScreenSubscribe, WallView, WhiteboardView, ZoneView } from './types.ts';
+import { DESK_SIZE, WALL_T, deskBox, deskSeat, type Box, type World } from './world.ts';
+import { ON_SURFACE } from './surface.ts';
+
+/** What the scene reports about itself for the UI tests (like `window.__orchPerf`): which room interiors are mounted, what the whiteboard says. */
+export function sceneProbe(): Record<string, any> {
+  return ((window as any).__orchScene ??= { detail: {} });
+}
+
+// ───────────────────────────── lazy interiors ─────────────────────────────
+
+const NEAR = 24;
+const FAR = 30;
+
+/**
+ * Is the camera (or the owner's avatar) close enough to an area for its detailed interior to
+ * be worth mounting? True within NEAR metres, false again only after being beyond FAR for a
+ * moment — so walking along the threshold never makes furniture flicker. Overview cameras
+ * (and a free camera flown high) see the whole floor, so everything is mounted for them.
+ *
+ * This saving is only made on the Low graphics setting (`sceneProbe().lazy`). On Medium and High
+ * every interior stays mounted: things appearing and disappearing while walking reads as flicker,
+ * and on a capable machine it buys nothing (the frame rate was the same either way). Overview cameras
+ * (and a free camera flown high) see the whole floor, so everything is mounted for them.
+ */
+export function useNear(id: string, area: Box | null, player: THREE.Vector3, overview: boolean): boolean {
+  const { camera } = useThree();
+  const dist = () => {
+    if (!area) return Infinity;
+    const d = (x: number, z: number) => Math.hypot(Math.max(area.minX - x, 0, x - area.maxX), Math.max(area.minZ - z, 0, z - area.maxZ));
+    return Math.min(d(camera.position.x, camera.position.z), d(player.x, player.z));
+  };
+  const [on, setOn] = useState(() => !!area && (sceneProbe().lazy !== true || overview || dist() < NEAR));
+  const st = useRef({ on, tick: 0, farFor: 0 });
+  useFrame((_s, dt) => {
+    const r = st.current;
+    r.farFor += dt;
+    if (r.tick++ % 12 !== 0 || !area) return;
+    const d = dist();
+    // `forceAll` is a measuring aid: it mounts everything, to compare against the lazy state in the same view.
+    const all = sceneProbe().lazy !== true || overview || camera.position.y > 16 || sceneProbe().forceAll === true;
+    if (all || d < FAR) r.farFor = 0;
+    const want = r.on ? r.farFor < 1.5 : all || d < NEAR;
+    if (want !== r.on) {
+      r.on = want;
+      setOn(want);
+    }
+  });
+  useEffect(() => {
+    sceneProbe().detail[id] = on;
+    return () => {
+      delete sceneProbe().detail[id];
+    };
+  }, [id, on]);
+  return on;
+}
+
+function roomBox(r: RoomDef | undefined): Box | null {
+  return r ? { minX: r.x, maxX: r.x + r.w, minZ: r.z, maxZ: r.z + r.d } : null;
+}
+
+/** Children are mounted only while the camera or the owner is near the area. */
+export function Near({ id, area, player, overview, children }: { id: string; area: Box | null; player: THREE.Vector3; overview: boolean; children: ReactNode }) {
+  return useNear(id, area, player, overview) ? <>{children}</> : null;
+}
+
+// ───────────────────────────── helpers ─────────────────────────────
+
+function noiseTexture(base: string, variance: number, repeat: number, grid = 0): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, size, size);
+  const img = ctx.getImageData(0, 0, size, size);
+  let seed = 1337;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const n = (rnd() - 0.5) * variance;
+    img.data[i] = Math.max(0, Math.min(255, img.data[i]! + n));
+    img.data[i + 1] = Math.max(0, Math.min(255, img.data[i + 1]! + n));
+    img.data[i + 2] = Math.max(0, Math.min(255, img.data[i + 2]! + n));
+  }
+  ctx.putImageData(img, 0, 0);
+  if (grid) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.16)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i <= grid; i++) {
+      const p = (i / grid) * size;
+      ctx.beginPath();
+      ctx.moveTo(p, 0);
+      ctx.lineTo(p, size);
+      ctx.moveTo(0, p);
+      ctx.lineTo(size, p);
+      ctx.stroke();
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+const FLOOR: Record<RoomDef['kind'], { color: string; variance: number; rough: number; grid?: number; scale: number }> = {
+  open: { color: '#5d6f8a', variance: 22, rough: 0.95, scale: 0.9 },
+  hall: { color: '#b9c0cb', variance: 10, rough: 0.55, grid: 2, scale: 0.5 },
+  ceo: { color: '#8b6a48', variance: 26, rough: 0.6, scale: 0.6 },
+  meeting: { color: '#4d7c7b', variance: 20, rough: 0.95, scale: 0.9 },
+  ops: { color: '#2b3344', variance: 12, rough: 0.5, grid: 2, scale: 0.6 },
+  server: { color: '#262d3a', variance: 10, rough: 0.45, grid: 2, scale: 0.8 },
+  break: { color: '#d8c6a6', variance: 14, rough: 0.6, grid: 3, scale: 0.5 },
+  reception: { color: '#cdd1d8', variance: 10, rough: 0.4, grid: 1, scale: 0.4 },
+  team: { color: '#7a6a8e', variance: 20, rough: 0.95, scale: 0.9 },
+};
+
+/** Many copies of one mesh in a single draw call. */
+function Instanced({ geometry, material, matrices, castShadow = true, receiveShadow = false }: { geometry: THREE.BufferGeometry; material: THREE.Material; matrices: THREE.Matrix4[]; castShadow?: boolean; receiveShadow?: boolean }) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const mesh = ref.current;
+    if (!mesh) return;
+    matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+  }, [matrices]);
+  if (!matrices.length) return null;
+  return <instancedMesh ref={ref} args={[geometry, material, matrices.length]} castShadow={castShadow} receiveShadow={receiveShadow} frustumCulled />;
+}
+
+const tmpM = new THREE.Matrix4();
+const tmpQ = new THREE.Quaternion();
+const tmpS = new THREE.Vector3(1, 1, 1);
+const Y = new THREE.Vector3(0, 1, 0);
+
+/** World matrix for a part placed relative to an object at (x,z) rotated by `rot` around Y. */
+function place(x: number, z: number, rot: number, lx: number, ly: number, lz: number, localRotY = 0, scale?: [number, number, number]): THREE.Matrix4 {
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  tmpQ.setFromAxisAngle(Y, rot + localRotY);
+  tmpS.set(scale?.[0] ?? 1, scale?.[1] ?? 1, scale?.[2] ?? 1);
+  return new THREE.Matrix4().compose(new THREE.Vector3(x + lx * cos + lz * sin, ly, z - lx * sin + lz * cos), tmpQ, tmpS);
+}
+
+/** A flat panel whose picture is drawn with the 2D canvas API (boards, signs, dashboards). */
+function useCanvasTexture(width: number, height: number, px: number, draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void, deps: unknown[]): THREE.CanvasTexture {
+  const tex = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = px;
+    canvas.height = Math.round((px * height) / width);
+    const t = new THREE.CanvasTexture(canvas);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    return t;
+  }, [px, width, height]);
+  useEffect(() => {
+    const canvas = tex.image as HTMLCanvasElement;
+    draw(canvas.getContext('2d')!, canvas.width, canvas.height);
+    tex.needsUpdate = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tex, ...deps]);
+  useEffect(() => () => tex.dispose(), [tex]);
+  return tex;
+}
+
+function CanvasPanel({ width, height, px = 1024, draw, deps, emissive = true, ...props }: { width: number; height: number; px?: number; draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void; deps: unknown[]; emissive?: boolean } & Record<string, any>) {
+  const tex = useCanvasTexture(width, height, px, draw, deps);
+  return (
+    <mesh {...props}>
+      <planeGeometry args={[width, height]} />
+      {emissive ? <meshBasicMaterial map={tex} toneMapped={false} {...ON_SURFACE} /> : <meshStandardMaterial map={tex} roughness={0.9} {...ON_SURFACE} />}
+    </mesh>
+  );
+}
+
+// ───────────────────────────── building ─────────────────────────────
+
+export function Building({ world, cutaway, quality }: { world: World; cutaway: boolean; quality: Quality }) {
+  const floors = useMemo(
+    () =>
+      world.rooms.map((r) => {
+        const f = FLOOR[r.kind];
+        const tex = noiseTexture(f.color, f.variance, 1, f.grid ?? 0);
+        tex.repeat.set(r.w * f.scale, r.d * f.scale);
+        return { room: r, material: new THREE.MeshStandardMaterial({ map: tex, roughness: f.rough, metalness: 0 }) };
+      }),
+    [world.rooms],
+  );
+  const wallMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#e7eaf0', roughness: 0.92 }), []);
+  const outerMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#d5dae3', roughness: 0.9 }), []);
+  const glassMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#a9d8ff', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.3, depthWrite: false }), []);
+  const frameMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#2c3442', roughness: 0.4, metalness: 0.6 }), []);
+  const capMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#39424f', roughness: 0.7 }), []);
+  const group = useRef<THREE.Group>(null);
+  const ceiling = useRef<THREE.Group>(null);
+  const ceilingMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#eef1f5', roughness: 0.95, transparent: true, opacity: cutaway ? 0 : 1 }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const panels = useMemo(() => {
+    const out: Array<[number, number]> = [];
+    for (let x = world.bounds.minX + 3; x < world.bounds.maxX; x += 5.5) for (let z = world.bounds.minZ + 3; z < world.bounds.maxZ; z += 5) out.push([x, z]);
+    return out;
+  }, [world]);
+  // The light panels are painted into the ceiling itself (as its glow) rather than hung under it as separate
+  // slivers: seen far down the room they are thinner than a pixel, and a texture is filtered where geometry sparkles.
+  useEffect(() => {
+    const W = world.layout.width;
+    const D = world.layout.depth;
+    const k = Math.min(40, 4096 / Math.max(W, D));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(W * k);
+    canvas.height = Math.round(D * k);
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#fff7e8';
+    for (const [x, z] of panels) ctx.fillRect((x + W / 2 - 0.75) * k, (D / 2 - z - 0.25) * k, 1.5 * k, 0.5 * k);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 16;
+    ceilingMat.emissive = new THREE.Color('#ffffff');
+    ceilingMat.emissiveIntensity = 2.4;
+    ceilingMat.emissiveMap = tex;
+    ceilingMat.needsUpdate = true;
+    return () => {
+      ceilingMat.emissiveMap = null;
+      ceilingMat.needsUpdate = true;
+      tex.dispose();
+    };
+  }, [world, panels, ceilingMat]);
+  const height = useRef(cutaway ? 1.1 : 3);
+
+  // Walls drop to a cut-away height for overhead cameras and rise for first-person views.
+  useFrame((_s, dt) => {
+    const target = cutaway ? 1.1 : 3;
+    // The ceiling only exists for eye-level cameras; it fades in as the walls rise.
+    const want = cutaway ? 0 : 1;
+    if (Math.abs(ceilingMat.opacity - want) > 0.01) {
+      ceilingMat.opacity += (want - ceilingMat.opacity) * (1 - Math.exp(-dt * 5));
+      if (ceiling.current) ceiling.current.visible = ceilingMat.opacity > 0.02;
+    }
+    if (Math.abs(height.current - target) < 0.002 || !group.current) return;
+    height.current += (target - height.current) * (1 - Math.exp(-dt * 6));
+    group.current.scale.y = height.current / 3;
+  });
+
+  return (
+    <group>
+      {/* ground outside the building */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.2, 0]} receiveShadow>
+        <planeGeometry args={[220, 220]} />
+        <meshStandardMaterial color="#12161e" roughness={1} />
+      </mesh>
+      {/* The slab's top is centimetres under the room floors, not millimetres: two surfaces that close flicker from across the office. */}
+      <mesh position={[0, -0.09, 0]} receiveShadow>
+        <boxGeometry args={[world.layout.width + 0.6, 0.1, world.layout.depth + 0.6]} />
+        <meshStandardMaterial color="#8d95a3" roughness={0.8} />
+      </mesh>
+      {floors.map(({ room, material }) => (
+        <mesh key={room.id} rotation={[-Math.PI / 2, 0, 0]} position={[room.x + room.w / 2, 0.005, room.z + room.d / 2]} receiveShadow material={material}>
+          <planeGeometry args={[room.w, room.d]} />
+        </mesh>
+      ))}
+      <group ref={ceiling} visible={!cutaway}>
+        {/* The underside sits just below the wall tops (and their caps), so the walls run cleanly into the ceiling:
+            a ceiling resting exactly on them leaves a hairline along every wall that sparkles as the camera moves. */}
+        <mesh position={[0, 2.97, 0]} rotation={[Math.PI / 2, 0, 0]} material={ceilingMat}>
+          <planeGeometry args={[world.layout.width, world.layout.depth]} />
+        </mesh>
+      </group>
+      <group ref={group} scale={[1, height.current / 3, 1]}>
+        {world.walls.map((w, i) => {
+          const len = Math.hypot(w.x2 - w.x1, w.z2 - w.z1);
+          const horizontal = Math.abs(w.z2 - w.z1) < 1e-6;
+          const cx = (w.x1 + w.x2) / 2;
+          const cz = (w.z1 + w.z2) / 2;
+          const size: [number, number, number] = horizontal ? [len + (w.glass ? 0 : WALL_T), 3, WALL_T] : [WALL_T, 3, len + (w.glass ? 0 : WALL_T)];
+          if (w.glass) {
+            const rail: [number, number, number] = horizontal ? [len, 0.07, WALL_T * 0.9] : [WALL_T * 0.9, 0.07, len];
+            return (
+              <group key={i} position={[cx, 0, cz]}>
+                {/* The pane stands between its two rails: no face of it lies inside a rail or under the floor,
+                    where it would fight with them for the same depth and shimmer. */}
+                <mesh position={[0, 1.5, 0]} material={glassMat}>
+                  <boxGeometry args={[size[0] * (horizontal ? 1 : 0.35), 2.86, size[2] * (horizontal ? 0.35 : 1)]} />
+                </mesh>
+                <mesh position={[0, 0.035, 0]} material={frameMat}>
+                  <boxGeometry args={rail} />
+                </mesh>
+                <mesh position={[0, 2.965, 0]} material={frameMat}>
+                  <boxGeometry args={rail} />
+                </mesh>
+              </group>
+            );
+          }
+          return (
+            <group key={i} position={[cx, 0, cz]}>
+              <mesh position={[0, 1.5, 0]} material={w.outer ? outerMat : wallMat} castShadow={quality !== 'low'} receiveShadow>
+                <boxGeometry args={size} />
+              </mesh>
+              <mesh position={[0, 3.0, 0]} material={capMat}>
+                <boxGeometry args={[size[0] + 0.02, 0.05, size[2] + 0.02]} />
+              </mesh>
+            </group>
+          );
+        })}
+      </group>
+    </group>
+  );
+}
+
+export function Lights({ quality, world }: { quality: Quality; world: World }) {
+  const sun = useRef<THREE.DirectionalLight>(null);
+  useLayoutEffect(() => {
+    const l = sun.current;
+    if (!l) return;
+    const cam = l.shadow.camera as THREE.OrthographicCamera;
+    const hw = world.layout.width / 2 + 4;
+    const hd = world.layout.depth / 2 + 4;
+    cam.left = -hw;
+    cam.right = hw;
+    cam.top = hd;
+    cam.bottom = -hd;
+    cam.near = 1;
+    cam.far = 90;
+    cam.updateProjectionMatrix();
+    l.shadow.bias = -0.0004;
+    l.shadow.normalBias = 0.03;
+  }, [world]);
+  const size = quality === 'high' ? 4096 : 2048;
+  return (
+    <>
+      <hemisphereLight args={['#eaf1ff', '#4a4f5c', 0.85]} />
+      <directionalLight ref={sun} position={[16, 30, 18]} intensity={2.1} color="#fff4e2" castShadow={quality !== 'low'} shadow-mapSize={[size, size]} />
+      <directionalLight position={[-20, 16, -14]} intensity={0.55} color="#bcd4ff" />
+    </>
+  );
+}
+
+// ───────────────────────────── monitors ─────────────────────────────
+
+const SCREEN_W = 0.6;
+const SCREEN_H = 0.36;
+
+/** Within this distance of the camera a monitor switches to its sharp tier; it switches back a little further out. */
+const CLOSE_IN = 6;
+const CLOSE_OUT = 7.5;
+
+/**
+ * A monitor showing the employee's real terminal. Frames arrive from the
+ * server at a low rate; how finely and how often a screen is drawn depends on
+ * how near the camera is, so an office full of screens stays cheap:
+ *
+ *   close (walking up to a desk)  texture twice as fine, every frame that arrives
+ *   near                          readable text, every frame / once a second
+ *   far                           coloured bars, every few seconds
+ */
+export function MonitorScreen({ sessionId, subscribe, live, position, rotation, width = SCREEN_W, height = SCREEN_H, px = 512 }: { sessionId: string | null; subscribe: ScreenSubscribe; live: boolean; position: [number, number, number]; rotation: [number, number, number]; width?: number; height?: number; px?: number }) {
+  const mesh = useRef<THREE.Mesh>(null);
+  const { camera } = useThree();
+  const [close, setClose] = useState(false);
+  const res = close ? Math.min(2048, px * 2) : px;
+  const state = useRef<{ frame: TerminalScreen | null; dirty: boolean; drawnAt: number; dist: number; tick: number; close: boolean; far: boolean }>({ frame: null, dirty: true, drawnAt: 0, dist: 99, tick: 0, close: false, far: false });
+  const tex = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = res;
+    canvas.height = Math.round((res * height) / width);
+    const t = new THREE.CanvasTexture(canvas);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = res > px ? 16 : 4;
+    return t;
+  }, [res, px, width, height]);
+  const paint = () => {
+    const st = state.current;
+    const canvas = tex.image as HTMLCanvasElement;
+    const ctx = canvas.getContext('2d')!;
+    if (!live || !sessionId) {
+      ctx.fillStyle = '#05070b';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    } else {
+      drawScreen(ctx, canvas.width, canvas.height, st.frame, { lod: st.far ? 'far' : 'near' });
+    }
+    tex.needsUpdate = true;
+  };
+  // A new texture (the tier changed) is painted before it is first shown, so the screen never blinks.
+  useLayoutEffect(() => {
+    paint();
+    return () => tex.dispose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tex]);
+  useEffect(() => {
+    state.current.frame = null;
+    state.current.dirty = true;
+    if (!sessionId) return;
+    return subscribe(sessionId, (s) => {
+      state.current.frame = s;
+      state.current.dirty = true;
+    });
+  }, [sessionId, subscribe]);
+  useEffect(() => {
+    state.current.dirty = true;
+  }, [live]);
+  const wp = useMemo(() => new THREE.Vector3(), []);
+  useEffect(() => {
+    if (!close) return;
+    const probe = sceneProbe();
+    probe.closeScreens = (probe.closeScreens ?? 0) + 1;
+    return () => {
+      probe.closeScreens -= 1;
+    };
+  }, [close]);
+
+  useFrame((s) => {
+    const st = state.current;
+    if (!mesh.current) return;
+    if (st.tick++ % 6 === 0) {
+      mesh.current.getWorldPosition(wp);
+      st.dist = wp.distanceTo(camera.position);
+      const wantClose = st.dist < (st.close ? CLOSE_OUT : CLOSE_IN);
+      if (wantClose !== st.close) {
+        st.close = wantClose;
+        setClose(wantClose);
+      }
+      const far = st.dist > (st.far ? 15 : 17);
+      if (far !== st.far) {
+        st.far = far;
+        st.dirty = true;
+      }
+    }
+    if (!st.dirty) return;
+    const now = s.clock.elapsedTime;
+    // Close: every frame that arrives. Mid: about once a second. Far: every few seconds, as coloured bars.
+    const interval = st.dist < CLOSE_OUT ? 0 : st.dist < 18 ? 1 : 3;
+    if (now - st.drawnAt < interval) return;
+    st.dirty = false;
+    st.drawnAt = now;
+    paint();
+  });
+
+  return (
+    <mesh ref={mesh} position={position} rotation={rotation} userData={{ tier: close ? 'close' : 'near' }}>
+      <planeGeometry args={[width, height]} />
+      <meshBasicMaterial map={tex} toneMapped={false} {...ON_SURFACE} />
+    </mesh>
+  );
+}
+
+// ───────────────────────────── desks ─────────────────────────────
+
+const GEO = {
+  top: new RoundedBoxGeometry(DESK_SIZE.w, 0.045, DESK_SIZE.d, 2, 0.02),
+  side: new THREE.BoxGeometry(0.04, 0.7, DESK_SIZE.d - 0.12),
+  drawer: new RoundedBoxGeometry(0.42, 0.52, 0.6, 2, 0.02),
+  bezel: new RoundedBoxGeometry(SCREEN_W + 0.04, SCREEN_H + 0.04, 0.035, 2, 0.012),
+  stand: new THREE.BoxGeometry(0.06, 0.2, 0.04),
+  foot: new RoundedBoxGeometry(0.26, 0.015, 0.18, 2, 0.006),
+  keyboard: new RoundedBoxGeometry(0.42, 0.018, 0.14, 2, 0.006),
+  mouse: new RoundedBoxGeometry(0.06, 0.025, 0.1, 2, 0.01),
+  seat: new RoundedBoxGeometry(0.5, 0.08, 0.48, 3, 0.03),
+  back: new RoundedBoxGeometry(0.46, 0.55, 0.07, 3, 0.03),
+  post: new THREE.CylinderGeometry(0.03, 0.03, 0.34, 8),
+  base: new THREE.CylinderGeometry(0.3, 0.3, 0.035, 5),
+  divider: new THREE.BoxGeometry(DESK_SIZE.w * 2 + 0.2, 0.42, 0.04),
+};
+
+export interface DeskSeatInfo {
+  desk: Desk;
+  sessionId: string | null;
+  live: boolean;
+  color: string | null;
+  attention: 'question' | 'approval' | 'blocked' | 'done' | null;
+  occupied: boolean;
+  /** Set for an employee whose level earned a specialized workstation: what its side monitor and plate say. */
+  special: { name: string; title: string; level: number; accent: string; taskKey: string | null; progress: number | null; label: string } | null;
+}
+
+export function Desks({ world, seats, subscribe }: { world: World; seats: DeskSeatInfo[]; subscribe: ScreenSubscribe }) {
+  const mats = useMemo(
+    () => ({
+      top: new THREE.MeshStandardMaterial({ color: '#efe6d6', roughness: 0.55 }),
+      frame: new THREE.MeshStandardMaterial({ color: '#f4f6f9', roughness: 0.5, metalness: 0.2 }),
+      dark: new THREE.MeshStandardMaterial({ color: '#1c212b', roughness: 0.45, metalness: 0.3 }),
+      chair: new THREE.MeshStandardMaterial({ color: '#2f3846', roughness: 0.85 }),
+      chrome: new THREE.MeshStandardMaterial({ color: '#aeb6c2', roughness: 0.25, metalness: 0.9 }),
+      divider: new THREE.MeshStandardMaterial({ color: '#7d8aa0', roughness: 0.95 }),
+    }),
+    [],
+  );
+  const m = useMemo(() => {
+    const out = { top: [] as THREE.Matrix4[], side: [] as THREE.Matrix4[], drawer: [] as THREE.Matrix4[], bezel: [] as THREE.Matrix4[], stand: [] as THREE.Matrix4[], foot: [] as THREE.Matrix4[], keyboard: [] as THREE.Matrix4[], mouse: [] as THREE.Matrix4[], seat: [] as THREE.Matrix4[], back: [] as THREE.Matrix4[], post: [] as THREE.Matrix4[], base: [] as THREE.Matrix4[], divider: [] as THREE.Matrix4[] };
+    for (const d of world.layout.desks) {
+      const { x, z, rot } = d;
+      out.top.push(place(x, z, rot, 0, DESK_SIZE.h, 0));
+      out.side.push(place(x, z, rot, -DESK_SIZE.w / 2 + 0.04, 0.36, 0), place(x, z, rot, DESK_SIZE.w / 2 - 0.04, 0.36, 0));
+      out.drawer.push(place(x, z, rot, DESK_SIZE.w / 2 - 0.3, 0.3, 0.02));
+      // The monitor stands at the far edge of the desk and faces the seat (local -Z).
+      out.foot.push(place(x, z, rot, -0.08, DESK_SIZE.h + 0.03, 0.22));
+      out.stand.push(place(x, z, rot, -0.08, DESK_SIZE.h + 0.13, 0.24));
+      out.bezel.push(place(x, z, rot, -0.08, DESK_SIZE.h + 0.38, 0.22));
+      out.keyboard.push(place(x, z, rot, -0.08, DESK_SIZE.h + 0.034, -0.16));
+      out.mouse.push(place(x, z, rot, 0.28, DESK_SIZE.h + 0.036, -0.15));
+      const seat = deskSeat(d);
+      out.seat.push(place(seat.x, seat.z, rot, 0, 0.47, 0));
+      out.back.push(place(seat.x, seat.z, rot, 0, 0.82, -0.25));
+      out.post.push(place(seat.x, seat.z, rot, 0, 0.26, 0));
+      out.base.push(place(seat.x, seat.z, rot, 0, 0.05, 0));
+    }
+    // A low privacy divider down the middle of each pod (between desks that face each other).
+    const seen = new Set<string>();
+    for (const d of world.layout.desks) {
+      const mate = world.layout.desks.find((o) => o !== d && Math.abs(o.x - d.x) < 0.01 && Math.abs(Math.abs(o.z - d.z) - 1) < 0.06);
+      if (!mate) continue;
+      const row = world.layout.desks.filter((o) => Math.abs(o.z - d.z) < 0.01 && Math.abs(o.x - d.x) < 2.2);
+      const cx = row.reduce((a, o) => a + o.x, 0) / row.length;
+      const cz = (d.z + mate.z) / 2;
+      const key = `${cx.toFixed(1)}:${cz.toFixed(1)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.divider.push(new THREE.Matrix4().makeTranslation(cx, DESK_SIZE.h + 0.23, cz));
+    }
+    return out;
+  }, [world.layout.desks]);
+
+  return (
+    <group>
+      <Instanced geometry={GEO.top} material={mats.top} matrices={m.top} receiveShadow />
+      <Instanced geometry={GEO.side} material={mats.frame} matrices={m.side} />
+      <Instanced geometry={GEO.drawer} material={mats.frame} matrices={m.drawer} />
+      <Instanced geometry={GEO.bezel} material={mats.dark} matrices={m.bezel} />
+      <Instanced geometry={GEO.stand} material={mats.dark} matrices={m.stand} />
+      <Instanced geometry={GEO.foot} material={mats.dark} matrices={m.foot} />
+      <Instanced geometry={GEO.keyboard} material={mats.dark} matrices={m.keyboard} castShadow={false} />
+      <Instanced geometry={GEO.mouse} material={mats.dark} matrices={m.mouse} castShadow={false} />
+      <Instanced geometry={GEO.seat} material={mats.chair} matrices={m.seat} />
+      <Instanced geometry={GEO.back} material={mats.chair} matrices={m.back} />
+      <Instanced geometry={GEO.post} material={mats.chrome} matrices={m.post} castShadow={false} />
+      <Instanced geometry={GEO.base} material={mats.chrome} matrices={m.base} castShadow={false} />
+      <Instanced geometry={GEO.divider} material={mats.divider} matrices={m.divider} />
+      {seats.map((s) => {
+        const { x, z, rot } = s.desk;
+        const cos = Math.cos(rot);
+        const sin = Math.sin(rot);
+        const lz = 0.22 - 0.02;
+        const sx = x + -0.08 * cos + lz * sin;
+        const sz = z - -0.08 * sin + lz * cos;
+        return (
+          <group key={s.desk.id}>
+            {s.occupied && <MonitorScreen sessionId={s.sessionId} live={s.live} subscribe={subscribe} position={[sx, DESK_SIZE.h + 0.38, sz]} rotation={[0, rot + Math.PI, 0]} />}
+            <DeskLight x={x + (DESK_SIZE.w / 2 - 0.14) * cos + 0.3 * sin} z={z - (DESK_SIZE.w / 2 - 0.14) * sin + 0.3 * cos} color={s.color} attention={s.attention} on={s.occupied} />
+            {s.special && <SpecialDesk desk={s.desk} info={s.special} live={s.live} dark={mats.dark} />}
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+const SIDE_W = 0.3;
+const SIDE_H = 0.46;
+const SPECIAL_GEO = {
+  bezel: new RoundedBoxGeometry(SIDE_W + 0.04, SIDE_H + 0.04, 0.03, 2, 0.012),
+  arm: new THREE.BoxGeometry(0.035, 0.36, 0.035),
+  foot: new RoundedBoxGeometry(0.2, 0.015, 0.16, 2, 0.006),
+  strip: new THREE.BoxGeometry(DESK_SIZE.w - 0.12, 0.014, 0.022),
+  mat: new RoundedBoxGeometry(0.86, 0.006, 0.34, 2, 0.003),
+  plate: new THREE.BoxGeometry(0.3, 0.075, 0.02),
+};
+
+/**
+ * A specialized workstation, earned with levels: a portrait side monitor with the employee's
+ * real task and progress, a light strip in their role's colour, a desk mat and a name plate
+ * with their level. Looks only — the desk gives its owner nothing a standard desk does not.
+ */
+function SpecialDesk({ desk, info, live, dark }: { desk: Desk; info: NonNullable<DeskSeatInfo['special']>; live: boolean; dark: THREE.Material }) {
+  const strip = useMemo(() => new THREE.MeshStandardMaterial({ color: info.accent, emissive: new THREE.Color(info.accent), emissiveIntensity: 1, toneMapped: false }), [info.accent]);
+  strip.emissiveIntensity = live ? 1.7 : 0.25;
+  const mat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#232a36', roughness: 0.9 }), []);
+  const brass = useMemo(() => new THREE.MeshStandardMaterial({ color: '#b08d3c', roughness: 0.35, metalness: 0.8 }), []);
+  const top = DESK_SIZE.h + 0.0225;
+  return (
+    <group position={[desk.x, 0, desk.z]} rotation={[0, desk.rot, 0]}>
+      {/* portrait side monitor, left of the main one and turned toward the chair */}
+      <group position={[-0.62, 0, 0.2]} rotation={[0, Math.PI - 0.32, 0]}>
+        <mesh geometry={SPECIAL_GEO.foot} material={dark} position={[0, top + 0.008, -0.03]} />
+        <mesh geometry={SPECIAL_GEO.arm} material={dark} position={[0, top + 0.18, -0.035]} />
+        <mesh geometry={SPECIAL_GEO.bezel} material={dark} position={[0, top + 0.38, -0.018]} castShadow />
+        <CanvasPanel
+          width={SIDE_W}
+          height={SIDE_H}
+          px={256}
+          position={[0, top + 0.38, 0]}
+          deps={[info.name, info.level, info.taskKey, info.progress, info.label, info.accent, live]}
+          draw={(ctx, w, h) => {
+            ctx.fillStyle = '#080b11';
+            ctx.fillRect(0, 0, w, h);
+            if (!live) return;
+            ctx.fillStyle = info.accent;
+            ctx.fillRect(0, 0, w, h * 0.03);
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffffff';
+            ctx.font = font(h * 0.1, 800);
+            ctx.fillText(clip(ctx, info.name, w * 0.88), w * 0.07, h * 0.12);
+            ctx.fillStyle = info.accent;
+            ctx.font = font(h * 0.065, 700);
+            ctx.fillText(`LEVEL ${info.level}`, w * 0.07, h * 0.215);
+            ctx.fillStyle = '#7f8aa0';
+            ctx.font = font(h * 0.05, 600);
+            ctx.fillText('CURRENT TASK', w * 0.07, h * 0.36);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = font(h * 0.13, 800);
+            ctx.fillText(info.taskKey ?? '—', w * 0.07, h * 0.47);
+            if (info.taskKey && info.progress != null) {
+              ctx.fillStyle = '#1c2533';
+              ctx.fillRect(w * 0.07, h * 0.57, w * 0.86, h * 0.035);
+              ctx.fillStyle = info.accent;
+              ctx.fillRect(w * 0.07, h * 0.57, w * 0.86 * Math.max(0, Math.min(1, info.progress / 100)), h * 0.035);
+              ctx.fillStyle = '#b9c3d3';
+              ctx.font = font(h * 0.05, 600);
+              ctx.fillText(`${Math.round(info.progress)}%`, w * 0.07, h * 0.65);
+            }
+            ctx.fillStyle = '#7f8aa0';
+            ctx.font = font(h * 0.05, 600);
+            ctx.fillText('NOW', w * 0.07, h * 0.8);
+            ctx.fillStyle = '#d7dde8';
+            ctx.font = font(h * 0.06, 700);
+            ctx.fillText(clip(ctx, info.label, w * 0.88), w * 0.07, h * 0.89);
+          }}
+        />
+      </group>
+      <mesh geometry={SPECIAL_GEO.strip} material={strip} position={[0, top + 0.007, DESK_SIZE.d / 2 - 0.03]} />
+      <mesh geometry={SPECIAL_GEO.mat} material={mat} position={[-0.02, top + 0.003, -0.15]} receiveShadow />
+      {/* name plate on the chair-side edge, tilted up toward whoever walks up behind the chair */}
+      <group position={[0.52, top + 0.04, -DESK_SIZE.d / 2 + 0.05]} rotation={[0, Math.PI, 0]}>
+        <group rotation={[-0.45, 0, 0]}>
+          <mesh geometry={SPECIAL_GEO.plate} material={brass} position={[0, 0, -0.011]} castShadow />
+          <CanvasPanel
+            width={0.28}
+            height={0.06}
+            px={512}
+            deps={[info.level, info.title]}
+            draw={(ctx, w, h) => {
+              ctx.fillStyle = '#c9a54a';
+              ctx.fillRect(0, 0, w, h);
+              ctx.textBaseline = 'middle';
+              ctx.fillStyle = '#2a2008';
+              ctx.font = font(h * 0.6, 800);
+              const lv = `LV ${info.level}`;
+              ctx.fillText(lv, w * 0.04, h * 0.54);
+              const x = w * 0.04 + ctx.measureText(lv).width + w * 0.04;
+              ctx.font = font(h * 0.42, 600);
+              ctx.fillText(clip(ctx, info.title, w * 0.96 - x), x, h * 0.54);
+            }}
+          />
+        </group>
+      </group>
+    </group>
+  );
+}
+
+// ───────────────────────────── project zones ─────────────────────────────
+
+/**
+ * A desk pod that belongs to one project: its floor is outlined and tinted in the project's
+ * colour, and a sign above the pod names the project and shows its real task counts.
+ * Clicking the sign opens the project.
+ */
+export function Zones({ world, zones, onOpen }: { world: World; zones: ZoneView[]; onOpen: (projectId: string) => void }) {
+  const desks = useMemo(() => new Map(world.layout.desks.map((d) => [d.id, d])), [world.layout.desks]);
+  return (
+    <>
+      {zones.map((z) => {
+        const list = z.deskIds.map((id) => desks.get(id)).filter((d): d is Desk => !!d);
+        if (!list.length) return null;
+        return <Zone key={z.id} zone={z} desks={list} onOpen={onOpen} />;
+      })}
+    </>
+  );
+}
+
+function Zone({ zone, desks, onOpen }: { zone: ZoneView; desks: Desk[]; onOpen: (projectId: string) => void }) {
+  const [hover, setHover] = useState(false);
+  // The pod's floor: its desks and the chairs behind them, with a little margin.
+  const area = useMemo(() => {
+    const b: Box = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+    let cx = 0;
+    let cz = 0;
+    for (const d of desks) {
+      const box = deskBox(d);
+      const seat = deskSeat(d);
+      b.minX = Math.min(b.minX, box.minX, seat.x - 0.4);
+      b.maxX = Math.max(b.maxX, box.maxX, seat.x + 0.4);
+      b.minZ = Math.min(b.minZ, box.minZ, seat.z - 0.4);
+      b.maxZ = Math.max(b.maxZ, box.maxZ, seat.z + 0.4);
+      cx += d.x / desks.length;
+      cz += d.z / desks.length;
+    }
+    const pad = 0.3;
+    return { x: (b.minX + b.maxX) / 2, z: (b.minZ + b.maxZ) / 2, w: b.maxX - b.minX + pad * 2, d: b.maxZ - b.minZ + pad * 2, cx, cz };
+  }, [desks]);
+  const frame = useMemo(() => {
+    const { w, d } = area;
+    const t = 0.09;
+    const shape = new THREE.Shape();
+    shape.moveTo(-w / 2, -d / 2);
+    shape.lineTo(w / 2, -d / 2);
+    shape.lineTo(w / 2, d / 2);
+    shape.lineTo(-w / 2, d / 2);
+    shape.closePath();
+    const hole = new THREE.Path();
+    hole.moveTo(-w / 2 + t, -d / 2 + t);
+    hole.lineTo(-w / 2 + t, d / 2 - t);
+    hole.lineTo(w / 2 - t, d / 2 - t);
+    hole.lineTo(w / 2 - t, -d / 2 + t);
+    hole.closePath();
+    shape.holes.push(hole);
+    return new THREE.ShapeGeometry(shape);
+  }, [area]);
+  useEffect(() => () => frame.dispose(), [frame]);
+  const SW = 1.7;
+  const SH = 0.5;
+  // Just above the monitors, level with the name tags: seen from an overhead camera the tags of the near row
+  // then fall below the sign and those of the far row above it, instead of on top of it.
+  const SIGN_Y = 1.38;
+  const tex = useCanvasTexture(SW, SH, 768, (ctx, w, h) => {
+    ctx.fillStyle = '#10151e';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = zone.color;
+    ctx.fillRect(0, 0, w * 0.025, h);
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = font(h * 0.34, 800);
+    ctx.fillText(clip(ctx, zone.name, w * 0.9), w * 0.06, h * 0.3);
+    ctx.font = font(h * 0.2, 700);
+    let x = w * 0.06;
+    for (const [n, label, color] of [
+      [zone.inProgress, 'in progress', '#f0c36a'],
+      [zone.blocked, 'blocked', '#ff6b7d'],
+      [zone.done, 'done', '#6fd08c'],
+    ] as Array<[number, string, string]>) {
+      ctx.fillStyle = n ? color : '#5b6677';
+      const text = `${n} ${label}`;
+      ctx.fillText(text, x, h * 0.72);
+      x += ctx.measureText(text).width + w * 0.045;
+    }
+  }, [zone.name, zone.color, zone.inProgress, zone.blocked, zone.done]);
+  // The sign faces along the desks (toward the chairs on both sides).
+  const rot = desks[0]!.rot;
+  useEffect(() => {
+    const signs = (sceneProbe().zoneSigns ??= {});
+    signs[zone.id] = { x: area.cx, y: SIGN_Y + SH / 2, z: area.cz, projectId: zone.projectId };
+    return () => {
+      delete signs[zone.id];
+    };
+  }, [zone.id, zone.projectId, area, SIGN_Y]);
+  const pointer = {
+    onClick: (e: { stopPropagation: () => void }) => {
+      e.stopPropagation();
+      onOpen(zone.projectId);
+    },
+    onPointerOver: (e: { stopPropagation: () => void }) => {
+      e.stopPropagation();
+      setHover(true);
+      document.body.style.cursor = 'pointer';
+    },
+    onPointerOut: () => {
+      setHover(false);
+      document.body.style.cursor = '';
+    },
+  };
+  return (
+    <group>
+      {/* The same sign once more as a plaque on the floor in front of the zone: what the overhead cameras read. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[area.x, 0.016, area.z + area.d / 2 + 0.42]} {...pointer}>
+        <planeGeometry args={[SW * 1.3, SH * 1.3]} />
+        <meshBasicMaterial map={tex} toneMapped={false} {...ON_SURFACE} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[area.x, 0.011, area.z]}>
+        <planeGeometry args={[area.w, area.d]} />
+        <meshBasicMaterial color={zone.color} transparent opacity={0.2} depthWrite={false} toneMapped={false} {...ON_SURFACE} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[area.x, 0.014, area.z]} geometry={frame}>
+        <meshBasicMaterial color={zone.color} transparent opacity={0.9} depthWrite={false} toneMapped={false} {...ON_SURFACE} />
+      </mesh>
+      <group position={[area.cx, 0, area.cz]} rotation={[0, rot, 0]}>
+        <mesh position={[0, SIGN_Y / 2, 0]}>
+          <cylinderGeometry args={[0.022, 0.022, SIGN_Y, 10]} />
+          <meshStandardMaterial color="#2c3442" roughness={0.4} metalness={0.6} />
+        </mesh>
+        <group position={[0, SIGN_Y + SH / 2, 0]} {...pointer}>
+          <mesh castShadow>
+            <boxGeometry args={[SW + 0.08, SH + 0.08, 0.04]} />
+            <meshStandardMaterial color={hover ? '#ffffff' : zone.color} roughness={0.5} emissive={zone.color} emissiveIntensity={hover ? 0.9 : 0.35} />
+          </mesh>
+          <mesh position={[0, 0, 0.0215]}>
+            <planeGeometry args={[SW, SH]} />
+            <meshBasicMaterial map={tex} toneMapped={false} {...ON_SURFACE} />
+          </mesh>
+          <mesh position={[0, 0, -0.0215]} rotation={[0, Math.PI, 0]}>
+            <planeGeometry args={[SW, SH]} />
+            <meshBasicMaterial map={tex} toneMapped={false} {...ON_SURFACE} />
+          </mesh>
+        </group>
+      </group>
+    </group>
+  );
+}
+
+const ATTENTION_COLOR = { question: '#ffb020', approval: '#ffb020', blocked: '#ff4d5e', done: '#3ddc84' } as const;
+
+/** The status lamp on each desk: project colour normally, pulsing when the employee needs the owner. */
+function DeskLight({ x, z, color, attention, on }: { x: number; z: number; color: string | null; attention: DeskSeatInfo['attention']; on: boolean }) {
+  const mat = useRef<THREE.MeshStandardMaterial>(null);
+  useFrame((s) => {
+    if (!mat.current) return;
+    mat.current.emissiveIntensity = attention ? 1.6 + Math.sin(s.clock.elapsedTime * 6) * 1.2 : on ? 1.1 : 0.05;
+  });
+  const c = attention ? ATTENTION_COLOR[attention] : (color ?? '#8aa0c0');
+  return (
+    <mesh position={[x, DESK_SIZE.h + 0.07, z]}>
+      <cylinderGeometry args={[0.035, 0.045, 0.09, 12]} />
+      <meshStandardMaterial ref={mat} color={on ? c : '#3a4250'} emissive={c} emissiveIntensity={on ? 1 : 0.05} toneMapped={false} />
+    </mesh>
+  );
+}
+
+// ───────────────────────────── rooms ─────────────────────────────
+
+function Plant({ x, z }: { x: number; z: number }) {
+  return (
+    <group position={[x, 0, z]}>
+      <mesh position={[0, 0.22, 0]} castShadow>
+        <cylinderGeometry args={[0.2, 0.15, 0.44, 14]} />
+        <meshStandardMaterial color="#d9d3c8" roughness={0.8} />
+      </mesh>
+      {[
+        [0, 0.78, 0, 0.36],
+        [0.16, 0.62, 0.08, 0.24],
+        [-0.14, 0.66, -0.1, 0.26],
+        [0.02, 1.08, -0.04, 0.24],
+      ].map(([px, py, pz, r], i) => (
+        <mesh key={i} position={[px!, py!, pz!]} castShadow>
+          <icosahedronGeometry args={[r!, 1]} />
+          <meshStandardMaterial color={i % 2 ? '#3f8f5a' : '#357a4c'} roughness={0.9} flatShading />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function font(px: number, weight = 600): string {
+  return `${weight} ${px}px "Inter", "SF Pro Display", "Segoe UI", system-ui, sans-serif`;
+}
+
+function clip(ctx: CanvasRenderingContext2D, text: string, max: number): string {
+  if (ctx.measureText(text).width <= max) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(t + '…').width > max) t = t.slice(0, -1);
+  return t + '…';
+}
+
+const COLUMN_COLOR: Record<string, string> = { BACKLOG: '#7f8aa0', READY: '#6ea8ff', IN_PROGRESS: '#f0c36a', REVIEW: '#c792ea', DONE: '#6fd08c', BLOCKED: '#ff6b7d' };
+
+function drawBoard(ctx: CanvasRenderingContext2D, w: number, h: number, board: BoardView) {
+  ctx.fillStyle = '#f7f8fa';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#1c2330';
+  ctx.font = font(h * 0.07, 700);
+  ctx.textBaseline = 'middle';
+  ctx.fillText(clip(ctx, board.title, w * 0.9), w * 0.02, h * 0.07);
+  const top = h * 0.15;
+  const colW = (w * 0.96) / Math.max(1, board.columns.length);
+  board.columns.forEach((col, i) => {
+    const x = w * 0.02 + i * colW;
+    ctx.fillStyle = COLUMN_COLOR[col.status] ?? '#888';
+    ctx.fillRect(x + 4, top, colW - 8, h * 0.012);
+    ctx.fillStyle = '#4a5364';
+    ctx.font = font(h * 0.042, 700);
+    ctx.fillText(`${col.status.replace('_', ' ')}  ${col.items.length}`, x + 6, top + h * 0.045);
+    const cardH = h * 0.105;
+    const max = Math.floor((h - top - h * 0.1) / (cardH + 6));
+    col.items.slice(0, max).forEach((it, j) => {
+      const y = top + h * 0.08 + j * (cardH + 6);
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#d5dae3';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(x + 6, y, colW - 12, cardH, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = it.color;
+      ctx.fillRect(x + 6, y, 6, cardH);
+      ctx.fillStyle = '#1c2330';
+      ctx.font = font(h * 0.036, 700);
+      ctx.fillText(clip(ctx, `${it.key}  ${it.title}`, colW - 34), x + 20, y + cardH * 0.34);
+      ctx.fillStyle = '#6b7588';
+      ctx.font = font(h * 0.03, 500);
+      ctx.fillText(clip(ctx, it.who, colW - 34), x + 20, y + cardH * 0.72);
+    });
+    if (col.items.length > max) {
+      ctx.fillStyle = '#8a93a5';
+      ctx.font = font(h * 0.03, 600);
+      ctx.fillText(`+${col.items.length - max} more`, x + 8, h - h * 0.035);
+    }
+  });
+}
+
+function drawLines(ctx: CanvasRenderingContext2D, w: number, h: number, title: string, lines: string[], accent = '#6ea8ff') {
+  ctx.fillStyle = '#0b0f17';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = accent;
+  ctx.fillRect(0, 0, w, h * 0.02);
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = font(h * 0.11, 700);
+  ctx.fillText(clip(ctx, title, w * 0.92), w * 0.04, h * 0.14);
+  ctx.font = font(h * 0.072, 500);
+  lines.slice(0, 9).forEach((l, i) => {
+    ctx.fillStyle = l.startsWith('!') ? '#ff8a98' : l.startsWith('?') ? '#ffd98a' : '#b9c3d3';
+    ctx.fillText(clip(ctx, l, w * 0.92), w * 0.04, h * 0.3 + i * h * 0.078);
+  });
+}
+
+function Chair({ x, z, rot, color = '#39424f' }: { x: number; z: number; rot: number; color?: string }) {
+  return (
+    <group position={[x, 0, z]} rotation={[0, rot, 0]}>
+      <mesh position={[0, 0.46, 0]} geometry={GEO.seat} castShadow>
+        <meshStandardMaterial color={color} roughness={0.85} />
+      </mesh>
+      <mesh position={[0, 0.8, -0.25]} geometry={GEO.back} castShadow>
+        <meshStandardMaterial color={color} roughness={0.85} />
+      </mesh>
+      <mesh position={[0, 0.25, 0]} geometry={GEO.post}>
+        <meshStandardMaterial color="#aeb6c2" metalness={0.9} roughness={0.25} />
+      </mesh>
+    </group>
+  );
+}
+
+function Rack({ x, z, host, detail }: { x: number; z: number; host: HostView | null; detail: boolean }) {
+  return (
+    <group position={[x, 0, z]}>
+      <mesh position={[0, 1.0, 0]} castShadow>
+        <boxGeometry args={[0.8, 2.0, 1.05]} />
+        <meshStandardMaterial color={host ? '#1a1f29' : '#242a35'} roughness={0.5} metalness={0.5} />
+      </mesh>
+      {detail && <RackFront x={x} host={host} />}
+    </group>
+  );
+}
+
+/** The lit front of a rack: status LEDs and the machine's name plate. Mounted only when someone is near the server room. */
+function RackFront({ x, host }: { x: number; host: HostView | null }) {
+  const leds = useRef<THREE.MeshStandardMaterial>(null);
+  useFrame((s) => {
+    if (!leds.current) return;
+    // Blinking only for a host that is really connected; steady red when it is not.
+    leds.current.emissiveIntensity = !host ? 0 : host.status === 'online' ? 1.2 + Math.sin(s.clock.elapsedTime * (4 + (host.cpu ?? 0) / 12) + x) * 0.9 : 1.4;
+  });
+  const color = !host ? '#20262f' : host.status === 'online' ? '#3ddc84' : host.status === 'revoked' ? '#7b8494' : '#ff4d5e';
+  return (
+    <>
+      {[0.4, 0.75, 1.1, 1.45, 1.8].map((y) => (
+        <mesh key={y} position={[0, y, 0.531]}>
+          <boxGeometry args={[0.66, 0.035, 0.01]} />
+          <meshStandardMaterial ref={y === 1.1 ? leds : undefined} color={color} emissive={color} emissiveIntensity={host ? 1 : 0} toneMapped={false} />
+        </mesh>
+      ))}
+      {host && (
+        <CanvasPanel
+          width={0.7}
+          height={0.26}
+          px={256}
+          position={[0, 2.2, 0.53]}
+          deps={[host.name, host.status, host.sessions, Math.round(host.cpu ?? -1), Math.round(host.mem ?? -1)]}
+          draw={(ctx, w, h) => {
+            ctx.fillStyle = '#0b0f17';
+            ctx.fillRect(0, 0, w, h);
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#fff';
+            ctx.font = font(h * 0.3, 700);
+            ctx.fillText(clip(ctx, host.name, w * 0.92), w * 0.04, h * 0.25);
+            ctx.fillStyle = color;
+            ctx.font = font(h * 0.22, 600);
+            ctx.fillText(host.status.toUpperCase() + ` · ${host.sessions} sessions`, w * 0.04, h * 0.58);
+            ctx.fillStyle = '#9aa7b8';
+            ctx.fillText(host.status === 'online' ? `CPU ${host.cpu == null ? 'n/a' : Math.round(host.cpu) + '%'}  MEM ${host.mem == null ? 'n/a' : Math.round(host.mem) + '%'}` : 'no data', w * 0.04, h * 0.84);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/** Break a line into at most `max` rows that fit `width`. */
+function wrap(ctx: CanvasRenderingContext2D, text: string, width: number, max: number): string[] {
+  const rows: string[] = [];
+  let row = '';
+  for (const word of text.split(/\s+/)) {
+    const next = row ? `${row} ${word}` : word;
+    if (ctx.measureText(next).width <= width || !row) row = next;
+    else {
+      rows.push(row);
+      row = word;
+    }
+  }
+  if (row) rows.push(row);
+  if (rows.length > max) {
+    rows.length = max;
+    rows[max - 1] = clip(ctx, rows[max - 1]! + ' …', width);
+  }
+  return rows.map((r) => clip(ctx, r, width));
+}
+
+const MARKER = { blue: '#1d3b8b', red: '#b3261e', green: '#1f7a3d', ink: '#232830', grey: '#7a8291' };
+
+/** The meeting-room whiteboard, written in marker: the topic, where the meeting stands, and what was said or decided. */
+function drawWhiteboard(ctx: CanvasRenderingContext2D, w: number, h: number, wb: WhiteboardView) {
+  ctx.fillStyle = '#fbfbf7';
+  ctx.fillRect(0, 0, w, h);
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  const left = w * 0.045;
+  const width = w * 0.91;
+  if (wb.state === 'empty') {
+    ctx.fillStyle = MARKER.grey;
+    ctx.font = font(h * 0.13, 700);
+    ctx.fillText(wb.title, left, h * 0.3);
+    ctx.font = font(h * 0.062, 500);
+    wrap(ctx, wb.lines[0] ?? '', width, 3).forEach((row, i) => ctx.fillText(row, left, h * 0.5 + i * h * 0.09));
+    return;
+  }
+  ctx.fillStyle = MARKER.grey;
+  ctx.font = font(h * 0.05, 700);
+  ctx.fillText(wb.state === 'running' ? 'MEETING IN PROGRESS' : 'LAST DECISION', left, h * 0.075);
+  ctx.fillStyle = MARKER.blue;
+  ctx.font = font(h * 0.105, 800);
+  const title = wrap(ctx, wb.title, width, 2);
+  title.forEach((row, i) => ctx.fillText(row, left, h * 0.19 + i * h * 0.115));
+  let y = h * 0.19 + title.length * h * 0.115;
+  // The title is underlined the way a marker would do it.
+  ctx.strokeStyle = MARKER.blue;
+  ctx.lineWidth = Math.max(2, h * 0.008);
+  ctx.beginPath();
+  ctx.moveTo(left, y - h * 0.045);
+  ctx.lineTo(left + Math.min(width, Math.max(...title.map((r) => ctx.measureText(r).width))), y - h * 0.045);
+  ctx.stroke();
+  ctx.fillStyle = wb.state === 'running' ? MARKER.red : MARKER.green;
+  ctx.font = font(h * 0.065, 700);
+  ctx.fillText(clip(ctx, wb.status, width), left, y + h * 0.02);
+  y += h * 0.115;
+  ctx.font = font(h * 0.058, 500);
+  const rowH = h * 0.078;
+  for (const line of wb.lines) {
+    const rows = wrap(ctx, line, width - w * 0.03, 2);
+    if (y + rows.length * rowH > h * 0.99) break;
+    // "HEADING:" lines are the decision document's own section titles.
+    const heading = /^[^a-z]+:$/.test(line);
+    ctx.fillStyle = heading ? MARKER.blue : line.startsWith('✓') ? MARKER.green : line.startsWith('…') ? MARKER.grey : MARKER.ink;
+    ctx.font = font(h * 0.058, heading ? 800 : 500);
+    const bullet = !heading && !/^[✓…]/.test(line);
+    if (bullet) {
+      ctx.beginPath();
+      ctx.arc(left + w * 0.008, y, h * 0.011, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    rows.forEach((row, i) => ctx.fillText(row, left + (bullet ? w * 0.03 : 0), y + i * rowH));
+    y += rows.length * rowH;
+  }
+}
+
+function Whiteboard({ at, view, onOpen }: { at: NonNullable<World['whiteboard']>; view: WhiteboardView; onOpen: (meetingId: string | null) => void }) {
+  const [hover, setHover] = useState(false);
+  const frame = useMemo(() => new THREE.MeshStandardMaterial({ color: '#c9ced6', roughness: 0.35, metalness: 0.7 }), []);
+  frame.emissive.set(hover ? '#6ea8ff' : '#000000');
+  frame.emissiveIntensity = hover ? 0.8 : 0;
+  useEffect(() => {
+    sceneProbe().whiteboard = { ...view, x: at.x, y: 1.7, z: at.z };
+  }, [view, at]);
+  return (
+    <group
+      position={[at.x, 1.7, at.z]}
+      rotation={[0, at.rot, 0]}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen(view.meetingId);
+      }}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        setHover(true);
+        document.body.style.cursor = 'pointer';
+      }}
+      onPointerOut={() => {
+        setHover(false);
+        document.body.style.cursor = '';
+      }}
+    >
+      <mesh material={frame}>
+        <boxGeometry args={[at.w + 0.1, at.h + 0.1, 0.04]} />
+      </mesh>
+      {/* the pen tray */}
+      <mesh position={[0, -at.h / 2 - 0.06, 0.05]} material={frame}>
+        <boxGeometry args={[at.w * 0.5, 0.025, 0.09]} />
+      </mesh>
+      <CanvasPanel width={at.w} height={at.h} px={1536} position={[0, 0, 0.0215]} deps={[JSON.stringify(view)]} draw={(ctx, w, h) => drawWhiteboard(ctx, w, h, view)} />
+    </group>
+  );
+}
+
+const BOOKS = ['#b5483c', '#3c6fb5', '#d9a441', '#4c8f5e', '#7a5aa8', '#c9ced6'];
+
+/** One decoration from the layout. Mounted only while someone is near it. */
+function Decoration({ d, player, overview }: { d: World['layout']['decorations'][number]; player: THREE.Vector3; overview: boolean }) {
+  const area = useMemo(() => ({ minX: d.x, maxX: d.x, minZ: d.z, maxZ: d.z }), [d.x, d.z]);
+  if (!useNear(`decoration:${d.id}`, area, player, overview)) return null;
+  if (d.kind === 'plant') return <Plant x={d.x} z={d.z} />;
+  if (d.kind === 'arcade')
+    return (
+      <group position={[d.x, 0, d.z]} rotation={[0, d.rot, 0]}>
+        <mesh position={[0, 0.9, 0]} castShadow>
+          <boxGeometry args={[0.8, 1.8, 0.8]} />
+          <meshStandardMaterial color="#5b2d8e" roughness={0.5} />
+        </mesh>
+        <mesh position={[0, 1.25, 0.41]}>
+          <planeGeometry args={[0.6, 0.45]} />
+          <meshBasicMaterial color="#3ddc84" toneMapped={false} />
+        </mesh>
+      </group>
+    );
+  if (d.kind === 'trophy_case')
+    return (
+      <group position={[d.x, 0, d.z]} rotation={[0, d.rot, 0]}>
+        <mesh position={[0, 0.7, 0]} castShadow>
+          <boxGeometry args={[2.0, 1.4, 0.45]} />
+          <meshStandardMaterial color="#2a313d" roughness={0.4} />
+        </mesh>
+        {[-0.6, 0, 0.6].map((x) => (
+          <mesh key={x} position={[x, 1.6, 0]} castShadow>
+            <cylinderGeometry args={[0.12, 0.06, 0.36, 12]} />
+            <meshStandardMaterial color="#f5c542" metalness={0.9} roughness={0.2} />
+          </mesh>
+        ))}
+      </group>
+    );
+  if (d.kind === 'neon_sign')
+    return (
+      <mesh position={[d.x, 2.3, d.z]} rotation={[0, d.rot, 0]}>
+        <boxGeometry args={[4.5, 0.5, 0.06]} />
+        <meshStandardMaterial color="#ff5fa2" emissive="#ff5fa2" emissiveIntensity={2.2} toneMapped={false} />
+      </mesh>
+    );
+  if (d.kind === 'bookshelf')
+    return (
+      <group position={[d.x, 0, d.z]} rotation={[0, d.rot, 0]}>
+        <mesh position={[0, 0.9, -0.17]} castShadow>
+          <boxGeometry args={[1.6, 1.8, 0.04]} />
+          <meshStandardMaterial color="#5a4330" roughness={0.6} />
+        </mesh>
+        {[-0.78, 0.78].map((x) => (
+          <mesh key={x} position={[x, 0.9, 0]} castShadow>
+            <boxGeometry args={[0.04, 1.8, 0.38]} />
+            <meshStandardMaterial color="#6f5236" roughness={0.55} />
+          </mesh>
+        ))}
+        {[0.04, 0.48, 0.92, 1.36, 1.78].map((y) => (
+          <mesh key={y} position={[0, y, 0]}>
+            <boxGeometry args={[1.56, 0.04, 0.38]} />
+            <meshStandardMaterial color="#6f5236" roughness={0.55} />
+          </mesh>
+        ))}
+        {[0.06, 0.5, 0.94, 1.38].flatMap((y, row) =>
+          [0, 1, 2, 3, 4].map((i) => {
+            // Blocks of books: widths and colours vary by position, the same for the same shelf every time.
+            const wBook = 0.2 + ((row * 3 + i * 5) % 4) * 0.03;
+            const hBook = 0.26 + ((row + i * 2) % 3) * 0.04;
+            return (
+              <mesh key={`${row}:${i}`} position={[-0.6 + i * 0.3, y + hBook / 2, 0.02]}>
+                <boxGeometry args={[wBook, hBook, 0.24]} />
+                <meshStandardMaterial color={BOOKS[(row * 2 + i) % BOOKS.length]} roughness={0.8} />
+              </mesh>
+            );
+          }),
+        )}
+      </group>
+    );
+  if (d.kind === 'floor_lamp')
+    return (
+      <group position={[d.x, 0, d.z]}>
+        <mesh position={[0, 0.02, 0]} castShadow>
+          <cylinderGeometry args={[0.17, 0.19, 0.04, 20]} />
+          <meshStandardMaterial color="#2c3442" roughness={0.4} metalness={0.6} />
+        </mesh>
+        <mesh position={[0, 0.82, 0]}>
+          <cylinderGeometry args={[0.016, 0.016, 1.6, 8]} />
+          <meshStandardMaterial color="#aeb6c2" roughness={0.25} metalness={0.9} />
+        </mesh>
+        <mesh position={[0, 1.68, 0]}>
+          <cylinderGeometry args={[0.13, 0.2, 0.3, 20, 1, true]} />
+          <meshStandardMaterial color="#fff1d0" emissive="#ffd98a" emissiveIntensity={1.3} side={THREE.DoubleSide} toneMapped={false} />
+        </mesh>
+      </group>
+    );
+  if (d.kind === 'sofa')
+    return (
+      <group position={[d.x, 0, d.z]} rotation={[0, d.rot, 0]}>
+        <mesh position={[0, 0.24, -0.05]} castShadow>
+          <boxGeometry args={[2.0, 0.48, 0.8]} />
+          <meshStandardMaterial color="#4f6d8f" roughness={0.95} />
+        </mesh>
+        <mesh position={[0, 0.6, 0.35]} castShadow>
+          <boxGeometry args={[2.0, 0.5, 0.2]} />
+          <meshStandardMaterial color="#4f6d8f" roughness={0.95} />
+        </mesh>
+        {[-0.92, 0.92].map((x) => (
+          <mesh key={x} position={[x, 0.42, -0.05]} castShadow>
+            <boxGeometry args={[0.16, 0.36, 0.8]} />
+            <meshStandardMaterial color="#456180" roughness={0.95} />
+          </mesh>
+        ))}
+      </group>
+    );
+  return null;
+}
+
+/**
+ * Everything that stands in the rooms. The large furniture of each room is always there; the
+ * detailed interior (chairs, live screens, rack lights, appliances, decorations) is mounted
+ * only while the camera or the owner is near that room, or an overview camera shows the floor.
+ */
+export function Rooms({
+  world,
+  board,
+  wall,
+  ceo,
+  hosts,
+  subscribe,
+  unlocked,
+  whiteboard,
+  onOpenMeeting,
+  player,
+  overview,
+}: {
+  world: World;
+  board: BoardView;
+  wall: WallView;
+  ceo: CeoView;
+  hosts: HostView[];
+  subscribe: ScreenSubscribe;
+  unlocked: Set<string>;
+  whiteboard: WhiteboardView;
+  onOpenMeeting: (meetingId: string | null) => void;
+  player: THREE.Vector3;
+  overview: boolean;
+}) {
+  const wood = useMemo(() => new THREE.MeshStandardMaterial({ color: '#6f5236', roughness: 0.5 }), []);
+  const white = useMemo(() => new THREE.MeshStandardMaterial({ color: '#f1f3f6', roughness: 0.5 }), []);
+  const dark = useMemo(() => new THREE.MeshStandardMaterial({ color: '#1c212b', roughness: 0.45, metalness: 0.3 }), []);
+  const fabric = useMemo(() => new THREE.MeshStandardMaterial({ color: '#c96f4a', roughness: 0.95 }), []);
+  const br = world.room('break');
+  const rr = world.room('reception');
+  const cr = world.room('ceo');
+  const or = world.room('ops');
+  const mr = world.room('meeting');
+  const sr = world.room('server');
+  const tiles = wall.tiles.slice(0, 6);
+  const near = {
+    meeting: useNear('meeting', useMemo(() => roomBox(mr), [mr]), player, overview),
+    ops: useNear('ops', useMemo(() => roomBox(or), [or]), player, overview),
+    server: useNear('server', useMemo(() => roomBox(sr), [sr]), player, overview),
+    ceo: useNear('ceo', useMemo(() => roomBox(cr), [cr]), player, overview),
+    break: useNear('break', useMemo(() => roomBox(br), [br]), player, overview),
+    reception: useNear('reception', useMemo(() => roomBox(rr), [rr]), player, overview),
+  };
+
+  return (
+    <group>
+      {/* project board */}
+      {world.board && (
+        <group position={[world.board.x, 1.75, world.board.z]} rotation={[0, world.board.rot, 0]}>
+          <mesh position={[0, 0, -0.03]} material={dark}>
+            <boxGeometry args={[world.board.w + 0.16, world.board.h + 0.16, 0.05]} />
+          </mesh>
+          <CanvasPanel width={world.board.w} height={world.board.h} px={2048} deps={[JSON.stringify(board)]} draw={(ctx, w, h) => drawBoard(ctx, w, h, board)} />
+        </group>
+      )}
+
+      {/* meeting room: the table and the whiteboard are always there, the chairs come with proximity */}
+      {world.meeting && mr && (
+        <group>
+          <mesh position={[world.meeting.x, 0.73, world.meeting.z]} castShadow receiveShadow material={wood}>
+            <boxGeometry args={[world.meeting.w, 0.06, world.meeting.d]} />
+          </mesh>
+          {[-1, 1].map((s) => (
+            <mesh key={s} position={[world.meeting!.x + (s * world.meeting!.w) / 3, 0.36, world.meeting!.z]} material={dark} castShadow>
+              <boxGeometry args={[0.12, 0.7, world.meeting!.d * 0.6]} />
+            </mesh>
+          ))}
+          {near.meeting && world.meeting.seats.map((s, i) => <Chair key={i} x={s.x} z={s.z} rot={s.rot} color="#3d4a5c" />)}
+          {world.whiteboard && <Whiteboard at={world.whiteboard} view={whiteboard} onOpen={onOpenMeeting} />}
+        </group>
+      )}
+
+      {/* operations room: the wall shows real terminals (live only while someone is near enough to see them) */}
+      {world.opsWall && or && (
+        <group>
+          {[0, 1, 2, 3, 4, 5].map((i) => {
+            const col = i % 3;
+            const row = Math.floor(i / 3);
+            const tw = world.opsWall!.w / 3 - 0.2;
+            const th = tw * 0.56;
+            const x = world.opsWall!.x + (col - 1) * (tw + 0.2);
+            const y = 0.75 + (1 - row) * (th + 0.14) + th / 2;
+            const tile = tiles[i];
+            return (
+              <group key={i}>
+                <mesh position={[x, y, world.opsWall!.z - 0.03]} material={dark}>
+                  <boxGeometry args={[tw + 0.08, th + 0.08, 0.05]} />
+                </mesh>
+                {tile && near.ops ? (
+                  <MonitorScreen sessionId={tile.sessionId} live subscribe={subscribe} position={[x, y, world.opsWall!.z + 0.001]} rotation={[0, 0, 0]} width={tw} height={th} px={768} />
+                ) : (
+                  <mesh position={[x, y, world.opsWall!.z + 0.001]}>
+                    <planeGeometry args={[tw, th]} />
+                    <meshBasicMaterial color="#05070b" />
+                  </mesh>
+                )}
+              </group>
+            );
+          })}
+          <mesh position={[or.x + or.w / 2, 0.45, or.z + 4.6]} material={dark} castShadow>
+            <boxGeometry args={[5.2, 0.9, 1.0]} />
+          </mesh>
+          {near.ops && <CanvasPanel width={2.4} height={0.9} px={768} position={[or.x + or.w / 2, 1.28, or.z + 4.75]} rotation={[-0.5, Math.PI, 0]} deps={[wall.stats.join('|')]} draw={(ctx, w, h) => drawLines(ctx, w, h, 'OPERATIONS', wall.stats, '#3ddc84')} />}
+        </group>
+      )}
+
+      {/* server room: one rack per connected machine */}
+      {world.racks.map((r, i) => (
+        <Rack key={i} x={r.x} z={r.z} host={hosts[i] ?? null} detail={near.server} />
+      ))}
+
+      {/* CEO office */}
+      {world.ceoDesk && cr && (
+        <group>
+          <mesh position={[world.ceoDesk.x, 0.74, world.ceoDesk.z]} material={wood} castShadow receiveShadow>
+            <boxGeometry args={[2.4, 0.07, 1.1]} />
+          </mesh>
+          <mesh position={[world.ceoDesk.x, 0.36, world.ceoDesk.z + 0.3]} material={dark} castShadow>
+            <boxGeometry args={[2.2, 0.7, 0.06]} />
+          </mesh>
+          {near.ceo && <Chair x={world.ceoDesk.x} z={world.ceoDesk.z - 0.95} rot={0} color="#1f2630" />}
+          <mesh position={[cr.x + cr.w / 2, 1.75, cr.z + 0.1]} material={dark}>
+            <boxGeometry args={[5.2, 2.0, 0.05]} />
+          </mesh>
+          {near.ceo && <CanvasPanel width={5.0} height={1.8} px={1536} position={[cr.x + cr.w / 2, 1.75, cr.z + 0.13]} deps={[ceo.company, ceo.lines.join('|')]} draw={(ctx, w, h) => drawLines(ctx, w, h, ceo.company, ceo.lines)} />}
+          <mesh position={[cr.x + 1.3, 0.3, cr.z + cr.d - 2.2]} material={fabric} castShadow>
+            <boxGeometry args={[0.9, 0.6, 2.2]} />
+          </mesh>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[world.ceoDesk.x, 0.012, world.ceoDesk.z + 0.4]}>
+            <planeGeometry args={[4.6, 3.4]} />
+            <meshStandardMaterial color="#39465c" roughness={1} />
+          </mesh>
+        </group>
+      )}
+
+      {/* break room */}
+      {br && (
+        <group>
+          <mesh position={[br.x + br.w - 0.55, 0.46, br.z + 3.2]} material={white} castShadow>
+            <boxGeometry args={[0.8, 0.92, 4.6]} />
+          </mesh>
+          <mesh position={[br.x + br.w - 0.55, 0.94, br.z + 3.2]} material={wood}>
+            <boxGeometry args={[0.86, 0.04, 4.66]} />
+          </mesh>
+          {near.break && (
+            <>
+              <mesh position={[br.x + br.w - 0.55, 1.14, br.z + 2.2]} material={dark} castShadow>
+                <boxGeometry args={[0.4, 0.36, 0.34]} />
+              </mesh>
+              <mesh position={[br.x + br.w - 0.5, 0.95, br.z + 5.9]} castShadow>
+                <boxGeometry args={[0.8, 1.9, 0.8]} />
+                <meshStandardMaterial color="#c8ced8" metalness={0.7} roughness={0.3} />
+              </mesh>
+            </>
+          )}
+          <group position={[br.x + br.w / 2 - 0.8, 0, br.z + br.d - 1.0]}>
+            <mesh position={[0, 0.25, 0]} material={fabric} castShadow>
+              <boxGeometry args={[2.6, 0.5, 0.95]} />
+            </mesh>
+            <mesh position={[0, 0.62, 0.38]} material={fabric} castShadow>
+              <boxGeometry args={[2.6, 0.5, 0.2]} />
+            </mesh>
+          </group>
+          <mesh position={[br.x + br.w / 2 - 0.8, 0.3, br.z + br.d - 2.5]} material={wood} castShadow>
+            <boxGeometry args={[1.3, 0.06, 0.7]} />
+          </mesh>
+        </group>
+      )}
+
+      {/* reception */}
+      {world.reception && rr && (
+        <group>
+          <mesh position={[world.reception.x, 0.55, world.reception.z]} material={white} castShadow>
+            <boxGeometry args={[3.4, 1.1, 0.9]} />
+          </mesh>
+          <mesh position={[world.reception.x, 1.12, world.reception.z]} material={wood}>
+            <boxGeometry args={[3.5, 0.05, 1.0]} />
+          </mesh>
+          <mesh position={[rr.x + rr.w - 1.0, 0.25, rr.z + 2.6]} material={fabric} castShadow>
+            <boxGeometry args={[0.9, 0.5, 3.0]} />
+          </mesh>
+          {near.reception && (
+            <CanvasPanel
+              width={5}
+              height={1.3}
+              px={1536}
+              position={[rr.x + rr.w - 0.1, 2.0, rr.z + rr.d / 2]}
+              rotation={[0, -Math.PI / 2, 0]}
+              deps={[ceo.company, ceo.tagline]}
+              draw={(ctx, w, h) => {
+                ctx.fillStyle = '#10151e';
+                ctx.fillRect(0, 0, w, h);
+                ctx.textBaseline = 'middle';
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#ffffff';
+                ctx.font = font(h * 0.36, 800);
+                ctx.fillText(clip(ctx, ceo.company.toUpperCase(), w * 0.9), w / 2, h * 0.4);
+                ctx.fillStyle = '#6ea8ff';
+                ctx.font = font(h * 0.14, 500);
+                ctx.fillText(ceo.tagline, w / 2, h * 0.76);
+                ctx.textAlign = 'left';
+              }}
+            />
+          )}
+        </group>
+      )}
+
+      {world.layout.decorations.map((d) => (d.requires && !unlocked.has(d.requires) ? null : <Decoration key={d.id} d={d} player={player} overview={overview} />))}
+    </group>
+  );
+}
