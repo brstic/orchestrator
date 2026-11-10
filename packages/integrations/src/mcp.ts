@@ -26,6 +26,11 @@ export interface McpServerOptions<Ctx> {
   instructions: string;
   tools: McpToolSpec[];
   handlers: Record<string, McpToolHandler<Ctx>>;
+  /**
+   * Which tools a caller is shown by tools/list (default: all of them). Not an access check:
+   * a handler that is not for everyone must refuse by itself.
+   */
+  listed?: (tool: McpToolSpec, ctx: Ctx) => boolean;
 }
 
 const SUPPORTED_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
@@ -81,7 +86,7 @@ async function handleOne<Ctx>(req: JsonRpcRequest, opts: McpServerOptions<Ctx>, 
     case 'ping':
       return { jsonrpc: '2.0', id: req.id, result: {} };
     case 'tools/list':
-      return { jsonrpc: '2.0', id: req.id, result: { tools: opts.tools } };
+      return { jsonrpc: '2.0', id: req.id, result: { tools: opts.listed ? opts.tools.filter((t) => opts.listed!(t, ctx)) : opts.tools } };
     case 'tools/call': {
       const name = String(req.params?.name ?? '');
       const spec = opts.tools.find((t) => t.name === name);
@@ -345,3 +350,62 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
 ];
 
 export type OrchestratorToolName = (typeof ORCHESTRATOR_TOOLS)[number]['name'];
+
+/**
+ * Tools only an employee with the `foreman` role may use (the handlers refuse anyone else, and
+ * nobody else is shown them). With these a foreman's session supervises the office; none of them
+ * can approve a permission request or touch anybody's terminal.
+ */
+export const FOREMAN_TOOLS: McpToolSpec[] = [
+  {
+    name: 'office_overview',
+    description: 'Foreman only. Everyone in the office at a glance — role, project, what their session is doing and for how long, their current task, any open question — and every project: tasks by status, ready work nobody has, blocked tasks with reasons.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'look_at',
+    description: "Foreman only. Walk over and look at one employee: the last lines of their real terminal screen, their current task with its description, their recent events and their open question. Says so when no screen is available.",
+    inputSchema: { type: 'object', properties: { employee: str('Employee name') }, required: ['employee'] },
+  },
+  {
+    name: 'answer_question',
+    description: "Foreman only. Answer an employee's open question on the owner's behalf; they receive it at once and it is recorded as answered by you. Only for operational questions you are sure about. Permission requests cannot be answered this way — approving an action is always the owner's.",
+    inputSchema: {
+      type: 'object',
+      properties: { question_id: str('The question id'), answer: str('Your answer, phrased for the employee who asked'), answers: { type: 'object', description: 'Only for a question with several parts: one answer per part, keyed by the exact text of the part' } },
+      required: ['question_id', 'answer'],
+    },
+  },
+  {
+    name: 'assign_task',
+    description: 'Foreman only. Assign a task to an employee. A ready task is handed to them as soon as they are free.',
+    inputSchema: { type: 'object', properties: { task: str('Task key, e.g. "T-7"'), employee: str('Employee name') }, required: ['task', 'employee'] },
+  },
+  {
+    name: 'create_task',
+    description: 'Foreman only. Create a task on a project board, optionally assigned to someone. For follow-up work inside what the owner already asked for — new direction is the owner\'s to give.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: str('Project name'),
+        title: str('Short imperative title'),
+        description: str('What to do'),
+        acceptance: str('Verifiable acceptance criteria'),
+        assignee: str('Employee name (optional)'),
+        priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] },
+        kind: { type: 'string', enum: ['feature', 'bug', 'test', 'research', 'planning', 'security', 'docs', 'ops', 'refactor', 'chore'] },
+      },
+      required: ['project', 'title', 'description'],
+    },
+  },
+  {
+    name: 'escalate_to_owner',
+    description: "Foreman only. Put something in front of the owner: a matter of direction, product or policy, anything destructive or irreversible, or anything you are not sure about. If it is about an employee's question, pass its id: the question then stays open for the owner.",
+    inputSchema: { type: 'object', properties: { summary: str('One line: what the owner must decide or know'), detail: str('What you saw and what the options are'), question_id: str("The employee's question this is about, if any") }, required: ['summary', 'detail'] },
+  },
+  {
+    name: 'finish_round',
+    description: 'Foreman only. End the round you were called for, with a short summary of what you did. Then stop.',
+    inputSchema: { type: 'object', properties: { summary: str('One or two sentences: what you looked at, decided, assigned and escalated') }, required: ['summary'] },
+  },
+];

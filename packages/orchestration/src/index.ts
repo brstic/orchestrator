@@ -9,3 +9,4 @@ export * from './hook-receiver.ts';
 export * from './mcp-tools.ts';
 export * from './prompts.ts';
 export * from './improve.ts';
+export * from './foreman.ts';

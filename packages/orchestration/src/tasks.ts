@@ -386,7 +386,7 @@ export class TaskManager {
     this.scheduleTimer.unref?.();
   }
 
-  private withinSchedule(e: Employee): boolean {
+  withinSchedule(e: Employee): boolean {
     if (!e.schedule.available) return false;
     if (!e.schedule.from || !e.schedule.to) return true;
     const now = new Date();
@@ -413,6 +413,8 @@ export class TaskManager {
     const pool = this.core.employees.filter((e) => this.isFree(e) && (e.projectId === task.projectId || e.projectId === null || !!e.alsoProjectIds?.includes(task.projectId)));
     let best: { e: Employee; score: number; reason: string | null } | undefined;
     for (const e of pool) {
+      // A foreman supervises; work is never routed to one.
+      if (e.roleKey === 'foreman') continue;
       const role = roleByKey(e.roleKey);
       let score = 0;
       if (wantedRole) {

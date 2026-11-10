@@ -67,9 +67,61 @@ export function personViews(s: OfficeState): PersonView[] {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Recent collaboration events become short walks between desks. The event is real; the walk only shows it. */
-export function walkRequests(s: OfficeState, now: number): WalkRequest[] {
+/** How long the foreman stands at each desk it looked at, so every visit is seen even when several come at once. */
+const FOREMAN_DWELL_MS = 8000;
+/** While its round is still running, the foreman stays at the last desk it looked at for at most this long. */
+const FOREMAN_STAY_MS = 40_000;
+
+/**
+ * A foreman's `look_at` calls become visits: its character walks to the desk of each employee it
+ * really looked at, in the order it looked, and goes back to its own desk when the round is over.
+ * Looks that come in quick succession are shown one after the other, not only the last of them.
+ */
+export function foremanWalks(events: Array<{ id: string; type: string; ts: string; employeeId: string | null; data: Record<string, unknown> }>, now: number): WalkRequest[] {
+  const visits = new Map<string, Array<{ id: string; toId: string; at: number }>>();
+  /** When each foreman's latest round ended. */
+  const ended = new Map<string, number>();
+  const horizon = now - 3 * 60_000;
+  for (let i = events.length - 1; i >= 0 && i > events.length - 600; i--) {
+    const e = events[i]!;
+    const at = Date.parse(e.ts);
+    if (at < horizon) break;
+    if (e.type === 'foreman.round.finished' && e.employeeId && !ended.has(e.employeeId)) ended.set(e.employeeId, at);
+    if (e.type !== 'foreman.visit') continue;
+    const from = e.data.fromEmployeeId;
+    const to = e.data.toEmployeeId;
+    if (typeof from !== 'string' || typeof to !== 'string' || from === to) continue;
+    const list = visits.get(from) ?? [];
+    list.unshift({ id: e.id, toId: to, at }); // oldest first
+    visits.set(from, list);
+  }
   const out: WalkRequest[] = [];
+  for (const [fromId, list] of visits) {
+    let start = 0;
+    let current: { id: string; toId: string } | null = null;
+    for (const [n, v] of list.entries()) {
+      // Each desk gets its turn: a visit starts when the look happened, or when the previous desk has had its time.
+      start = n ? Math.max(v.at, start + FOREMAN_DWELL_MS) : v.at;
+      if (start > now) break;
+      current = v;
+      if (n === list.length - 1) {
+        // The last desk: until the round ends (but long enough to get there), or for a while when nothing says it ended.
+        const end = ended.get(fromId);
+        const until = end !== undefined && end >= v.at ? Math.min(start + FOREMAN_STAY_MS, Math.max(start + FOREMAN_DWELL_MS, end)) : start + FOREMAN_STAY_MS;
+        if (now >= until) current = null;
+      }
+    }
+    if (current) out.push({ id: current.id, fromId, toId: current.toId });
+  }
+  return out;
+}
+
+/**
+ * Recent collaboration events become short walks between desks, and a foreman's looks become visits.
+ * The event is real; the walk only shows it.
+ */
+export function walkRequests(s: OfficeState, now: number): WalkRequest[] {
+  const out: WalkRequest[] = foremanWalks(s.events, now);
   for (let i = s.events.length - 1; i >= 0 && i > s.events.length - 80; i--) {
     const e = s.events[i]!;
     if (now - Date.parse(e.ts) > 9000) break;

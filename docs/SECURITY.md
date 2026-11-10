@@ -9,6 +9,7 @@ Orchestrator drives tools that edit files and run commands. These are the bounda
 | Owner (the office UI) | owner token — random, stored hashed; plaintext only in `~/.orchestrator/server/owner-token` (0600) | everything in the REST API and client WebSocket |
 | Host agent | host credential issued at enrollment — stored hashed on the server, plaintext only in the agent's `config.json` (0600) | report its own sessions and hooks, answer RPCs. It cannot read or change other hosts' sessions: every message is checked against the connection's host id |
 | Worker (a Claude Code session) | MCP bearer token — per launch, revoked when the session is relaunched | call the Orchestrator MCP tools **as its own employee**. Identity comes from the token, never from tool arguments |
+| Foreman (a worker whose employee has the `foreman` role) | the same per-launch MCP bearer token | additionally the foreman tools: read the office and employees' terminal screens, answer employees' questions, assign and create tasks, escalate to the owner. Never an approval — see [The foreman](#the-foreman) |
 | Hook process | per-session hook token over a 0600 unix socket | post hook events for its own session |
 
 Unauthenticated requests get `401`; a client WebSocket without the owner token is closed (`4003`); an agent with an unknown or revoked credential is rejected.
@@ -53,6 +54,34 @@ Plus project `policy.allow` / `policy.deny`, plus the employee's own lists. `byp
 **Workers do not inherit your MCP connectors** by default (`--strict-mcp-config`): they get the Orchestrator server only. Turning on *Settings → Workers → inherit my MCP servers* gives every worker whatever those connectors can reach.
 
 **Changes that widen permissions are always yours.** Suggestions such as "pre-approve `docker build`" or "give Dana standard autonomy" are proposals; applying one is an owner action, recorded in the audit log, and takes effect for sessions started afterwards.
+
+## The foreman
+
+A foreman is an employee whose session supervises the others (role `foreman`; rounds are off until you switch them on in *Settings → Foreman*). It is a Claude Code session like any other, so everything above applies to it; in addition:
+
+**What it may do**, through tools only a foreman's session can call (the server checks the caller's role on every call; the caller is identified by the session's bearer token, never by an argument):
+
+- read the office: every employee's role, activity, task and open question, every project's board, and — with `look_at` — the last 40 lines of an employee's **terminal screen**;
+- answer an employee's **question** on your behalf, if *the foreman answers employees' questions* is on;
+- assign tasks, create tasks, and message employees;
+- put something in your inbox (`escalate_to_owner`).
+
+**What it may not do**, by construction rather than by instruction:
+
+- **Decide a permission request.** `answer_question` refuses every request that is not an ordinary question — permission requests, trust prompts, and questions an employee addressed to you as a decision, priority or deployment — and the engine's own answer path refuses a non-owner decision as well. Approvals stay with you and with each employee's autonomy level and the high-risk gate, exactly as before; no permission-bypass flag is used anywhere.
+- **Touch a terminal or a session.** It has no tool that types into, interrupts, starts, stops or takes control of anybody's session; `look_at` only reads the screen the host already captures for the office's monitors.
+- **Edit files.** The role denies Edit, Write, MultiEdit and NotebookEdit whatever autonomy level you give the foreman.
+- **Widen anyone's permissions, change settings or policies, release, review, merge or promote.** Those have no foreman tool.
+- **Answer a question it escalated.** Once it is in your inbox it is yours.
+
+**On the record.** Everything a foreman does is written under `foreman:<name>`: answers (`question.answer`, with `onBehalfOfOwner`), assignments and created tasks (task history), escalations, and every refusal (`foreman.refused`; a non-foreman trying a foreman tool is `foreman.tool_refused`). An answered question records who answered it, and the employee is told it was the foreman. Rounds are events (`foreman.round.started` / `.finished`) with what was listed and what was done.
+
+**What to keep in mind.**
+
+- *Terminal contents reach the foreman's model.* What `look_at` returns becomes part of the foreman's conversation with Claude, like anything a session reads. Values in known credential formats are redacted first; other sensitive text on a screen is not. Screen contents are not written to events or the audit log.
+- *An employee's words reach the foreman's prompt.* Questions, blocker reasons and task titles are quoted in the round digest, so a compromised or misled employee can try to steer the foreman. What that can achieve is bounded by the list above: tasks, assignments, messages and answers to questions — never an approval, a command or a file change.
+- *A wrong answer is still an answer.* The foreman can answer a question you would have answered differently. The answer is on the record with its author; turn off *the foreman answers employees' questions* if you want every question yourself.
+- *Each round uses Claude usage* on the account the foreman runs on. The office starts a round only for something new, never while one is running, and never sooner than the gap you set.
 
 ## Repository safety
 

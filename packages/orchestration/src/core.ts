@@ -7,6 +7,7 @@ import type {
   CompanyStats,
   Employee,
   EntityKind,
+  ForemanSettings,
   EventType,
   Host,
   Improvement,
@@ -49,6 +50,16 @@ export interface Timings {
   /** Default verification command timeout. */
   verifyTimeoutMs: number;
   scheduleDebounceMs: number;
+  /** How often the office looks at what would need the foreman (no model involved). */
+  foremanTickMs: number;
+  /** A question or a ready task must have waited this long before it calls the foreman. */
+  foremanSettleMs: number;
+  /** Idle with a task in progress for this long counts as stalled. */
+  foremanStalledMs: number;
+  /** The shortest gap between two foreman rounds, whatever the owner's setting says. */
+  foremanMinGapMs: number;
+  /** A round that was neither finished nor ended with its turn is given up on after this long. */
+  foremanRoundTimeoutMs: number;
 }
 
 export const DEFAULT_TIMINGS: Timings = {
@@ -58,6 +69,11 @@ export const DEFAULT_TIMINGS: Timings = {
   deliveryConfirmMs: 20_000,
   verifyTimeoutMs: 240_000,
   scheduleDebounceMs: 120,
+  foremanTickMs: 5000,
+  foremanSettleMs: 4000,
+  foremanStalledMs: 5 * 60_000,
+  foremanMinGapMs: 30_000,
+  foremanRoundTimeoutMs: 10 * 60_000,
 };
 
 export interface EngineOptions {
@@ -100,6 +116,23 @@ export function sanitizeRadio(input: Partial<OwnerSettings['radio']>, current: O
   return { stations, volume, lastStationId: last && stations.some((s) => s.id === last) ? last : null };
 }
 
+/**
+ * Foreman settings come from the owner's typing: booleans stay booleans and the two intervals are
+ * whole numbers inside sane bounds. `minGapFloorSeconds` is the shortest gap the office allows.
+ */
+export function sanitizeForeman(input: unknown, current: ForemanSettings, minGapFloorSeconds = 30): ForemanSettings {
+  const i = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const int = (v: unknown, lo: number, hi: number, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : fallback);
+  const quiet = int(i.quietCheckMinutes, 0, 24 * 60, current.quietCheckMinutes);
+  return {
+    enabled: typeof i.enabled === 'boolean' ? i.enabled : current.enabled,
+    minGapSeconds: int(i.minGapSeconds, minGapFloorSeconds, 3600, Math.max(minGapFloorSeconds, current.minGapSeconds)),
+    // 0 switches quiet checks off; anything else is at least five minutes.
+    quietCheckMinutes: quiet === 0 ? 0 : Math.max(5, quiet),
+    answersQuestions: typeof i.answersQuestions === 'boolean' ? i.answersQuestions : current.answersQuestions,
+  };
+}
+
 const DEFAULT_SETTINGS: OwnerSettings = {
   companyName: 'My Company',
   ownerName: 'Boss',
@@ -124,6 +157,7 @@ const DEFAULT_SETTINGS: OwnerSettings = {
     lastStationId: null,
   },
   selfImprovement: { enabled: true, retrospectives: 'friction', autoApproveSharedLessons: false, learnedRouting: true },
+  foreman: { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true },
   quality: 'high',
   keybindings: {
     forward: 'KeyW',
@@ -214,6 +248,7 @@ export class Core {
     }
     this._settings.keybindings = { ...DEFAULT_SETTINGS.keybindings, ...(this._settings.keybindings ?? {}) };
     this._settings.selfImprovement = { ...DEFAULT_SETTINGS.selfImprovement, ...(this._settings.selfImprovement ?? {}) };
+    this._settings.foreman = sanitizeForeman(this._settings.foreman, DEFAULT_SETTINGS.foreman, this.foremanGapFloor);
     this._layout = s.kvGet<OfficeLayout | null>('layout', null) ?? defaultLayout();
     this._milestones = s.kvGet<Milestone[] | null>('milestones', null) ?? initialMilestones();
     this._company = { ...emptyCompanyStats(), ...s.kvGet<Partial<CompanyStats>>('company', {}) };
@@ -312,6 +347,11 @@ export class Core {
     return this._settings;
   }
 
+  /** The shortest gap between foreman rounds the owner can ask for, in seconds. */
+  private get foremanGapFloor(): number {
+    return Math.max(1, Math.ceil(this.timings.foremanMinGapMs / 1000));
+  }
+
   updateSettings(patch: Partial<OwnerSettings>): OwnerSettings {
     this._settings = {
       ...this._settings,
@@ -320,6 +360,7 @@ export class Core {
       ...(patch.radio ? { radio: sanitizeRadio(patch.radio, this._settings.radio) } : {}),
       ...(patch.tv ? { tv: sanitizeTv(patch.tv, this._settings.tv) } : {}),
       selfImprovement: { ...this._settings.selfImprovement, ...(patch.selfImprovement ?? {}) },
+      foreman: patch.foreman === undefined ? this._settings.foreman : sanitizeForeman(patch.foreman, this._settings.foreman, this.foremanGapFloor),
     };
     this.store.kvSet('settings', this._settings);
     this.bus.emit('entity', 'settings', 'upsert', this._settings);

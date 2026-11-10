@@ -1,6 +1,6 @@
 import { useTick } from './company-shared.tsx';
 import { useEffect, useState, type ReactNode } from 'react';
-import type { AuditEntry, OwnerSettings, SelfImprovementSettings } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, type AuditEntry, type ForemanSettings, type ForemanStatus, type OwnerSettings, type SelfImprovementSettings } from '@orchestrator/contracts';
 import { Badge, Button, Field, Window } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
@@ -8,7 +8,7 @@ import { act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { LoadState, fmtDateTime, keyLabel, useLoad, type PanelProps } from './company-shared.tsx';
 
-type SectionId = 'company' | 'graphics' | 'controls' | 'game' | 'improve' | 'workers' | 'commands' | 'audit';
+type SectionId = 'company' | 'graphics' | 'controls' | 'game' | 'improve' | 'workers' | 'foreman' | 'commands' | 'audit';
 
 const SECTIONS: Array<{ id: SectionId; label: string }> = [
   { id: 'company', label: 'Company' },
@@ -17,11 +17,12 @@ const SECTIONS: Array<{ id: SectionId; label: string }> = [
   { id: 'game', label: 'Game mechanics' },
   { id: 'improve', label: 'Self-improvement' },
   { id: 'workers', label: 'Workers' },
+  { id: 'foreman', label: 'Foreman' },
   { id: 'commands', label: 'Commands' },
   { id: 'audit', label: 'Audit log' },
 ];
 
-type SettingsPatch = Partial<Omit<OwnerSettings, 'selfImprovement'>> & { selfImprovement?: Partial<SelfImprovementSettings> };
+type SettingsPatch = Partial<Omit<OwnerSettings, 'selfImprovement' | 'foreman'>> & { selfImprovement?: Partial<SelfImprovementSettings>; foreman?: Partial<ForemanSettings> };
 
 /** Settings are saved one change at a time; the server merges the partial and broadcasts the result. */
 function save(patch: SettingsPatch, ok = 'Saved'): Promise<OwnerSettings | undefined> {
@@ -288,6 +289,146 @@ function ImproveSection({ settings }: { settings: OwnerSettings }) {
   );
 }
 
+const ATTENTION_LABEL: Record<string, string> = { question: 'question', blocked: 'blocked', stalled: 'stalled', unassigned: 'unassigned' };
+const ROUND_OUTCOME: Record<string, string> = { running: 'in progress', finished: 'finished', turn_ended: 'ended without a summary', timed_out: 'gave up waiting', failed: 'could not be delivered', interrupted: 'interrupted' };
+
+function roundDid(a: ForemanStatus['rounds'][number]): string {
+  const parts = [
+    a.visited.length ? `looked at ${a.visited.length}` : '',
+    a.actions.answered ? `answered ${a.actions.answered}` : '',
+    a.actions.assigned ? `assigned ${a.actions.assigned}` : '',
+    a.actions.created ? `created ${a.actions.created}` : '',
+    a.actions.messaged ? `messaged ${a.actions.messaged}` : '',
+    a.actions.escalated ? `escalated ${a.actions.escalated} to you` : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+function ForemanSection({ settings }: { settings: OwnerSettings }) {
+  // An office running an older server has no foreman settings yet: show them as off.
+  const f: ForemanSettings = settings.foreman ?? { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true };
+  const set = (patch: Partial<ForemanSettings>, ok?: string) => void save({ foreman: patch }, ok);
+  const [gap, setGap] = useState(String(f.minGapSeconds));
+  const [quiet, setQuiet] = useState(String(f.quietCheckMinutes));
+  useEffect(() => setGap(String(f.minGapSeconds)), [f.minGapSeconds]);
+  useEffect(() => setQuiet(String(f.quietCheckMinutes)), [f.quietCheckMinutes]);
+  // The status is read again on a slow clock; what is shown stays in place while it loads.
+  const [st, setSt] = useState<ForemanStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const tick = useTick(5000);
+  useEffect(() => {
+    let alive = true;
+    api<ForemanStatus>('GET', '/foreman').then(
+      (data) => {
+        if (!alive) return;
+        setSt(data);
+        setError(null);
+      },
+      (e: Error) => alive && setError(e.message),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [tick, f.enabled, f.minGapSeconds, f.quietCheckMinutes, f.answersQuestions]);
+
+  const gapN = Number(gap);
+  const quietN = Number(quiet);
+  const numbersValid = Number.isFinite(gapN) && gap.trim() !== '' && Number.isFinite(quietN) && quiet.trim() !== '';
+  const dirty = numbersValid && (Math.round(gapN) !== f.minGapSeconds || Math.round(quietN) !== f.quietCheckMinutes);
+  const off = !f.enabled;
+  const last = st?.lastRound ?? null;
+  const fresh = st?.attention.filter((i) => !i.seen) ?? [];
+  const older = st?.attention.filter((i) => i.seen) ?? [];
+
+  return (
+    <div className="col" style={{ gap: 14, maxWidth: 680 }}>
+      <Toggle checked={f.enabled} onChange={(enabled) => set({ enabled }, enabled ? 'Foreman rounds are on' : 'Foreman rounds are off')} title="Foreman rounds">
+        A foreman is an employee (hire one with the role <b>Foreman</b>) who goes round the office for you. When something needs attention — an employee's question nobody has answered, a blocked or stalled task, ready work next to a free employee — the
+        foreman is given one round: it looks at what people are really doing, answers, assigns, and comes to you only with what is yours to decide. Off: nothing is ever sent to the foreman automatically.
+      </Toggle>
+      <div className="pc-info">
+        Each round is a real turn in the foreman's own Claude Code session, so it uses Claude usage on the account the foreman runs on. Whether a round is due is worked out by the office itself, without any model: a quiet office starts no round and costs
+        nothing.
+      </div>
+      <Toggle checked={f.answersQuestions} onChange={(answersQuestions) => set({ answersQuestions })} title="The foreman answers employees' questions" disabled={off}>
+        An employee's question goes to the foreman as well as to you; whoever answers first counts, and the record says who it was. Approving or denying an action is never the foreman's — permission requests always wait for you. Off: questions wait for
+        you alone, and the foreman only deals with blocked, stalled and unassigned work.
+      </Toggle>
+      <form
+        className="col"
+        style={{ gap: 10 }}
+        onSubmit={(ev) => {
+          ev.preventDefault();
+          if (dirty) set({ minGapSeconds: Math.round(gapN), quietCheckMinutes: Math.round(quietN) });
+        }}
+      >
+        <div className="grid2">
+          <Field label="Shortest gap between rounds (seconds)" hint={`However much is going on, a new round starts no sooner than this after the previous one ended.${st && st.minGapSeconds !== f.minGapSeconds ? ` In force right now: ${st.minGapSeconds} s.` : ''}`}>
+            <input type="number" min={30} max={3600} step={10} value={gap} disabled={off} onChange={(ev) => setGap(ev.target.value)} />
+          </Field>
+          <Field label="Quiet check every (minutes)" hint="With nothing waiting, the foreman still takes one look around this often — but only if tasks or sessions changed since its last round. 0 = never.">
+            <input type="number" min={0} max={1440} step={5} value={quiet} disabled={off} onChange={(ev) => setQuiet(ev.target.value)} />
+          </Field>
+        </div>
+        <div className="row">
+          <Button variant="primary" type="submit" disabled={!dirty || off}>
+            Save
+          </Button>
+        </div>
+      </form>
+
+      <div>
+        <div className="section-title">Right now</div>
+        {error && !st && <div className="small bad">Could not load the foreman's status: {error}</div>}
+        {st && (
+          <div className="col small" style={{ gap: 6 }}>
+            <div>
+              <span className="muted">Foreman: </span>
+              {st.foreman ? (
+                <>
+                  <span className="strong">{st.foreman.name}</span> <Badge tone={st.foreman.session === 'running' ? 'good' : 'muted'}>{st.foreman.session === 'running' && st.foreman.activity ? (ACTIVITY_LABEL[st.foreman.activity] ?? st.foreman.activity).toLowerCase() : 'no session running'}</Badge>
+                  {st.otherForemen.length > 0 && <span className="faint"> — rounds go to {st.foreman.name}; {st.otherForemen.join(', ')} also {st.otherForemen.length === 1 ? 'has' : 'have'} the role</span>}
+                </>
+              ) : (
+                <span className="muted">nobody yet</span>
+              )}
+            </div>
+            {st.problem && <div className="pc-note">{st.problem}</div>}
+            <div>
+              <span className="muted">{st.round ? 'Round in progress' : 'Last round'}: </span>
+              {st.round ? (
+                <span>started {fmtDateTime(st.round.startedAt)}</span>
+              ) : last ? (
+                <span>
+                  {fmtDateTime(last.finishedAt ?? last.startedAt)} — {last.reason === 'quiet_check' ? 'quiet check, ' : ''}
+                  {ROUND_OUTCOME[last.outcome] ?? last.outcome}
+                  {roundDid(last) ? ` · ${roundDid(last)}` : ''}
+                </span>
+              ) : (
+                <span className="muted">none yet</span>
+              )}
+            </div>
+            {!st.round && last?.summary && <div className="faint">“{last.summary}”</div>}
+            <div>
+              <span className="muted">Needs attention: </span>
+              {fresh.length === 0 && older.length === 0 && <span className="muted">nothing</span>}
+            </div>
+            {[...fresh, ...older].map((i) => (
+              <div key={i.key} className="row" style={{ alignItems: 'baseline', gap: 6 }}>
+                <Badge tone={i.seen ? 'muted' : 'warn'}>{ATTENTION_LABEL[i.kind] ?? i.kind}</Badge>
+                <span className="grow">
+                  {i.text}
+                  {i.escalated ? <span className="faint"> — escalated to you</span> : i.seen ? <span className="faint"> — the foreman has seen it</span> : off || !st.foreman ? null : <span className="faint"> — waiting for the next round</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AuditSection() {
   const load = useLoad<AuditEntry[]>('/audit?limit=200');
   const rows = load.data ?? [];
@@ -401,6 +542,7 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
               </Toggle>
             </div>
           )}
+          {section === 'foreman' && <ForemanSection settings={settings} />}
           {section === 'commands' && (
             <div className="col" style={{ gap: 12, maxWidth: 640 }}>
               <Toggle checked={settings.nlFallback} onChange={(nlFallback) => void save({ nlFallback })} title="Let Claude interpret commands the rules cannot">

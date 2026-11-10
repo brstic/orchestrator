@@ -32,10 +32,10 @@ export function trustPromptKeys(lines: string[]): string[] | null {
 export interface Delivery {
   id: string;
   employeeId: string;
-  marker: 'TASK' | 'MSG' | 'ANSWER' | 'MEETING' | 'REVIEW' | 'REPORT' | 'RETRO';
+  marker: 'TASK' | 'MSG' | 'ANSWER' | 'MEETING' | 'REVIEW' | 'REPORT' | 'RETRO' | 'ROUND';
   /** Id embedded in the correlation marker; a UserPromptSubmit hook carrying it confirms delivery. */
   markerId: string;
-  ref: { kind: 'task' | 'message' | 'question' | 'meeting' | 'report' | 'retro'; id: string };
+  ref: { kind: 'task' | 'message' | 'question' | 'meeting' | 'report' | 'retro' | 'round'; id: string };
   text: string;
   createdAt: number;
   attempts: number;
@@ -257,7 +257,7 @@ export class Comms {
       this.core.event({
         type: 'agent.question_delivered',
         source: 'server',
-        summary: `${this.core.employees.get(q.employeeId)?.name ?? 'Employee'} received the boss's ${q.kind === 'permission' ? 'decision' : 'answer'}`,
+        summary: `${this.core.employees.get(q.employeeId)?.name ?? 'Employee'} received ${q.answeredBy?.kind === 'foreman' ? `${q.answeredBy.name}'s (the foreman's)` : "the boss's"} ${q.kind === 'permission' ? 'decision' : 'answer'}`,
         employeeId: q.employeeId,
         sessionId: q.sessionId,
         taskId: q.taskId,
@@ -318,9 +318,13 @@ export class Comms {
     if (q && q.status === 'answered') this.setStatus(q, 'delivered', 'Returned as the result of the ask_boss tool call');
   }
 
-  /** The owner's reply to a question or approval. */
-  async answer(questionId: string, input: { answer?: string | null; decision?: 'allow' | 'deny' | null; answers?: Record<string, string> | null }, actor = 'owner'): Promise<Question> {
+  /**
+   * The owner's reply to a question or approval — or, for an employee's question only, a foreman's
+   * reply on the owner's behalf (`by`). A permission request is never decided by anyone but the owner.
+   */
+  async answer(questionId: string, input: { answer?: string | null; decision?: 'allow' | 'deny' | null; answers?: Record<string, string> | null }, actor = 'owner', by: { kind: 'foreman'; id: string; name: string } | null = null): Promise<Question> {
     const q = this.core.questions.require(questionId);
+    if (by && q.kind !== 'question') throw new EngineError('Only the owner can decide this.', 403);
     if (q.status !== 'open') throw new EngineError(`this ${q.kind === 'permission' ? 'request' : 'question'} is no longer open (${q.status})`, 409);
     const employee = this.core.employees.get(q.employeeId);
     if (q.kind === 'permission') {
@@ -334,8 +338,9 @@ export class Comms {
     q.decision = input.decision ?? null;
     q.answeredAt = nowIso();
     q.status = 'answered';
+    if (by) q.answeredBy = by;
     this.core.put('question', q);
-    this.core.audit(actor, q.kind === 'permission' ? 'approval.decide' : 'question.answer', q.id, { decision: q.decision, employee: employee?.name });
+    this.core.audit(actor, q.kind === 'permission' ? 'approval.decide' : 'question.answer', q.id, { decision: q.decision, employee: employee?.name, ...(by ? { onBehalfOfOwner: true } : {}) });
     this.core.company.questionsAnswered++;
     this.core.saveCompany();
     if (q.kind === 'permission') {
@@ -348,20 +353,20 @@ export class Comms {
       }
       // Each decision is evidence about what the owner is comfortable pre-approving.
       this.eng.improver.scheduleAnalyze();
-    } else this.eng.improver.captureOwnerAnswer(q);
+    } else if (!by) this.eng.improver.captureOwnerAnswer(q); // only the owner's own answers become "decided by the boss" knowledge
     this.core.event({
       type: q.kind === 'permission' ? 'agent.permission_decided' : 'agent.question_answered',
-      source: 'owner',
+      source: by ? 'mcp' : 'owner',
       summary:
         q.kind === 'permission'
           ? `Boss ${q.decision === 'allow' ? 'approved' : 'denied'} ${employee?.name ?? 'employee'}'s request`
-          : `Boss answered ${employee?.name ?? 'employee'}: ${truncate(q.answer ?? '', 100)}`,
+          : `${by ? `${by.name} (foreman)` : 'Boss'} answered ${employee?.name ?? 'employee'}: ${truncate(q.answer ?? '', 100)}`,
       employeeId: q.employeeId,
       sessionId: q.sessionId,
       taskId: q.taskId,
       projectId: q.projectId,
       correlationId: q.id,
-      data: { questionId: q.id, decision: q.decision },
+      data: { questionId: q.id, decision: q.decision, ...(by ? { answeredBy: by } : {}) },
     });
 
     switch (q.channel) {
@@ -384,7 +389,7 @@ export class Comms {
         }
         const answers = q.answers ?? (q.parts[0] ? { [q.parts[0].question]: q.answer ?? '' } : {});
         const ok = this.core.agents.respondHook(pending.hostId, pending.requestId, {
-          hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Answered by the boss in Orchestrator', updatedInput: { ...(pending.toolInput ?? {}), answers } },
+          hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: by ? `Answered by ${by.name} (the foreman) on the boss's behalf` : 'Answered by the boss in Orchestrator', updatedInput: { ...(pending.toolInput ?? {}), answers } },
         });
         if (!ok) this.setStatus(q, 'failed', 'The host is offline; the answer could not be delivered.');
         break;
@@ -863,6 +868,8 @@ export class Comms {
       }
     } else if (d.ref.kind === 'meeting') {
       this.eng.meetings.onDeliveryState(d.ref.id, d.employeeId, state);
+    } else if (d.ref.kind === 'round') {
+      this.eng.foreman.onDeliveryState(d.ref.id, state);
     }
   }
 

@@ -119,7 +119,7 @@ export function App() {
       const moving = useOffice.getState().movingEmployeeId;
       if (moving) void seatAt(moving, deskId);
     },
-    openMeeting: (id: string) => useOffice.getState().openPanel('meetings', id),
+    openMeeting: (id: string | null) => useOffice.getState().openPanel('meetings', id),
     openProject: (id: string) => useOffice.getState().openPanel('projects', id),
     select: (id: string | null) => useOffice.getState().selectEmployee(id),
     context: (employeeId: string, x: number, y: number) => setMenu({ employeeId, x, y }),

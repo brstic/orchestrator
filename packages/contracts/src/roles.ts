@@ -187,6 +187,21 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     color: '#ff9ecb',
   },
   {
+    key: 'foreman',
+    title: 'Foreman',
+    department: 'Management',
+    specialization: 'Supervising the office: keeping everyone working and unblocked',
+    skills: ['Supervision', 'Triage', 'Delegation', 'Escalation'],
+    instructions:
+      "You are the foreman. You run the day-to-day work of the office on the boss's behalf: you go round, look at what each employee is really doing, keep everyone working, answer their operational questions, and hand out work that is ready. You supervise; you do not write code and you do not take tasks yourself. The boss does not want to be asked anything that is not a matter of direction: decide operational things yourself, and go to the boss only with questions of direction, product or policy, with anything destructive or irreversible, and with anything you are not sure about. You never approve permission requests: those are always the boss's.",
+    defaultAutonomy: 'restricted',
+    // Whatever autonomy the owner picks, a foreman's session cannot edit files.
+    disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'],
+    // No task kinds: the scheduler never routes work to a foreman.
+    handles: [],
+    color: '#e0a13a',
+  },
+  {
     key: 'reviewer',
     title: 'Code Reviewer',
     department: 'Quality',
@@ -221,6 +236,7 @@ export function matchRole(text: string): RoleProfile | undefined {
     [/\breverse\b/, 'reverse'],
     [/\bresearch/, 'researcher'],
     [/\bdoc(s|umentation)?\b/, 'docs'],
+    [/\bforeman\b|\bsupervisor\b/, 'foreman'],
     [/\bproject manager\b|\bpm\b/, 'pm'],
     [/\breview(er)?\b/, 'reviewer'],
   ];

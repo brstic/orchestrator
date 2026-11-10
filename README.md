@@ -88,6 +88,8 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Window
 | Projects → Integration | After each merge your verification command also runs on the integration branch; **Bring in main** merges the base branch in, **Promote to main** fast-forwards the base branch to it — refused while tests fail, when it is not a fast-forward, or over uncommitted changes. Nothing is ever pushed |
 | Terminals → Operations | Build results are the office's own verification runs; deployments are commands that really ran in a terminal, with their exit status; git activity is commits and merges measured on the machines |
 | A security notification | Claude Code refused an action, a known credential format went through a session (it is redacted in the records), a machine was refused a connection, or someone presented wrong owner tokens |
+| A **Foreman** walks to someone's desk | The foreman's own session called `look_at` for that employee and was shown the last lines of their real terminal, their task and their open question. It walks back when its round is over |
+| An employee's question is answered without you | The foreman's session called `answer_question`; the employee gets the answer as usual and the record says the foreman gave it. Approving or denying an action is never the foreman's |
 | Meeting room | Each participant's session writes a proposal and a response; the facilitator's session writes the decision document and follow-up tasks |
 | Growth | Workers record lessons after real friction; Orchestrator proposes policy and process changes from its own history |
 
@@ -98,6 +100,18 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Window
 - **Delivered ≠ confirmed.** Messages, tasks and answers move `queued → sent → confirmed`, and *confirmed* requires a signal from Claude Code.
 - **Measured, reported, unavailable.** Verification results are measured on the host; an agent's summary is “reported”; token usage is read from the real transcript or shown as “not available”. Cost is never invented. **How much Claude is left** on each account (5-hour and weekly percentages, exactly as Claude Code reports them) is shown at the CEO desk; employees can be put on different Claude accounts.
 - **Autonomy never bypasses permissions.** Autonomy levels map to Claude Code's own permission modes and allow-rules. High-risk commands are escalated at every level. `--dangerously-skip-permissions` is never used.
+
+## The foreman
+
+Hire an employee with the role **Foreman** (give them any folder: it is only where their Claude Code session runs) and switch on **Settings → Foreman → Foreman rounds**. From then on the office is run for you between your own visits:
+
+- **The office decides when, without any model.** Every few seconds it works out from its own records what needs attention: an employee's question nobody has answered, a blocked task, someone idle for five minutes with a task in progress, ready work that nobody has while somebody is free. Only when that list holds something *new* — and the previous round is over, and the gap you set has passed — is **one** prompt delivered to the foreman's session. The prompt carries the digest itself, so a simple round needs a handful of tool calls. A quiet office starts no round and costs nothing.
+- **The foreman acts through its own tools**: `office_overview`, `look_at` (an employee's real terminal screen, task and recent events), `answer_question`, `assign_task`, `create_task`, `send_message`, `escalate_to_owner`, `finish_round`. Everything it does is on the record under its name.
+- **You are asked only about direction.** The foreman answers operational questions itself and escalates what is yours: direction, product or policy, anything destructive or irreversible, anything it is not sure about. An escalated question stays open in your inbox. You can always answer first — whoever answers first counts.
+- **It never approves anything.** Permission requests stay with you and with each employee's autonomy level; the foreman has no tool that could decide one, and cannot edit files or type into anybody's terminal.
+- **Cost.** Each round is a real turn in the foreman's Claude Code session and uses the Claude usage of the account that session runs on (you can put the foreman on its own account). An item the foreman has already seen does not start another round. Optionally, with nothing waiting, it takes one look around every *N* minutes if tasks or sessions changed since its last round (default 15; 0 = never).
+
+Off by default. *Settings → Foreman* shows who the foreman is, the last round and its summary, and what currently needs attention (`GET /api/foreman`).
 
 ## Self-improvement
 
@@ -134,7 +148,7 @@ docs/            architecture, install, security, Claude Code integration
 
 ```bash
 pnpm test                  # unit tests
-pnpm test:e2e              # 73 end-to-end scenarios: real server, real agents, real tmux, real git; scripted worker
+pnpm test:e2e              # 111 end-to-end scenarios: real server, real agents, real tmux, real git; scripted worker
 pnpm test:ui               # the UI used for real in Electron (clicks, typing, keys) against a live development office
 pnpm package && pnpm package:smoke   # build the tarball and macOS app, then run them (incl. the connect screen)
 pnpm package:linux         # .deb and Linux desktop bundles;  pnpm test:linux:deb / test:linux:desktop run them (Docker)

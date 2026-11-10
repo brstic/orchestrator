@@ -105,6 +105,8 @@ interface Runtime {
 interface PendingHook {
   resolve: (output: Record<string, unknown> | null) => void;
   timer: NodeJS.Timeout;
+  /** What was sent, so it can be sent again if the connection drops before the server answers. */
+  event?: RawHookEvent;
 }
 
 type Logger = (level: 'info' | 'warn' | 'error', msg: string) => void;
@@ -333,6 +335,10 @@ export class HostAgent {
     // Blocking hooks cannot be answered any more; let Claude Code fall back to its own dialog.
     for (const [id, pending] of this.pendingHooks) {
       clearTimeout(pending.timer);
+      // The server may never have seen this event (it was on the wire, or the server was just going down): it is
+      // kept and sent again after reconnecting, like any event that could not be delivered. A turn that ended during
+      // a restart would otherwise leave its session looking busy for good. The server ignores an event it already has.
+      if (pending.event) this.enqueue(pending.event);
       pending.resolve(null);
       this.pendingHooks.delete(id);
     }
@@ -1397,7 +1403,7 @@ export class HostAgent {
         this.pendingHooks.delete(requestId);
         resolve(null);
       }, waitMs);
-      this.pendingHooks.set(requestId, { resolve, timer });
+      this.pendingHooks.set(requestId, { resolve, timer, event });
       res.on('close', () => {
         if (finished) return;
         // Claude Code gave up on the hook (timeout, interrupt, session ended).

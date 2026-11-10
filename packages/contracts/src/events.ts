@@ -84,6 +84,10 @@ export type EventType =
   | 'improvement.proposed'
   | 'improvement.applied'
   | 'improvement.dismissed'
+  | 'foreman.round.started'
+  | 'foreman.round.finished'
+  | 'foreman.visit'
+  | 'foreman.escalated'
   | 'ops.deployment'
   | 'security.alert'
   | 'owner.command';

@@ -445,6 +445,8 @@ export interface Question {
   status: QuestionStatus;
   answer: string | null;
   decision: 'allow' | 'deny' | null;
+  /** Who answered, when it was not the owner's own reply: a foreman answering on the owner's behalf. */
+  answeredBy?: { kind: 'owner' | 'foreman'; id: ID | null; name: string } | null;
   createdAt: ISODate;
   answeredAt: ISODate | null;
   deliveredAt: ISODate | null;
@@ -721,6 +723,79 @@ export interface SelfImprovementSettings {
   learnedRouting: boolean;
 }
 
+// ──────────────────────────── Foreman ────────────────────────────
+
+/**
+ * Rounds of the foreman (an employee with the `foreman` role). A round is one prompt delivered to the
+ * foreman's own Claude Code session, so each one uses that account's Claude usage; the office decides
+ * when one is due without any model.
+ */
+export interface ForemanSettings {
+  /** Off by default: nothing is ever delivered to a foreman unless the owner switches this on. */
+  enabled: boolean;
+  /** The shortest time between the end of one round and the start of the next. */
+  minGapSeconds: number;
+  /** With nothing waiting, one look around at most this often, and only if the office changed. 0 = never. */
+  quietCheckMinutes: number;
+  /** Employees' questions go to the foreman first. Permission requests never do. */
+  answersQuestions: boolean;
+}
+
+export type ForemanAttentionKind = 'question' | 'blocked' | 'stalled' | 'unassigned';
+
+/** One thing that calls for the foreman, computed from recorded state. */
+export interface ForemanAttentionItem {
+  /** Stable while the thing stays as it is; a round is only started for keys the foreman has not seen. */
+  key: string;
+  kind: ForemanAttentionKind;
+  text: string;
+  employeeId: ID | null;
+  taskId: ID | null;
+  questionId: ID | null;
+  projectId: ID | null;
+  since: ISODate;
+  /** Already put in front of the foreman in an earlier round. */
+  seen: boolean;
+  /** A question the foreman passed on to the owner. */
+  escalated: boolean;
+}
+
+export interface ForemanRound {
+  id: ID;
+  reason: 'attention' | 'quiet_check';
+  startedAt: ISODate;
+  finishedAt: ISODate | null;
+  /** finished = the foreman called finish_round; turn_ended = its turn ended without one. */
+  outcome: 'running' | 'finished' | 'turn_ended' | 'timed_out' | 'failed' | 'interrupted';
+  summary: string | null;
+  /** New items the round was started for, by kind. */
+  counts: Record<ForemanAttentionKind, number>;
+  fresh: number;
+  /** Items listed again that an earlier round had already shown. */
+  stillOpen: number;
+  /** Employees the foreman looked at during the round. */
+  visited: ID[];
+  actions: { answered: number; assigned: number; created: number; escalated: number; messaged: number };
+}
+
+export interface ForemanStatus {
+  settings: ForemanSettings;
+  /** The employee who does the rounds, if there is one. */
+  foreman: { id: ID; name: string; session: SessionStatus | null; activity: ActivityState | null } | null;
+  /** Further employees with the foreman role: they have the tools, but rounds go to one. */
+  otherForemen: string[];
+  /** A round could be handed over right now. */
+  available: boolean;
+  problem: string | null;
+  round: ForemanRound | null;
+  lastRound: ForemanRound | null;
+  rounds: ForemanRound[];
+  attention: ForemanAttentionItem[];
+  /** The gap between rounds actually in force. */
+  minGapSeconds: number;
+  earliestNextRoundAt: ISODate | null;
+}
+
 // ───────────────────────── Office layout ─────────────────────────
 
 export interface Desk {
@@ -831,6 +906,8 @@ export interface OwnerSettings {
   /** Let a headless Claude run interpret commands the rule-based parser cannot. Uses tokens. */
   nlFallback: boolean;
   selfImprovement: SelfImprovementSettings;
+  /** The foreman's rounds (off by default). */
+  foreman: ForemanSettings;
   /**
    * false (default): workers load only the Orchestrator MCP server. true: they also load the
    * owner's own MCP servers and connectors — more tools, more tokens per request, and autonomous

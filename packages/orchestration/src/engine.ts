@@ -5,6 +5,7 @@ import { TerminalGateway, type GatewayDeps } from '@orchestrator/terminal';
 import { CommandCenter } from './commands.ts';
 import { Comms } from './comms.ts';
 import { Core, EngineError, type EngineOptions } from './core.ts';
+import { Foreman } from './foreman.ts';
 import { HookReceiver } from './hook-receiver.ts';
 import { Improver } from './improve.ts';
 import { MeetingManager } from './meetings.ts';
@@ -18,6 +19,7 @@ import { TaskManager } from './tasks.ts';
  *   hosts ─ sessions ─ employees      who exists and where they really run
  *   hooks ─ comms                     what they are doing, asking and being told
  *   tasks ─ meetings ─ commands       what work exists and how it moves
+ *   foreman                           an employee who supervises the rest, in rounds
  *
  * Nothing in here knows about rendering.
  */
@@ -32,6 +34,7 @@ export class Engine {
   readonly meetings: MeetingManager;
   readonly commands: CommandCenter;
   readonly improver: Improver;
+  readonly foreman: Foreman;
   readonly mcp: McpServerOptions<McpContext>;
   private housekeeping: NodeJS.Timeout | null = null;
 
@@ -46,6 +49,7 @@ export class Engine {
     this.meetings = new MeetingManager(this);
     this.commands = new CommandCenter(this);
     this.improver = new Improver(this);
+    this.foreman = new Foreman(this);
     this.core.gateway = new TerminalGateway({
       rpc: (hostId, rpc, timeoutMs) => this.core.agents.rpc(hostId, rpc, timeoutMs),
       locate: (sessionId) => {
@@ -114,11 +118,13 @@ export class Engine {
       this.comms.prune();
     }, 3600_000);
     this.housekeeping.unref?.();
+    this.foreman.start();
     this.tasks.schedule();
   }
 
   stop(): void {
     if (this.housekeeping) clearInterval(this.housekeeping);
+    this.foreman.stop();
   }
 
   // ─────────────────────────── snapshots ───────────────────────────

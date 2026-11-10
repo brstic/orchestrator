@@ -137,6 +137,45 @@ Sessions that were not launched with the MCP server (attached sessions) simply l
 claude mcp add --transport http orchestrator https://<server>/mcp --header "Authorization: Bearer <session token>"
 ```
 
+## The foreman: rounds, tools and cost
+
+A foreman is an ordinary employee — a real Claude Code session with the Orchestrator MCP server — whose role is `foreman`. What is different is what it is sent and which tools it has.
+
+**Rounds.** Nothing is sent to a foreman unless *Settings → Foreman → Foreman rounds* is on (`settings.foreman.enabled`, default off) and an employee with that role exists. Every `foremanTickMs` (5 s) the engine computes, from its own records and without any model, what needs attention:
+
+| Item | When |
+| --- | --- |
+| `QUESTION` | an employee's open question of kind `question` (asked with `ask_boss`, `request_help` or `AskUserQuestion`) that has waited a few seconds — only while *the foreman answers employees' questions* is on |
+| `BLOCKED` | a task in `BLOCKED` on an active project |
+| `STALLED` | a task `IN_PROGRESS` whose assignee's session is between turns and reported idle / waiting for five minutes, with no open question and not paused or controlled by you |
+| `UNASSIGNED` | a `READY` task with no assignee while an employee who could take it is free (after the scheduler has had its turn) |
+
+Permission requests, trust prompts, and questions an employee marked as a decision, a priority or a deployment are never in that list: they are the owner's.
+
+Each item has a key that stays the same while the item does. A round starts only when there is an item whose key the foreman has **not** been shown before, no round is running, and `minGapSeconds` (default 120, at least 30) has passed since the last one ended. Then one prompt, tagged `[ORCH:ROUND:<id>]`, goes through the normal delivery queue (typed into the terminal, as Stop-hook feedback, or through the SDK; the foreman's session is started first if none is running). It contains the digest — each new item with its ids and details, items from earlier rounds that are still open, and one line per employee — so a simple round is: read, one or two tool calls, `finish_round`. A round ends with `finish_round`, or when the foreman's turn ends (`Stop` hook) without one, or after ten minutes; a round that could not be delivered leaves its items unseen. An open item the foreman has already seen never starts another round, so nothing loops.
+
+*Quiet check:* with nothing new, at most once every `quietCheckMinutes` (default 15, `0` = never) the foreman is sent a round that asks it to look around — only if a task changed status or assignee, a session started or stopped, or a question was opened or closed since its last round.
+
+`foreman.round.started` and `foreman.round.finished` events carry the reason, the counts per kind, what the foreman did (looked at, answered, assigned, created, messaged, escalated) and its summary. `GET /api/foreman` (owner only) returns the foreman, the round in flight, the recent rounds and the current attention list.
+
+**Tools** (declared as `FOREMAN_TOOLS` in `packages/integrations/src/mcp.ts`). Only a session whose employee has the `foreman` role is shown them in `tools/list`; a call from anyone else is refused and audited (`foreman.tool_refused`). As with every tool, the caller is the session the bearer token belongs to.
+
+| Tool | What it really does |
+| --- | --- |
+| `office_overview` | reads the registries: every employee (role, project, session activity and for how long, current task, open question) and every project (tasks by status, ready and unassigned, waiting for release, blocked with reasons) |
+| `look_at {employee}` | the last 40 lines of that employee's terminal as last captured by the host (the same monitor frames the 3D office shows; known secret formats redacted), their task with its description, their recent events, their open question. Without a running session or a captured screen it says so. Records `foreman.visit`, which is what makes the foreman's character walk to that desk |
+| `answer_question {question_id, answer}` | answers through the same path as the owner's answer (tool result, hook output or a typed message); the question records `answeredBy: foreman`, the audit actor is `foreman:<name>`, and the employee is told the foreman answered on the boss's behalf. Refused for anything that is not kind `question`, for a question the foreman escalated, and when answering is switched off |
+| `assign_task {task, employee}` | the task board's own update (a task in progress cannot be reassigned; a foreman cannot be the assignee) |
+| `create_task {project, title, description, …}` | a real task on the board, created by `foreman:<name>` |
+| `escalate_to_owner {summary, detail, question_id?}` | a notification in the owner's inbox; with a `question_id` the question stays open for the owner and the foreman can no longer answer it |
+| `finish_round {summary}` | closes the round and records the summary |
+
+The foreman also has the ordinary tools; `send_message` is how it tells an employee what to do next.
+
+**Cost.** The decision whether a round is due costs no tokens. A round costs what a short Claude Code turn costs on the account the foreman's session runs on: the round prompt (about 1,000 characters for a round with one item, as produced in the tests) plus the tool calls it makes, on top of the session's own context. The foreman's tool definitions are only loaded into the foreman's session. Figures were not measured with the real CLI (see *Status* below); the usage panel shows the foreman's session like any other.
+
+**Status.** Implemented and covered by the scripted end-to-end tests (`tests/e2e/14-foreman.test.ts`) and unit tests. **Not yet run with the real Claude Code CLI**: how a real model weighs "answer or escalate" is governed by the role instructions and the round prompt and has not been observed.
+
 ## Usage data
 
 Claude Code does not report tokens or cost through hooks. The agent reads the session's transcript file (its path arrives in every hook payload) and sums the `usage` fields Claude Code itself wrote. Shown as **measured**. Sessions without a known transcript show "not available". Cost is not shown at all.

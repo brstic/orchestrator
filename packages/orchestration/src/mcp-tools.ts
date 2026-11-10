@@ -1,8 +1,10 @@
 import type { AgentSession, Employee, Task } from '@orchestrator/contracts';
 import { ACTIVITY_LABEL, truncate } from '@orchestrator/contracts';
 import type { McpServerOptions, McpToolHandler } from '@orchestrator/integrations';
-import { ORCHESTRATOR_TOOLS } from '@orchestrator/integrations';
+import { FOREMAN_TOOLS, ORCHESTRATOR_TOOLS } from '@orchestrator/integrations';
 import type { Engine } from './engine.ts';
+import { FOREMAN_ROLE } from './foreman.ts';
+import { answerLine } from './prompts.ts';
 
 /** Who is calling: resolved from the session's bearer token, never from tool arguments. */
 export interface McpContext {
@@ -90,7 +92,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       const answered = await eng.comms.waitForAnswer(q.id, core.timings.askBossWaitMs);
       if (answered && answered.status === 'answered') {
         eng.comms.answerReturnedByTool(q.id);
-        return `The boss answered: ${answered.answer ?? ''}`;
+        return answerLine(answered);
       }
       if (answered && answered.status === 'superseded') return { text: 'The question was withdrawn before it was answered. Use your best judgement on reversible details, or ask again if it still matters.', isError: true };
       return `The boss has not answered yet. Your question is recorded with id ${q.id} and is visible in the office. Do not guess the answer. Either continue with work that does not depend on it, or call wait_for_answer with question_id "${q.id}" to keep waiting. If the boss answers while you are working, the answer will be delivered to you.`;
@@ -99,13 +101,13 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     wait_for_answer: async (a, { employee }) => {
       const q = core.questions.get(String(a.question_id)) ?? core.questions.find((x) => x.id.startsWith(String(a.question_id)));
       if (!q || q.employeeId !== employee.id) return { text: 'No such question of yours.', isError: true };
-      if (q.status === 'delivered' || q.status === 'confirmed') return `The boss answered: ${q.answer ?? ''}`;
+      if (q.status === 'delivered' || q.status === 'confirmed') return answerLine(q);
       const answered = q.status === 'answered' ? q : await eng.comms.waitForAnswer(q.id, core.timings.askBossWaitMs);
       if (answered && (answered.status === 'answered' || answered.status === 'delivered')) {
         // An answer may also be queued for terminal delivery; returning it here makes that redundant.
         eng.comms.cancelFor({ kind: 'question', id: q.id });
         eng.comms.answerReturnedByTool(q.id);
-        return `The boss answered: ${answered.answer ?? ''}`;
+        return answerLine(answered);
       }
       return `Still no answer to question ${q.id}. Continue with other work or call wait_for_answer again.`;
     },
@@ -145,6 +147,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       const to = eng.comms.resolveTeammate(employee, String(a.to));
       if (!to) return { text: `No teammate matches "${a.to}". Use get_team.`, isError: true };
       eng.comms.sendMessage({ from: { kind: 'employee', id: employee.id, name: `${employee.name} (${employee.title})` }, toEmployeeId: to.id, body: String(a.message), taskId: eng.tasks.currentTask(employee.id)?.id ?? null });
+      eng.foreman.noteMessage(employee);
       return `Message queued for ${to.name}. It is delivered to their session when they can read it.`;
     },
 
@@ -241,14 +244,20 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       }
       return recorded ? `${text} ${recorded} team lesson${recorded === 1 ? '' : 's'} recorded.` : text;
     },
+
+    // Foreman-only tools (each refuses a caller who is not a foreman).
+    ...eng.foreman.handlers(),
   };
 
+  const foremanTools = new Set(FOREMAN_TOOLS.map((t) => t.name));
   return {
     name: 'orchestrator',
     version: '0.1.0',
     instructions:
       'Orchestrator connects you to the virtual office you work in. Use these tools to learn your task, report real progress, ask the boss for decisions, collaborate with teammates and declare work complete. Completion is verified independently, so report honestly.',
-    tools: ORCHESTRATOR_TOOLS,
+    tools: [...ORCHESTRATOR_TOOLS, ...FOREMAN_TOOLS],
     handlers,
+    // Only a foreman is shown the foreman's tools; everyone else's tool list (and prompt) stays as small as before.
+    listed: (tool, { employee }) => employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name),
   };
 }

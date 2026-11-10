@@ -230,6 +230,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
     api.get('/state', async () => engine.state());
     api.get('/usage', async () => engine.sessions.accountUsage());
+    // The foreman: who it is, the round in flight and the last ones, and what needs attention right now (owner only).
+    api.get('/foreman', async () => engine.foreman.status());
     api.get('/me', async (req) => ({ kind: whoOf(req).kind, role: whoOf(req).role, name: whoOf(req).name, office: engine.core.settings.companyName }));
     api.get('/people', async () => clients.people());
 
@@ -313,6 +315,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           changed,
           ...(changed.includes('workersInheritMcp') ? { workersInheritMcp: after.workersInheritMcp } : {}),
           ...(changed.includes('selfImprovement') ? { selfImprovement: after.selfImprovement } : {}),
+          ...(changed.includes('foreman') ? { foreman: after.foreman } : {}),
         });
       }
       return after;

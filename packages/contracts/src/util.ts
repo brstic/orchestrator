@@ -105,7 +105,7 @@ export function formatDuration(ms: number): string {
 }
 
 /** Marker embedded in prompts typed into a terminal so delivery can be confirmed by a hook. */
-export function correlationMarker(kind: 'TASK' | 'MSG' | 'ANSWER' | 'MEETING' | 'REVIEW' | 'REPORT' | 'RETRO', id: string): string {
+export function correlationMarker(kind: 'TASK' | 'MSG' | 'ANSWER' | 'MEETING' | 'REVIEW' | 'REPORT' | 'RETRO' | 'ROUND', id: string): string {
   return `[ORCH:${kind}:${id}]`;
 }
 
