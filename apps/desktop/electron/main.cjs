@@ -155,8 +155,8 @@ function parseInvite(code) {
 }
 
 /**
- * Ask the office at this address who we are — accepting exactly the certificate the invitation
- * names and no other. The token is sent only after the certificate has been checked.
+ * Ask the office at this address who we are — accepting the certificate the invitation names, or
+ * one that is publicly trusted for that name, and no other. The token is sent only after the certificate has been checked.
  */
 function askAsGuest(address, token, fingerprint) {
   return new Promise((resolve) => {
@@ -165,8 +165,10 @@ function askAsGuest(address, token, fingerprint) {
     let checked = false;
     req.on('socket', (socket) => {
       socket.on('secureConnect', () => {
+        // The office is who it says it is when its certificate is the one the invitation names (an office reached by
+        // address, with a certificate of its own) or one the system trusts for that name (an office behind a domain).
         const seen = socket.getPeerCertificate().fingerprint256;
-        if (seen !== fingerprint) return req.destroy(new Error('PIN'));
+        if (seen !== fingerprint && !socket.authorized) return req.destroy(new Error('PIN'));
         checked = true;
         req.setHeader('authorization', `Bearer ${token}`);
         req.end();

@@ -30,10 +30,19 @@ There is one office and it lives on the server. Desktop apps are clients; the pa
 | Service | systemd user unit `orchestrator-office` (`~/.config/systemd/user/orchestrator-office.service`), lingering enabled so it survives logout and reboot |
 | Node.js | `~/.nvm/versions/node/v22.23.4/bin/node` (the system's `node` is too old) |
 | Ports | 4600 on loopback (the office itself), **4610/tcp open in ufw** (the door, TLS) |
-| Members reach it at | `https://<server-vpn-ip>:4610` (Tailscale) · `https://<server-lan-ip>:4610` (LAN) |
+| Members reach it at | **`https://office.sparkcan.com`** (through Cloudflare and the server's nginx — see "The domain" below) · `https://<server-vpn-ip>:4610` (Tailscale) · `https://<server-lan-ip>:4610` (LAN). New invitations list them in that order; the app uses the first that answers |
 | Claude Code | `/usr/local/bin/claude`, logged in as `sparkcan`: this is the account shared employees use |
 | Shared sessions | the default tmux server of `sparkcan`, sessions named `orch-<employee>-<id>` |
 | Not ours | `~/.orchestrator-mac-link-backup-2026-11-10` — the agent of the old Mac office, stopped and set aside. Safe to delete |
+
+### The domain
+`office.sparkcan.com` → Cloudflare (proxied DNS record, as for the other sparkcan.com sites) → the server's public address `<server-public-ip>:443` → nginx (CloudPanel site `office.sparkcan.com`, type *reverse proxy*) → `https://127.0.0.1:4610`, the office's door.
+
+- The proxy must point at the **door (4610)**, never at the office's own port (4600): the door is what marks a request as coming from outside, and only that keeps the office's own owner token from being usable over the network. Checked after setup: the owner token gets 401 through the domain.
+- CloudPanel: site user `<site-user>`; its password is in `~/.orchestrator-office/cloudpanel-site-user.txt` on the server (mode 600). Vhost: `/etc/nginx/sites-enabled/office.sparkcan.com.conf` (WebSocket upgrade headers and 900 s timeouts come from CloudPanel's reverse-proxy template). The origin certificate is CloudPanel's self-signed one; Cloudflare terminates TLS for visitors.
+- **DNS is not something the server can create** (no Cloudflare credentials there): in the Cloudflare dashboard for sparkcan.com add `office` → `<server-public-ip>`, type A, proxied — the same as the other subdomains.
+- The desktop app trusts an office when its certificate is the one named in the invitation (addresses with a port, certificate made on the server) **or** one the system trusts for that name (the domain). So nothing has to be re-pinned when Cloudflare renews its certificate. Needs a desktop app built after 2026-11-10.
+- Old invitations keep working through the Tailscale/LAN addresses; `reinvite` gives one that tries the domain first.
 
 ### A person's computer (client)
 | | |
@@ -149,6 +158,7 @@ Install there (`INSTALL.md` section 0), stop both services, copy `~/.orchestrato
 
 | What you see | Look at |
 | --- | --- |
+| `office.sparkcan.com` does not answer | `dig +short office.sparkcan.com` (is the DNS record there and proxied?); on the server `curl -sk --resolve office.sparkcan.com:443:127.0.0.1 https://office.sparkcan.com/healthz` (nginx → door); `sudo nginx -t`. The Tailscale and LAN addresses keep working meanwhile |
 | App: "could not be opened" / cannot reach the office | Is the service active (`deploy-server.sh --status`)? Are you on Tailscale or the LAN? Is 4610 open (`sudo ufw status`)? |
 | App: "the certificate is different" | The server's certificate changed (state folder replaced). Make new invitations |
 | "This invitation is no longer valid" | It was revoked or re-issued: `office-admin status`, then `reinvite` |

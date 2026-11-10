@@ -9,8 +9,8 @@
  *
  * The office's door has a certificate made on the host's machine, which neither the agent nor
  * Claude Code's MCP client would trust. So both talk to a relay on this computer's loopback
- * instead; the relay connects to the office and accepts exactly the certificate the invitation
- * named. It forwards two things and nothing else: the agent's WebSocket and the worker endpoint.
+ * instead; the relay connects to the office and accepts the certificate the invitation named (or
+ * one publicly trusted for the office's domain). It forwards two things and nothing else: the agent's WebSocket and the worker endpoint.
  */
 const { spawn, spawnSync } = require('node:child_process');
 const crypto = require('node:crypto');
@@ -28,14 +28,21 @@ const sni = (hostname) => (net.isIP(hostname) ? {} : { servername: hostname });
 const FORWARD_HTTP = /^\/(mcp|healthz)$/;
 const FORWARD_UPGRADE = /^\/ws\/agent$/;
 
-/** A TLS connection to the office that exists only if the certificate is the pinned one. */
+/**
+ * Is this the office? Yes when its certificate is exactly the one the invitation names (an office reached by address,
+ * with a certificate made on its own machine), or one the system trusts for that name (an office behind a domain,
+ * where the certificate is renewed every few months and cannot be pinned).
+ */
+const trusted = (socket, fingerprint) => socket.getPeerCertificate().fingerprint256 === fingerprint || socket.authorized === true;
+
+/** A TLS connection to the office that exists only if its certificate is the pinned one or a publicly trusted one. */
 function connectPinned(office, fingerprint) {
   return new Promise((resolve, reject) => {
     const socket = tls.connect({ host: office.hostname, port: Number(office.port) || 443, ...sni(office.hostname), rejectUnauthorized: false, ALPNProtocols: ['http/1.1'] });
     socket.setTimeout(10000, () => socket.destroy(new Error('the office did not answer')));
     socket.once('error', reject);
     socket.once('secureConnect', () => {
-      if (socket.getPeerCertificate().fingerprint256 !== fingerprint) return socket.destroy(new Error('the certificate at that address is not the one from the invitation'));
+      if (!trusted(socket, fingerprint)) return socket.destroy(new Error('the certificate at that address is not the one from the invitation'));
       socket.setTimeout(0);
       socket.removeListener('error', reject);
       resolve(socket);
@@ -51,7 +58,7 @@ function requestPinned(office, fingerprint, options, send, onResponse, onError) 
   const req = https.request({ host: office.hostname, port: Number(office.port) || 443, ...sni(office.hostname), rejectUnauthorized: false, agent: false, timeout: 60000, ...options });
   req.on('socket', (socket) =>
     socket.once('secureConnect', () => {
-      if (socket.getPeerCertificate().fingerprint256 !== fingerprint) return req.destroy(new Error('the certificate at that address is not the one from the invitation'));
+      if (!trusted(socket, fingerprint)) return req.destroy(new Error('the certificate at that address is not the one from the invitation'));
       send(req);
     }),
   );

@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-10
+- `office.sparkcan.com`: CloudPanel reverse-proxy site in front of the office's door; the desktop app now also accepts an office whose certificate is publicly trusted for its name (pinning stays for addresses with the office's own certificate).
 - `pnpm deploy:server` (`scripts/deploy-server.sh`: build, copy, swap, restart, `--status`, `--rollback`) and `docs/OPERATIONS.md` (where everything runs, how to update server and clients, backup, troubleshooting).
 - Members arrange their own room (Menu → My room → *Arrange my room*): name on the door, colour, number of desks (up to 20), open floor behind the desks, furniture. Kept by the office (`PUT /api/me/room`), drawn for everyone.
 - A member's room now stays in the office when they leave: grey, dark and locked, their employees asleep at their desks; it opens again when their computer reconnects. Rooms no longer change places when someone leaves.
