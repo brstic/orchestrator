@@ -7,6 +7,7 @@ import { DEFAULT_HIGH_RISK_PATTERNS } from './prompts.ts';
 import { Playbook } from './learning/playbook.ts';
 import { Capture, type LessonArgs } from './learning/capture.ts';
 import { Outcomes, routingEvidence } from './learning/outcomes.ts';
+import { applyDetectAction, mayPropose, runDetectors } from './learning/detect.ts';
 
 const MAX_LESSONS_IN_PROMPT = 12;
 /** Approvals of the same command shape before Orchestrator suggests pre-approving it. */
@@ -316,7 +317,8 @@ export class Improver {
   }
 
   private propose(p: { kind: ImprovementKind; key: string; title: string; rationale: string; evidence: EvidenceRef[]; projectId?: string | null; employeeId?: string | null; action: ImprovementAction }): Improvement | null {
-    if (this.core.improvements.find((i) => i.dedupeKey === p.key)) return null;
+    // Not while an earlier one is undecided, nor soon after it was decided (learning/detect.ts, mayPropose).
+    if (!mayPropose(this.core.improvements.filter((i) => i.dedupeKey === p.key), p.evidence)) return null;
     const imp: Improvement = { id: newId().slice(0, 8), kind: p.kind, title: p.title, rationale: p.rationale, evidence: p.evidence.slice(0, 12), projectId: p.projectId ?? null, employeeId: p.employeeId ?? null, action: p.action, status: 'proposed', dedupeKey: p.key, createdAt: nowIso(), decidedAt: null };
     this.core.put('improvement', imp);
     this.core.event({ type: 'improvement.proposed', source: 'server', summary: `Orchestrator suggests: ${p.title}`, projectId: imp.projectId, employeeId: imp.employeeId, data: { improvementId: imp.id, kind: imp.kind } });
@@ -512,6 +514,8 @@ export class Improver {
         );
       }
     }
+    // Further findings (learning/detect.ts): task size, dependencies, routing, repeated questions, stalls, weak verification, machine load, idle capacity.
+    for (const i of runDetectors(this.eng, (p) => this.propose(p))) add(i);
     // 8. Did what was learned help? Retire lessons the record is against, mark the proven ones, suggest undoing a change that made things worse.
     for (const i of this.outcomes.act()) add(i);
     if (out.length) this.core.broadcast('performance', this.performance());
@@ -549,6 +553,11 @@ export class Improver {
       case 'advice':
         // "Take back the change that made things worse" (learning/outcomes.ts): accepting the suggestion does it.
         if (imp.kind === 'revert_improvement' && imp.outcomesRevertOf && this.core.improvements.get(imp.outcomesRevertOf)?.status === 'applied') this.autopilot.revert(imp.outcomesRevertOf, actor);
+        break;
+      case 'task.dependsOn':
+      case 'project.routing':
+      case 'project.notes.append':
+        imp.previous = applyDetectAction(this.eng, a, actor);
         break;
     }
     imp.status = 'applied';

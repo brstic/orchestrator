@@ -119,6 +119,8 @@ const RULES: Rule[] = [
   rule('POST', '/commands/plan', 'work'),
   // Whether what the office learned helped. Counted, for anyone but an owner, only from what they may see (`outcomesScopeFor`).
   rule('GET', '/growth/outcomes', 'read'),
+  // What the office did by itself with what it learned; each entry is filtered like any other event.
+  rule('GET', '/growth/log', 'read'),
 ];
 
 /** In place of a member's id: the thing is the foreman's (its profile, its session, its questions), which only owners may touch or look into. */

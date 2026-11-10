@@ -142,6 +142,8 @@ export interface EventQuery {
   since?: string;
   beforeSeq?: number;
   limit?: number;
+  /** Only events whose type starts with this, e.g. "learning." */
+  typePrefix?: string;
 }
 
 export class Collection<T extends { id: string }> {
@@ -385,6 +387,7 @@ export class Store implements Storage {
     if (q.beforeSeq) (where.push('seq < ?'), args.push(q.beforeSeq));
     if (q.types?.length) (where.push(`type IN (${q.types.map(() => '?').join(',')})`), args.push(...q.types));
     if (q.excludeTypes?.length) (where.push(`type NOT IN (${q.excludeTypes.map(() => '?').join(',')})`), args.push(...q.excludeTypes));
+    if (q.typePrefix) (where.push('substr(type, 1, ?) = ?'), args.push(q.typePrefix.length, q.typePrefix));
     const limit = Math.max(1, Math.min(2000, q.limit ?? 200));
     const rows = this.db.prepare(`SELECT * FROM events ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY seq DESC LIMIT ${limit}`).all(...args);
     return rows.map((r) => this.rowToEvent(r)).reverse();

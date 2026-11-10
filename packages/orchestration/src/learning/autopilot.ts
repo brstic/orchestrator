@@ -3,6 +3,7 @@ import { nowIso, truncate } from '@orchestrator/contracts';
 import { EngineError } from '../core.ts';
 import type { Engine } from '../engine.ts';
 import { DEFAULT_HIGH_RISK_PATTERNS } from '../prompts.ts';
+import { revertDetectAction } from './detect.ts';
 
 /**
  * The autopilot: the office applies what it has learned by itself, where that is safe, and takes it
@@ -65,12 +66,23 @@ export const AUTOPILOT_TABLE: {
     verify_timeout: ['project.verifyTimeout'],
     sequencing: ['advice'],
     acceptance_criteria: ['advice'],
-    routing: ['advice'],
+    routing: ['advice', 'project.routing'],
     // Advice from the other parts of Growth: a person reads it and decides; the office never applies advice by itself.
     playbook_contradiction: ['advice'],
     revert_improvement: ['advice'],
+    // Found by the detectors (learning/detect.ts). Three of them can carry a change of their own; none of it is a permission.
+    task_size: ['advice'],
+    dependencies: ['advice', 'task.dependsOn'],
+    missing_context: ['project.notes.append'],
+    stall: ['advice'],
+    verify_quality: ['advice'],
+    machine_load: ['advice'],
+    idle_capacity: ['advice'],
   },
   actions: {
+    'task.dependsOn': () => ({ widening: false, why: 'it only makes one task wait for another' }),
+    'project.routing': () => ({ widening: false, why: 'it only changes who is preferred for a kind of task' }),
+    'project.notes.append': () => ({ widening: false, why: 'it adds a sentence to what the project tells its employees; it permits nothing' }),
     'project.policy.allow': () => ({ widening: true, why: 'an allow rule lets matching commands run without asking' }),
     'project.policy.deny': () => ({ widening: false, why: 'a deny rule only takes away' }),
     'project.requireReview': (a) => (a.value === true ? { widening: false, why: 'requiring review adds a check' } : { widening: true, why: 'switching review off removes a check' }),
@@ -196,6 +208,11 @@ export class Autopilot {
       }
       case 'advice':
         return { widening, undo: { type: 'advice' } };
+      case 'task.dependsOn':
+      case 'project.routing':
+      case 'project.notes.append':
+        // What was there before is written on the improvement by the action itself (`previous`).
+        return { widening, undo: { type: 'detect' } };
       default:
         return { widening: true, undo: null };
     }
@@ -657,6 +674,8 @@ export class Autopilot {
       }
       case 'advice':
         return { restored: false, note: 'Advice changed nothing, so there was nothing to put back.' };
+      case 'detect':
+        return { restored: false, note: 'This kind of change is taken back from its own record.' };
     }
   }
 
@@ -670,6 +689,10 @@ export class Autopilot {
         return { type: a.type, projectId: a.projectId, previous: !a.value, applied: a.value };
       case 'advice':
         return { type: 'advice' };
+      case 'task.dependsOn':
+      case 'project.routing':
+      case 'project.notes.append':
+        return { type: 'detect' };
       default:
         throw new EngineError('This was applied before the office recorded what was there earlier, so it cannot be put back exactly. Change it by hand in the project or employee settings.', 409);
     }
@@ -680,7 +703,7 @@ export class Autopilot {
       imp.autopilot ??
       (imp.autopilot = { appliedBy: 'owner', auto: false, appliedAt: imp.decidedAt ?? imp.createdAt, widening: classify(imp, this.look).widening, undo: this.undoWithoutRecord(imp.action), probation: null, reverted: null, noAuto: false, history: [] });
     const undo = record.undo ?? this.undoWithoutRecord(imp.action);
-    const result = this.takeBack(undo, by);
+    const result = undo.type === 'detect' ? { restored: true, note: revertDetectAction(this.eng, imp, by) } : this.takeBack(undo, by);
     const now = nowIso();
     record.reverted = { at: now, by, reason, evidence: evidence.slice(0, 12), restored: result.restored, note: result.note };
     record.noAuto = true;

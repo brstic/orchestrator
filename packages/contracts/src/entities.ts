@@ -368,6 +368,8 @@ export interface Project {
   /** Set once every released task of the project has been verified DONE. */
   deliveredAt: ISODate | null;
   createdAt: ISODate;
+  /** Routing preferences accepted from the record (learning/detect.ts): for a kind of task, the employee to prefer when free. */
+  detectRouting?: Partial<Record<TaskKind, ID>>;
 }
 
 // ───────────────────────────── Tasks ─────────────────────────────
@@ -800,7 +802,10 @@ export interface PerformanceStat {
   outcomes?: { weight: number; firstPassRate: number; routingRate: number; meanFriction: number; lastCompletedAt: ISODate | null };
 }
 
-export type ImprovementKind = 'allow_rule' | 'deny_rule' | 'autonomy' | 'review_policy' | 'verify_command' | 'verify_timeout' | 'sequencing' | 'acceptance_criteria' | 'routing' | 'playbook_contradiction' | 'revert_improvement';
+export type ImprovementKind =
+  | 'allow_rule' | 'deny_rule' | 'autonomy' | 'review_policy' | 'verify_command' | 'verify_timeout' | 'sequencing' | 'acceptance_criteria' | 'routing' | 'playbook_contradiction' | 'revert_improvement'
+  // Found by the detectors in orchestration/src/learning/detect.ts.
+  | 'task_size' | 'dependencies' | 'missing_context' | 'stall' | 'verify_quality' | 'machine_load' | 'idle_capacity';
 
 export type ImprovementAction =
   | { type: 'project.policy.allow'; projectId: ID; rule: string }
@@ -808,7 +813,14 @@ export type ImprovementAction =
   | { type: 'project.requireReview'; projectId: ID; value: boolean }
   | { type: 'project.verifyTimeout'; projectId: ID; seconds: number }
   | { type: 'employee.autonomy'; employeeId: ID; level: AutonomyLevel }
-  | { type: 'advice' };
+  | { type: 'advice' }
+  // learning/detect.ts — none of these lets an agent do more without asking.
+  /** `taskId` waits for `dependsOnTaskId`. Inverse: take that id out of the task's dependencies again. */
+  | { type: 'task.dependsOn'; taskId: ID; dependsOnTaskId: ID }
+  /** When free, `employeeId` is preferred for tasks of this kind in the project. Inverse: put back the earlier preference (or none). */
+  | { type: 'project.routing'; projectId: ID; kind: TaskKind; employeeId: ID }
+  /** Add `text` as a line of the project's documentation notes. Inverse: take the line out again. */
+  | { type: 'project.notes.append'; projectId: ID; text: string };
 
 /**
  * A change Orchestrator proposes to its own way of working, derived from its
@@ -835,6 +847,8 @@ export interface Improvement {
   outcomesRevertOf?: ID | null;
   /** autopilot: who applied it, how to undo it, its probation and whether it was taken back. Absent on records from before the autopilot. */
   autopilot?: ImprovementAutopilot | null;
+  /** What applying replaced, kept so the change can be reversed (set when applied; shape depends on the action). */
+  previous?: unknown;
 }
 
 export interface SelfImprovementSettings {
@@ -1058,6 +1072,8 @@ export type AutopilotUndo =
   | { type: 'project.requireReview'; projectId: ID; previous: boolean; applied: boolean }
   | { type: 'project.verifyTimeout'; projectId: ID; previous: number; applied: number }
   | { type: 'employee.autonomy'; employeeId: ID; previous: AutonomyLevel; applied: AutonomyLevel }
+  /** A change made by one of the detectors' own actions: what was there before is on the improvement itself (`previous`). */
+  | { type: 'detect' }
   | { type: 'advice' };
 
 /** autopilot: the trial period of a change the office made by itself. */

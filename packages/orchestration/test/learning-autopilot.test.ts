@@ -64,9 +64,9 @@ const project = (o: Office) => o.eng.core.projects.require(o.shop.id);
 test('the table: every kind and every action is classified, and anything unknown counts as widening', async () => {
   const o = await office('safe');
   const now = { project: (id: string) => o.eng.core.projects.get(id), employee: (id: string) => o.eng.core.employees.get(id) };
-  const kinds: ImprovementKind[] = ['allow_rule', 'deny_rule', 'autonomy', 'review_policy', 'verify_command', 'verify_timeout', 'sequencing', 'acceptance_criteria', 'routing', 'playbook_contradiction', 'revert_improvement'];
+  const kinds: ImprovementKind[] = ['allow_rule', 'deny_rule', 'autonomy', 'review_policy', 'verify_command', 'verify_timeout', 'sequencing', 'acceptance_criteria', 'routing', 'playbook_contradiction', 'revert_improvement', 'task_size', 'dependencies', 'missing_context', 'stall', 'verify_quality', 'machine_load', 'idle_capacity'];
   assert.deepEqual(Object.keys(AUTOPILOT_TABLE.kinds).sort(), [...kinds].sort(), 'every kind of proposal has a row');
-  assert.deepEqual(Object.keys(AUTOPILOT_TABLE.actions).sort(), ['advice', 'employee.autonomy', 'project.policy.allow', 'project.policy.deny', 'project.requireReview', 'project.verifyTimeout']);
+  assert.deepEqual(Object.keys(AUTOPILOT_TABLE.actions).sort(), ['advice', 'employee.autonomy', 'project.notes.append', 'project.policy.allow', 'project.policy.deny', 'project.requireReview', 'project.routing', 'project.verifyTimeout', 'task.dependsOn']);
   for (const actions of Object.values(AUTOPILOT_TABLE.kinds)) for (const a of actions) assert.ok(Object.hasOwn(AUTOPILOT_TABLE.actions, a), `${a} is a known action`);
 
   const p = o.shop.id;
