@@ -4,7 +4,7 @@ import { ACTIVITY_LABEL } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Markdown, Progress, clock, timeAgo } from '@orchestrator/ui';
 import { api, connection } from '../lib/api.ts';
 import { usePrefs } from '../lib/prefs.ts';
-import { stopRadio } from '../lib/radio.ts';
+import { RadioPillButtons } from './radio-bits.tsx';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice, type Ask, type CameraMode, type PanelId } from '../lib/store.ts';
 import { may, memberOfEmployee, whyNot } from '../lib/access.ts';
 import { needsYou } from '../lib/attention.ts';
@@ -207,9 +207,7 @@ export function TopBar() {
               {s.radio.status === 'loading' ? 'Tuning in…' : s.radio.status === 'error' ? 'Radio: cannot play' : (s.radio.nowPlaying ?? s.radio.name)}
             </span>
           </button>
-          <button className="pill" onClick={stopRadio} title="Stop the radio" aria-label="Stop the radio">
-            ■
-          </button>
+          <RadioPillButtons />
         </div>
       )}
       {(s.me?.kind === 'guest' || s.people.length > 1) && (

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import type { WebSocket } from 'ws';
 import { eventFor, mayDrive, mayReadMessage, mayReadQuestion, maySee, stateFor } from './access.ts';
-import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, OrchestratorEvent, PersonPresence, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
+import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, OrchestratorEvent, PersonPresence, RadioNow, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
 import { hueOf, type Who } from './guests.ts';
 import { PROTOCOL_VERSION, ROLE_CATALOGUE, matchRole, nowIso, roleByKey } from '@orchestrator/contracts';
 import { EngineError, type AgentLink, type Engine } from '@orchestrator/orchestration';
@@ -424,6 +424,13 @@ export class ClientHub {
     return [...this.clients.values()].some((c) => this.answers(c));
   }
 
+  /** What the office's hi-fi is playing: told to everyone, now and when they walk in (see `HiFi` in `radio.ts`). */
+  private onAir: RadioNow | null = null;
+  radio(now: RadioNow | null): void {
+    this.onAir = now;
+    this.broadcast({ t: 'radio', radio: now });
+  }
+
   /** The last things said in the office (kept in memory only): shown to whoever walks in. */
   private recent: Array<{ from: { id: string; name: string; role: Who['role']; hue: number }; text: string; ts: string; emote?: boolean }> = [];
   private remember(line: (typeof this.recent)[number]): void {
@@ -475,6 +482,8 @@ export class ClientHub {
     const lines = this.recent.filter((l) => Date.parse(l.ts) > since);
     if (lines.length) this.send(id, { t: 'chat.history', lines });
     if (this.atDoor.length && this.answers(conn)) this.send(id, { t: 'knocks', knocks: this.atDoor });
+    // Always said, also when it is off: a window that comes back after the office restarted must not go on playing.
+    this.send(id, { t: 'radio', radio: this.onAir });
 
     ws.on('message', (data) => {
       let msg: ClientToServer;

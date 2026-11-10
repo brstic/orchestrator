@@ -137,7 +137,7 @@ export interface CeoView {
   accounts: UsageClockView[];
 }
 
-/** What the office hi-fi is doing right now (it really is playing in the owner's window, or it is not). */
+/** What the office hi-fi is doing right now: the office's own state, the same in every window (also in one that has muted its copy). */
 export interface RadioView {
   playing: boolean;
   station: string | null;

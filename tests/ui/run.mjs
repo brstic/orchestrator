@@ -146,10 +146,10 @@ try {
   const cancelTopic = 'A meeting that gets cancelled';
   const toCancel = await post('/meetings', { topic: cancelTopic, projectId: E('Noor').projectId, participantIds: [E('Alex').id, E('Sarah').id] });
   if (!toCancel.id) throw new Error(`setup: could not start the meeting to cancel: ${JSON.stringify(toCancel).slice(0, 200)}`);
-  // A local "radio station" (forty seconds of silence, and what it says is on air), so the hi-fi needs no internet here.
+  // A local "radio station" (three minutes of silence, and what it says is on air), so the hi-fi needs no internet here.
   const wav = (() => {
     const rate = 8000;
-    const n = rate * 40;
+    const n = rate * 180;
     const b = Buffer.alloc(44 + n, 128);
     b.write('RIFF', 0);
     b.writeUInt32LE(36 + n, 4);
@@ -329,7 +329,7 @@ try {
   check('the pause from the right-click menu was a real interrupt of that session', events.some((e) => e.type === 'terminal.interrupt' && e.employeeId === ava.id));
   check('every notification that existed when "Mark all read" was pressed is read', !!markedAt && s.notifications.filter((n) => n.createdAt <= markedAt && !n.resolvedAt && !n.readAt).length === 0, `${s.notifications.filter((n) => n.createdAt <= (markedAt ?? '')).length} notifications up to then`);
   const fm = s.settings.radio.stations.find((x) => x.name === ctx.radioName);
-  check('the station added at the hi-fi is saved with the office, with the volume that was set', fm?.url === ctx.radioUrl && fm?.nowPlayingUrl === ctx.radioNow && s.settings.radio.lastStationId === fm?.id && s.settings.radio.volume !== before.settings.radio.volume, `${fm?.name} @ ${fm?.url}, volume ${before.settings.radio.volume} → ${s.settings.radio.volume}`);
+  check('the station added at the hi-fi is saved with the office and noted as the last one played; the volume set there stayed on this computer', fm?.url === ctx.radioUrl && fm?.nowPlayingUrl === ctx.radioNow && s.settings.radio.lastStationId === fm?.id && s.settings.radio.volume === before.settings.radio.volume, `${fm?.name} @ ${fm?.url}, the office's volume ${before.settings.radio.volume} → ${s.settings.radio.volume}`);
   const whipTrace = [...events, ...audit].filter((x) => /whip/i.test(JSON.stringify(x)));
   check('the whip left no trace on the server: no event, no audit entry, no message', whipTrace.length === 0 && !s.messages.some((m) => /whip/i.test(m.body ?? '')), `${whipTrace.length} traces`);
   const bulk = ['XagioPanel', 'AiTuner', 'Scribe'].map((n) => by(n));

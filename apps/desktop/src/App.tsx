@@ -9,6 +9,8 @@ import { loadPrefs, usePrefs } from './lib/prefs.ts';
 import { boardView, ceoView, foremanView, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
 import { ChatBox, CommandBar, ConfirmDialog, DoorBell, Replies, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
 import { onTvFrame } from './lib/tv.ts';
+import { startRadio } from './lib/radio.ts';
+import { RadioNotice } from './hud/radio-bits.tsx';
 import { TvLayer } from './hud/tv.tsx';
 import { PanelHost } from './hud/panels/index.tsx';
 import './hud/panels/all.ts';
@@ -129,6 +131,8 @@ export function App() {
   const prefsReady = usePrefs((p) => p.ready);
   usePresence();
   useAccounts();
+  // The office's hi-fi is heard in this window too, from where this person's character stands.
+  useEffect(() => startRadio(), []);
   const [saying, setSaying] = useState(false);
   // Speech bubbles fade on their own: look again a moment after someone spoke.
   const [sayTick, setSayTick] = useState(0);
@@ -276,7 +280,8 @@ export function App() {
     const timer = setInterval(read, 60_000);
     return () => clearInterval(timer);
   }, [docKey, s.ready]);
-  const radioView = useMemo(() => ({ playing: s.radio.status === 'playing', station: s.radio.name }), [s.radio.status, s.radio.name]);
+  // The hi-fi in the 3D office shows the office's state, the same in every window — also in one that has muted its copy.
+  const radioView = useMemo(() => ({ playing: !!s.hifi, station: s.hifi?.station.name ?? null }), [s.hifi]);
   // The other people in the office (not this window), each with what they last said for a few seconds.
   const humans = useMemo(() => {
     const now = Date.now();
@@ -401,6 +406,7 @@ export function App() {
         <TvLayer />
         <div className="notice-stack">
           <DoorBell />
+          <RadioNotice />
           <Replies />
         </div>
         <CommandBar />

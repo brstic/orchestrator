@@ -2,7 +2,7 @@ import { Door, inviteCode } from './door.ts';
 import { Guests, whoIs, type Who } from './guests.ts';
 import { Knocks, type Admission } from './knocks.ts';
 import { allowed, eventFor, mayCall, stateFor } from './access.ts';
-import { nowPlaying } from './radio.ts';
+import { HiFi, nowPlaying } from './radio.ts';
 import { SshLinks } from './ssh-links.ts';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -113,6 +113,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const engine = new Engine({ store, agents, publicUrl, timings: opts.timings, log }, { send: (clientId, msg) => clients.send(clientId, msg) });
   agents.attach(engine);
   clients.attach(engine);
+  // The office's hi-fi: what is on is told to every window, and follows the list of stations when an owner edits it.
+  const hifi = new HiFi(() => engine.core.settings.radio.stations, (now) => clients.radio(now));
+  engine.core.bus.on('entity', (kind: string) => {
+    if (kind === 'settings') hifi.stationsChanged();
+  });
   engine.start();
 
   const app = Fastify({
@@ -405,6 +410,19 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.get('/radio/now', async (req) => {
       const station = engine.core.settings.radio.stations.find((s) => s.id === String(query(req).station ?? ''));
       return { text: station?.nowPlayingUrl ? await nowPlaying(station.nowPlayingUrl) : null };
+    });
+    // The hi-fi plays for the whole office. Owners and colleagues switch it (`access.ts`); the station is one of the saved ones.
+    api.get('/radio', async () => ({ radio: hifi.current }));
+    api.post('/radio/play', async (req) => {
+      const who = whoOf(req);
+      const now = hifi.play({ stationId: body(req).stationId, url: body(req).url }, { id: who.id, name: who.name });
+      if (!now) throw new EngineError('That station is not in the office\'s list. An owner can add it at the hi-fi.', 404);
+      if (engine.core.settings.radio.lastStationId !== now.station.id) engine.core.updateSettings({ radio: { ...engine.core.settings.radio, lastStationId: now.station.id } });
+      return { radio: now };
+    });
+    api.post('/radio/stop', async () => {
+      hifi.stop();
+      return { radio: null };
     });
     api.patch('/settings', async (req) => {
       const patch = body(req) as Record<string, unknown>;

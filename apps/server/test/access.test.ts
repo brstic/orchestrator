@@ -133,3 +133,11 @@ test('what is said on a member’s own computer is theirs and the owners’; of 
   assert.deepEqual([forAna.events.length, forAna.messages.length, forAna.questions.length, forAna.employees], [2, 1, 1, ['kept']]);
   assert.equal(stateFor(engine, vera, state), state);
 });
+
+test('the hi-fi plays for the whole office: everyone is told what is on, owners and colleagues switch it, the list of stations is the owners’', () => {
+  for (const who of [root, vera, jovan, ana, mila]) assert.ok(call(who, 'GET', '/radio') && call(who, 'GET', '/radio/now'), `${who.name} may know what is playing`);
+  for (const route of ['/radio/play', '/radio/stop']) assert.deepEqual([root, vera, jovan, ana, mila].map((who) => call(who, 'POST', route, { stationId: 'jazz' })), [true, true, true, true, false], route);
+  assert.match(mayCall(engine, mila, 'POST', '/radio/play', { stationId: 'jazz' }).reason ?? '', /You are visiting this office/);
+  // Stations are kept in the settings: adding one (an address every window will load) stays an owner's act.
+  assert.deepEqual([vera, jovan, mila].map((who) => call(who, 'PATCH', '/settings', { radio: { stations: [] } })), [true, false, false]);
+});

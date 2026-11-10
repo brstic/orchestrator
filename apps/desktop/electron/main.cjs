@@ -321,8 +321,8 @@ ipcMain.handle('orch:pick-folders', async (event) => {
   const res = await dialog.showOpenDialog(parent, { title: 'Choose the project folders — one employee is hired for each', buttonLabel: 'Choose folders', properties: ['openDirectory', 'multiSelections'] });
   return res.canceled ? [] : res.filePaths;
 });
-// This computer's preferences (graphics, keys, extras), the same in every office opened from here. The page that
-// asks may be another office's, so only those four fields are kept, and only in their expected shapes.
+// This computer's preferences (graphics, keys, extras, how loud the hi-fi is here), the same in every office opened
+// from here. The page that asks may be another office's, so only these fields are kept, and only in their expected shapes.
 const prefsFile = () => path.join(app.getPath('userData'), 'prefs.json');
 ipcMain.handle('orch:prefs-get', () => {
   try {
@@ -337,7 +337,14 @@ ipcMain.handle('orch:prefs-set', (_event, input) => {
   for (const [id, code] of Object.entries(p.keybindings && typeof p.keybindings === 'object' ? p.keybindings : {}).slice(0, 64)) {
     if (typeof code === 'string' && code && code.length <= 40 && id.length <= 40) keys[id] = code;
   }
-  const prefs = { quality: ['low', 'medium', 'high'].includes(p.quality) ? p.quality : 'medium', keybindings: keys, projectZones: p.projectZones === true, approachZoom: p.approachZoom === true };
+  const prefs = {
+    quality: ['low', 'medium', 'high'].includes(p.quality) ? p.quality : 'medium',
+    keybindings: keys,
+    projectZones: p.projectZones === true,
+    approachZoom: p.approachZoom === true,
+    radioVolume: typeof p.radioVolume === 'number' && Number.isFinite(p.radioVolume) ? Math.min(1, Math.max(0, p.radioVolume)) : 0.6,
+    radioMuted: p.radioMuted === true,
+  };
   const file = prefsFile();
   // Written beside and renamed, so a crash half-way leaves the previous file.
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -532,6 +539,9 @@ async function openOffice(target) {
       sandbox: true,
       // Keep rendering and terminal streams alive when the window is in the background.
       backgroundThrottling: false,
+      // The office hi-fi starts in every window when someone in the office switches it on: no click happens here first.
+      // (This is Electron's default; said here because the hi-fi depends on it.)
+      autoplayPolicy: 'no-user-gesture-required',
       additionalArguments: [`--orch-server=${target.url}`, `--orch-token=${target.token}`],
       // The office TV is a real embedded browser (see setupTv): the only <webview> this window may create.
       webviewTag: true,
