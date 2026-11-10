@@ -3,7 +3,7 @@
 _Last updated: 2026-11-10. Update this file with every piece of work (see `CLAUDE.md`)._
 
 ## Now
-**Plan:** [UPDATE — central office](plans/UPDATE-central-office.md) — **finished**: built, tested, running on the owner's server, and tried there with two members at once and real Claude Code doing a small real task on the server and on a member's computer. Handed over: a second human joining from their own computer (see the plan's "Handed over" section).
+**Plan:** [UPDATE — central office](plans/UPDATE-central-office.md) — **finished**: built, tested, running on the owner's server, and tried there with two members at once and real Claude Code doing a small real task on the server and on a member's computer. The plan is closed. Follow-up, outside the plan: the collaborator builds the client from the repository and joins with their invitation.
 
 **The office on the server ("Sparkcan", Ubuntu 22.04):**
 - Program: `~/orchestrator-office/app` (portable package). State: `~/.orchestrator-office/{server,agent}` — separate from `~/.orchestrator`, where the agent of the owner's Mac office (the SSH link) lives.
@@ -16,7 +16,7 @@ _Last updated: 2026-11-10. Update this file with every piece of work (see `CLAUD
 **The owner's Mac app** (`release/Orchestrator.app`) runs the latest build (replaced 2026-11-10 after the owner closed it; smoke 15/15, sessions re-adopted, SSH link connected). `release/` also holds the matching `.dmg` and portable tarball.
 
 Next steps:
-1. The owner connects with their invitation and passes `~/Desktop/Orchestrator-za-kolegu/` to the collaborator (macOS Apple Silicon installer + invitation). For another platform, build the bundle (`node scripts/package.mjs --linux --windows`; those in `release/` are stale).
+1. The collaborator needs access to the repository (their GitHub username is still needed to add them), builds the client from it (INSTALL.md, "Without an installer") and joins with the invitation in `~/Desktop/Orchestrator-za-kolegu/PROCITAJ.txt`. The owner connects with their own invitation.
 3. Decide what moves from the Mac's local office to the server office (the two are separate offices; nothing was migrated).
 4. From real use: fix what breaks; extend the UI suite with role-by-role clicks.
 

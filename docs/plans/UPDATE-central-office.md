@@ -68,10 +68,8 @@ Details and the route-by-route table: [../ACCESS.md](../ACCESS.md).
 - [x] On the owner's own server (2026-11-10): installed on "Sparkcan" (Ubuntu 22.04) from the portable package as a systemd user service with its own state folders, door on 4610 (firewall opened with the owner's approval), reachable on the LAN and over Tailscale. Joined from this Mac with the real desktop app as a temporary colleague: the Mac came in as a personal host over the network, real Claude Code started on the server (shared) and on the Mac (personal) with nothing sent, the server's terminal was watched from the Mac, the room appeared; then everything the trial made was removed and the member revoked.
 - [x] Two members at once and real work, on the owner's server (2026-11-10): an owner and a colleague, each in their own desktop app, in the office on Sparkcan at the same time — they saw and heard each other; the owner gave a shared employee on the server one small real task and the colleague gave their own employee on the Mac one; **real Claude Code did both** (a file written on the server, a file written on the Mac), and both accounts' usage arrived at the office. Trial members and employees were removed afterwards.
 
-## Handed over to the owner (not development)
-Everything that can be done without another human is done, including the update of the owner's own Mac app to the final build. For the collaborator to come in, the owner only has to pass on what is prepared:
-- `~/Desktop/Orchestrator-za-kolegu/` — a fresh macOS (Apple Silicon) installer, an invitation for "Fenix" as `colleague`, and instructions. The invitation is unused; it can be revoked or re-issued from Menu → People.
-- `~/Desktop/Orchestrator-moja-pozivnica-OWNER.txt` — the owner's own invitation to the office on the server.
+## Closed
+The owner closed the plan on 2026-11-10: the collaborator has GitHub and will build the client from the repository (INSTALL.md, "Without an installer") and come in with the invitation made for them ("Fenix", colleague — in `~/Desktop/Orchestrator-za-kolegu/PROCITAJ.txt` on the owner's Mac). What their first real session turns up goes into `STATUS.md` as ordinary follow-up work, not into this plan.
 
 ## What "done" does not cover
 - The trials used one client computer (this Mac) for both people; the server was a separate machine. Real work was one trivial task per side.

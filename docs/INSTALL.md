@@ -49,6 +49,16 @@ A restart of the service does not stop anyone's work: employees' tmux sessions k
 
 **On each person's computer:** install the desktop app, choose **Connect to an office**, paste the invitation. The office is remembered on the start screen. A colleague or owner whose computer has tmux, Node.js and Claude Code also gets **Menu → My room**: folders on their own computer become employees that run there, under their own Claude account, visible in their room while they are connected (see [ACCESS.md](ACCESS.md)).
 
+**Without an installer (from the repository):** on macOS or Linux with Node.js 22.18+ and pnpm:
+
+```sh
+git clone https://github.com/brstic/orchestrator && cd orchestrator
+pnpm install && pnpm build
+pnpm desktop            # opens the start screen: Connect to an office → paste the invitation
+```
+
+For a room of your own (sessions on your computer) you also need tmux and the Claude Code CLI logged in. `node scripts/package.mjs` makes an installable app from the same checkout.
+
 **More members:** any owner can invite from **Menu → People**, or on the server: `pnpm office invite <name> --role owner|colleague|visitor`, `pnpm office role <name> <role>`, `pnpm office reinvite <name>`, `pnpm office revoke <name>`.
 
 Not tried yet on a real server with two people on two computers; it is covered by the automated suites on one machine (see `docs/STATUS.md`).
