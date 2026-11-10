@@ -501,6 +501,8 @@ export interface Question {
   deliveredAt: ISODate | null;
   confirmedAt: ISODate | null;
   deliveryDetail: string | null;
+  /** autopilot: who decided a permission request, as the audit log names them ('owner', 'member:<name>'). Absent on older records. */
+  autopilotDecidedBy?: string | null;
 }
 
 // ─────────────────────────── Messaging ───────────────────────────
@@ -743,8 +745,10 @@ export type ImprovementAction =
 
 /**
  * A change Orchestrator proposes to its own way of working, derived from its
- * recorded history. Anything that widens what agents may do without asking is
- * never applied without the owner.
+ * recorded history. Whether the office may apply one by itself is decided by
+ * the autopilot dial (`SelfImprovementSettings.autopilot`): anything that widens
+ * what agents may do without asking waits for the owner unless the dial is on
+ * `trusted`, and then only under evidence thresholds and on probation.
  */
 export interface Improvement {
   id: ID;
@@ -760,6 +764,8 @@ export interface Improvement {
   dedupeKey: string;
   createdAt: ISODate;
   decidedAt: ISODate | null;
+  /** autopilot: who applied it, how to undo it, its probation and whether it was taken back. Absent on records from before the autopilot. */
+  autopilot?: ImprovementAutopilot | null;
 }
 
 export interface SelfImprovementSettings {
@@ -770,6 +776,57 @@ export interface SelfImprovementSettings {
   autoApproveSharedLessons: boolean;
   /** Let measured outcomes influence which employee the scheduler picks. */
   learnedRouting: boolean;
+  /**
+   * autopilot: what the office applies by itself.
+   * off = nothing, every suggestion waits; safe = only changes that cannot widen what agents may do without asking;
+   * trusted = also widening changes, under evidence thresholds, each on probation and taken back on a counter-signal.
+   */
+  autopilot: AutopilotMode;
+  /** autopilot: at most this many automatic changes per project per day (1–20). */
+  autopilotMaxPerDay: number;
+}
+
+export type AutopilotMode = 'off' | 'safe' | 'trusted';
+
+/** autopilot: the inverse of an applied `ImprovementAction`, with what was there before it. */
+export type AutopilotUndo =
+  | { type: 'project.policy.allow'; projectId: ID; rule: string; /** false: the rule was already there, so undoing removes nothing */ added: boolean }
+  | { type: 'project.policy.deny'; projectId: ID; rule: string; added: boolean }
+  | { type: 'project.requireReview'; projectId: ID; previous: boolean; applied: boolean }
+  | { type: 'project.verifyTimeout'; projectId: ID; previous: number; applied: number }
+  | { type: 'employee.autonomy'; employeeId: ID; previous: AutonomyLevel; applied: AutonomyLevel }
+  | { type: 'advice' };
+
+/** autopilot: the trial period of a change the office made by itself. */
+export interface AutopilotProbation {
+  startedAt: ISODate;
+  /** It ends at this time… */
+  until: ISODate;
+  /** …or once this many more tasks of the affected project or employee have finished, whichever comes first. */
+  tasksLeft: number;
+  /** The finished tasks counted so far. */
+  taskIds: ID[];
+  /** running; passed = it ended without a counter-signal; reverted = a counter-signal took the change back; ended = a person undid or replaced the change first. */
+  status: 'running' | 'passed' | 'reverted' | 'ended';
+}
+
+/** autopilot: the record kept with an applied improvement so that it can be explained and reversed. */
+export interface ImprovementAutopilot {
+  /** 'autopilot', or the person as the audit log names them ('owner', 'member:<name>'). */
+  appliedBy: string;
+  /** True when the office applied it by itself. */
+  auto: boolean;
+  appliedAt: ISODate;
+  /** Whether the change widened what agents may do without asking, judged when it was applied. */
+  widening: boolean;
+  undo: AutopilotUndo | null;
+  /** Only changes the office made by itself are on probation. */
+  probation: AutopilotProbation | null;
+  /** Set when it was taken back. `restored` is false when there was nothing left to restore (a person had changed the setting since). */
+  reverted: { at: ISODate; by: string; reason: string; evidence: EvidenceRef[]; restored: boolean; note: string } | null;
+  /** The autopilot will not apply this one again by itself: it was taken back once. */
+  noAuto: boolean;
+  history: Array<{ ts: ISODate; what: 'applied' | 'reverted' | 'kept'; by: string; note: string }>;
 }
 
 // ──────────────────────────── Foreman ────────────────────────────

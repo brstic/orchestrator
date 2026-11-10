@@ -29,6 +29,8 @@ const termOf = async (name: string) => {
 before(async () => {
   h = await createHarness();
   boss = await h.client();
+  // These tests are about what the owner decides by hand; what the office applies by itself is in 23-learning-autopilot.
+  await h.api('PATCH', '/settings', { selfImprovement: { autopilot: 'off' } });
   repo = h.makeRepo('learn');
   projectId = (await h.project('Learning', repo, { verifyCommand: 'npm test --silent' })).id;
   ids.Alex = (await h.employee('Alex', 'backend', { projectId, autonomy: 'standard' })).id;

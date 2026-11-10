@@ -53,7 +53,13 @@ Plus project `policy.allow` / `policy.deny`, plus the employee's own lists. `byp
 
 **Workers do not inherit your MCP connectors** by default (`--strict-mcp-config`): they get the Orchestrator server only. Turning on *Settings → Workers → inherit my MCP servers* gives every worker whatever those connectors can reach.
 
-**Changes that widen permissions are always yours.** Suggestions such as "pre-approve `docker build`" or "give Dana standard autonomy" are proposals; applying one is an owner action, recorded in the audit log, and takes effect for sessions started afterwards.
+**Changes that widen permissions are yours — unless you hand some of that over.** Suggestions such as "pre-approve `docker build`" or "give Dana standard autonomy" are proposals; applying one is an owner action, recorded in the audit log, and takes effect for sessions started afterwards. What the office may apply by itself is set by one dial, *the autopilot* (`settings.selfImprovement.autopilot`; details and limits in [learning/autopilot.md](learning/autopilot.md)):
+
+- **off** — nothing is applied without a person.
+- **safe** (the default) — the office applies only changes that cannot let agents do more without asking: deny rules, required review, a longer verification timeout, a lower autonomy level, a lesson for one employee. It never adds an allow rule, raises autonomy or switches review off. "Safe" is about permissions only: a deny rule or a review gate applied this way can still get in the way of work until you undo it.
+- **trusted** — the office also applies widening changes, each under a fixed evidence rule (for an allow rule: at least five approvals of exactly that command shape in that project, across two tasks or a day, not one denial ever, nothing of that shape on the high-risk list, never a shape that runs arbitrary other commands; for autonomy: one level at a time, never beyond *standard*, on a clean record), and each on probation: a denial, a high-risk request of that shape or a failure in that time takes it back, and it is not applied automatically again. On shared machines a colleague's approvals count as evidence like yours.
+
+Whatever the dial says, the office **never answers a permission request**, never pre-approves anything that matches the high-risk list, never gives *autonomous* or *auto*, and never changes the foreman. On a member's own computer it changes permissions only on that member's own decisions. Every automatic change is written to the audit log as `autopilot`, recorded as a `learning.applied` event with its evidence, and can be undone (`POST /api/improvements/:id/revert`, owners only). Like any rule change, an automatic one — and its undoing — reaches a session when that session is next started: a rule that is taken back stays in sessions already running until they restart.
 
 ## The foreman
 

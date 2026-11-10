@@ -541,6 +541,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/improvements/analyze', async () => engine.improver.analyze());
     api.post('/improvements/:id/apply', async (req) => engine.improver.apply(param(req, 'id')));
     api.post('/improvements/:id/dismiss', async (req) => engine.improver.dismiss(param(req, 'id')));
+    // Undo an applied improvement, whoever applied it (the office itself included). Like apply: owners only, as it is on no guest's list in access.ts.
+    api.post('/improvements/:id/revert', async (req) => {
+      const who = whoOf(req);
+      return engine.improver.autopilot.revert(param(req, 'id'), who.id === 'owner' ? 'owner' : `member:${who.name}`);
+    });
 
     // natural-language commands: plan first, execute only what the owner confirmed
     api.post('/commands/plan', async (req) => engine.commands.planWithFallback(String(body(req).input ?? '')));
