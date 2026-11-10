@@ -43,6 +43,8 @@ loginctl enable-linger "$USER"
 journalctl --user -u orchestrator -f
 ```
 
+If the machine already runs an Orchestrator agent for another office (for example it is linked over SSH to an office on your own computer), give this office folders of its own before starting it and before generating the unit: `export ORCH_SERVER_HOME=~/.orchestrator-office/server ORCH_AGENT_HOME=~/.orchestrator-office/agent` (the unit generator writes them into the service).
+
 A restart of the service does not stop anyone's work: employees' tmux sessions keep running and are picked up again. The door keeps its certificate, so invitations stay valid.
 
 **On each person's computer:** install the desktop app, choose **Connect to an office**, paste the invitation. The office is remembered on the start screen. A colleague or owner whose computer has tmux, Node.js and Claude Code also gets **Menu → My room**: folders on their own computer become employees that run there, under their own Claude account, visible in their room while they are connected (see [ACCESS.md](ACCESS.md)).

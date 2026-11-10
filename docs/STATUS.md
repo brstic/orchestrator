@@ -3,12 +3,21 @@
 _Last updated: 2026-11-10. Update this file with every piece of work (see `CLAUDE.md`)._
 
 ## Now
-**Plan:** [UPDATE — central office](plans/UPDATE-central-office.md) — all phases built, passing the automated suites, and tried against a real Linux server in a container (`pnpm test:central`, 23/23, with the real Claude Code CLI started on the member's side). **One item is open and needs the owner:** the same on their own server with a second person on another computer.
+**Plan:** [UPDATE — central office](plans/UPDATE-central-office.md) — built, tested, and **running on the owner's server**. What is left is not development: a second person joining from their own computer, and giving the employees real work.
 
-Next steps, in order:
-1. Install on the owner's Linux server following `INSTALL.md` section 0; invite the owner as `owner` and the collaborator as `colleague`; note what breaks.
-2. Rebuild the desktop bundles for the collaborator's platform (`.dmg`, Linux/Windows bundles are stale).
-3. From that trial: fix, then extend the UI suite with role-by-role clicks (see "Not verified").
+**The office on the server ("Sparkcan", Ubuntu 22.04):**
+- Program: `~/orchestrator-office/app` (portable package). State: `~/.orchestrator-office/{server,agent}` — separate from `~/.orchestrator`, where the agent of the owner's Mac office (the SSH link) lives.
+- Service: `systemctl --user status orchestrator-office` (linger on). Node from nvm (`~/.nvm/versions/node/v22.23.4`).
+- Door: port 4610, TLS; addresses `https://<server-vpn-ip>:4610` (Tailscale) and `https://<server-lan-ip>:4610` (LAN); `ufw allow 4610/tcp` was added.
+- Manage: `cd ~/orchestrator-office/app && ORCH_SERVER_HOME=~/.orchestrator-office/server node scripts/office-admin.mjs status|invite|role|revoke`.
+- Update: build a package here (`node scripts/package.mjs --no-app`), copy `release/orchestrator-<version>.tar.gz`, unpack over `~/orchestrator-office/app`, `systemctl --user restart orchestrator-office`.
+- Members: Branko (owner; invitation made, not yet used).
+
+Next steps:
+1. The owner connects with their invitation; invites the collaborator as `colleague`.
+2. Rebuild the desktop bundles for the collaborator's platform (`.dmg`, Linux/Windows bundles are stale) — or they build from the repository.
+3. Decide what moves from the Mac's local office to the server office (the two are separate offices; nothing was migrated).
+4. From real use: fix what breaks; extend the UI suite with role-by-role clicks.
 
 ## What exists (verified by the automated suites)
 - **Office on a server**: `pnpm serve` (server + shared host agent + TLS door), `pnpm office …` to invite and manage members from the server's terminal, a systemd unit generator.
@@ -21,7 +30,8 @@ Next steps, in order:
 - Extras: radio, TV, whip, seating editor, sleeping pose. Storage: SQLite (default) and PostgreSQL.
 
 ## Not verified / known problems
-- The UPDATE plan has run against a Linux server only as a container on this Mac, with both people's desktop apps on this Mac. Real Claude Code was started on the member's computer (hooks and MCP reached the server) but did no work; on the server the worker was the scripted one. Not yet: the owner's server, a physically separate second computer, real work.
+- On the real server the trial was one person from one Mac, and real Claude Code was only started (no prompt sent) on both sides. Not yet: a second person on another computer, real work through the server office, a server restart with real sessions.
+- The server office and the owner's local Mac office are two separate offices; the Mac office still reaches the same server through its SSH link, so two agents run on Sparkcan side by side (they do not share sessions).
 - Usage per account did not arrive from a real CLI session that had made no request yet (Claude Code gives the status line no limits until it knows them); it does once the session has worked.
 - Role-dependent controls (People panel with the owner role, hidden/disabled buttons for visitors and for other members' employees) are covered by API tests and type checks, not by UI tests that click as each role. Hi-fi and TV panels are not role-aware (a visitor can try to add a station and is refused by the office).
 - Member rooms: default layout and High quality only; more than 10 members online get no room; places are per position (when someone leaves, later members move up one).

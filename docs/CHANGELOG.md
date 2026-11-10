@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-10
+- The office is installed and running on the owner's server (see STATUS). Invitations no longer list container bridge addresses or duplicates; in server mode the start script no longer prints the owner token to the log; the generated systemd unit carries the office's state folders.
 - `pnpm test:central`: the office installed from the portable package on a Linux container, two desktop apps connecting from this computer, the real Claude Code CLI on the member's side (zero tokens).
 - **UPDATE plan (office on a server):** members with three roles and one access module (`access.ts`, `ACCESS.md`); owner-role members through the door; `pnpm serve`, `pnpm office` (invite/role/revoke/service); personal hosts (`POST /api/me/host`, relay + agent started by the desktop app, `Host.memberId`); "My room" panel; start screen leads with "Connect to an office"; role-aware employee card, context menu and workstation.
 - Behaviour changes to note: visitors can now watch shared terminals and read shared documents; colleagues can type into shared terminals, hire, start/stop sessions and decide permission requests of shared employees; the API path for members is still `/guests`; audit actors are `member:<name>`.

@@ -53,7 +53,12 @@ export class Door {
   status(): DoorStatus {
     const addresses: string[] = [];
     if (this.server && this.port) {
-      for (const list of Object.values(os.networkInterfaces())) for (const a of list ?? []) if (!a.internal && a.family === 'IPv4') addresses.push(`https://${a.address}:${this.port}`);
+      // Not the bridges of containers and virtual machines on this computer: nobody outside can reach those,
+      // and an invitation full of them makes the joining app try each in turn.
+      for (const [name, list] of Object.entries(os.networkInterfaces())) {
+        if (/^(docker|br-|veth|virbr|cni|flannel|lxc|podman|vmnet|bridge\d)/.test(name)) continue;
+        for (const a of list ?? []) if (!a.internal && a.family === 'IPv4') addresses.push(`https://${a.address}:${this.port}`);
+      }
     }
     return { open: !!this.server, port: this.port, addresses, fingerprint: this.fingerprint, error: this.error };
   }

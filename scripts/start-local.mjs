@@ -147,7 +147,8 @@ if (json) console.log(JSON.stringify({ url, token, ...(door ? { door: door.door 
 else {
   say('');
   say('  ORCHESTRATOR is running.');
-  say(`  Open your office:  ${officeUrl}`);
+  // On a server the output goes to a log; the office's own token does not belong there.
+  say(door ? `  The office itself answers on ${url} (this machine only); its owner token is in ${path.join(serverHome, 'owner-token')}` : `  Open your office:  ${officeUrl}`);
   if (!fs.existsSync(path.join(root, 'apps/desktop/dist/index.html'))) say('  (The office UI has not been built yet — run: pnpm build:ui)');
   if (door) {
     say(`  Open to its members at:  ${[door.wanted.address, ...door.door.addresses].filter(Boolean).join('   ')}`);

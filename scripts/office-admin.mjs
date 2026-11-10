@@ -126,8 +126,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=%h
-Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=${process.execPath} ${path.join(root, 'scripts', 'start-local.mjs')} --door ${door}${opts.address ? ` --address ${opts.address}` : ''}
+Environment=PATH=${path.dirname(process.execPath)}:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+${['ORCH_SERVER_HOME', 'ORCH_AGENT_HOME', 'ORCH_PORT'].filter((k) => process.env[k]).map((k) => `Environment=${k}=${process.env[k]}\n`).join('')}ExecStart=${process.execPath} ${path.join(root, 'scripts', 'start-local.mjs')} --door ${door}${opts.address ? ` --address ${opts.address}` : ''}
 Restart=always
 RestartSec=5
 # Employees' tmux sessions outlive a restart of the office.

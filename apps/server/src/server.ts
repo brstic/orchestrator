@@ -252,7 +252,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     const invitation = (guest: { name: string; role: string }, token: string) => {
       const st = door!.status();
       const extra = store.kvGet<{ address: string | null }>('sharing', { address: null }).address;
-      return inviteCode({ office: engine.core.settings.companyName, guest: guest.name, role: guest.role, token, addresses: [...(extra ? [extra] : []), ...st.addresses], fingerprint: st.fingerprint ?? '' });
+      return inviteCode({ office: engine.core.settings.companyName, guest: guest.name, role: guest.role, token, addresses: [...new Set([...(extra ? [extra] : []), ...st.addresses])], fingerprint: st.fingerprint ?? '' });
     };
     const needDoor = () => {
       if (!door?.status().open) throw new EngineError('open the office to guests first (the guest door is closed)');
