@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { unlockedUpgrades } from '@orchestrator/contracts';
 import { OfficeScene, ownerPosition } from '@orchestrator/office-3d';
 import { Button } from '@orchestrator/ui';
 import { api, connection, serverBase, setToken } from './lib/api.ts';
@@ -242,7 +243,7 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [prefs.keybindings]);
 
-  const unlocked = useMemo(() => s.milestones.filter((m) => m.unlockedAt && m.unlocks).map((m) => m.unlocks!), [s.milestones]);
+  const unlocked = useMemo(() => unlockedUpgrades(s.milestones), [s.milestones]);
   // The office as it is drawn: the stored layout plus a room for each member whose own computer is connected.
   const office = useMemo(() => officeWithRooms(s, unlocked), [s.layout, s.hosts, s.employees, unlocked]); // eslint-disable-line react-hooks/exhaustive-deps
   const people = useMemo(() => personViews(s, office), [s.employees, s.sessions, s.tasks, s.questions, s.meetings, s.projects, s.filter, s.control, office]); // eslint-disable-line react-hooks/exhaustive-deps

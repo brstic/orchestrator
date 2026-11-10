@@ -2,7 +2,7 @@ import { Seating } from './seating.tsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { OfficeLayout } from '@orchestrator/contracts';
-import { DESK_SIZE, decorationBox, decorationKind, deskSeat } from '@orchestrator/contracts';
+import { DESK_SIZE, decorationBox, decorationKind, deskSeat, unlockedUpgrades } from '@orchestrator/contracts';
 import { addDecoration, deskPods, movableEdges, moveDecoration, moveDesks, ownerPosition, placeableDecorations, removeDecoration, renameRoom, resizeRoom, type EditResult } from '@orchestrator/office-3d';
 import { Badge, Button, Stat, Window } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
@@ -312,7 +312,7 @@ function OfficePanel({ onClose }: { arg: string | null; onClose: () => void }) {
   const occupied = new Map(employees.filter((e) => e.deskId).map((e) => [e.deskId!, e]));
   const free = s.layout.desks.filter((d) => !occupied.has(d.id));
   const refresh = () => void qc.invalidateQueries({ queryKey: ['layout-capacity'] });
-  const unlocked = new Set(s.milestones.filter((m) => m.unlockedAt && m.unlocks).map((m) => m.unlocks!));
+  const unlocked = new Set(unlockedUpgrades(s.milestones));
   return (
     <Window title="Office" subtitle="Floor plan, desks, decorations and upgrades" onClose={onClose} width={940}>
       <div className="col" style={{ gap: 14 }}>

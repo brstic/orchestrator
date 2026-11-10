@@ -8,6 +8,11 @@ import type { BoardView, CeoView, HostView, Quality, ScreenSubscribe, UsageClock
 import { DESK_SIZE, WALL_T, deskBox, deskSeat, type Box, type World } from './world.ts';
 import { memberRoomTitle, type MemberRoom } from './member-rooms.ts';
 import { ON_SURFACE } from './surface.ts';
+import { InstancedModel, Model } from './models/Model.tsx';
+import { DESK_TOP, desk as deskModel, divider as dividerModel, lampDome, taskChair } from './models/workplace.ts';
+import { arcade, bookshelf, coffeeTable, deskPlant, floorLamp, mug, neonBoard, notebook, plant, rug, sofa, trophyCase } from './models/decor.ts';
+import { carpetMaterial, ceilingTexture, floorMaterial } from './models/surfaces.ts';
+import { executiveDesk, fridge, kitchen, mediaConsole, meetingTable, opsConsole, rack as rackModel, receptionDesk } from './models/rooms.ts';
 
 /** What the scene reports about itself for the UI tests (like `window.__orchPerf`): which room interiors are mounted, what the whiteboard says. */
 export function sceneProbe(): Record<string, any> {
@@ -73,56 +78,6 @@ export function Near({ id, area, player, overview, children }: { id: string; are
 
 // ───────────────────────────── helpers ─────────────────────────────
 
-function noiseTexture(base: string, variance: number, repeat: number, grid = 0): THREE.CanvasTexture {
-  const size = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, size, size);
-  const img = ctx.getImageData(0, 0, size, size);
-  let seed = 1337;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const n = (rnd() - 0.5) * variance;
-    img.data[i] = Math.max(0, Math.min(255, img.data[i]! + n));
-    img.data[i + 1] = Math.max(0, Math.min(255, img.data[i + 1]! + n));
-    img.data[i + 2] = Math.max(0, Math.min(255, img.data[i + 2]! + n));
-  }
-  ctx.putImageData(img, 0, 0);
-  if (grid) {
-    ctx.strokeStyle = 'rgba(0,0,0,0.16)';
-    ctx.lineWidth = 2;
-    for (let i = 0; i <= grid; i++) {
-      const p = (i / grid) * size;
-      ctx.beginPath();
-      ctx.moveTo(p, 0);
-      ctx.lineTo(p, size);
-      ctx.moveTo(0, p);
-      ctx.lineTo(size, p);
-      ctx.stroke();
-    }
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(repeat, repeat);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
-}
-
-const FLOOR: Record<RoomDef['kind'], { color: string; variance: number; rough: number; grid?: number; scale: number }> = {
-  open: { color: '#5d6f8a', variance: 22, rough: 0.95, scale: 0.9 },
-  hall: { color: '#b9c0cb', variance: 10, rough: 0.55, grid: 2, scale: 0.5 },
-  ceo: { color: '#8b6a48', variance: 26, rough: 0.6, scale: 0.6 },
-  meeting: { color: '#4d7c7b', variance: 20, rough: 0.95, scale: 0.9 },
-  ops: { color: '#2b3344', variance: 12, rough: 0.5, grid: 2, scale: 0.6 },
-  server: { color: '#262d3a', variance: 10, rough: 0.45, grid: 2, scale: 0.8 },
-  break: { color: '#d8c6a6', variance: 14, rough: 0.6, grid: 3, scale: 0.5 },
-  reception: { color: '#cdd1d8', variance: 10, rough: 0.4, grid: 1, scale: 0.4 },
-  team: { color: '#7a6a8e', variance: 20, rough: 0.95, scale: 0.9 },
-};
-
 /** Many copies of one mesh in a single draw call. */
 function Instanced({ geometry, material, matrices, castShadow = true, receiveShadow = false }: { geometry: THREE.BufferGeometry; material: THREE.Material; matrices: THREE.Matrix4[]; castShadow?: boolean; receiveShadow?: boolean }) {
   const ref = useRef<THREE.InstancedMesh>(null);
@@ -134,7 +89,8 @@ function Instanced({ geometry, material, matrices, castShadow = true, receiveSha
     mesh.computeBoundingSphere();
   }, [matrices]);
   if (!matrices.length) return null;
-  return <instancedMesh ref={ref} args={[geometry, material, matrices.length]} castShadow={castShadow} receiveShadow={receiveShadow} frustumCulled />;
+  // Keyed by count: an instanced mesh cannot grow, so a longer list gets a new one.
+  return <instancedMesh key={matrices.length} ref={ref} args={[geometry, material, matrices.length]} castShadow={castShadow} receiveShadow={receiveShadow} frustumCulled />;
 }
 
 const tmpM = new THREE.Matrix4();
@@ -191,10 +147,12 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
   const floors = useMemo(
     () =>
       base.rooms.map((r) => {
-        const f = FLOOR[r.kind];
-        const tex = noiseTexture(f.color, f.variance, 1, f.grid ?? 0);
-        tex.repeat.set(r.w * f.scale, r.d * f.scale);
-        return { room: r, material: new THREE.MeshStandardMaterial({ map: tex, roughness: f.rough, metalness: 0 }) };
+        const material = floorMaterial(r.kind, r.w, r.d).material;
+        // A room that stands inside another (the team room on the engineering floor) lies on that room's floor:
+        // its own floor is drawn as a picture on a surface, or the two would fight for the same depth and flicker.
+        const inside = base.rooms.some((o) => o !== r && r.x >= o.x - 0.01 && r.z >= o.z - 0.01 && r.x + r.w <= o.x + o.w + 0.01 && r.z + r.d <= o.z + o.d + 0.01);
+        if (inside) Object.assign(material, ON_SURFACE);
+        return { room: r, material, lift: inside ? 0.004 : 0 };
       }),
     [base.rooms],
   );
@@ -203,9 +161,24 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
   const glassMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#a9d8ff', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.3, depthWrite: false }), []);
   const frameMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#2c3442', roughness: 0.4, metalness: 0.6 }), []);
   const capMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#39424f', roughness: 0.7 }), []);
+  const skirtMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#4a5361', roughness: 0.6 }), []);
+  // A skirting board along the foot of every solid wall, in one draw call. It keeps its height when the walls drop.
+  const skirting = useMemo(() => {
+    const unit = new THREE.BoxGeometry(1, 0.085, 1);
+    return {
+      unit,
+      matrices: world.walls
+        .filter((w) => !w.glass)
+        .map((w) => {
+          const len = Math.hypot(w.x2 - w.x1, w.z2 - w.z1) + WALL_T + 0.024;
+          const horizontal = Math.abs(w.z2 - w.z1) < 1e-6;
+          return new THREE.Matrix4().compose(new THREE.Vector3((w.x1 + w.x2) / 2, 0.0425, (w.z1 + w.z2) / 2), new THREE.Quaternion(), new THREE.Vector3(horizontal ? len : WALL_T + 0.024, 1, horizontal ? WALL_T + 0.024 : len));
+        }),
+    };
+  }, [world.walls]);
   const group = useRef<THREE.Group>(null);
   const ceiling = useRef<THREE.Group>(null);
-  const ceilingMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#eef1f5', roughness: 0.95, transparent: true, opacity: cutaway ? 0 : 1 }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const ceilingMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, transparent: true, opacity: cutaway ? 0 : 1 }), []); // eslint-disable-line react-hooks/exhaustive-deps
   const panels = useMemo(() => {
     const out: Array<[number, number]> = [];
     for (let x = base.bounds.minX + 3; x < base.bounds.maxX; x += 5.5) for (let z = base.bounds.minZ + 3; z < base.bounds.maxZ; z += 5) out.push([x, z]);
@@ -228,14 +201,18 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 16;
+    const tiles = ceilingTexture(W, D);
     ceilingMat.emissive = new THREE.Color('#ffffff');
     ceilingMat.emissiveIntensity = 2.4;
     ceilingMat.emissiveMap = tex;
+    ceilingMat.map = tiles;
     ceilingMat.needsUpdate = true;
     return () => {
       ceilingMat.emissiveMap = null;
+      ceilingMat.map = null;
       ceilingMat.needsUpdate = true;
       tex.dispose();
+      tiles.dispose();
     };
   }, [base, panels, ceilingMat]);
   const height = useRef(cutaway ? 1.1 : 3);
@@ -248,9 +225,7 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
       world.memberRooms.map((r) => {
         // Away: the room keeps a trace of its colour under grey, and its lights are off.
         const carpet = r.locked ? new THREE.Color(r.color).lerp(new THREE.Color('#43474e'), 0.94) : new THREE.Color(r.color).lerp(new THREE.Color('#566072'), 0.62);
-        const tex = noiseTexture(`#${carpet.getHexString()}`, 20, 1);
-        tex.repeat.set(r.w * 0.9, r.d * 0.9);
-        const floor = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, metalness: 0 });
+        const { material: floor, texture: tex } = carpetMaterial(`#${carpet.getHexString()}`, r.w, r.d);
         // The light panels are painted into the ceiling's glow, as in the building (see above).
         const k = 40;
         const canvas = document.createElement('canvas');
@@ -264,9 +239,10 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
         const glow = new THREE.CanvasTexture(canvas);
         glow.colorSpace = THREE.SRGBColorSpace;
         glow.anisotropy = 16;
-        const ceil = new THREE.MeshStandardMaterial({ color: '#eef1f5', roughness: 0.95, transparent: true, opacity: ceilingMat.opacity, emissive: '#ffffff', emissiveIntensity: 2.4, emissiveMap: glow });
+        const tiles = ceilingTexture(r.w, r.d);
+        const ceil = new THREE.MeshStandardMaterial({ color: '#ffffff', map: tiles, roughness: 0.95, transparent: true, opacity: ceilingMat.opacity, emissive: '#ffffff', emissiveIntensity: 2.4, emissiveMap: glow });
         const accent = new THREE.MeshStandardMaterial({ color: r.locked ? '#5b616b' : r.color, roughness: 0.6, ...ON_SURFACE });
-        return { room: r, floor, ceil, accent, textures: [tex, glow] };
+        return { room: r, floor, ceil, accent, textures: [tex, glow, tiles] };
       }),
     [annexKey], // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -315,11 +291,12 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
       <mesh position={[0, -0.09, 0]} receiveShadow material={slabMat}>
         <boxGeometry args={[base.layout.width + 0.6, 0.1, base.layout.depth + 0.6]} />
       </mesh>
-      {floors.map(({ room, material }) => (
-        <mesh key={room.id} rotation={[-Math.PI / 2, 0, 0]} position={[room.x + room.w / 2, 0.005, room.z + room.d / 2]} receiveShadow material={material}>
+      {floors.map(({ room, material, lift }) => (
+        <mesh key={room.id} rotation={[-Math.PI / 2, 0, 0]} position={[room.x + room.w / 2, 0.005 + lift, room.z + room.d / 2]} receiveShadow material={material}>
           <planeGeometry args={[room.w, room.d]} />
         </mesh>
       ))}
+      <Instanced geometry={skirting.unit} material={skirtMat} matrices={skirting.matrices} castShadow={false} />
       <group ref={ceiling} visible={!cutaway}>
         {/* The underside sits just below the wall tops (and their caps), so the walls run cleanly into the ceiling:
             a ceiling resting exactly on them leaves a hairline along every wall that sparkles as the camera moves. */}
@@ -406,6 +383,15 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
                 <mesh position={[0, 2.965, 0]} material={frameMat}>
                   <boxGeometry args={rail} />
                 </mesh>
+                {/* Posts between the panes, about every metre and a half, and one at each end. */}
+                {Array.from({ length: Math.max(2, Math.round(len / 1.5) + 1) }, (_, k) => {
+                  const t = (k / (Math.max(2, Math.round(len / 1.5) + 1) - 1) - 0.5) * (len - 0.05);
+                  return (
+                    <mesh key={k} position={[horizontal ? t : 0, 1.5, horizontal ? 0 : t]} material={frameMat}>
+                      <boxGeometry args={[0.05, 2.86, 0.05]} />
+                    </mesh>
+                  );
+                })}
               </group>
             );
           }
@@ -662,22 +648,6 @@ export function MonitorScreen({ sessionId, subscribe, live, position, rotation, 
 
 // ───────────────────────────── desks ─────────────────────────────
 
-const GEO = {
-  top: new RoundedBoxGeometry(DESK_SIZE.w, 0.045, DESK_SIZE.d, 2, 0.02),
-  side: new THREE.BoxGeometry(0.04, 0.7, DESK_SIZE.d - 0.12),
-  drawer: new RoundedBoxGeometry(0.42, 0.52, 0.6, 2, 0.02),
-  bezel: new RoundedBoxGeometry(SCREEN_W + 0.04, SCREEN_H + 0.04, 0.035, 2, 0.012),
-  stand: new THREE.BoxGeometry(0.06, 0.2, 0.04),
-  foot: new RoundedBoxGeometry(0.26, 0.015, 0.18, 2, 0.006),
-  keyboard: new RoundedBoxGeometry(0.42, 0.018, 0.14, 2, 0.006),
-  mouse: new RoundedBoxGeometry(0.06, 0.025, 0.1, 2, 0.01),
-  seat: new RoundedBoxGeometry(0.5, 0.08, 0.48, 3, 0.03),
-  back: new RoundedBoxGeometry(0.46, 0.55, 0.07, 3, 0.03),
-  post: new THREE.CylinderGeometry(0.03, 0.03, 0.34, 8),
-  base: new THREE.CylinderGeometry(0.3, 0.3, 0.035, 5),
-  divider: new THREE.BoxGeometry(DESK_SIZE.w * 2 + 0.2, 0.42, 0.04),
-};
-
 export interface DeskSeatInfo {
   desk: Desk;
   sessionId: string | null;
@@ -689,43 +659,24 @@ export interface DeskSeatInfo {
   special: { name: string; title: string; level: number; accent: string; taskKey: string | null; progress: number | null; label: string } | null;
 }
 
-// One set of materials for every desk there is: the office's own and those in member rooms.
-let DESK_MATS: Record<'top' | 'frame' | 'dark' | 'chair' | 'chrome' | 'divider', THREE.MeshStandardMaterial> | null = null;
-function deskMats() {
-  return (DESK_MATS ??= {
-    top: new THREE.MeshStandardMaterial({ color: '#efe6d6', roughness: 0.55 }),
-    frame: new THREE.MeshStandardMaterial({ color: '#f4f6f9', roughness: 0.5, metalness: 0.2 }),
-    dark: new THREE.MeshStandardMaterial({ color: '#1c212b', roughness: 0.45, metalness: 0.3 }),
-    chair: new THREE.MeshStandardMaterial({ color: '#2f3846', roughness: 0.85 }),
-    chrome: new THREE.MeshStandardMaterial({ color: '#aeb6c2', roughness: 0.25, metalness: 0.9 }),
-    divider: new THREE.MeshStandardMaterial({ color: '#7d8aa0', roughness: 0.95 }),
-  });
-}
+// The dark casing of the extra monitor a specialized workstation has.
+let DESK_DARK: THREE.MeshStandardMaterial | null = null;
+const deskDark = () => (DESK_DARK ??= new THREE.MeshStandardMaterial({ color: '#15181e', roughness: 0.5, metalness: 0.05 }));
+
+const MUGS = ['#f2f0ea', '#c96f4a', '#4f6d8f', '#2f3846'];
+const BOOKS = ['#2f3846', '#7a3b34', '#35604a'];
 
 /**
  * A set of desks with their chairs and monitors. The scene draws two: the office's own desks, and those in the
  * rooms of connected members — so a member arriving or leaving does not touch the office's desks.
  */
 export function Desks({ desks, seats, subscribe }: { desks: Desk[]; seats: DeskSeatInfo[]; subscribe: ScreenSubscribe }) {
-  const mats = deskMats();
   const m = useMemo(() => {
-    const out = { top: [] as THREE.Matrix4[], side: [] as THREE.Matrix4[], drawer: [] as THREE.Matrix4[], bezel: [] as THREE.Matrix4[], stand: [] as THREE.Matrix4[], foot: [] as THREE.Matrix4[], keyboard: [] as THREE.Matrix4[], mouse: [] as THREE.Matrix4[], seat: [] as THREE.Matrix4[], back: [] as THREE.Matrix4[], post: [] as THREE.Matrix4[], base: [] as THREE.Matrix4[], divider: [] as THREE.Matrix4[] };
+    const out = { desk: [] as THREE.Matrix4[], chair: [] as THREE.Matrix4[], divider: [] as THREE.Matrix4[] };
     for (const d of desks) {
-      const { x, z, rot } = d;
-      out.top.push(place(x, z, rot, 0, DESK_SIZE.h, 0));
-      out.side.push(place(x, z, rot, -DESK_SIZE.w / 2 + 0.04, 0.36, 0), place(x, z, rot, DESK_SIZE.w / 2 - 0.04, 0.36, 0));
-      out.drawer.push(place(x, z, rot, DESK_SIZE.w / 2 - 0.3, 0.3, 0.02));
-      // The monitor stands at the far edge of the desk and faces the seat (local -Z).
-      out.foot.push(place(x, z, rot, -0.08, DESK_SIZE.h + 0.03, 0.22));
-      out.stand.push(place(x, z, rot, -0.08, DESK_SIZE.h + 0.13, 0.24));
-      out.bezel.push(place(x, z, rot, -0.08, DESK_SIZE.h + 0.38, 0.22));
-      out.keyboard.push(place(x, z, rot, -0.08, DESK_SIZE.h + 0.034, -0.16));
-      out.mouse.push(place(x, z, rot, 0.28, DESK_SIZE.h + 0.036, -0.15));
+      out.desk.push(place(d.x, d.z, d.rot, 0, 0, 0));
       const seat = deskSeat(d);
-      out.seat.push(place(seat.x, seat.z, rot, 0, 0.47, 0));
-      out.back.push(place(seat.x, seat.z, rot, 0, 0.82, -0.25));
-      out.post.push(place(seat.x, seat.z, rot, 0, 0.26, 0));
-      out.base.push(place(seat.x, seat.z, rot, 0, 0.05, 0));
+      out.chair.push(place(seat.x, seat.z, d.rot, 0, 0, 0));
     }
     // A low privacy divider down the middle of each pod (between desks that face each other).
     const seen = new Set<string>();
@@ -743,26 +694,41 @@ export function Desks({ desks, seats, subscribe }: { desks: Desk[]; seats: DeskS
       const key = `${cx.toFixed(1)}:${cz.toFixed(1)}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      out.divider.push(turned ? place(cx, cz, Math.PI / 2, 0, DESK_SIZE.h + 0.23, 0) : new THREE.Matrix4().makeTranslation(cx, DESK_SIZE.h + 0.23, cz));
+      out.divider.push(place(cx, cz, turned ? Math.PI / 2 : 0, 0, 0, 0));
     }
     return out;
   }, [desks]);
 
+  // What people keep on their desks: a cup, a notebook, a small plant. Which of them, in what colour and exactly
+  // where follows from the desk, so a desk looks the same every day; an empty desk is bare.
+  const things = useMemo(() => {
+    const out = { mugs: MUGS.map(() => [] as THREE.Matrix4[]), books: BOOKS.map(() => [] as THREE.Matrix4[]), plants: [] as THREE.Matrix4[] };
+    for (const s of seats) {
+      if (!s.occupied) continue;
+      let h = 0;
+      for (let i = 0; i < s.desk.id.length; i++) h = (h * 31 + s.desk.id.charCodeAt(i)) >>> 0;
+      const r = (n: number) => ((h >>> n) % 97) / 97;
+      const { x, z, rot } = s.desk;
+      if (h % 5 !== 0) out.mugs[h % MUGS.length]!.push(place(x, z, rot, 0.44 + r(3) * 0.08, DESK_TOP, 0.06 + r(5) * 0.12, r(7) * 6));
+      if (h % 3 !== 0) out.books[(h >>> 4) % BOOKS.length]!.push(place(x, z, rot, -0.56 + r(9) * 0.08, DESK_TOP, -0.16 + r(11) * 0.08, (r(13) - 0.5) * 0.5));
+      // A specialized workstation has its second monitor where the plant would stand.
+      if (h % 4 === 1 && !s.special) out.plants.push(place(x, z, rot, -0.68, DESK_TOP, 0.26, r(6) * 6, [1.25, 1.25, 1.25]));
+    }
+    return out;
+  }, [seats]);
+
   return (
     <group>
-      <Instanced geometry={GEO.top} material={mats.top} matrices={m.top} receiveShadow />
-      <Instanced geometry={GEO.side} material={mats.frame} matrices={m.side} />
-      <Instanced geometry={GEO.drawer} material={mats.frame} matrices={m.drawer} />
-      <Instanced geometry={GEO.bezel} material={mats.dark} matrices={m.bezel} />
-      <Instanced geometry={GEO.stand} material={mats.dark} matrices={m.stand} />
-      <Instanced geometry={GEO.foot} material={mats.dark} matrices={m.foot} />
-      <Instanced geometry={GEO.keyboard} material={mats.dark} matrices={m.keyboard} castShadow={false} />
-      <Instanced geometry={GEO.mouse} material={mats.dark} matrices={m.mouse} castShadow={false} />
-      <Instanced geometry={GEO.seat} material={mats.chair} matrices={m.seat} />
-      <Instanced geometry={GEO.back} material={mats.chair} matrices={m.back} />
-      <Instanced geometry={GEO.post} material={mats.chrome} matrices={m.post} castShadow={false} />
-      <Instanced geometry={GEO.base} material={mats.chrome} matrices={m.base} castShadow={false} />
-      <Instanced geometry={GEO.divider} material={mats.divider} matrices={m.divider} />
+      {MUGS.map((c, i) => (
+        <InstancedModel key={c} model={mug(c)} matrices={things.mugs[i]!} shadows={false} />
+      ))}
+      {BOOKS.map((c, i) => (
+        <InstancedModel key={c} model={notebook(c)} matrices={things.books[i]!} shadows={false} />
+      ))}
+      <InstancedModel model={deskPlant()} matrices={things.plants} shadows={false} />
+      <InstancedModel model={deskModel()} matrices={m.desk} />
+      <InstancedModel model={taskChair()} matrices={m.chair} />
+      <InstancedModel model={dividerModel(DESK_SIZE.w * 2 + 0.2)} matrices={m.divider} />
       {seats.map((s) => {
         const { x, z, rot } = s.desk;
         const cos = Math.cos(rot);
@@ -774,7 +740,7 @@ export function Desks({ desks, seats, subscribe }: { desks: Desk[]; seats: DeskS
           <group key={s.desk.id}>
             {s.occupied && <MonitorScreen sessionId={s.sessionId} live={s.live} subscribe={subscribe} position={[sx, DESK_SIZE.h + 0.38, sz]} rotation={[0, rot + Math.PI, 0]} />}
             <DeskLight x={x + (DESK_SIZE.w / 2 - 0.14) * cos + 0.3 * sin} z={z - (DESK_SIZE.w / 2 - 0.14) * sin + 0.3 * cos} color={s.color} attention={s.attention} on={s.occupied} />
-            {s.special && <SpecialDesk desk={s.desk} info={s.special} live={s.live} dark={mats.dark} />}
+            {s.special && <SpecialDesk desk={s.desk} info={s.special} live={s.live} dark={deskDark()} />}
           </group>
         );
       })}
@@ -1043,9 +1009,8 @@ function DeskLight({ x, z, color, attention, on }: { x: number; z: number; color
   });
   const c = attention ? ATTENTION_COLOR[attention] : (color ?? '#8aa0c0');
   return (
-    <mesh position={[x, DESK_SIZE.h + 0.07, z]}>
-      <cylinderGeometry args={[0.035, 0.045, 0.09, 12]} />
-      <meshStandardMaterial ref={mat} color={on ? c : '#3a4250'} emissive={c} emissiveIntensity={on ? 1 : 0.05} toneMapped={false} />
+    <mesh position={[x, DESK_TOP, z]} geometry={lampDome()}>
+      <meshStandardMaterial ref={mat} color={on ? c : '#4a5261'} emissive={c} emissiveIntensity={on ? 1 : 0.05} roughness={0.35} toneMapped={false} />
     </mesh>
   );
 }
@@ -1053,25 +1018,9 @@ function DeskLight({ x, z, color, attention, on }: { x: number; z: number; color
 // ───────────────────────────── rooms ─────────────────────────────
 
 function Plant({ x, z }: { x: number; z: number }) {
-  return (
-    <group position={[x, 0, z]}>
-      <mesh position={[0, 0.22, 0]} castShadow>
-        <cylinderGeometry args={[0.2, 0.15, 0.44, 14]} />
-        <meshStandardMaterial color="#d9d3c8" roughness={0.8} />
-      </mesh>
-      {[
-        [0, 0.78, 0, 0.36],
-        [0.16, 0.62, 0.08, 0.24],
-        [-0.14, 0.66, -0.1, 0.26],
-        [0.02, 1.08, -0.04, 0.24],
-      ].map(([px, py, pz, r], i) => (
-        <mesh key={i} position={[px!, py!, pz!]} castShadow>
-          <icosahedronGeometry args={[r!, 1]} />
-          <meshStandardMaterial color={i % 2 ? '#3f8f5a' : '#357a4c'} roughness={0.9} flatShading />
-        </mesh>
-      ))}
-    </group>
-  );
+  // Which of the three plants stands here follows from where it stands, so the same spot always has the same one.
+  const n = Math.abs(Math.round(x * 3 + z * 7));
+  return <Model model={plant(n)} position={[x, 0, z]} rotation={[0, n * 1.3, 0]} />;
 }
 
 function font(px: number, weight = 600): string {
@@ -1208,8 +1157,21 @@ function drawClockFace(ctx: CanvasRenderingContext2D, w: number, h: number, hasF
 }
 
 const CLOCK_R = 0.5;
+/** The clock's case: a shallow drum with a rounded bezel that stands a little proud of the face. */
+let CLOCK_CASE: THREE.BufferGeometry | null = null;
+function clockCase(): THREE.BufferGeometry {
+  if (CLOCK_CASE) return CLOCK_CASE;
+  const R = CLOCK_R;
+  const g = new THREE.LatheGeometry(
+    [[R - 0.004, 0.06], [R + 0.004, 0.074], [R + 0.022, 0.082], [R + 0.042, 0.078], [R + 0.054, 0.064], [R + 0.058, 0.04], [R + 0.058, 0.004], [R + 0.05, 0], [0.0001, 0]].map(([r, y]) => new THREE.Vector2(r, y)),
+    56,
+  );
+  g.rotateX(Math.PI / 2);
+  return (CLOCK_CASE = g);
+}
+
 const CLOCK_MAT = {
-  rim: new THREE.MeshStandardMaterial({ color: '#232830', roughness: 0.35, metalness: 0.6 }),
+  rim: new THREE.MeshStandardMaterial({ color: '#2a303a', roughness: 0.32, metalness: 0.75, side: THREE.DoubleSide }),
   hand: new THREE.MeshStandardMaterial({ color: '#15181e', roughness: 0.5 }),
   five: new THREE.MeshStandardMaterial({ color: '#c2410c', roughness: 0.5 }),
   hub: new THREE.MeshStandardMaterial({ color: '#8f2738', roughness: 0.4, metalness: 0.3 }),
@@ -1237,9 +1199,7 @@ function UsageClock({ position, account }: { position: [number, number, number];
   });
   return (
     <group position={position}>
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0.03]} material={CLOCK_MAT.rim}>
-        <cylinderGeometry args={[CLOCK_R + 0.045, CLOCK_R + 0.045, 0.06, 48]} />
-      </mesh>
+      <mesh geometry={clockCase()} material={CLOCK_MAT.rim} castShadow />
       <mesh position={[0, 0, 0.066]}>
         <circleGeometry args={[CLOCK_R, 48]} />
         <meshStandardMaterial map={face} roughness={0.7} {...ON_SURFACE} />
@@ -1289,29 +1249,14 @@ function UsageClock({ position, account }: { position: [number, number, number];
   );
 }
 
-function Chair({ x, z, rot, color = '#39424f' }: { x: number; z: number; rot: number; color?: string }) {
-  return (
-    <group position={[x, 0, z]} rotation={[0, rot, 0]}>
-      <mesh position={[0, 0.46, 0]} geometry={GEO.seat} castShadow>
-        <meshStandardMaterial color={color} roughness={0.85} />
-      </mesh>
-      <mesh position={[0, 0.8, -0.25]} geometry={GEO.back} castShadow>
-        <meshStandardMaterial color={color} roughness={0.85} />
-      </mesh>
-      <mesh position={[0, 0.25, 0]} geometry={GEO.post}>
-        <meshStandardMaterial color="#aeb6c2" metalness={0.9} roughness={0.25} />
-      </mesh>
-    </group>
-  );
+function Chair({ x, z, rot, color = '#39424f', kind = 'task' }: { x: number; z: number; rot: number; color?: string; kind?: 'task' | 'executive' | 'visitor' }) {
+  return <Model model={taskChair(color, kind)} position={[x, 0, z]} rotation={[0, rot, 0]} />;
 }
 
 function Rack({ x, z, host, detail }: { x: number; z: number; host: HostView | null; detail: boolean }) {
   return (
     <group position={[x, 0, z]}>
-      <mesh position={[0, 1.0, 0]} castShadow>
-        <boxGeometry args={[0.8, 2.0, 1.05]} />
-        <meshStandardMaterial color={host ? '#1a1f29' : '#242a35'} roughness={0.5} metalness={0.5} />
-      </mesh>
+      <Model model={rackModel()} />
       {detail && <RackFront x={x} host={host} />}
     </group>
   );
@@ -1329,8 +1274,8 @@ function RackFront({ x, host }: { x: number; host: HostView | null }) {
   return (
     <>
       {[0.4, 0.75, 1.1, 1.45, 1.8].map((y) => (
-        <mesh key={y} position={[0, y, 0.531]}>
-          <boxGeometry args={[0.66, 0.035, 0.01]} />
+        <mesh key={y} position={[0, y, 0.512]}>
+          <boxGeometry args={[0.6, 0.022, 0.006]} />
           <meshStandardMaterial ref={y === 1.1 ? leds : undefined} color={color} emissive={color} emissiveIntensity={host ? 1 : 0} toneMapped={false} />
         </mesh>
       ))}
@@ -1437,6 +1382,15 @@ function drawWhiteboard(ctx: CanvasRenderingContext2D, w: number, h: number, wb:
   }
 }
 
+const FRAMES = new Map<string, THREE.BufferGeometry>();
+/** A flat panel with rounded edges: the frame behind a board, a tray, a plaque. One geometry per size. */
+function boardFrame(w: number, h: number, d: number, r: number): THREE.BufferGeometry {
+  const key = `${w}:${h}:${d}:${r}`;
+  let g = FRAMES.get(key);
+  if (!g) FRAMES.set(key, (g = new RoundedBoxGeometry(w, h, d, 3, Math.min(r, d / 2 - 0.0005))));
+  return g;
+}
+
 function Whiteboard({ at, view, onOpen }: { at: NonNullable<World['whiteboard']>; view: WhiteboardView; onOpen: (meetingId: string | null) => void }) {
   const [hover, setHover] = useState(false);
   const frame = useMemo(() => new THREE.MeshStandardMaterial({ color: '#c9ced6', roughness: 0.35, metalness: 0.7 }), []);
@@ -1463,19 +1417,108 @@ function Whiteboard({ at, view, onOpen }: { at: NonNullable<World['whiteboard']>
         document.body.style.cursor = '';
       }}
     >
-      <mesh material={frame}>
-        <boxGeometry args={[at.w + 0.1, at.h + 0.1, 0.04]} />
-      </mesh>
-      {/* the pen tray */}
-      <mesh position={[0, -at.h / 2 - 0.06, 0.05]} material={frame}>
-        <boxGeometry args={[at.w * 0.5, 0.025, 0.09]} />
+      <mesh material={frame} geometry={boardFrame(at.w + 0.1, at.h + 0.1, 0.04, 0.03)} castShadow />
+      {/* the pen tray, with three markers and the eraser on it */}
+      <mesh position={[0, -at.h / 2 - 0.06, 0.05]} material={frame} geometry={boardFrame(at.w * 0.5, 0.025, 0.09, 0.008)} />
+      {['#22262e', '#d9483b', '#3c6fb5'].map((c, i) => (
+        <mesh key={c} position={[-0.5 + i * 0.17, -at.h / 2 - 0.036, 0.055]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.011, 0.011, 0.13, 10]} />
+          <meshStandardMaterial color={c} roughness={0.45} />
+        </mesh>
+      ))}
+      <mesh position={[0.5, -at.h / 2 - 0.03, 0.055]} geometry={boardFrame(0.13, 0.036, 0.05, 0.008)}>
+        <meshStandardMaterial color="#39424f" roughness={0.9} />
       </mesh>
       <CanvasPanel width={at.w} height={at.h} px={1536} position={[0, 0, 0.0215]} deps={[JSON.stringify(view)]} draw={(ctx, w, h) => drawWhiteboard(ctx, w, h, view)} />
     </group>
   );
 }
 
-const BOOKS = ['#b5483c', '#3c6fb5', '#d9a441', '#4c8f5e', '#7a5aa8', '#c9ced6'];
+/** The neon sign's tubes: drawn with a glow around them, on a transparent picture in front of the backing board. */
+function NeonSign() {
+  const tex = useCanvasTexture(4.4, 0.8, 2048, (ctx, w, h) => {
+    ctx.clearRect(0, 0, w, h);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    const text = 'your code. your company. your world.';
+    let size = h * 0.4;
+    ctx.font = `italic 600 ${size}px "Snell Roundhand", "Brush Script MT", "Segoe Script", cursive`;
+    while (size > h * 0.2 && ctx.measureText(text).width > w * 0.9) ctx.font = `italic 600 ${(size *= 0.95)}px "Snell Roundhand", "Brush Script MT", "Segoe Script", cursive`;
+    for (const [blur, alpha, width] of [[h * 0.16, 0.55, 5], [h * 0.07, 0.8, 4], [0, 1, 2.2]] as Array<[number, number, number]>) {
+      ctx.shadowColor = '#ff4d9a';
+      ctx.shadowBlur = blur;
+      ctx.strokeStyle = blur ? `rgba(255,95,162,${alpha})` : '#ffe3f0';
+      ctx.lineWidth = (width * w) / 2048;
+      ctx.strokeText(text, w / 2, h * 0.5);
+    }
+    ctx.shadowBlur = 0;
+    ctx.textAlign = 'left';
+  }, []);
+  return (
+    <mesh position={[0, 0, 0.022]}>
+      <planeGeometry args={[4.4, 0.8]} />
+      <meshBasicMaterial map={tex} transparent depthWrite={false} toneMapped={false} {...ON_SURFACE} />
+    </mesh>
+  );
+}
+
+/** What the arcade cabinet shows: a few rows of invaders, a ship and a score, in the picture tube's colours. */
+function ArcadeScreen() {
+  const draw = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
+    ctx.fillStyle = '#05080f';
+    ctx.fillRect(0, 0, w, h);
+    const u = w / 44;
+    const cols = ['#ff5fa2', '#f5c542', '#3ddc84', '#6ea8ff'];
+    for (let r = 0; r < 4; r++)
+      for (let c = 0; c < 8; c++) {
+        if ((r * 3 + c * 5) % 11 === 0) continue;
+        ctx.fillStyle = cols[r]!;
+        const x = u * (5 + c * 4.4);
+        const y = u * (6 + r * 3.6);
+        ctx.fillRect(x, y, u * 2.6, u * 1.6);
+        ctx.fillRect(x - u * 0.5, y + u * 0.6, u * 3.6, u * 0.6);
+        ctx.fillStyle = '#05080f';
+        ctx.fillRect(x + u * 0.5, y + u * 0.5, u * 0.5, u * 0.5);
+        ctx.fillRect(x + u * 1.6, y + u * 0.5, u * 0.5, u * 0.5);
+      }
+    ctx.fillStyle = '#e8f0ff';
+    ctx.fillRect(u * 20, h - u * 4, u * 4, u * 1.2);
+    ctx.fillRect(u * 21.5, h - u * 5, u * 1, u * 1);
+    ctx.fillRect(u * 21.8, h - u * 11, u * 0.4, u * 2);
+    ctx.font = font(u * 2, 800);
+    ctx.textBaseline = 'top';
+    ctx.fillText('SCORE 04200', u * 2, u * 1.4);
+  };
+  return (
+    <>
+      <CanvasPanel width={0.56} height={0.42} px={256} position={[0, 1.27, 0.262]} rotation={[-0.53, 0, 0]} deps={[]} draw={draw} />
+      <CanvasPanel
+        width={0.66}
+        height={0.18}
+        px={256}
+        position={[0, 1.74, 0.302]}
+        deps={[]}
+        draw={(ctx, w, h) => {
+          const g = ctx.createLinearGradient(0, 0, w, 0);
+          g.addColorStop(0, '#ff5fa2');
+          g.addColorStop(1, '#f5c542');
+          ctx.fillStyle = g;
+          ctx.fillRect(0, 0, w, h);
+          ctx.fillStyle = '#1a0f2e';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          let size = h * 0.56;
+          ctx.font = font(size, 800);
+          while (size > h * 0.2 && ctx.measureText('ORCHESTRATOR').width > w * 0.9) ctx.font = font((size *= 0.94), 800);
+          ctx.fillText('ORCHESTRATOR', w / 2, h * 0.54);
+          ctx.textAlign = 'left';
+        }}
+      />
+    </>
+  );
+}
 
 /** One decoration from the layout. Mounted only while someone is near it. */
 function Decoration({ d, player, overview }: { d: World['layout']['decorations'][number]; player: THREE.Vector3; overview: boolean }) {
@@ -1485,108 +1528,21 @@ function Decoration({ d, player, overview }: { d: World['layout']['decorations']
   if (d.kind === 'arcade')
     return (
       <group position={[d.x, 0, d.z]} rotation={[0, d.rot, 0]}>
-        <mesh position={[0, 0.9, 0]} castShadow>
-          <boxGeometry args={[0.8, 1.8, 0.8]} />
-          <meshStandardMaterial color="#5b2d8e" roughness={0.5} />
-        </mesh>
-        <mesh position={[0, 1.25, 0.41]}>
-          <planeGeometry args={[0.6, 0.45]} />
-          <meshBasicMaterial color="#3ddc84" toneMapped={false} />
-        </mesh>
+        <Model model={arcade()} />
+        <ArcadeScreen />
       </group>
     );
-  if (d.kind === 'trophy_case')
-    return (
-      <group position={[d.x, 0, d.z]} rotation={[0, d.rot, 0]}>
-        <mesh position={[0, 0.7, 0]} castShadow>
-          <boxGeometry args={[2.0, 1.4, 0.45]} />
-          <meshStandardMaterial color="#2a313d" roughness={0.4} />
-        </mesh>
-        {[-0.6, 0, 0.6].map((x) => (
-          <mesh key={x} position={[x, 1.6, 0]} castShadow>
-            <cylinderGeometry args={[0.12, 0.06, 0.36, 12]} />
-            <meshStandardMaterial color="#f5c542" metalness={0.9} roughness={0.2} />
-          </mesh>
-        ))}
-      </group>
-    );
+  if (d.kind === 'trophy_case') return <Model model={trophyCase()} position={[d.x, 0, d.z]} rotation={[0, d.rot, 0]} />;
   if (d.kind === 'neon_sign')
     return (
-      <mesh position={[d.x, 2.3, d.z]} rotation={[0, d.rot, 0]}>
-        <boxGeometry args={[4.5, 0.5, 0.06]} />
-        <meshStandardMaterial color="#ff5fa2" emissive="#ff5fa2" emissiveIntensity={2.2} toneMapped={false} />
-      </mesh>
-    );
-  if (d.kind === 'bookshelf')
-    return (
-      <group position={[d.x, 0, d.z]} rotation={[0, d.rot, 0]}>
-        <mesh position={[0, 0.9, -0.17]} castShadow>
-          <boxGeometry args={[1.6, 1.8, 0.04]} />
-          <meshStandardMaterial color="#5a4330" roughness={0.6} />
-        </mesh>
-        {[-0.78, 0.78].map((x) => (
-          <mesh key={x} position={[x, 0.9, 0]} castShadow>
-            <boxGeometry args={[0.04, 1.8, 0.38]} />
-            <meshStandardMaterial color="#6f5236" roughness={0.55} />
-          </mesh>
-        ))}
-        {[0.04, 0.48, 0.92, 1.36, 1.78].map((y) => (
-          <mesh key={y} position={[0, y, 0]}>
-            <boxGeometry args={[1.56, 0.04, 0.38]} />
-            <meshStandardMaterial color="#6f5236" roughness={0.55} />
-          </mesh>
-        ))}
-        {[0.06, 0.5, 0.94, 1.38].flatMap((y, row) =>
-          [0, 1, 2, 3, 4].map((i) => {
-            // Blocks of books: widths and colours vary by position, the same for the same shelf every time.
-            const wBook = 0.2 + ((row * 3 + i * 5) % 4) * 0.03;
-            const hBook = 0.26 + ((row + i * 2) % 3) * 0.04;
-            return (
-              <mesh key={`${row}:${i}`} position={[-0.6 + i * 0.3, y + hBook / 2, 0.02]}>
-                <boxGeometry args={[wBook, hBook, 0.24]} />
-                <meshStandardMaterial color={BOOKS[(row * 2 + i) % BOOKS.length]} roughness={0.8} />
-              </mesh>
-            );
-          }),
-        )}
+      <group position={[d.x, 2.3, d.z]} rotation={[0, d.rot, 0]}>
+        <Model model={neonBoard()} shadows={false} />
+        <NeonSign />
       </group>
     );
-  if (d.kind === 'floor_lamp')
-    return (
-      <group position={[d.x, 0, d.z]}>
-        <mesh position={[0, 0.02, 0]} castShadow>
-          <cylinderGeometry args={[0.17, 0.19, 0.04, 20]} />
-          <meshStandardMaterial color="#2c3442" roughness={0.4} metalness={0.6} />
-        </mesh>
-        <mesh position={[0, 0.82, 0]}>
-          <cylinderGeometry args={[0.016, 0.016, 1.6, 8]} />
-          <meshStandardMaterial color="#aeb6c2" roughness={0.25} metalness={0.9} />
-        </mesh>
-        <mesh position={[0, 1.68, 0]}>
-          <cylinderGeometry args={[0.13, 0.2, 0.3, 20, 1, true]} />
-          <meshStandardMaterial color="#fff1d0" emissive="#ffd98a" emissiveIntensity={1.3} side={THREE.DoubleSide} toneMapped={false} />
-        </mesh>
-      </group>
-    );
-  if (d.kind === 'sofa')
-    return (
-      <group position={[d.x, 0, d.z]} rotation={[0, d.rot, 0]}>
-        <mesh position={[0, 0.24, -0.05]} castShadow>
-          <boxGeometry args={[2.0, 0.48, 0.8]} />
-          <meshStandardMaterial color="#4f6d8f" roughness={0.95} />
-        </mesh>
-        <mesh position={[0, 0.6, 0.35]} castShadow>
-          <boxGeometry args={[2.0, 0.5, 0.2]} />
-          <meshStandardMaterial color="#4f6d8f" roughness={0.95} />
-        </mesh>
-        {[-0.92, 0.92].map((x) => (
-          <mesh key={x} position={[x, 0.42, -0.05]} castShadow>
-            <boxGeometry args={[0.16, 0.36, 0.8]} />
-            <meshStandardMaterial color="#456180" roughness={0.95} />
-          </mesh>
-        ))}
-      </group>
-    );
+  if (d.kind === 'bookshelf') return <Model model={bookshelf()} position={[d.x, 0, d.z]} rotation={[0, d.rot, 0]} />;
+  if (d.kind === 'floor_lamp') return <Model model={floorLamp()} position={[d.x, 0, d.z]} />;
+  if (d.kind === 'sofa') return <Model model={sofa(2.0, '#4f6d8f')} position={[d.x, 0, d.z]} rotation={[0, d.rot, 0]} />;
   return null;
 }
 
@@ -1620,10 +1576,7 @@ export function Rooms({
   player: THREE.Vector3;
   overview: boolean;
 }) {
-  const wood = useMemo(() => new THREE.MeshStandardMaterial({ color: '#6f5236', roughness: 0.5 }), []);
-  const white = useMemo(() => new THREE.MeshStandardMaterial({ color: '#f1f3f6', roughness: 0.5 }), []);
   const dark = useMemo(() => new THREE.MeshStandardMaterial({ color: '#1c212b', roughness: 0.45, metalness: 0.3 }), []);
-  const fabric = useMemo(() => new THREE.MeshStandardMaterial({ color: '#c96f4a', roughness: 0.95 }), []);
   const br = world.room('break');
   const rr = world.room('reception');
   const cr = world.room('ceo');
@@ -1640,6 +1593,9 @@ export function Rooms({
     reception: useNear('reception', useMemo(() => roomBox(rr), [rr]), player, overview),
   };
 
+  const teamSeats = useMemo(() => (world.team?.seats ?? []).map((s) => place(s.x, s.z, s.rot, 0, 0, 0)), [world.team]);
+  const meetingSeats = useMemo(() => (world.meeting?.seats ?? []).map((s) => place(s.x, s.z, s.rot, 0, 0, 0)), [world.meeting]);
+
   // For the UI tests: what the usage clocks on the CEO room wall are showing.
   useEffect(() => {
     sceneProbe().clocks = ceo.accounts.map((a) => ({ name: a.name, week: a.week, five: a.five, lines: a.lines }));
@@ -1650,9 +1606,7 @@ export function Rooms({
       {/* project board */}
       {world.board && (
         <group position={[world.board.x, 1.75, world.board.z]} rotation={[0, world.board.rot, 0]}>
-          <mesh position={[0, 0, -0.03]} material={dark}>
-            <boxGeometry args={[world.board.w + 0.16, world.board.h + 0.16, 0.05]} />
-          </mesh>
+          <mesh position={[0, 0, -0.03]} material={dark} geometry={boardFrame(world.board.w + 0.16, world.board.h + 0.16, 0.05, 0.024)} castShadow />
           <CanvasPanel width={world.board.w} height={world.board.h} px={2048} deps={[JSON.stringify(board)]} draw={(ctx, w, h) => drawBoard(ctx, w, h, board)} />
         </group>
       )}
@@ -1660,16 +1614,18 @@ export function Rooms({
       {/* meeting room: the table and the whiteboard are always there, the chairs come with proximity */}
       {world.meeting && mr && (
         <group>
-          <mesh position={[world.meeting.x, 0.73, world.meeting.z]} castShadow receiveShadow material={wood}>
-            <boxGeometry args={[world.meeting.w, 0.06, world.meeting.d]} />
-          </mesh>
-          {[-1, 1].map((s) => (
-            <mesh key={s} position={[world.meeting!.x + (s * world.meeting!.w) / 3, 0.36, world.meeting!.z]} material={dark} castShadow>
-              <boxGeometry args={[0.12, 0.7, world.meeting!.d * 0.6]} />
-            </mesh>
-          ))}
-          {near.meeting && world.meeting.seats.map((s, i) => <Chair key={i} x={s.x} z={s.z} rot={s.rot} color="#3d4a5c" />)}
+          <Model model={meetingTable(world.meeting.w, world.meeting.d)} position={[world.meeting.x, 0, world.meeting.z]} />
+          {near.meeting && <InstancedModel model={taskChair('#3d4a5c', 'visitor')} matrices={meetingSeats} />}
           {world.whiteboard && <Whiteboard at={world.whiteboard} view={whiteboard} onOpen={onOpenMeeting} />}
+        </group>
+      )}
+
+      {/* team room: only there once the company has earned it */}
+      {world.team && (
+        <group>
+          <Model model={meetingTable(world.team.table.w, world.team.table.d)} position={[world.team.table.x, 0, world.team.table.z]} />
+          <InstancedModel model={taskChair('#5a4f7a', 'visitor')} matrices={teamSeats} />
+          <Model model={sofa(world.team.sofa.w, '#5a4f7a')} position={[world.team.sofa.x, 0, world.team.sofa.z]} rotation={[0, world.team.sofa.rot, 0]} />
         </group>
       )}
 
@@ -1700,10 +1656,38 @@ export function Rooms({
               </group>
             );
           })}
-          <mesh position={[or.x + or.w / 2, 0.45, or.z + 4.6]} material={dark} castShadow>
-            <boxGeometry args={[5.2, 0.9, 1.0]} />
-          </mesh>
-          {near.ops && <CanvasPanel width={2.4} height={0.9} px={768} position={[or.x + or.w / 2, 1.28, or.z + 4.75]} rotation={[-0.5, Math.PI, 0]} deps={[wall.stats.join('|')]} draw={(ctx, w, h) => drawLines(ctx, w, h, 'OPERATIONS', wall.stats, '#3ddc84')} />}
+          <Model model={opsConsole()} position={[or.x + or.w / 2, 0, or.z + 4.6]} />
+          {/* The numbers of the day, on the console's sloped deck, facing whoever stands at it. */}
+          {near.ops && (
+            <CanvasPanel
+              width={4.7}
+              height={0.34}
+              px={2048}
+              position={[or.x + or.w / 2, 0.96, or.z + 4.3535]}
+              rotation={[-0.957, 0, 0]}
+              deps={[wall.stats.join('|')]}
+              draw={(ctx, w, h) => {
+                ctx.fillStyle = '#070a10';
+                ctx.fillRect(0, 0, w, h);
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#3ddc84';
+                ctx.font = font(h * 0.34, 800);
+                ctx.fillText('OPERATIONS', w * 0.015, h * 0.5);
+                let x = w * 0.015 + ctx.measureText('OPERATIONS').width + w * 0.03;
+                ctx.font = font(h * 0.24, 600);
+                for (const line of wall.stats) {
+                  const room = w * 0.985 - x;
+                  if (room < w * 0.06) break;
+                  ctx.fillStyle = '#1c2533';
+                  ctx.fillRect(x - w * 0.012, h * 0.2, 2, h * 0.6);
+                  ctx.fillStyle = '#d7dde8';
+                  const text = clip(ctx, line, room);
+                  ctx.fillText(text, x, h * 0.52);
+                  x += ctx.measureText(text).width + w * 0.028;
+                }
+              }}
+            />
+          )}
         </group>
       )}
 
@@ -1715,16 +1699,9 @@ export function Rooms({
       {/* CEO office */}
       {world.ceoDesk && cr && (
         <group>
-          <mesh position={[world.ceoDesk.x, 0.74, world.ceoDesk.z]} material={wood} castShadow receiveShadow>
-            <boxGeometry args={[2.4, 0.07, 1.1]} />
-          </mesh>
-          <mesh position={[world.ceoDesk.x, 0.36, world.ceoDesk.z + 0.3]} material={dark} castShadow>
-            <boxGeometry args={[2.2, 0.7, 0.06]} />
-          </mesh>
-          {near.ceo && <Chair x={world.ceoDesk.x} z={world.ceoDesk.z - 0.95} rot={0} color="#1f2630" />}
-          <mesh position={[cr.x + cr.w / 2, 1.75, cr.z + 0.1]} material={dark}>
-            <boxGeometry args={[5.2, 2.0, 0.05]} />
-          </mesh>
+          <Model model={executiveDesk()} position={[world.ceoDesk.x, 0, world.ceoDesk.z]} />
+          {near.ceo && <Chair x={world.ceoDesk.x} z={world.ceoDesk.z - 0.95} rot={0} color="#2a2420" kind="executive" />}
+          <mesh position={[cr.x + cr.w / 2, 1.75, cr.z + 0.1]} material={dark} geometry={boardFrame(5.2, 2.0, 0.05, 0.024)} castShadow />
           {/* How much Claude is left: a clock per account, to the right of the company board and then to its left. */}
           {near.ceo &&
             (() => {
@@ -1738,62 +1715,30 @@ export function Rooms({
               });
             })()}
           {near.ceo && <CanvasPanel width={5.0} height={1.8} px={1536} position={[cr.x + cr.w / 2, 1.75, cr.z + 0.13]} deps={[ceo.company, ceo.lines.join('|')]} draw={(ctx, w, h) => drawLines(ctx, w, h, ceo.company, ceo.lines)} />}
-          <mesh position={[cr.x + 1.3, 0.3, cr.z + cr.d - 2.2]} material={fabric} castShadow>
-            <boxGeometry args={[0.9, 0.6, 2.2]} />
-          </mesh>
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[world.ceoDesk.x, 0.012, world.ceoDesk.z + 0.4]}>
-            <planeGeometry args={[4.6, 3.4]} />
-            <meshStandardMaterial color="#39465c" roughness={1} />
-          </mesh>
+          {/* Two leather armchairs along the west wall, and the rug the desk stands on. */}
+          {[-0.56, 0.56].map((dz) => (
+            <Model key={dz} model={sofa(1.0, '#8a5230', { leather: true })} position={[cr.x + 1.3, 0, cr.z + cr.d - 2.2 + dz]} rotation={[0, -Math.PI / 2, 0]} />
+          ))}
+          <Model model={rug(4.6, 3.4, '#3b4a63', '#27324a')} position={[world.ceoDesk.x, 0, world.ceoDesk.z + 0.4]} />
         </group>
       )}
 
       {/* break room */}
       {br && (
         <group>
-          <mesh position={[br.x + br.w - 0.55, 0.46, br.z + 3.2]} material={white} castShadow>
-            <boxGeometry args={[0.8, 0.92, 4.6]} />
-          </mesh>
-          <mesh position={[br.x + br.w - 0.55, 0.94, br.z + 3.2]} material={wood}>
-            <boxGeometry args={[0.86, 0.04, 4.66]} />
-          </mesh>
-          {near.break && (
-            <>
-              <mesh position={[br.x + br.w - 0.55, 1.14, br.z + 2.2]} material={dark} castShadow>
-                <boxGeometry args={[0.4, 0.36, 0.34]} />
-              </mesh>
-              <mesh position={[br.x + br.w - 0.5, 0.95, br.z + 5.9]} castShadow>
-                <boxGeometry args={[0.8, 1.9, 0.8]} />
-                <meshStandardMaterial color="#c8ced8" metalness={0.7} roughness={0.3} />
-              </mesh>
-            </>
-          )}
-          <group position={[br.x + br.w / 2 - 0.8, 0, br.z + br.d - 1.0]}>
-            <mesh position={[0, 0.25, 0]} material={fabric} castShadow>
-              <boxGeometry args={[2.6, 0.5, 0.95]} />
-            </mesh>
-            <mesh position={[0, 0.62, 0.38]} material={fabric} castShadow>
-              <boxGeometry args={[2.6, 0.5, 0.2]} />
-            </mesh>
-          </group>
-          <mesh position={[br.x + br.w / 2 - 0.8, 0.3, br.z + br.d - 2.5]} material={wood} castShadow>
-            <boxGeometry args={[1.3, 0.06, 0.7]} />
-          </mesh>
+          <Model model={kitchen(4.6)} position={[br.x + br.w - 0.55, 0, br.z + 3.2]} rotation={[0, -Math.PI / 2, 0]} />
+          {near.break && <Model model={fridge()} position={[br.x + br.w - 0.5, 0, br.z + 5.95]} rotation={[0, -Math.PI / 2, 0]} />}
+          <Model model={sofa(2.6, '#c96f4a', { seat: 0.5 })} position={[br.x + br.w / 2 - 0.8, 0, br.z + br.d - 1.0]} />
+          <Model model={coffeeTable(1.3, 0.7)} position={[br.x + br.w / 2 - 0.8, 0, br.z + br.d - 2.5]} />
         </group>
       )}
 
       {/* reception */}
       {world.reception && rr && (
         <group>
-          <mesh position={[world.reception.x, 0.55, world.reception.z]} material={white} castShadow>
-            <boxGeometry args={[3.4, 1.1, 0.9]} />
-          </mesh>
-          <mesh position={[world.reception.x, 1.12, world.reception.z]} material={wood}>
-            <boxGeometry args={[3.5, 0.05, 1.0]} />
-          </mesh>
-          <mesh position={[rr.x + rr.w - 1.0, 0.25, rr.z + 2.6]} material={fabric} castShadow>
-            <boxGeometry args={[0.9, 0.5, 3.0]} />
-          </mesh>
+          <Model model={receptionDesk()} position={[world.reception.x, 0, world.reception.z]} />
+          {/* The waiting sofa along the east wall. */}
+          <Model model={sofa(3.0, '#c96f4a')} position={[rr.x + rr.w - 1.0, 0, rr.z + 2.6]} rotation={[0, Math.PI / 2, 0]} />
           {near.reception && (
             <CanvasPanel
               width={5}

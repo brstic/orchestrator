@@ -73,6 +73,8 @@ export interface World {
   whiteboard: { x: number; z: number; rot: number; w: number; h: number } | null;
   opsWall: { x: number; z: number; w: number } | null;
   racks: Array<{ x: number; z: number; rot: number }>;
+  /** The team room, once the company has earned it: a table to gather round and a sofa against the far wall. */
+  team: { table: { x: number; z: number; w: number; d: number }; seats: Spot[]; sofa: { x: number; z: number; rot: number; w: number } } | null;
   interactables: Interactable[];
   spawn: { x: number; z: number; rot: number };
   nav: NavGrid;
@@ -487,6 +489,7 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
   if (br) {
     const cx = br.x + br.w / 2;
     obstacles.push(rect(br.x + br.w - 0.55, br.z + 3.2, 0.8, 4.6)); // kitchen counter along the east wall
+    obstacles.push(rect(br.x + br.w - 0.5, br.z + 5.95, 0.8, 0.8)); // the fridge at the end of it
     obstacles.push(rect(cx - 0.8, br.z + br.d - 1.0, 2.6, 0.95)); // sofa
     obstacles.push(rect(cx - 0.8, br.z + br.d - 2.5, 1.3, 0.7)); // coffee table
     breakSpots.push({ x: cx - 1.5, z: br.z + br.d - 1.05, rot: Math.PI, sit: true }, { x: cx - 0.1, z: br.z + br.d - 1.05, rot: Math.PI, sit: true });
@@ -551,6 +554,33 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
     interactables.push({ kind: 'server', id: 'server', label: 'SERVER ROOM — CONNECTED MACHINES', x: sr.x + sr.w / 2, z: sr.z + 6.6, radius: 2.6 });
   }
 
+  // Team room (earned): a table for six in the middle, a sofa against the wall opposite its door.
+  let team: World['team'] = null;
+  const tm = room('team');
+  if (tm && tm.w >= 6 && tm.d >= 4.5) {
+    const cz = tm.z + tm.d / 2;
+    const tw = Math.min(3.2, tm.w - 5);
+    const td = 1.2;
+    const cx = tm.x + tm.w / 2 + 0.6;
+    const seats: Spot[] = [];
+    const perSide = Math.max(2, Math.floor(tw / 1.0));
+    for (let i = 0; i < perSide; i++) {
+      const x = cx - tw / 2 + (tw / perSide) * (i + 0.5);
+      seats.push({ x, z: cz - td / 2 - 0.55, rot: 0, sit: true }, { x, z: cz + td / 2 + 0.55, rot: Math.PI, sit: true });
+    }
+    // The sofa stands against the wall furthest from the door (the west wall in the default office), facing the table.
+    const sofa = { x: tm.x + 0.6, z: cz, rot: -Math.PI / 2, w: 2.0 };
+    // Only where the floor is free: an owner who has put desks or decorations in the room keeps the room as they made it.
+    const wanted = [rect(cx, cz, tw + 0.2, td + 2.2), rect(sofa.x, sofa.z, 1.1, sofa.w + 0.2)];
+    const taken = [...layout.desks.map((d) => deskBox(d)), ...layout.decorations.filter((d) => !d.requires || unlocked.has(d.requires)).map((d) => decorationBox(d)).filter((b): b is Box => !!b)];
+    const free = !taken.some((t) => wanted.some((w) => t.minX < w.maxX && t.maxX > w.minX && t.minZ < w.maxZ && t.maxZ > w.minZ));
+    if (free) {
+      team = { table: { x: cx, z: cz, w: tw, d: td }, seats, sofa };
+      obstacles.push(rect(cx, cz, tw, td));
+      obstacles.push(rect(sofa.x, sofa.z, 0.9, sofa.w));
+    }
+  }
+
   for (const d of layout.decorations) {
     if (d.requires && !unlocked.has(d.requires)) continue;
     const box = decorationKind(d.kind)?.solid ? decorationBox(d) : null;
@@ -579,7 +609,7 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
   const spawn = rr ? { x: rr.x + rr.w / 2, z: rr.z + rr.d - 1.6, rot: Math.PI } : { x: 0, z: bounds.maxZ - 2, rot: Math.PI };
   const solids = obstacles;
   const all = [...wallBoxes, ...solids];
-  const world = { layout, rooms, walls, obstacles: all, solids, bounds, memberRooms: NO_ROOMS, memberDesks: NO_DESKS, meeting, breakSpots, ceoDesk, hifi, tv, reception, board, boardSpots, whiteboard, opsWall, racks, interactables, spawn, nav: new NavGrid(bounds, all), room } as unknown as World;
+  const world = { layout, rooms, walls, obstacles: all, solids, bounds, memberRooms: NO_ROOMS, memberDesks: NO_DESKS, meeting, breakSpots, ceoDesk, hifi, tv, reception, board, boardSpots, whiteboard, opsWall, racks, team, interactables, spawn, nav: new NavGrid(bounds, all), room } as unknown as World;
   world.base = world;
   return world;
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultLayout, deskSeat } from '@orchestrator/contracts';
+import { defaultLayout, deskSeat, unlockedUpgrades } from '@orchestrator/contracts';
 import { buildWorld, deskPods, moveWithCollision } from '../src/world.ts';
 import { addDecoration, layoutProblems, movableEdges, moveDecoration, moveDesks, removeDecoration, renameRoom, resizeRoom } from '../src/layout-edit.ts';
 import { parseSgrLine } from '../src/terminal-texture.ts';
@@ -286,4 +286,50 @@ test('the TV hangs on the break room wall facing the sofa, clear of the door, an
   // Standing there means the TV, not the wider break-room circle.
   assert.equal(world.interactables.find((i) => Math.hypot(i.x - spot.x, i.z - spot.z) < i.radius)!.kind, 'tv');
   for (const s of world.breakSpots) assert.ok(Math.hypot(s.x - tv.x, s.z - (br.z + 0.36)) > 1.0, 'nobody on a break stands in the console');
+});
+
+test('what a reached milestone grants stands in the office: the arcade after ten tasks, not before', () => {
+  const layout = defaultLayout();
+  const milestones = [
+    { key: 'ten_tasks', unlocks: 'arcade', unlockedAt: null as string | null },
+    { key: 'first_delivery', unlocks: 'trophy_case', unlockedAt: null as string | null },
+    { key: 'first_task', unlocks: null, unlockedAt: '2026-01-01T00:00:00.000Z' },
+    { key: 'team_room', unlocks: 'team_room', unlockedAt: null as string | null },
+  ];
+  const stands = (id: string) => {
+    const unlocked = new Set(unlockedUpgrades(milestones));
+    const d = layout.decorations.find((x) => x.id === id)!;
+    return !d.requires || unlocked.has(d.requires);
+  };
+  assert.deepEqual(unlockedUpgrades(milestones), [], 'a milestone that grants nothing opens nothing');
+  assert.equal(stands('arcade'), false);
+  milestones[0]!.unlockedAt = '2026-01-02T00:00:00.000Z';
+  assert.equal(stands('arcade'), true, 'the decoration asks for the milestone by its key');
+  assert.equal(stands('trophy'), false);
+  assert.ok(unlockedUpgrades(milestones).includes('arcade'), 'and what the milestone grants is in the set under its own name too');
+  // The arcade cabinet is then something to walk around.
+  const before = buildWorld(layout, new Set()).solids.length;
+  assert.equal(buildWorld(layout, new Set(unlockedUpgrades(milestones))).solids.length, before + 1);
+});
+
+test('the team room, once earned, has a table and a sofa that people walk around; desks an owner put there are left alone', () => {
+  const layout = defaultLayout();
+  assert.equal(buildWorld(layout, new Set()).team, null, 'no team room, no furniture');
+  const w = buildWorld(layout, new Set(['team_room']));
+  const room = w.room('team')!;
+  assert.ok(w.team, 'the earned team room is furnished');
+  const t = w.team!;
+  const inside = (x: number, z: number) => x > room.x + 0.2 && x < room.x + room.w - 0.2 && z > room.z + 0.2 && z < room.z + room.d - 0.2;
+  assert.ok(inside(t.table.x - t.table.w / 2, t.table.z - t.table.d / 2) && inside(t.table.x + t.table.w / 2, t.table.z + t.table.d / 2), 'the table stands inside the room');
+  assert.ok(t.seats.length >= 4 && t.seats.every((s) => inside(s.x, s.z)), 'with seats on both sides of it');
+  assert.ok(inside(t.sofa.x, t.sofa.z));
+  // The table is something to walk around, and the door still leads to the sofa.
+  const [x] = moveWithCollision(w, t.table.x - t.table.w / 2 - 0.8, t.table.z, 1.5, 0);
+  assert.ok(x < t.table.x - t.table.w / 2, 'nobody walks through the table');
+  const door = { x: room.x + room.w + 0.8, z: room.z + room.d / 2 };
+  const path = w.nav.path(door.x, door.z, t.sofa.x + 1.0, t.sofa.z);
+  assert.ok(path && path.length > 0, 'the sofa can be walked to from the door');
+  // An owner's own arrangement of that room wins.
+  const own = { ...layout, desks: [...layout.desks, { id: 'x-a', x: t.table.x, z: t.table.z, rot: 0, zone: 'south', kind: 'standard' as const }] };
+  assert.equal(buildWorld(own, new Set(['team_room'])).team, null);
 });

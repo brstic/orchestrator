@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { Appearance } from '@orchestrator/contracts';
 import { Character, type Motion } from './Character.tsx';
+import { sceneProbe } from './Environment.tsx';
 import type { CameraMode, NearbyTarget, PersonView } from './types.ts';
 import { deskSeat, moveWithCollision, type World } from './world.ts';
 
@@ -521,6 +522,13 @@ export function Rig({
       curLook.current.lerp(camLook, a);
     }
     camera.lookAt(curLook.current);
+    // For looking at a model up close in tests and captures: `window.__orchScene.cam = { pos, look, fov? }` holds the camera there.
+    const held = sceneProbe().cam as { pos: [number, number, number]; look: [number, number, number]; fov?: number } | undefined;
+    if (held) {
+      camera.position.set(...held.pos);
+      camera.lookAt(...held.look);
+      if (held.fov) fov = held.fov;
+    }
     // Everything drawn this frame (name tags included) is placed with the camera as it is now, not as it was a frame ago.
     camera.updateMatrixWorld();
     const pc = camera as THREE.PerspectiveCamera;

@@ -126,6 +126,8 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
   const world = useMemo(() => (stored === props.layout ? core : buildWorld(props.layout, unlocked, core)), [core, props.layout, unlocked, stored]);
   const player = useMemo(() => new THREE.Vector3(world.spawn.x, 0, world.spawn.z), []); // eslint-disable-line react-hooks/exhaustive-deps
   const positions = useRef(new Map<string, THREE.Vector3>()).current;
+  // Where everyone stands or sits right now, for tests and captures that look at one person.
+  sceneProbe().positions = positions;
   const cutaway = props.cameraMode === 'ceo' || props.cameraMode === 'management' || props.cameraMode === 'command' || props.cameraMode === 'free';
 
   const seatsAt = (desks: Desk[]) => {

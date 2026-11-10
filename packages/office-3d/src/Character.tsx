@@ -1676,6 +1676,22 @@ function buildEyes(): THREE.BufferGeometry {
   return fuse(parts);
 }
 
+/**
+ * The light caught in each eye: a small bright fleck toward the upper side, the same side on both. It is what makes
+ * a pair of dark eyes look at something. It rides on the eyes, so it closes with them.
+ */
+function buildGlints(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  for (const side of [1, -1]) {
+    const ry = side * EYE_AZ * 0.8;
+    const ox = 0.0036;
+    const oy = 0.0062;
+    const oz = 0.006;
+    parts.push(xf(ball(8, 6), side * EYE[0] + ox * Math.cos(ry) + oz * Math.sin(ry), oy, EYE[2] - 0.002 - ox * Math.sin(ry) + oz * Math.cos(ry), 0, ry, 0, 0.0034, 0.0042, 0.0014));
+  }
+  return fuse(parts);
+}
+
 function buildBrows(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   for (const side of [1, -1]) {
@@ -1745,7 +1761,7 @@ function curls(minPol: number): THREE.BufferGeometry {
     const r1 = Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1;
     const r2 = Math.abs(Math.sin(i * 78.233) * 12345.678) % 1;
     const p = headPt(az, pol, 0.012 + r1 * 0.012);
-    parts.push(xf(ball(8, 6), p[0], p[1], p[2], 0, 0, 0, 0.025 + r2 * 0.01));
+    parts.push(xf(ball(11, 7), p[0], p[1], p[2], 0, 0, 0, 0.025 + r2 * 0.01));
   }
   parts.push(shell((az) => keyed(CURLY_LINE, az), () => 0.018));
   return fuse(parts);
@@ -2294,6 +2310,7 @@ function buildSpark(): THREE.BufferGeometry {
 interface Geos {
   head: THREE.BufferGeometry;
   eyes: THREE.BufferGeometry;
+  glints: THREE.BufferGeometry;
   brows: THREE.BufferGeometry;
   mouth: THREE.BufferGeometry;
   neck: THREE.BufferGeometry;
@@ -2350,6 +2367,7 @@ function geos(): Geos {
   GEOS = {
     head: buildHead(),
     eyes: buildEyes(),
+    glints: buildGlints(),
     brows: buildBrows(),
     mouth: buildMouth(),
     neck: xf(new THREE.CylinderGeometry(0.046, 0.053, 0.14, 14), 0, 0.565, -0.004, 0.06, 0, 0),
@@ -2456,6 +2474,9 @@ function skinned<T extends THREE.Material>(m: T): T {
   }
   return twin;
 }
+
+/** The fleck of light in an eye: it does not take the room's light, it is the room's light. */
+const GLINT = new THREE.MeshBasicMaterial({ color: '#f4f6fa' });
 
 /** How far someone without a live session is washed toward grey: dimmed, but still plainly themselves. */
 const DIM = 0.26;
@@ -3045,7 +3066,9 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
           <group ref={head} position={[0, HEAD_Y, -0.002]}>
             <group position={[0, 0.103, 0.014]}>
               <mesh geometry={g.head} material={look3d.skin} castShadow />
-              <mesh ref={eyes} geometry={g.eyes} material={look3d.eye} position={[0, EYE[1], 0]} />
+              <mesh ref={eyes} geometry={g.eyes} material={look3d.eye} position={[0, EYE[1], 0]}>
+                <mesh geometry={g.glints} material={GLINT} />
+              </mesh>
               <mesh geometry={g.brows} material={look3d.brow} />
               <mesh geometry={g.mouth} material={look3d.mouth} />
               {look3d.fade && <mesh geometry={look3d.fade} material={look3d.fadeMat} />}

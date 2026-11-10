@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import type { AgentSession, ControlState, Employee, Host, Notification, OfficeLayout, OrchestratorEvent, Question, RoomDef, SessionCapabilities, Task } from '@orchestrator/contracts';
-import { ACTIVITY_LABEL, LEVEL_THRESHOLDS } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, LEVEL_THRESHOLDS, unlockedUpgrades } from '@orchestrator/contracts';
 import { Badge, Button, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
@@ -275,7 +275,7 @@ export function openNotificationTarget(n: Notification): boolean {
 /** Office upgrades granted by unlocked milestones (rooms with `requires` appear only then). */
 export function useUnlocked(): Set<string> {
   const milestones = useOffice((s) => s.milestones);
-  return useMemo(() => new Set(milestones.filter((m) => m.unlockedAt && m.unlocks).map((m) => m.unlocks!)), [milestones]);
+  return useMemo(() => new Set(unlockedUpgrades(milestones)), [milestones]);
 }
 
 export function visibleRooms(layout: OfficeLayout, unlocked: Set<string>): RoomDef[] {

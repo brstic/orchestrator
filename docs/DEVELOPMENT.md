@@ -38,7 +38,9 @@ See [OPERATIONS.md](OPERATIONS.md): `pnpm deploy:server` for the office on the s
 - A UI test run and a packaging run both use `apps/desktop/dist`; do not run them at the same time, and do not start a UI run while the app is starting.
 
 ## Measuring instead of guessing
-- **Flicker:** compare composited frames (`webContents.capturePage()` in a loop, count pixels that change and change back). Reading the WebGL canvas mid-frame produces false differences.
+- **Flicker:** compare composited frames (`webContents.capturePage()` in a loop, count pixels that change and change back). Reading the WebGL canvas mid-frame produces false differences. Hide the people and the overlays first when the question is about things that stand still (people move on purpose, and a name tag that shifts by a pixel counts as hundreds), let the scene settle for a second after hiding, and compare against the previous build served by `dev-office.ts --ui <its dist>`: a thin line that sweeps across the screen while walking also "changes and changes back", in any build.
+- **Looking at a model:** `window.__orchScene.cam = { pos: [x,y,z], look: [x,y,z], fov? }` holds the camera there until the property is deleted (any camera mode; First person for full-height walls and the ceiling). `window.__orchScene.positions` is the map of where everyone is. Earned decorations can be previewed by marking the milestones reached in the store (`window.__office.setState`).
+- **Sizes of models:** `node --test packages/office-3d/test/models.test.ts` — footprint, seat and desk heights, triangle budgets. It runs without a browser; surfaces are then plain.
 - **Stutter:** frame-interval evenness matters more than fps. `window.__orchPace` (`every`, `fps`), `window.__orchPerf`.
 - **Cost:** `Profiler` over the DevTools protocol on an unminified build (`vite build --minify false --outDir …`, served with `dev-office.ts --ui`).
 - `window.__orchScene.three` exposes `{gl, scene, camera, THREE}`; `window.__office` is the store; `window.__orchPlayer.goto = {x,z,rot}` places the owner.

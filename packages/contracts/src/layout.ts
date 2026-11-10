@@ -1,4 +1,4 @@
-import type { Desk, OfficeLayout, RoomDef } from './entities.ts';
+import type { Desk, Milestone, OfficeLayout, RoomDef } from './entities.ts';
 
 /**
  * The default headquarters floor plan. Units are metres; +X is east, +Z is
@@ -101,4 +101,20 @@ export function decorationBox(d: { kind: string; x: number; z: number; rot: numb
   const w = turned ? k.d : k.w;
   const dd = turned ? k.w : k.d;
   return { minX: d.x - w / 2, maxX: d.x + w / 2, minZ: d.z - dd / 2, maxZ: d.z + dd / 2 };
+}
+
+/**
+ * What the company's reached milestones open in the office, as the set that rooms and decorations are checked
+ * against. A room or decoration names the milestone it waits for (`requires`, `unlock`: "ten_tasks"); a
+ * milestone also names what it grants ("arcade"). Both names are in the set for every milestone that has been
+ * reached and grants something — so the arcade stands once "ten_tasks" is reached, whichever of the two is asked for.
+ */
+export function unlockedUpgrades(milestones: Array<Pick<Milestone, 'key' | 'unlocks' | 'unlockedAt'>>): string[] {
+  const out = new Set<string>();
+  for (const m of milestones) {
+    if (!m.unlockedAt || !m.unlocks) continue;
+    out.add(m.key);
+    out.add(m.unlocks);
+  }
+  return [...out];
 }

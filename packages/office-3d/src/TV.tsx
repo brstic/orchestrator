@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { World } from './world.ts';
 import { ON_SURFACE } from './surface.ts';
+import { Model } from './models/Model.tsx';
+import { mediaConsole } from './models/rooms.ts';
 
 export interface TvView {
   on: boolean;
@@ -89,9 +91,7 @@ export function TV({ world, tv, frames, onOpen }: { world: World; tv: TvView; fr
         <circleGeometry args={[0.012, 12]} />
       </mesh>
       {/* a low media console under it */}
-      <mesh position={[0, 0.22, 0.24]} material={body} castShadow receiveShadow>
-        <boxGeometry args={[2.6, 0.44, 0.42]} />
-      </mesh>
+      <Model model={mediaConsole()} position={[0, 0, 0.24]} />
       {tv.on && <pointLight position={[0, 1.7, 1.2]} intensity={tv.audible ? 2.2 : 1.4} distance={6} color="#9db8ff" />}
       {(hover || (tv.on && !showing)) && (
         <Html position={[0, 1.75 + H / 2 + 0.28, 0.1]} center zIndexRange={[40, 0]} style={{ pointerEvents: 'none' }}>

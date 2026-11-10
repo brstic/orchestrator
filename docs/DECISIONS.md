@@ -27,6 +27,15 @@ Newest first. Each entry: what was decided, why, and what was rejected. Add one 
 - A room grows only away from the building (more desks, open floor), never along the wall: neighbours never move. Width along the wall stays fixed at 6.8 m.
 - An away computer with nobody on it gets no room when its member has another computer: a re-enrollment would otherwise leave an empty room behind.
 
+## 2026-11-10 — Furniture is sculpted in code
+- No model files. Everything in the office is built at start from a small kit of shapes (`packages/office-3d/src/models/kit.ts`). Why: nothing to fetch or package, one style throughout (the characters are made the same way), and sizes are numbers — a test can say that a sofa fits the floor kept free for it and that a chair's seat is where people are posed to sit.
+- One material per look for the whole office, and each model fused into one geometry per material: detail costs triangles, not draw calls. Budgets are in `test/models.test.ts`; what is drawn many times (chair, desk, cup) has the tightest.
+- Fine repeated detail is kept low in contrast (the reception counter's battens stand on wood of nearly their own tone, keys are light on light). Bright thin stripes crawl while one walks past them, and that reads as the flicker the owner has complained of. Measured, not guessed: see DEVELOPMENT.md.
+- Small things on desks appear with the person who sits there and are chosen from the desk's id: lively, but never changing while one looks.
+- A room that lies inside another room has its floor drawn as a picture on a surface (`ON_SURFACE`), not as a second floor at the same height.
+- What a milestone grants and the milestone's key are both accepted as "unlocked" (`unlockedUpgrades`). The mismatch had hidden three decorations since they were added; accepting both names needs no migration of stored layouts.
+- The team room's furniture is placed only when the room's floor is free: an owner's own arrangement of that room is never overridden.
+
 ## 2026-11-10 — Rendering and movement
 - Even rhythm over raw frame rate: draw on every refresh or on every second one (`pace.ts`). A steady 60 looks smoother than an unsteady 90.
 - Things that lie on a surface get a polygon offset (`surface.ts`); surfaces are kept centimetres apart, not millimetres.
