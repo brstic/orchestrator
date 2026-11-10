@@ -45,6 +45,8 @@ See [OPERATIONS.md](OPERATIONS.md): `pnpm deploy:server` for the office on the s
 - **Cost:** `Profiler` over the DevTools protocol on an unminified build (`vite build --minify false --outDir …`, served with `dev-office.ts --ui`).
 - `window.__orchScene.three` exposes `{gl, scene, camera, THREE}`; `window.__office` is the store; `window.__orchPlayer.goto = {x,z,rot}` places the owner.
 
+- **Clocks in tests:** what the office does by the clock has its interval in `Timings` (`packages/orchestration/src/core.ts`), so a test can run it fast: `routineTickMs` and `routineMinuteMs` (how long "a minute" of a routine is), `sleepTickMs` and `sleepIdleMs` (overrides the owner's "asleep after … minutes"), `wakeRetryMs`. `tests/e2e/16-routines-sleep.test.ts` runs a five-minute routine every second and a half and puts a session to sleep after two seconds.
+
 ## Conventions
 - Comments say why, in plain words. No narration of the change itself.
 - New owner-visible behaviour that is automatic (camera, overlays, effects) ships switched off behind a setting.

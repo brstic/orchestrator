@@ -21,12 +21,15 @@ const ROUNDS: Array<{ status: MeetingStatus; round: Round; label: string; explai
 
 const isActive = (m: Meeting) => m.status === 'proposals' || m.status === 'responses' || m.status === 'synthesis';
 
-/** Same rule the server uses: a participant can only take part through a running session. */
+/**
+ * Same rule the server uses: someone takes part through a running session, or through one the office put to
+ * sleep — that one is woken for the meeting. Someone who was never started, or whom a person stopped, is absent.
+ */
 function useLive(): (employeeId: string) => boolean {
   const sessions = useOffice((s) => s.sessions);
   return (employeeId) => {
-    const status = sessionOfEmployee(sessions, employeeId)?.status;
-    return status === 'running' || status === 'starting';
+    const session = sessionOfEmployee(sessions, employeeId);
+    return session?.status === 'running' || session?.status === 'starting' || !!session?.asleepSince;
   };
 }
 
@@ -48,7 +51,7 @@ function MeetingCreate({ onCreated }: { onCreated: (id: string) => void }) {
 
   const present = picked.filter(live);
   const facilitators = employees.filter((e) => present.includes(e.id));
-  const problem = picked.length < 2 ? 'Pick at least two participants.' : present.length === 0 ? 'None of the people you picked has a running session, so nobody could answer.' : null;
+  const problem = picked.length < 2 ? 'Pick at least two participants.' : present.length === 0 ? 'None of the people you picked can take part: start at least one of them first.' : null;
   const toggle = (id: string, on: boolean) => {
     setPicked(on ? [...picked, id] : picked.filter((x) => x !== id));
     if (!on && facilitatorId === id) setFacilitatorId('');
@@ -88,7 +91,7 @@ function MeetingCreate({ onCreated }: { onCreated: (id: string) => void }) {
           ))}
         </select>
       </Field>
-      <Field label="Facilitator" hint="Writes the decision document in the last round. Must have a running session.">
+      <Field label="Facilitator" hint="Writes the decision in the last round.">
         <select value={facilitatorId} onChange={(e) => setFacilitatorId(e.target.value)}>
           <option value="">Automatic (architect, then project manager, then anyone present)</option>
           {facilitators.map((e) => (
@@ -101,10 +104,10 @@ function MeetingCreate({ onCreated }: { onCreated: (id: string) => void }) {
       <div className="field field-wide">
         <span className="row spread">
           <span className="field-label">
-            Participants ({picked.length} picked, {present.length} with a running session)
+            Participants ({picked.length} picked, {present.length} who can take part)
           </span>
           <Button small type="button" variant="ghost" onClick={() => setPicked(employees.filter((e) => live(e.id)).map((e) => e.id))}>
-            Pick everyone with a running session
+            Pick everyone who can take part
           </Button>
         </span>
         {employees.length === 0 ? (
@@ -119,8 +122,8 @@ function MeetingCreate({ onCreated }: { onCreated: (id: string) => void }) {
                   {e.name} <span className="muted small">{e.title}</span>
                 </span>
                 {!live(e.id) && (
-                  <Badge tone="warn" title="Only a running session can answer. If you invite them anyway they are recorded as absent.">
-                    no running session — would be recorded absent
+                  <Badge tone="warn" title="They were never started, or someone stopped them. Invited anyway, they are recorded as absent. Start them first to have them take part.">
+                    not started — would be absent
                   </Badge>
                 )}
               </label>

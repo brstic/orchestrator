@@ -218,9 +218,13 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     propose_tasks: async (a, { employee }) => {
       const projectId = eng.tasks.currentTask(employee.id)?.projectId ?? employee.projectId;
       if (!projectId) return { text: 'You are not assigned to a project.', isError: true };
-      const created = eng.tasks.proposeTasks(employee, projectId, a.tasks, a.rationale ? String(a.rationale) : undefined, 'planning');
-      const released = core.projects.get(projectId)?.policy.autoAssign;
-      return `Created ${created.length} tasks: ${created.map((t) => t.key).join(', ')}. ${released ? 'They are scheduled automatically as dependencies complete.' : 'They wait in the backlog for the boss to release them.'}`;
+      const { created, existing } = eng.tasks.propose(employee, projectId, a.tasks, a.rationale ? String(a.rationale) : undefined, 'planning');
+      // Items a repeating check has already reported: nothing is added, and the employee is told so.
+      const already = existing.length ? `Already on the board, so not added again: ${existing.map((t) => `${t.key} [${t.status}]`).join(', ')}.` : '';
+      if (!created.length) return `Nothing new was added. ${already}`;
+      const waiting = created.filter((t) => !t.released);
+      const fate = !waiting.length ? 'They are scheduled automatically as dependencies complete.' : waiting.length === created.length ? 'They wait in the backlog for the boss to release them.' : `${waiting.map((t) => t.key).join(', ')} wait in the backlog for the boss to release them; the rest are scheduled automatically.`;
+      return `Created ${created.length} tasks: ${created.map((t) => t.key).join(', ')}. ${fate}${already ? ` ${already}` : ''}`;
     },
 
     record_lesson: async (a, { employee }) =>

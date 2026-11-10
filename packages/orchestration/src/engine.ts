@@ -11,6 +11,8 @@ import { Improver } from './improve.ts';
 import { MeetingManager } from './meetings.ts';
 import { buildMcpServer, type McpContext } from './mcp-tools.ts';
 import { EmployeeRegistry, HostRegistry, SessionRegistry, type EmployeeInput } from './registry.ts';
+import { Routines } from './routines.ts';
+import { Sleeper } from './sleep.ts';
 import { TaskManager } from './tasks.ts';
 
 /**
@@ -20,6 +22,7 @@ import { TaskManager } from './tasks.ts';
  *   hooks ─ comms                     what they are doing, asking and being told
  *   tasks ─ meetings ─ commands       what work exists and how it moves
  *   foreman                           an employee who supervises the rest, in rounds
+ *   routines ─ sleep                  what is repeated by the clock, and who rests meanwhile
  *
  * Nothing in here knows about rendering.
  */
@@ -35,6 +38,8 @@ export class Engine {
   readonly commands: CommandCenter;
   readonly improver: Improver;
   readonly foreman: Foreman;
+  readonly routines: Routines;
+  readonly sleeper: Sleeper;
   readonly mcp: McpServerOptions<McpContext>;
   private housekeeping: NodeJS.Timeout | null = null;
 
@@ -50,6 +55,8 @@ export class Engine {
     this.commands = new CommandCenter(this);
     this.improver = new Improver(this);
     this.foreman = new Foreman(this);
+    this.routines = new Routines(this);
+    this.sleeper = new Sleeper(this);
     this.core.gateway = new TerminalGateway({
       rpc: (hostId, rpc, timeoutMs) => this.core.agents.rpc(hostId, rpc, timeoutMs),
       locate: (sessionId) => {
@@ -120,12 +127,16 @@ export class Engine {
     this.housekeeping.unref?.();
     this.employees.unseatForemen();
     this.foreman.start();
+    this.routines.start();
+    this.sleeper.start();
     this.tasks.schedule();
   }
 
   stop(): void {
     if (this.housekeeping) clearInterval(this.housekeeping);
     this.foreman.stop();
+    this.routines.stop();
+    this.sleeper.stop();
   }
 
   // ─────────────────────────── snapshots ───────────────────────────
@@ -155,6 +166,7 @@ export class Engine {
       lessons: c.lessons.all(),
       improvements: c.improvements.all(),
       performance: this.improver.performance(),
+      routines: this.routines.list(),
       events: c.store.queryEvents({ limit: 400, excludeTypes: ['terminal.output'] }),
     };
   }

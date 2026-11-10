@@ -69,6 +69,8 @@ One outbound WebSocket per host, authenticated by its first message. Non-blockin
 | Office state manager | `engine.ts`, `core.ts` | full-state snapshots, entity broadcasts, layout |
 | Progression engine | `packages/game-systems` | XP ledger, levels, milestones |
 | Self-improvement | `improve.ts` | playbooks, project knowledge, routing, proposals |
+| Routines | `routines.ts` | standing instructions repeated for one employee: when a run is due, delivered, skipped or held |
+| Sleep | `sleep.ts`, `registry.ts` (`wake`), `comms.ts` (`pump`) | stopping sessions that have no work; starting them again for what they are needed for |
 | Persistence & recovery | `core.ts`, `engine.ts` | everything is rebuilt from the database on start |
 
 ### Activity state
@@ -146,6 +148,28 @@ Every event has `id` (dedupe key), `seq` (store order), `ts`, `type`, `source` (
 - **Routing** — `performance()` counts outcomes per employee and task kind from task records; `routingBonus` nudges the scheduler toward the better first-pass record (needs ≥ 2 completed tasks of that kind). The reason is written into the task history.
 - **Proposals** — `analyze()` reads approvals, tasks and events and proposes: allow/deny rules for command shapes decided the same way ≥ 3 times (never for high-risk commands), more autonomy for a supervised employee with a clean record, a review gate where work keeps failing, a verification command where there is none, a longer verification timeout after repeated timeouts, sequencing for files that keep conflicting, acceptance criteria where vague tasks fail more. Applying is always an owner action.
 
+### Routines (`routines.ts`)
+
+A `Routine` (`employeeId`, `instruction`, `everyMinutes`, `enabled`, `nextRunAt`, `runs`, last outcome) is stored like any entity (collection `routine`, in the state and broadcast as `entity` messages; filtered for members' own employees like messages are). A timer (`timings.routineTickMs`, 20 s) looks for those whose `nextRunAt` has passed. A look comes to one of:
+
+| Outcome | When | Next look |
+| --- | --- | --- |
+| `delivered` | the session is between turns with nothing waiting on the owner — or there is no session and the machine is there (the session is then started for it) | one interval after this look |
+| `skipped_busy` | mid-turn; a question or approval open; someone at the terminal; other things queued for them; the run before this one not delivered yet | one interval after this look |
+| `not_run` | the employee or the project is paused, the employee is archived or outside working hours | unchanged: it runs once when the hold is over |
+| `skipped_offline` | no session and the machine is away (or out of resources, or there is no folder) | unchanged: once when it is back |
+| `failed` | the session could not be started for a run that is still waiting | one interval after this look |
+
+A run is `Comms.sendMessage` with `routineId` set: the message body is `Routine (every N min): <instruction>`, and the prompt typed into the session adds `ROUTINE_GUIDE` (use `propose_tasks` with a `dedupe_key` for what is found; one line when there is nothing new). `propose_tasks` with a `dedupe_key` adds nothing when the project already has a task with that key (`TaskManager.propose`), and holds what it adds for the owner's release.
+
+### Sleep and wake (`sleep.ts`, `registry.ts`, `comms.ts`)
+
+`Sleeper.tick` (every `timings.sleepTickMs`, 30 s) stops managed sessions on shared machines that have rested for `OwnerSettings.sleepAfterMinutes` (`keptAwake` lists every reason not to). The stop is `SessionRegistry.stop(…, { asleep: true })`: `session.kill` on the host, then the record becomes `exited` with `asleepSince` and `exitReason: "asleep after N min without work"` — no `session.lost` event, no notification, not counted as a lost session; a `session.asleep` event instead.
+
+Waking is in one place: `Comms.pump`. When something is queued for an employee with no session, `wakeFor` starts it (`SessionRegistry.wake`) if the employee is asleep, or if the delivery asks for it (a routine's run). `wake` picks the folder (`wakeCwd`: the task in hand's, else the last one if it is still theirs), calls the ordinary `start` — which resumes the conversation of the previous record in that folder — and records `session.woken` with whether it resumed. Starts of one employee are shared (`starting`); one that needs a particular folder looks again once the shared start is through. A resumed session that ends before any hook arrives had nothing to resume: `lastEventAt` is cleared so the next start is a new conversation, the feed says so, and the queue is pumped once more.
+
+Meetings and report requests use `SessionRegistry.present` (running, or asleep and startable) where they used to require a running session.
+
 ## Layer C — office (`packages/office-3d`, `apps/desktop`)
 
 - Procedural world from layout data (`world.ts`): walls with merged shared segments and door gaps, obstacles, a navigation grid with A* and string-pulling, points of interest.
@@ -222,6 +246,8 @@ SQLite (`node:sqlite`), WAL mode, file mode 0600: entity documents, the event st
 | Agent restart | tmux sessions keep running; the agent re-attaches from its state file and re-reports. Hooks fired meanwhile are lost (Claude Code treats the dead socket as "no hook") and state is `UNKNOWN` until the next hook |
 | Network drop | Agent reconnects with backoff; queued hook events are flushed; viewers get a fresh snapshot |
 | Claude process exits | Pane is kept (`remain-on-exit`), session `exited`, employee `OFFLINE`; "Resume session" respawns the pane with `--resume` |
+| Session put to sleep | The tmux session and the process are ended on purpose; the record keeps the folder and the Claude conversation id. The next thing the employee is needed for starts a new tmux session of the same name with `--resume` |
+| Server restart with routines | Routines and their `nextRunAt` are stored; one that came due meanwhile runs once (after its machine has reconnected) |
 | Duplicate events | Ignored by id |
 | Merge conflict | Aborted; task blocked; owner decides |
 | Host revoked | Cut off immediately; credential invalid; tmux sessions untouched |

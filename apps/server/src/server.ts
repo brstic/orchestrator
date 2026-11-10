@@ -1,7 +1,7 @@
 import { Door, inviteCode } from './door.ts';
 import { Guests, whoIs, type Who } from './guests.ts';
 import { Knocks, type Admission } from './knocks.ts';
-import { allowed, eventFor, mayCall, outcomesScopeFor, stateFor } from './access.ts';
+import { allowed, eventFor, mayCall, mayReadRoutine, outcomesScopeFor, stateFor } from './access.ts';
 import { HiFi, nowPlaying } from './radio.ts';
 import { SshLinks } from './ssh-links.ts';
 import fs from 'node:fs';
@@ -471,6 +471,16 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       const who = whoOf(req);
       return engine.comms.sendMessage({ from: { kind: 'owner', id: null, name: who.kind === 'owner' ? (who.id === 'owner' ? 'the boss' : `${who.name} (an owner of this office)`) : `${who.name} (a colleague the boss invited; not the boss)` }, toEmployeeId: param(req, 'id'), body: text });
     });
+    // Routines: a standing instruction the office repeats for one employee (see `routines.ts`).
+    const actorOf = (req: FastifyRequest) => (whoOf(req).id === 'owner' ? 'owner' : `member:${whoOf(req).name}`);
+    api.get('/routines', async (req) => engine.routines.list().filter((r) => mayReadRoutine(engine, whoOf(req), r)));
+    api.post('/routines', async (req) => engine.routines.create(body(req), actorOf(req)));
+    api.patch('/routines/:id', async (req) => engine.routines.update(param(req, 'id'), body(req), actorOf(req)));
+    api.delete('/routines/:id', async (req) => {
+      engine.routines.remove(param(req, 'id'), actorOf(req));
+      return { ok: true };
+    });
+    api.post('/routines/:id/run', async (req) => engine.routines.runNow(param(req, 'id'), actorOf(req)));
     api.post('/employees/:id/report', async (req) => engine.commands.execute({ input: 'request report', interpretedBy: 'rules', operations: [{ operation: { op: 'employee.report', employeeId: param(req, 'id') }, description: 'Request a status report' }], problems: [] }));
     api.get('/employees/:id/git', async (req) => engine.tasks.gitView({ employeeId: param(req, 'id') }));
     api.get('/employees/:id/xp', async (req) => engine.core.xp.filter((x) => x.employeeId === param(req, 'id')).sort((a, b) => (a.ts < b.ts ? 1 : -1)));

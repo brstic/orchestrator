@@ -22,6 +22,7 @@ import type {
   Project,
   Question,
   SelfImprovementSettings,
+  Routine,
   Task,
   XpEntry,
   EventSourceKind,
@@ -75,6 +76,16 @@ export interface Timings {
   autopilotProbationMs: number;
   /** …or until this many tasks of the affected project or employee have finished, whichever comes first. */
   autopilotProbationTasks: number;
+  /** How often the office looks for routines that are due. */
+  routineTickMs: number;
+  /** How long "a minute" of a routine's interval is (tests run on faster clocks). */
+  routineMinuteMs: number;
+  /** How often the office looks for sessions that have sat idle long enough to be put to sleep. */
+  sleepTickMs: number;
+  /** Overrides the owner's "asleep after … minutes" setting (tests run on faster clocks). */
+  sleepIdleMs: number | null;
+  /** After a session that would not start when it was needed: no further attempt for this long. */
+  wakeRetryMs: number;
 }
 
 export const DEFAULT_TIMINGS: Timings = {
@@ -96,6 +107,11 @@ export const DEFAULT_TIMINGS: Timings = {
   autopilotReviewOffTasks: 10,
   autopilotProbationMs: 7 * 86400_000,
   autopilotProbationTasks: 5,
+  routineTickMs: 20_000,
+  routineMinuteMs: 60_000,
+  sleepTickMs: 30_000,
+  sleepIdleMs: null,
+  wakeRetryMs: 30_000,
 };
 
 export interface EngineOptions {
@@ -167,6 +183,13 @@ export function sanitizeAutopilot(si: SelfImprovementSettings, fallback: Pick<Se
   };
 }
 
+/** Minutes without work before a session is put to sleep: 0 switches it off; anything else is five minutes to a day. */
+export function sanitizeSleep(input: unknown, current: number): number {
+  if (typeof input !== 'number' || !Number.isFinite(input)) return current;
+  const n = Math.round(input);
+  return n <= 0 ? 0 : Math.min(24 * 60, Math.max(5, n));
+}
+
 const DEFAULT_SETTINGS: OwnerSettings = {
   companyName: 'My Company',
   ownerName: 'Boss',
@@ -176,6 +199,7 @@ const DEFAULT_SETTINGS: OwnerSettings = {
   autoAsksHighRisk: true,
   projectZones: false,
   approachZoom: false,
+  sleepAfterMinutes: 30,
   tv: {
     home: 'https://www.youtube.com/',
     bookmarks: [
@@ -247,6 +271,7 @@ export class Core {
   readonly xp: Collection<XpEntry>;
   readonly lessons: Collection<Lesson>;
   readonly improvements: Collection<Improvement>;
+  readonly routines: Collection<Routine>;
 
   private _settings: OwnerSettings;
   private _layout: OfficeLayout;
@@ -274,6 +299,7 @@ export class Core {
     this.xp = s.col('xp');
     this.lessons = s.col('lesson');
     this.improvements = s.col('improvement');
+    this.routines = s.col('routine');
     this._settings = { ...DEFAULT_SETTINGS, ...s.kvGet<Partial<OwnerSettings>>('settings', {}) };
     // Offices created before sidestepping existed: A/D turn, Q/E sidestep, and "interact" moves off E.
     const kb = this._settings.keybindings;
@@ -284,6 +310,7 @@ export class Core {
     this._settings.selfImprovement = { ...DEFAULT_SETTINGS.selfImprovement, ...(this._settings.selfImprovement ?? {}) };
     this._settings.selfImprovement = sanitizeAutopilot(this._settings.selfImprovement, DEFAULT_SETTINGS.selfImprovement);
     this._settings.foreman = sanitizeForeman(this._settings.foreman, DEFAULT_SETTINGS.foreman, this.foremanGapFloor);
+    this._settings.sleepAfterMinutes = sanitizeSleep(this._settings.sleepAfterMinutes, DEFAULT_SETTINGS.sleepAfterMinutes);
     this._layout = s.kvGet<OfficeLayout | null>('layout', null) ?? defaultLayout();
     this._milestones = s.kvGet<Milestone[] | null>('milestones', null) ?? initialMilestones();
     this._company = { ...emptyCompanyStats(), ...s.kvGet<Partial<CompanyStats>>('company', {}) };
@@ -317,6 +344,8 @@ export class Core {
         return this.lessons;
       case 'improvement':
         return this.improvements;
+      case 'routine':
+        return this.routines;
       default:
         throw new Error(`no collection for ${kind}`);
     }
@@ -397,6 +426,7 @@ export class Core {
       ...(patch.tv ? { tv: sanitizeTv(patch.tv, this._settings.tv) } : {}),
       selfImprovement: { ...this._settings.selfImprovement, ...(patch.selfImprovement ?? {}) },
       foreman: patch.foreman === undefined ? this._settings.foreman : sanitizeForeman(patch.foreman, this._settings.foreman, this.foremanGapFloor),
+      sleepAfterMinutes: patch.sleepAfterMinutes === undefined ? this._settings.sleepAfterMinutes : sanitizeSleep(patch.sleepAfterMinutes, this._settings.sleepAfterMinutes),
     };
     this._settings.selfImprovement = sanitizeAutopilot(this._settings.selfImprovement, autopilotBefore);
     this.store.kvSet('settings', this._settings);

@@ -7,6 +7,7 @@ import { api } from '../../lib/api.ts';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { QuestionBody, act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
+import { RepeatChoice, RepeatHint, RoutineList, createRoutine } from './routines.tsx';
 
 type Line =
   | { kind: 'boss'; id: string; ts: string; text: string; delivery: string; via: string | null }
@@ -27,6 +28,8 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
   const e = arg ? s.employees[arg] : undefined;
   const [text, setText] = useState('');
   const [asTask, setAsTask] = useState(false);
+  // Say it once, or have the office repeat it every so many minutes (a routine).
+  const [repeat, setRepeat] = useState({ on: false, minutes: 5 });
   const [busy, setBusy] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -36,7 +39,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
     if (!e) return [];
     const out: Line[] = [];
     for (const m of Object.values(s.messages)) {
-      if (m.toEmployeeId === e.id && m.from.kind === 'owner') out.push({ kind: 'boss', id: m.id, ts: m.createdAt, text: m.body, delivery: m.delivery.status, via: m.delivery.via });
+      if (m.toEmployeeId === e.id && (m.from.kind === 'owner' || m.routineId)) out.push({ kind: 'boss', id: m.id, ts: m.createdAt, text: m.body, delivery: m.delivery.status, via: m.delivery.via });
     }
     const seen = new Set<string>();
     for (const ev of [...(history.data ?? []), ...s.events]) {
@@ -73,6 +76,14 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
     if (!body || busy) return;
     setBusy(true);
     try {
+      // Repeated by the office from now on: the first run is now, and the office starts their session for it itself.
+      if (repeat.on) {
+        if (await createRoutine(e.id, e.name, body, repeat.minutes)) {
+          setText('');
+          setRepeat({ on: false, minutes: repeat.minutes });
+        }
+        return;
+      }
       // Talking to someone who is not at their desk yet brings them in.
       if (!live && e.hostId) await api('POST', `/employees/${e.id}/start`, {});
       if (asTask && e.projectId) {
@@ -121,6 +132,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
         </>
       }
     >
+      <RoutineList employeeId={e.id} />
       <div className="talk-thread">
         {lines.length === 0 && (
           <div className="empty">
@@ -191,9 +203,10 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
         />
         <div className="row spread">
           <label className="check small" title={e.projectId ? 'A task is tracked on the board and only counts as done after Orchestrator verifies it' : 'Needs a project or folder'}>
-            <input type="checkbox" checked={asTask} disabled={!e.projectId} onChange={(ev) => setAsTask(ev.target.checked)} />
+            <input type="checkbox" checked={asTask && !repeat.on} disabled={!e.projectId || repeat.on} onChange={(ev) => setAsTask(ev.target.checked)} />
             Track as a task{task ? ` (after ${task.key})` : ''} — verified when done
           </label>
+          <RepeatChoice on={repeat.on} minutes={repeat.minutes} name={e.name} onChange={(on, minutes) => setRepeat({ on, minutes })} />
           <div className="row">
             <span className="small faint">Enter to send · Shift+Enter for a new line</span>
             {session && live && (
@@ -202,10 +215,11 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
               </Button>
             )}
             <Button variant="primary" small disabled={!text.trim() || busy || (!live && !e.hostId)} onClick={send}>
-              {asTask ? 'Assign' : 'Send'}
+              {repeat.on ? 'Repeat' : asTask ? 'Assign' : 'Send'}
             </Button>
           </div>
         </div>
+        {repeat.on && <RepeatHint name={e.name} />}
       </div>
     </Window>
   );

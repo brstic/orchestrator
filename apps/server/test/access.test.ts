@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { OWNERS_ONLY, allowed, eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, maySee, memberOf, outcomesScopeFor, stateFor, type Who } from '../src/access.ts';
+import { OWNERS_ONLY, allowed, eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, maySee, memberOf, outcomesScopeFor, stateFor, type Who, mayReadRoutine } from '../src/access.ts';
 
 /** An office with one shared machine and Jovan's own computer, and one employee, session, project, task and question on each. */
 const table = <T extends { id: string }>(rows: T[]) => ({ get: (id: string) => rows.find((r) => r.id === id) });
@@ -12,6 +12,7 @@ const engine = {
     projects: table([{ id: 'p-shared', hostId: 'h-shared' }, { id: 'p-jovan', hostId: 'h-jovan' }, { id: 'p-nohost', hostId: null }]),
     tasks: table([{ id: 't-shared', projectId: 'p-shared', assigneeId: null }, { id: 't-jovan', projectId: 'p-jovan', assigneeId: 'e-jovan' }, { id: 't-loose', projectId: 'p-nohost', assigneeId: 'e-jovan' }]),
     questions: table([{ id: 'q-shared', employeeId: 'e-shared' }, { id: 'q-jovan', employeeId: 'e-jovan' }, { id: 'q-foreman', employeeId: 'e-foreman' }]),
+    routines: table([{ id: 'r-shared', employeeId: 'e-shared' }, { id: 'r-jovan', employeeId: 'e-jovan' }, { id: 'r-foreman', employeeId: 'e-foreman' }]),
   },
 } as any;
 
@@ -179,4 +180,35 @@ test('measured outcomes: everyone may ask, and what is on a member’s own compu
   }
   // The company lesson is judged, for Ana, from the one task she may see.
   assert.deepEqual([reportFor(ana).lessons[0]!.given, reportFor(vera).lessons[0]!.given], [1, 3]);
+});
+
+test('routines: set by whoever may work with the employee, read by whoever may read them', () => {
+  // A visitor reads the shared ones and changes none.
+  assert.ok(call(mila, 'GET', '/routines'));
+  for (const [m, r, b] of [['POST', '/routines', { employeeId: 'e-shared' }], ['PATCH', '/routines/r-shared'], ['DELETE', '/routines/r-shared'], ['POST', '/routines/r-shared/run']] as Array<[string, string, Record<string, unknown>?]>) {
+    assert.equal(call(mila, m, r, b), false, `Mila: ${m} ${r}`);
+    assert.equal(call(ana, m, r, b), true, `Ana: ${m} ${r}`);
+  }
+  assert.match(mayCall(engine, mila, 'POST', '/routines', { employeeId: 'e-shared' }).reason!, /visiting/);
+  // On a member's own computer: that member and the owners.
+  for (const [m, r, b] of [['POST', '/routines', { employeeId: 'e-jovan' }], ['PATCH', '/routines/r-jovan'], ['DELETE', '/routines/r-jovan'], ['POST', '/routines/r-jovan/run']] as Array<[string, string, Record<string, unknown>?]>) {
+    assert.equal(call(ana, m, r, b), false, `Ana: ${m} ${r}`);
+    assert.equal(call(jovan, m, r, b), true, `Jovan: ${m} ${r}`);
+    assert.equal(call(vera, m, r, b), true, `Vera: ${m} ${r}`);
+  }
+  // The foreman's are the owners' alone.
+  for (const who of [ana, jovan]) assert.equal(call(who, 'POST', '/routines', { employeeId: 'e-foreman' }) || call(who, 'DELETE', '/routines/r-foreman'), false);
+  assert.ok(call(vera, 'POST', '/routines', { employeeId: 'e-foreman' }) && call(root, 'DELETE', '/routines/r-foreman'));
+  assert.equal(memberOf(engine, 'routine', 'r-jovan'), 'jovan');
+  assert.equal(memberOf(engine, 'routine', 'r-foreman'), OWNERS_ONLY);
+  // What an employee on a member's computer is told to repeat is content of that computer.
+  const routines = [{ id: 'r-shared', employeeId: 'e-shared' }, { id: 'r-jovan', employeeId: 'e-jovan' }, { id: 'r-foreman', employeeId: 'e-foreman' }];
+  const seen = (who: Who) => routines.filter((r) => mayReadRoutine(engine, who, r)).map((r) => r.id);
+  assert.deepEqual(seen(mila), ['r-shared']);
+  assert.deepEqual(seen(ana), ['r-shared']);
+  assert.deepEqual(seen(jovan), ['r-shared', 'r-jovan']);
+  assert.deepEqual(seen(vera), ['r-shared', 'r-jovan', 'r-foreman']);
+  const state = { events: [], messages: [], questions: [], routines } as any;
+  assert.deepEqual(stateFor(engine, ana, state).routines.map((r: any) => r.id), ['r-shared']);
+  assert.equal(stateFor(engine, root, state), state);
 });

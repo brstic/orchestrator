@@ -276,7 +276,8 @@ async function scenario() {
     await type(`window.__t.scope().querySelector('textarea')`, 'Welcome aboard. @@fake: say glad-to-be-here@@');
     await clickText('Send');
     await waitFor(`Object.values(window.__t.store().sessions).some((s) => s.employeeId === window.__t.emp(${JSON.stringify(ctx.hireName)}).id && s.status === 'running')`, 20000);
-    await waitFor(`/glad-to-be-here/.test(window.__t.scope().textContent.replace('@@fake: say glad-to-be-here@@', ''))`, 25000);
+    // (Their reply itself, in their bubble: the window's text also holds what was typed — in my bubble and, for a moment, still in the box.)
+    await waitFor(`[...window.__t.scope().querySelectorAll('.talk-them')].some((b) => /glad-to-be-here/.test(b.textContent))`, 25000);
     await js(`window.__t.store().openPanel(null)`);
     return 'hired with no session; the first message started it and got a reply';
   });
@@ -378,6 +379,32 @@ async function scenario() {
     await js(`window.__t.store().openPanel(null)`);
     if (before !== 0 || kept !== JSON.stringify([ava])) throw new Error(`cards before the answer: ${before}; remembered: ${kept}`);
     return 'dots → "Ava answered you" card and bubble → gone once the conversation is opened';
+  });
+
+  await step('a routine: "Repeat every … minutes" turns what I type into a standing instruction, listed above the conversation', async () => {
+    const ava = await js(`window.__t.emp('Ava').id`);
+    await js(`window.__t.store().openPanel('talk', ${JSON.stringify(ava)})`);
+    await type(`window.__t.scope().querySelector('textarea')`, 'Check the queue and say what is new @@fake: say routine-check-7781@@');
+    await click(`window.__t.checkbox('Repeat every')`, 'the "Repeat every" checkbox');
+    // The cost is said where the choice is made, and the button says what it will do.
+    await waitFor(`/Each run is a real Claude turn on Ava's account/.test(window.__t.scope().textContent) && !!window.__t.byText('Repeat')`, 4000);
+    await clickText('Repeat');
+    // Listed above the conversation, with its rhythm; its first run is delivered and answered like a message.
+    await waitFor(`(() => { const r = window.__t.scope().querySelector('.routine-row'); return !!r && /Check the queue and say what is new/.test(r.textContent) && r.querySelector('.routine-every input').value === '5'; })()`, 8000);
+    await waitFor(`[...window.__t.scope().querySelectorAll('.talk-me')].some((b) => /Routine \\(every 5 min\\): Check the queue/.test(b.textContent))`, 8000);
+    await waitFor(`[...window.__t.scope().querySelectorAll('.talk-them')].some((b) => /routine-check-7781/.test(b.textContent))`, 25000);
+    await waitFor(`Object.values(window.__t.store().routines).some((r) => r.employeeId === ${JSON.stringify(ava)} && r.runs === 1 && r.lastOutcome === 'delivered')`, 5000);
+    // The box is back to saying things once.
+    const reset = await js(`!window.__t.checkbox('Repeat every').checked && [...window.__t.scope().querySelectorAll('.talk-compose button')].some((b) => b.textContent.trim() === 'Send') && window.__t.scope().querySelector('textarea').value === ''`);
+    await shot('routine');
+    // Pause it, then remove it: both from its row.
+    await click(`window.__t.byText('Pause', 'button', window.__t.scope().querySelector('.routine-row'))`, 'Pause');
+    await waitFor(`!!window.__t.scope().querySelector('.routine-row.routine-off') && /Paused/.test(window.__t.scope().querySelector('.routine-row').textContent)`, 5000);
+    await click(`window.__t.byText('Remove', 'button', window.__t.scope().querySelector('.routine-row'))`, 'Remove');
+    await waitFor(`!window.__t.scope().querySelector('.routine-row') && Object.keys(window.__t.store().routines).length === 0`, 5000);
+    await js(`window.__t.store().openPanel(null)`);
+    if (!reset) throw new Error('after creating the routine the message box did not go back to "Send"');
+    return 'created with its first run answered → paused → removed';
   });
 
   await step('workstation: take control, type into the real terminal, return control', async () => {

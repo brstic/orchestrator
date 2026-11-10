@@ -244,6 +244,13 @@ export function reviewPrompt(review: Task, target: Task, project: Project, autho
     .join('\n');
 }
 
+/** What every run of a routine is told after the owner's own words. */
+export const ROUTINE_GUIDE = [
+  'This is a standing instruction from the boss that the office repeats; this is one run of it. Do the check now.',
+  'If you find something new that needs work, put it on the task board with the propose_tasks tool: one task per item, each with a dedupe_key that identifies the item itself (a ticket id, a URL) so that an item you already reported is never added twice.',
+  'If there is nothing new, change nothing and answer in one line that there is nothing new.',
+].join(' ');
+
 export function messagePrompt(msg: Message, collab: CollabRequest | undefined): string {
   const from = msg.from.kind === 'owner' ? 'the boss' : msg.from.name;
   if (collab && msg.kind === 'collab_request') {
@@ -253,6 +260,7 @@ export function messagePrompt(msg: Message, collab: CollabRequest | undefined): 
       `\nEvaluate this against your current work, then call respond_to_request with request_id "${collab.id}" and one action: incorporated (you will do it within your current task), new_task (it should be separate work), needs_decision (the boss must prioritise), dependency (it depends on other work) or declined. Then carry on with your task.`,
     ].join('');
   }
+  if (msg.routineId) return `${correlationMarker('MSG', msg.id)} ${msg.body}\n\n${ROUTINE_GUIDE}`;
   const tail = msg.from.kind === 'employee' ? '\n(Use send_message if a reply is needed, then carry on with your work.)' : '';
   return `${correlationMarker('MSG', msg.id)} Message from ${from}: ${msg.body}${tail}`;
 }

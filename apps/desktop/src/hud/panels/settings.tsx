@@ -311,6 +311,30 @@ function roundDid(a: ForemanStatus['rounds'][number]): string {
   return parts.join(' · ');
 }
 
+/**
+ * Sleep: how long a session on the office's own machines may sit without work before it is stopped to free memory.
+ * Saved when the field is left (or Enter is pressed); what the office keeps is shown back.
+ */
+function SleepSetting({ settings }: { settings: OwnerSettings }) {
+  // An office running an older server does not have the setting yet: shown as off.
+  const current = settings.sleepAfterMinutes ?? 0;
+  const [minutes, setMinutes] = useState(String(current));
+  useEffect(() => setMinutes(String(current)), [current]);
+  const commit = () => {
+    const n = Math.round(Number(minutes));
+    if (minutes.trim() === '' || !Number.isFinite(n) || n === current) return setMinutes(String(current));
+    void save({ sleepAfterMinutes: n }, n <= 0 ? 'Sessions are never put to sleep' : `Sessions sleep after ${Math.max(5, Math.min(1440, n))} minutes without work`);
+  };
+  return (
+    <Field
+      label="Put sessions to sleep after (minutes without work)"
+      hint="A Claude Code session that sits idle still holds memory. On the office's own machines, one that has had no work this long — between turns, no task in hand, no question open, nobody at its terminal — is stopped, and the employee is shown as sleeping. Anything they are needed for (a message, a task, a routine that is due, a meeting) starts it again in the same folder, continuing the same conversation. 0 = never; otherwise at least 5. Sessions on members' own computers are left alone."
+    >
+      <input type="number" min={0} max={1440} step={5} value={minutes} style={{ maxWidth: 120 }} aria-label="Put sessions to sleep after (minutes without work)" onChange={(ev) => setMinutes(ev.target.value)} onBlur={commit} onKeyDown={(ev) => ev.key === 'Enter' && (ev.target as HTMLInputElement).blur()} />
+    </Field>
+  );
+}
+
 function ForemanSection({ settings, readOnly }: { settings: OwnerSettings; readOnly: boolean }) {
   // An office running an older server has no foreman settings yet: show them as off.
   const f: ForemanSettings = settings.foreman ? { ...settings.foreman, idleMinutes: settings.foreman.idleMinutes ?? 10 } : { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true, idleMinutes: 10 };
@@ -582,6 +606,7 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                     Employees on <b>Auto</b> do not ask for permission; Claude Code's own auto mode decides what is safe to run. With this on, commands on the high-risk list — pushing, sudo, deploying, publishing, broad deletions, reading
                     credential files — still come to you first. Turn it off and those are left to Claude Code's auto mode as well.
                   </Toggle>
+                  <SleepSetting settings={settings} />
                 </div>
               )}
               {section === 'foreman' && <ForemanSection settings={settings} readOnly={readOnly} />}

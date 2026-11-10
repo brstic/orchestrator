@@ -22,6 +22,7 @@ import type {
   Project,
   RadioNow,
   Question,
+  Routine,
   SessionCapabilities,
   SessionOrigin,
   ExecutionMode,
@@ -216,6 +217,8 @@ export interface FullState {
   lessons: Lesson[];
   improvements: Improvement[];
   performance: PerformanceStat[];
+  /** Standing instructions the office repeats for employees. */
+  routines: Routine[];
   events: OrchestratorEvent[];
 }
 
@@ -237,7 +240,8 @@ export type EntityKind =
   | 'company'
   | 'lesson'
   | 'improvement'
-  | 'performance';
+  | 'performance'
+  | 'routine';
 
 export type ClientToServer =
   | { t: 'term.open'; sessionId: ID }
