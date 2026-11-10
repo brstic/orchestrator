@@ -14,21 +14,22 @@ const WHIP_MS = 700;
 /** Standing at someone's desk, the third-person camera comes in to at most this distance. */
 const APPROACH_DIST = 4.2;
 /**
- * The owner's pace on foot, units per second: walking forward, backward and sideways, and the same with Shift held.
- * These are speeds the legs can really walk (and run) at: the feet stay where they are put down.
+ * The owner's pace on foot, units per second: forward, backward and sideways, and the same with Shift held.
+ * The everyday pace is an easy jog and Shift is a run: the avatar's legs take whatever stride the speed needs
+ * (see `stepLoco` in Character.tsx), so the feet stay where they are put down at any of these.
  */
-const WALK = { fwd: 2.5, back: 1.7, side: 1.6 };
-const RUN = { fwd: 6.4, back: 3.0, side: 3.4 };
-/** Turning on the spot and while walking, radians per second. */
-const TURN_RATE = 2.4;
+const WALK = { fwd: 3.8, back: 2.4, side: 2.6 };
+const RUN = { fwd: 7.4, back: 3.6, side: 4.4 };
+/** Turning on the spot and while moving, radians per second. */
+const TURN_RATE = 2.9;
 /**
- * Nothing starts or stops at once: speed and turning are eased toward what the keys ask for by critically damped
- * springs of these stiffnesses (1/s). Walking pace is reached in about 0.2 s; letting go stops a little quicker.
+ * Nothing starts or stops at once, but nearly: speed and turning are eased toward what the keys ask for by critically
+ * damped springs of these stiffnesses (1/s). The everyday pace is reached in about 0.13 s; letting go stops quicker still.
  */
-const ACCEL = 20;
-const BRAKE = 25;
-const TURN_EASE = 22;
-const TURN_STOP = 32;
+const ACCEL = 30;
+const BRAKE = 36;
+const TURN_EASE = 30;
+const TURN_STOP = 40;
 /** How fast the body comes round to face where the camera looks once it starts moving, and the most it may spin (rad/s). */
 const FACE_EASE = 11;
 const FACE_MAX = 7.5;
@@ -36,7 +37,7 @@ const FACE_MAX = 7.5;
  * The third-person camera follows a point that trails the owner softly, and comes round behind them a moment after
  * they turn (1/s). Mouse look and the zoom wheel settle at the old pace.
  */
-const CAM_FOLLOW = 9;
+const CAM_FOLLOW = 12;
 const CAM_SWING = 16;
 const CAM_LOOK = 18;
 
@@ -402,7 +403,8 @@ export function Rig({
     m.vx = wx * cr - wz * sr;
     m.vz = wx * sr + wz * cr;
     m.turn = (s.playerRot - rot0) * perSec;
-    m.run = run && moved && !!(fwd || strafe);
+    // Every pace the keys ask for is a running one: the first step is already a running step, and the last ones (keys let go) are walked.
+    m.run = moved && !!(fwd || strafe);
     // Where the owner's character is and which way it faces — read by the UI tests, like `window.__office`.
     const probe = ((window as any).__orchPlayer ??= { x: 0, z: 0, rot: 0 });
     // Tests may also place the character somewhere (`goto`), instead of steering there key by key.

@@ -55,7 +55,7 @@ export interface Motion {
   vz: number;
   /** Turn rate in radians per second, with the sign of `rotation.y` (positive = to its left). */
   turn: number;
-  /** Running rather than walking. */
+  /** Setting off at (or keeping up) a running pace: the legs run from the first step instead of walking up to it. */
   run: boolean;
 }
 
@@ -476,23 +476,26 @@ function poseAt(name: PoseName, t: number, ph: number, o: Pose, build = 1): void
 const HIP_X = 0.078;
 const THIGH = 0.4;
 const SHIN = 0.4;
-/** Height of the ankle joint above the sole; how far the heel is behind it and the ball of the foot ahead of it. */
+/** Height of the ankle joint above the sole; how far the heel is behind it and the front of the sole ahead of it. */
 const ANKLE = 0.08;
 const HEEL = 0.06;
-const BALL = 0.115;
+/** A shoe does not bend at the ball of the foot: the foot rolls off the floor over the front of its sole. */
+const TOE = 0.15;
 /** The leg is never locked completely straight: the last millimetres of reach are where knees pop. */
 const REACH = THIGH + SHIN - 0.0008;
-/** How far the hips turn toward the direction of travel when moving sideways. */
-const FACE_MAX = 0.6;
-/** Standing, each foot is this far to the side of the body's centre line. */
+/** The most the hips turn toward the direction of travel when going sideways at a run (the shoulders stay square). */
+const FACE_MAX = 0.75;
+/** Standing, each foot is this far to the side of the body's centre line; in stride the feet come in under the body. */
 const STANCE_X = 0.092;
-/** A foot comes down this share of its stride ahead of the hips (and leaves the floor the rest of it behind them). */
-const LAND = 0.4;
+const TRACK_WALK = 0.058;
+const TRACK_RUN = 0.046;
+/** Walking, a foot comes down this share of its stride ahead of the hips (and leaves the floor the rest of it behind them). */
+const LAND = 0.38;
 /** A foot within this distance (and this turn) of where it belongs does not take a step to get there. */
-const HOME_NEAR = 0.035;
+const HOME_NEAR = 0.045;
 const HOME_YAW = 0.12;
 /** Cadence of the steps that bring the feet back under a body that has stopped, cycles per second. */
-const SETTLE_HZ = 1.55;
+const SETTLE_HZ = 1.7;
 
 /** One foot: where it is on the floor. */
 interface Step {
@@ -506,11 +509,14 @@ interface Step {
   sz: number;
   syaw: number;
   w0: number;
-  /** Staying down through this turn to swing, because it already stands where it belongs. */
+  /** How far through its swing (0 leaving the floor … 1 landing), and how far through its time on the floor. */
+  w: number;
+  u: number;
+  /** Staying down through this turn to swing: it already stands where it belongs, or it has only just landed. */
   hold: boolean;
 }
 
-const newStep = (side: 1 | -1): Step => ({ x: side * STANCE_X, z: 0, yaw: 0, down: true, sx: 0, sz: 0, syaw: 0, w0: 0, hold: false });
+const newStep = (side: 1 | -1): Step => ({ x: side * STANCE_X, z: 0, yaw: 0, down: true, sx: 0, sz: 0, syaw: 0, w0: 0, w: 0, u: 1, hold: false });
 
 /** The state of one character's gait. */
 interface Loco {
@@ -547,6 +553,13 @@ interface Loco {
   lift: number;
   /** A planted foot has been left too far behind: the next step comes sooner. */
   hurry: number;
+  /** The body's speed as last given (unsmoothed), and how much further it will travel if it keeps slowing down as it is now. */
+  raw: number;
+  coast: number;
+  /** The body is in the middle of turning back the way it came. */
+  about: boolean;
+  /** How far the arms have joined in with the stride (they take a moment longer than the legs). */
+  arms: number;
   /** Scratch values shared between the body and the feet for the current frame. */
   homeX: number;
   homeZ: number;
@@ -554,55 +567,69 @@ interface Loco {
   right: Step;
   /** The feet have not been placed yet (first frame on its feet, or back from a chair). */
   fresh: boolean;
-  /** Last world transform seen, for characters whose motion is measured rather than given. */
+  /** Last world transform seen and how long the frame before this one took, for characters whose motion is measured rather than given. */
   px: number;
   pz: number;
   yaw: number;
+  pdt: number;
   has: boolean;
 }
 
 const newLoco = (): Loco => ({
   phase: 0.6, active: false, go: false, mvx: 0, mvz: 0, mturn: 0, dt: 0, vx: 0, vz: 0, sx: 0, sz: 0, turn: 0, speed: 0, amp: 0, run: 0, face: 0, dirx: 0, dirz: 1,
-  freq: 1, duty: 0.6, stride: 0, lift: 0, hurry: 0, homeX: STANCE_X, homeZ: 0, left: newStep(1), right: newStep(-1), fresh: true, px: 0, pz: 0, yaw: 0, has: false,
+  freq: 1, duty: 0.6, stride: 0, lift: 0, hurry: 0, raw: 0, coast: 9, about: false, arms: 0, homeX: STANCE_X, homeZ: 0, left: newStep(1), right: newStep(-1), fresh: true, px: 0, pz: 0, yaw: 0, pdt: 0, has: false,
 });
 
 /**
- * Advance the gait by `dt` given the body's real motion. `run` is a hint that the body is setting off at a run (the
- * gait breaks into one by itself above a brisk walk).
+ * Advance the gait by `dt` given the body's real motion (as velocities). `run` says the body is setting off at a running pace, so its
+ * very first step is a running one (without it the gait breaks into a run by itself once the legs cannot walk the speed).
  *
- * The stride is chosen for the speed — how far the body travels over a planted foot, and what share of the time a foot
- * is planted — and the cadence follows from the two, so a foot is on the floor exactly as long as the floor needs it.
+ * The stride is chosen for the speed and the direction — how far the body travels over a planted foot, and what share
+ * of the time a foot is planted — and the cadence follows from the two, so a foot is on the floor exactly as long as
+ * the floor needs it. Walking, that is a long time on the floor and both feet down between steps; running, a short push
+ * and both feet in the air between steps.
  */
-function stepLoco(L: Loco, dt: number, vx: number, vz: number, turn: number, run: boolean | null): void {
-  L.mvx = vx;
-  L.mvz = vz;
-  L.mturn = turn;
+function stepLoco(L: Loco, dt: number, vx: number, vz: number, turn: number, run: boolean | null, took = dt): void {
+  // (A measured motion may have happened over the frame before this one, which took `took`: the floor moves by exactly that much.)
+  const k = dt > 1e-6 ? took / dt : 1;
+  L.mvx = vx * k;
+  L.mvz = vz * k;
+  L.mturn = turn * k;
   L.dt = dt;
-  const kv = 1 - Math.exp(-dt / 0.075);
+  const kv = 1 - Math.exp(-dt / 0.06);
   L.vx += (vx - L.vx) * kv;
   L.vz += (vz - L.vz) * kv;
-  L.turn += (turn - L.turn) * (1 - Math.exp(-dt / 0.1));
-  const ks = 1 - Math.exp(-dt / 0.32);
+  L.turn += (turn - L.turn) * (1 - Math.exp(-dt / 0.09));
+  const ks = 1 - Math.exp(-dt / 0.3);
   L.sx += (L.vx - L.sx) * ks;
   L.sz += (L.vz - L.sz) * ks;
   const speed = Math.hypot(L.vx, L.vz);
   L.speed = speed;
   const turning = Math.abs(L.turn);
-  const want = clamp01(Math.max(speed / 0.9, turning / 1.2));
-  L.amp += (want - L.amp) * (1 - Math.exp(-dt / (want > L.amp ? 0.08 : 0.14)));
+  const want = clamp01(Math.max(speed / 0.8, turning / 1.2));
+  L.amp += (want - L.amp) * (1 - Math.exp(-dt / (want > L.amp ? 0.07 : 0.14)));
   if (L.amp < 0.0005) L.amp = 0;
-  const auto = smooth(2.9, 3.7, speed);
-  const runT = run && speed > 1 ? 1 : auto;
-  L.run += (runT - L.run) * (1 - Math.exp(-dt / 0.13));
-  L.go = speed > 0.06 || turning > 0.25 || Math.hypot(vx, vz) > 0.15;
+  // Braking: a foot in the air is put down where the body will come to rest, so stopping does not take an extra step.
+  const raw = Math.hypot(vx, vz);
+  const slowing = dt > 1e-4 ? (L.raw - raw) / dt : 0;
+  L.coast = slowing > 3 ? Math.min(9, (0.75 * raw * raw) / slowing) : 9;
+  L.raw = raw;
+  const went = L.go;
+  L.go = raw > 0.12 || turning > 0.25;
+  // Setting off — from standing, after a pause, or turning back the way it came, which is not one more step of the old stride.
+  const about = raw > 0.3 && speed > 0.3 && vx * L.vx + vz * L.vz < 0;
+  const setOff = L.go && (!L.active || !went || (about && !L.about));
+  L.about = about;
+  if (setOff && run) L.run = 1;
 
-  // The hips turn toward where the body is going, so a sidestep becomes a crossing stride instead of a shuffle.
+  // Going sideways slowly is a sidestep with the hips square. At a run the hips turn toward where the body is going
+  // (the chest and the head do not), so the legs can stride out instead of shuffling.
   let face = 0;
   if (speed > 0.25) {
-    face = L.vz >= -0.12 * speed ? Math.atan2(L.vx, Math.max(L.vz, 0)) : Math.atan2(-L.vx, -L.vz);
-    face = clamp(face, -FACE_MAX, FACE_MAX) * clamp01((speed - 0.25) / 0.8);
+    const ang = L.vz >= -0.12 * speed ? Math.atan2(L.vx, Math.max(L.vz, 0)) : Math.atan2(-L.vx, -L.vz);
+    face = clamp(ang * 0.85, -FACE_MAX, FACE_MAX) * smooth(1.1, 2.2, speed);
   }
-  L.face += (face - L.face) * (1 - Math.exp(-dt / 0.11));
+  L.face += (face - L.face) * (1 - Math.exp(-dt / 0.12));
   if (speed > 0.05) {
     const cp = Math.cos(L.face);
     const sp = Math.sin(L.face);
@@ -610,16 +637,27 @@ function stepLoco(L: Loco, dt: number, vx: number, vz: number, turn: number, run
     L.dirz = (L.vx * sp + L.vz * cp) / speed;
   }
 
-  // Stride for this speed and direction: an easy walk lengthening into a brisk one, then a run with both feet off the floor.
-  const back = Math.max(0, -L.dirz);
-  const along = L.dirz >= 0 ? lerp(0.96, 1.02, L.run) : lerp(0.74, 0.86, L.run);
-  const across = lerp(0.66, 0.82, L.run);
-  const longest = 1 / Math.sqrt((L.dirz / along) ** 2 + (L.dirx / across) ** 2);
-  let stride = longest * (1 - Math.exp(-speed / lerp(0.95, 1.3, L.run)));
-  const duty = lerp(lerp(0.64, 0.53, clamp01((speed - 0.5) / 2)), lerp(0.4, 0.27, clamp01((speed - 3) / 3.4)), L.run);
+  // Legs reach furthest straight ahead, less far behind and least far across: `eff` is the speed straight ahead that
+  // would ask as much of them as this speed does in this direction.
+  const bz = L.dirz >= 0 ? L.dirz : L.dirz / 0.78;
+  const sd = 1 / Math.sqrt(bz * bz + (L.dirx / 0.6) ** 2);
+  const eff = speed / sd;
+  const auto = smooth(2.15, 2.85, eff);
+  L.run += ((run ? 1 : auto) - L.run) * (1 - Math.exp(-dt / 0.1));
+
+  // Walking: the stride lengthens with the pace, most of the time is spent on the floor.
+  const strideW = 0.9 * sd * (1 - Math.exp(-eff / 0.65));
+  const dutyW = lerp(0.64, 0.58, clamp01(eff / 2.2));
+  // Running: the cadence barely changes with the pace, the push gets longer and the time in the air too.
+  // Setting off at a run is quick short steps at that same cadence, not one long slow one.
+  const cadence = 1.25 + 0.065 * Math.min(eff, 8.5);
+  const dutyR = clamp((cadence * sd * Math.min(0.5 + 0.045 * eff, 0.86)) / Math.max(speed, 0.1), 0.2, 0.45);
+  const strideR = (speed * dutyR) / cadence;
+  let stride = lerp(strideW, strideR, L.run);
+  const duty = lerp(dutyW, dutyR, L.run);
   let f = stride > 0.02 ? (speed * duty) / stride : 0;
   // Legs only go so fast: beyond that the stride has to give.
-  const fMax = lerp(1.85, 2.15, L.run);
+  const fMax = lerp(1.7, 2.1, L.run);
   if (f > fMax) {
     f = fMax;
     stride = (speed * duty) / f;
@@ -632,12 +670,27 @@ function stepLoco(L: Loco, dt: number, vx: number, vz: number, turn: number, run
   L.freq = f;
   L.duty = duty;
   L.stride = stride;
-  L.lift = Math.max(0.03, L.amp * lerp(lerp(0.05, 0.075, clamp01((speed - 1) / 2)), 0.27, L.run) * (1 - 0.3 * back));
-  if (!L.active && L.go) {
-    // Setting off: the foot on the side the body is heading to steps first, and the other is already part-way through its time on the floor.
+  // Walking, the foot clears the floor by little; running, the heel comes up behind.
+  const back = Math.max(0, -L.dirz);
+  L.lift = Math.max(0.025, L.amp * lerp(0.04 + 0.015 * clamp01(eff / 2), 0.05 + 0.028 * Math.min(eff, 8), L.run) * (1 - 0.4 * back) * (1 - 0.3 * Math.abs(L.dirx)));
+  if (setOff) {
+    // The foot that steps first is already part-way through its swing — further still when setting off at a run — and
+    // the other is part-way through its time on the floor. First goes a foot that is in the air anyway, else one that
+    // the move would leave far behind, else the one on the side the body is heading to.
     L.active = true;
-    const rightFirst = vx < -0.2 || (Math.abs(vx) <= 0.2 && turn < -0.2);
-    L.phase = LAND * duty + (rightFirst ? 0 : 0.5);
+    const l = L.left;
+    const r = L.right;
+    let rightFirst: boolean;
+    if (l.down !== r.down) rightFirst = l.down;
+    else if (!l.down) rightFirst = r.w < l.w;
+    else {
+      const lead = ((l.x - r.x) * vx + (l.z - r.z) * vz) / (raw || 1);
+      rightFirst = Math.abs(lead) > 0.25 ? lead > 0 : Math.abs(vx) > 0.4 * Math.abs(vz) ? vx < 0 : turn < -0.2;
+    }
+    l.hold = r.hold = false;
+    const first = rightFirst ? r : l;
+    const begun = first.down ? 0 : Math.min(0.9, first.w0 + first.w * (1 - first.w0));
+    L.phase = duty + Math.max(run ? 0.6 : 0.35, begun) * (1 - duty) + (rightFirst ? 0.5 : 0);
     L.phase -= Math.floor(L.phase);
   } else if (L.active) {
     L.phase += f * dt;
@@ -655,15 +708,15 @@ interface Foot {
 const FOOT_L: Foot = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
 const FOOT_R: Foot = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
 
-/** How far the ankle moves (forward, up) when the foot tips by `p` about the heel (p < 0, toes up) or the ball (p > 0, heel up). */
+/** How far the ankle moves (forward, up) when the foot tips by `p` about the heel (p < 0, toes up) or the front of the sole (p > 0, heel up). */
 let PIVOT_Z = 0;
 let PIVOT_Y = 0;
 function pivot(p: number): void {
   const c = Math.cos(p);
   const sn = Math.sin(p);
   if (p > 0) {
-    PIVOT_Z = BALL * (1 - c) + ANKLE * sn;
-    PIVOT_Y = ANKLE * (c - 1) + BALL * sn;
+    PIVOT_Z = TOE * (1 - c) + ANKLE * sn;
+    PIVOT_Y = ANKLE * (c - 1) + TOE * sn;
   } else {
     PIVOT_Z = HEEL * (c - 1) + ANKLE * sn;
     PIVOT_Y = ANKLE * (c - 1) - HEEL * sn;
@@ -688,18 +741,22 @@ function footfall(L: Loco, s: Step, side: 1 | -1, f: Foot): void {
   let ph = L.phase + (side > 0 ? 0 : 0.5);
   ph -= Math.floor(ph);
   const stride = L.stride;
+  const run = L.run;
   const fwd = Math.max(0, L.dirz);
   const back = Math.max(0, -L.dirz);
-  // Where this foot belongs under the hips. Tracks of the two feet are kept apart when the stride runs across the hips, so the legs pass each other.
-  const gap = Math.max(0, 0.085 - L.homeX * Math.abs(L.dirz)) * clamp01(stride / 0.3) * side * (L.dirz >= 0 ? 1 : -1);
+  const across = Math.abs(L.dirx);
+  // Where this foot belongs under the hips. When the stride runs across the hips the two tracks are kept apart fore and aft, so the legs pass each other.
+  const gap = 0.085 * (1 - Math.abs(L.dirz)) * clamp01(stride / 0.3) * side * (L.dirz >= 0 ? 1 : -1);
   const cf = Math.cos(L.face);
   const sf = Math.sin(L.face);
   const hx0 = side * L.homeX + gap * L.dirz;
   const hz0 = L.homeZ - gap * L.dirx;
   const hx = hx0 * cf + hz0 * sf;
   const hz = -hx0 * sf + hz0 * cf;
-  // Where the next step lands: ahead of home along the way the body is going, and turned ahead of a turning body, so that it is under the hips half-way through its time on the floor.
-  const land = stride * lerp(lerp(LAND, 0.5, Math.max(back, Math.abs(L.dirx))), 0.36, L.run * fwd);
+  // Where the next step lands: ahead of home along the way the body is going, and turned ahead of a turning body.
+  // A runner's foot comes down closer under the body than a walker's.
+  const off = Math.max(back, across);
+  const land = Math.min(stride * lerp(lerp(LAND, 0.5, off), lerp(0.3, 0.46, off), run), L.coast);
   const ax = hx0 + L.dirx * land;
   const az = hz0 + L.dirz * land;
   const psi = L.go ? clamp((L.turn * LAND * d) / Math.max(L.freq, 0.6), -0.5, 0.5) : 0;
@@ -721,22 +778,15 @@ function footfall(L: Loco, s: Step, side: 1 | -1, f: Foot): void {
     // A leg is only so long, and an ankle only turns so far: past that the foot gives (it pivots or drags) rather than the leg.
     s.yaw = clamp(s.yaw, L.face - 0.8, L.face + 0.8);
     const far = Math.hypot(s.x - hx, s.z - hz);
-    if (far > 0.66) {
-      s.x = hx + ((s.x - hx) * 0.66) / far;
-      s.z = hz + ((s.z - hz) * 0.66) / far;
+    if (far > 0.7) {
+      s.x = hx + ((s.x - hx) * 0.7) / far;
+      s.z = hz + ((s.z - hz) * 0.7) / far;
     }
   }
   // (Half a frame early rather than half a frame late.)
   const swinging = ph + 0.5 * L.freq * L.dt >= d;
-  if (!swinging) {
-    s.hold = false;
-    if (!s.down) {
-      s.down = true;
-      s.x = tx;
-      s.z = tz;
-      s.yaw = tyaw;
-    }
-  } else if (s.down && !s.hold) {
+  if (!swinging) s.hold = false;
+  else if (s.down && !s.hold) {
     // Its turn to step — unless the body is standing and the foot already is where it belongs.
     if (!L.go && Math.hypot(s.x - hx, s.z - hz) < HOME_NEAR && Math.abs(s.yaw - L.face) < HOME_YAW) s.hold = true;
     else {
@@ -745,18 +795,41 @@ function footfall(L: Loco, s: Step, side: 1 | -1, f: Foot): void {
       s.sz = s.z;
       s.syaw = s.yaw;
       s.w0 = clamp((ph - d) / (1 - d), 0, 0.7);
+      s.w = 0;
     }
+  }
+  if (!s.down) {
+    // A step keeps its own time once it has begun, so a change of gait in the middle of it never moves the foot at once;
+    // it is only kept from drifting away from the stride clock, and brought down smartly when its time is up.
+    const span = Math.max(0.05, (1 - d) * (1 - s.w0));
+    // (A body that is stopping does not leave a foot hanging in the air.)
+    let w = s.w + Math.max(((L.freq * L.dt) / span) * (swinging ? 1 : 2.5), L.coast < 0.5 || !L.go ? L.dt / 0.2 : 0);
+    if (swinging) w += Math.max(0, ((ph - d) / (1 - d) - s.w0) / (1 - s.w0) - w) * Math.min(1, L.dt * 10);
+    if (w >= 1) {
+      // It touched down part-way through this frame, and the floor has carried it since.
+      const since = (L.dt * (w - 1)) / Math.max(1e-6, w - s.w);
+      s.down = true;
+      s.hold = swinging;
+      s.u = 0;
+      s.x = tx - L.mvx * since;
+      s.z = tz - L.mvz * since;
+      s.yaw = tyaw;
+    }
+    s.w = w;
   }
 
   const roll = clamp01(stride / 0.45) * L.amp;
-  const pStrike = roll * (-0.3 * fwd * (1 - 0.8 * L.run) + 0.28 * back);
+  // Walking forward the heel comes down first; running, the foot lands almost flat; going backward, the toes.
+  const pStrike = roll * (-0.34 * fwd * (1 - 0.75 * run) + 0.3 * back);
   /** How far the foot trails behind where it belongs, along the way it points: that, not the clock, lifts the heel. */
   const trail = (hx - s.x) * Math.sin(s.yaw) + (hz - s.z) * Math.cos(s.yaw);
-  const pOff = clamp01((trail - 0.1) / 0.36) * (0.95 + 0.1 * L.run) * (1 - 0.6 * back);
+  const heelFrom = lerp(0.16, 0.08, run);
+  const heelMax = (1 + 0.15 * run) * (1 - 0.6 * back);
+  const pOff = clamp01((trail - heelFrom) / 0.36) * heelMax;
   if (s.down) {
-    // Heel first, flat, then up onto the ball of the foot as the body leaves it behind.
-    const u = ph / d;
-    const pitch = Math.max(pOff * pOff * (3 - 2 * pOff) * 1.05, 0) + (!swinging && u < 0.2 ? pStrike * (1 - smooth(0, 0.2, u)) : 0);
+    // Heel first, flat, then up onto the front of the foot as the body leaves it behind.
+    s.u += (Math.max(L.freq, 0.5) * L.dt) / Math.max(d, 0.15);
+    const pitch = pOff * pOff * (3 - 2 * pOff) * 1.05 + (s.u < 0.24 ? pStrike * (1 - smooth(0, 0.24, s.u)) : 0);
     pivot(pitch);
     f.x = s.x + Math.sin(s.yaw) * PIVOT_Z;
     f.z = s.z + Math.cos(s.yaw) * PIVOT_Z;
@@ -766,15 +839,15 @@ function footfall(L: Loco, s: Step, side: 1 | -1, f: Foot): void {
     FREE = 0;
     AWAY = Math.max(Math.hypot(s.x - hx, s.z - hz) / HOME_NEAR, Math.abs(s.yaw - L.face) / HOME_YAW);
     // Left behind further than a stride should leave it: the cadence picks up until it has been brought forward.
-    const lim = 0.6 * Math.max(stride, 0.3) + 0.06;
+    const lim = 0.7 * Math.max(stride, 0.3) + 0.08;
     L.hurry = Math.max(L.hurry, clamp01((Math.hypot(s.x - hx, s.z - hz) - lim) / 0.12));
     return;
   }
-  const w = clamp01(((ph - d) / (1 - d) - s.w0) / (1 - s.w0));
+  const w = s.w;
   // Leaving the floor and arriving on it at the speed of the floor (in the body's frame the floor moves backward, and turns against the body).
-  const dur = ((1 - d) * (1 - s.w0)) / Math.max(L.freq, 0.3);
-  const k0 = -lerp(0.55, 0.4, L.run) * dur;
-  const k1 = -lerp(0.9, 0.5, L.run) * dur;
+  const dur = Math.min(0.45, ((1 - d) * (1 - s.w0)) / Math.max(L.freq, 0.3));
+  const k0 = -lerp(0.55, 0.2, run) * dur;
+  const k1 = -lerp(0.9, 0.75, run) * dur;
   const w2 = w * w;
   const w3 = w2 * w;
   const h0 = 2 * w3 - 3 * w2 + 1;
@@ -785,20 +858,24 @@ function footfall(L: Loco, s: Step, side: 1 | -1, f: Foot): void {
   s.x = h0 * s.sx + g0 * k0 * (L.vx + L.turn * s.sz) + h1 * tx + g1 * k1 * (L.vx + L.turn * tz);
   s.z = h0 * s.sz + g0 * k0 * (L.vz - L.turn * s.sx) + h1 * tz + g1 * k1 * (L.vz - L.turn * tx);
   s.yaw = lerp(s.syaw, tyaw, e);
-  const pLift = clamp01(((hx - s.sx) * Math.sin(s.syaw) + (hz - s.sz) * Math.cos(s.syaw) - 0.1) / 0.36) * (0.95 + 0.1 * L.run) * (1 - 0.6 * back);
+  const pLift = clamp01(((hx - s.sx) * Math.sin(s.syaw) + (hz - s.sz) * Math.cos(s.syaw) - heelFrom) / 0.36) * heelMax;
   const pStart = pLift * pLift * (3 - 2 * pLift) * 1.05;
-  const pMid = roll * (0.3 + 0.55 * L.run) * fwd;
-  const pitch = lerp(lerp(pStart, pMid, smooth(0, 0.4, w)), pStrike, smooth(0.55, 0.95, w));
+  // In the air the toes hang down behind the knee (a runner's sole faces backward as the heel comes up), then lift for the landing.
+  const pMid = roll * (0.3 + 0.95 * run) * fwd;
+  const pitch = lerp(lerp(pStart, pMid, smooth(0, 0.4, w)), pStrike, smooth(0.5, 0.95, w));
+  // However the foot is tipped in the air, it is its lowest point that clears the floor (or a first, low step would drag its toes).
+  pivot(pitch);
+  const low = PIVOT_Y;
   pivot(pStart);
   const z0 = PIVOT_Z;
-  const y0 = PIVOT_Y;
   pivot(pStrike);
   const dz = lerp(z0, PIVOT_Z, e);
   f.x = s.x + Math.sin(s.yaw) * dz;
   f.z = s.z + Math.cos(s.yaw) * dz;
   // Walking, the foot skims the floor; running, the heel kicks up behind and the knee carries it through.
-  const up = Math.sin(Math.PI * Math.pow(w, lerp(0.8, 0.62, L.run)));
-  f.y = ANKLE + lerp(y0, PIVOT_Y, e) + L.lift * Math.pow(up, 1.15);
+  // A runner's foot stays off the floor until it is back under the knee, and only then comes down.
+  const up = Math.max(Math.sin(Math.PI * Math.pow(w, lerp(0.78, 0.68, run))), 0.42 * run * smooth(0.3, 0.6, w) * (1 - smooth(0.84, 1, w)));
+  f.y = ANKLE + low + L.lift * Math.pow(up, 1.15);
   f.yaw = s.yaw;
   f.pitch = pitch;
   FREE = up;
@@ -854,51 +931,74 @@ function upright(o: Pose, t: number, ph: number, L: Loco): void {
   const run = L.run;
   const d = L.duty;
   const a = L.phase * TAU;
+  /** Share of the travel that is forward (+) or backward (−) for the hips, and the same without its sign. */
   const fw = L.dirz;
-  const gait = amp * clamp01(L.stride / 0.7);
-  const c0 = Math.cos(a);
+  const along = Math.abs(fw);
+  const sgn = fw >= 0 ? 1 : -1;
+  const back = Math.max(0, -fw);
+  const across = Math.abs(L.dirx);
+  /** How much of a full stride the legs are taking: all of it walking (`stroll`), or all of it running (`carry`). */
+  const gait = amp * clamp01(L.stride / 0.68);
+  const carry = run * gait;
+  const stroll = gait - carry;
+  /** 0 at a jog … 1 at a sprint. */
+  const sprint = clamp01((L.speed - 3.6) / 3.6);
   /** +1 in the middle of the left foot's time on the floor, −1 in the middle of the right's. */
   const mid = Math.cos(a - d * Math.PI);
   const breath = s(t * 1.3 + ph * 1.9);
-  // Standing: the weight drifts slowly from one leg to the other.
-  const shift = rest * (s(t * 0.23 + ph) * 0.015 + s(t * 0.61 + ph * 2.1) * 0.005);
+  // Standing: the weight settles on one leg for a while, then moves over to the other.
+  const lazy = s(t * 0.37 + ph);
+  const shift = rest * (lazy * (1.5 - 0.5 * lazy * lazy) * 0.022 + s(t * 0.83 + ph * 2.1) * 0.004);
 
-  // Hips: the side of the leading leg swings forward, the weight rides over the planted foot.
-  const osc = -(0.07 + 0.04 * run) * gait * fw * c0;
-  L.homeX = STANCE_X - 0.03 * run * gait;
-  L.homeZ = -(0.03 + 0.07 * run) * gait * fw;
-  o.hipX = shift + (0.016 - 0.008 * run) * gait * mid;
+  // Hips: the side of the leading leg swings forward, the weight rides over the planted foot, the free side drops a little.
+  const osc = -(0.1 * stroll + 0.13 * carry) * fw * Math.cos(a - 0.15);
+  L.homeX = lerp(STANCE_X, lerp(TRACK_WALK, TRACK_RUN, run), gait * along) + 0.03 * stroll * across;
+  L.homeZ = -0.02 * carry * fw;
+  o.hipX = shift + (0.02 * stroll + 0.008 * carry) * mid;
   o.hipZ = 0;
   o.pelYaw = L.face + osc;
-  o.pelRoll = 0.035 * gait * mid - shift * 1.4;
+  o.pelRoll = (0.045 * stroll + 0.05 * carry) * mid - shift * 1.4;
 
-  // Spine: upright at a walk, forward at a run; leans into every change of speed, counters the hips, banks into turns.
-  o.lean = gait * fw * lerp(0.05, 0.17, run) + clamp((L.vz - L.sz) * 0.032, -0.09, 0.12) + rest * (s(t * 0.5 + ph) * 0.012 + breath * 0.004);
-  o.twist = L.face * 0.5 - osc * 1.25 + clamp(L.turn * 0.035, -0.1, 0.1);
-  o.side = -o.pelRoll * 0.5 - clamp(L.turn * L.speed * 0.012, -0.12, 0.12) - clamp((L.vx - L.sx) * 0.022, -0.08, 0.08);
-  o.shrug = breath * 0.003 * rest;
+  // Spine: nearly upright at a walk, forward at a run; it leans into every change of speed, counters the hips, banks
+  // into turns, and gives a little as each running foot takes the weight.
+  const push = L.vz - L.sz;
+  o.lean =
+    Math.max(0, fw) * (0.055 * stroll + lerp(0.2, 0.27, sprint) * carry) +
+    0.07 * back * gait +
+    clamp(push * 0.03, -0.07, 0.09) +
+    0.014 * carry * Math.cos(2 * a - TAU * d - 0.5) +
+    rest * (s(t * 0.5 + ph) * 0.012 + breath * 0.004);
+  o.twist = L.face * 0.22 - osc * lerp(1.25, 1.45, run) + clamp(L.turn * 0.035, -0.1, 0.1);
+  o.side = -o.pelRoll * 0.6 - clamp(L.turn * L.speed * 0.013, -0.15, 0.15) - clamp((L.vx - L.sx) * 0.025, -0.08, 0.08);
+  o.shrug = breath * 0.003 * rest - 0.006 * carry * Math.cos(2 * a - TAU * d - 0.9);
 
-  // Head: steady while the body works underneath it, looking into a turn, glancing around when idle.
-  o.headYaw = -o.twist * 0.85 + clamp(L.turn * 0.09, -0.3, 0.3) + rest * (s(t * 0.29 + ph) * 0.16 + s(t * 0.71 + ph * 1.7) * 0.06);
-  o.headPitch = -o.lean * 0.6 + rest * s(t * 0.43 + ph * 1.3) * 0.02;
-  o.headRoll = -o.side * 0.6;
+  // Head: level and facing where the body goes while the body works underneath it, looking into a turn, glancing around when idle.
+  o.headYaw = -o.twist * 0.9 + L.face * 0.3 + clamp(L.turn * 0.1, -0.32, 0.32) + rest * (s(t * 0.29 + ph) * 0.16 + s(t * 0.71 + ph * 1.7) * 0.06);
+  o.headPitch = -o.lean * 0.75 + rest * s(t * 0.43 + ph * 1.3) * 0.02;
+  o.headRoll = -o.side * 0.7;
 
-  // Arms: loose and opposite to the legs, the forearm trailing the upper arm and folding on the way forward; pumping when running.
-  const sw = Math.cos(a - 0.3);
-  const fore = Math.cos(a - 0.85);
-  const reach = gait * Math.abs(fw) * lerp(0.36, 0.6, run) * (fw >= 0 ? 1 : 0.6);
-  const carry = run * gait;
-  const bend = lerp(0.2 + 0.12 * gait, 1.3, carry);
-  const wide = 0.085 + 0.05 * carry + 0.07 * gait * Math.abs(L.dirx);
-  o.sLx = sw * reach - 0.06 * carry - 0.03 + rest * s(t * 0.6 + ph) * 0.03;
-  o.sRx = -sw * reach - 0.06 * carry - 0.03 + rest * s(t * 0.6 + ph + 1.3) * 0.03;
+  // Arms, opposite to the legs. Walking they hang loose, the forearm trailing the upper arm and folding as the hand
+  // comes forward. Running they are carried bent and pump: the elbow drives back, the hand comes up in front.
+  L.arms += (gait - L.arms) * (1 - Math.exp(-L.dt / 0.2));
+  const armsR = run * L.arms;
+  const armsW = L.arms - armsR;
+  const sw = Math.cos(a - 0.3) * sgn;
+  const fore = Math.cos(a - 0.9) * sgn;
+  const swingW = 0.44 * armsW * along * (fw >= 0 ? 1 : 0.6);
+  const swingR = lerp(0.5, 0.75, sprint) * armsR * along * (fw >= 0 ? 1 : 0.45);
+  const swing = swingW + swingR;
+  const wide = 0.085 + 0.045 * armsR + 0.06 * L.arms * across;
+  const idle = rest * 0.03;
+  o.sLx = sw * swing + 0.2 * armsR * (1 - back) - 0.04 * armsW - 0.03 + idle * s(t * 0.6 + ph);
+  o.sRx = -sw * swing + 0.2 * armsR * (1 - back) - 0.04 * armsW - 0.03 + idle * s(t * 0.6 + ph + 1.3);
   o.sLz = wide;
   o.sRz = -wide;
-  o.tL = 0.3 * carry;
-  o.tR = 0.3 * carry;
-  // The elbow closes as the hand comes forward and opens as it goes back.
-  o.eL = -(bend + reach * (0.6 * Math.max(0, -fore) - 0.45 * carry * Math.max(0, fore)));
-  o.eR = -(bend + reach * (0.6 * Math.max(0, fore) - 0.45 * carry * Math.max(0, -fore)));
+  o.tL = 0.22 * armsR;
+  o.tR = 0.22 * armsR;
+  const hang = 0.2 + 0.16 * armsW;
+  const held = lerp(1.5, 1.6, sprint) * (1 - 0.45 * back);
+  o.eL = -lerp(hang + swingW * 1.3 * Math.max(0, -fore), held - 0.3 * sw, armsR);
+  o.eR = -lerp(hang + swingW * 1.3 * Math.max(0, fore), held + 0.3 * sw, armsR);
 
   // Feet on the floor, then the hips as high as the planted legs allow, then the legs to fit.
   if (L.fresh) {
@@ -918,6 +1018,19 @@ function upright(o: Pose, t: number, ph: number, L: Loco): void {
     // Standing: the stride clock stops once both feet are back under the body, and starts again if one is left out of place.
     if (L.active) {
       if (awayL < 1 && awayR < 1) L.active = false;
+      else if (L.left.down && L.right.down) {
+        // A foot left out of place does not wait for its turn in the stride: once the other has taken the weight, it steps in.
+        const lead = awayL >= awayR ? L.left : L.right;
+        const other = awayL >= awayR ? L.right : L.left;
+        let turnOf = L.phase + (awayL >= awayR ? 0 : 0.5);
+        turnOf -= Math.floor(turnOf);
+        if (Math.max(awayL, awayR) > 1.6 && other.u > 0.12 && (turnOf < d || lead.hold)) {
+          lead.hold = false;
+          other.hold = true;
+          L.phase = d + (awayL >= awayR ? 0.001 : 0.501);
+          L.phase -= Math.floor(L.phase);
+        }
+      }
     } else if (awayL > 1.6 || awayR > 1.6) {
       L.active = true;
       L.phase = d + (awayL >= awayR ? 0.001 : 0.501);
@@ -933,12 +1046,14 @@ function upright(o: Pose, t: number, ph: number, L: Loco): void {
   const lz = lx0 * sy + FOOT_L.z * cy;
   const rx = rx0 * cy - FOOT_R.z * sy + HIP_X;
   const rz = rx0 * sy + FOOT_R.z * cy;
-  // Walking, the knees stay soft and the hips ride level; running, the body sinks onto the planted leg and rises while both feet are in the air.
-  const top = STAND_Y + 0.006 - amp * 0.003 - gait * (0.005 + 0.034 * run) - gait * (1 - run) * 0.024 + carry * 0.028 * Math.cos(2 * a - TAU * (d + 0.5));
+  // Walking, the hips are lowest just after a foot takes the weight and highest as the other leg passes it. Running,
+  // the body sinks onto the planted leg and rises while both feet are in the air.
+  const top = STAND_Y + 0.004 - stroll * (0.028 + 0.02 * Math.cos(2 * a - 0.75)) - carry * (lerp(0.058, 0.064, sprint) + 0.032 * Math.cos(2 * a - TAU * d));
   // Only a foot on the floor holds the hips down (a leg in the air folds as it must), and never by more than a few centimetres:
   // a foot left too far behind comes off the floor rather than dragging the body down.
-  const hl = Math.max(top - 0.056, FOOT_L.y + Math.sqrt(Math.max(0.01, REACH * REACH - lx * lx - lz * lz)) + freeL * 0.4);
-  const hr = Math.max(top - 0.056, FOOT_R.y + Math.sqrt(Math.max(0.01, REACH * REACH - rx * rx - rz * rz)) + freeR * 0.4);
+  const give = lerp(0.056, 0.03, run);
+  const hl = Math.max(top - give, FOOT_L.y + Math.sqrt(Math.max(0.01, REACH * REACH - lx * lx - lz * lz)) + freeL * 0.4);
+  const hr = Math.max(top - give, FOOT_R.y + Math.sqrt(Math.max(0.01, REACH * REACH - rx * rx - rz * rz)) + freeR * 0.4);
   const lo = Math.min(top, hl, hr);
   // In stride the handover from one leg to the other is rounded off; standing still, the legs are simply straight.
   const K = 0.011 * gait;
@@ -2471,7 +2586,8 @@ interface CharacterProps {
   frozen?: () => boolean;
   /**
    * How the character is moving while on its feet, read every frame. Without it the character measures its own
-   * movement through the world, so anything that moves a standing character makes it walk.
+   * movement through the world, so anything that moves a standing character makes it walk. (Best moved from a
+   * `useFrame` that runs before this one — priority −1 — so the feet are placed for where the body is drawn.)
    */
   motion?: { current: Motion };
   /** Change this to restart a one-shot pose ('ouch', 'whip') while the pose name stays the same. */
@@ -2651,6 +2767,7 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
     else if (first) A.base = name === 'whip' ? 'stand' : 'still';
     const base = A.base;
     const L = A.loco;
+    let pumping = 0;
 
     // ── the pose this frame ──
     if (base === 'walk' || base === 'stand' || base === 'doze') {
@@ -2658,6 +2775,7 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
       let vz = 0;
       let turn = 0;
       let run: boolean | null = null;
+      let took = dt;
       if (motion) {
         const m = motion.current;
         vx = m.vx;
@@ -2665,8 +2783,15 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
         turn = m.turn;
         run = m.run;
       } else if (outer.current && dt > 1e-4) {
-        // Nobody told us how we are moving: read it off our own transform (as rendered last frame).
+        // Nobody told us how we are moving: read it off our own transform. Whoever moves us has either done so already
+        // this frame (then the move is this frame's), or will only do so after us (then what we see is the move of the
+        // frame before, which took as long as that frame did). Mixing the two up would make the feet slide whenever
+        // the frame rate is uneven.
         const e = outer.current.matrixWorld.elements;
+        const ox = e[12]!;
+        const oz = e[14]!;
+        const or = e[8]!;
+        outer.current.updateWorldMatrix(true, false);
         const wx = e[12]!;
         const wz = e[14]!;
         const yaw = Math.atan2(e[8]!, e[10]!);
@@ -2676,30 +2801,33 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
           const dyaw = wrapPi(yaw - L.yaw);
           // A jump is a teleport, not a sprint.
           if (dx * dx + dz * dz < 0.3 && Math.abs(dyaw) < 0.3) {
+            took = wx !== ox || wz !== oz || e[8] !== or || L.pdt <= 1e-4 ? dt : L.pdt;
             const sy = Math.sin(yaw);
             const cy = Math.cos(yaw);
-            vx = (dx * cy - dz * sy) / dt;
-            vz = (dx * sy + dz * cy) / dt;
-            turn = dyaw / dt;
+            vx = (dx * cy - dz * sy) / took;
+            vz = (dx * sy + dz * cy) / took;
+            turn = dyaw / took;
           }
         }
         L.px = wx;
         L.pz = wz;
         L.yaw = yaw;
+        L.pdt = dt;
         L.has = true;
       }
       if (isFrozen) {
         L.has = false;
         L.fresh = true;
       }
-      stepLoco(L, dt, vx / build, vz / build, turn, run);
+      stepLoco(L, dt, vx / build, vz / build, turn, run, took);
       upright(TARGET, t, phase, L);
+      pumping = L.run * L.arms;
       if (base === 'doze') doze(TARGET, t, phase);
     } else {
       if (L.amp !== 0 || L.has) {
         L.has = false;
         L.fresh = true;
-        L.amp = L.run = L.vx = L.vz = L.sx = L.sz = L.turn = L.face = L.speed = 0;
+        L.amp = L.run = L.vx = L.vz = L.sx = L.sz = L.turn = L.face = L.speed = L.raw = L.arms = 0;
       }
       poseAt(base, t, phase, TARGET, build);
     }
@@ -2769,8 +2897,10 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
     if (eL.current) eL.current.rotation.x = c.eL;
     if (eR.current) eR.current.rotation.x = c.eR;
     // Palms turn down as the elbow bends (keyboard, desk) and forward when the arm is raised.
-    if (handL.current) handL.current.rotation.y = -1.45 * Math.max(0.3, smooth(0.4, 1.1, -c.eL), smooth(1.9, 2.6, -c.sLx));
-    if (handR.current) handR.current.rotation.y = 1.45 * Math.max(0.3, smooth(0.4, 1.1, -c.eR), smooth(1.9, 2.6, -c.sRx));
+    // A runner's bent arms keep the thumbs up.
+    const desk = 1 - 0.75 * pumping;
+    if (handL.current) handL.current.rotation.y = -1.45 * Math.max(0.3, smooth(0.4, 1.1, -c.eL) * desk, smooth(1.9, 2.6, -c.sLx));
+    if (handR.current) handR.current.rotation.y = 1.45 * Math.max(0.3, smooth(0.4, 1.1, -c.eR) * desk, smooth(1.9, 2.6, -c.sRx));
     hL.current?.rotation.set(c.hL, c.yL, c.aL, 'ZXY');
     hR.current?.rotation.set(c.hR, c.yR, c.aR, 'ZXY');
     if (kL.current) kL.current.rotation.x = c.kL;
