@@ -773,6 +773,14 @@ export class SessionRegistry {
       row.employeeIds.push(e.id);
       out.set(key, row);
     }
+    // A machine nobody has been placed on yet still has its own Claude login: listed too, so its clock hangs on the
+    // wall from the start (the office's own machines always; a member's computer while it is connected).
+    for (const h of this.core.hosts.filter((x) => x.status !== 'revoked' && (!x.memberId || x.status === 'online'))) {
+      const key = `${h.id}|default`;
+      if (out.has(key)) continue;
+      const known = this.accounts.get(key);
+      out.set(key, { ...(known ?? { key, hostId: h.id, configDir: null, email: null, organization: null, fiveHour: null, sevenDay: null, reportedAt: null, reportedBy: null }), employeeIds: [] });
+    }
     // A window whose reset time has passed is no longer what the figure says.
     const now = Date.now();
     for (const row of out.values()) {
