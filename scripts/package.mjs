@@ -16,6 +16,7 @@
  *   --skip-build   reuse the existing bundles and UI build
  *   --no-app       only the tarball
  *   --no-dmg       the .app but no disk image
+ *   --out <dir>    write everything to this folder instead of release/
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -25,7 +26,9 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
 const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
-const release = path.join(root, 'release');
+// --out <dir>: build somewhere else (e.g. a fresh app next to one that is running and cannot be replaced).
+const outAt = process.argv.indexOf('--out');
+const release = outAt > 0 && process.argv[outAt + 1] ? path.resolve(process.argv[outAt + 1]) : path.join(root, 'release');
 const name = `orchestrator-${version}`;
 const run = (cmd, argv, opts = {}) => execFileSync(cmd, argv, { stdio: 'inherit', cwd: root, ...opts });
 const size = (p) => `${(fs.statSync(p).size / 1024 / 1024).toFixed(1)} MB`;

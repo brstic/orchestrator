@@ -19,6 +19,8 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// --out <dir>: check a build made with `package.mjs --out <dir>` instead of release/.
+const releaseDir = process.argv.includes('--out') ? path.resolve(process.argv[process.argv.indexOf('--out') + 1]) : path.join(root, 'release');
 const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 const argv = process.argv.slice(2);
 const shot = argv.includes('--shot') ? path.resolve(argv[argv.indexOf('--shot') + 1]) : null;
@@ -47,7 +49,7 @@ const stop = async (child) => {
 
 try {
   // ───────────── 1. portable tarball ─────────────
-  const tarball = path.join(root, 'release', `orchestrator-${version}.tar.gz`);
+  const tarball = path.join(releaseDir, `orchestrator-${version}.tar.gz`);
   if (!fs.existsSync(tarball)) throw new Error(`${tarball} not found — run: pnpm package`);
   execFileSync('tar', ['-xzf', tarball, '-C', tmp]);
   const home = path.join(tmp, `orchestrator-${version}`);
@@ -90,7 +92,7 @@ try {
     check('bin/orchestrator-server runs standalone', /--database/.test(out('orchestrator-server', '--help')));
 
     // The desktop app as a pure client of that office (what a Windows machine, or any second computer, does).
-    const clientApp = path.join(root, 'release', 'Orchestrator.app', 'Contents/MacOS/Electron');
+    const clientApp = path.join(releaseDir, 'Orchestrator.app', 'Contents/MacOS/Electron');
     if (process.platform === 'darwin' && fs.existsSync(clientApp)) {
       const userData = path.join(tmp, 'client-data');
       const resultFile = path.join(tmp, 'connect.log');
@@ -122,7 +124,7 @@ try {
   await stop(child);
 
   // ───────────── 2. macOS desktop app ─────────────
-  const app = path.join(root, 'release', 'Orchestrator.app');
+  const app = path.join(releaseDir, 'Orchestrator.app');
   if (process.platform === 'darwin' && fs.existsSync(app)) {
     const png = path.join(tmp, 'app.png');
     const appPort = await freePort();
