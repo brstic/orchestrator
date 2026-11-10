@@ -32,7 +32,8 @@ Next steps:
 - **Per-client preferences**: graphics, keys, office extras per computer; everyone can change their own.
 - Local office (one machine) as before: 3D office, real Claude Code sessions in tmux, tasks, reviews/merges, meetings, questions and approvals, self-improvement, XP.
 - Other shared machines: enrolled hosts, servers linked over SSH, adoption of running Claude sessions.
-- Claude usage per account: the office's accounts as wall clocks in the CEO room and at the CEO desk, each member's own account as a clock in their room; foreman role with rounds (off until hired and enabled; shared employees only).
+- Claude usage per account: the office's accounts as wall clocks in the CEO room and at the CEO desk, each member's own account as a clock in their room.
+- **The foreman**: one for the whole office, on the office's own machine, with no desk — it walks the floor and members' open rooms and stands with whoever it is dealing with. It supervises shared employees and members' own (while their computer is connected), in engine-driven rounds: questions, blocked, stalled, unassigned and idle; tools to look, answer, assign, create, tell, escalate. Owners-only. Rounds are on once it is hired.
 - People in the office: characters with name tags, speech bubbles (also over one's own head), a chat box at the bottom left with the last hour of history, and the whip seen by everyone.
 - Extras: radio, TV, whip, seating editor, sleeping pose. Storage: SQLite (default) and PostgreSQL.
 
@@ -44,7 +45,10 @@ Next steps:
 - A personal host's default allowed root is the member's home folder.
 - Two windows on the same computer do not pick up each other's preference changes until reopened.
 - "Janky" movement and flicker: measured causes fixed (CHANGELOG 2026-11-10); the owner has not yet confirmed on their machine.
-- Foreman, SSH links and usage reporting: scripted worker only (parts tried with the real CLI at zero tokens).
+- Foreman, SSH links and usage reporting: scripted worker only (parts tried with the real CLI at zero tokens). **The reworked foreman has not run with real Claude Code**: how a real model handles an idle employee ("carry on" versus "leave them be") is governed by the round prompt and has not been observed; what it costs on the owner's account is not measured.
+- The foreman supervising a member's own employees is covered by unit tests (engine with a member host) and the access tests, not by an end-to-end run with a real second computer. The office running on the owner's server has no foreman yet: nothing changes there until one is hired.
+- Message records and event summaries (the last line a session says at the end of a turn) are sent to every member's window — also those of members' own employees and of the foreman. Only terminals, monitor frames, documents, diffs and history are held back per person.
+- The walking foreman: verified in the UI suite on the default layout (walks between desks, its line in Team, no desk). That its route goes through members' open rooms and passes locked ones is unit-tested (`packages/office-3d/test/foreman-route.test.ts`), not looked at on screen. Walking up to the foreman and pressing Space/F, and the camera's jump to it, do not work (both find people by desk, in `Rig.tsx`).
 - Windows and Linux desktop bundles and the `.dmg` are stale; Windows never ran on a real machine; no notarisation. A Windows client can connect but cannot host sessions (no tmux).
 - GitHub: `brstic/orchestrator` (private); collaborators: `fenixf4`, `nikolajanko`. This machine pushes over HTTPS through `gh` (its SSH key is a deploy key for another repository).
 
@@ -52,4 +56,4 @@ Next steps:
 The packaged app `release/Orchestrator.app` (Desktop shortcut is a symlink to it) as a **client of the office on Sparkcan**; the Mac's own state is only `~/.orchestrator/offices/<id>/agent` (its personal host) and the app's data folder. Shipping procedure: `DEVELOPMENT.md`.
 
 ## Suites (last full run, working tree after the UPDATE plan)
-unit 65/65 · e2e 119/119 · UI 146/146 · desktop join (`tests/ui/guest-app.mjs`) 37/37 · Linux server trial (`pnpm test:central`) 23/23 · TV (`tests/ui/tv-app.mjs`) 12/12.
+unit 72/72 · e2e 120/120 · UI 147/147 · desktop join (`tests/ui/guest-app.mjs`) 37/37 (these four on the foreman branch, before it was merged with the knock-at-the-door work) · Linux server trial (`pnpm test:central`) 23/23 · TV (`tests/ui/tv-app.mjs`) 12/12.

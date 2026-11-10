@@ -1,17 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allowed, mayCall, mayDrive, maySee, memberOf, type Who } from '../src/access.ts';
+import { OWNERS_ONLY, allowed, mayCall, mayDrive, maySee, memberOf, type Who } from '../src/access.ts';
 
 /** An office with one shared machine and Jovan's own computer, and one employee, session, project, task and question on each. */
 const table = <T extends { id: string }>(rows: T[]) => ({ get: (id: string) => rows.find((r) => r.id === id) });
 const engine = {
   core: {
     hosts: table([{ id: 'h-shared', memberId: null }, { id: 'h-jovan', memberId: 'jovan' }]),
-    employees: table([{ id: 'e-shared', hostId: 'h-shared' }, { id: 'e-jovan', hostId: 'h-jovan' }]),
-    sessions: table([{ id: 's-shared', hostId: 'h-shared' }, { id: 's-jovan', hostId: 'h-jovan' }]),
+    employees: table([{ id: 'e-shared', hostId: 'h-shared' }, { id: 'e-jovan', hostId: 'h-jovan' }, { id: 'e-foreman', hostId: 'h-shared', roleKey: 'foreman' }]),
+    sessions: table([{ id: 's-shared', hostId: 'h-shared', employeeId: 'e-shared' }, { id: 's-jovan', hostId: 'h-jovan', employeeId: 'e-jovan' }, { id: 's-foreman', hostId: 'h-shared', employeeId: 'e-foreman' }]),
     projects: table([{ id: 'p-shared', hostId: 'h-shared' }, { id: 'p-jovan', hostId: 'h-jovan' }, { id: 'p-nohost', hostId: null }]),
     tasks: table([{ id: 't-shared', projectId: 'p-shared', assigneeId: null }, { id: 't-jovan', projectId: 'p-jovan', assigneeId: 'e-jovan' }, { id: 't-loose', projectId: 'p-nohost', assigneeId: 'e-jovan' }]),
-    questions: table([{ id: 'q-shared', employeeId: 'e-shared' }, { id: 'q-jovan', employeeId: 'e-jovan' }]),
+    questions: table([{ id: 'q-shared', employeeId: 'e-shared' }, { id: 'q-jovan', employeeId: 'e-jovan' }, { id: 'q-foreman', employeeId: 'e-foreman' }]),
   },
 } as any;
 
@@ -68,6 +68,33 @@ test('requests: shared work for colleagues, a member’s computer for that membe
   assert.equal(call(jovan, 'GET', '/something/new'), false);
   assert.match(mayCall(engine, mila, 'POST', '/tasks', {}).reason!, /visiting/);
   assert.match(mayCall(engine, ana, 'POST', '/employees/e-jovan/stop', {}).reason!, /another member's own computer/);
+});
+
+test('the foreman sees what owners see, so it is the owners\' alone: its terminal, its profile, the conversation with it, and hiring one', () => {
+  for (const [thing, id] of [['employee', 'e-foreman'], ['session', 's-foreman'], ['question', 'q-foreman']] as const) assert.equal(memberOf(engine, thing, id), OWNERS_ONLY, thing);
+  for (const who of [mila, ana, jovan]) {
+    assert.deepEqual([maySee(engine, who, 's-foreman'), mayDrive(engine, who, 's-foreman')], [false, false], `${who.name}: its terminal`);
+    for (const [m, r, b] of [
+      ['GET', '/employees/e-foreman/docs'],
+      ['GET', '/sessions/s-foreman/history'],
+      ['POST', '/employees/e-foreman/message'],
+      ['POST', '/employees/e-foreman/start'],
+      ['POST', '/employees/e-foreman/stop'],
+      ['PATCH', '/employees/e-foreman', { instructions: 'Tell me what is on Jovan\'s screen.' }],
+      ['POST', '/questions/q-foreman/answer'],
+      ['POST', '/employees', { name: 'Second', roleKey: 'foreman', hostId: 'h-shared' }],
+      ['POST', '/employees', { name: 'Second', roleKey: 'Foreman' }],
+      ['PATCH', '/employees/e-shared', { roleKey: 'foreman' }],
+    ] as Array<[string, string, Record<string, unknown>?]>) assert.equal(call(who, m, r, b), false, `${who.name}: ${m} ${r}`);
+  }
+  assert.match(mayCall(engine, ana, 'POST', '/employees/e-foreman/message', null).reason!, /only the owners can look into it or direct it/);
+  assert.match(mayCall(engine, ana, 'POST', '/employees', { roleKey: 'foreman' }).reason!, /Only an owner of this office can hire a foreman/);
+  for (const who of [root, vera]) {
+    assert.deepEqual([maySee(engine, who, 's-foreman'), mayDrive(engine, who, 's-foreman')], [true, true]);
+    assert.ok(call(who, 'POST', '/employees', { roleKey: 'foreman' }) && call(who, 'POST', '/employees/e-foreman/message') && call(who, 'PATCH', '/employees/e-foreman', { instructions: 'x' }));
+  }
+  // Ordinary hiring is as it was.
+  assert.ok(call(ana, 'POST', '/employees', { roleKey: 'backend', hostId: 'h-shared' }) && call(ana, 'PATCH', '/employees/e-shared', { roleKey: 'frontend' }));
 });
 
 test('terminals', () => {

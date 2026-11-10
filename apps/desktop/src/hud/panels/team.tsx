@@ -154,6 +154,7 @@ function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
 
   const custom = roleKey === 'custom';
   const role = custom ? undefined : roleByKey(roleKey);
+  const existingForeman = useOffice((s) => Object.values(s.employees).find((e) => !e.archived && e.roleKey === 'foreman'));
   // Default: they work on their own and come to the owner only for decisions.
   const effectiveAutonomy = autonomy ?? 'auto';
   const host = hostId ? hostsById[hostId] : undefined;
@@ -171,7 +172,7 @@ function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
         roleKey: custom ? null : roleKey,
         ...(custom ? { title: title.trim(), department: department.trim() || undefined, specialization: specialization.trim(), skills: parseSkills(skills) } : {}),
         hostId,
-        ...(deskId ? { deskId } : {}),
+        ...(deskId && roleKey !== 'foreman' ? { deskId } : {}),
         projectId: projectId || null,
         // A folder with no shared project becomes this employee's own in-place project (server side).
         workingDir: projectId ? null : workingDir.trim() || null,
@@ -240,10 +241,21 @@ function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
         <FolderField value={workingDir} onChange={setWorkingDir} host={host} disabled={!!projectId} />
       </Field>
 
-      <div className="section-title" style={{ margin: 0 }}>
-        3 · Their desk {place.mine ? 'in your room' : 'in the office'}
-      </div>
-      <DeskPicker place={place} value={deskId} onChange={setDeskId} />
+      {roleKey === 'foreman' ? (
+        <div className="card small" data-foreman-note>
+          <span className="strong">A foreman has no desk.</span> It walks the office — the shared floor and every member's room that is open — goes to whoever needs something, and keeps the work going: it answers operational questions, hands out
+          ready work and gets people who stopped moving again. There is one for the whole office and it runs on the office's own machine. Hiring it switches its rounds on (Settings → Foreman pauses them); each round uses that machine's Claude account.
+          {place.mine && <div className="bad" style={{ marginTop: 6 }}>Choose the shared office in step 1: the foreman cannot run on your own computer.</div>}
+          {existingForeman && <div className="bad" style={{ marginTop: 6 }}>The office already has a foreman ({existingForeman.name}).</div>}
+        </div>
+      ) : (
+        <>
+          <div className="section-title" style={{ margin: 0 }}>
+            3 · Their desk {place.mine ? 'in your room' : 'in the office'}
+          </div>
+          <DeskPicker place={place} value={deskId} onChange={setDeskId} />
+        </>
+      )}
 
       <div className="small muted">
         {!hasCwd ? 'Choose the folder they live in' : startNow && canStart ? 'Their session starts right away' : 'Hired without starting a session — it starts when you first talk to them or give them a task'}
@@ -334,7 +346,10 @@ function TeamPanel({ arg, onClose }: PanelProps) {
   const place = places.find((p) => p.host.id === where) ?? (places.length === 1 ? places[0] : undefined);
 
   const all = useMemo(() => Object.values(employeesById).sort(byName), [employeesById]);
-  const active = all.filter((e) => !e.archived);
+  // The foreman is not one of the seated employees: it is shown on its own, above the list.
+  const foreman = all.find((e) => !e.archived && e.roleKey === 'foreman');
+  const foremanOn = useOffice((s) => !!s.settings?.foreman?.enabled);
+  const active = all.filter((e) => !e.archived && e.id !== foreman?.id);
   const archived = all.filter((e) => e.archived);
   const needle = search.trim().toLowerCase();
   const shown = active.filter(
@@ -410,6 +425,26 @@ function TeamPanel({ arg, onClose }: PanelProps) {
         </select>
       </div>
 
+      {foreman && (
+        <div className="card row team-foreman" data-foreman={foreman.id} style={{ gap: 12, marginBottom: 12, alignItems: 'center' }}>
+          <Avatar appearance={foreman.appearance} size={36} offline={!isLive(sessionOfEmployee(sessions, foreman.id))} />
+          <div className="grow">
+            <div>
+              <span className="strong">{foreman.name}</span> <Badge tone="warn">Foreman</Badge> <span className="small muted">no desk — walks the whole office: the shared floor and members' rooms</span>
+            </div>
+            <div className="small muted">
+              {foremanOn ? 'Rounds are on: it goes to whoever is waiting, blocked, stalled or idle, and keeps the work going.' : 'Rounds are paused (Settings → Foreman).'} Runs on <HostLabel host={foreman.hostId ? hosts[foreman.hostId] : undefined} />.
+            </div>
+          </div>
+          <ActivityBadge activity={activityOf(sessionOfEmployee(sessions, foreman.id))} needsYou={openQuestionsOf(questions, foreman.id).length > 0} />
+          <Button small onClick={() => st.openPanel('settings', 'foreman')}>
+            Rounds
+          </Button>
+          <Button small onClick={() => st.openPanel('employee', foreman.id)}>
+            Profile
+          </Button>
+        </div>
+      )}
       {active.length === 0 ? (
         <Empty title="Nobody works here yet">Hire your first employee, then give them a machine and a project.</Empty>
       ) : shown.length === 0 ? (
@@ -1521,7 +1556,8 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
           { id: 'session', label: 'Session' },
           { id: 'message', label: 'Message' },
           { id: 'history', label: 'History' },
-          { id: 'desk', label: 'Workstation' },
+          // The foreman has no desk to choose.
+          ...(e.roleKey === 'foreman' ? [] : [{ id: 'desk' as const, label: 'Workstation' }]),
         ]}
       />
       <div className="pc-tabbody" key={e.id} ref={body}>
@@ -1535,7 +1571,7 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
         {tab === 'session' && <SessionTab e={e} />}
         {tab === 'message' && <MessageTab e={e} />}
         {tab === 'history' && <HistoryTab e={e} />}
-        {tab === 'desk' && <DeskTab e={e} />}
+        {tab === 'desk' && e.roleKey !== 'foreman' && <DeskTab e={e} />}
       </div>
     </Window>
   );

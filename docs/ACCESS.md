@@ -19,7 +19,7 @@ A machine (host) is either **shared** or **a member's own computer** (`Host.memb
 
 - The office server's own machine, enrolled machines and SSH-linked servers are shared.
 - A member's own computer joins while their desktop app has the office open, and only through the door. Its employees sit in the member's room.
-- Work does not cross: a personal employee works only on projects on the same computer; a shared employee is never put on a project that lives on someone's computer; the scheduler and the foreman ignore personal employees.
+- Work does not cross: a personal employee works only on projects on the same computer; a shared employee is never put on a project that lives on someone's computer; the scheduler never routes shared work to a personal employee, and the foreman — which supervises everyone — never assigns across that line either.
 
 ## The rules
 
@@ -32,6 +32,15 @@ A machine (host) is either **shared** or **a member's own computer** (`Host.memb
 | admin | owners | owners |
 
 Other members still see that a personal employee exists and its state (name, activity, in the member's room). They do not get its terminal, monitor frames, documents, diffs or history, and cannot talk to it.
+
+### The foreman: owners only
+The foreman is neither shared nor a member's. It supervises the whole office — **including members' own employees while their computer is connected**: it is shown the last lines of their terminals, answers their questions and tells them what to do next, as an owner could. So what is the foreman's is for owners alone (`memberOf` answers `OWNERS_ONLY` for its profile, its session and its questions):
+
+- colleagues and visitors cannot watch or type into its terminal, read its documents or history, talk to it, start or stop it, or change its profile;
+- only an owner can hire a foreman or make someone the foreman (`POST`/`PATCH /employees` with the role `foreman`);
+- everyone still sees that it exists, where it walks and what it is doing (its events carry who it visited and why, never what was on a screen).
+
+There is one foreman, on one of the office's own machines, never on a member's computer (the engine refuses both). Work it hands out stays on the computer its project is on, as everywhere else.
 
 ### What each level covers
 

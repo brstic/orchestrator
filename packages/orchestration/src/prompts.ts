@@ -157,7 +157,7 @@ export function systemPromptFor(employee: Employee, project: Project | undefined
               `  • look_at — one employee in detail, including what is on their terminal screen right now.`,
               `  • answer_question — answer an employee's operational question on the boss's behalf.`,
               `  • assign_task / create_task — hand out ready work, or add follow-up work inside what the boss already asked for.`,
-              `  • send_message — tell an employee what to do next.`,
+              `  • tell_employee — tell an employee what to do next: continue, how a blocker is resolved, what to pick up.`,
               `  • escalate_to_owner — put something in front of the boss.`,
               `  • finish_round — end the round with a short summary.`,
             ].join('\n')

@@ -26,7 +26,7 @@ function SeatPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
   const people = useMemo(
     () =>
       Object.values(employees)
-        .filter((e) => !e.archived && e.deskId !== arg && (!needle || `${e.name} ${e.title} ${projects[e.projectId ?? '']?.name ?? ''}`.toLowerCase().includes(needle)))
+        .filter((e) => !e.archived && e.roleKey !== 'foreman' && e.deskId !== arg && (!needle || `${e.name} ${e.title} ${projects[e.projectId ?? '']?.name ?? ''}`.toLowerCase().includes(needle)))
         // People without a desk first, then by name.
         .sort((a, b) => Number(!!a.deskId) - Number(!!b.deskId) || a.name.localeCompare(b.name)),
     [employees, projects, arg, needle],

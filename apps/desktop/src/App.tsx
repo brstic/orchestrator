@@ -4,7 +4,7 @@ import { Button } from '@orchestrator/ui';
 import { api, connection, setToken } from './lib/api.ts';
 import { loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
 import { loadPrefs, usePrefs } from './lib/prefs.ts';
-import { boardView, ceoView, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
+import { boardView, ceoView, foremanView, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
 import { ChatBox, CommandBar, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
 import { onTvFrame } from './lib/tv.ts';
 import { TvLayer } from './hud/tv.tsx';
@@ -223,6 +223,9 @@ export function App() {
   const office = useMemo(() => officeWithRooms(s, unlocked), [s.layout, s.hosts, s.employees, unlocked]); // eslint-disable-line react-hooks/exhaustive-deps
   const people = useMemo(() => personViews(s, office), [s.employees, s.sessions, s.tasks, s.questions, s.meetings, s.projects, s.filter, s.control, office]); // eslint-disable-line react-hooks/exhaustive-deps
   const walks = useMemo(() => walkRequests(s, Date.now()), [s.events, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The foreman has no desk: who it is with, and what it is doing, comes from its rounds.
+  const foremanNow = foremanView(s, Date.now());
+  const foreman = useMemo(() => foremanNow, [JSON.stringify(foremanNow)]); // eslint-disable-line react-hooks/exhaustive-deps
   const hosts = useMemo(() => hostViews(s), [s.hosts, s.sessions]); // eslint-disable-line react-hooks/exhaustive-deps
   const board = useMemo(() => boardView(s), [s.tasks, s.projects, s.employees, s.filter]); // eslint-disable-line react-hooks/exhaustive-deps
   const wall = useMemo(() => wallView(s, people), [people, s.hosts, s.tasks, s.questions]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -297,6 +300,7 @@ export function App() {
           unlocked={unlocked}
           people={people}
           humans={humans}
+          foreman={foreman}
           selfSaying={selfSaying}
           docs={docViews}
           onOpenDocs={on.openDocs}

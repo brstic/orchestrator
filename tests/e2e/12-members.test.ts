@@ -358,7 +358,7 @@ test('another colleague sees that she is there and nothing more; an owner can wo
   for (const c of [a, m, j, v]) c.ws.close();
 });
 
-test('the foreman and the office’s own alerts leave a member’s computer alone; when the member goes, the computer is offline, not an incident', async () => {
+test('the office’s own alerts leave a member’s computer alone; when the member goes, the computer is offline, not an incident', async () => {
   const before = (await h.state()).notifications.length;
   await jovanHost.stop();
   await waitFor(async () => (await h.state()).hosts.find((x) => x.id === jovanHost.hostId)!.status === 'offline', { label: 'his computer is offline' });

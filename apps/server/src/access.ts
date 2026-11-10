@@ -12,9 +12,15 @@
  * people see that a personal employee exists and what state it is in; its terminal, documents and
  * code are for its member and for owners.
  *
+ * One employee is nobody's and not shared either: the foreman. It supervises the whole office, members'
+ * own computers included, so what it sees is what an owner sees — its terminal, its documents and the
+ * conversation with it are for owners only, and only an owner can hire one or change who it is. Everyone
+ * still sees that it is there and what it is doing.
+ *
  * A route that is not listed here needs an owner: forgetting to list a new route fails closed.
  */
-import type { Engine } from '@orchestrator/orchestration';
+import { FOREMAN_ROLE, type Engine } from '@orchestrator/orchestration';
+import { matchRole, roleByKey } from '@orchestrator/contracts';
 
 export type Role = 'owner' | 'colleague' | 'visitor';
 
@@ -105,18 +111,30 @@ const RULES: Rule[] = [
   rule('POST', '/commands/plan', 'work'),
 ];
 
-/** The member a thing belongs to; null when it is shared (or does not exist: the route then answers 404 itself). */
+/** In place of a member's id: the thing is the foreman's (its profile, its session, its questions), which only owners may touch or look into. */
+export const OWNERS_ONLY = '#owners';
+
+/**
+ * The member a thing belongs to; null when it is shared (or does not exist: the route then answers 404 itself).
+ * What is the foreman's belongs to no member and is not shared: `OWNERS_ONLY`.
+ */
 export function memberOf(engine: Engine, thing: Thing, id: string | null | undefined): string | null {
   if (!id) return null;
   const core = engine.core;
   const ofHost = (hostId: string | null | undefined): string | null => (hostId ? (core.hosts.get(hostId)?.memberId ?? null) : null);
+  const ofEmployee = (employeeId: string | null | undefined): string | null => {
+    const e = employeeId ? core.employees.get(employeeId) : undefined;
+    return e?.roleKey === FOREMAN_ROLE ? OWNERS_ONLY : ofHost(e?.hostId);
+  };
   switch (thing) {
     case 'host':
       return ofHost(id);
     case 'employee':
-      return ofHost(core.employees.get(id)?.hostId);
-    case 'session':
-      return ofHost(core.sessions.get(id)?.hostId);
+      return ofEmployee(id);
+    case 'session': {
+      const s = core.sessions.get(id);
+      return s?.employeeId && core.employees.get(s.employeeId)?.roleKey === FOREMAN_ROLE ? OWNERS_ONLY : ofHost(s?.hostId);
+    }
     case 'project':
       return ofHost(core.projects.get(id)?.hostId);
     case 'task': {
@@ -155,7 +173,11 @@ export function mayCall(engine: Engine, who: Who, method: string, route: string,
       const raw = s.from === 'path' ? decodeURIComponent(m[1] ?? '') : body?.[s.field];
       const id = typeof raw === 'string' && raw ? raw : null;
       const member = memberOf(engine, s.thing, id);
-      if (!allowed(who, r.need, member)) return { ok: false, reason: "That is on another member's own computer; only they and the owners can use it." };
+      if (!allowed(who, r.need, member)) return { ok: false, reason: member === OWNERS_ONLY ? 'The foreman supervises the whole office, so only the owners can look into it or direct it.' : "That is on another member's own computer; only they and the owners can use it." };
+    }
+    // Hiring a foreman, or making someone the foreman, is an owner's act.
+    if (/^\/employees(\/[^/]+)?$/.test(route) && (method === 'POST' || method === 'PATCH') && typeof body?.roleKey === 'string' && (roleByKey(body.roleKey) ?? matchRole(body.roleKey))?.key === FOREMAN_ROLE) {
+      return { ok: false, reason: 'Only an owner of this office can hire a foreman.' };
     }
     return { ok: true };
   }

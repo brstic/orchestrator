@@ -56,6 +56,8 @@ export interface Timings {
   foremanSettleMs: number;
   /** Idle with a task in progress for this long counts as stalled. */
   foremanStalledMs: number;
+  /** Overrides the owner's "idle for … minutes" setting (tests run on faster clocks). */
+  foremanIdleMs: number | null;
   /** The shortest gap between two foreman rounds, whatever the owner's setting says. */
   foremanMinGapMs: number;
   /** A round that was neither finished nor ended with its turn is given up on after this long. */
@@ -72,6 +74,7 @@ export const DEFAULT_TIMINGS: Timings = {
   foremanTickMs: 5000,
   foremanSettleMs: 4000,
   foremanStalledMs: 5 * 60_000,
+  foremanIdleMs: null,
   foremanMinGapMs: 30_000,
   foremanRoundTimeoutMs: 10 * 60_000,
 };
@@ -130,6 +133,8 @@ export function sanitizeForeman(input: unknown, current: ForemanSettings, minGap
     // 0 switches quiet checks off; anything else is at least five minutes.
     quietCheckMinutes: quiet === 0 ? 0 : Math.max(5, quiet),
     answersQuestions: typeof i.answersQuestions === 'boolean' ? i.answersQuestions : current.answersQuestions,
+    // 0 switches it off; settings stored before this existed get the default.
+    idleMinutes: int(i.idleMinutes, 0, 24 * 60, current.idleMinutes ?? 10),
   };
 }
 
@@ -157,7 +162,7 @@ const DEFAULT_SETTINGS: OwnerSettings = {
     lastStationId: null,
   },
   selfImprovement: { enabled: true, retrospectives: 'friction', autoApproveSharedLessons: false, learnedRouting: true },
-  foreman: { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true },
+  foreman: { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true, idleMinutes: 10 },
   quality: 'high',
   keybindings: {
     forward: 'KeyW',
