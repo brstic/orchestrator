@@ -192,7 +192,9 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
         .map((e) => {
           const s = core.runningSessionOf(e.id);
           const t = eng.tasks.currentTask(e.id);
-          return `- ${e.name} — ${e.title}${e.projectId === employee.projectId ? '' : ' (other project)'} · ${s ? (ACTIVITY_LABEL[s.activity] ?? s.activity) : 'OFFLINE'}${t ? ` · working on ${t.key} "${truncate(t.title, 50)}"` : ''}`;
+          // What their finished work here shows (counted, not declared): whom to ask about what.
+          const record = eng.improver.capture.skillsLine(e);
+          return `- ${e.name} — ${e.title}${e.projectId === employee.projectId ? '' : ' (other project)'} · ${s ? (ACTIVITY_LABEL[s.activity] ?? s.activity) : 'OFFLINE'}${t ? ` · working on ${t.key} "${truncate(t.title, 50)}"` : ''}${record ? ` · ${record}` : ''}`;
         })
         .join('\n');
     },
@@ -221,7 +223,8 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       return `Created ${created.length} tasks: ${created.map((t) => t.key).join(', ')}. ${released ? 'They are scheduled automatically as dependencies complete.' : 'They wait in the backlog for the boss to release them.'}`;
     },
 
-    record_lesson: async (a, { employee }) => eng.improver.recordFromAgent(employee, { lesson: a.lesson ? String(a.lesson) : undefined, applies_when: a.applies_when ? String(a.applies_when) : undefined, scope: a.scope, none: a.none === true }),
+    record_lesson: async (a, { employee }) =>
+      eng.improver.recordFromAgent(employee, { lesson: a.lesson ? String(a.lesson) : undefined, applies_when: a.applies_when ? String(a.applies_when) : undefined, why: a.why ? String(a.why) : undefined, scope: a.scope, none: a.none === true, reason: a.reason ? String(a.reason) : undefined, replaces: a.replaces ? String(a.replaces) : undefined }),
 
     get_playbook: async (_a, { employee }) => {
       const projectId = eng.tasks.currentTask(employee.id)?.projectId ?? employee.projectId;
@@ -236,7 +239,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       let recorded = 0;
       for (const lesson of Array.isArray(a.lessons) ? a.lessons.slice(0, 5) : []) {
         try {
-          eng.improver.recordFromAgent(employee, { lesson: String(lesson), applies_when: `agreed in meeting ${a.meeting_id}`, scope: 'project' });
+          eng.improver.recordFromAgent(employee, { lesson: String(lesson), applies_when: `agreed in meeting ${a.meeting_id}`, why: `The team agreed on this in meeting ${a.meeting_id}`, scope: 'project' });
           recorded++;
         } catch {
           /* skip malformed entries */

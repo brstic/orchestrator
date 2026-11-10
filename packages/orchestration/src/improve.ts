@@ -4,6 +4,7 @@ import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
 import { DEFAULT_HIGH_RISK_PATTERNS } from './prompts.ts';
 import { Playbook } from './learning/playbook.ts';
+import { Capture, type LessonArgs } from './learning/capture.ts';
 
 const MAX_LESSONS_IN_PROMPT = 12;
 /** Approvals of the same command shape before Orchestrator suggests pre-approving it. */
@@ -31,10 +32,13 @@ export class Improver {
   private analyzeTimer: NodeJS.Timeout | null = null;
   /** Which lessons a task prompt carries, and keeping the lessons free of duplicates (learning/playbook.ts). */
   readonly playbook: Playbook;
+  /** What is learned from the record itself: corrections, rejections, repeats, failures (learning/capture.ts). */
+  readonly capture: Capture;
 
   constructor(eng: Engine) {
     this.eng = eng;
     this.playbook = new Playbook(eng, (p) => this.propose(p));
+    this.capture = new Capture(eng);
   }
 
   private get core() {
@@ -127,29 +131,37 @@ export class Improver {
     // What a second employee of the project learns independently becomes the project's.
     this.playbook.afterSave(lesson);
     if (lesson.status === 'proposed') {
-      this.eng.comms.notify({ kind: 'improvement', severity: 'info', title: `${input.authoredBy.name} proposes a team lesson`, body: lesson.text, employeeId: input.authoredBy.id, projectId: lesson.projectId });
+      // (A candidate for one employee's playbook is not a team lesson: say whose it would be.)
+      this.eng.comms.notify({ kind: 'improvement', severity: 'info', title: lesson.scope === 'employee' ? `${input.authoredBy.name} proposes a lesson for ${this.core.employees.get(lesson.employeeId)?.name ?? 'an employee'}` : `${input.authoredBy.name} proposes a team lesson`, body: lesson.text, employeeId: input.authoredBy.id ?? lesson.employeeId, projectId: lesson.projectId });
     }
     return lesson;
   }
 
+  /** A candidate lesson derived from the record (learning/capture.ts): saved like any other, so it is merged and ranked like any other. */
+  saveCandidate(input: { scope: Lesson['scope']; employeeId: string | null; projectId: string | null; text: string; appliesWhen: string; source: LessonSource; evidence: EvidenceRef[]; status: Lesson['status']; authoredBy: Lesson['authoredBy'] }): Lesson {
+    return this.saveLesson(input);
+  }
+
   /** A worker's own session records what it learned (the record_lesson tool). */
-  recordFromAgent(employee: Employee, args: { lesson?: string; applies_when?: string; scope?: string; none?: boolean }): string {
+  recordFromAgent(employee: Employee, args: LessonArgs): string {
     if (!this.on) return 'Self-improvement is switched off in this office; nothing was recorded.';
     const retro = this.retros.get(employee.id);
-    if (args.none) {
+    // The fixed shape of a lesson: a vague one is sent back here, with what is missing.
+    const checked = this.capture.check(employee, args);
+    if (checked.none) {
       this.retros.delete(employee.id);
+      this.capture.nothingLearned(employee, retro?.taskId ?? null, checked.reason);
       return 'Noted: nothing to record from this one.';
     }
-    if (!args.lesson?.trim()) throw new EngineError('provide the lesson text, or none=true');
     const task = retro ? this.core.tasks.get(retro.taskId) : this.eng.tasks.currentTask(employee.id);
-    const shared = args.scope === 'project' || args.scope === 'team' || args.scope === 'company';
+    const shared = checked.scope !== 'employee';
     const projectId = task?.projectId ?? employee.projectId;
     const lesson = this.saveLesson({
-      scope: shared ? (projectId ? 'project' : 'company') : 'employee',
+      scope: shared ? (projectId && checked.scope === 'project' ? 'project' : 'company') : 'employee',
       employeeId: shared ? null : employee.id,
-      projectId: shared ? projectId : null,
-      text: args.lesson,
-      appliesWhen: args.applies_when ?? '',
+      projectId: shared && checked.scope === 'project' ? projectId : null,
+      text: checked.rule,
+      appliesWhen: checked.when,
       source: 'retrospective',
       evidence: task ? [{ kind: 'task', id: task.id, note: `${task.key} ${task.title}` }] : [],
       // A worker may shape its own playbook freely; rules for everyone else go past the owner.
@@ -157,7 +169,8 @@ export class Improver {
       authoredBy: { kind: 'employee', id: employee.id, name: employee.name },
     });
     if (retro && ++retro.recorded >= 3) this.retros.delete(employee.id);
-    return lesson.status === 'proposed' ? `Recorded as a proposal for the team (id ${lesson.id}); the boss decides whether it becomes shared knowledge.` : `Recorded in ${shared ? 'the team knowledge' : 'your playbook'} (id ${lesson.id}). It will be included in your future task prompts.`;
+    const revised = this.capture.recorded(lesson, employee, task, checked, args.replaces);
+    return `${lesson.status === 'proposed' ? `Recorded as a proposal for the team (id ${lesson.id}); the boss decides whether it becomes shared knowledge.` : `Recorded in ${shared ? 'the team knowledge' : 'your playbook'} (id ${lesson.id}). It will be included in your future task prompts.`}${revised}`;
   }
 
   /** The owner teaches directly. */
@@ -223,24 +236,6 @@ export class Improver {
 
   // ───────────────────────── retrospectives ────────────────────────
 
-  private frictionFacts(task: Task): string[] {
-    const facts: string[] = [];
-    const events = this.core.store.queryEvents({ taskId: task.id, limit: 400 });
-    const failures = events.filter((e) => e.type === 'task.verification_failed');
-    if (failures.length) {
-      const last = failures[failures.length - 1]!;
-      facts.push(`Verification ("${last.data.command}") failed ${failures.length} time${failures.length === 1 ? '' : 's'} before it passed. Last failure output:\n${truncate(String(last.data.outputTail ?? ''), 700)}`);
-    }
-    for (const e of events.filter((x) => x.type === 'task.review_completed' && x.data.verdict === 'changes_requested')) facts.push(`A review requested changes: "${truncate(String(e.data.comments ?? ''), 400)}"`);
-    for (const e of events.filter((x) => x.type === 'task.merge_conflict')) facts.push(`Merging your branch conflicted${Array.isArray(e.data.conflicts) && e.data.conflicts.length ? ` in ${(e.data.conflicts as string[]).join(', ')}` : ''}.`);
-    for (const e of events.filter((x) => x.type === 'task.blocked')) facts.push(`The task was blocked: ${truncate(String(e.data.reason ?? ''), 300)}`);
-    for (const q of this.core.questions.filter((x) => x.taskId === task.id && x.kind !== 'permission' && x.kind !== 'merge_conflict' && !!x.answer)) facts.push(`You asked the boss "${truncate(q.text, 200)}" and were told: "${truncate(q.answer ?? '', 200)}"`);
-    const denied = this.core.questions.filter((x) => x.taskId === task.id && x.kind === 'permission' && x.decision === 'deny');
-    if (denied.length) facts.push(`${denied.length} action${denied.length === 1 ? ' was' : 's were'} denied by the boss: ${denied.map((d) => truncate(d.text.replace(/^.*wants to run: /, ''), 80)).join('; ')}`);
-    if (task.nudges > 0) facts.push(`You stopped ${task.nudges} time${task.nudges === 1 ? '' : 's'} without finishing or asking, and had to be told to continue.`);
-    return facts;
-  }
-
   hadFriction(task: Task): boolean {
     const f = task.friction;
     return f.failedVerifications + f.reviewRejections + f.mergeConflicts + f.blockers + f.questions + f.denials > 0 || task.nudges > 0;
@@ -249,23 +244,19 @@ export class Improver {
   /** A task was verified done: ask its author to reflect, when there is something to reflect on. */
   afterTask(task: Task): void {
     this.scheduleAnalyze();
+    if (this.on && task.kind !== 'review') this.capture.refreshSkills(task.assigneeId);
     if (!this.on || task.kind === 'review' || !task.assigneeId) return;
     const mode = this.core.settings.selfImprovement.retrospectives;
     if (mode === 'off' || (mode === 'friction' && !this.hadFriction(task))) return;
     const employee = this.core.employees.get(task.assigneeId);
     const session = employee ? this.core.runningSessionOf(employee.id) : undefined;
     if (!employee || !session?.capabilities.mcp) return;
-    const facts = this.frictionFacts(task);
-    const text = [
-      `${correlationMarker('RETRO', task.id)} Retrospective for ${task.key} "${task.title}" (verified and done).`,
-      '',
-      facts.length ? `What Orchestrator recorded while you worked on it:\n${facts.map((f) => `- ${f}`).join('\n')}` : 'It went through without recorded problems.',
-      '',
-      'Is there a concrete, reusable lesson here that would make your next task go better? If so, record it with the record_lesson tool: "lesson" is an instruction to your future self, "applies_when" says when it matters, and "scope" is "self" for your own playbook or "project" if the whole team should know it. Record at most 3, and only lessons grounded in the facts above. If there is nothing worth keeping, call record_lesson with none=true. Do not change any code for this.',
-    ].join('\n');
+    // The facts in a structured form and the shape of a lesson — or nothing, when they already hold a lesson about exactly this.
+    const retro = this.capture.retrospective(task, employee);
+    if (!retro.text) return;
     this.retros.set(employee.id, { taskId: task.id, recorded: 0 });
-    this.eng.comms.deliver(employee.id, 'RETRO', task.id, { kind: 'retro', id: task.id }, text);
-    this.core.event({ type: 'improvement.retrospective_requested', source: 'server', summary: `${employee.name} was asked to reflect on ${task.key}`, employeeId: employee.id, taskId: task.id, projectId: task.projectId, data: { key: task.key, facts: facts.length, quiet: true } });
+    this.eng.comms.deliver(employee.id, 'RETRO', task.id, { kind: 'retro', id: task.id }, retro.text);
+    this.core.event({ type: 'improvement.retrospective_requested', source: 'server', summary: `${employee.name} was asked to reflect on ${task.key}`, employeeId: employee.id, taskId: task.id, projectId: task.projectId, data: { key: task.key, facts: retro.facts.length, kinds: [...new Set(retro.facts.map((f) => f.kind))], revises: retro.revises?.id ?? null, quiet: true } });
   }
 
   // ─────────────────────────── performance ─────────────────────────

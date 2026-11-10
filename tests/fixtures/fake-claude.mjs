@@ -239,6 +239,10 @@ async function runDirectives(text) {
           say(rest);
           lastMessage = rest;
           break;
+        case 'saw':
+          // Was this text in the prompt that was delivered? (What a test asks about a prompt's content.)
+          say(`saw[${rest}]=${text.replace(/@@[\s\S]*?@@/g, '').includes(rest) ? 'yes' : 'no'}`);
+          break;
         case 'sleep':
           await sleep(Number(rest) || 100);
           break;
@@ -343,10 +347,17 @@ async function defaultBehaviour(text) {
   }
   if (/\[ORCH:RETRO:/.test(text)) {
     // Reflect on the facts Orchestrator recorded, the way the retrospective prompt asks.
-    if (/Verification \(.*\) failed/.test(text)) await orchestrator('record_lesson', { lesson: "Run the project's verification command myself before calling complete_task", applies_when: 'before completing any task', scope: 'self' });
-    else if (/review requested changes/i.test(text)) await orchestrator('record_lesson', { lesson: 'Remove draft markers and re-read my own diff before asking for review', applies_when: 'before a task goes to review', scope: 'project' });
-    else if (/conflicted/.test(text)) await orchestrator('record_lesson', { lesson: 'Merge the integration branch into my task branch before finishing work on shared files', applies_when: 'when touching files other people also change', scope: 'self' });
-    else await orchestrator('record_lesson', { none: true });
+    // A lesson has a rule, a trigger, the evidence and a scope; the evidence is quoted from the facts in the prompt.
+    const fact = (kind) => new RegExp(`^- \\[${kind}\\] (.*(?:\\n {4}.*)*)`, 'm').exec(text)?.[1] ?? '';
+    const lastLine = (s) => s.split('\n').map((l) => l.trim()).filter(Boolean).pop() ?? '';
+    const replaces = /replaces="([0-9a-f]+)"/.exec(text)?.[1];
+    if (replaces && /Anything to change\?/.test(text))
+      // The earlier lesson was in the prompt and did not prevent a repeat: sharpen it.
+      await orchestrator('record_lesson', { lesson: "Run the project's verification command and read its whole output before calling complete_task", applies_when: 'before calling complete_task on a task with a verification command', why: `The same verification failure happened again with the earlier lesson in place: "${lastLine(fact('verification'))}"`, scope: 'self', replaces });
+    else if (/Verification \(.*\) failed/.test(text)) await orchestrator('record_lesson', { lesson: "Run the project's verification command myself before calling complete_task", applies_when: 'before completing any task', why: `Verification failed on this task before it passed, with "${lastLine(fact('verification'))}"`, scope: 'self' });
+    else if (/review requested changes/i.test(text)) await orchestrator('record_lesson', { lesson: 'Remove draft markers and re-read my own diff before asking for review', applies_when: 'before a task goes to review', why: 'The reviewer sent this task back because a draft marker was still in the file', scope: 'project' });
+    else if (/conflicted/.test(text)) await orchestrator('record_lesson', { lesson: 'Merge the integration branch into my task branch before finishing work on shared files', applies_when: 'when touching files other people also change', why: 'Merging my branch conflicted because a teammate changed the same file first', scope: 'self' });
+    else await orchestrator('record_lesson', { none: true, reason: 'Nothing in the recorded facts would be prevented by a rule' });
     return 'Retrospective done.';
   }
   if (/\[ORCH:ROUND:/.test(text)) {

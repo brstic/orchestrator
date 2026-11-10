@@ -34,6 +34,10 @@ export const STALE_AFTER = 8;
 const STALE_FACTOR = 0.5;
 const SCOPE_BOOST: Record<Lesson['scope'], number> = { employee: 0.15, project: 0.08, company: 0 };
 const KIND_BOOST = 0.08;
+/** Knowledge that was asked about again although it existed goes ahead of anything that only shares words with the task. */
+const MISSED_BOOST = 1;
+/** A lesson measured to help is preferred among lessons that fit about as well. */
+const PROVEN_BOOST = 0.06;
 const SAME_FILE_BOOST = 0.2;
 const SAME_DIR_BOOST = 0.1;
 /**
@@ -425,7 +429,19 @@ export function selectLessons(input: { lessons: Lesson[]; employeeId: string; co
       score += SAME_DIR_BOOST;
       reasons.push(`learned in ${sameDir}/`);
     }
-    const fits = relevance >= MATCH_THRESHOLD || !!sameFile || !!sameDir;
+    // Knowledge the office had and that was asked for again anyway (learning/capture.ts counts these): it did not
+    // reach the session that needed it, so it is put ahead of everything that merely fits. A lesson shown to help
+    // (learning/outcomes.ts) is preferred among equals.
+    const missed = lesson.captureMustInclude ?? 0;
+    if (missed > 0) {
+      score += MISSED_BOOST;
+      reasons.push(`was asked about again ${missed === 1 ? 'once' : `${missed} times`} although the office knew it`);
+    }
+    if ((lesson as { proven?: boolean }).proven) {
+      score += PROVEN_BOOST;
+      reasons.push('shown to help');
+    }
+    const fits = relevance >= MATCH_THRESHOLD || !!sameFile || !!sameDir || missed > 0;
     // A history of being included without fitting only counts against a lesson that does not fit this task either.
     const stale = !fits && isStale(lesson);
     if (stale) {

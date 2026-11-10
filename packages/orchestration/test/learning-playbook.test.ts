@@ -318,11 +318,11 @@ test('no task (a system prompt, a Talk message, get_playbook): the newest twelve
 test('a lesson recorded again in other words is merged: clearer text, all the evidence, the earliest date, counted, undoable', async () => {
   const o = await office();
   const t1 = o.working(o.alex, 'Add the orders migration');
-  o.eng.improver.recordFromAgent(o.alex, { lesson: 'Always run the migration against a copy of the database before committing.', applies_when: 'when writing a migration' });
+  o.eng.improver.recordFromAgent(o.alex, { lesson: 'Always run the migration against a copy of the database before committing.', applies_when: 'when writing a migration', why: 'verification failed on this task because the migration was only run on an empty database' });
   const first = o.lessons()[0]!;
   o.eng.core.put('lesson', { ...first, createdAt: day(1), appliedCount: 3 });
   const t2 = o.working(o.alex, 'Add the invoices migration');
-  const reply = o.eng.improver.recordFromAgent(o.alex, { lesson: 'Run migrations on a database copy before you commit — production data included' });
+  const reply = o.eng.improver.recordFromAgent(o.alex, { lesson: 'Run migrations on a database copy before you commit — production data included', applies_when: 'when writing a migration', why: 'verification failed on this task because the migration was only run on an empty database' });
   assert.match(reply, new RegExp(`Recorded in your playbook \\(id ${first.id}\\)`), 'the employee is told it is in their playbook, under the lesson that carries on');
 
   assert.equal(o.lessons().length, 1, 'one lesson, not two');
@@ -342,16 +342,16 @@ test('a lesson recorded again in other words is merged: clearer text, all the ev
   assert.ok(d.similarity > 0.35 && d.similarity < 1 && /share \d+% of their meaningful words/.test(d.why));
 
   // The very same call again changes nothing; the same words on another task only add the evidence.
-  o.eng.improver.recordFromAgent(o.alex, { lesson: 'Run migrations on a database copy before you commit — production data included' });
+  o.eng.improver.recordFromAgent(o.alex, { lesson: 'Run migrations on a database copy before you commit — production data included', applies_when: 'when writing a migration', why: 'verification failed on this task because the migration was only run on an empty database' });
   assert.equal(o.events('learning.lesson_merged').length, 1);
   const t3 = o.working(o.alex, 'Add the refunds migration');
-  o.eng.improver.recordFromAgent(o.alex, { lesson: 'run migrations on a database copy before you commit, production data included.' });
+  o.eng.improver.recordFromAgent(o.alex, { lesson: 'run migrations on a database copy before you commit, production data included.', applies_when: 'when writing a migration', why: 'verification failed on this task because the migration was only run on an empty database' });
   assert.deepEqual(o.lessons()[0]!.evidence.map((e) => e.id), [t1.id, t2.id, t3.id]);
   assert.equal(o.lessons()[0]!.playbook!.mergedCount, 2);
   assert.equal(o.lessons().length, 1);
 
   // A different lesson, another employee's lesson and another scope are left alone.
-  o.eng.improver.recordFromAgent(o.alex, { lesson: 'Run pnpm typecheck on a database copy before you commit' });
+  o.eng.improver.recordFromAgent(o.alex, { lesson: 'Run pnpm typecheck on a database copy before you commit', applies_when: 'when writing a migration', why: 'verification failed on this task because the migration was only run on an empty database' });
   o.working(o.sarah, 'Style the invoices page');
   o.eng.improver.recordFromOwner({ text: 'Run migrations on a database copy before you commit', scope: 'company' });
   assert.equal(o.lessons().length, 3);
@@ -407,7 +407,7 @@ test('a contradiction is put to the owner, not merged and not decided', async ()
   const o = await office();
   const yes = o.eng.improver.recordFromOwner({ text: 'Always squash commits before merging into the main branch', scope: 'project', projectId: o.shop.id });
   o.working(o.alex, 'Merge the checkout branch');
-  o.eng.improver.recordFromAgent(o.alex, { lesson: 'Never squash commits before merging into the main branch' });
+  o.eng.improver.recordFromAgent(o.alex, { lesson: 'Never squash commits before merging into the main branch', applies_when: 'when writing a migration', why: 'verification failed on this task because the migration was only run on an empty database' });
   const no = o.lessons().find((l) => l.scope === 'employee')!;
   // A lesson of an employee on another project never meets the project's lesson: no contradiction there.
   const other = await o.eng.tasks.createProject({ name: 'Blog', policy: { autoAssign: false } });
@@ -457,15 +457,15 @@ test('promotion: what a second employee of the project learns independently beco
   for (const auto of [false, true]) {
     const o = await office({ autoApproveSharedLessons: auto });
     const t1 = o.working(o.alex, 'Add the orders migration');
-    o.eng.improver.recordFromAgent(o.alex, { lesson: 'Run the migration against a copy of the database before committing', applies_when: 'when writing a migration' });
+    o.eng.improver.recordFromAgent(o.alex, { lesson: 'Run the migration against a copy of the database before committing', applies_when: 'when writing a migration', why: 'verification failed on this task because the migration was only run on an empty database' });
     assert.equal(o.lessons().length, 1, 'one employee: theirs alone');
     // The same employee learning it twice is a merge, not a promotion.
-    o.eng.improver.recordFromAgent(o.alex, { lesson: 'Run migrations on a database copy before you commit' });
+    o.eng.improver.recordFromAgent(o.alex, { lesson: 'Run migrations on a database copy before you commit', applies_when: 'when writing a migration', why: 'verification failed on this task because the migration was only run on an empty database' });
     o.eng.improver.analyze();
     assert.deepEqual([o.lessons().length, o.events('learning.lesson_promoted').length], [1, 0]);
 
     const t2 = o.working(o.sarah, 'Add the invoices migration');
-    o.eng.improver.recordFromAgent(o.sarah, { lesson: 'Before committing, run every migration on a copy of the database first' });
+    o.eng.improver.recordFromAgent(o.sarah, { lesson: 'Before committing, run every migration on a copy of the database first', applies_when: 'when writing a migration', why: 'verification failed on this task because the migration was only run on an empty database' });
     const project = o.lessons().find((l) => l.scope === 'project')!;
     assert.ok(project, 'recorded by the second employee: promoted there and then');
     const own = o.lessons().filter((l) => l.scope === 'employee');
@@ -513,7 +513,7 @@ test('promotion needs the same project: the same lesson in two projects stays wi
   const blog = await o.eng.tasks.createProject({ name: 'Blog', policy: { autoAssign: false } });
   const bo = o.eng.employees.create({ name: 'Bo', roleKey: 'backend', projectId: blog.id, hostId: 'host-1', workingDir: '/tmp/x' });
   o.working(o.alex, 'Add the orders migration');
-  o.eng.improver.recordFromAgent(o.alex, { lesson: 'Run the migration against a copy of the database before committing' });
+  o.eng.improver.recordFromAgent(o.alex, { lesson: 'Run the migration against a copy of the database before committing', applies_when: 'when writing a migration', why: 'verification failed on this task because the migration was only run on an empty database' });
   o.eng.improver.recordFromOwner({ text: 'Run migrations on a database copy before you commit', scope: 'employee', employeeId: bo.id });
   o.eng.improver.analyze();
   assert.deepEqual(o.lessons().map((l) => l.scope), ['employee', 'employee']);

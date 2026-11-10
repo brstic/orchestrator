@@ -189,6 +189,10 @@ export interface Employee {
    * the office gives it no work of its own accord and does not nudge it.
    */
   selfDriven?: boolean;
+  /** capture: projects whose "what this team has learned" digest this employee was already given (once, with their first task there). */
+  captureOnboarded?: ID[];
+  /** capture: what their finished work shows, counted from task records and hook events. `skills` above is what was declared at hiring. */
+  captureSkills?: MeasuredSkill[];
 }
 
 // ─────────────────────────── Sessions ────────────────────────────
@@ -511,6 +515,11 @@ export interface Question {
   deliveredAt: ISODate | null;
   confirmedAt: ISODate | null;
   deliveryDetail: string | null;
+  /**
+   * capture: an already answered question of the same project that reads like this one (a word-overlap match,
+   * not an understanding of the question). Shown to whoever answers; nothing is answered automatically.
+   */
+  captureAnsweredBefore?: { questionId: ID; text: string; answer: string; answeredAt: ISODate | null; askedBy: string | null; answeredBy: string; lessonId: ID | null; similarity: number } | null;
 }
 
 // ─────────────────────────── Messaging ───────────────────────────
@@ -697,7 +706,7 @@ export interface Milestone {
 // ──────────────────────── Self-improvement ───────────────────────
 
 export interface EvidenceRef {
-  kind: 'task' | 'question' | 'review' | 'event' | 'meeting' | 'approval' | 'lesson';
+  kind: 'task' | 'question' | 'review' | 'event' | 'meeting' | 'approval' | 'lesson' | 'message';
   id: ID;
   note: string;
 }
@@ -729,6 +738,15 @@ export interface Lesson {
   updatedAt: ISODate;
   /** Playbook bookkeeping (orchestration/src/learning/playbook.ts). Absent until the lesson is first used, merged or promoted. */
   playbook?: LessonPlaybookMeta;
+  /** capture: why the rule exists — the evidence, in its author's words. */
+  captureWhy?: string;
+  /** capture: what the lesson was derived from, when nobody typed it in as a lesson. */
+  captureOrigin?: CaptureOrigin;
+  /**
+   * capture: how many times this knowledge existed and its question was asked again anyway. Above zero means
+   * "it did not reach the session that needed it": retrieval should put it in front of everything else.
+   */
+  captureMustInclude?: number;
 }
 
 /**
@@ -812,6 +830,41 @@ export interface SelfImprovementSettings {
   playbookRelevance?: boolean;
   /** How many characters of lessons a task prompt may carry (default 2400, kept within 400–8000). */
   playbookBudgetChars?: number;
+}
+
+/** capture: where a lesson came from, with the exact words or output it was derived from. */
+export interface CaptureOrigin {
+  /**
+   * retrospective     the employee's own session recorded it (record_lesson)
+   * correction        a message to the employee that reads as a standing rule ("don't…", "from now on…")
+   * review_rejection  the owner sent work back with a comment
+   * denial            the owner denied an action and said why
+   * repeat_failure    verification failed the same way on more than one task of the project
+   */
+  kind: 'retrospective' | 'correction' | 'review_rejection' | 'denial' | 'repeat_failure';
+  /** Whose words they are ("the boss", a colleague's name), for the kinds that quote a person. */
+  from?: string | null;
+  /** Who was being told. */
+  toEmployeeId?: ID | null;
+  taskId?: ID | null;
+  taskKey?: string | null;
+  /** The words or output the lesson was derived from, unedited (shortened). */
+  quote?: string;
+  /** correction: the wording that made the message count as a rule, so the match can be judged. */
+  matched?: string;
+  /** What the lesson is about, in a form that can be compared: the friction of the task (retrospective) or the failure (repeat_failure). */
+  signatures?: string[];
+}
+
+/** capture: one thing an employee's finished work shows. Counts from records, never a judgement. */
+export interface MeasuredSkill {
+  kind: 'task_kind' | 'file_type' | 'directory' | 'tool';
+  /** Ready to show: "bug", ".ts", "src/api", "Bash". */
+  label: string;
+  /** Finished tasks behind it; for a tool, uses reported by the session's hooks. */
+  count: number;
+  /** task_kind only: how many of those passed verification and review the first time. */
+  firstPass?: number;
 }
 
 // ──────────────────────────── Foreman ────────────────────────────

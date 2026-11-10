@@ -573,14 +573,15 @@ export class TaskManager {
       if (task.kind === 'review' && task.reviewOf) {
         const target = this.core.tasks.require(task.reviewOf);
         text = reviewPrompt(task, target, project, this.core.employees.get(target.assigneeId)?.name ?? 'a teammate');
-        const playbook = this.eng.improver.playbookBlock(employee, project.id, true, task);
+        // (First task on this project: what the team has learned, once, ahead of the lessons chosen for this task.)
+        const playbook = [this.eng.improver.capture.onboardingBlock(employee, project), this.eng.improver.playbookBlock(employee, project.id, true, task)].filter(Boolean).join('\n\n');
         if (playbook) text += `\n\n${playbook}`;
       } else {
         const deps = task.dependsOn.map((id) => this.core.tasks.get(id)).filter((t): t is Task => !!t);
         const fb: string[] = [];
         if (task.evidence.review?.verdict === 'changes_requested') fb.push(`Review (${task.evidence.review.by === 'owner' ? 'the boss' : (this.core.employees.get(task.evidence.review.reviewerId)?.name ?? 'reviewer')}): ${task.evidence.review.comments}`);
         if (task.evidence.merge && !task.evidence.merge.ok) fb.push(`Merge into ${task.evidence.merge.into} conflicted: ${task.evidence.merge.detail}\nIn your worktree run "git merge ${project.integrationBranch}", resolve the conflicts, commit, re-run the tests and call complete_task again.`);
-        text = taskPrompt(task, project, deps, fb.length ? fb.join('\n\n') : null, this.eng.improver.playbookBlock(employee, project.id, true, task));
+        text = taskPrompt(task, project, deps, fb.length ? fb.join('\n\n') : null, [this.eng.improver.capture.onboardingBlock(employee, project), this.eng.improver.playbookBlock(employee, project.id, true, task)].filter(Boolean).join('\n\n'));
       }
       this.eng.comms.deliver(employee.id, 'TASK', task.id, { kind: 'task', id: task.id }, text);
     } catch (e) {
@@ -800,6 +801,8 @@ export class TaskManager {
           this.core.put('task', task);
           this.core.saveCompany();
           this.core.event({ type: 'task.verification_failed', source: 'server', summary: `${task.key} failed verification (${res.timedOut ? 'timeout' : `exit ${res.exitCode}`})`, taskId: task.id, projectId: project.id, employeeId: employee.id, data: { key: task.key, command, exitCode: res.exitCode, timedOut: res.timedOut, outputTail: truncate(res.outputTail, 1500) } });
+          // The same failure on another task of this project is a fact about the project, not about this task.
+          this.eng.improver.capture.onVerificationFailed(task, project, command, res);
           this.eng.comms.resolveNotifications((n) => n.kind === 'test_failure' && n.taskId === task.id);
           this.eng.comms.notify({ kind: 'test_failure', severity: 'warning', title: `${task.key} failed verification`, body: `${employee.name}'s work did not pass "${command}". They have been told to fix it.`, taskId: task.id, projectId: project.id, employeeId: employee.id });
           return {
@@ -1171,6 +1174,8 @@ export class TaskManager {
       if (PRIORITY_ORDER[task.priority] > PRIORITY_ORDER.high) task.priority = 'high';
       this.history(task, `Changes requested by ${reviewerName}: ${truncate(comments, 200)}`, reviewerName);
       this.core.put('task', task);
+      // The owner's own words on rejected work are a lesson candidate for its author.
+      if (by === 'owner') this.eng.improver.capture.onReviewRejected(task, comments);
       this.schedule();
     }
     return task;
