@@ -527,8 +527,7 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
         <div className="split-main">
           {current.group === 'mine' && (
             <div className="pc-info" style={{ marginBottom: 12 }} data-settings-scope="mine">
-              Saved on this computer, for you alone: nobody else's office looks or behaves differently, and the same choices apply in every office you open from here.
-            </div>
+              Yours alone, kept on this computer, and the same in every office you open from here.</div>
           )}
           {readOnly && (
             <div className="pc-info" style={{ marginBottom: 12 }} data-settings-scope="office-readonly">
@@ -544,11 +543,9 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
               {section === 'game' && (
                 <div className="col" style={{ gap: 12, maxWidth: 640 }}>
                   <Toggle checked={settings.gamification} onChange={(gamification) => void save({ gamification })} title="XP, levels and milestones">
-                    Employees earn XP and levels, and the company reaches milestones that unlock office upgrades — all of it awarded only for verified work. When off, no XP is awarded, no milestones are evaluated, and the level, XP and milestone views are hidden.
-                  </Toggle>
+                    Employees earn XP and levels, and the company reaches milestones that unlock things for the office — only for work that was checked. Off: none of it is counted or shown.</Toggle>
                   <div className="pc-info">
-                    Productivity always comes first. Game mechanics are a view on work that was really delivered: they never change how tasks are assigned, verified, reviewed or merged, and a level says nothing about the capability of the underlying model.
-                  </div>
+                    A level is a record of delivered work. It changes nothing about how work is handed out or checked, and says nothing about the model.</div>
                 </div>
               )}
               {section === 'improve' && <ImproveSection settings={settings} />}
@@ -561,13 +558,13 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                     <dt>
                       <Badge tone={settings.workersInheritMcp ? 'muted' : 'good'}>off</Badge>
                     </dt>
-                    <dd>Workers load only the Orchestrator MCP server. Fewer tokens per request (no extra tool definitions) and a smaller blast radius: a worker can reach its repository and Orchestrator, nothing else of yours.</dd>
+                    <dd>Employees get only the office's own tools: cheaper per request, and they can reach their folder and the office, nothing else of yours.</dd>
                     <dt>
                       <Badge tone={settings.workersInheritMcp ? 'warn' : 'muted'}>on</Badge>
                     </dt>
-                    <dd>Workers also load your own MCP servers and connectors, and can use whatever those can reach — including autonomous employees. More tools, and more tokens per request.</dd>
+                    <dd>Employees also get your own MCP servers and connectors and whatever those can reach. More tools, more tokens per request.</dd>
                   </dl>
-                  <div className="pc-info">Applies to sessions started afterwards. Sessions that are already running keep the MCP servers they started with until they are stopped and started again.</div>
+                  <div className="pc-info">Takes effect for a session the next time it starts.</div>
                   <Toggle checked={settings.autoAsksHighRisk !== false} onChange={(autoAsksHighRisk) => void save({ autoAsksHighRisk })} title="On Auto, still ask me before high-risk commands">
                     Employees on <b>Auto</b> do not ask for permission; Claude Code's own auto mode decides what is safe to run. With this on, commands on the high-risk list — pushing, sudo, deploying, publishing, broad deletions, reading
                     credential files — still come to you first. Turn it off and those are left to Claude Code's auto mode as well.
@@ -578,12 +575,9 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
               {section === 'commands' && (
                 <div className="col" style={{ gap: 12, maxWidth: 640 }}>
                   <Toggle checked={settings.nlFallback} onChange={(nlFallback) => void save({ nlFallback })} title="Let Claude interpret commands the rules cannot">
-                    The command bar first uses deterministic rules. When they do not understand an instruction, a headless Claude run on one of your machines interprets it. That run uses tokens.
-                  </Toggle>
+                    The command bar understands common instructions by itself. For the rest it can ask Claude on one of your machines, which uses tokens.</Toggle>
                   <div className="pc-info">
-                    Its output is never trusted as it is: it is validated against the operations Orchestrator supports, shown to you as an explicit plan, and still needs your confirmation before anything is changed. It needs an online machine with a project repository;
-                    without one, only the rules are used.
-                  </div>
+                    Whatever it understands is shown to you as a plan first; nothing changes until you confirm.</div>
                 </div>
               )}
               {section === 'audit' && <AuditSection />}

@@ -77,7 +77,7 @@ function MapPanel({ onClose }: PanelProps) {
   const counts = LEGEND.map((s) => ({ s, n: people.filter((p) => p.state === s).length }));
 
   return (
-    <Window title="Office map" subtitle="Click someone to walk to their desk" onClose={onClose} width={1000}>
+    <Window title="Map" subtitle="Click someone to walk to their desk" onClose={onClose} width={1000}>
       <div className="col" style={{ gap: 10 }}>
         <div className="pc-toolbar" style={{ marginBottom: 0 }}>
           <select value={filter.projectId ?? ''} onChange={(ev) => setFilter({ projectId: ev.target.value || null })} aria-label="Filter by project">

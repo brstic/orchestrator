@@ -19,8 +19,8 @@ registerLazyPanels(['growth'], () => import('./growth.tsx'));
 registerLazyPanels(['team', 'employee'], () => import('./team.tsx'));
 registerLazyPanels(['hosts'], () => import('./hosts.tsx'));
 registerLazyPanels(['wall'], () => import('./wall.tsx'));
-registerLazyPanels(['overview'], () => import('./overview.tsx'));
-registerLazyPanels(['ceo'], () => import('./ceo.tsx'));
+// The CEO desk is the Company window.
+registerLazyPanels(['overview', 'ceo'], () => import('./overview.tsx'));
 registerLazyPanels(['map'], () => import('./map.tsx'));
 registerLazyPanels(['notifications'], () => import('./notifications.tsx'));
 registerLazyPanels(['settings'], () => import('./settings.tsx'));

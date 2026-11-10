@@ -4,7 +4,7 @@ import { Button } from '@orchestrator/ui';
 import { api } from '../lib/api.ts';
 import { useOffice } from '../lib/store.ts';
 import { clearTvFrame, toAddress, tvBridge, youtubeEmbed, type TvPage } from '../lib/tv.ts';
-import { act } from './core.tsx';
+import { act, ask } from './core.tsx';
 import { registerPanel } from './panels/index.tsx';
 
 const FALLBACK: TvSettings = { home: 'https://www.youtube.com/', bookmarks: [] };
@@ -197,7 +197,7 @@ function TvSet({ visible }: { visible: boolean }) {
               type="button"
               className="fp-link"
               title="Forget the cookies, logins and cache of the TV's browser"
-              onClick={() => window.confirm('Forget everything the TV has stored (cookies, logins, cache)?') && void bridge.forget().then(() => useOffice.getState().toast('The TV forgot what it had stored', 'success'))}
+              onClick={() => void ask({ title: 'Forget what the TV has stored?', body: 'Cookies, logins and the cache are deleted. You will have to sign in to sites again.', ok: 'Forget', danger: true }).then((yes) => { if (yes) void bridge.forget().then(() => useOffice.getState().toast('The TV forgot what it had stored', 'success')); })}
             >
               forget browsing data
             </button>

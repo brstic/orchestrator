@@ -197,8 +197,8 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
           <div className="row">
             <span className="small faint">Enter to send · Shift+Enter for a new line</span>
             {session && live && (
-              <Button small onClick={() => act(() => api('POST', `/employees/${e.id}/pause`, {}), 'Interrupted')} title="Interrupt what they are doing right now">
-                Interrupt
+              <Button small onClick={() => act(() => api('POST', `/employees/${e.id}/pause`, {}), `${e.name} paused`)} title="Stops what they are doing right now. They do nothing more until you resume them.">
+                Pause
               </Button>
             )}
             <Button variant="primary" small disabled={!text.trim() || busy || (!live && !e.hostId)} onClick={send}>

@@ -2,7 +2,6 @@ import './team.tsx';
 import './hosts.tsx';
 import './wall.tsx';
 import './overview.tsx';
-import './ceo.tsx';
 import './map.tsx';
 import './notifications.tsx';
 import './settings.tsx';

@@ -73,7 +73,6 @@ export function Seating({ layout }: { layout: OfficeLayout }) {
 
   return (
     <div>
-      <div className="section-title">Who sits where</div>
       <div className="small muted" style={{ marginBottom: 8 }}>
         Drag a person to another seat. Dropping onto someone swaps the two. Each table can carry a label and have between one and six seats.
       </div>
@@ -108,7 +107,7 @@ export function Seating({ layout }: { layout: OfficeLayout }) {
                       ) : (
                         <>
                           <span className="small faint">empty</span>
-                          <button className="seat-x" title="Remove this empty seat" aria-label={`Remove seat ${d.id}`} onClick={() => window.confirm('Remove this empty seat from the table?') && void act(() => api('DELETE', `/layout/desks/${d.id}`), 'Seat removed')}>
+                          <button className="seat-x" title="Remove this empty seat" aria-label={`Remove seat ${d.id}`} onClick={() => void act(() => api('DELETE', `/layout/desks/${d.id}`), 'Seat removed')}>
                             ✕
                           </button>
                         </>

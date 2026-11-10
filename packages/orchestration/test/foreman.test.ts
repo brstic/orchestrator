@@ -519,3 +519,29 @@ test('a foreman who cannot be reached is a reported problem, not a loop of attem
   assert.match(other.foreman.status().problem!, /The office has no foreman\. Hire one/);
   assert.equal(other.foreman.status().foreman, null);
 });
+
+test("a person's own session is left alone: the foreman does not ask about it when idle, and the scheduler gives it no work", async () => {
+  const me = eng.employees.create({ name: 'Boss at desk', roleKey: 'fullstack', projectId: id.shop!, hostId: id.host!, selfDriven: true });
+  assert.equal(eng.core.employees.require(me.id).selfDriven, true);
+  // Idle for an hour: an ordinary employee would be put in front of the foreman; this one is not.
+  session(me.id, { status: 'running', activity: 'idle', inTurn: false, activitySince: new Date(Date.now() - 3600_000).toISOString() });
+  assert.ok(!eng.foreman.attention().some((i) => i.kind === 'idle' && i.text.startsWith('Boss at desk')), 'the foreman leaves a person\'s own session alone');
+  assert.ok(!eng.foreman.attention().some((i) => i.kind === 'unassigned' && /Boss at desk/.test(i.text)), 'and does not offer it as free hands');
+  // A project that assigns by itself: its ready task goes to nobody rather than to the person's session.
+  const own = await eng.tasks.createProject({ name: 'Own corner', policy: { autoAssign: true } });
+  const only = eng.employees.create({ name: 'Only me here', roleKey: 'fullstack', projectId: own.id, hostId: id.host!, selfDriven: true });
+  const t = eng.tasks.createTask({ projectId: own.id, title: 'Nobody should take this', description: 'x', acceptance: 'x' });
+  await sleep(50);
+  eng.tasks.schedule();
+  await sleep(50);
+  assert.equal(eng.core.tasks.require(t.id).assigneeId ?? null, null, 'the scheduler did not hand it to the person\'s own session');
+  assert.ok(only.id);
+  // The same set-up with an ordinary employee: the scheduler does hand the task out (so the check above means something).
+  const other = await eng.tasks.createProject({ name: 'Other corner', policy: { autoAssign: true } });
+  const worker = eng.employees.create({ name: 'Ordinary worker', roleKey: 'fullstack', projectId: other.id, hostId: id.host! });
+  const t2 = eng.tasks.createTask({ projectId: other.id, title: 'Someone takes this', description: 'x', acceptance: 'x' });
+  await sleep(50);
+  eng.tasks.schedule();
+  await sleep(50);
+  assert.equal(eng.core.tasks.require(t2.id).assigneeId, worker.id);
+});

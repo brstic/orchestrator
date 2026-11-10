@@ -35,7 +35,7 @@ function ReportsPanel({ arg, onClose }: { arg: string | null; onClose: () => voi
   const scopeLabel = scope?.taskId ? `for ${tasks[scope.taskId]?.key ?? 'this task'}` : scope?.employeeId ? `from ${employees[scope.employeeId]?.name ?? 'this employee'}` : null;
 
   return (
-    <Window title="Reports and documents" subtitle={`Handed in by employees${scopeLabel ? ` · ${scopeLabel}` : ''}`} onClose={onClose} width={1180} flush>
+    <Window title="Reports" subtitle={`Handed in by employees${scopeLabel ? ` · ${scopeLabel}` : ''}`} onClose={onClose} width={1180} flush>
       <div className="doc-cols">
         <div className="doc-side">
           <div className="col" style={{ gap: 6, padding: '10px 10px 6px' }}>

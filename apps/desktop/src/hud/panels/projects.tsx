@@ -3,6 +3,7 @@ import type { Project, Task, TaskStatus } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field, Stat, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { sessionOfEmployee, useOffice } from '../../lib/store.ts';
+import { ask } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { TaskChip, activeEmployees, plural, stamp, useAction } from './tasks.tsx';
 import './panels-work.css';
@@ -53,12 +54,15 @@ function ProjectOverview({ project }: { project: Project }) {
     </Field>
   );
   const pause = async () => {
+    // Stopping people mid-task is worth a question; pausing a project nobody is working on is not.
+    if (inProgress && !(await ask({ title: `Pause ${project.name}?`, body: `${plural(inProgress, 'task')} in progress will be stopped where they are and wait. Nothing new starts until you resume.`, ok: 'Pause project' }))) return;
     const res = await run(() => api<{ interrupted: number }>('POST', `/projects/${project.id}/pause`, {}));
-    if (res) s.toast(`${project.name} paused — ${plural(res.interrupted, 'in-progress task')} interrupted and put back to READY`, 'success');
+    if (res) s.toast(`${project.name} paused${res.interrupted ? `: ${plural(res.interrupted, 'task')} stopped and waiting` : ''}`, 'success');
   };
 
   return (
     <div className="col" style={{ gap: 14 }}>
+      {/* One line says how the project stands; what can be done with it sits beside it. */}
       <div className="row row-wrap">
         <Badge tone={STATUS_TONE[project.status]}>{project.status}</Badge>
         {project.deliveredAt && (
@@ -66,9 +70,13 @@ function ProjectOverview({ project }: { project: Project }) {
             delivered {timeAgo(project.deliveredAt)}
           </Badge>
         )}
+        <span className="small muted">
+          {count('DONE')} of {tasks.length} tasks done{inProgress ? ` · ${inProgress} in progress` : ''}
+          {blocked ? <span className="bad"> · {blocked} blocked</span> : null}
+        </span>
         <div className="grow" />
         <label className="check small" title="Dims everyone else in the office and filters the task board">
-          <input type="checkbox" checked={filtered} onChange={(e) => s.setFilter({ projectId: e.target.checked ? project.id : null })} /> Filter the office to this project
+          <input type="checkbox" checked={filtered} onChange={(e) => s.setFilter({ projectId: e.target.checked ? project.id : null })} /> Show only this project in the office
         </label>
         <Button
           small
@@ -77,37 +85,20 @@ function ProjectOverview({ project }: { project: Project }) {
             s.openPanel('tasks');
           }}
         >
-          Open its board
+          Its tasks
         </Button>
+        {project.status === 'active' && (
+          <Button small disabled={busy} onClick={pause} title="Everyone working on it stops where they are; their tasks wait, and nothing new starts until you resume">
+            Pause project
+          </Button>
+        )}
+        {project.status === 'paused' && (
+          <Button small variant="success" disabled={busy} onClick={() => run(() => api('POST', `/projects/${project.id}/resume`, {}), `${project.name} resumed`)}>
+            Resume project
+          </Button>
+        )}
       </div>
-
-      <div className="grid3">
-        <Stat label="Done" value={`${count('DONE')}/${tasks.length}`} sub="tasks, reviews not counted" tone={tasks.length && count('DONE') === tasks.length ? 'good' : undefined} />
-        <Stat label="In progress" value={inProgress} />
-        <Stat label="Blocked" value={blocked} tone={blocked ? 'bad' : undefined} />
-      </div>
-
-      {project.status !== 'archived' && (
-        <div className="card row spread">
-          {project.status === 'active' ? (
-            <>
-              <span className="small">
-                Pausing is real: every session working on this project gets an interrupt in its terminal, its task goes back to READY on the same branch, and nothing new starts until you resume.
-              </span>
-              <Button disabled={busy} onClick={pause}>
-                {inProgress ? `Pause and interrupt ${plural(inProgress, 'task')}` : 'Pause project'}
-              </Button>
-            </>
-          ) : (
-            <>
-              <span className="small">This project is paused. No task of it is delivered to anyone until you resume.</span>
-              <Button variant="success" disabled={busy} onClick={() => run(() => api('POST', `/projects/${project.id}/resume`, {}), `${project.name} resumed — READY tasks are scheduled again`)}>
-                Resume project
-              </Button>
-            </>
-          )}
-        </div>
-      )}
+      {project.status === 'paused' && <div className="pc-note">Paused: nobody is given any of its tasks until you resume.</div>}
 
       <div>
         <div className="section-title">Team ({team.length})</div>
@@ -274,7 +265,7 @@ function ProjectPolicyTab({ project }: { project: Project }) {
   const timeout = Number(draft.verifyTimeoutSec);
   const timeoutOk = Number.isInteger(timeout) && timeout > 0;
 
-  const save = (ev: FormEvent) => {
+  const save = async (ev: FormEvent) => {
     ev.preventDefault();
     if (!dirty || !timeoutOk || badRegexes.length) return;
     // Anything that lets agents do more without asking is spelled out before it is saved.
@@ -283,7 +274,7 @@ function ProjectPolicyTab({ project }: { project: Project }) {
       ...p.deny.filter((r) => !deny.includes(r)).map((r) => `no longer denied  ${r}`),
       ...p.highRiskPatterns.filter((r) => !highRisk.includes(r)).map((r) => `no longer needs approval  ${r}`),
     ];
-    if (widening.length && !window.confirm(`This widens what agents on "${project.name}" may do without asking you:\n\n${widening.join('\n')}\n\nIt applies to sessions started from now on. Save?`)) return;
+    if (widening.length && !(await ask({ title: `Let agents on "${project.name}" do more without asking?`, body: `${widening.join('\n')}\n\nThis takes effect for sessions started from now on.`, ok: 'Save the rules' }))) return;
     void run(
       () =>
         api('PATCH', `/projects/${project.id}`, {
@@ -329,7 +320,7 @@ function ProjectPolicyTab({ project }: { project: Project }) {
       {rules('highRisk', 'Extra high-risk patterns', 'One regular expression per line. Matching shell commands always need your approval, in addition to the built-in ones.', 'terraform\\s+apply')}
       {badRegexes.length > 0 && <div className="pw-error field-wide">Not a valid regular expression: {badRegexes.join('   ')}</div>}
 
-      <div className="pw-note field-wide">Allow, deny and high-risk rules are handed to a session when it starts. Changes apply to sessions started afterwards, not to the ones already running.</div>
+      <div className="pw-note field-wide">These rules reach a session when it starts: change them, then restart whoever should follow the new ones.</div>
       <div className="row field-wide">
         <Button variant="primary" type="submit" disabled={busy || !dirty || !timeoutOk || badRegexes.length > 0}>
           Save policy
@@ -546,10 +537,10 @@ function ProjectIntegration({ project }: { project: Project }) {
   if (!view) return <div className="small muted">Reading the repository…</div>;
   const t = view.lastTest;
   const act2 = (fn: () => Promise<unknown>, ok: string) => run(fn, ok).then(() => load());
-  const promote = () => {
+  const promote = async () => {
     const red = t?.passed === false;
     const where = view.baseCheckout ? `It is checked out in ${view.baseCheckout}, so those files change on disk.` : 'It is not checked out anywhere, so only the branch moves.';
-    if (!window.confirm(`Move ${view.base} forward by ${view.ahead} commit${view.ahead === 1 ? '' : 's'} to match ${view.integration}?\n\n${where}\nNothing is pushed.${red ? '\n\nThe integration tests are FAILING. Promote anyway?' : ''}`)) return;
+    if (!(await ask({ title: `Move ${view.base} forward by ${view.ahead} commit${view.ahead === 1 ? '' : 's'}?`, body: `${view.base} then matches ${view.integration}. ${where} Nothing is pushed.${red ? '\n\nThe integration tests are FAILING.' : ''}`, ok: red ? 'Promote anyway' : 'Promote', danger: red }))) return;
     void act2(() => api('POST', `/projects/${project.id}/promote`, { force: red }), `${view.base} now has the integrated work`);
   };
   return (
@@ -633,7 +624,7 @@ function ProjectsPanel({ arg, onClose }: PanelProps) {
   const [selected, setSelected] = useState(() => (arg && s.projects[arg] ? arg : (projects[0]?.id ?? NEW)));
   const project = s.projects[selected];
   return (
-    <Window title="Projects" subtitle="Repositories, their rules and their plans" onClose={onClose} width={1120} flush>
+    <Window title="Projects" subtitle="The folders your employees work in, and the rules for each" onClose={onClose} width={1120} flush>
       <div className="pw-frame">
         <div className="split">
           <div className="split-side col">

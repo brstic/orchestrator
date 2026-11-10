@@ -37,8 +37,11 @@ export function useHirePlaces(): { places: HirePlace[]; myRoomUnavailable: strin
 }
 
 /** Step one of hiring: the shared office, or my own room. Nothing is chosen for the person. */
-export function WherePicker({ value, onChange }: { value: string; onChange: (hostId: string) => void }) {
-  const { places, myRoomUnavailable } = useHirePlaces();
+export function WherePicker({ value, onChange, only }: { value: string; onChange: (hostId: string) => void; only?: 'shared' | 'mine' }) {
+  const { places: all, myRoomUnavailable } = useHirePlaces();
+  const places = only ? all.filter((p) => (only === 'mine' ? p.mine : !p.mine)) : all;
+  // More than one shared machine: each is named, or the choices would read the same.
+  const severalShared = places.filter((p) => !p.mine).length > 1;
   const employees = useOffice((s) => s.employees);
   const count = (hostId: string) => Object.values(employees).filter((e) => !e.archived && e.hostId === hostId).length;
   return (
@@ -47,7 +50,7 @@ export function WherePicker({ value, onChange }: { value: string; onChange: (hos
         {places.map(({ host, mine, problem }) => (
           <button key={host.id} type="button" role="radio" aria-checked={value === host.id} className={`hire-place${value === host.id ? ' on' : ''}`} onClick={() => onChange(host.id)} data-place={mine ? 'mine' : 'shared'}>
             <span className="row" style={{ gap: 8 }}>
-              <span className="strong grow">{mine ? 'In my room' : 'In the shared office'}</span>
+              <span className="strong grow">{mine ? 'In my room' : severalShared ? `In the shared office · ${host.name}` : 'In the shared office'}</span>
               <Badge tone={problem ? 'warn' : 'good'}>{problem ? 'offline' : 'online'}</Badge>
             </span>
             <span className="small muted">
@@ -62,7 +65,7 @@ export function WherePicker({ value, onChange }: { value: string; onChange: (hos
         ))}
         {places.length === 0 && <div className="card small bad">No machine is available to hire on.</div>}
       </div>
-      {myRoomUnavailable && <div className="small faint">My room is not offered: {myRoomUnavailable}</div>}
+      {myRoomUnavailable && only !== 'shared' && <div className="small faint">My room is not offered: {myRoomUnavailable}</div>}
     </div>
   );
 }

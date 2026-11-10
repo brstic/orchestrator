@@ -7,7 +7,7 @@ import { Knock } from './Knock.tsx';
 import { loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
 import { loadPrefs, usePrefs } from './lib/prefs.ts';
 import { boardView, ceoView, foremanView, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
-import { ChatBox, CommandBar, DoorBell, Replies, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
+import { ChatBox, CommandBar, ConfirmDialog, DoorBell, Replies, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
 import { onTvFrame } from './lib/tv.ts';
 import { TvLayer } from './hud/tv.tsx';
 import { PanelHost } from './hud/panels/index.tsx';
@@ -406,6 +406,7 @@ export function App() {
         <CommandBar />
         {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
         <Toasts />
+        <ConfirmDialog />
       </div>
     </div>
   );

@@ -27,6 +27,15 @@ Newest first. Each entry: what was decided, why, and what was rejected. Add one 
 - A room grows only away from the building (more desks, open floor), never along the wall: neighbours never move. Width along the wall stays fixed at 6.8 m.
 - An away computer with nobody on it gets no room when its member has another computer: a re-enrollment would otherwise leave an empty room behind.
 
+## 2026-11-10 — Words and windows
+- One name per action in the whole interface, chosen for what the person sees happen: *Open terminal*, *Pause*, *Ask for a report*, *Take the keyboard*. Internal state names (AGENT_CONTROLLED…) are not shown; a tooltip says what the state means.
+- "Needs you" has one definition (`apps/desktop/src/lib/attention.ts`): open questions and approvals plus unresolved notifications of the kinds that stop work. Unread informational notifications are not part of it — they made the number on the Inbox button mean something else than the Inbox said.
+- Confirmation is asked only for what cannot simply be put back, in the app's own dialog (`ask()` in `hud/core.tsx`, state in the store). The red button names the action. Tests answer through `window.__orchConfirm`, and one test clicks the real dialog.
+- Two windows that showed the same thing became one (Company and the CEO desk): "what needs me" had four homes. The Inbox stays the place to answer; Company's *Now* tab is the place to look. `openPanel('ceo')` still works and opens Company.
+- Long pages became tabs or folded sections where their parts are used at different times (Floor plan, Machines' connect forms, a profile's rarely changed settings). A folded section opens by itself when something in it is set.
+- Camera names (CEO, Management, Command center…) were left as they are, but the five buttons became one menu: the top bar is for what changes often. the owner uses them daily and they are in the original brief; their tooltips and Help say what each does.
+- A person's own Claude Code at a desk is an employee record marked `selfDriven`, not a new kind of thing: everything that works for an employee (terminal, documents, stopping, resuming) works for it. The mark keeps the scheduler from assigning to it and the foreman from asking about it; a person can still hand it a task. It is tied to a machine like any employee: a desk in the office is the server, a seat in one's room is one's own computer.
+
 ## 2026-11-10 — Furniture is sculpted in code
 - No model files. Everything in the office is built at start from a small kit of shapes (`packages/office-3d/src/models/kit.ts`). Why: nothing to fetch or package, one style throughout (the characters are made the same way), and sizes are numbers — a test can say that a sofa fits the floor kept free for it and that a chair's seat is where people are posed to sit.
 - One material per look for the whole office, and each model fused into one geometry per material: detail costs triangles, not draw calls. Budgets are in `test/models.test.ts`; what is drawn many times (chair, desk, cup) has the tightest.

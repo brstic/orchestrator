@@ -144,8 +144,7 @@ export function BulkHire({ onDone, onlyHostId }: { onDone: () => void; onlyHostI
   return (
     <div className="col" style={{ gap: 14 }}>
       <div className="small muted">
-        Pick the folders of your projects. One employee is hired for each: they live in that folder, it becomes their project, and they are named after it so you can tell who works on what. No session is started now — each starts when you first talk to them, give them a task, or press Start.
-      </div>
+        Tick the folders. One employee is hired for each and named after it; each starts working when you first talk to them or give them a task.</div>
       <div className="grid2">
         <Field label="Machine">
           <select value={hostId} onChange={(ev) => setHostId(ev.target.value)} aria-label="Machine">

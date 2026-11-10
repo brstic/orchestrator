@@ -81,6 +81,17 @@ export interface DocListing {
   unavailable?: string;
 }
 
+/** A question the app asks before doing something that cannot simply be undone. */
+export interface Ask {
+  title: string;
+  /** What will happen, in a sentence or two. Lines are kept. */
+  body?: string;
+  /** The word on the button that goes ahead (default "OK"). */
+  ok?: string;
+  /** The button that goes ahead is red: something is deleted, stopped or taken away. */
+  danger?: boolean;
+}
+
 export interface Toast {
   id: number;
   kind: 'info' | 'success' | 'error';
@@ -169,6 +180,11 @@ export interface OfficeState {
   nearby: Nearby | null;
   commandOpen: boolean;
   toasts: Toast[];
+  /** The question on screen, if any (one at a time). */
+  asking: (Ask & { resolve: (yes: boolean) => void }) | null;
+  /** Ask the person, in the app's own dialog; resolves to their answer. */
+  ask: (q: Ask) => Promise<boolean>;
+  answer: (yes: boolean) => void;
   filter: { projectId: string | null; hostId: string | null; employeeId: string | null };
   /** Bumped to ask the 3D scene to move the player/camera to an employee. */
   focusRequest: { employeeId: string; n: number } | null;
@@ -339,6 +355,22 @@ export const useOffice = create<OfficeState>((set, get) => ({
   nearby: null,
   commandOpen: false,
   toasts: [],
+  asking: null,
+  ask: (q) =>
+    new Promise<boolean>((resolve) => {
+      // For the UI tests: a function here answers instead of a person (it is told what was asked).
+      const auto = (window as unknown as { __orchConfirm?: (text: string) => boolean }).__orchConfirm;
+      if (typeof auto === 'function') return resolve(!!auto(`${q.title}${q.body ? `\n\n${q.body}` : ''}`));
+      // A second question while one is open: the first is taken as "no".
+      get().asking?.resolve(false);
+      set({ asking: { ...q, resolve } });
+    }),
+  answer: (yes) => {
+    const a = get().asking;
+    if (!a) return;
+    set({ asking: null });
+    a.resolve(yes);
+  },
   filter: { projectId: null, hostId: null, employeeId: null },
   focusRequest: null,
 
@@ -360,7 +392,8 @@ export const useOffice = create<OfficeState>((set, get) => ({
   setCommandOpen: (open) => set({ commandOpen: open }),
   toast: (text, kind = 'info') => {
     const id = ++toastId;
-    set((s) => ({ toasts: [...s.toasts.slice(-3), { id, kind, text }] }));
+    // Three at most: more than that is a wall nobody reads, and the newest say what just happened.
+    set((s) => ({ toasts: [...s.toasts.slice(-2), { id, kind, text }] }));
     window.setTimeout(() => get().dismissToast(id), kind === 'error' ? 7000 : 4000);
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),

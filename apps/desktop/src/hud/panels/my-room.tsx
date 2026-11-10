@@ -129,7 +129,7 @@ function MyRoomPanel({ onClose }: { arg: string | null; onClose: () => void }) {
   const start = (e: Employee) => act(() => api('POST', `/employees/${e.id}/start`, {}), `${e.name} is starting on your computer`);
 
   return (
-    <Window title="My room" subtitle={`${me?.name ?? 'You'} · sessions on your own computer`} onClose={onClose} width={adding ? 1040 : 760}>
+    <Window title="My room" subtitle="Employees that run on your own computer" onClose={onClose} width={adding ? 1040 : 760}>
       <div className="col" style={{ gap: 14 }}>
         <div className="card col" style={{ gap: 6 }}>
           <div className="row">
@@ -137,9 +137,7 @@ function MyRoomPanel({ onClose }: { arg: string | null; onClose: () => void }) {
             {status}
           </div>
           <div className="small muted">
-            What runs here is yours: your folders, your Claude account, your terminals. The others see that your employees are there and what state they are in; only you and the owners of the office can open their terminals or talk to them.
-            When you leave the office your room goes with you; the sessions keep running in tmux on this computer and are back when you return.
-          </div>
+            What runs here is yours: your folders, your Claude account. Others see your employees and what state they are in; only you and the owners can open their terminals or talk to them. When you leave, your room is locked and the sessions wait on your computer.</div>
           {!online && myHost.state === 'unavailable' && <div className="small bad">{myHost.reason}</div>}
           {!online && myHost.state === 'none' && <div className="small muted">Open this office with the Orchestrator desktop app to bring your computer in: a browser tab cannot run sessions.</div>}
         </div>

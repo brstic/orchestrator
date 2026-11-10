@@ -3,7 +3,7 @@ import type { AgentSession, Employee, Host } from '@orchestrator/contracts';
 import { Badge, Button, Empty, Field, Progress, Provenance, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api, serverBase } from '../../lib/api.ts';
 import { sessionOfEmployee, useOffice } from '../../lib/store.ts';
-import { act } from '../core.tsx';
+import { act, ask } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { OutsideTmux, SshLinks, freeEmployeeName } from './ssh-links.tsx';
 import { CapabilityBadges, ConfirmBox, byName, copyText, fmtBytes, fmtDateTime, hostDotClass, isLive, useTick, type PanelProps } from './company-shared.tsx';
@@ -217,7 +217,7 @@ function Discover({ host, onClose }: { host: Host; onClose: () => void }) {
                             disabled={busy === key}
                             title="An attached session is terminal-only: you can watch it and type, but it cannot receive tasks, ask you questions or report what it does. This restarts Claude Code there under the office, continuing the same conversation."
                             onClick={async () => {
-                              if (!window.confirm(`Make ${owner.name} a full employee?\n\nClaude Code in "${p.tmuxSession}" is asked to exit (/exit), and is started again by the office in ${p.cwd ?? 'the same folder'}, continuing the same conversation — now able to take tasks, ask you questions and report its work.\n\nIf it is in the middle of something it will not exit, and nothing changes.`)) return;
+                              if (!(await ask({ title: `Make ${owner.name} a full employee?`, body: `Claude Code in "${p.tmuxSession}" is asked to exit and is started again by the office in ${p.cwd ?? 'the same folder'}, continuing the same conversation. After that it can take tasks, ask you questions and report its work.\n\nIf it is in the middle of something it will not exit, and nothing changes.`, ok: 'Restart under the office' }))) return;
                               setBusy(key);
                               await act(() => api('POST', `/sessions/${connected.id}/adopt`, {}), `${owner.name} now runs under the office, continuing the same conversation`);
                               setBusy(null);
@@ -248,7 +248,9 @@ function Discover({ host, onClose }: { host: Host; onClose: () => void }) {
   );
 }
 
-function HostCard({ host }: { host: Host }) {
+/** One machine: a line that says how it is, opening to its details and what can be done with it. */
+function HostCard({ host, startOpen }: { host: Host; startOpen: boolean }) {
+  const [open, setOpen] = useState(startOpen);
   const sessions = useOffice((s) => s.sessions);
   const employees = useOffice((s) => s.employees);
   const [renaming, setRenaming] = useState(false);
@@ -303,9 +305,14 @@ function HostCard({ host }: { host: Host }) {
           </span>
         )}
         <Badge tone={statusTone(host.status)}>{host.status}</Badge>
-        {host.local && <Badge tone="muted" title="The machine the Orchestrator server itself runs on">this server's machine</Badge>}
+        {host.local && <Badge tone="muted" title="The machine the office itself runs on">the office's own</Badge>}
+        {host.memberName && <Badge tone="muted">{host.memberName}'s computer</Badge>}
+        <span className="small muted">
+          {host.status === 'online' && host.resources ? `CPU ${Math.round(host.resources.cpuPercent ?? 0)}% · ` : ''}
+          {running} session{running === 1 ? '' : 's'} · {staff.length} employee{staff.length === 1 ? '' : 's'}
+        </span>
         <span className="grow" />
-        {!renaming && host.status !== 'revoked' && (
+        {open && !renaming && host.status !== 'revoked' && (
           <Button
             small
             variant="ghost"
@@ -317,16 +324,19 @@ function HostCard({ host }: { host: Host }) {
             Rename
           </Button>
         )}
-        {host.status !== 'revoked' && (
-          <Button small variant="danger" onClick={() => setConfirm('revoke')}>
+        {open && host.status !== 'revoked' && (
+          <Button small variant="danger" onClick={() => setConfirm('revoke')} title="This machine can no longer connect to the office">
             Revoke…
           </Button>
         )}
-        {host.status !== 'online' && (
+        {open && host.status !== 'online' && (
           <Button small onClick={() => setConfirm('remove')}>
             Remove…
           </Button>
         )}
+        <Button small variant="ghost" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          {open ? 'Hide details' : 'Details'}
+        </Button>
       </div>
 
       {confirm === 'revoke' && (
@@ -343,16 +353,19 @@ function HostCard({ host }: { host: Host }) {
         </ConfirmBox>
       )}
 
+      {open && (
+        <>
       <div className="grid2">
         <dl className="kv small">
           <dt>System</dt>
-          <dd>{info ? `${info.platform} / ${info.arch} · ${info.cpus} CPUs · ${fmtBytes(info.totalMemBytes)} RAM` : <span className="muted">not reported</span>}</dd>
+          {/* A machine that has never connected has reported nothing about itself. */}
+          <dd>{info?.platform ? `${info.platform} / ${info.arch} · ${info.cpus} CPUs · ${fmtBytes(info.totalMemBytes)} RAM` : <span className="muted">not reported yet</span>}</dd>
           <dt>Hostname</dt>
-          <dd className="mono">{info ? `${info.user}@${info.hostname}` : '—'}</dd>
+          <dd className="mono">{info?.hostname ? `${info.user ? `${info.user}@` : ''}${info.hostname}` : '—'}</dd>
           <dt>Claude Code</dt>
-          <dd>{!info ? '—' : info.claudeVersion ? <span className="mono">{info.claudeVersion}</span> : <Badge tone="warn" title="The agent could not find the claude binary on this machine">not found</Badge>}</dd>
+          <dd>{!info?.platform ? '—' : info.claudeVersion ? <span className="mono">{info.claudeVersion}</span> : <Badge tone="warn" title="The agent could not find the claude binary on this machine">not found</Badge>}</dd>
           <dt>tmux</dt>
-          <dd>{!info ? '—' : info.tmuxVersion ? <span className="mono">{info.tmuxVersion}</span> : <Badge tone="warn" title="The agent could not find tmux on this machine">not found</Badge>}</dd>
+          <dd>{!info?.platform ? '—' : info.tmuxVersion ? <span className="mono">{info.tmuxVersion}</span> : <Badge tone="warn" title="The agent could not find tmux on this machine">not found</Badge>}</dd>
           <dt>Worker runtimes</dt>
           <dd>
             {!info?.runtimes ? (
@@ -398,6 +411,8 @@ function HostCard({ host }: { host: Host }) {
       </div>
 
       {host.status === 'online' && <Discover key={discover} host={host} onClose={() => setDiscover((n) => n + 1)} />}
+        </>
+      )}
     </div>
   );
 }
@@ -415,8 +430,7 @@ function UnboundSessions() {
     <div>
       <div className="section-title">Sessions without an employee</div>
       <div className="small muted" style={{ marginBottom: 6 }}>
-        These sessions are connected to the office but represent nobody yet. Bind each one to an employee to see it at a desk.
-      </div>
+        These sessions belong to nobody yet. Give each one to an employee to see it at a desk.</div>
       <div className="list">
         {unbound.map((x) => (
           <div key={x.id} className="card row row-wrap" style={{ padding: 10 }}>
@@ -457,6 +471,7 @@ function isLoopbackUrl(url: string): boolean {
 }
 
 function ConnectMachine() {
+  const [open, setOpen] = useState(false);
   const [label, setLabel] = useState('');
   const [ttl, setTtl] = useState(60);
   const [url, setUrl] = useState(() => (serverBase || window.location.origin).replace(/\/+$/, ''));
@@ -474,12 +489,33 @@ function ConnectMachine() {
   const connect = 'orchestrator-agent connect';
   const expired = !!issued && Date.parse(issued.expiresAt) <= Date.now();
   const insecure = /^http:\/\//i.test(server) && !isLoopbackUrl(server);
+  if (!open)
+    return (
+      <div className="card">
+        <div className="row">
+          <div className="section-title" style={{ margin: 0 }}>
+            Any other machine
+          </div>
+          <span className="grow" />
+          <Button small variant="primary" onClick={() => setOpen(true)}>
+            Connect with a token
+          </Button>
+        </div>
+        <div className="small muted" style={{ marginTop: 4 }}>
+          You run a small agent on it; it connects out to this office.
+        </div>
+      </div>
+    );
   return (
     <div className="card col" style={{ gap: 10 }}>
-      <div className="strong">Connect a machine</div>
-      <div className="small muted">
-        Each machine runs the Orchestrator host agent, which makes one outbound connection to this server — no inbound ports are opened on the machine. Create a one-time enrollment token, then run the two commands there.
+      <div className="row">
+        <div className="strong grow">Connect a machine with a token</div>
+        <Button small variant="ghost" onClick={() => setOpen(false)}>
+          Close
+        </Button>
       </div>
+      <div className="small muted">
+        A machine joins by running a small agent that connects out to this office; nothing is opened on the machine. Create a one-time token, then run the two commands there.</div>
       <div className="grid3">
         <Field label="Label" hint="Only for the audit log.">
           <input value={label} onChange={(ev) => setLabel(ev.target.value)} placeholder="e.g. build-server" />
@@ -553,9 +589,9 @@ function HostsPanel({ onClose }: PanelProps) {
   const active = hosts.filter((h) => h.status !== 'revoked');
   const online = active.filter((h) => h.status === 'online').length;
   return (
-    <Window title="Machines" subtitle={`The server room · ${online} of ${active.length} online`} onClose={onClose} width={1040}>
+    <Window title="Machines" subtitle={`${online} of ${active.length} online`} onClose={onClose} width={1040}>
       <div className="col" style={{ gap: 14 }}>
-        {hosts.length === 0 ? <Empty title="No machines yet">Connect the machine your Claude Code sessions run on to bring the office to life.</Empty> : hosts.map((h) => <HostCard key={h.id} host={h} />)}
+        {hosts.length === 0 ? <Empty title="No machines yet">Connect the machine your Claude Code sessions run on to bring the office to life.</Empty> : hosts.map((h) => <HostCard key={h.id} host={h} startOpen={active.length <= 2 && h.status !== 'revoked'} />)}
         <UnboundSessions />
         <SshLinks />
         <ConnectMachine />

@@ -3,7 +3,7 @@ import type { Employee, Host } from '@orchestrator/contracts';
 import { Badge, Button, Field, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
-import { act } from '../core.tsx';
+import { act, ask } from '../core.tsx';
 
 interface Probe {
   os: string;
@@ -159,7 +159,7 @@ export function SshLinks() {
         )}
       </div>
       <div className="small muted" style={{ marginTop: 4 }}>
-        A server you can already <span className="mono">ssh</span> into becomes a machine of the office: its Claude Code sessions become employees here. Everything travels inside SSH with your own keys — no port is opened on the server or on this computer, and no password is asked for or stored.
+        A server you can already <span className="mono">ssh</span> into: the office sets itself up there through SSH, with your own keys. No port is opened and no password is stored.
       </div>
 
       {links.map((l) => {
@@ -187,7 +187,7 @@ export function SshLinks() {
                 small
                 variant="ghost"
                 title="Stop the agent on the server, delete what was installed for this link, and revoke the machine. tmux sessions on the server are left alone."
-                onClick={() => window.confirm(`Remove the link to ${l.target}?\n\nThe agent on the server is stopped and its folder deleted, and the machine "${l.name}" is revoked here. Claude Code sessions running in tmux on the server are left alone.`) && void act(() => api('DELETE', `/ssh-links/${l.id}`), 'Link removed').then(load)}
+                onClick={() => void ask({ title: `Remove the link to ${l.target}?`, body: `The agent on the server is stopped and its folder deleted, and the machine "${l.name}" can no longer connect. Claude Code sessions running in tmux on the server are left alone.`, ok: 'Remove link', danger: true }).then((yes) => { if (yes) void act(() => api('DELETE', `/ssh-links/${l.id}`), 'Link removed').then(load); })}
               >
                 Remove
               </Button>

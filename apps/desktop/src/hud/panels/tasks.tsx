@@ -5,7 +5,7 @@ import { ROLE_CATALOGUE, formatDuration } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field, Markdown, Progress, Provenance, Stat, Tabs, Window, clock, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
-import { act } from '../core.tsx';
+import { act, ask } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import './panels-work.css';
 
@@ -84,10 +84,10 @@ function boardOrder(a: Task, b: Task): number {
 }
 
 /** A manual board move. The server decides what is legal; marking DONE by hand is spelled out first. */
-function moveTask(taskId: string, status: TaskStatus): void {
+async function moveTask(taskId: string, status: TaskStatus): Promise<void> {
   const task = useOffice.getState().tasks[taskId];
   if (!task || task.status === status) return;
-  if (status === 'DONE' && !window.confirm(`Mark ${task.key} as done by hand?\n\nOrchestrator will not have verified it. The record will say it was marked done manually (not verified).`)) return;
+  if (status === 'DONE' && !(await ask({ title: `Mark ${task.key} as done by hand?`, body: 'Nobody will have checked it. The record will say it was marked done by hand, not verified.', ok: 'Mark as done' }))) return;
   void act(() => api('PATCH', `/tasks/${taskId}`, { status }), `${task.key} moved to ${STATUS_META[status].label}`);
 }
 
@@ -116,16 +116,17 @@ function TaskCard({ task, onDrag }: { task: Task; onDrag: (id: string | null) =>
       }}
       onDragEnd={() => onDrag(null)}
     >
-      <div className="row spread">
-        <span className="mono muted">{task.key}</span>
-        <span className="row" style={{ gap: 4 }}>
+      {/* The key never breaks, and the tags wrap under it rather than run out of the card. Priority is said only when it is not the ordinary one. */}
+      <div className="tcard-head">
+        <span className="mono muted tcard-key">{task.key}</span>
+        <span className="tcard-tags">
           {!task.released && (
             <Badge tone="warn" title="Proposed: waits for your release before it is scheduled">
               proposed
             </Badge>
           )}
           <Badge tone="muted">{task.kind}</Badge>
-          <Badge tone={PRIORITY_TONE[task.priority]}>{task.priority}</Badge>
+          {task.priority !== 'normal' && <Badge tone={PRIORITY_TONE[task.priority]}>{task.priority}</Badge>}
         </span>
       </div>
       <div className="tcard-title">{task.title}</div>
@@ -169,7 +170,7 @@ function TasksPanel({ onClose }: PanelProps) {
   );
 
   return (
-    <Window title="Task board" subtitle="Tasks move on their own as Orchestrator delivers, verifies and merges the work. Drag a card to move it by hand." onClose={onClose} width={1320} flush>
+    <Window title="Tasks" subtitle="Cards move by themselves as work is done and checked. Drag one to move it by hand." onClose={onClose} width={1320} flush>
       <div className="pw-frame">
         <div className="pw-toolbar">
           <input type="search" aria-label="Search tasks" placeholder="Search tasks…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 190 }} />
@@ -321,7 +322,7 @@ function TaskCreate({ employeeId, onClose }: { employeeId: string | null; onClos
   };
 
   return (
-    <Window title="New task" subtitle={preset ? `For ${preset.name} · ${preset.title}` : 'Orchestrator delivers it to a real session and verifies the result itself'} onClose={onClose} width={780}>
+    <Window title="New task" subtitle={preset ? `For ${preset.name} · ${preset.title}` : 'Given to an employee; done when the project\'s check passes'} onClose={onClose} width={780}>
       {projects.length === 0 ? (
         <Empty title="No projects yet">
           A task needs a project.{' '}
@@ -490,7 +491,7 @@ function TaskOverview({ task, onClose, onShowChanges }: { task: Task; onClose: (
     if (res) setNote('');
   };
   const remove = async () => {
-    if (!window.confirm(`Delete ${task.key} "${task.title}"?\n\nThe task and its record are removed from the board. This cannot be undone. Its branch and worktree on the host are left as they are.`)) return;
+    if (!(await ask({ title: `Delete ${task.key}?`, body: `"${task.title}"\n\nThe task and its record are removed from the board. This cannot be undone. Its branch and folder on the machine are left as they are.`, ok: 'Delete task', danger: true }))) return;
     const res = await run(() => api('DELETE', `/tasks/${task.id}`), `${task.key} deleted`);
     if (res) s.openPanel('tasks');
   };
@@ -509,7 +510,7 @@ function TaskOverview({ task, onClose, onShowChanges }: { task: Task; onClose: (
 
         {!task.released && (
           <div className="card row spread">
-            <span className="small">This task was proposed and waits for your go-ahead. Released tasks are scheduled as soon as their dependencies are done.</span>
+            <span className="small">Proposed: nobody starts it until you release it.</span>
             <Button variant="success" disabled={busy} onClick={() => run(() => api('POST', '/tasks/release', { ids: [task.id] }), `${task.key} released for scheduling`)}>
               Release
             </Button>
@@ -553,7 +554,7 @@ function TaskOverview({ task, onClose, onShowChanges }: { task: Task; onClose: (
                 Look at the changes first
               </Button>
             </div>
-            <div className="small faint">Approving lets Orchestrator finish the task (merge included). Requesting changes sends it back to the employee.</div>
+            <div className="small faint">Approve to let it finish (merge included), or send it back with what should change.</div>
           </div>
         )}
 
@@ -1026,7 +1027,7 @@ function TaskDetail({ id, initialTab, onClose }: { id: string; initialTab: TaskT
       flush
       actions={
         <Button small variant="ghost" onClick={() => useOffice.getState().openPanel('tasks')}>
-          Task board
+          All tasks
         </Button>
       }
     >
@@ -1055,7 +1056,7 @@ function TaskDetail({ id, initialTab, onClose }: { id: string; initialTab: TaskT
 function EmployeeChanges({ employeeId, onClose }: { employeeId: string; onClose: () => void }) {
   const e = useOffice((s) => s.employees[employeeId]);
   return (
-    <Window title={e ? `${e.name}'s working tree` : 'Working tree'} subtitle="The current state of their working directory, read from the host" onClose={onClose} width={1040} flush>
+    <Window title={e ? `${e.name}'s working tree` : 'Working tree'} subtitle="What they have changed in their folder so far" onClose={onClose} width={1040} flush>
       <div className="pw-frame">
         <div className="pw-body">{e ? <GitChanges path={`/employees/${employeeId}/git`} /> : <Empty title="Unknown employee" />}</div>
       </div>

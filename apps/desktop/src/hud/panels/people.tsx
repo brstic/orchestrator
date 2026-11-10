@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Field, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
-import { act } from '../core.tsx';
+import { act, ask } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { copyText } from './company-shared.tsx';
 
@@ -49,7 +49,7 @@ function PeoplePanel({ onClose }: { arg: string | null; onClose: () => void }) {
   const others = people.filter((p) => p.id !== clientId);
 
   return (
-    <Window title="People" subtitle={owner ? `${others.length ? `${others.length} other${others.length === 1 ? '' : 's'} here now` : 'Nobody else is here'} · other people can walk around ${office} with you` : `You are in ${office} as a ${me?.role ?? 'guest'}`} onClose={onClose} width={owner ? 980 : 620}>
+    <Window title="Who is here" subtitle={owner ? `${others.length ? `${others.length} other${others.length === 1 ? '' : 's'} here now` : 'Nobody else is here'} · other people can walk around ${office} with you` : `You are in ${office} as a ${me?.role ?? 'guest'}`} onClose={onClose} width={owner ? 980 : 620}>
       <div className={owner ? 'people-cols' : 'col'} style={{ gap: 16 }}>
         <div className="col" style={{ gap: 12, minWidth: 0 }}>
           <div>
@@ -144,7 +144,7 @@ function GuestsAdmin() {
           </Button>
         </div>
         <div className="small muted">
-          The office normally answers only on its own computer. Open, it also answers on the network — encrypted, with a certificate made here — and only for people who were invited. Nobody gets the server's own owner token, and the only machine that can join from outside is a member's own computer, for their own sessions.
+          Closed, the office answers only on its own computer. Open, people you invited (or let in at the door) can come in over the network, encrypted. Nobody is given the server's own key.
         </div>
         {sharing.door.error && !open && <div className="small bad">{sharing.door.error}</div>}
         {open && (
@@ -239,7 +239,7 @@ function GuestsAdmin() {
             >
               New invitation
             </Button>
-            <Button small variant="danger" disabled={busy} onClick={() => window.confirm(`Take away ${g.name}'s access? They are disconnected at once and their invitation stops working.`) && void run(() => api('DELETE', `/guests/${g.id}`), `${g.name} can no longer come in`)}>
+            <Button small variant="danger" disabled={busy} onClick={() => void ask({ title: `Take away ${g.name}'s access?`, body: 'They are disconnected at once and their invitation stops working.', ok: 'Take away access', danger: true }).then((yes) => { if (yes) void run(() => api('DELETE', `/guests/${g.id}`), `${g.name} can no longer come in`); })}>
               Revoke
             </Button>
           </div>

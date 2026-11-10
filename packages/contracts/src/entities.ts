@@ -184,6 +184,11 @@ export interface Employee {
   stats: EmployeeStats;
   createdAt: ISODate;
   archived: boolean;
+  /**
+   * A person's own session: someone sat down at a desk and opened Claude Code for themselves. They type into it;
+   * the office gives it no work of its own accord and does not nudge it.
+   */
+  selfDriven?: boolean;
 }
 
 // ─────────────────────────── Sessions ────────────────────────────

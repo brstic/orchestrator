@@ -107,7 +107,7 @@ function WallPanel({ onClose }: PanelProps) {
   const st = useOffice.getState();
 
   return (
-    <Window title="Terminal wall" subtitle={`The operations room · ${runningTotal} running session${runningTotal === 1 ? '' : 's'}, read-only`} onClose={onClose} width="96vw" flush>
+    <Window title="Terminals" subtitle={`${runningTotal} running session${runningTotal === 1 ? '' : 's'} · watching only`} onClose={onClose} width="96vw" flush>
       <div className="pc-wall">
         <div className="pc-wall-bar">
           <div className="seg" role="tablist" aria-label="What the wall shows">
@@ -220,7 +220,7 @@ function WallPanel({ onClose }: PanelProps) {
                       {pinned ? 'Pinned' : 'Pin'}
                     </button>
                     <button className="btn btn-ghost btn-sm pc-tile-btn" disabled={!employee} onClick={() => employee && st.enterWorkstation(employee.id)} title={employee ? 'Sit at this workstation: observe, or take control' : 'Bind this session to an employee first (server room)'}>
-                      Open workstation
+                      Open terminal
                     </button>
                     <button className="btn btn-ghost btn-sm pc-tile-btn" aria-pressed={!!big} onClick={() => setEnlarged(big ? null : session.id)} title={big ? 'Back to the wall' : 'Enlarge this terminal'}>
                       {big ? 'Restore' : 'Enlarge'}

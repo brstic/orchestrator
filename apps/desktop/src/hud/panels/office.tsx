@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { OfficeLayout } from '@orchestrator/contracts';
 import { DESK_SIZE, decorationBox, decorationKind, deskSeat, unlockedUpgrades } from '@orchestrator/contracts';
 import { addDecoration, deskPods, movableEdges, moveDecoration, moveDesks, ownerPosition, placeableDecorations, removeDecoration, renameRoom, resizeRoom, type EditResult } from '@orchestrator/office-3d';
-import { Badge, Button, Stat, Window } from '@orchestrator/ui';
+import { Badge, Button, Tabs, Window } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
 import { act } from '../core.tsx';
@@ -228,7 +228,7 @@ function FloorPlan({ layout, unlocked }: { layout: OfficeLayout; unlocked: Set<s
                   </Button>
                 </div>
               )}
-              <div className="small faint">Drag it on the plan, or move it half a metre at a time. Places where it would stand in a wall, in furniture or in someone's way are refused.</div>
+              <div className="small faint">Drag it on the plan, or use the arrows. It cannot be put in a wall, in furniture or in someone's way.</div>
             </div>
           )}
 
@@ -272,7 +272,7 @@ function FloorPlan({ layout, unlocked }: { layout: OfficeLayout; unlocked: Set<s
             </div>
           )}
 
-          {!sel && <div className="small faint">Click a desk pod, a decoration or a room on the plan — or pick it from the list — to move, turn, rename or resize it.</div>}
+          {!sel && <div className="small faint">Click a group of desks, a decoration or a room on the plan (or pick it from the list) to move, turn, rename or resize it.</div>}
           {error && (
             <div className="small bad" role="alert">
               Not possible: {error}.
@@ -303,73 +303,58 @@ function FloorPlan({ layout, unlocked }: { layout: OfficeLayout; unlocked: Set<s
 }
 
 /** Customising the office itself: desks, capacity, and what company milestones have unlocked. */
-function OfficePanel({ onClose }: { arg: string | null; onClose: () => void }) {
+function OfficePanel({ arg, onClose }: { arg: string | null; onClose: () => void }) {
   const s = useOffice();
   const qc = useQueryClient();
   const capacity = useQuery({ queryKey: ['layout-capacity', s.layout?.version], queryFn: () => api<{ desks: number; freePodSlots: number }>('GET', '/layout/capacity') });
+  // Three things, one at a time: who sits where, the plan itself, and what the company has earned for the office.
+  const [tab, setTab] = useState<'seats' | 'plan' | 'earned'>(arg === 'plan' || arg === 'earned' ? arg : 'seats');
   if (!s.layout) return null;
   const employees = Object.values(s.employees).filter((e) => !e.archived);
   const occupied = new Map(employees.filter((e) => e.deskId).map((e) => [e.deskId!, e]));
   const free = s.layout.desks.filter((d) => !occupied.has(d.id));
   const refresh = () => void qc.invalidateQueries({ queryKey: ['layout-capacity'] });
   const unlocked = new Set(unlockedUpgrades(s.milestones));
+  const unseated = employees.filter((e) => !e.deskId && e.roleKey !== 'foreman' && !s.hosts[e.hostId ?? '']?.memberId).length;
+  const earned = s.milestones.filter((m) => m.unlocks);
   return (
-    <Window title="Office" subtitle="Floor plan, desks, decorations and upgrades" onClose={onClose} width={940}>
-      <div className="col" style={{ gap: 14 }}>
-        <div className="grid3">
-          <Stat label="Desks" value={s.layout.desks.length} sub={`${free.length} free`} />
-          <Stat label="Employees" value={employees.length} sub={`${employees.filter((e) => !e.deskId).length} without a desk`} tone={employees.some((e) => !e.deskId) ? 'warn' : undefined} />
-          <Stat label="Room for pods" value={capacity.data?.freePodSlots ?? '—'} sub="four desks each" />
-        </div>
-        <div className="row">
-          <Button variant="primary" disabled={!capacity.data?.freePodSlots} onClick={() => act(() => api('POST', '/layout/pods', {}), 'A new pod of four desks was added to the engineering floor').then(refresh)}>
-            Add a desk pod
-          </Button>
-          <span className="small muted">New desks appear on the engineering floor immediately. Employees without a desk are seated automatically.</span>
-        </div>
-        <Seating layout={s.layout} />
-        <FloorPlan layout={s.layout} unlocked={unlocked} />
-        <div>
-          <div className="section-title">Free desks</div>
-          {free.length === 0 ? (
-            <div className="small muted">Every desk is taken.</div>
-          ) : (
-            <div className="row row-wrap">
-              {free.map((d) => (
-                <span key={d.id} className="badge badge-muted" style={{ gap: 6 }}>
-                  <span className="mono">{d.id}</span>
-                  <button className="btn btn-ghost btn-sm" style={{ height: 18, padding: '0 4px' }} title="Remove this empty desk" onClick={() => window.confirm(`Remove empty desk ${d.id}?`) && act(() => api('DELETE', `/layout/desks/${d.id}`), 'Desk removed').then(refresh)}>
-                    ✕
-                  </button>
-                </span>
-              ))}
+    <Window title="Floor plan" subtitle={`${s.layout.desks.length} desks, ${free.length} free${unseated ? ` · ${unseated} without a desk` : ''}`} onClose={onClose} width={940} flush>
+      <Tabs<'seats' | 'plan' | 'earned'>
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { id: 'seats', label: 'Who sits where' },
+          { id: 'plan', label: 'Rooms and furniture' },
+          ...(s.settings?.gamification ? [{ id: 'earned' as const, label: 'Earned', count: earned.filter((m) => m.unlockedAt).length || undefined }] : []),
+        ]}
+      />
+      <div className="pc-tabbody">
+        {tab === 'seats' && (
+          <div className="col" style={{ gap: 14 }}>
+            <Seating layout={s.layout} />
+            <div className="row">
+              <Button disabled={!capacity.data?.freePodSlots} onClick={() => act(() => api('POST', '/layout/pods', {}), 'Four more desks were added').then(refresh)}>
+                Add a table of four desks
+              </Button>
+              <span className="small muted">{capacity.data?.freePodSlots ? `Room for ${capacity.data.freePodSlots} more on the engineering floor.` : 'The engineering floor is full.'} In the office you can also right-click someone → Move to another desk.</span>
             </div>
-          )}
-          <div className="small faint" style={{ marginTop: 6 }}>
-            To move someone, drag them in “Who sits where” above — or, in the office, right-click them → Move to another desk.
           </div>
-        </div>
-        {s.settings?.gamification && (
-          <div>
-            <div className="section-title">Upgrades from company milestones</div>
-            <div className="col" style={{ gap: 6 }}>
-              {s.milestones
-                .filter((m) => m.unlocks)
-                .map((m) => (
-                  <div key={m.key} className="row card" style={{ padding: '8px 10px' }}>
-                    <div className="grow">
-                      <div className="strong">{m.unlocks!.replace(/_/g, ' ')}</div>
-                      <div className="small muted">
-                        {m.title} — {m.description}
-                      </div>
-                    </div>
-                    <Badge tone={m.unlockedAt ? 'good' : 'muted'}>{m.unlockedAt ? `unlocked ${new Date(m.unlockedAt).toLocaleDateString()}` : 'locked'}</Badge>
+        )}
+        {tab === 'plan' && <FloorPlan layout={s.layout} unlocked={unlocked} />}
+        {tab === 'earned' && (
+          <div className="col" style={{ gap: 6 }}>
+            <div className="small muted">What the company gets for the office as work is delivered and checked.</div>
+            {earned.map((m) => (
+              <div key={m.key} className="row card" style={{ padding: '8px 10px' }}>
+                <div className="grow">
+                  <div className="strong" style={{ textTransform: 'capitalize' }}>{m.unlocks!.replace(/_/g, ' ')}</div>
+                  <div className="small muted">
+                    {m.title} — {m.description}
                   </div>
-                ))}
-            </div>
-            <div className="small faint" style={{ marginTop: 6 }}>
-              Milestones are reached only by verified work (tasks that passed Orchestrator's own checks).
-            </div>
+                </div>
+                <Badge tone={m.unlockedAt ? 'good' : 'muted'}>{m.unlockedAt ? `earned ${new Date(m.unlockedAt).toLocaleDateString()}` : 'not yet'}</Badge>
+              </div>
+            ))}
           </div>
         )}
       </div>

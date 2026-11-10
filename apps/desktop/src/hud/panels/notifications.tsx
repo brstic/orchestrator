@@ -1,16 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Notification, NotificationKind, Question, QuestionStatus } from '@orchestrator/contracts';
+import type { Notification, Question, QuestionStatus } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Markdown, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
+import { needsYou } from '../../lib/attention.ts';
 import { act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { fmtDateTime, humanize, openNotificationTarget, severityDot, type PanelProps } from './company-shared.tsx';
 
 type TabId = 'needs' | 'all' | 'answered';
-
-/** Notification kinds that mean someone is stuck until the owner acts. */
-const NEEDS_KINDS = new Set<NotificationKind>(['blocked', 'review', 'merge_conflict', 'session_lost', 'host_disconnected', 'host_resources', 'security']);
 
 const STATUS_TONE: Record<QuestionStatus, Tone> = { open: 'warn', answered: 'info', delivered: 'info', confirmed: 'good', failed: 'bad', superseded: 'muted' };
 const STATUS_TIP: Record<QuestionStatus, string> = {
@@ -96,23 +94,22 @@ function NotificationsPanel({ arg, onClose }: PanelProps) {
 
   const questions = useMemo(() => Object.values(questionsById), [questionsById]);
   const notifications = useMemo(() => Object.values(notificationsById).sort((a, b) => Number(!!a.resolvedAt) - Number(!!b.resolvedAt) || (a.createdAt < b.createdAt ? 1 : -1)), [notificationsById]);
-  const open = questions.filter((q) => q.status === 'open').sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const { questions: open, stuck: needs, count: needCount } = useMemo(() => needsYou(questionsById, notificationsById), [questionsById, notificationsById]);
   const answered = questions
     .filter((q) => q.status !== 'open')
     .sort((a, b) => ((a.answeredAt ?? a.createdAt) < (b.answeredAt ?? b.createdAt) ? 1 : -1))
     .slice(0, 60);
   const unresolved = notifications.filter((n) => !n.resolvedAt);
-  const needs = unresolved.filter((n) => NEEDS_KINDS.has(n.kind));
   const unread = notifications.filter((n) => !n.readAt).length;
 
   return (
-    <Window title="Inbox" subtitle={open.length ? `${open.length} waiting on you` : 'Nothing is waiting on you'} onClose={onClose} width={860} flush>
+    <Window title="Inbox" subtitle={needCount ? `${needCount} need${needCount === 1 ? 's' : ''} you` : 'Nothing needs you'} onClose={onClose} width={860} flush>
       <Tabs<TabId>
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: 'needs', label: 'Needs you', count: open.length + needs.length },
-          { id: 'all', label: 'All notifications', count: unresolved.length },
+          { id: 'needs', label: 'Needs you', count: needCount },
+          { id: 'all', label: 'Notifications', count: unread },
           { id: 'answered', label: 'Answered' },
         ]}
       />
@@ -125,7 +122,7 @@ function NotificationsPanel({ arg, onClose }: PanelProps) {
             ))}
             {needs.length > 0 && (
               <div>
-                <div className="section-title">Also stuck</div>
+                <div className="section-title">Stuck until you act</div>
                 <div className="col" style={{ gap: 2 }}>
                   {needs.map((n) => (
                     <NotificationRow key={n.id} n={n} onClose={onClose} />
@@ -140,7 +137,7 @@ function NotificationsPanel({ arg, onClose }: PanelProps) {
           <div className="col" style={{ gap: 8 }}>
             <div className="row">
               <span className="small muted">
-                {unresolved.length} unresolved · {unread} unread · {notifications.length} in total
+                {unread} new · {unresolved.length} not dismissed · {notifications.length} in total
               </span>
               <span className="grow" />
               <Button small disabled={unread === 0} onClick={() => act(() => api('POST', '/notifications/read', { ids: 'all' }), 'All notifications marked read')}>
@@ -158,9 +155,8 @@ function NotificationsPanel({ arg, onClose }: PanelProps) {
 
         {tab === 'answered' && (
           <div className="col" style={{ gap: 8 }}>
-            <div className="pc-info">
-              Whether an answer really arrived: <b>answered</b> means you replied and delivery is in flight, <b>delivered</b> means it was handed to the runtime, and only <b>confirmed</b> means the runtime acknowledged it. <b>Failed</b> and <b>superseded</b> answers did
-              not reach the session this way.
+            <div className="small muted">
+              The badge on each says whether your answer arrived: <b>confirmed</b> means the session acknowledged it; <b>failed</b> and <b>superseded</b> mean it did not get there this way. Point at a badge for the details.
             </div>
             {answered.length === 0 && <Empty title="No answered questions yet">Questions you have answered are kept here with their delivery state.</Empty>}
             <div className="list">

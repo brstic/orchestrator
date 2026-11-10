@@ -127,9 +127,9 @@ async function step(name, fn) {
 /** Right-click the employee (just below their name tag in the top-down view) until their menu is open. */
 async function openEmployeeMenu(name) {
   const tag = `[...document.querySelectorAll('.tag')].find((t) => t.querySelector('.tag-name') && t.querySelector('.tag-name').textContent.trim().startsWith(${JSON.stringify(name)}))`;
-  const menuOpen = `[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'View skills')`;
+  const menuOpen = `[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Their project')`;
   if ((await js(`window.__t.store().cameraMode`)) !== 'command') {
-    await click(`window.__t.byText('Command center', 'button', document.body)`, 'Command center');
+    await camera('Command center');
     await sleep(3500);
   }
   await waitFor(`!!(${tag}) && (${tag}).getBoundingClientRect().width > 0`, 10000);
@@ -146,6 +146,14 @@ async function openEmployeeMenu(name) {
   }
   throw new Error(`right-clicking ${name} never opened their menu`);
 }
+/** Choose a camera the way a person does: open the View menu in the top bar, click the view. */
+async function camera(label) {
+  if (!(await js(`!!document.querySelector('.cam-dock')`))) await click(`document.querySelector('.cam-btn')`, 'the View button');
+  await waitFor(`!!document.querySelector('.cam-dock')`, 3000);
+  await click(`[...document.querySelectorAll('.cam-dock .cam-item')].find((b) => b.querySelector('.cam-label').textContent.trim() === ${JSON.stringify(label)})`, `the ${label} view`);
+  await waitFor(`!document.querySelector('.cam-dock')`, 3000);
+}
+
 const menuItem = (label) => `[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === ${JSON.stringify(label)} && !b.closest('.win') && !b.closest('.cc'))`;
 
 /** Tick or untick one of the "Office extras" in Settings (a real click on its checkbox). */
@@ -185,7 +193,7 @@ async function scenario() {
   await step('every camera mode can be selected from the top bar', async () => {
     const seen = [];
     for (const [label, mode] of [['First person', 'first'], ['Management', 'management'], ['Free cam', 'free'], ['Command center', 'command'], ['CEO', 'ceo']]) {
-      await click(`window.__t.byText(${JSON.stringify(label)}, 'button', document.body)`, label);
+      await camera(label);
       await waitFor(`window.__t.store().cameraMode === ${JSON.stringify(mode)}`, 4000);
       await sleep(700);
       if (mode === 'command') await shot('camera-command');
@@ -195,7 +203,7 @@ async function scenario() {
   });
 
   await step('command center view lists what needs the owner, everyone, and measured machine load', async () => {
-    await click(`window.__t.byText('Command center', 'button', document.body)`, 'Command center');
+    await camera('Command center');
     await waitFor(`!!document.querySelector('.cc')`, 5000);
     const text = await js(`document.querySelector('.cc').textContent`);
     for (const expected of ['Needs you', 'People', 'Machines', 'Sarah', 'David', 'dev-mac']) if (!text.includes(expected)) throw new Error(`"${expected}" is missing from the command center`);
@@ -205,7 +213,7 @@ async function scenario() {
     await click(`[...document.querySelectorAll('.cc .cc-row')].find((r) => /approval|question/.test(r.textContent))`, 'a needs-you row');
     await waitFor(`document.querySelector('.win') && /Allow this once|Option A/.test(document.querySelector('.win').textContent)`, 5000);
     await clickText('✕');
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    await camera('CEO');
     await waitFor(`!document.querySelector('.cc')`, 4000);
     return text.match(/\d+\/\d+ working · \d+ at their desks/)?.[0] ?? '';
   });
@@ -375,16 +383,16 @@ async function scenario() {
   await step('workstation: take control, type into the real terminal, return control', async () => {
     await js(`window.__t.store().enterWorkstation(window.__t.emp('Rev').id)`);
     await waitFor(`document.querySelector('.ws .xterm') && document.querySelector('.ws .xterm-rows') && document.querySelector('.ws .xterm-rows').textContent.length > 20`, 15000);
-    await clickText('Take control');
-    await waitFor(`/YOU ARE IN CONTROL/.test(document.querySelector('.ws-state').textContent)`, 8000);
+    await clickText('Take the keyboard');
+    await waitFor(`/You are typing/.test(document.querySelector('.ws-state').textContent)`, 8000);
     await click(`document.querySelector('.ws .xterm')`, 'the terminal');
     await win.webContents.insertText(ctx.typedPrompt);
     await sleep(300);
     await key('Enter');
     await waitFor(`/${ctx.typedReply}/.test(document.querySelector('.ws .xterm-rows').textContent)`, 20000);
     await shot('workstation-control');
-    await clickText('Return control');
-    await waitFor(`!/YOU ARE IN CONTROL/.test(document.querySelector('.ws-state').textContent)`, 8000);
+    await clickText('Give it back');
+    await waitFor(`!/You are typing/.test(document.querySelector('.ws-state').textContent)`, 8000);
     await clickText('Leave');
     await waitFor(`!document.querySelector('.ws')`, 5000);
     return 'typed prompt ran in the real session';
@@ -404,6 +412,7 @@ async function scenario() {
 
   await step('Machines: creating an enrollment token shows a usable one-time token', async () => {
     await open('hosts');
+    await clickText('Connect with a token');
     await clickText('Create enrollment token');
     // The token as its own element shows it (neighbouring button labels are not part of it).
     const token = await waitFor(`([...document.querySelectorAll('.win *')].find((e) => e.children.length === 0 && /^orch_enroll_[A-Za-z0-9_-]+$/.test(e.textContent.trim())) || { textContent: '' }).textContent.trim()`, 8000);
@@ -416,7 +425,7 @@ async function scenario() {
   await step('Office: adding a desk pod grows the real layout', async () => {
     await open('office');
     const before = await js(`window.__t.store().layout.desks.length`);
-    await clickText('Add a desk pod');
+    await clickText('Add a table of four desks');
     await waitFor(`window.__t.store().layout.desks.length === ${before} + 4`, 8000);
     await close();
     return `${before} → ${before + 4} desks`;
@@ -427,7 +436,7 @@ async function scenario() {
   const deskAt = (id) => js(`(() => { const d = window.__t.store().layout.desks.find((x) => x.id === ${JSON.stringify(id)}); return d ? { x: d.x, z: d.z } : null; })()`);
 
   await step('Office: a desk pod is moved with the arrow buttons, and the people sitting there move with it', async () => {
-    await open('office');
+    await open('office', `'plan'`);
     await waitFor(`!!window.__t.scope().querySelector('svg.plan [data-pod]')`, 8000);
     // The pod Alex sits in.
     const desk = await js(`window.__t.emp('Alex').deskId`);
@@ -444,7 +453,7 @@ async function scenario() {
   });
 
   await step('Office: a desk pod is dragged on the floor plan; dropping it onto another pod is refused', async () => {
-    await open('office');
+    await open('office', `'plan'`);
     await waitFor(`!!window.__t.scope().querySelector('svg.plan [data-pod]')`, 8000);
     // An empty pod (nobody to disturb) with free floor to its south: the northernmost one.
     const pod = await js(`(() => { const s = window.__t.store(); const taken = new Set(Object.values(s.employees).filter((e) => !e.archived && e.deskId).map((e) => e.deskId)); const pods = [...window.__t.scope().querySelectorAll('svg.plan [data-pod]')].map((g) => g.getAttribute('data-pod')); const z = (p) => s.layout.desks.find((d) => d.id === p).z; const free = pods.filter((p) => !s.layout.desks.some((d) => d.id.startsWith(p.replace(/-[a-z]$/, '-')) && taken.has(d.id))).sort((a, b) => z(a) - z(b)); return free[0] || null; })()`);
@@ -485,7 +494,7 @@ async function scenario() {
   });
 
   await step('Office: a decoration is added, turned, and removed again', async () => {
-    await open('office');
+    await open('office', `'plan'`);
     await waitFor(`!!window.__t.scope().querySelector('select[aria-label="Decoration to add"]')`, 8000);
     const count = `window.__t.store().layout.decorations.length`;
     const before = await js(count);
@@ -508,7 +517,7 @@ async function scenario() {
   });
 
   await step('Office: a room is renamed and the wall it shares with the next room is moved', async () => {
-    await open('office');
+    await open('office', `'plan'`);
     await waitFor(`!!window.__t.scope().querySelector('select[aria-label="Selected item"]')`, 8000);
     await pick('room:meeting');
     await type(`window.__t.scope().querySelector('input[aria-label="Room name"]')`, ctx.roomName);
@@ -555,6 +564,7 @@ async function scenario() {
 
   await step('Team: editing a profile saves standing instructions', async () => {
     await open('employee', `window.__t.emp('Ava').id`);
+    if (!(await js(`window.__t.scope().querySelector('details.pc-more').open`))) await click(`window.__t.scope().querySelector('details.pc-more > summary')`, 'More settings');
     await type(`window.__t.field('Standing instructions')`, ctx.instructions);
     await clickText('Save changes');
     await waitFor(`window.__t.emp('Ava').instructions === ${JSON.stringify(ctx.instructions)}`, 8000);
@@ -576,9 +586,9 @@ async function scenario() {
   await step('Team: interrupting a working employee and resuming from the Session tab', async () => {
     const act = (name) => `(Object.values(window.__t.store().sessions).find((s) => s.employeeId === window.__t.emp('${name}').id && s.status === 'running') || {}).activity`;
     await open('employee', `window.__t.emp('Mike').id + ':session'`);
-    await clickText('Pause (interrupt)');
+    await clickText('Pause');
     await waitFor(`${act('Mike')} === 'paused'`, 10000);
-    await clickText('Resume work');
+    await clickText('Resume');
     await waitFor(`${act('Mike')} !== 'paused'`, 10000);
     await close();
     return 'paused → resumed';
@@ -622,7 +632,7 @@ async function scenario() {
     await clickText('Enlarge');
     await waitFor(`!!window.__t.byText('Restore')`, 5000);
     await clickText('Restore');
-    await clickText('Open workstation');
+    await clickText('Open terminal');
     await waitFor(`!!document.querySelector('.ws .xterm')`, 10000);
     await clickText('Leave');
     await waitFor(`!document.querySelector('.ws')`, 5000);
@@ -633,7 +643,7 @@ async function scenario() {
     const unread = `Object.values(window.__t.store().notifications).filter((n) => !n.resolvedAt && !n.readAt).length`;
     const before = await js(unread);
     if (before > 0) {
-      await clickText('All notifications');
+      await clickText('Notifications');
       await clickText('Mark all read');
       await waitFor(`${unread} === 0`, 8000);
     }
@@ -755,7 +765,7 @@ async function scenario() {
     const other = original === 'low' ? 'medium' : 'low';
     const title = (q) => q[0].toUpperCase() + q.slice(1);
     const radio = (q) => `[...window.__t.scope().querySelectorAll('label.pc-choice')].find((l) => l.textContent.trim().startsWith(${JSON.stringify(title(q))})).querySelector('input')`;
-    if (!(await js(`/Saved on this computer/.test(window.__t.scope().textContent) && [...window.__t.scope().querySelectorAll('nav .section-title')].map((e) => e.textContent).join('|') === 'This computer|The office'`))) throw new Error('Settings does not show the two groups "This computer" and "The office"');
+    if (!(await js(`/kept on this computer/.test(window.__t.scope().textContent) && [...window.__t.scope().querySelectorAll('nav .section-title')].map((e) => e.textContent).join('|') === 'This computer|The office'`))) throw new Error('Settings does not show the two groups "This computer" and "The office"');
     await click(radio(other), title(other));
     await waitFor(`${mine} === ${JSON.stringify(other)} && ${kept} === ${JSON.stringify(other)} && (${radio(other)}).checked`, 8000);
     // Long enough for the office to have answered, had anything been sent to it.
@@ -770,7 +780,7 @@ async function scenario() {
 
   await step('3D office: walking up to someone, talking (F), sitting down (Space), turning (A/D), sidestepping (Q/E) and walking (W/S)', async () => {
     await close();
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    await camera('CEO');
     const ava = await js(`window.__t.emp('Ava').id`);
     const nearAva = `(() => { const n = window.__t.store().nearby; return !!n && n.kind === 'employee' && n.id === ${JSON.stringify(ava)}; })()`;
     await js(`window.__t.store().focusEmployee(${JSON.stringify(ava)})`);
@@ -839,7 +849,7 @@ async function scenario() {
 
   await step('3D office: at a workstation the camera comes closer and the monitor is drawn sharper; both ease back on leaving', async () => {
     await close();
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    await camera('CEO');
     const ava = await js(`window.__t.emp('Ava').id`);
     const away = await js(`(window.__orchPlayer.spots || []).find((s) => s.kind === 'reception')`);
     await js(`window.__orchPlayer.goto = { x: ${away.x}, z: ${away.z}, rot: 0 }; true`);
@@ -852,7 +862,7 @@ async function scenario() {
     await sleep(1800);
     if ((await js(`window.__orchPlayer.approach`)) !== 0 || Math.abs((await js(`window.__orchPlayer.camDist`)) - far) > 0.2) throw new Error('the camera moved closer although "Move the camera closer at a desk" is off');
     await officeExtra('Move the camera closer at a desk', true);
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    await camera('CEO');
     await waitFor(`window.__orchPlayer.approach > 0.97 && window.__orchPlayer.camDist < ${far} - 3 && window.__orchScene.closeScreens >= 1`, 8000);
     const near = await js(`({ dist: window.__orchPlayer.camDist, sharp: window.__orchScene.closeScreens })`);
     await sleep(400);
@@ -885,10 +895,10 @@ async function scenario() {
     // Stay put: nothing may come and go on its own.
     await sleep(1200);
     if (JSON.stringify(await detail()) !== JSON.stringify(farAway)) throw new Error('interiors changed while standing still');
-    await click(`window.__t.byText('Command center', 'button', document.body)`, 'Command center');
+    await camera('Command center');
     await waitFor(`Object.values(window.__orchScene.detail).every(Boolean) && window.__orchScene.detail.server === true && window.__orchScene.detail.hifi === true`, 8000);
     const all = await detail();
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    await camera('CEO');
     // Walking into the break room brings its interior (and the hi-fi) back.
     const hifi = await js(`(window.__orchPlayer.spots || []).find((s) => s.kind === 'hifi')`);
     await js(`window.__orchPlayer.goto = { x: ${hifi.x + 2}, z: ${hifi.z + 1}, rot: 0 }; true`);
@@ -928,7 +938,7 @@ async function scenario() {
     const empty = await js(`(() => { const s = window.__t.store(); const taken = new Set(Object.values(s.employees).filter((e) => !e.archived && e.deskId).map((e) => e.deskId)); return ${JSON.stringify(zones.map((x) => x.id))}.filter((id) => !s.layout.desks.some((d) => d.id.startsWith(id.replace(/-[a-z]$/, '-')) && taken.has(d.id))); })()`);
     if (empty.length) throw new Error(`empty pods are marked as zones: ${empty.join(', ')}`);
     // Click the sign, from the overview camera, where a person would.
-    await click(`window.__t.byText('Management', 'button', document.body)`, 'Management');
+    await camera('Management');
     await sleep(2500);
     let opened = null;
     for (const [zid, sign] of Object.entries(await js(`window.__orchScene.zoneSigns`))) {
@@ -947,16 +957,16 @@ async function scenario() {
     if (!opened) throw new Error('clicking a zone sign did not open its project');
     await waitFor(`!!document.querySelector('.win') && document.querySelector('.win').textContent.includes(${JSON.stringify(z.name)})`, 8000);
     await close();
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    await camera('CEO');
     return `sign "${z.name}": ${z.inProgress} in progress, ${z.blocked} blocked, ${z.done} done — ${zones.length} zone(s); clicking the sign of pod ${opened} opened the project`;
   });
 
-  await step('3D office: right-clicking an employee opens their menu; "Request report" asks their real session', async () => {
-    await click(`window.__t.byText('Command center', 'button', document.body)`, 'Command center');
+  await step('3D office: right-clicking an employee opens their menu; "Ask for a report" asks their real session', async () => {
+    await camera('Command center');
     await sleep(3500);
     const tag = `[...document.querySelectorAll('.tag')].find((t) => t.querySelector('.tag-name') && t.querySelector('.tag-name').textContent.trim().startsWith('Ava'))`;
     await waitFor(`!!(${tag}) && (${tag}).getBoundingClientRect().width > 0`, 10000);
-    const menuOpen = `[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Request report')`;
+    const menuOpen = `[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Ask for a report')`;
     let hit = null;
     for (const dy of [8, 16, 24, 34, 46, 60]) {
       const p = await js(`(() => { const r = (${tag}).getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.bottom + ${dy}) }; })()`);
@@ -971,9 +981,9 @@ async function scenario() {
     }
     if (hit === null) throw new Error('right-clicking below the name tag never opened the employee menu');
     await shot('context-menu');
-    await click(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Request report')`, 'Request report');
+    await click(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Ask for a report')`, 'Ask for a report');
     await waitFor(`!(${menuOpen})`, 4000);
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    await camera('CEO');
     return `menu opened by a right-click ${hit}px below the name tag`;
   });
 
@@ -1138,14 +1148,24 @@ async function scenario() {
   });
 
   await step('Task panel: a task is deleted after its confirmation', async () => {
-    // The app asks with a native confirm dialog, which cannot be clicked in a hidden window:
-    // the question it asks is recorded and answered "OK" here.
-    await js(`window.__confirms = []; window.confirm = (m) => { window.__confirms.push(String(m)); return true; }; true`);
+    // The app asks in its own dialog: Cancel leaves the task, the red button deletes it.
+    await js(`window.__confirms = []; delete window.__orchConfirm; true`);
     await open('task', JSON.stringify(ctx.throwawayTaskId));
     await clickText('Delete task');
-    await waitFor(`!window.__t.store().tasks[${JSON.stringify(ctx.throwawayTaskId)}]`, 8000);
-    const asked = await js(`window.__confirms.join(' | ')`);
+    await waitFor(`!!document.querySelector('.confirm-dialog')`, 5000);
+    const asked = await js(`document.querySelector('.confirm-dialog').textContent`);
     if (!/Delete .*This cannot be undone/s.test(asked)) throw new Error(`no delete confirmation was asked (got: ${asked.slice(0, 80)})`);
+    await shot('confirm-dialog');
+    await click(`[...document.querySelectorAll('.confirm-dialog button')].find((b) => b.textContent.trim() === 'Cancel')`, 'Cancel');
+    await waitFor(`!document.querySelector('.confirm-dialog')`, 3000);
+    await sleep(300);
+    if (!(await js(`!!window.__t.store().tasks[${JSON.stringify(ctx.throwawayTaskId)}]`))) throw new Error('Cancel deleted the task');
+    await click(`[...window.__t.scope().querySelectorAll('button')].find((b) => b.textContent.trim() === 'Delete task')`, 'Delete task');
+    await waitFor(`!!document.querySelector('.confirm-dialog [data-confirm-ok]')`, 5000);
+    await click(`document.querySelector('.confirm-dialog [data-confirm-ok]')`, 'the confirming button');
+    await waitFor(`!window.__t.store().tasks[${JSON.stringify(ctx.throwawayTaskId)}]`, 8000);
+    // The later steps answer such questions through the test hook, which records what was asked.
+    await js(`window.__orchConfirm = (m) => { window.__confirms.push(String(m)); return true; }; true`);
     await close();
     return `asked: "${asked.split('\\n')[0]}"`;
   });
@@ -1181,12 +1201,10 @@ async function scenario() {
     const entries = [
       ['Talk', `window.__t.store().panel === 'talk'`],
       ['Open terminal', `!!document.querySelector('.ws .xterm')`],
-      ['Inspect work', `!!document.querySelector('.ws .xterm')`],
       ['Assign task…', `!!document.querySelector('.win') && /New task/.test(document.querySelector('.win h2').textContent) && /Ava/.test(document.querySelector('.win').textContent)`],
-      ['View skills', `window.__t.store().panel === 'employee' && /Ava/.test(document.querySelector('.win').textContent)`],
-      ['View history', `window.__t.store().panel === 'employee' && String(window.__t.store().panelArg).endsWith(':history')`],
-      ['View current project', `window.__t.store().panel === 'projects'`],
-      ['Change workstation…', `window.__t.store().panel === 'employee' && String(window.__t.store().panelArg).endsWith(':desk')`],
+      ['Profile', `window.__t.store().panel === 'employee' && /Ava/.test(document.querySelector('.win').textContent)`],
+      ['Their project', `window.__t.store().panel === 'projects'`],
+      ['Desk and working hours…', `window.__t.store().panel === 'employee' && String(window.__t.store().panelArg).endsWith(':desk')`],
     ];
     for (const [label, expect] of entries) {
       await openEmployeeMenu('Ava');
@@ -1202,24 +1220,24 @@ async function scenario() {
     }
     const activity = `(Object.values(window.__t.store().sessions).find((x) => x.employeeId === window.__t.emp('Ava').id && x.status === 'running') || {}).activity`;
     await openEmployeeMenu('Ava');
-    await click(menuItem('Pause (interrupt)'), 'menu entry "Pause (interrupt)"');
+    await click(menuItem('Pause'), 'menu entry "Pause"');
     await waitFor(`${activity} === 'paused'`, 10000);
     await openEmployeeMenu('Ava');
     await click(menuItem('Resume'), 'menu entry "Resume"');
     await waitFor(`${activity} !== 'paused'`, 10000);
-    done.push('Pause (interrupt)', 'Resume');
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    done.push('Pause', 'Resume');
+    await camera('CEO');
     return done.join(', ');
   });
 
   await step('Task panel: a task is marked done by hand, after the warning that it is unverified', async () => {
-    await js(`window.__confirms = []; window.confirm = (m) => { window.__confirms.push(String(m)); return true; }; true`);
+    await js(`window.__confirms = []; window.__orchConfirm = (m) => { window.__confirms.push(String(m)); return true; }; true`);
     await open('task', JSON.stringify(ctx.manualTaskId));
     await waitFor(`!!window.__t.scope().querySelector('select[aria-label="Move to another column"]')`, 5000);
     await js(`window.__t.setSelect(window.__t.scope().querySelector('select[aria-label="Move to another column"]'), 'DONE')`);
     await waitFor(`window.__t.store().tasks[${JSON.stringify(ctx.manualTaskId)}].status === 'DONE'`, 8000);
     const asked = await js(`window.__confirms.join(' | ')`);
-    if (!/by hand/.test(asked) || !/not have verified/.test(asked)) throw new Error(`the unverified warning was not shown (got: ${asked.slice(0, 80)})`);
+    if (!/by hand/.test(asked) || !/not verified/.test(asked)) throw new Error(`the unverified warning was not shown (got: ${asked.slice(0, 80)})`);
     await close();
     return `asked: "${asked.split('\n')[0]}"`;
   });
@@ -1244,7 +1262,7 @@ async function scenario() {
 
   await step('3D office: the whiteboard shows the last decision, and a click on it opens that meeting', async () => {
     await close();
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    await camera('CEO');
     const wb = await waitFor(`(() => { const w = window.__orchScene.whiteboard; return w && w.state === 'concluded' && w.title === ${JSON.stringify(ctx.meetingTopic)} ? { ...w } : null; })()`, 8000);
     if (!wb.lines.some((l) => /Adopt the HTTP boundary/.test(l))) throw new Error(`the decision is not on the board: ${wb.lines.join(' | ')}`);
     // Walk into the meeting room and stand in front of it.
@@ -1266,15 +1284,15 @@ async function scenario() {
     await js(`window.__confirms = []; true`);
     await open('office');
     const before = await js(`window.__t.store().layout.desks.length`);
-    await click(`window.__t.scope().querySelector('button[title="Remove this empty desk"]')`, 'remove-desk button');
+    await click(`window.__t.scope().querySelector('button[title="Remove this empty seat"]')`, 'the ✕ on an empty seat');
     await waitFor(`window.__t.store().layout.desks.length === ${before} - 1`, 8000);
     await close();
-    return `${before} → ${before - 1} desks; asked: "${await js(`window.__confirms.join(' | ')`)}"`;
+    return `${before} → ${before - 1} desks`;
   });
 
   await step('3D office: standing in front of the hi-fi offers it, and Space opens the radio', async () => {
     await close();
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    await camera('CEO');
     const spot = await js(`(window.__orchPlayer.spots || []).find((s) => s.kind === 'hifi') || null`);
     if (!spot) throw new Error('the office has no hi-fi to walk up to');
     await js(`window.__orchPlayer.goto = { x: ${spot.x}, z: ${spot.z}, rot: ${-Math.PI / 2} }; true`); // facing the west wall, where it stands
@@ -1291,7 +1309,7 @@ async function scenario() {
 
   await step('3D office: an empty desk offers a seat; someone is seated there, moved with the menu, and swapped with a colleague', async () => {
     await close();
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    await camera('CEO');
     const desks = () => js(`(() => { const s = window.__t.store(); const taken = new Set(Object.values(s.employees).filter((e) => !e.archived && e.deskId).map((e) => e.deskId)); return s.layout.desks.filter((d) => !taken.has(d.id) && d.kind !== 'executive').map((d) => d.id); })()`);
     const standAt = async (deskId) => {
       const seat = await js(`window.__orchPlayer.seatOf(${JSON.stringify(deskId)})`);
@@ -1302,10 +1320,12 @@ async function scenario() {
     const [first, second] = await desks();
     await standAt(first);
     await waitFor(`(() => { const n = window.__t.store().nearby; return !!n && n.kind === 'desk' && n.id === ${JSON.stringify(first)}; })()`, 8000);
-    await waitFor(`/SEAT SOMEONE AT THIS DESK/.test((document.querySelector('.prompt') || {}).textContent || '')`, 4000);
+    await waitFor(`/EMPTY DESK/.test((document.querySelector('.prompt') || {}).textContent || '')`, 4000);
     await shot('empty-desk');
     await key('Space', ' ');
-    await waitFor(`window.__t.store().panel === 'seat' && !!document.querySelector('.win')`, 8000);
+    await waitFor(`window.__t.store().panel === 'seat' && document.querySelectorAll('.win .choice').length === 3`, 8000);
+    await shot('empty-desk-choices');
+    await click(`document.querySelector('.win .choice[data-choice="move"]')`, 'Seat someone who already works here');
     await type(`window.__t.scope().querySelector('input[aria-label="Search people"]')`, 'Scribe');
     await click(`window.__t.near('Scribe', 'Move here')`, 'Move here');
     await waitFor(`window.__t.emp('Scribe').deskId === ${JSON.stringify(first)} && !document.querySelector('.win')`, 8000);
@@ -1313,7 +1333,7 @@ async function scenario() {
     await openEmployeeMenu('Ava');
     await click(menuItem('Move to another desk…'), 'Move to another desk…');
     await waitFor(`window.__t.store().movingEmployeeId === window.__t.emp('Ava').id`, 4000);
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    await camera('CEO');
     await standAt(second);
     await waitFor(`/SEAT AVA HERE/.test((document.querySelector('.prompt') || {}).textContent || '')`, 8000);
     await shot('moving-someone');
@@ -1332,9 +1352,60 @@ async function scenario() {
     return `Scribe seated at ${first}; Ava moved to ${second}, then swapped with Rev (${revDesk})`;
   });
 
+  await step('3D office: an empty desk can be hired for, or sat at with a Claude Code session of one\'s own', async () => {
+    await close();
+    await camera('CEO');
+    const freeDesks = () => js(`(() => { const s = window.__t.store(); const taken = new Set(Object.values(s.employees).filter((e) => !e.archived && e.deskId).map((e) => e.deskId)); return s.layout.desks.filter((d) => !taken.has(d.id) && d.kind !== 'executive').map((d) => d.id); })()`);
+    const standAt = async (deskId) => {
+      const seat = await js(`window.__orchPlayer.seatOf(${JSON.stringify(deskId)})`);
+      await js(`window.__orchPlayer.goto = { x: ${seat.x}, z: ${seat.z} }; true`);
+      await waitFor(`(() => { const n = window.__t.store().nearby; return !!n && n.kind === 'desk' && n.id === ${JSON.stringify(deskId)}; })()`, 8000);
+    };
+    const folder = async (label) => {
+      await clickText('Browse…');
+      await waitFor(`!!window.__t.near(${JSON.stringify(ctx.hireFolderName)}, 'Choose')`, 10000);
+      await click(`window.__t.near(${JSON.stringify(ctx.hireFolderName)}, 'Choose')`, 'Choose');
+      await waitFor(`window.__t.field(${JSON.stringify(label)}).value === ${JSON.stringify(ctx.hireFolder)}`, 5000);
+    };
+    // 1. Hire someone new for exactly this desk: the desk is already chosen in the form.
+    const [a] = await freeDesks();
+    await standAt(a);
+    await key('Space', ' ');
+    await waitFor(`document.querySelectorAll('.win .choice').length === 3`, 8000);
+    await click(`document.querySelector('.win .choice[data-choice="hire"]')`, 'Hire someone new for this desk');
+    await waitFor(`/Hire someone for this desk/.test((document.querySelector('.win h2') || {}).textContent || '')`, 8000);
+    if (await js(`document.querySelectorAll('.win .hire-place').length > 1 && !document.querySelector('.win form')`)) await js(`[...document.querySelectorAll('.win .hire-place')].find((b) => /dev-mac/.test(b.textContent)).click()`);
+    await waitFor(`window.__t.scope().querySelector('.desk-seat.on')?.dataset.desk === ${JSON.stringify(a)}`, 5000);
+    await type(`window.__t.field('Name')`, 'Deskhire');
+    await folder('Folder they live in');
+    await clickText('Hire');
+    await waitFor(`!!window.__t.emp('Deskhire') && !document.querySelector('.win')`, 10000);
+    if ((await js(`window.__t.emp('Deskhire').deskId`)) !== a) throw new Error(`hired at ${await js(`window.__t.emp('Deskhire').deskId`)} instead of the desk stood at (${a})`);
+    // 2. Sit down oneself: a session of one's own starts at this desk and its terminal opens with the keyboard taken.
+    const [b] = await freeDesks();
+    await standAt(b);
+    await key('Space', ' ');
+    await waitFor(`document.querySelectorAll('.win .choice').length === 3`, 8000);
+    await click(`document.querySelector('.win .choice[data-choice="me"]')`, 'Sit here myself');
+    await waitFor(`/Sit here with your own Claude Code/.test((document.querySelector('.win h2') || {}).textContent || '')`, 8000);
+    if (await js(`document.querySelectorAll('.win .hire-place').length > 1 && !document.querySelector('.win form')`)) await js(`[...document.querySelectorAll('.win .hire-place')].find((b) => /dev-mac/.test(b.textContent)).click()`);
+    if (await js(`!!window.__t.byText('Sit down and start') `)) throw new Error('sitting down was offered before a folder was chosen');
+    const mine = await js(`window.__t.field('Name on the desk').value`);
+    await folder('Claude Code starts in this folder');
+    await shot('sit-here-myself');
+    await clickText('Sit down and start');
+    await waitFor(`(() => { const e = window.__t.emp(${JSON.stringify(mine)}); return !!e && e.selfDriven === true && e.deskId === ${JSON.stringify(b)}; })()`, 10000);
+    await waitFor(`!!document.querySelector('.ws .xterm')`, 15000);
+    await waitFor(`(() => { const s = window.__t.store(); const e = window.__t.emp(${JSON.stringify(mine)}); const ses = Object.values(s.sessions).find((x) => x.employeeId === e.id && x.status === 'running'); return !!ses && !!s.control[ses.id] && s.control[ses.id].you === true; })()`, 20000);
+    await shot('sit-here-terminal');
+    await clickText('Leave');
+    await waitFor(`!document.querySelector('.ws')`, 5000);
+    return `Deskhire hired at ${a}; "${mine}" sat down at ${b} with the keyboard`;
+  });
+
   await step('3D office: the TV on the break room wall opens; put away it stays on, and the top bar turns it off', async () => {
     await close();
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    await camera('CEO');
     const spot = await js(`(window.__orchPlayer.spots || []).find((s) => s.kind === 'tv') || null`);
     if (!spot) throw new Error('the office has no TV to walk up to');
     await js(`window.__orchPlayer.goto = { x: ${spot.x}, z: ${spot.z}, rot: ${Math.PI} }; true`);
@@ -1356,7 +1427,7 @@ async function scenario() {
   });
 
   await step('Office: who sits where — a person is dragged to another seat, a table gets a label and one more seat', async () => {
-    await js(`window.__confirms = []; window.confirm = (m) => { window.__confirms.push(String(m)); return true; }; true`);
+    await js(`window.__confirms = []; window.__orchConfirm = (m) => { window.__confirms.push(String(m)); return true; }; true`);
     await open('office');
     await waitFor(`!!window.__t.scope().querySelector('.seat-table')`, 10000);
     const chip = `window.__t.scope().querySelector('.seat-chip[data-employee="Noor"]')`;
@@ -1394,7 +1465,7 @@ async function scenario() {
 
   await step('CEO desk: how much Claude is left on each account, and an employee is put on another account', async () => {
     const card = (text) => `[...window.__t.scope().querySelectorAll('.claude-account')].find((c) => c.textContent.includes(${JSON.stringify(text)}))`;
-    await open('ceo');
+    await open('overview', `'usage'`);
     await waitFor(`(() => { const c = ${card('dev@example.test')}; return !!c && /42% used/.test(c.textContent) && /85% used/.test(c.textContent) && /Dev Org/.test(c.textContent); })()`, 20000);
     const before = await js(`window.__t.scope().querySelectorAll('.claude-account').length`);
     // The same reading hangs on the CEO room wall as a clock: the big hand is the week, the small dial the 5 hours.
@@ -1402,11 +1473,13 @@ async function scenario() {
     await shot('ceo-claude');
     await close();
     await open('employee', `window.__t.emp('Ava').id`);
+    // Rarely changed settings are folded away: open them first.
+    if (!(await js(`window.__t.scope().querySelector('details.pc-more').open`))) await click(`window.__t.scope().querySelector('details.pc-more > summary')`, 'More settings');
     await type(`window.__t.field('Claude account folder')`, '~/.claude-second');
     await clickText('Save changes');
     await waitFor(`window.__t.emp('Ava').claudeConfigDir === '~/.claude-second'`, 8000);
     await close();
-    await open('ceo');
+    await open('overview', `'usage'`);
     // Her account is listed at once, without figures: nobody has worked on it yet.
     await waitFor(`(() => { const c = ${card('~/.claude-second')}; return !!c && /Not reported yet/.test(c.textContent) && /used by Ava/.test(c.textContent); })()`, 10000);
     const after = await js(`window.__t.scope().querySelectorAll('.claude-account').length`);
@@ -1476,7 +1549,7 @@ async function scenario() {
 
   await step('the 3D office keeps a usable frame rate while every session is live (measured, not assumed)', async () => {
     await close();
-    await click(`window.__t.byText('CEO', 'button', document.body)`, 'CEO');
+    await camera('CEO');
     await js(`window.__orchPerf = null; true`);
     const samples = [];
     for (let i = 0; i < 3; i++) {

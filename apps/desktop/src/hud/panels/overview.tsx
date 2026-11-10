@@ -1,8 +1,11 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import type { CompanyStats } from '@orchestrator/contracts';
+import type { CommandResult, CompanyStats } from '@orchestrator/contracts';
 import { formatDuration } from '@orchestrator/contracts';
-import { Avatar, Badge, Empty, Progress, Stat, Window, timeAgo, type Tone } from '@orchestrator/ui';
+import { Avatar, Badge, Button, Empty, Progress, Stat, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { activityOf, currentTaskOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
+import { api } from '../../lib/api.ts';
+import { act } from '../core.tsx';
+import { ClaudeAccounts, Portfolio, Timeline, Usage } from './ceo.tsx';
 import { registerPanel } from './index.tsx';
 import { ActivityBadge, HostLabel, NOT_AVAILABLE, attentionOf, byName, fmtDateTime, fmtInt, humanize, isLive, isWorking, onActivate, useTick, type PanelProps } from './company-shared.tsx';
 
@@ -155,7 +158,22 @@ const COMPANY_STATS: Array<{ key: keyof CompanyStats; label: string }> = [
   { key: 'debtReduced', label: 'Debt tasks paid down' },
 ];
 
-function OverviewPanel({ onClose }: PanelProps) {
+type CompanyTab = 'now' | 'projects' | 'usage' | 'history' | 'record';
+
+/**
+ * The company in one window: what needs you and what everyone is doing, the projects, how much Claude is left,
+ * what happened, and the record. (The CEO desk in the office opens the same window.)
+ */
+function OverviewPanel({ arg, onClose }: PanelProps) {
+  const [tab, setTab] = useState<CompanyTab>(arg === 'projects' || arg === 'usage' || arg === 'history' || arg === 'record' ? arg : 'now');
+  const [away, setAway] = useState<CommandResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const summarize = async () => {
+    setBusy(true);
+    const res = await act(() => api<CommandResult>('POST', '/commands/execute', { input: 'summarize what happened while I was away' }));
+    setBusy(false);
+    if (res) setAway(res);
+  };
   const employees = useOffice((s) => s.employees);
   const sessions = useOffice((s) => s.sessions);
   const hostsById = useOffice((s) => s.hosts);
@@ -191,22 +209,41 @@ function OverviewPanel({ onClose }: PanelProps) {
   };
   const rate = company?.reviewCompletionRate;
 
-  return (
-    <Window title="Company overview" subtitle={settings?.companyName ?? undefined} onClose={onClose} width={1120}>
-      <div className="col" style={{ gap: 16 }}>
-        <div className="pc-stats">
-          <Stat label="Working" value={`${working} / ${team.length}`} sub="employees doing something now" tone={working ? 'info' : undefined} />
-          <Stat label="In progress" value={inProgress} sub="tasks" />
-          <Stat label="In review" value={inReview} sub="tasks" />
-          <Stat label="Blocked" value={blocked} sub="tasks" tone={blocked ? 'bad' : undefined} />
-          <Stat label="Open questions" value={openQuestions} sub="waiting on you" tone={openQuestions ? 'warn' : undefined} />
-          <Stat label="Machines online" value={`${hostsOnline} / ${hosts.length}`} tone={hosts.length && hostsOnline < hosts.length ? 'warn' : undefined} />
-        </div>
+  const summary = [`${working} of ${team.length} working`, inProgress ? `${inProgress} in progress` : '', inReview ? `${inReview} in review` : '', blocked ? `${blocked} blocked` : '', openQuestions ? `${openQuestions} waiting for your answer` : '', hosts.length ? `${hostsOnline}/${hosts.length} machines online` : ''].filter(Boolean).join(' · ');
 
+  return (
+    <Window
+      title={settings?.companyName || 'Company'}
+      subtitle={summary}
+      onClose={onClose}
+      width={1120}
+      flush
+      actions={
+        tab === 'history' ? (
+          <Button small variant="primary" onClick={summarize} disabled={busy}>
+            {busy ? 'Summarising…' : 'What happened while I was away'}
+          </Button>
+        ) : undefined
+      }
+    >
+      <Tabs<CompanyTab>
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { id: 'now', label: 'Now', count: attention.length || undefined },
+          { id: 'projects', label: 'Projects' },
+          { id: 'usage', label: 'Claude usage' },
+          { id: 'history', label: 'History' },
+          ...(settings?.gamification !== false ? [{ id: 'record' as const, label: 'Record' }] : []),
+        ]}
+      />
+      <div className="pc-tabbody">
+        {tab === 'now' && (
+          <div className="col" style={{ gap: 16 }}>
         <div>
-          <div className="section-title">Needs your attention{attention.length ? ` (${attention.length})` : ''}</div>
+          <div className="section-title">Needs you{attention.length ? ` (${attention.length})` : ''}</div>
           {attention.length === 0 ? (
-            <div className="card small muted">Nothing needs you right now: no open questions, no blocked tasks, no reviews waiting on you, and every machine with employees is online.</div>
+            <div className="card small muted">Nothing needs you right now.</div>
           ) : (
             <div className="list">
               {attention.map((a) => (
@@ -228,7 +265,6 @@ function OverviewPanel({ onClose }: PanelProps) {
             </div>
           )}
         </div>
-
         <div>
           <div className="row" style={{ marginBottom: 6 }}>
             <div className="section-title" style={{ margin: 0 }}>
@@ -305,7 +341,33 @@ function OverviewPanel({ onClose }: PanelProps) {
             </table>
           )}
         </div>
-
+          </div>
+        )}
+        {tab === 'projects' && <Portfolio />}
+        {tab === 'usage' && (
+          <div className="col" style={{ gap: 14 }}>
+            <ClaudeAccounts />
+            <Usage />
+          </div>
+        )}
+        {tab === 'history' && (
+          <div className="col" style={{ gap: 14 }}>
+            {away && (
+              <div className="card col" style={{ gap: 6 }}>
+                <div className="row">
+                  <span className="strong grow">{away.answer?.title ?? 'While you were away'}</span>
+                  <Button small variant="ghost" onClick={() => setAway(null)}>
+                    Close summary
+                  </Button>
+                </div>
+                {away.answer?.lines.length ? away.answer.lines.map((l, i) => <div key={i} className="small pre">{l}</div>) : <div className="small muted">Nothing was recorded.</div>}
+              </div>
+            )}
+            <Timeline onClose={onClose} />
+          </div>
+        )}
+        {tab === 'record' && (
+          <div className="col" style={{ gap: 16 }}>
         {settings?.gamification !== false && (
           <>
             {milestones.length > 0 && (
@@ -356,8 +418,13 @@ function OverviewPanel({ onClose }: PanelProps) {
             )}
           </>
         )}
+          </div>
+        )}
       </div>
     </Window>
   );
 }
+
 registerPanel('overview', OverviewPanel);
+// The CEO desk is the same window.
+registerPanel('ceo', OverviewPanel);

@@ -1,14 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { CommandResult, OrchestratorEvent } from '@orchestrator/contracts';
-import { Badge, Button, Empty, Progress, Provenance, Stat, Window, clock, timeAgo } from '@orchestrator/ui';
-import { api } from '../../lib/api.ts';
+import { useEffect, useMemo } from 'react';
+import type { OrchestratorEvent } from '@orchestrator/contracts';
+import { Badge, Empty, Progress, Provenance, clock, timeAgo } from '@orchestrator/ui';
 import { loadAccounts, useOffice } from '../../lib/store.ts';
 import { accountName, limitText } from '../../lib/views.ts';
-import { QuestionBody, act } from '../core.tsx';
-import { registerPanel } from './index.tsx';
-import { NOT_AVAILABLE, eventTone, fmtInt, humanize, isLoudEvent, openNotificationTarget, type PanelProps } from './company-shared.tsx';
+import { NOT_AVAILABLE, eventTone, fmtInt, isLoudEvent } from './company-shared.tsx';
 
-function Portfolio() {
+/** The parts of the Company window that came from the CEO's desk: projects, usage, what happened. */
+
+export function Portfolio() {
   const projectsById = useOffice((s) => s.projects);
   const tasks = useOffice((s) => s.tasks);
   const projects = useMemo(
@@ -58,110 +57,7 @@ function Portfolio() {
   );
 }
 
-function Decisions() {
-  const questions = useOffice((s) => s.questions);
-  const employees = useOffice((s) => s.employees);
-  const open = useMemo(
-    () =>
-      Object.values(questions)
-        .filter((q) => q.status === 'open')
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-    [questions],
-  );
-  const [first, ...rest] = open;
-  if (!first) return <div className="card small muted">No decision is waiting on you.</div>;
-  return (
-    <div className="col">
-      <div className="card">
-        <QuestionBody key={first.id} q={first} />
-      </div>
-      {rest.length > 0 && (
-        <div className="list">
-          {rest.map((q) => (
-            <button key={q.id} className="pc-rowbtn" onClick={() => useOffice.getState().openPanel('question', q.id)}>
-              <Badge tone="warn">{q.kind === 'permission' ? 'approval' : humanize(q.kind)}</Badge>
-              <span className="grow truncate">
-                <span className="strong">{q.employeeId ? (employees[q.employeeId]?.name ?? 'An employee') : 'Orchestrator'}</span> {q.text}
-              </span>
-              <span className="small faint pc-nowrap">{timeAgo(q.createdAt)}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Warnings({ onClose }: { onClose: () => void }) {
-  const notifications = useOffice((s) => s.notifications);
-  const critical = Object.values(notifications)
-    .filter((n) => !n.resolvedAt && n.severity === 'critical')
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  if (critical.length === 0) return null;
-  return (
-    <div>
-      <div className="section-title">High-priority warnings</div>
-      <div className="col" style={{ gap: 6 }}>
-        {critical.map((n) => (
-          <div key={n.id} className="pc-confirm" style={{ padding: 10, gap: 4 }}>
-            <div className="row">
-              <button className="pc-rowbtn grow" style={{ padding: 0 }} onClick={() => openNotificationTarget(n) && onClose()}>
-                <span className="dot dot-bad" />
-                <span className="strong grow truncate">{n.title}</span>
-              </button>
-              <span className="small faint pc-nowrap">{timeAgo(n.createdAt)}</span>
-              <Button small variant="ghost" onClick={() => act(() => api('POST', `/notifications/${n.id}/resolve`, {}))}>
-                Dismiss
-              </Button>
-            </div>
-            {n.body && <div className="small">{n.body}</div>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Infrastructure() {
-  const hostsById = useOffice((s) => s.hosts);
-  const sessions = useOffice((s) => s.sessions);
-  const hosts = Object.values(hostsById).filter((h) => h.status !== 'revoked');
-  const online = hosts.filter((h) => h.status === 'online').length;
-  const offline = hosts.length - online;
-  const all = Object.values(sessions);
-  const running = all.filter((s) => s.status === 'running').length;
-  const unobservable = all.filter((s) => s.status === 'host_offline').length;
-  return (
-    <div>
-      <div className="row" style={{ marginBottom: 6 }}>
-        <div className="section-title" style={{ margin: 0 }}>
-          Infrastructure
-        </div>
-        <span className="grow" />
-        <Button small variant="ghost" onClick={() => useOffice.getState().openPanel('hosts')}>
-          Open the server room
-        </Button>
-      </div>
-      <div className="grid3" style={{ gap: 8 }}>
-        <Stat label="Machines online" value={online} tone={online ? 'good' : undefined} />
-        <Stat label="Machines offline" value={offline} tone={offline ? 'bad' : undefined} />
-        <Stat label="Sessions running" value={running} />
-      </div>
-      {unobservable > 0 && (
-        <div className="pc-note" style={{ marginTop: 8 }}>
-          {unobservable} session{unobservable === 1 ? '' : 's'} cannot be observed while {unobservable === 1 ? 'its' : 'their'} machine is offline.
-        </div>
-      )}
-      {hosts.length === 0 && (
-        <div className="small muted" style={{ marginTop: 8 }}>
-          No machine is connected yet.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Usage() {
+export function Usage() {
   const sessions = useOffice((s) => s.sessions);
   const all = Object.values(sessions);
   const measured = all.filter((s) => s.usage !== null);
@@ -223,7 +119,7 @@ function Usage() {
   );
 }
 
-function Timeline({ onClose }: { onClose: () => void }) {
+export function Timeline({ onClose }: { onClose: () => void }) {
   const events = useOffice((s) => s.events);
   const shown = useMemo(() => events.filter(isLoudEvent).slice(-40).reverse(), [events]);
   const go = (e: OrchestratorEvent) => {
@@ -236,7 +132,7 @@ function Timeline({ onClose }: { onClose: () => void }) {
   };
   return (
     <div>
-      <div className="section-title">Activity timeline</div>
+      <div className="section-title">What happened</div>
       <div className="card pc-timeline" style={{ padding: '6px 0' }}>
         {shown.length === 0 && <div className="feed-item muted">Nothing has happened yet.</div>}
         {shown.map((e) => (
@@ -271,7 +167,7 @@ function LimitRow({ label, w }: { label: string; w: { usedPercent: number; reset
 }
 
 /** How much Claude is left: one card per account the employees run on. */
-function ClaudeAccounts() {
+export function ClaudeAccounts() {
   const accounts = useOffice((s) => s.accounts);
   const employees = useOffice((s) => s.employees);
   const hosts = useOffice((s) => s.hosts);
@@ -301,7 +197,7 @@ function ClaudeAccounts() {
                   <LimitRow label="This week" w={a.sevenDay} />
                 </>
               ) : (
-                <div className="small muted">Not reported yet. Claude Code says how much is used when a session on this account starts; it will appear here the next time one of these employees starts a session. A session that was already running before this was added reports after it is stopped and resumed.</div>
+                <div className="small muted">Not reported yet. It appears the next time an employee on this account starts a session.</div>
               )}
               <div className="small faint">
                 {hosts[a.hostId]?.name ?? 'unknown machine'} · {a.configDir ?? 'default login'} · used by {who.length ? who.join(', ') : 'nobody'}
@@ -312,84 +208,7 @@ function ClaudeAccounts() {
         })}
       </div>
       <div className="small faint" style={{ marginTop: 4 }}>
-        These are the percentages Claude Code itself shows for a subscription account, passed on by each session's status line; nothing is estimated. An account billed by API key has no such limits and reports nothing. To put an employee on another account, set their Claude account folder in their profile.
-      </div>
+        The percentages are Claude Code's own for a subscription account; an account billed by API key reports none. An employee's account is set in their profile.</div>
     </div>
   );
 }
-
-function CeoPanel({ onClose }: PanelProps) {
-  const settings = useOffice((s) => s.settings);
-  const [away, setAway] = useState<CommandResult | null>(null);
-  const [busy, setBusy] = useState(false);
-  const summarize = async () => {
-    setBusy(true);
-    const res = await act(() => api<CommandResult>('POST', '/commands/execute', { input: 'summarize what happened while I was away' }));
-    setBusy(false);
-    if (res) setAway(res);
-  };
-  return (
-    <Window
-      title="CEO desk"
-      subtitle={[settings?.companyName, settings?.ownerName].filter(Boolean).join(' · ') || undefined}
-      onClose={onClose}
-      width={1180}
-      actions={
-        <Button small variant="primary" onClick={summarize} disabled={busy}>
-          {busy ? 'Summarising…' : 'What happened while I was away'}
-        </Button>
-      }
-    >
-      <div className="col" style={{ gap: 14 }}>
-        {away && (
-          <div className="card col" style={{ gap: 6 }}>
-            <div className="row">
-              <span className="strong grow">{away.answer?.title ?? 'While you were away'}</span>
-              <Button small variant="ghost" onClick={() => setAway(null)}>
-                Close summary
-              </Button>
-            </div>
-            {away.answer ? (
-              away.answer.lines.length ? (
-                away.answer.lines.map((l, i) => (
-                  <div key={i} className="small pre">
-                    {l}
-                  </div>
-                ))
-              ) : (
-                <div className="small muted">Nothing was recorded.</div>
-              )
-            ) : (
-              <>
-                {away.executed.map((x, i) => (
-                  <div key={i} className="small">
-                    <Badge tone={x.ok ? 'good' : 'bad'}>{x.ok ? 'done' : 'failed'}</Badge> {x.description} <span className="muted">— {x.detail}</span>
-                  </div>
-                ))}
-                {away.executed.length === 0 && <div className="small muted">The server returned no summary.</div>}
-              </>
-            )}
-          </div>
-        )}
-        <Warnings onClose={onClose} />
-        <div className="pc-cols">
-          <div className="col" style={{ gap: 0 }}>
-            <div className="section-title">Project portfolio</div>
-            <Portfolio />
-            <div style={{ height: 14 }} />
-            <Timeline onClose={onClose} />
-          </div>
-          <div className="col" style={{ gap: 0 }}>
-            <div className="section-title">Pending decisions</div>
-            <Decisions />
-            <div style={{ height: 14 }} />
-            <Infrastructure />
-            <ClaudeAccounts />
-            <Usage />
-          </div>
-        </div>
-      </div>
-    </Window>
-  );
-}
-registerPanel('ceo', CeoPanel);

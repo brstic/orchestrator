@@ -301,6 +301,7 @@ export interface EmployeeInput {
   executionMode?: Employee['executionMode'];
   schedule?: Employee['schedule'];
   deskId?: string | null;
+  selfDriven?: boolean;
 }
 
 export class EmployeeRegistry {
@@ -426,6 +427,7 @@ export class EmployeeRegistry {
       stats: { tasksCompleted: 0, testsPassed: 0, bugsFixed: 0, reviewsCompleted: 0, assists: 0, deliverablesAccepted: 0 },
       createdAt: nowIso(),
       archived: false,
+      ...(input.selfDriven ? { selfDriven: true } : {}),
     };
     this.core.put('employee', employee);
     this.core.audit(actor, 'employee.created', employee.id, { name, role: employee.roleKey });

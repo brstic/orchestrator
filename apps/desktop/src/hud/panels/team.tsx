@@ -2,9 +2,9 @@ import { DeskPicker, WherePicker, useHirePlaces, type HirePlace } from './hire-w
 import { BulkHire } from './bulk-hire.tsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentSession, Appearance, AutonomyLevel, CommunicationStyle, DeliveryStatus, Employee, ExecutionMode, Host, OrchestratorEvent, XpEntry } from '@orchestrator/contracts';
-import { DESK_SIZE, ROLE_CATALOGUE, roleByKey } from '@orchestrator/contracts';
+import { DESK_SIZE, ROLE_CATALOGUE, memberSeatOf, roleByKey } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field, Progress, Provenance, Stat, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
-import { api } from '../../lib/api.ts';
+import { api, connection } from '../../lib/api.ts';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { act } from '../core.tsx';
 import { FolderField } from './folder-picker.tsx';
@@ -122,7 +122,12 @@ function LevelCell({ e }: { e: Employee }) {
 
 // ───────────────────────────── Hire ─────────────────────────────
 
-function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
+/**
+ * `desk`: the desk the person was standing at when they chose to hire (it is preselected).
+ * `self`: not an employee to give work to but the person's own Claude Code session at that desk — it is named
+ * after them, started at once, and its terminal opens with the keyboard in their hands.
+ */
+function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) => void; place: HirePlace; desk?: string; self?: boolean }) {
   const hostsById = useOffice((s) => s.hosts);
   const projectsById = useOffice((s) => s.projects);
   const hosts = useMemo(() => Object.values(hostsById).filter((h) => h.status !== 'revoked').sort(byName), [hostsById]);
@@ -131,7 +136,8 @@ function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
   const employeesNow = useOffice((st) => st.employees);
   const taken = new Set(Object.values(employeesNow).map((x) => x.name.toLowerCase()));
   // A name nobody here has yet, so the form can be submitted with just a folder.
-  const [name, setName] = useState(() => HIRE_NAMES.find((n) => !taken.has(n.toLowerCase())) ?? '');
+  const myName = useOffice((st) => st.me?.name || st.settings?.ownerName || 'Me');
+  const [name, setName] = useState(() => (self ? (taken.has(myName.toLowerCase()) ? `${myName} (me)` : myName) : (HIRE_NAMES.find((n) => !taken.has(n.toLowerCase())) ?? '')));
   const [more, setMore] = useState(false);
   const [roleKey, setRoleKey] = useState(ROLE_CATALOGUE.find((r) => r.key === 'fullstack')?.key ?? ROLE_CATALOGUE[0]!.key);
   const [title, setTitle] = useState('');
@@ -140,7 +146,7 @@ function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
   const [skills, setSkills] = useState('');
   const hostId = place.host.id;
   // Which desk: null lets the office choose (with their project's people; in a room, the next free seat).
-  const [deskId, setDeskId] = useState<string | null>(null);
+  const [deskId, setDeskId] = useState<string | null>(desk ?? null);
   const [projectId, setProjectId] = useState('');
   const [workingDir, setWorkingDir] = useState('');
   const [autonomy, setAutonomy] = useState<AutonomyLevel | null>(null);
@@ -149,7 +155,7 @@ function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
   const [executionMode, setExecutionMode] = useState<ExecutionMode>('interactive_cli');
   const [instructions, setInstructions] = useState('');
   // Hiring gives someone a desk; their session starts when you first talk to them, give them a task, or press Start.
-  const [startNow, setStartNow] = useState(false);
+  const [startNow, setStartNow] = useState(!!self);
   const [busy, setBusy] = useState(false);
 
   const custom = roleKey === 'custom';
@@ -161,7 +167,7 @@ function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
   const project = projectId ? projectsById[projectId] : undefined;
   const hasCwd = !!workingDir.trim() || !!project?.repoPath;
   const canStart = !!host && host.status === 'online' && hasCwd;
-  const valid = !!name.trim() && (!custom || !!title.trim());
+  const valid = !!name.trim() && (!custom || !!title.trim()) && (!self || hasCwd);
 
   const submit = async () => {
     if (!valid) return;
@@ -181,17 +187,18 @@ function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
         model: model.trim() || null,
         executionMode,
         instructions,
+        ...(self ? { selfDriven: true } : {}),
       }),
     );
     if (!created) {
       setBusy(false);
       return;
     }
-    useOffice.getState().toast(`${created.name} joined as ${created.title}`, 'success');
+    if (!self) useOffice.getState().toast(`${created.name} joined as ${created.title}`, 'success');
     // The employee exists either way; a failed start is reported and can be retried from their profile.
-    if (startNow) await act(() => api('POST', `/employees/${created.id}/start`, {}), `${created.name}'s session is starting`);
+    if (startNow || self) await act(() => api('POST', `/employees/${created.id}/start`, {}), self ? 'Your session is starting' : `${created.name}'s session is starting`);
     setBusy(false);
-    onDone();
+    onDone(created.id);
   };
 
   return (
@@ -204,19 +211,21 @@ function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
       }}
     >
       <div className="grid2">
-        <Field label="Name">
-          <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="e.g. Alex" autoFocus />
+        <Field label={self ? 'Name on the desk' : 'Name'}>
+          <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="e.g. Alex" autoFocus={!self} />
         </Field>
-        <Field label="Role">
-          <select value={roleKey} onChange={(ev) => setRoleKey(ev.target.value)}>
-            {ROLE_CATALOGUE.map((r) => (
-              <option key={r.key} value={r.key}>
-                {r.title}
-              </option>
-            ))}
-            <option value="custom">Custom role…</option>
-          </select>
-        </Field>
+        {!self && (
+          <Field label="Role">
+            <select value={roleKey} onChange={(ev) => setRoleKey(ev.target.value)}>
+              {ROLE_CATALOGUE.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.title}
+                </option>
+              ))}
+              <option value="custom">Custom role…</option>
+            </select>
+          </Field>
+        )}
       </div>
       {custom && (
         <div className="grid2">
@@ -235,9 +244,9 @@ function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
         </div>
       )}
       <div className="section-title" style={{ margin: 0 }}>
-        2 · Their folder {place.mine ? 'on your computer' : `on ${place.host.name}`}
+        {self ? 'The folder to open' : '2 · Their folder'} {place.mine ? 'on your computer' : `on ${place.host.name}`}
       </div>
-      <Field label="Folder they live in" hint={projectId ? `They join the shared project "${project?.name}", so they get their own worktree instead of a folder.` : undefined} wide>
+      <Field label={self ? 'Claude Code starts in this folder' : 'Folder they live in'} hint={projectId ? `They join the shared project "${project?.name}", so they get their own worktree instead of a folder.` : undefined} wide>
         <FolderField value={workingDir} onChange={setWorkingDir} host={host} disabled={!!projectId} />
       </Field>
 
@@ -248,7 +257,7 @@ function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
           {place.mine && <div className="bad" style={{ marginTop: 6 }}>Choose the shared office in step 1: the foreman cannot run on your own computer.</div>}
           {existingForeman && <div className="bad" style={{ marginTop: 6 }}>The office already has a foreman ({existingForeman.name}).</div>}
         </div>
-      ) : (
+      ) : self ? null : (
         <>
           <div className="section-title" style={{ margin: 0 }}>
             3 · Their desk {place.mine ? 'in your room' : 'in the office'}
@@ -258,8 +267,16 @@ function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
       )}
 
       <div className="small muted">
-        {!hasCwd ? 'Choose the folder they live in' : startNow && canStart ? 'Their session starts right away' : 'Hired without starting a session — it starts when you first talk to them or give them a task'}
-        {host ? ` on ${host.name}` : ''} · {autonomyInfo(effectiveAutonomy).label.toLowerCase()}: {autonomyInfo(effectiveAutonomy).text}{' '}
+        {self ? (
+          <>
+            {!hasCwd ? 'Choose the folder first.' : canStart ? 'The session starts now and its terminal opens with the keyboard in your hands.' : `${host?.name ?? 'That machine'} is offline: the session starts when it is back.`} It uses {place.mine ? 'your own' : "the server's"} Claude account.
+            The office gives it no work; you can still hand it a task yourself.{' '}
+          </>
+        ) : (
+          <>
+            {!hasCwd ? 'Without a folder they cannot be started yet.' : startNow && canStart ? 'Their session starts right away.' : 'Their session starts when you first talk to them or give them a task.'} {autonomyInfo(effectiveAutonomy).label}: {autonomyInfo(effectiveAutonomy).text}{' '}
+          </>
+        )}
         <button type="button" className="fp-link" style={{ display: 'inline' }} onClick={() => setMore((m) => !m)}>
           {more ? 'Fewer options' : 'More options'}
         </button>
@@ -306,18 +323,20 @@ function HireForm({ onDone, place }: { onDone: () => void; place: HirePlace }) {
               <span className="muted">{role.title}:</span> {role.instructions}
             </div>
           )}
-          <label className="check">
-            <input type="checkbox" checked={startNow} onChange={(ev) => setStartNow(ev.target.checked)} />
-            <span>Start their session right away (otherwise it starts when you first talk to them)</span>
-          </label>
+          {!self && (
+            <label className="check">
+              <input type="checkbox" checked={startNow} onChange={(ev) => setStartNow(ev.target.checked)} />
+              <span>Start their session right away (otherwise it starts when you first talk to them)</span>
+            </label>
+          )}
         </div>
       )}
 
       <div className="row">
         <Button variant="primary" type="submit" disabled={!valid || busy}>
-          {busy ? 'Hiring…' : 'Hire'}
+          {self ? (busy ? 'Starting…' : 'Sit down and start') : busy ? 'Hiring…' : 'Hire'}
         </Button>
-        <Button variant="ghost" type="button" onClick={onDone} disabled={busy}>
+        <Button variant="ghost" type="button" onClick={() => onDone()} disabled={busy}>
           Cancel
         </Button>
       </div>
@@ -339,11 +358,35 @@ function TeamPanel({ arg, onClose }: PanelProps) {
   const [projectId, setProjectId] = useState('');
   const [hostId, setHostId] = useState('');
   // `openPanel('team', 'hire')` goes straight to the hiring form.
-  const [hiring, setHiring] = useState<false | 'one' | 'many'>(arg === 'hire' ? 'one' : arg === 'hire-many' ? 'many' : false);
+  // `hire@<desk>` and `me@<desk>` come from an empty desk: hire for that desk, or sit there oneself.
+  const atDesk = arg && /^(hire|me)@/.test(arg) ? arg.slice(arg.indexOf('@') + 1) : undefined;
+  const self = !!arg?.startsWith('me@');
+  const [hiring, setHiring] = useState<false | 'one' | 'many'>(arg === 'hire' || atDesk ? 'one' : arg === 'hire-many' ? 'many' : false);
   // Step one of hiring: the shared office or my own room. Chosen by the person, unless there is only one place.
-  const { places } = useHirePlaces();
+  const { places: allPlaces } = useHirePlaces();
+  // A desk decides the place: a seat in my room is on my computer, a desk in the office is on a shared machine.
+  const seatHost = memberSeatOf(atDesk)?.hostId;
+  const only = atDesk ? (seatHost ? 'mine' : 'shared') : undefined;
+  const places = only ? allPlaces.filter((p) => (only === 'mine' ? p.mine && p.host.id === seatHost : !p.mine)) : allPlaces;
   const [where, setWhere] = useState('');
   const place = places.find((p) => p.host.id === where) ?? (places.length === 1 ? places[0] : undefined);
+  // Sitting down oneself: once the session exists, open its terminal and take the keyboard.
+  const sitDown = (id?: string) => {
+    if (!id) return onClose();
+    const st0 = useOffice.getState();
+    st0.openPanel(null);
+    st0.enterWorkstation(id);
+    let tries = 0;
+    const take = window.setInterval(() => {
+      const now = useOffice.getState();
+      const session = sessionOfEmployee(now.sessions, id);
+      if (now.workstationId !== id || ++tries > 60) return window.clearInterval(take);
+      if (session?.status === 'running') {
+        window.clearInterval(take);
+        connection.send({ t: 'control.acquire', sessionId: session.id });
+      }
+    }, 500);
+  };
 
   const all = useMemo(() => Object.values(employeesById).sort(byName), [employeesById]);
   // The foreman is not one of the seated employees: it is shown on its own, above the list.
@@ -359,26 +402,47 @@ function TeamPanel({ arg, onClose }: PanelProps) {
 
   if (hiring) {
     return (
-      <Window title={hiring === 'many' ? 'Hire for several projects' : 'Hire an employee'} subtitle="A persistent identity; their Claude Code sessions come and go" onClose={onClose} width={hiring === 'many' ? 1080 : 860}>
-        <div className="seg" role="tablist" aria-label="How many to hire" style={{ marginBottom: 14 }}>
-          <button role="tab" aria-selected={hiring === 'one'} className={hiring === 'one' ? 'seg-on' : ''} onClick={() => setHiring('one')}>
-            One employee
-          </button>
-          <button role="tab" aria-selected={hiring === 'many'} className={hiring === 'many' ? 'seg-on' : ''} onClick={() => setHiring('many')}>
-            One per project folder
-          </button>
-        </div>
-        <div className="section-title" style={{ marginTop: 0 }}>
-          1 · Where do they work?
-        </div>
-        <WherePicker value={place?.host.id ?? where} onChange={setWhere} />
-        <div style={{ height: 14 }} />
+      <Window
+        title={self ? 'Sit here with your own Claude Code' : hiring === 'many' ? 'Hire one employee per project folder' : atDesk ? 'Hire someone for this desk' : 'Hire an employee'}
+        subtitle={self ? 'A session of your own at this desk: you type, the office only shows it' : 'An employee is a Claude Code session with a name, a folder and a desk'}
+        onClose={onClose}
+        width={hiring === 'many' ? 1080 : 860}
+      >
+        {!atDesk && (
+          <div className="seg" role="tablist" aria-label="How many to hire" style={{ marginBottom: 14 }}>
+            <button role="tab" aria-selected={hiring === 'one'} className={hiring === 'one' ? 'seg-on' : ''} onClick={() => setHiring('one')}>
+              One employee
+            </button>
+            <button role="tab" aria-selected={hiring === 'many'} className={hiring === 'many' ? 'seg-on' : ''} onClick={() => setHiring('many')}>
+              One per project folder
+            </button>
+          </div>
+        )}
+        {/* With one possible place there is nothing to choose: say where it is and go on. */}
+        {places.length > 1 || !place ? (
+          <>
+            <div className="section-title" style={{ marginTop: 0 }}>
+              {self ? 'On which machine?' : '1 · Where do they work?'}
+            </div>
+            <WherePicker value={place?.host.id ?? where} onChange={setWhere} only={only} />
+            <div style={{ height: 14 }} />
+          </>
+        ) : (
+          <div className="small muted" style={{ marginBottom: 12 }}>
+            {place.mine ? `On your computer (${place.host.name}), in your room.` : `In the shared office, on ${place.host.name}.`}
+          </div>
+        )}
         {!place ? (
-          <div className="card small muted">Choose where they work first: in the shared office on the server, or in your own room on your computer. The folder and the desk follow from that.</div>
+          places.length > 0 && <div className="card small muted">{self ? 'Choose the machine first.' : 'Choose where they work first: in the shared office on the server, or in your own room on your computer. The folder and the desk follow from that.'}</div>
         ) : place.problem && !place.mine ? (
-          <div className="card small bad">{place.problem}. They can be hired now and started when it is back.</div>
+          <div className="card small bad">{place.problem}. {self ? 'The session starts when it is back.' : 'They can be hired now and started when it is back.'}</div>
         ) : null}
-        {place && (hiring === 'many' ? <BulkHire key={place.host.id} onlyHostId={place.host.id} onDone={() => setHiring(false)} /> : <HireForm key={place.host.id} place={place} onDone={() => setHiring(false)} />)}
+        {place &&
+          (hiring === 'many' ? (
+            <BulkHire key={place.host.id} onlyHostId={place.host.id} onDone={() => setHiring(false)} />
+          ) : (
+            <HireForm key={place.host.id} place={place} desk={atDesk} self={self} onDone={(id) => (self ? sitDown(id) : atDesk ? onClose() : setHiring(false))} />
+          ))}
       </Window>
     );
   }
@@ -391,10 +455,7 @@ function TeamPanel({ arg, onClose }: PanelProps) {
       width={1240}
       actions={
         <>
-          <Button small onClick={() => setHiring('many')} title="Pick several project folders and hire one employee for each">
-            Hire for several projects
-          </Button>
-          <Button variant="primary" small onClick={() => setHiring('one')}>
+          <Button variant="primary" small onClick={() => setHiring('one')} title="One employee, or one for each of several project folders">
             Hire
           </Button>
         </>
@@ -518,7 +579,7 @@ function TeamPanel({ arg, onClose }: PanelProps) {
                   </td>
                   <td className="pc-right pc-nowrap">
                     <Button small onClick={() => st.enterWorkstation(e.id)} disabled={!session} title={session ? 'Sit at their real terminal' : 'No session yet'}>
-                      Open workstation
+                      Open terminal
                     </Button>{' '}
                     <Button small onClick={() => st.openPanel('employee', e.id)}>
                       Profile
@@ -740,6 +801,8 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
     setArchiving(false);
     if (res) onClose();
   };
+  // Open from the start when something in it is set, and then as the person leaves it.
+  const [more, setMore] = useState(() => !!(e.claudeConfigDir || e.model || e.instructions || e.allowedTools.length || e.disallowedTools.length || e.executionMode !== 'interactive_cli'));
   const restartSensitive = live && ('instructions' in patch || 'allowedTools' in patch || 'disallowedTools' in patch || 'autonomy' in patch || 'model' in patch || 'roleKey' in patch || 'executionMode' in patch);
 
   return (
@@ -775,7 +838,9 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
         </div>
       </div>
 
-      <div className="grid3">
+      <div>
+        <div className="section-title">Who they are</div>
+        <div className="grid2">
         <Field label="Name">
           <input value={d.name} onChange={(ev) => set('name', ev.target.value)} />
         </Field>
@@ -792,15 +857,14 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
         <Field label="Title">
           <input value={d.title} onChange={(ev) => set('title', ev.target.value)} />
         </Field>
-        <Field label="Department">
-          <input value={d.department} onChange={(ev) => set('department', ev.target.value)} />
-        </Field>
-        <Field label="Specialisation">
-          <input value={d.specialization} onChange={(ev) => set('specialization', ev.target.value)} />
-        </Field>
         <Field label="Skills" hint="Comma separated">
           <input value={d.skills} onChange={(ev) => set('skills', ev.target.value)} />
         </Field>
+        </div>
+      </div>
+      <div>
+        <div className="section-title">Where they work</div>
+        <div className="grid3">
         <Field label="Machine" hint={live ? 'Stop the running session before moving them to another machine.' : undefined}>
           <select value={d.hostId} onChange={(ev) => set('hostId', ev.target.value)}>
             <option value="">No machine</option>
@@ -824,9 +888,6 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
         <Field label="Working directory" hint="Used when there is no project repository.">
           <input value={d.workingDir} onChange={(ev) => set('workingDir', ev.target.value)} className="mono" placeholder="none" />
         </Field>
-        <Field label="Claude account folder" hint="Leave empty to use the machine's own Claude login. To put this employee on another account, log in once on their machine with CLAUDE_CONFIG_DIR=~/.claude-second claude, then write that folder here. Takes effect the next time their session starts.">
-          <input value={d.claudeConfigDir} onChange={(ev) => set('claudeConfigDir', ev.target.value)} className="mono" placeholder="default login" spellCheck={false} aria-label="Claude account folder" />
-        </Field>
         {projects.filter((p) => p.id !== d.projectId).length > 0 && (
           <Field label="Also works on" hint="Other projects this employee may be given tasks from. Their own project stays the one above.">
             <div className="row row-wrap" style={{ gap: 10 }}>
@@ -841,6 +902,23 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
             </div>
           </Field>
         )}
+        </div>
+      </div>
+      <div>
+        <div className="section-title">How much they may do without asking</div>
+        <AutonomyPicker name={`autonomy-${e.id}`} value={d.autonomy} onChange={(v) => set('autonomy', v)} />
+      </div>
+      {/* What is rarely changed stays folded away, unless something in it is set. */}
+      <details className="pc-more" open={more} onToggle={(ev) => setMore((ev.currentTarget as HTMLDetailsElement).open)}>
+        <summary>More settings: account, model, instructions, tools</summary>
+        <div className="col" style={{ gap: 14, marginTop: 10 }}>
+          <div className="grid3">
+        <Field label="Department">
+          <input value={d.department} onChange={(ev) => set('department', ev.target.value)} />
+        </Field>
+        <Field label="Specialisation">
+          <input value={d.specialization} onChange={(ev) => set('specialization', ev.target.value)} />
+        </Field>
         <Field label="Communication style">
           <select value={d.style} onChange={(ev) => set('style', ev.target.value as CommunicationStyle)}>
             {STYLES.map((s) => (
@@ -854,7 +932,10 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
           <input value={d.model} onChange={(ev) => set('model', ev.target.value)} className="mono" placeholder="default" />
         </Field>
         <RuntimeField value={d.executionMode} onChange={(v) => set('executionMode', v)} host={d.hostId ? hostsById[d.hostId] : undefined} />
-      </div>
+        <Field label="Claude account folder" hint="Leave empty to use the machine's own Claude login. To put this employee on another account, log in once on their machine with CLAUDE_CONFIG_DIR=~/.claude-second claude, then write that folder here. Takes effect the next time their session starts.">
+          <input value={d.claudeConfigDir} onChange={(ev) => set('claudeConfigDir', ev.target.value)} className="mono" placeholder="default login" spellCheck={false} aria-label="Claude account folder" />
+        </Field>
+          </div>
       {role && (
         <div className="small faint">
           <span className="muted">Role brief (appended to the system prompt):</span> {role.instructions}
@@ -863,21 +944,18 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
       <Field label="Standing instructions" hint="Appended to the system prompt of every session they start.">
         <textarea value={d.instructions} onChange={(ev) => set('instructions', ev.target.value)} placeholder="Anything this employee should always keep in mind." />
       </Field>
-      <div className="grid2">
+          <div className="grid2">
         <Field label="Always allowed tools" hint="Claude Code permission rules, one per line — e.g. Bash(npm run lint:*) or WebFetch. Added to what the project and autonomy level already allow.">
           <textarea className="mono" value={d.allowedTools} onChange={(ev) => set('allowedTools', ev.target.value)} placeholder="Bash(npm run lint:*)" spellCheck={false} style={{ minHeight: 64 }} />
         </Field>
         <Field label="Never allowed tools" hint="Rules this employee may never use, one per line — e.g. WebSearch or Bash(docker:*). A denied rule wins over an allowed one.">
           <textarea className="mono" value={d.disallowedTools} onChange={(ev) => set('disallowedTools', ev.target.value)} placeholder="Bash(docker:*)" spellCheck={false} style={{ minHeight: 64 }} />
         </Field>
-      </div>
-      <div>
-        <div className="section-title">Autonomy</div>
-        <AutonomyPicker name={`autonomy-${e.id}`} value={d.autonomy} onChange={(v) => set('autonomy', v)} />
-      </div>
+          </div>
+        </div>
+      </details>
       <div className={restartSensitive ? 'pc-note' : 'pc-info'}>
-        Instructions, autonomy, role, model and runtime are applied when a session starts.{' '}
-        {live ? 'The session that is running now keeps what it was started with until it is stopped and started again.' : 'They take effect the next time this employee’s session is started.'}
+        {live ? 'Autonomy, role, model, instructions and tools reach a session when it starts: stop and start theirs to apply a change.' : 'Changes take effect the next time their session is started.'}
       </div>
       <div className="row">
         <Button variant="primary" disabled={!dirty || !valid || busy} onClick={save}>
@@ -974,8 +1052,7 @@ function AppearanceTab({ e }: { e: Employee }) {
         <Avatar appearance={a} size={120} />
         <div className="strong">{e.name}</div>
         <div className="small faint" style={{ textAlign: 'center' }}>
-          Live preview. The portrait shows skin, hair and shirt; trousers, accessory and build are visible on the 3D character.
-        </div>
+          The portrait shows skin, hair and shirt; the rest is seen on the character in the office.</div>
       </div>
       <div className="grow col" style={{ gap: 14 }}>
         <div className="grid4">
@@ -1096,11 +1173,11 @@ function SessionTab({ e }: { e: Employee }) {
           <>
             {paused ? (
               <Button variant="success" small disabled={busy} onClick={() => run(() => api('POST', `/employees/${e.id}/resume`, {}), `${e.name} resumed`)}>
-                Resume work
+                Resume
               </Button>
             ) : (
-              <Button small disabled={busy} onClick={() => run(() => api('POST', `/employees/${e.id}/pause`, {}), `${e.name} interrupted`)} title="A real interrupt of the running turn (Escape, or the SDK interrupt): a real interrupt of the current turn. New prompts are held until you resume.">
-                Pause (interrupt)
+              <Button small disabled={busy} onClick={() => run(() => api('POST', `/employees/${e.id}/pause`, {}), `${e.name} paused`)} title="Stops what they are doing right now. They do nothing more until you resume them.">
+                Pause
               </Button>
             )}
             <Button variant="danger" small disabled={busy} onClick={() => setConfirmStop(true)}>
@@ -1113,7 +1190,7 @@ function SessionTab({ e }: { e: Employee }) {
           </Button>
         )}
         <Button small onClick={() => st.enterWorkstation(e.id)} disabled={!session}>
-          Open workstation
+          Open terminal
         </Button>
         {!live && host && host.status !== 'online' && <span className="small muted">{host.name} is {host.status}; a session cannot start there right now.</span>}
         {!live && !e.hostId && <span className="small muted">No machine assigned.</span>}
@@ -1266,8 +1343,6 @@ const DELIVERY_TIP: Record<DeliveryStatus, string> = {
 function MessageTab({ e }: { e: Employee }) {
   const messages = useOffice((s) => s.messages);
   const employees = useOffice((s) => s.employees);
-  const [body, setBody] = useState('');
-  const [busy, setBusy] = useState(false);
   const list = useMemo(
     () =>
       Object.values(messages)
@@ -1275,26 +1350,15 @@ function MessageTab({ e }: { e: Employee }) {
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
     [messages, e.id],
   );
-  const send = async () => {
-    if (!body.trim()) return;
-    setBusy(true);
-    const res = await act(() => api('POST', `/employees/${e.id}/message`, { body }), 'Message queued');
-    setBusy(false);
-    if (res) setBody('');
-  };
   return (
     <div className="col" style={{ gap: 12 }}>
-      <div className="col" style={{ gap: 6 }}>
-        <textarea autoFocus value={body} onChange={(ev) => setBody(ev.target.value)} placeholder={`Tell ${e.name} something…`} onKeyDown={(ev) => (ev.metaKey || ev.ctrlKey) && ev.key === 'Enter' && void send()} />
-        <div className="row">
-          <Button variant="primary" disabled={!body.trim() || busy} onClick={send}>
-            Send message
-          </Button>
-          <span className="small faint">⌘/Ctrl + Enter · delivered into their session when it is between turns; “confirmed” only once the runtime acknowledges it.</span>
-        </div>
+      <div className="row">
+        <span className="small muted grow">Everything said to and by {e.name}, newest first: by you, by other people and by other employees.</span>
+        <Button small variant="primary" onClick={() => useOffice.getState().openPanel('talk', e.id)}>
+          Talk to {e.name}
+        </Button>
       </div>
       <div>
-        <div className="section-title">Messages to and from {e.name}</div>
         {list.length === 0 && <div className="small muted">No messages yet.</div>}
         <div className="list">
           {list.map((m) => {
@@ -1554,10 +1618,10 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
           { id: 'profile', label: 'Profile' },
           { id: 'appearance', label: 'Appearance' },
           { id: 'session', label: 'Session' },
-          { id: 'message', label: 'Message' },
+          { id: 'message', label: 'Messages' },
           { id: 'history', label: 'History' },
           // The foreman has no desk to choose.
-          ...(e.roleKey === 'foreman' ? [] : [{ id: 'desk' as const, label: 'Workstation' }]),
+          ...(e.roleKey === 'foreman' ? [] : [{ id: 'desk' as const, label: 'Desk and hours' }]),
         ]}
       />
       <div className="pc-tabbody" key={e.id} ref={body}>

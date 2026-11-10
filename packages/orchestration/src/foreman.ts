@@ -270,7 +270,8 @@ export class Foreman {
     // foreman once (the key carries when it began), so someone left alone on purpose is not asked about again.
     const idleMs = this.idleMs();
     if (idleMs > 0) {
-      for (const who of core.employees.filter((e) => !e.archived && e.roleKey !== FOREMAN_ROLE && !this.away(e))) {
+      // A person's own session is theirs to leave idle: the foreman does not ask about it.
+      for (const who of core.employees.filter((e) => !e.archived && e.roleKey !== FOREMAN_ROLE && !e.selfDriven && !this.away(e))) {
         const s = core.runningSessionOf(who.id);
         if (!s || s.status !== 'running' || s.inTurn === true || (s.activity !== 'idle' && s.activity !== 'waiting_input' && s.activity !== 'task_complete')) continue;
         if (core.gateway.isPaused(s.id) || core.gateway.isHumanControlled(s.id) || !this.eng.tasks.withinSchedule(who)) continue;
@@ -283,7 +284,7 @@ export class Foreman {
       }
     }
 
-    const free = core.employees.filter((e) => e.roleKey !== FOREMAN_ROLE && !this.away(e) && this.eng.tasks.isFree(e));
+    const free = core.employees.filter((e) => e.roleKey !== FOREMAN_ROLE && !e.selfDriven && !this.away(e) && this.eng.tasks.isFree(e));
     if (free.length) {
       for (const t of core.tasks.filter((x) => x.status === 'READY' && !x.assigneeId && x.kind !== 'review' && active(x.projectId))) {
         // Give the scheduler its turn first: where a project assigns automatically, this is only what it left over.
