@@ -36,7 +36,12 @@ export function officeWithRooms(s: OfficeState, unlocked: string[]): OfficeWithR
   const staff = Object.values(s.employees)
     .filter((e) => !e.archived && !!e.hostId)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
-  const online = personal.filter((h) => h.status === 'online').map((h) => ({ hostId: h.id, memberId: h.memberId!, memberName: h.memberName ?? h.name, employeeIds: staff.filter((e) => e.hostId === h.id).map((e) => e.id) }));
+  // Every member's room stands in the office whether they are in or not: lit and open while their computer is
+  // connected, grey and locked while it is not. (A computer of theirs that is away and has nobody on it gets no room
+  // when they have another: an old enrollment would otherwise leave an empty room behind.)
+  const hasStaff = (id: string) => staff.some((e) => e.hostId === id);
+  const shown = personal.filter((h) => h.status === 'online' || hasStaff(h.id) || !personal.some((o) => o.id !== h.id && o.memberId === h.memberId));
+  const online = shown.map((h) => ({ hostId: h.id, memberId: h.memberId!, memberName: h.memberName ?? h.name, prefs: h.room ?? null, locked: h.status !== 'online', employeeIds: staff.filter((e) => e.hostId === h.id).map((e) => e.id) }));
   const theirs = staff.filter((e) => personal.some((h) => h.id === e.hostId)).map((e) => e.id);
   const key = JSON.stringify([online, theirs, [...unlocked].sort()]);
   if (lastOffice && lastOffice.layout === s.layout && lastOffice.key === key) return lastOffice.value;

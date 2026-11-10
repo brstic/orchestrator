@@ -386,7 +386,7 @@ export function moveWithCollision(world: World, x: number, z: number, dx: number
     // Outside the building there is floor only in the member rooms (and in front of the entrance).
     if (px < core.minX + radius || px > core.maxX - radius || pz < core.minZ + radius || pz > core.maxZ + 6) {
       let inRoom = false;
-      for (const r of world.memberRooms) if (px > r.reach.minX && px < r.reach.maxX && pz > r.reach.minZ && pz < r.reach.maxZ) inRoom = true;
+      for (const r of world.memberRooms) if (!r.locked && px > r.reach.minX && px < r.reach.maxX && pz > r.reach.minZ && pz < r.reach.maxZ) inRoom = true;
       if (!inRoom) return true;
     }
     for (const o of world.obstacles) {

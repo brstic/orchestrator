@@ -57,6 +57,40 @@ export interface Host {
   memberId?: ID | null;
   /** That member's name, for the sign on their room. */
   memberName?: string | null;
+  /** How the member wants their room: its size, colour, name and furniture. Null: as it comes. */
+  room?: MemberRoomPrefs | null;
+}
+
+/** A member's own choices for their room in the office. Everything is optional; the room is never smaller than its employees need. */
+export interface MemberRoomPrefs {
+  /** What the sign says instead of "<NAME>'S ROOM". */
+  title?: string | null;
+  /** Carpet and accent colour, `#rrggbb`. */
+  color?: string | null;
+  /** At least this many desks (in pairs), even when fewer employees live there. */
+  desks?: number | null;
+  /** Metres of open floor behind the desks: room to walk, and where the furniture stands. */
+  extraDepth?: number | null;
+  /** What stands in the room. */
+  furniture?: MemberRoomFurniture[] | null;
+}
+export type MemberRoomFurniture = 'plant' | 'bookshelf' | 'sofa' | 'floor_lamp';
+export const MEMBER_ROOM_FURNITURE: MemberRoomFurniture[] = ['plant', 'bookshelf', 'sofa', 'floor_lamp'];
+export const MEMBER_ROOM_LIMITS = { desks: 20, extraDepth: 12 } as const;
+
+/** Keep what is a valid choice and drop the rest (what a member sends is drawn in everyone's office). */
+export function sanitizeMemberRoom(input: unknown): MemberRoomPrefs {
+  const p = (input ?? {}) as Record<string, unknown>;
+  const out: MemberRoomPrefs = {};
+  const title = typeof p.title === 'string' ? p.title.replace(/[\u0000-\u001f\s]+/g, ' ').trim().slice(0, 28).trim() : '';
+  if (title) out.title = title;
+  if (typeof p.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(p.color)) out.color = p.color.toLowerCase();
+  const desks = Number(p.desks);
+  if (Number.isFinite(desks) && desks >= 2) out.desks = Math.min(MEMBER_ROOM_LIMITS.desks, Math.ceil(desks / 2) * 2);
+  const extra = Number(p.extraDepth);
+  if (Number.isFinite(extra) && extra > 0) out.extraDepth = Math.min(MEMBER_ROOM_LIMITS.extraDepth, Math.round(extra * 2) / 2);
+  if (Array.isArray(p.furniture)) out.furniture = MEMBER_ROOM_FURNITURE.filter((k) => (p.furniture as unknown[]).includes(k));
+  return out;
 }
 
 // ─────────────────────────── Employees ───────────────────────────

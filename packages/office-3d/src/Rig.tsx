@@ -192,12 +192,12 @@ export function Rig({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A member's room is gone when they leave the office. Whoever was standing in it is put back inside the building,
+  // A member's room is locked when they leave the office (and gone if their computer is removed). Whoever was standing in it is put back inside the building,
   // by the wall the room was attached to, instead of being left where there is no floor any more.
   useEffect(() => {
     const c = world.base.bounds;
     if (player.x > c.minX && player.x < c.maxX && player.z > c.minZ && player.z < c.maxZ + 6) return;
-    if (world.memberRooms.some((r) => player.x > r.reach.minX && player.x < r.reach.maxX && player.z > r.reach.minZ && player.z < r.reach.maxZ)) return;
+    if (world.memberRooms.some((r) => !r.locked && player.x > r.reach.minX && player.x < r.reach.maxX && player.z > r.reach.minZ && player.z < r.reach.maxZ)) return;
     const back = world.nav.nearestWalkable(THREE.MathUtils.clamp(player.x, c.minX + 0.8, c.maxX - 0.8), THREE.MathUtils.clamp(player.z, c.minZ + 0.8, c.maxZ - 0.8));
     if (!back) return;
     player.set(back[0], 0, back[1]);

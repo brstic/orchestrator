@@ -100,6 +100,8 @@ for (const [n, arg] of memberArgs.entries()) {
   const root = path.join(fs.realpathSync(base), `member-${n}`);
   fs.mkdirSync(root, { recursive: true });
   const socket = `${sock}-m${n}`;
+  // ORCH_DEV_ROOM='{"desks":8,…}': how the first of these members arranged their room (as PUT /api/me/room would).
+  if (n === 0 && process.env.ORCH_DEV_ROOM) server.engine.hosts.setMemberRoom(`dev-member-${n}`, JSON.parse(process.env.ORCH_DEV_ROOM), 'dev');
   const { token } = server.engine.hosts.createMemberEnrollment({ id: `dev-member-${n}`, name });
   const enrolled = await enroll(server.url, token, `${name}'s computer`, { ...info, hostname: `${name.toLowerCase()}-laptop` });
   const memberCfg = { ...cfg, name: `${name}'s computer`, allowedRoots: [root], tmuxSocketName: socket, hostId: enrolled.hostId, credential: enrolled.credential };

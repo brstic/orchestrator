@@ -242,11 +242,12 @@ export function Building({ world, cutaway, quality }: { world: World; cutaway: b
   const slabMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#8d95a3', roughness: 0.8 }), []);
 
   // Member rooms: a floor of the member's colour and a ceiling with its own light panels, made when the room appears.
-  const annexKey = world.memberRooms.map((r) => `${r.roomId}:${r.x}:${r.z}:${r.w}:${r.d}:${r.color}:${r.lights.length}`).join('|');
+  const annexKey = world.memberRooms.map((r) => `${r.roomId}:${r.x}:${r.z}:${r.w}:${r.d}:${r.color}:${r.lights.length}:${r.locked ? 'L' : ''}`).join('|');
   const annex = useMemo(
     () =>
       world.memberRooms.map((r) => {
-        const carpet = new THREE.Color(r.color).lerp(new THREE.Color('#566072'), 0.62);
+        // Away: the room keeps a trace of its colour under grey, and its lights are off.
+        const carpet = r.locked ? new THREE.Color(r.color).lerp(new THREE.Color('#43474e'), 0.94) : new THREE.Color(r.color).lerp(new THREE.Color('#566072'), 0.62);
         const tex = noiseTexture(`#${carpet.getHexString()}`, 20, 1);
         tex.repeat.set(r.w * 0.9, r.d * 0.9);
         const floor = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, metalness: 0 });
@@ -264,7 +265,7 @@ export function Building({ world, cutaway, quality }: { world: World; cutaway: b
         glow.colorSpace = THREE.SRGBColorSpace;
         glow.anisotropy = 16;
         const ceil = new THREE.MeshStandardMaterial({ color: '#eef1f5', roughness: 0.95, transparent: true, opacity: ceilingMat.opacity, emissive: '#ffffff', emissiveIntensity: 2.4, emissiveMap: glow });
-        const accent = new THREE.MeshStandardMaterial({ color: r.color, roughness: 0.6, ...ON_SURFACE });
+        const accent = new THREE.MeshStandardMaterial({ color: r.locked ? '#5b616b' : r.color, roughness: 0.6, ...ON_SURFACE });
         return { room: r, floor, ceil, accent, textures: [tex, glow] };
       }),
     [annexKey], // eslint-disable-line react-hooks/exhaustive-deps
@@ -350,6 +351,24 @@ export function Building({ world, cutaway, quality }: { world: World; cutaway: b
         );
       })}
       <group ref={group} scale={[1, height.current / 3, 1]}>
+        {/* A locked room's door: closed, on the whole wall, with a bar across it. */}
+        {world.memberRooms.filter((r) => r.locked).map((r) => {
+          const alongZ = r.side !== 'n';
+          const into = r.side === 'e' ? -1 : 1;
+          const px = r.door.x + (alongZ ? into * (WALL_T / 2 + 0.02) : 0);
+          const pz = r.door.z + (alongZ ? 0 : WALL_T / 2 + 0.02);
+          return (
+            <group key={`${r.roomId}:shut`} position={[px, 0, pz]}>
+              <mesh position={[0, 1.1, 0]} material={frameMat}>
+                <boxGeometry args={alongZ ? [0.05, 2.2, r.door.width - 0.2] : [r.door.width - 0.2, 2.2, 0.05]} />
+              </mesh>
+              <mesh position={[alongZ ? into * 0.04 : 0, 1.05, alongZ ? 0 : 0.04]}>
+                <boxGeometry args={alongZ ? [0.04, 0.12, r.door.width - 0.5] : [r.door.width - 0.5, 0.12, 0.04]} />
+                <meshStandardMaterial color="#8a8f98" roughness={0.4} metalness={0.7} />
+              </mesh>
+            </group>
+          );
+        })}
         {/* The frame of each member room's door: it stands a few centimetres proud of the wall it is cut through. */}
         {world.memberRooms.map((r) =>
           [-1, 1].map((e) => {
@@ -406,9 +425,11 @@ export function Building({ world, cutaway, quality }: { world: World; cutaway: b
 
 /** A member room's name: on a plaque by its door (or over it), and painted on its floor for the cameras that look down. */
 function MemberSigns({ room }: { room: MemberRoom }) {
-  const title = memberRoomTitle(room.memberName);
+  const title = room.title;
+  // Away: the signs lose their colour with the room.
+  const tint = room.locked ? '#8a9099' : room.color;
   const seated = room.employees - room.unseated;
-  const sub = !room.employees ? 'No employees yet' : room.unseated ? `${seated} of ${room.employees} employees here` : `${room.employees} employee${room.employees === 1 ? '' : 's'}`;
+  const sub = room.locked ? 'Away · locked' : !room.employees ? 'No employees yet' : room.unseated ? `${seated} of ${room.employees} employees here` : `${room.employees} employee${room.employees === 1 ? '' : 's'}`;
   const PW = 1.2;
   const PH = 0.5;
   const label = useCanvasTexture(
@@ -428,12 +449,12 @@ function MemberSigns({ room }: { room: MemberRoom }) {
       const text = clip(ctx, title, w * 0.96);
       ctx.fillText(text, w / 2, h * 0.44);
       const tw = Math.min(w * 0.96, ctx.measureText(text).width);
-      ctx.fillStyle = room.color;
+      ctx.fillStyle = tint;
       ctx.fillRect(w / 2 - tw / 2, h * 0.82, tw, h * 0.07);
       (ctx as any).letterSpacing = '0px';
       ctx.textAlign = 'left';
     },
-    [title, room.color],
+    [title, tint],
   );
   return (
     <>
@@ -447,11 +468,11 @@ function MemberSigns({ room }: { room: MemberRoom }) {
           height={PH}
           px={768}
           position={[0, 0, 0.0415]}
-          deps={[title, sub, room.color]}
+          deps={[title, sub, tint]}
           draw={(ctx, w, h) => {
             ctx.fillStyle = '#10151e';
             ctx.fillRect(0, 0, w, h);
-            ctx.fillStyle = room.color;
+            ctx.fillStyle = tint;
             ctx.fillRect(0, 0, w * 0.03, h);
             ctx.textBaseline = 'middle';
             ctx.fillStyle = '#ffffff';
@@ -460,7 +481,7 @@ function MemberSigns({ room }: { room: MemberRoom }) {
             ctx.font = font(size, 800);
             while (size > h * 0.17 && ctx.measureText(title).width > w * 0.86) ctx.font = font((size *= 0.94), 800);
             ctx.fillText(clip(ctx, title, w * 0.88), w * 0.08, h * 0.36);
-            ctx.fillStyle = room.color;
+            ctx.fillStyle = tint;
             ctx.font = font(h * 0.17, 600);
             ctx.fillText(clip(ctx, sub, w * 0.88), w * 0.08, h * 0.72);
           }}

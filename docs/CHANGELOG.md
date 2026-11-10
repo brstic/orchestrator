@@ -3,6 +3,8 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-10
+- Members arrange their own room (Menu → My room → *Arrange my room*): name on the door, colour, number of desks (up to 20), open floor behind the desks, furniture. Kept by the office (`PUT /api/me/room`), drawn for everyone.
+- A member's room now stays in the office when they leave: grey, dark and locked, their employees asleep at their desks; it opens again when their computer reconnects. Rooms no longer change places when someone leaves.
 - A saved office can be marked "open at start": the app walks into it without the start screen. The owner's local office was shut down and set aside (see STATUS); they now work in the server office.
 - Trial on the owner's server with two members at once and real Claude Code doing one small task on the server and one on a member's computer; usage of both accounts reported. UPDATE plan closed.
 - The office is installed and running on the owner's server (see STATUS). Invitations no longer list container bridge addresses or duplicates; in server mode the start script no longer prints the owner token to the log; the generated systemd unit carries the office's state folders.

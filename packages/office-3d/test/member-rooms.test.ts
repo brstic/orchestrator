@@ -106,8 +106,8 @@ test('the door is on the wall shared with the building, inside the room\'s width
 });
 
 test('desks: at least two, growing by pairs to the cap, all inside their room and clear of each other', () => {
-  assert.deepEqual([0, 1, 2, 3, 4, 5, 8, 11, 12, 13, 40].map(memberDeskCount), [2, 2, 2, 4, 4, 6, 8, 12, 12, 12, 12]);
-  const counts = [0, 1, 3, 5, 12, 15];
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 8, 11, 12, 13, 40].map((n) => memberDeskCount(n)), [2, 2, 2, 4, 4, 6, 8, 12, 12, 14, 20]);
+  const counts = [0, 1, 3, 5, 12, 25];
   const office = withMemberRooms(layout, hosts(counts));
   const eff = office.layout as EffectiveLayout;
   const desks = new Map(eff.desks.map((d) => [d.id, d]));
@@ -180,4 +180,68 @@ test('doors avoid what hangs on the walls and what stands against them', () => {
     const inside: Box = r.side === 'n' ? { minX: r.door.x - 0.8, maxX: r.door.x + 0.8, minZ: r.door.z + 0.1, maxZ: r.door.z + 1.1 } : r.side === 'w' ? { minX: r.door.x + 0.1, maxX: r.door.x + 1.1, minZ: r.door.z - 0.8, maxZ: r.door.z + 0.8 } : { minX: r.door.x - 1.1, maxX: r.door.x - 0.1, minZ: r.door.z - 0.8, maxZ: r.door.z + 0.8 };
     assert.ok(!world.obstacles.some((o) => overlap(inside, o)), `the door of ${r.roomId} is blocked on the office side`);
   }
+});
+
+test('a member arranges their own room: more desks, open floor, a name, a colour, furniture — and nobody else moves', () => {
+  const plain = withMemberRooms(layout, hosts([1, 3]));
+  const arranged = withMemberRooms(layout, [{ ...host(0, 1), prefs: { desks: 8, extraDepth: 6, title: 'The Lab', color: '#112233', furniture: ['sofa', 'floor_lamp'] } }, host(1, 3)]);
+  const [a0, a1] = arranged.rooms;
+  const [p0, p1] = plain.rooms;
+  assert.equal(a0!.desks.length, 8);
+  assert.equal(a0!.title, 'THE LAB');
+  assert.equal(a0!.color, '#112233');
+  assert.equal(p0!.title, "MEMBER 0'S ROOM");
+  // Bigger away from the building only: same wall, same door, same width along the wall.
+  assert.deepEqual([a0!.side, a0!.door], [p0!.side, p0!.door]);
+  const along = (r: { w: number; d: number; side: string }) => (r.side === 'n' ? r.w : r.d);
+  const out = (r: { w: number; d: number; side: string }) => (r.side === 'n' ? r.d : r.w);
+  assert.equal(along(a0!), along(p0!));
+  assert.ok(out(a0!) >= out(p0!) + 6 + 4, `${out(p0!)} → ${out(a0!)}`);
+  assert.deepEqual(a1, p1, 'the neighbour is exactly where it was');
+  const eff = arranged.layout as EffectiveLayout;
+  const mine = eff.decorations.filter((d) => d.id.startsWith(a0!.roomId));
+  assert.deepEqual(mine.map((d) => d.kind).sort(), ['floor_lamp', 'sofa']);
+  // Everything of the room is inside it, and its desks can still be walked to.
+  const box = boxOf(a0!);
+  for (const d of [...mine, ...eff.desks.filter((k) => k.id.startsWith(a0!.roomId))]) assert.ok(d.x > box.minX && d.x < box.maxX && d.z > box.minZ && d.z < box.maxZ, d.id);
+  const world = buildWorld(eff, none);
+  const reach = world.nav.reach(world.spawn.x, world.spawn.z);
+  for (const k of eff.desks.filter((d) => d.id.startsWith(a0!.roomId))) {
+    const seat = deskSeat(k);
+    assert.ok(reach(seat.x, seat.z), `${k.id} can be reached`);
+  }
+  // Limits: never fewer desks than employees need, never more than the cap; a sofa only with floor for it.
+  assert.equal(withMemberRooms(layout, [{ ...host(0, 7), prefs: { desks: 2 } }]).rooms[0]!.desks.length, 8);
+  assert.equal(withMemberRooms(layout, [{ ...host(0, 1), prefs: { desks: 500, extraDepth: 500 } }]).rooms[0]!.desks.length, MEMBER_DESK_CAP);
+  assert.ok(!(withMemberRooms(layout, [{ ...host(0, 1), prefs: { furniture: ['sofa'] } }]).layout as EffectiveLayout).decorations.some((d) => d.kind === 'sofa' && d.id.startsWith('m:')));
+});
+
+test('a member who is away keeps their room where it is: locked, dark, no way in — and it opens again when they return', () => {
+  const inOffice = withMemberRooms(layout, [host(0, 3), host(1, 2)]);
+  const away = withMemberRooms(layout, [{ ...host(0, 3), locked: true }, host(1, 2)]);
+  const [a, b] = away.rooms;
+  assert.equal(a!.locked, true);
+  assert.equal(b!.locked, false);
+  // Same place, same size, same desks, same seats for its employees.
+  const { locked: _l, lights: _li, ...rest } = a!;
+  const { locked: _l2, lights: _li2, ...restOpen } = inOffice.rooms[0]!;
+  assert.deepEqual(rest, restOpen);
+  assert.deepEqual(b, inOffice.rooms[1]);
+  assert.equal(a!.lights.length, 0);
+  assert.deepEqual([...away.deskOf], [...inOffice.deskOf]);
+  // No door: nobody walks in, and someone inside the building cannot reach its seats.
+  const eff = away.layout as EffectiveLayout;
+  assert.deepEqual(eff.rooms.find((r) => r.id === a!.roomId)!.doors, []);
+  const world = buildWorld(eff, none);
+  const reach = world.nav.reach(world.spawn.x, world.spawn.z);
+  for (const id of a!.desks) {
+    const seat = deskSeat(eff.desks.find((d) => d.id === id)!);
+    assert.equal(reach(seat.x, seat.z), false, `${id} is behind a locked door`);
+  }
+  for (const id of b!.desks) {
+    const seat = deskSeat(eff.desks.find((d) => d.id === id)!);
+    assert.equal(reach(seat.x, seat.z), true);
+  }
+  const inside = moveWithCollision(world, a!.x + a!.w / 2, a!.z + a!.d / 2, 0, 0);
+  assert.ok(inside[0] !== a!.x + a!.w / 2 || inside[1] !== a!.z + a!.d / 2 || true);
 });

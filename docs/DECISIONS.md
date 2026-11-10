@@ -21,6 +21,12 @@ Newest first. Each entry: what was decided, why, and what was rejected. Add one 
 - **A member's room exists while their host is online.** Closing the app stops the agent; the tmux sessions stay and are adopted again next time.
 - **Graphics, keys and office extras are per client,** stored by the desktop app (per computer). Office-wide settings stay with owners.
 
+## 2026-11-10 — Member rooms are permanent and the member's to arrange
+- Owner's words: "let me make my room the way I want, make it bigger etc." and "all of it must stay on the server; when I am not there my office should be visible but grey and locked". So a room stands for every member computer the office knows, whether connected or not; away means no door opening, no lights, grey carpet and signs, employees shown asleep. This replaces "a member's room exists while their host is online".
+- Choices are stored per member on the server (`memberRooms` in the key-value store) and copied onto each of their hosts (`Host.room`), so the client needs nothing extra to draw them. They are validated on the way in (`sanitizeMemberRoom`): what a member sends is drawn in everyone's office.
+- A room grows only away from the building (more desks, open floor), never along the wall: neighbours never move. Width along the wall stays fixed at 6.8 m.
+- An away computer with nobody on it gets no room when its member has another computer: a re-enrollment would otherwise leave an empty room behind.
+
 ## 2026-11-10 — Rendering and movement
 - Even rhythm over raw frame rate: draw on every refresh or on every second one (`pace.ts`). A steady 60 looks smoother than an unsteady 90.
 - Things that lie on a surface get a polygon offset (`surface.ts`); surfaces are kept centimetres apart, not millimetres.

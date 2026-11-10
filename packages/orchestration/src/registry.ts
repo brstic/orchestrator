@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type {
   AccountUsage,
+  MemberRoomPrefs,
   AgentSession,
   AgentSessionReport,
   Appearance,
@@ -13,7 +14,7 @@ import type {
   TerminalScreen,
   ActivityState,
 } from '@orchestrator/contracts';
-import { ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, slugify } from '@orchestrator/contracts';
+import { ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
 import { trustPromptKeys } from './comms.ts';
 import { EngineError } from './core.ts';
@@ -89,6 +90,24 @@ export class HostRegistry {
     return this.createEnrollmentToken(`member:${member.id}:${member.name}`, ttlMs, `member:${member.name}`);
   }
 
+  /** A member arranges their room: remembered for them, and shown on every computer of theirs. */
+  setMemberRoom(memberId: string, input: unknown, actor: string): MemberRoomPrefs {
+    const prefs = sanitizeMemberRoom(input);
+    const all = this.core.store.kvGet<Record<string, MemberRoomPrefs>>('memberRooms', {});
+    all[memberId] = prefs;
+    this.core.store.kvSet('memberRooms', all);
+    for (const h of this.ofMember(memberId)) {
+      h.room = prefs;
+      this.core.put('host', h);
+    }
+    this.core.audit(actor, 'member.room_changed', memberId, { ...prefs });
+    return prefs;
+  }
+
+  memberRoom(memberId: string): MemberRoomPrefs | null {
+    return this.core.store.kvGet<Record<string, MemberRoomPrefs>>('memberRooms', {})[memberId] ?? null;
+  }
+
   /** The hosts that are a member's own computers. */
   ofMember(memberId: string): Host[] {
     return this.core.hosts.filter((h) => h.memberId === memberId && h.status !== 'revoked');
@@ -139,6 +158,7 @@ export class HostRegistry {
         local: !member && ((local && !cred.label?.startsWith('ssh:')) || cred.label === 'local'),
         memberId: member?.[1] ?? null,
         memberName: member?.[2] ?? null,
+        room: member ? this.memberRoom(member[1]!) : null,
       };
       const credential = generateToken('orch_host');
       this.core.store.addCredential('host', credential, { refId: host.id, label: host.name });

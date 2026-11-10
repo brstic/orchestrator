@@ -242,6 +242,13 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       if (who.id === 'owner') throw new EngineError('This is the office\'s own computer already; its sessions are the shared ones.');
       return { ...engine.hosts.createMemberEnrollment({ id: who.id, name: who.name }), hosts: engine.hosts.ofMember(who.id).map((x) => ({ id: x.id, name: x.name, status: x.status })) };
     });
+    // How a member wants their own room (size, colour, name, furniture): theirs to decide.
+    api.get('/me/room', async (req) => engine.hosts.memberRoom(whoOf(req).id) ?? {});
+    api.put('/me/room', async (req) => {
+      const who = whoOf(req);
+      if (who.id === 'owner') throw new EngineError('The office\'s own computer has no room of its own; rooms belong to members who connect.');
+      return engine.hosts.setMemberRoom(who.id, body(req), `member:${who.name}`);
+    });
     /** Someone who may no longer have a computer in the office (revoked, or now a visitor): theirs are disconnected for good. */
     const dropHostsOf = (memberId: string) => {
       for (const x of engine.hosts.ofMember(memberId)) engine.hosts.revoke(x.id, 'system');

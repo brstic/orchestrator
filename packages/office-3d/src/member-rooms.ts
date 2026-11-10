@@ -1,4 +1,5 @@
-import type { Desk, OfficeLayout, RoomDef } from '@orchestrator/contracts';
+import type { MemberRoomPrefs, Desk, OfficeLayout, RoomDef } from '@orchestrator/contracts';
+import { MEMBER_ROOM_LIMITS } from '@orchestrator/contracts';
 import { buildWorld, wallFixtures, type Box, type World } from './world.ts';
 
 /**
@@ -14,6 +15,10 @@ export interface MemberHost {
   memberId: string;
   memberName: string;
   employeeIds: string[];
+  /** How the member arranged their room (size, colour, name, furniture); absent: as it comes. */
+  prefs?: MemberRoomPrefs | null;
+  /** The member is not in the office right now: their room stands where it is, dark and locked. */
+  locked?: boolean;
 }
 
 export type MemberSide = 'n' | 'e' | 'w';
@@ -22,6 +27,10 @@ export interface MemberRoom {
   hostId: string;
   memberId: string;
   memberName: string;
+  /** What the signs say. */
+  title: string;
+  /** The member is away: no way in, lights off, drawn grey. */
+  locked: boolean;
   /** The wall of the building the room is attached to. */
   side: MemberSide;
   /** Id of the room in the effective layout: `m:<hostId>`. */
@@ -77,8 +86,8 @@ const POD_BACK = 3.0;
 const DOOR_WIDTH = 1.6;
 /** The name painted on the floor: as long as the smallest room allows. */
 const LABEL_W = 4.2;
-/** The largest room: three pods. A member with more employees than this is told so on the plaque. */
-export const MEMBER_DESK_CAP = 12;
+/** The largest room: five pods. A member with more employees than this is told so on the plaque. */
+export const MEMBER_DESK_CAP = MEMBER_ROOM_LIMITS.desks;
 
 const COLORS = ['#e0a23a', '#4fb6a8', '#d0698c', '#7c8fe0', '#8cbf5a', '#d9774a'];
 
@@ -89,8 +98,8 @@ function hash(s: string): number {
 }
 
 /** Desks in a room for this many employees: always a pair to begin with, then by pairs up to the cap. */
-export function memberDeskCount(employees: number): number {
-  return Math.min(MEMBER_DESK_CAP, Math.max(2, Math.ceil(employees / 2) * 2));
+export function memberDeskCount(employees: number, wanted = 0): number {
+  return Math.min(MEMBER_DESK_CAP, Math.max(2, Math.ceil(employees / 2) * 2, Math.ceil(wanted / 2) * 2));
 }
 
 /** How far a room with this many desks reaches out from the building. */
@@ -214,8 +223,12 @@ function slotsOf(layout: OfficeLayout, unlocked: Set<string>): { core: World; sl
 
 function buildRoom(core: Box, slot: Slot, host: MemberHost): { room: MemberRoom; def: RoomDef; desks: Desk[]; decorations: OfficeLayout['decorations'] } {
   const at = frame(core, slot.side);
-  const count = memberDeskCount(host.employeeIds.length);
-  const depth = memberRoomDepth(count);
+  const prefs = host.prefs ?? {};
+  const count = memberDeskCount(host.employeeIds.length, prefs.desks ?? 0);
+  // The open floor the member asked for is behind the desks, at the far end from the door.
+  const lounge = Math.max(0, Math.min(MEMBER_ROOM_LIMITS.extraDepth, prefs.extraDepth ?? 0));
+  const depth = memberRoomDepth(count) + lounge;
+  const furniture = prefs.furniture ?? ['plant', 'bookshelf'];
   const rect = boxOf(at(slot.start, 0), at(slot.start + ROOM_ALONG, depth));
   const roomId = `m:${host.hostId}`;
   // Desks face each other across a pod, as in the office: the first pair has its back to the door, so the
@@ -232,6 +245,8 @@ function buildRoom(core: Box, slot: Slot, host: MemberHost): { room: MemberRoom;
     desks.push({ id: `${roomId}:${i + 1}`, x: round(x), z: round(z), rot: n < 2 ? rot : rot + Math.PI, zone: `member:${host.memberId}`, kind: 'standard' });
     if (n === 0) for (const side of [-1.3, 1.3]) lights.push(at(mid + side, POD_FIRST + POD_PITCH * pod).map(round) as [number, number]);
   }
+  // The open floor is lit too: a pair of panels every four metres.
+  for (let v = depth - lounge + 2; v < depth - 0.5; v += 4) for (const side of [-1.3, 1.3]) lights.push(at(mid + side, v).map(round) as [number, number]);
   const [dx, dz] = at(slot.door, 0);
   const [px, pz] = at(slot.door + slot.plaqueDir * (DOOR_WIDTH / 2 + 0.82), -0.07);
   // Facing into the office: the opposite of "away from the building".
@@ -246,6 +261,8 @@ function buildRoom(core: Box, slot: Slot, host: MemberHost): { room: MemberRoom;
     hostId: host.hostId,
     memberId: host.memberId,
     memberName: host.memberName,
+    title: prefs.title?.trim() ? prefs.title.trim().toUpperCase() : memberRoomTitle(host.memberName),
+    locked: host.locked === true,
     side: slot.side,
     roomId,
     x: round(rect.minX),
@@ -260,8 +277,8 @@ function buildRoom(core: Box, slot: Slot, host: MemberHost): { room: MemberRoom;
     // Along the room's south wall at the end nearest the building, or just inside the door of a room on the north
     // side: clear of the desks either way, and in view of the command centre's camera however far the room reaches.
     label: { x: round(slot.side === 'w' ? rect.maxX - 0.9 - LABEL_W / 2 : slot.side === 'e' ? rect.minX + 0.9 + LABEL_W / 2 : rect.minX + w / 2), z: round(rect.maxZ - 0.72), w: LABEL_W, h: 0.8 },
-    lights,
-    color: COLORS[hash(host.memberId) % COLORS.length]!,
+    lights: host.locked ? [] : lights,
+    color: prefs.color ?? COLORS[hash(host.memberId) % COLORS.length]!,
     reach: { minX: Math.min(rect.minX, doorIn.minX), maxX: Math.max(rect.maxX, doorIn.maxX), minZ: Math.min(rect.minZ, doorIn.minZ), maxZ: Math.max(rect.maxZ, doorIn.maxZ) },
   };
   const def: RoomDef = {
@@ -273,12 +290,21 @@ function buildRoom(core: Box, slot: Slot, host: MemberHost): { room: MemberRoom;
     w: room.w,
     d: room.d,
     // The door is on the wall the room shares with the building.
-    doors: [{ side: slot.side === 'e' ? 'w' : slot.side === 'w' ? 'e' : 's', at: (slot.door - slot.start) / ROOM_ALONG, width: DOOR_WIDTH }],
+    // A locked room has no opening: the wall is whole and a closed door is drawn on it.
+    doors: host.locked ? [] : [{ side: slot.side === 'e' ? 'w' : slot.side === 'w' ? 'e' : 's', at: (slot.door - slot.start) / ROOM_ALONG, width: DOOR_WIDTH }],
   };
+  // What the member chose to have in the room, along the back wall: bookshelf and plant in one corner, the sofa
+  // (when there is open floor for it) in the middle facing the desks, a lamp beside it.
+  const has = (k: string) => furniture.includes(k as never);
+  const [sofaX, sofaZ] = at(mid - 0.6, depth - 0.75);
+  const [lampX, lampZ] = at(slot.start + 0.6, depth - 0.6);
   const decorations: OfficeLayout['decorations'] = [
-    { id: `${roomId}:plant`, kind: 'plant', x: round(plantX), z: round(plantZ), rot: 0 },
+    ...(has('plant') ? [{ id: `${roomId}:plant`, kind: 'plant', x: round(plantX), z: round(plantZ), rot: 0 }] : []),
     // Against the back wall, its front to the room.
-    { id: `${roomId}:shelf`, kind: 'bookshelf', x: round(shelfX), z: round(shelfZ), rot: facing },
+    ...(has('bookshelf') ? [{ id: `${roomId}:shelf`, kind: 'bookshelf', x: round(shelfX), z: round(shelfZ), rot: facing }] : []),
+    // A sofa needs floor of its own: it comes with at least two metres of open floor.
+    ...(has('sofa') && lounge >= 2 ? [{ id: `${roomId}:sofa`, kind: 'sofa', x: round(sofaX), z: round(sofaZ), rot: facing }] : []),
+    ...(has('floor_lamp') ? [{ id: `${roomId}:lamp`, kind: 'floor_lamp', x: round(lampX), z: round(lampZ), rot: 0 }] : []),
   ];
   return { room, def, desks, decorations };
 }

@@ -59,6 +59,8 @@ const RULES: Rule[] = [
   rule('GET', '/sessions/:id/history', 'read', path('session')),
   // ── a member's own computer ──
   rule('POST', '/me/host', 'work'),
+  rule('GET', '/me/room', 'work'),
+  rule('PUT', '/me/room', 'work'),
   // ── employees and their sessions ──
   rule('POST', '/employees', 'work', inBody('host', 'hostId'), inBody('project', 'projectId')),
   rule('PATCH', '/employees/:id', 'work', path('employee'), inBody('host', 'hostId'), inBody('project', 'projectId')),

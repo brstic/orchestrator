@@ -438,3 +438,17 @@ fieldset.pc-plain {
   padding: 0;
   min-width: 0;
 }
+
+/* My room: colour swatches of the room editor */
+.room-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.room-swatch.on {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5);
+}

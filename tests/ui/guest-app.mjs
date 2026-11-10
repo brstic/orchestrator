@@ -272,6 +272,14 @@ try {
   check('her session runs on this computer, in this folder, and talks to the office through the relay', wrote, why);
   const room = await p2.until('the room in the 3D office', `(window.__orchScene.memberRooms || []).some((r) => r.hostId === ${JSON.stringify(mineHost.id)})`, 15000).then(() => p2.js(`JSON.stringify(window.__orchScene.memberRooms.map((r) => [r.memberName, r.desks]))`), (e) => `MISSING: ${e.message}`);
   check('the member’s room is attached to the office while they are in it', !/^MISSING/.test(room), room);
+  // Arranging the room: a name of its own, more desks and open floor — saved by the office, drawn at once.
+  await p2.until('the room editor', `[...document.querySelectorAll('.win .room-editor')].length === 1`, 10000);
+  const before = await p2.js(`JSON.stringify(window.__orchScene.memberRooms.map((r) => [r.desks.length, r.w, r.d]))`);
+  await p2.js(`(() => { const set = (el, v) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })); }; const ed = document.querySelector('.win .room-editor'); set(ed.querySelector('input[aria-label="Name on the door"]'), 'Mila Lab'); set(ed.querySelector('input[aria-label="Desks"]'), '6'); set(ed.querySelector('input[aria-label="Open floor"]'), '4'); })()`);
+  await p2.until('the office has it', `(() => { const s = window.__office.getState(); const h = Object.values(s.hosts).find((x) => x.memberId === s.me.id); return h.room && h.room.title === 'Mila Lab' && h.room.desks === 6 && h.room.extraDepth === 4; })()`, 10000);
+  await p2.until('the room redrawn', `window.__orchScene.memberRooms.some((r) => r.desks.length === 6)`, 10000);
+  const after = await p2.js(`JSON.stringify(window.__orchScene.memberRooms.map((r) => [r.desks.length, r.w, r.d]))`);
+  check('the member arranges their room from “My room”: its name, desks and size change for everyone', (await api('GET', '/state')).hosts.find((h) => h.id === mineHost.id).room.title === 'Mila Lab' && before !== after, `${before} → ${after}`);
   await p2.shot(path.join(tmp, 'member-room.png'));
   p2.close();
   again.child.kill('SIGTERM');

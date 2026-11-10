@@ -1,13 +1,98 @@
-import { useMemo, useState } from 'react';
-import type { Employee } from '@orchestrator/contracts';
-import { ACTIVITY_LABEL } from '@orchestrator/contracts';
-import { Avatar, Badge, Button, Empty, Window } from '@orchestrator/ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Employee, MemberRoomFurniture, MemberRoomPrefs } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, MEMBER_ROOM_FURNITURE, MEMBER_ROOM_LIMITS } from '@orchestrator/contracts';
+import { Avatar, Badge, Button, Empty, Field, Window } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { BulkHire } from './bulk-hire.tsx';
 import { OutsideTmux } from './ssh-links.tsx';
+
+const COLORS = ['#e0a23a', '#4fb6a8', '#d0698c', '#7c8fe0', '#8cbf5a', '#d9774a', '#b8a078', '#5a6b8c', '#8a5fbf', '#3f8f5a'];
+const FURNITURE: Record<MemberRoomFurniture, string> = { plant: 'Plant', bookshelf: 'Bookshelf', sofa: 'Sofa', floor_lamp: 'Floor lamp' };
+
+/**
+ * How the member wants their room: bigger, another colour, a name of its own, what stands in it. Saved as they
+ * change it and seen by everyone in the office at once. The room only ever grows away from the building, so the
+ * neighbours' rooms do not move.
+ */
+function RoomEditor({ current, minDesks, memberName }: { current: MemberRoomPrefs | null; minDesks: number; memberName: string }) {
+  const [prefs, setPrefs] = useState<MemberRoomPrefs>(current ?? {});
+  const [saved, setSaved] = useState<'saved' | 'saving' | 'error'>('saved');
+  const timer = useRef<number | null>(null);
+  const latest = useRef(prefs);
+  // What the office has (another window of mine changed it) replaces what is shown, unless a change of mine is on its way.
+  useEffect(() => {
+    if (saved === 'saved') setPrefs(current ?? {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(current ?? {})]);
+  const change = (patch: Partial<MemberRoomPrefs>) => {
+    const next = { ...latest.current, ...patch };
+    latest.current = next;
+    setPrefs(next);
+    setSaved('saving');
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      api<MemberRoomPrefs>('PUT', '/me/room', latest.current).then(
+        () => setSaved('saved'),
+        (e) => {
+          setSaved('error');
+          useOffice.getState().toast((e as Error).message, 'error');
+        },
+      );
+    }, 350);
+  };
+  const desks = Math.max(minDesks, prefs.desks ?? 2);
+  const extra = prefs.extraDepth ?? 0;
+  const furniture = prefs.furniture ?? ['plant', 'bookshelf'];
+  return (
+    <div className="card col room-editor" style={{ gap: 10 }}>
+      <div className="row">
+        <span className="section-title grow" style={{ margin: 0 }}>
+          Arrange my room
+        </span>
+        <span className="small faint">{saved === 'saving' ? 'saving…' : saved === 'error' ? 'not saved' : 'saved · everyone sees it'}</span>
+      </div>
+      <div className="grid2">
+        <Field label="Name on the door" hint={`Empty: ${memberName.toUpperCase()}'S ROOM`}>
+          <input value={prefs.title ?? ''} maxLength={28} placeholder={`${memberName}'s room`} onChange={(ev) => change({ title: ev.target.value })} aria-label="Name on the door" />
+        </Field>
+        <Field label="Colour">
+          <div className="row row-wrap" style={{ gap: 6 }}>
+            {COLORS.map((c) => (
+              <button key={c} type="button" className={`room-swatch${prefs.color === c ? ' on' : ''}`} style={{ background: c }} onClick={() => change({ color: c })} aria-label={`Colour ${c}`} title={c} />
+            ))}
+            <input type="color" value={prefs.color ?? '#e0a23a'} onChange={(ev) => change({ color: ev.target.value })} aria-label="Any colour" title="Any colour" style={{ width: 34, height: 26, padding: 0 }} />
+          </div>
+        </Field>
+        <Field label={`Desks: ${desks}`} hint={`By pairs, up to ${MEMBER_ROOM_LIMITS.desks}. Never fewer than your employees need (${minDesks}).`}>
+          <input type="range" min={2} max={MEMBER_ROOM_LIMITS.desks} step={2} value={desks} onChange={(ev) => change({ desks: Math.max(minDesks, Number(ev.target.value)) })} aria-label="Desks" />
+        </Field>
+        <Field label={`Open floor behind the desks: ${extra} m`} hint="Room to walk around, and where a sofa fits (from 2 m).">
+          <input type="range" min={0} max={MEMBER_ROOM_LIMITS.extraDepth} step={0.5} value={extra} onChange={(ev) => change({ extraDepth: Number(ev.target.value) })} aria-label="Open floor" />
+        </Field>
+      </div>
+      <Field label="In the room">
+        <div className="row row-wrap" style={{ gap: 12 }}>
+          {MEMBER_ROOM_FURNITURE.map((k) => (
+            <label key={k} className="check small" style={{ alignItems: 'center' }}>
+              <input type="checkbox" checked={furniture.includes(k)} onChange={(ev) => change({ furniture: MEMBER_ROOM_FURNITURE.filter((x) => (x === k ? ev.target.checked : furniture.includes(x))) })} style={{ marginTop: 0 }} />
+              {FURNITURE[k]}
+              {k === 'sofa' && extra < 2 && furniture.includes('sofa') ? <span className="faint"> (needs 2 m of open floor)</span> : null}
+            </label>
+          ))}
+        </div>
+      </Field>
+      <div className="row">
+        <span className="small faint grow">The room grows away from the building, so nobody else's room moves. It is in the office while you are.</span>
+        <Button small variant="ghost" onClick={() => change({ title: null, color: null, desks: null, extraDepth: null, furniture: null })}>
+          Back to how it came
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 /**
  * A member's own corner of the office: the sessions that run on their own computer. While they are
@@ -58,6 +143,8 @@ function MyRoomPanel({ onClose }: { arg: string | null; onClose: () => void }) {
           {!online && myHost.state === 'unavailable' && <div className="small bad">{myHost.reason}</div>}
           {!online && myHost.state === 'none' && <div className="small muted">Open this office with the Orchestrator desktop app to bring your computer in: a browser tab cannot run sessions.</div>}
         </div>
+
+        {!adding && host && <RoomEditor current={host.room ?? null} minDesks={Math.max(2, Math.ceil(people.filter((e) => e.hostId === host.id).length / 2) * 2)} memberName={me?.name ?? 'My'} />}
 
         {adding && host && online ? (
           <div className="card">

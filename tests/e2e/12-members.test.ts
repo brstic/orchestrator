@@ -248,6 +248,31 @@ test('a member’s own computer joins through the door; what is on it is theirs'
   assert.notEqual((await h.getTask(open.id)).assigneeId, lola);
 });
 
+test('a member arranges their own room; it is kept by the office and shown on their computer for everyone', async () => {
+  const jovan = invites.Jovan!.t;
+  const set = await door(jovan, 'PUT', '/api/me/room', { title: '  The   Lab ', color: '#8A5FBF', desks: 7, extraDepth: 6.2, furniture: ['sofa', 'aquarium', 'plant'], anything: 'else' });
+  assert.equal(set.status, 200);
+  const wanted = { title: 'The Lab', color: '#8a5fbf', desks: 8, extraDepth: 6, furniture: ['plant', 'sofa'] };
+  assert.deepEqual(set.body, wanted);
+  assert.deepEqual((await h.state()).hosts.find((x) => x.id === jovanHost.hostId)!.room, wanted, 'everyone sees it on his computer');
+  assert.deepEqual((await door(jovan, 'GET', '/api/me/room')).body, wanted);
+  // Out of range is brought into range; nonsense is dropped.
+  assert.deepEqual((await door(jovan, 'PUT', '/api/me/room', { desks: 999, extraDepth: 999, color: 'purple', title: 42 })).body, { desks: 20, extraDepth: 12 });
+  await door(jovan, 'PUT', '/api/me/room', wanted);
+  // Only one's own: a visitor has no room, and the office's own computer has none either.
+  assert.equal((await door(invites.Mila!.t, 'PUT', '/api/me/room', { desks: 4 })).status, 403);
+  assert.match((await h.apiRaw('PUT', '/me/room', { desks: 4 })).body.error, /no room of its own/);
+  assert.deepEqual((await door(invites.Ana!.t, 'GET', '/api/me/room')).body, {}, 'Ana has not arranged hers');
+  // It survives the office restarting, and a computer he enrolls later gets the same room.
+  await h.restartServer();
+  await waitFor(async () => (await door(jovan, 'GET', '/api/me/room').catch(() => ({ status: 0, body: null }))).status === 200, { label: 'the door after a restart', timeout: 20000 });
+  assert.deepEqual((await door(jovan, 'GET', '/api/me/room')).body, wanted);
+  await waitFor(async () => (await h.state()).hosts.find((x) => x.id === jovanHost.hostId)!.status === 'online', { label: 'his computer is back', timeout: 20000 });
+  assert.deepEqual((await h.state()).hosts.find((x) => x.id === jovanHost.hostId)!.room, wanted);
+  const audit = await h.api<any[]>('GET', '/audit');
+  assert.ok(audit.some((x) => x.action === 'member.room_changed' && x.actor === 'member:Jovan'));
+});
+
 test('another colleague sees that she is there and nothing more; an owner can work with her', async () => {
   const ana = invites.Ana!.t;
   const state = (await door(ana, 'GET', '/api/state')).body;

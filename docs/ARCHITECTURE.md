@@ -169,6 +169,9 @@ While a member's own computer (a personal host, `Host.memberId`) is online, a ro
 - **When a room goes** — the owner's character, if it stood in that room, is put back inside the building by that wall (`Rig`).
 - **For tests** — `window.__orchScene.memberRooms` = `[{ hostId, memberName, desks, side, x, z, w, d, door }]`. `node scripts/dev-office.ts --member-room "Mila:3"` (repeatable, dev only) adds a member with a personal host and employees; `kill -USR1 <pid>` disconnects/reconnects those hosts, `-USR2` only the last.
 
+
+**Since 2026-11-10:** a room is derived for every member computer the office knows (not only the connected ones); `MemberHost.locked` makes it dark and doorless, and `MemberHost.prefs` (from `Host.room`, set with `PUT /api/me/room`, validated by `sanitizeMemberRoom` in contracts) decides its title, colour, minimum desks, extra depth and furniture. `apps/desktop/src/lib/views.ts: officeWithRooms` builds that list.
+
 ## People, the door and personal hosts
 
 ```
