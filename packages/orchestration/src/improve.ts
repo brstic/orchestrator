@@ -3,6 +3,7 @@ import { correlationMarker, newId, nowIso, truncate } from '@orchestrator/contra
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
 import { DEFAULT_HIGH_RISK_PATTERNS } from './prompts.ts';
+import { Playbook } from './learning/playbook.ts';
 
 const MAX_LESSONS_IN_PROMPT = 12;
 /** Approvals of the same command shape before Orchestrator suggests pre-approving it. */
@@ -28,9 +29,12 @@ export class Improver {
   /** Retrospective in progress per employee: lessons they record are tied to that task. */
   private retros = new Map<string, { taskId: string; recorded: number }>();
   private analyzeTimer: NodeJS.Timeout | null = null;
+  /** Which lessons a task prompt carries, and keeping the lessons free of duplicates (learning/playbook.ts). */
+  readonly playbook: Playbook;
 
   constructor(eng: Engine) {
     this.eng = eng;
+    this.playbook = new Playbook(eng, (p) => this.propose(p));
   }
 
   private get core() {
@@ -53,11 +57,16 @@ export class Improver {
       .slice(0, MAX_LESSONS_IN_PROMPT);
   }
 
-  /** The block added to prompts. Counts each inclusion so usage is visible. */
-  playbookBlock(employee: Employee, projectId: string | null, count = true): string {
-    const lessons = this.lessonsFor(employee, projectId);
+  /**
+   * The block added to prompts. Counts each inclusion so usage is visible. With the task the prompt
+   * is for, the lessons are chosen by how well they fit it (learning/playbook.ts) and the choice is
+   * recorded on the task; without one (a system prompt, a Talk message) they are the newest by scope.
+   */
+  playbookBlock(employee: Employee, projectId: string | null, count = true, task: Task | null = null): string {
+    const fitted = task && this.on ? this.playbook.forTask(employee, task, count) : null;
+    const lessons = fitted ?? this.lessonsFor(employee, projectId);
     if (!lessons.length) return '';
-    if (count) {
+    if (count && !fitted) {
       for (const l of lessons) {
         l.appliedCount++;
         this.core.lessons.put(l);
@@ -87,13 +96,9 @@ export class Improver {
   }): Lesson {
     const text = input.text.trim().replace(/\s+/g, ' ');
     if (text.length < 8) throw new EngineError('a lesson needs to be a full sentence');
-    const duplicate = this.core.lessons.find((l) => l.status !== 'retired' && l.scope === input.scope && l.employeeId === input.employeeId && l.projectId === input.projectId && l.text.toLowerCase() === text.toLowerCase());
-    if (duplicate) {
-      // Learned twice: strengthen the record instead of repeating it.
-      for (const ev of input.evidence) if (!duplicate.evidence.find((e) => e.kind === ev.kind && e.id === ev.id)) duplicate.evidence.push(ev);
-      duplicate.updatedAt = nowIso();
-      return this.core.put('lesson', duplicate);
-    }
+    // Learned twice, in the same or in other words: strengthen the record instead of repeating it.
+    const duplicate = this.playbook.absorb({ ...input, text });
+    if (duplicate) return duplicate;
     const lesson: Lesson = {
       id: newId().slice(0, 8),
       scope: input.scope,
@@ -119,6 +124,8 @@ export class Improver {
       taskId: input.evidence.find((e) => e.kind === 'task')?.id ?? null,
       data: { lessonId: lesson.id, scope: lesson.scope, source: lesson.source, status: lesson.status },
     });
+    // What a second employee of the project learns independently becomes the project's.
+    this.playbook.afterSave(lesson);
     if (lesson.status === 'proposed') {
       this.eng.comms.notify({ kind: 'improvement', severity: 'info', title: `${input.authoredBy.name} proposes a team lesson`, body: lesson.text, employeeId: input.authoredBy.id, projectId: lesson.projectId });
     }
@@ -343,6 +350,14 @@ export class Improver {
       if (i) out.push(i);
     };
     const decided = this.core.questions.filter((q) => q.kind === 'permission' && !!q.decision && !!q.tool);
+
+    // 0. The lessons themselves: merge reworded copies, promote what two employees both learned, flag contradictions.
+    try {
+      for (const i of this.playbook.consolidate().contradictions) add(i);
+    } catch (e) {
+      // Tidying the lessons must not stop the rest of the analysis.
+      this.core.log('warn', `playbook consolidation failed: ${(e as Error).message}`);
+    }
 
     // 1. The owner keeps approving the same kind of command → offer to pre-approve it.
     const shapes = new Map<string, { projectId: string; shape: string; allowed: Question[]; denied: Question[] }>();

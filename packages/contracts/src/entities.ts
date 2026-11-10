@@ -449,6 +449,11 @@ export interface Task {
   completedAt: ISODate | null;
   /** Delivery of the task prompt to the session: confirmed only by a real hook. */
   delivery: DeliveryState;
+  /**
+   * The playbook lessons included in this task's prompts (every delivery of it, in the order first given).
+   * Why each was chosen is in the task's `learning.lessons_delivered` events. Absent on tasks from before this existed.
+   */
+  playbookLessonIds?: ID[];
 }
 
 // ───────────────────── Questions / approvals ─────────────────────
@@ -687,7 +692,7 @@ export interface Milestone {
 // ──────────────────────── Self-improvement ───────────────────────
 
 export interface EvidenceRef {
-  kind: 'task' | 'question' | 'review' | 'event' | 'meeting' | 'approval';
+  kind: 'task' | 'question' | 'review' | 'event' | 'meeting' | 'approval' | 'lesson';
   id: ID;
   note: string;
 }
@@ -717,6 +722,31 @@ export interface Lesson {
   appliedCount: number;
   createdAt: ISODate;
   updatedAt: ISODate;
+  /** Playbook bookkeeping (orchestration/src/learning/playbook.ts). Absent until the lesson is first used, merged or promoted. */
+  playbook?: LessonPlaybookMeta;
+}
+
+/**
+ * What the playbook keeps about one lesson. All of it is counted from what the office did;
+ * none of it says whether the lesson helped.
+ */
+export interface LessonPlaybookMeta {
+  /** When it was last included in a task prompt. (How often it was included is `Lesson.appliedCount`.) */
+  lastIncludedAt: ISODate | null;
+  /** Task prompts it was included in where its words fitted that task (text relevance at or above the match threshold). */
+  matchedCount: number;
+  /** Task prompts in a row it was included in without fitting the task. At the stale limit it is ranked down, never retired. */
+  unmatchedStreak: number;
+  /** How many near-duplicates were folded into this lesson. */
+  mergedCount: number;
+  /** The last few lessons folded in: whose they were and what they said. */
+  mergedFrom: Array<{ ts: ISODate; lessonId: ID | null; by: string; text: string; similarity: number }>;
+  /** Set on a lesson that was folded into another one (it is then retired): the lesson that carries on. */
+  mergedInto: ID | null;
+  /** For a project lesson made by promotion: the employees' own lessons it came from. */
+  promotedFrom: ID[];
+  /** Lessons this one must not be merged with again: a merge of the two was undone. */
+  distinctFrom: ID[];
 }
 
 /** Measured outcome for an employee on one kind of task. Counts, never estimates. */
@@ -731,7 +761,7 @@ export interface PerformanceStat {
   mergeConflicts: number;
 }
 
-export type ImprovementKind = 'allow_rule' | 'deny_rule' | 'autonomy' | 'review_policy' | 'verify_command' | 'verify_timeout' | 'sequencing' | 'acceptance_criteria' | 'routing';
+export type ImprovementKind = 'allow_rule' | 'deny_rule' | 'autonomy' | 'review_policy' | 'verify_command' | 'verify_timeout' | 'sequencing' | 'acceptance_criteria' | 'routing' | 'playbook_contradiction';
 
 export type ImprovementAction =
   | { type: 'project.policy.allow'; projectId: ID; rule: string }
@@ -770,6 +800,13 @@ export interface SelfImprovementSettings {
   autoApproveSharedLessons: boolean;
   /** Let measured outcomes influence which employee the scheduler picks. */
   learnedRouting: boolean;
+  /**
+   * Choose the lessons of a task prompt by how well they fit the task (default on). Off: the newest twelve by scope,
+   * as before. Read through `playbookSettings()`, which supplies the defaults and the bounds.
+   */
+  playbookRelevance?: boolean;
+  /** How many characters of lessons a task prompt may carry (default 2400, kept within 400–8000). */
+  playbookBudgetChars?: number;
 }
 
 // ──────────────────────────── Foreman ────────────────────────────
