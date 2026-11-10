@@ -90,7 +90,9 @@ export type EventType =
   | 'foreman.escalated'
   | 'ops.deployment'
   | 'security.alert'
-  | 'owner.command';
+  | 'owner.command'
+  // What the office learned or changed by itself (`data.area` says which part of Growth did it).
+  | `learning.${string}`;
 
 export type EventSourceKind = 'hook' | 'mcp' | 'host' | 'server' | 'owner' | 'sdk';
 

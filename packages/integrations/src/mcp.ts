@@ -300,14 +300,17 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
   {
     name: 'record_lesson',
     description:
-      'Record a reusable lesson you learned from real work here (a mistake you fixed, review feedback, a decision by the boss). It goes into your playbook and is given back to you on future tasks. Use scope "project" to propose it for the whole team. Call with none=true when asked to reflect and there is nothing worth keeping.',
+      'Record a reusable lesson you learned from real work here (a mistake you fixed, review feedback, a correction or decision by the boss). It goes into your playbook and is given back to you on future tasks. A good lesson has four parts: the rule as an instruction ("Run the project\'s verification command before calling complete_task, not only the test file I changed"), the concrete trigger ("before calling complete_task on a task with a verification command"), the evidence ("verification failed twice on T-12 because only the changed test file was run") and its scope. A lesson that does not say what to do or when ("be more careful", "always") is refused with what is missing. When asked to reflect and there is nothing worth keeping, call with none=true and a reason.',
     inputSchema: {
       type: 'object',
       properties: {
-        lesson: str('An instruction to your future self, e.g. "Run the full test script before complete_task, not just the file you changed"'),
-        applies_when: str('When this matters, e.g. "when changing shared configuration"'),
-        scope: { type: 'string', enum: ['self', 'project'], description: 'self = your own playbook (default); project = propose as team knowledge' },
-        none: { type: 'boolean', description: 'Set true if there is no lesson worth recording' },
+        lesson: str('The rule, as an instruction to your future self: what to do, and to what. E.g. "Run the full test script before complete_task, not just the file you changed"'),
+        applies_when: str('The concrete trigger: a kind of file, a kind of task, a tool or a moment. E.g. "when editing *.sql migrations", "on bug tasks that touch the API", "before calling complete_task"'),
+        why: str('The evidence, in one sentence: what happened that taught you this'),
+        scope: { type: 'string', enum: ['self', 'project', 'company'], description: 'self = your own playbook (default); project = propose as knowledge for everyone on this project; company = propose for every project' },
+        none: { type: 'boolean', description: 'Set true if there is no lesson worth recording (give a reason)' },
+        reason: str('With none=true: why there is nothing to learn, in one sentence'),
+        replaces: str('Id of a lesson of your own playbook that this one replaces, when you were told an earlier lesson did not prevent a repeat'),
       },
     },
   },

@@ -198,6 +198,8 @@ export class Comms {
       confirmedAt: null,
       deliveryDetail: null,
     };
+    // Asked before in this project? The earlier answer is shown with it; the question stays open for a person.
+    const answeredBefore = this.eng.improver.capture.repeatedQuestion(question);
     this.core.put('question', question);
     if (question.taskId && q.channel !== 'system' && q.kind !== 'permission' && q.kind !== 'trust_prompt') {
       const t = this.core.tasks.get(question.taskId);
@@ -212,7 +214,7 @@ export class Comms {
       kind: isPermission ? 'permission' : q.kind === 'merge_conflict' ? 'merge_conflict' : 'question',
       severity: 'warning',
       title: isPermission ? `${who} needs approval` : `${who} needs a decision`,
-      body: truncate(q.text, 240),
+      body: `${truncate(q.text, 240)}${answeredBefore ? `\n${answeredBefore}` : ''}`,
       employeeId: question.employeeId,
       sessionId: question.sessionId,
       taskId: question.taskId,
@@ -351,6 +353,8 @@ export class Comms {
           this.core.put('task', t);
         }
       }
+      // A denial with a note says what should have been known: kept as a lesson candidate.
+      if (q.decision === 'deny') this.eng.improver.capture.onDenied(q);
       // Each decision is evidence about what the owner is comfortable pre-approving.
       this.eng.improver.scheduleAnalyze();
     } else if (!by) this.eng.improver.captureOwnerAnswer(q); // only the owner's own answers become "decided by the boss" knowledge
@@ -513,6 +517,8 @@ export class Comms {
       data: { messageId: msg.id, toEmployeeId: to.id, fromEmployeeId: input.from.kind === 'employee' ? input.from.id : null, kind: msg.kind },
     });
     this.enqueueMessage(msg, true);
+    // A message that reads as a standing rule ("don't…", "from now on…") is kept as a lesson candidate.
+    this.eng.improver.capture.onMessage(msg);
     return msg;
   }
 
