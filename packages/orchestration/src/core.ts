@@ -161,7 +161,7 @@ const DEFAULT_SETTINGS: OwnerSettings = {
     volume: 0.6,
     lastStationId: null,
   },
-  selfImprovement: { enabled: true, retrospectives: 'friction', autoApproveSharedLessons: false, learnedRouting: true },
+  selfImprovement: { enabled: true, retrospectives: 'friction', autoApproveSharedLessons: false, learnedRouting: true, outcomesAutoRetire: true },
   foreman: { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true, idleMinutes: 10 },
   quality: 'high',
   keybindings: {

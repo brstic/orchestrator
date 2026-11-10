@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { OWNERS_ONLY, allowed, eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, maySee, memberOf, stateFor, type Who } from '../src/access.ts';
+import { OWNERS_ONLY, allowed, eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, maySee, memberOf, outcomesScopeFor, stateFor, type Who } from '../src/access.ts';
 
 /** An office with one shared machine and Jovan's own computer, and one employee, session, project, task and question on each. */
 const table = <T extends { id: string }>(rows: T[]) => ({ get: (id: string) => rows.find((r) => r.id === id) });
@@ -140,4 +140,41 @@ test('the hi-fi plays for the whole office: everyone is told what is on, owners 
   assert.match(mayCall(engine, mila, 'POST', '/radio/play', { stationId: 'jazz' }).reason ?? '', /You are visiting this office/);
   // Stations are kept in the settings: adding one (an address every window will load) stays an owner's act.
   assert.deepEqual([vera, jovan, mila].map((who) => call(who, 'PATCH', '/settings', { radio: { stations: [] } })), [true, false, false]);
+});
+
+test('measured outcomes: everyone may ask, and what is on a member’s own computer is counted only for that member and the owners', async () => {
+  const { outcomesReport } = await import('@orchestrator/orchestration');
+  for (const who of [root, vera, jovan, ana, mila]) assert.ok(call(who, 'GET', '/growth/outcomes'), who.name);
+  assert.ok(!call(mila, 'POST', '/growth/outcomes') && !call(ana, 'POST', '/growth/outcomes'));
+  // Finished tasks as the office keeps them: one shared, two of Jovan's (one in his project, one that follows him by its assignee).
+  const done = (id: string, projectId: string, assigneeId: string, day: number, failed = 0) => ({
+    id, key: id.toUpperCase(), projectId, assigneeId, kind: 'bug', status: 'DONE', nudges: 0, attempts: failed, title: `Private title of ${id}`,
+    friction: { failedVerifications: failed, reviewRejections: 0, mergeConflicts: 0, blockers: 0, questions: 0, denials: 0 },
+    evidence: { summary: 'done', verification: null }, startedAt: `2026-11-0${day}T09:00:00.000Z`, completedAt: `2026-11-0${day}T11:00:00.000Z`, updatedAt: `2026-11-0${day}T11:00:00.000Z`,
+  }) as any;
+  const tasks = [done('t-shared', 'p-shared', 'e-shared', 2), done('t-jovan', 'p-jovan', 'e-jovan', 3, 2), done('t-loose', 'p-nohost', 'e-jovan', 4, 1)];
+  const lesson = (id: string, scope: string, employeeId: string | null, projectId: string | null) => ({ id, scope, employeeId, projectId, text: employeeId || projectId === 'p-jovan' ? `Use the staging key from the vault (${id})` : `Run the tests before completing (${id})`, appliesWhen: '', source: 'retrospective', evidence: [], status: 'active', authoredBy: { kind: 'employee', id: employeeId, name: 'x' }, appliedCount: 0, createdAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z' }) as any;
+  const lessons = [lesson('l-company', 'company', null, null), lesson('l-shared', 'project', null, 'p-shared'), lesson('l-jovan-project', 'project', null, 'p-jovan'), lesson('l-jovan-own', 'employee', 'e-jovan', null), lesson('l-foreman', 'employee', 'e-foreman', null)];
+  const applied = (id: string, projectId: string | null, employeeId: string | null, action: any) => ({ id, kind: 'allow_rule', title: `Change ${id}`, rationale: '', evidence: [], projectId, employeeId, action, status: 'applied', dedupeKey: id, createdAt: '2026-11-01T00:00:00.000Z', decidedAt: '2026-11-01T12:00:00.000Z' }) as any;
+  const improvements = [applied('i-shared', 'p-shared', null, { type: 'project.policy.allow', projectId: 'p-shared', rule: 'Bash(ls:*)' }), applied('i-jovan', 'p-jovan', null, { type: 'project.policy.allow', projectId: 'p-jovan', rule: 'Bash(ls:*)' }), applied('i-jovan-autonomy', null, 'e-jovan', { type: 'employee.autonomy', employeeId: 'e-jovan', level: 'standard' })];
+  const names = { project: (id: string) => id, employee: (id: string) => id };
+  const reportFor = (who: Who) => outcomesReport({ tasks, questions: [], lessons, improvements, names, scope: outcomesScopeFor(engine, who), now: Date.parse('2026-11-10T00:00:00.000Z') });
+  const seen = (who: Who) => {
+    const r = reportFor(who);
+    return { tasks: r.tasks, employees: r.trends.byEmployee.map((x) => x.key).sort(), projects: r.trends.byProject.map((x) => x.key).sort(), lessons: r.lessons.map((l) => l.lessonId), improvements: r.improvements.map((i) => i.improvementId), firstPassRate: r.trends.overall.firstPassRate };
+  };
+  const everything = { tasks: 3, employees: ['e-jovan', 'e-shared'], projects: ['p-jovan', 'p-nohost', 'p-shared'], lessons: ['l-company', 'l-shared', 'l-jovan-project', 'l-jovan-own', 'l-foreman'], improvements: ['i-shared', 'i-jovan', 'i-jovan-autonomy'], firstPassRate: 0.333 };
+  assert.equal(outcomesScopeFor(engine, root), null);
+  assert.equal(outcomesScopeFor(engine, vera), null);
+  assert.deepEqual(seen(vera), everything);
+  // Jovan sees the office's and his own — everything here except what is the foreman's.
+  assert.deepEqual(seen(jovan), { ...everything, lessons: everything.lessons.filter((l) => l !== 'l-foreman') });
+  // A colleague and a visitor: only what is shared. Jovan's failures are not in their figures, his lessons and changes not in their lists.
+  for (const who of [ana, mila]) {
+    assert.deepEqual(seen(who), { tasks: 1, employees: ['e-shared'], projects: ['p-shared'], lessons: ['l-company', 'l-shared'], improvements: ['i-shared'], firstPassRate: 1 }, who.name);
+    const text = JSON.stringify(reportFor(who));
+    assert.ok(!/e-jovan|p-jovan|p-nohost|t-jovan|t-loose|l-jovan|i-jovan|e-foreman|vault|Private title/i.test(text), `${who.name}: nothing of Jovan's computer leaks`);
+  }
+  // The company lesson is judged, for Ana, from the one task she may see.
+  assert.deepEqual([reportFor(ana).lessons[0]!.given, reportFor(vera).lessons[0]!.given], [1, 3]);
 });

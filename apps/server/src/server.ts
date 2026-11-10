@@ -1,7 +1,7 @@
 import { Door, inviteCode } from './door.ts';
 import { Guests, whoIs, type Who } from './guests.ts';
 import { Knocks, type Admission } from './knocks.ts';
-import { allowed, eventFor, mayCall, stateFor } from './access.ts';
+import { allowed, eventFor, mayCall, outcomesScopeFor, stateFor } from './access.ts';
 import { HiFi, nowPlaying } from './radio.ts';
 import { SshLinks } from './ssh-links.ts';
 import fs from 'node:fs';
@@ -561,6 +561,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/improvements/:id/dismiss', async (req) => engine.improver.dismiss(param(req, 'id')));
     // the playbook: undo an automatic merge or promotion, by the id of the learning.* event that recorded it (owners only)
     api.post('/playbook/revert', async (req) => engine.improver.playbook.revert(String(body(req).eventId ?? '')));
+    // Whether what was learned helped: trends, and a verdict per lesson and per applied improvement — from what the asker may see.
+    api.get('/growth/outcomes', async (req) => engine.improver.outcomes.report(outcomesScopeFor(engine, whoOf(req))));
 
     // natural-language commands: plan first, execute only what the owner confirmed
     api.post('/commands/plan', async (req) => engine.commands.planWithFallback(String(body(req).input ?? '')));

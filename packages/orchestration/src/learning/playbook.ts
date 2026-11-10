@@ -437,7 +437,7 @@ export function selectLessons(input: { lessons: Lesson[]; employeeId: string; co
       score += MISSED_BOOST;
       reasons.push(`was asked about again ${missed === 1 ? 'once' : `${missed} times`} although the office knew it`);
     }
-    if ((lesson as { proven?: boolean }).proven) {
+    if (lesson.proven) {
       score += PROVEN_BOOST;
       reasons.push('shown to help');
     }

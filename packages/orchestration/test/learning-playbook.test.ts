@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type { SelfImprovementSettings } from '@orchestrator/contracts';
 import type { Employee, Host, Lesson, Project, Task } from '@orchestrator/contracts';
 import { Store } from '@orchestrator/database';
 import { Engine, type AgentLink } from '../src/index.ts';
@@ -178,7 +179,7 @@ test('telling lessons apart: a rewording is a duplicate, an opposite is a contra
 });
 
 test('settings: on by default, the budget kept within bounds', () => {
-  const s = (over: object) => playbookSettings({ selfImprovement: { enabled: true, retrospectives: 'friction', autoApproveSharedLessons: false, learnedRouting: true, ...over } });
+  const s = (over: object) => playbookSettings({ selfImprovement: { enabled: true, retrospectives: 'friction', autoApproveSharedLessons: false, learnedRouting: true, ...over } as SelfImprovementSettings });
   assert.deepEqual(s({}), { relevance: true, budgetChars: 2400 });
   assert.deepEqual(s({ playbookRelevance: false, playbookBudgetChars: 1000.4 }), { relevance: false, budgetChars: 1000 });
   assert.deepEqual([s({ playbookBudgetChars: 5 }).budgetChars, s({ playbookBudgetChars: 1e9 }).budgetChars, s({ playbookBudgetChars: 'lots' }).budgetChars, s({ playbookBudgetChars: NaN }).budgetChars], [400, 8000, 2400, 2400]);
