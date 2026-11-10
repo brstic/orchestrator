@@ -3,7 +3,8 @@ import { OfficeScene, ownerPosition } from '@orchestrator/office-3d';
 import { Button } from '@orchestrator/ui';
 import { api, connection, setToken } from './lib/api.ts';
 import { loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
-import { boardView, ceoView, hostViews, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
+import { loadPrefs, usePrefs } from './lib/prefs.ts';
+import { boardView, ceoView, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
 import { CommandBar, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, SayBar, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
 import { onTvFrame } from './lib/tv.ts';
 import { TvLayer } from './hud/tv.tsx';
@@ -49,7 +50,7 @@ const PANEL_KEYS: Array<[string, PanelId]> = [
   ['notifications', 'notifications'],
 ];
 
-/** Project areas are marked on the floor only when the owner switched that on. */
+/** Project areas are marked on the floor only when that is switched on for this computer. */
 const NO_ZONES: never[] = [];
 
 /** Tell the others in the office where this person's character is: when it moved, at most ten times a second. */
@@ -99,6 +100,9 @@ function usePresence(): void {
 
 export function App() {
   const s = useOffice();
+  // Graphics, keys and extras are this computer's own, not the office's.
+  const prefs = usePrefs((p) => p.prefs);
+  const prefsReady = usePrefs((p) => p.ready);
   usePresence();
   useAccounts();
   const [saying, setSaying] = useState(false);
@@ -127,6 +131,7 @@ export function App() {
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
+    loadPrefs();
     startConnection();
   }, []);
 
@@ -145,7 +150,7 @@ export function App() {
   }, [s.ready]);
 
   useEffect(() => {
-    const kb = s.settings?.keybindings ?? {};
+    const kb = prefs.keybindings;
     const onKey = (e: KeyboardEvent) => {
       const st = useOffice.getState();
       if (e.code === (kb.exit ?? 'Escape')) {
@@ -211,15 +216,18 @@ export function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [s.settings?.keybindings]);
+  }, [prefs.keybindings]);
 
-  const people = useMemo(() => personViews(s), [s.employees, s.sessions, s.tasks, s.questions, s.meetings, s.projects, s.filter, s.control]); // eslint-disable-line react-hooks/exhaustive-deps
+  const unlocked = useMemo(() => s.milestones.filter((m) => m.unlockedAt && m.unlocks).map((m) => m.unlocks!), [s.milestones]);
+  // The office as it is drawn: the stored layout plus a room for each member whose own computer is connected.
+  const office = useMemo(() => officeWithRooms(s, unlocked), [s.layout, s.hosts, s.employees, unlocked]); // eslint-disable-line react-hooks/exhaustive-deps
+  const people = useMemo(() => personViews(s, office), [s.employees, s.sessions, s.tasks, s.questions, s.meetings, s.projects, s.filter, s.control, office]); // eslint-disable-line react-hooks/exhaustive-deps
   const walks = useMemo(() => walkRequests(s, Date.now()), [s.events, tick]); // eslint-disable-line react-hooks/exhaustive-deps
   const hosts = useMemo(() => hostViews(s), [s.hosts, s.sessions]); // eslint-disable-line react-hooks/exhaustive-deps
   const board = useMemo(() => boardView(s), [s.tasks, s.projects, s.employees, s.filter]); // eslint-disable-line react-hooks/exhaustive-deps
   const wall = useMemo(() => wallView(s, people), [people, s.hosts, s.tasks, s.questions]); // eslint-disable-line react-hooks/exhaustive-deps
   const whiteboard = useMemo(() => whiteboardView(s), [s.meetings, s.employees]); // eslint-disable-line react-hooks/exhaustive-deps
-  const zones = useMemo(() => zoneViews(s), [s.layout, s.employees, s.projects, s.tasks]); // eslint-disable-line react-hooks/exhaustive-deps
+  const zones = useMemo(() => zoneViews(s, office), [s.layout, s.employees, s.projects, s.tasks, office]); // eslint-disable-line react-hooks/exhaustive-deps
   const ceo = useMemo(() => ceoView(s), [s.company, s.projects, s.tasks, s.questions, s.employees, s.accounts, s.hosts, s.settings?.companyName]); // eslint-disable-line react-hooks/exhaustive-deps
   // The folders on a desk stand for real files: one stack per employee whose folder has Markdown documents.
   const docViews = useMemo(
@@ -257,14 +265,13 @@ export function App() {
     const taken = new Set(Object.values(s.employees).filter((e) => !e.archived && e.deskId).map((e) => e.deskId));
     return (s.layout?.desks ?? []).filter((d) => !taken.has(d.id) && d.kind !== 'executive').map((d) => d.id);
   }, [s.movingEmployeeId, s.employees, s.layout]);
-  const unlocked = useMemo(() => s.milestones.filter((m) => m.unlockedAt && m.unlocks).map((m) => m.unlocks!), [s.milestones]);
   const keymap = useMemo(() => {
-    const kb = s.settings?.keybindings ?? {};
+    const kb = prefs.keybindings;
     return { forward: kb.forward ?? 'KeyW', back: kb.back ?? 'KeyS', left: kb.left ?? 'KeyA', right: kb.right ?? 'KeyD', strafeLeft: kb.strafeLeft ?? 'KeyQ', strafeRight: kb.strafeRight ?? 'KeyE' };
-  }, [s.settings?.keybindings]);
+  }, [prefs.keybindings]);
 
   if (s.conn === 'unauthorized') return <Login />;
-  if (!s.ready || !s.layout || !s.settings) {
+  if (!s.ready || !s.layout || !s.settings || !prefsReady) {
     return (
       <div className="login">
         <div className="glass login-card col">
@@ -280,7 +287,7 @@ export function App() {
     <div className="app">
       <div className="scene">
         <OfficeScene
-          layout={s.layout}
+          layout={office?.layout ?? s.layout}
           unlocked={unlocked}
           people={people}
           humans={humans}
@@ -302,11 +309,11 @@ export function App() {
           ceo={ceo}
           whiteboard={whiteboard}
           onOpenMeeting={on.openMeeting}
-          zones={s.settings?.projectZones ? zones : NO_ZONES}
-          approachZoom={s.settings?.approachZoom === true}
+          zones={prefs.projectZones ? zones : NO_ZONES}
+          approachZoom={prefs.approachZoom}
           onOpenProject={on.openProject}
           cameraMode={s.cameraMode}
-          quality={s.settings.quality}
+          quality={prefs.quality}
           keymap={keymap}
           selectedId={s.selectedEmployeeId}
           workstationId={s.workstationId}

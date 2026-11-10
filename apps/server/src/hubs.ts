@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { WebSocket } from 'ws';
+import { mayDrive, maySee } from './access.ts';
 import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, OrchestratorEvent, PersonPresence, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
 import { hueOf, type Who } from './guests.ts';
 import { PROTOCOL_VERSION, ROLE_CATALOGUE, matchRole, nowIso, roleByKey } from '@orchestrator/contracts';
@@ -119,7 +120,8 @@ export class AgentHub implements AgentLink {
 
   // ───────────── sockets ─────────────
 
-  handle(ws: WebSocket, remoteIsLoopback: boolean): void {
+  /** `outside`: the connection came in through the door, where only a member's own computer is let in. */
+  handle(ws: WebSocket, remoteIsLoopback: boolean, outside = false): void {
     if (this.closing) return void ws.terminate();
     let conn: AgentConn | null = null;
     const helloTimer = setTimeout(() => {
@@ -140,7 +142,7 @@ export class AgentHub implements AgentLink {
           ws.send(JSON.stringify({ t: 'rejected', reason: `protocol mismatch: server speaks v${PROTOCOL_VERSION}, agent v${msg.protocol}` } satisfies ServerToAgent));
           return ws.close(4002, 'protocol');
         }
-        const auth = this.engine.hosts.authenticate(msg, remoteIsLoopback);
+        const auth = this.engine.hosts.authenticate(msg, remoteIsLoopback && !outside, outside);
         if ('error' in auth) {
           ws.send(JSON.stringify({ t: 'rejected', reason: auth.error } satisfies ServerToAgent));
           this.engine.core.audit('unknown-host', 'host.auth_failed', msg.hostId ?? '-', { reason: auth.error, hostname: msg.info?.hostname });
@@ -350,6 +352,11 @@ export class ClientHub {
   send(clientId: string, msg: ServerToClient): void {
     const c = this.clients.get(clientId);
     if (!c || c.ws.readyState !== 1) return;
+    // What is on a member's own computer is shown to that member and to owners only.
+    if (msg.t.startsWith('term.') && msg.t !== 'term.closed') {
+      const about = (msg as { sessionId?: unknown }).sessionId ?? (msg as { snapshot?: { sessionId?: unknown } }).snapshot?.sessionId;
+      if (typeof about === 'string' && !maySee(this.engine, c.who, about)) return;
+    }
     // Monitor frames are disposable; never let them pile up behind a slow client.
     if (msg.t === 'term.screen' && c.ws.bufferedAmount > 4 * 1024 * 1024) return;
     try {
@@ -375,12 +382,12 @@ export class ClientHub {
 
   /** Everyone present, for a client that asks over HTTP. */
   people(): PersonPresence[] {
-    return [...this.clients.values()].filter((c) => c.presence).map((c) => ({ id: c.id, name: c.who.name, role: c.who.role, hue: hueOf(c.who.kind === 'owner' ? 'owner' : c.who.id), ...c.presence! }));
+    return [...this.clients.values()].filter((c) => c.presence).map((c) => ({ id: c.id, name: c.who.name, role: c.who.role, memberId: c.who.id, hue: hueOf(c.who.id), ...c.presence! }));
   }
 
   /** Close every window of a guest whose access was revoked. */
   dropGuest(guestId: string): void {
-    for (const c of this.clients.values()) if (c.who.kind === 'guest' && c.who.id === guestId) c.ws.close(4003, 'access revoked');
+    for (const c of this.clients.values()) if (c.who.id === guestId) c.ws.close(4003, 'access revoked');
   }
 
   /** Whose movement (or arrival, or leaving: '*') has not been passed on yet. */
@@ -412,14 +419,13 @@ export class ClientHub {
     const conn: ClientConn = { id, ws, who, presence: null, said: [] };
     this.clients.set(id, conn);
     const gateway = this.engine.core.gateway;
-    this.send(id, { t: 'ready', clientId: id, state: this.engine.state(), me: { kind: who.kind, role: who.role, name: who.name } });
-    // Terminals (and the live monitors in the 3D office) are not for visitors.
-    const terminals = who.role !== 'visitor';
-    if (terminals) gateway.registerClient(id);
-    const actor = who.kind === 'owner' ? `owner:${id.slice(0, 8)}` : `guest:${who.name}`;
-    const ownerOnly = (what: string): boolean => {
-      if (who.kind === 'owner') return true;
-      this.send(id, { t: 'error', message: `Only the owner can ${what}.` });
+    this.send(id, { t: 'ready', clientId: id, state: this.engine.state(), me: { kind: who.kind, role: who.role, name: who.name, id: who.id } });
+    // Everyone gets the live monitors of what they may see (`send` leaves out the rest: other members' own computers).
+    gateway.registerClient(id);
+    const actor = who.id === 'owner' ? `owner:${id.slice(0, 8)}` : `member:${who.name}`;
+    const drive = (sessionId: string, what: string): boolean => {
+      if (mayDrive(this.engine, who, sessionId)) return true;
+      this.send(id, { t: 'error', message: who.role === 'visitor' ? `You are visiting this office: you cannot ${what}.` : `That terminal is on another member's own computer: you cannot ${what}.`, ref: sessionId });
       return false;
     };
     if (this.clients.size > 1) this.send(id, { t: 'people', people: this.people() });
@@ -453,8 +459,8 @@ export class ClientHub {
             break;
           }
           case 'term.open':
-            if (!terminals) {
-              this.send(id, { t: 'term.closed', sessionId: msg.sessionId, reason: 'Visitors cannot see terminals.' });
+            if (!maySee(this.engine, who, msg.sessionId)) {
+              this.send(id, { t: 'term.closed', sessionId: msg.sessionId, reason: "This terminal is on another member's own computer." });
               break;
             }
             gateway.open(id, msg.sessionId).catch((e) => {
@@ -466,15 +472,15 @@ export class ClientHub {
             gateway.close(id, msg.sessionId);
             break;
           case 'term.input':
-            if (!ownerOnly('type into a terminal')) break;
+            if (!drive(msg.sessionId, 'type into a terminal')) break;
             gateway.input(id, msg.sessionId, msg.data).catch((e) => fail(e, msg.sessionId));
             break;
           case 'term.resize':
-            if (who.kind !== 'owner') break;
+            if (!mayDrive(this.engine, who, msg.sessionId)) break;
             gateway.resize(id, msg.sessionId, msg.cols, msg.rows).catch((e) => fail(e, msg.sessionId));
             break;
           case 'control.acquire':
-            if (!ownerOnly('take control of a terminal')) break;
+            if (!drive(msg.sessionId, 'take control of a terminal')) break;
             gateway.acquire(id, msg.sessionId, actor);
             break;
           case 'control.release':
@@ -482,7 +488,7 @@ export class ClientHub {
             gateway.release(id, msg.sessionId, actor);
             break;
           case 'screens.focus':
-            if (terminals) gateway.setFocus(id, msg.sessionId);
+            if (!msg.sessionId || maySee(this.engine, who, msg.sessionId)) gateway.setFocus(id, msg.sessionId);
             break;
           case 'ping':
             this.send(id, { t: 'pong' });

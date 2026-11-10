@@ -1,11 +1,12 @@
 /**
- * The guest door: how other people reach an office that otherwise listens on this computer only.
+ * The door: how other people reach an office that otherwise listens on this computer only.
  *
- * When the owner opens it, a second listener starts on the network with TLS and a certificate
- * made on this computer. It forwards only what a person's office window needs — the page, the
- * owner API (where a guest's role decides what is allowed) and the client WebSocket — and nothing
- * else: no agent endpoint, no worker (MCP) endpoint, no downloads. Requests that came through
- * the door are marked, and the office never accepts the owner's token from there.
+ * When it is open, a second listener runs on the network with TLS and a certificate made on this
+ * computer. It forwards what a person's desktop app needs — the page, the owner API (where the
+ * member's role decides what is allowed), the client WebSocket — and what that member's own
+ * computer needs to take part: the agent WebSocket (personal hosts only) and the worker endpoint
+ * (`/mcp`, per-session tokens). No downloads, no installer. Requests that came through the door
+ * are marked, and the office never accepts its own owner token from there.
  *
  * Guests do not trust the certificate through a certificate authority; the invitation carries
  * its fingerprint, and the joining app accepts exactly that certificate.
@@ -30,8 +31,10 @@ export interface DoorStatus {
 }
 
 /** What may pass. Everything else is answered 404 at the door. */
-const ALLOWED = [/^\/$/, /^\/index\.html$/, /^\/assets\/[A-Za-z0-9._-]+$/, /^\/favicon\.[a-z]+$/, /^\/healthz$/, /^\/api\/[^?#]*$/];
-const ALLOWED_UPGRADE = /^\/ws\/client$/;
+// `/mcp` is how a worker on a member's own computer talks to the office; it answers only to a session's own token.
+const ALLOWED = [/^\/$/, /^\/index\.html$/, /^\/assets\/[A-Za-z0-9._-]+$/, /^\/favicon\.[a-z]+$/, /^\/healthz$/, /^\/api\/[^?#]*$/, /^\/mcp$/];
+// `/ws/agent`: the office accepts only a member's own computer there when the connection comes through the door.
+const ALLOWED_UPGRADE = /^\/ws\/(client|agent)$/;
 
 export class Door {
   /** Sent with every forwarded request; the office uses it to know a request came from outside. */

@@ -6,6 +6,7 @@ import type { Desk, RoomDef, TerminalScreen } from '@orchestrator/contracts';
 import { drawScreen } from './terminal-texture.ts';
 import type { BoardView, CeoView, HostView, Quality, ScreenSubscribe, UsageClockView, WallView, WhiteboardView, ZoneView } from './types.ts';
 import { DESK_SIZE, WALL_T, deskBox, deskSeat, type Box, type World } from './world.ts';
+import { memberRoomTitle, type MemberRoom } from './member-rooms.ts';
 import { ON_SURFACE } from './surface.ts';
 
 /** What the scene reports about itself for the UI tests (like `window.__orchPerf`): which room interiors are mounted, what the whiteboard says. */
@@ -184,15 +185,18 @@ function CanvasPanel({ width, height, px = 1024, draw, deps, emissive = true, ..
 // ───────────────────────────── building ─────────────────────────────
 
 export function Building({ world, cutaway, quality }: { world: World; cutaway: boolean; quality: Quality }) {
+  // The building itself is drawn from the stored office; the rooms of connected members are added to it below.
+  // `base` stays the same object while members come and go, so nothing of the building is made again then.
+  const base = world.base;
   const floors = useMemo(
     () =>
-      world.rooms.map((r) => {
+      base.rooms.map((r) => {
         const f = FLOOR[r.kind];
         const tex = noiseTexture(f.color, f.variance, 1, f.grid ?? 0);
         tex.repeat.set(r.w * f.scale, r.d * f.scale);
         return { room: r, material: new THREE.MeshStandardMaterial({ map: tex, roughness: f.rough, metalness: 0 }) };
       }),
-    [world.rooms],
+    [base.rooms],
   );
   const wallMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#e7eaf0', roughness: 0.92 }), []);
   const outerMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#d5dae3', roughness: 0.9 }), []);
@@ -204,14 +208,14 @@ export function Building({ world, cutaway, quality }: { world: World; cutaway: b
   const ceilingMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#eef1f5', roughness: 0.95, transparent: true, opacity: cutaway ? 0 : 1 }), []); // eslint-disable-line react-hooks/exhaustive-deps
   const panels = useMemo(() => {
     const out: Array<[number, number]> = [];
-    for (let x = world.bounds.minX + 3; x < world.bounds.maxX; x += 5.5) for (let z = world.bounds.minZ + 3; z < world.bounds.maxZ; z += 5) out.push([x, z]);
+    for (let x = base.bounds.minX + 3; x < base.bounds.maxX; x += 5.5) for (let z = base.bounds.minZ + 3; z < base.bounds.maxZ; z += 5) out.push([x, z]);
     return out;
-  }, [world]);
+  }, [base]);
   // The light panels are painted into the ceiling itself (as its glow) rather than hung under it as separate
   // slivers: seen far down the room they are thinner than a pixel, and a texture is filtered where geometry sparkles.
   useEffect(() => {
-    const W = world.layout.width;
-    const D = world.layout.depth;
+    const W = base.layout.width;
+    const D = base.layout.depth;
     const k = Math.min(40, 4096 / Math.max(W, D));
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(W * k);
@@ -233,8 +237,55 @@ export function Building({ world, cutaway, quality }: { world: World; cutaway: b
       ceilingMat.needsUpdate = true;
       tex.dispose();
     };
-  }, [world, panels, ceilingMat]);
+  }, [base, panels, ceilingMat]);
   const height = useRef(cutaway ? 1.1 : 3);
+  const slabMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#8d95a3', roughness: 0.8 }), []);
+
+  // Member rooms: a floor of the member's colour and a ceiling with its own light panels, made when the room appears.
+  const annexKey = world.memberRooms.map((r) => `${r.roomId}:${r.x}:${r.z}:${r.w}:${r.d}:${r.color}:${r.lights.length}`).join('|');
+  const annex = useMemo(
+    () =>
+      world.memberRooms.map((r) => {
+        const carpet = new THREE.Color(r.color).lerp(new THREE.Color('#566072'), 0.62);
+        const tex = noiseTexture(`#${carpet.getHexString()}`, 20, 1);
+        tex.repeat.set(r.w * 0.9, r.d * 0.9);
+        const floor = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, metalness: 0 });
+        // The light panels are painted into the ceiling's glow, as in the building (see above).
+        const k = 40;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(r.w * k);
+        canvas.height = Math.round(r.d * k);
+        const ctx = canvas.getContext('2d')!;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#fff7e8';
+        for (const [x, z] of r.lights) ctx.fillRect((x - r.x - 0.75) * k, (r.z + r.d - z - 0.25) * k, 1.5 * k, 0.5 * k);
+        const glow = new THREE.CanvasTexture(canvas);
+        glow.colorSpace = THREE.SRGBColorSpace;
+        glow.anisotropy = 16;
+        const ceil = new THREE.MeshStandardMaterial({ color: '#eef1f5', roughness: 0.95, transparent: true, opacity: ceilingMat.opacity, emissive: '#ffffff', emissiveIntensity: 2.4, emissiveMap: glow });
+        const accent = new THREE.MeshStandardMaterial({ color: r.color, roughness: 0.6, ...ON_SURFACE });
+        return { room: r, floor, ceil, accent, textures: [tex, glow] };
+      }),
+    [annexKey], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  useEffect(
+    () => () => {
+      for (const a of annex) {
+        a.floor.dispose();
+        a.ceil.dispose();
+        a.accent.dispose();
+        for (const t of a.textures) t.dispose();
+      }
+    },
+    [annex],
+  );
+  const annexRef = useRef(annex);
+  annexRef.current = annex;
+  // For the UI tests: which member rooms stand, and where.
+  useEffect(() => {
+    sceneProbe().memberRooms = world.memberRooms.map((r) => ({ hostId: r.hostId, memberName: r.memberName, desks: r.desks, side: r.side, x: r.x, z: r.z, w: r.w, d: r.d, door: { x: r.door.x, z: r.door.z } }));
+  }, [world.memberRooms]);
 
   // Walls drop to a cut-away height for overhead cameras and rise for first-person views.
   useFrame((_s, dt) => {
@@ -244,6 +295,7 @@ export function Building({ world, cutaway, quality }: { world: World; cutaway: b
     if (Math.abs(ceilingMat.opacity - want) > 0.01) {
       ceilingMat.opacity += (want - ceilingMat.opacity) * (1 - Math.exp(-dt * 5));
       if (ceiling.current) ceiling.current.visible = ceilingMat.opacity > 0.02;
+      for (const a of annexRef.current) a.ceil.opacity = ceilingMat.opacity;
     }
     if (Math.abs(height.current - target) < 0.002 || !group.current) return;
     height.current += (target - height.current) * (1 - Math.exp(-dt * 6));
@@ -258,9 +310,8 @@ export function Building({ world, cutaway, quality }: { world: World; cutaway: b
         <meshStandardMaterial color="#12161e" roughness={1} />
       </mesh>
       {/* The slab's top is centimetres under the room floors, not millimetres: two surfaces that close flicker from across the office. */}
-      <mesh position={[0, -0.09, 0]} receiveShadow>
-        <boxGeometry args={[world.layout.width + 0.6, 0.1, world.layout.depth + 0.6]} />
-        <meshStandardMaterial color="#8d95a3" roughness={0.8} />
+      <mesh position={[0, -0.09, 0]} receiveShadow material={slabMat}>
+        <boxGeometry args={[base.layout.width + 0.6, 0.1, base.layout.depth + 0.6]} />
       </mesh>
       {floors.map(({ room, material }) => (
         <mesh key={room.id} rotation={[-Math.PI / 2, 0, 0]} position={[room.x + room.w / 2, 0.005, room.z + room.d / 2]} receiveShadow material={material}>
@@ -271,11 +322,49 @@ export function Building({ world, cutaway, quality }: { world: World; cutaway: b
         {/* The underside sits just below the wall tops (and their caps), so the walls run cleanly into the ceiling:
             a ceiling resting exactly on them leaves a hairline along every wall that sparkles as the camera moves. */}
         <mesh position={[0, 2.97, 0]} rotation={[Math.PI / 2, 0, 0]} material={ceilingMat}>
-          <planeGeometry args={[world.layout.width, world.layout.depth]} />
+          <planeGeometry args={[base.layout.width, base.layout.depth]} />
         </mesh>
+        {annex.map(({ room: r, ceil }) => (
+          <mesh key={r.roomId} position={[r.x + r.w / 2, 2.97, r.z + r.d / 2]} rotation={[Math.PI / 2, 0, 0]} material={ceil}>
+            <planeGeometry args={[r.w, r.d]} />
+          </mesh>
+        ))}
       </group>
+      {annex.map(({ room: r, floor, accent }) => {
+        const alongZ = r.side !== 'n';
+        return (
+          <group key={r.roomId}>
+            {/* The same slab as the building's, of the same material: where the two overlap they look the same whichever is drawn. */}
+            <mesh position={[r.x + r.w / 2, -0.09, r.z + r.d / 2]} receiveShadow material={slabMat}>
+              <boxGeometry args={[r.w + 0.6, 0.1, r.d + 0.6]} />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[r.x + r.w / 2, 0.005, r.z + r.d / 2]} receiveShadow material={floor}>
+              <planeGeometry args={[r.w, r.d]} />
+            </mesh>
+            {/* The threshold, in the member's colour. */}
+            <mesh rotation={[-Math.PI / 2, 0, alongZ ? Math.PI / 2 : 0]} position={[r.door.x, 0.016, r.door.z]} material={accent}>
+              <planeGeometry args={[r.door.width - 0.2, 0.3]} />
+            </mesh>
+            <MemberSigns room={r} />
+          </group>
+        );
+      })}
       <group ref={group} scale={[1, height.current / 3, 1]}>
-        {world.walls.map((w, i) => {
+        {/* The frame of each member room's door: it stands a few centimetres proud of the wall it is cut through. */}
+        {world.memberRooms.map((r) =>
+          [-1, 1].map((e) => {
+            const off = e * (r.door.width / 2 - 0.05);
+            const alongZ = r.side !== 'n';
+            return (
+              <mesh key={`${r.roomId}:${e}`} position={[r.door.x + (alongZ ? 0 : off), 1.5, r.door.z + (alongZ ? off : 0)]} material={frameMat} castShadow={quality !== 'low'}>
+                <boxGeometry args={alongZ ? [WALL_T + 0.06, 3, 0.1] : [0.1, 3, WALL_T + 0.06]} />
+              </mesh>
+            );
+          }),
+        )}
+        {world.walls.map((w) => {
+          // Keyed by where the wall stands: when a member room cuts a door into one wall, the others are left as they are.
+          const i = `${w.x1}:${w.z1}:${w.x2}:${w.z2}:${w.glass ? 'g' : 's'}`;
           const len = Math.hypot(w.x2 - w.x1, w.z2 - w.z1);
           const horizontal = Math.abs(w.z2 - w.z1) < 1e-6;
           const cx = (w.x1 + w.x2) / 2;
@@ -315,14 +404,85 @@ export function Building({ world, cutaway, quality }: { world: World; cutaway: b
   );
 }
 
+/** A member room's name: on a plaque by its door (or over it), and painted on its floor for the cameras that look down. */
+function MemberSigns({ room }: { room: MemberRoom }) {
+  const title = memberRoomTitle(room.memberName);
+  const seated = room.employees - room.unseated;
+  const sub = !room.employees ? 'No employees yet' : room.unseated ? `${seated} of ${room.employees} employees here` : `${room.employees} employee${room.employees === 1 ? '' : 's'}`;
+  const PW = 1.2;
+  const PH = 0.5;
+  const label = useCanvasTexture(
+    room.label.w,
+    room.label.h,
+    1024,
+    (ctx, w, h) => {
+      ctx.clearRect(0, 0, w, h);
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      (ctx as any).letterSpacing = `${Math.round(h * 0.05)}px`;
+      // A long name is painted smaller before it is cut short.
+      let size = h * 0.56;
+      ctx.font = font(size, 800);
+      while (size > h * 0.3 && ctx.measureText(title).width > w * 0.94) ctx.font = font((size *= 0.94), 800);
+      ctx.fillStyle = 'rgba(255,255,255,0.86)';
+      const text = clip(ctx, title, w * 0.96);
+      ctx.fillText(text, w / 2, h * 0.44);
+      const tw = Math.min(w * 0.96, ctx.measureText(text).width);
+      ctx.fillStyle = room.color;
+      ctx.fillRect(w / 2 - tw / 2, h * 0.82, tw, h * 0.07);
+      (ctx as any).letterSpacing = '0px';
+      ctx.textAlign = 'left';
+    },
+    [title, room.color],
+  );
+  return (
+    <>
+      <group position={[room.plaque.x, room.plaque.above ? 2.42 : 1.5, room.plaque.z]} rotation={[0, room.plaque.rot, 0]}>
+        <mesh position={[0, 0, 0.02]} castShadow>
+          <boxGeometry args={[PW + 0.08, PH + 0.08, 0.04]} />
+          <meshStandardMaterial color="#1c212b" roughness={0.45} metalness={0.3} />
+        </mesh>
+        <CanvasPanel
+          width={PW}
+          height={PH}
+          px={768}
+          position={[0, 0, 0.0415]}
+          deps={[title, sub, room.color]}
+          draw={(ctx, w, h) => {
+            ctx.fillStyle = '#10151e';
+            ctx.fillRect(0, 0, w, h);
+            ctx.fillStyle = room.color;
+            ctx.fillRect(0, 0, w * 0.03, h);
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#ffffff';
+            // A long name is written smaller before it is cut short.
+            let size = h * 0.3;
+            ctx.font = font(size, 800);
+            while (size > h * 0.17 && ctx.measureText(title).width > w * 0.86) ctx.font = font((size *= 0.94), 800);
+            ctx.fillText(clip(ctx, title, w * 0.88), w * 0.08, h * 0.36);
+            ctx.fillStyle = room.color;
+            ctx.font = font(h * 0.17, 600);
+            ctx.fillText(clip(ctx, sub, w * 0.88), w * 0.08, h * 0.72);
+          }}
+        />
+      </group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[room.label.x, 0.016, room.label.z]}>
+        <planeGeometry args={[room.label.w, room.label.h]} />
+        <meshBasicMaterial map={label} transparent depthWrite={false} toneMapped={false} {...ON_SURFACE} />
+      </mesh>
+    </>
+  );
+}
+
 export function Lights({ quality, world }: { quality: Quality; world: World }) {
   const sun = useRef<THREE.DirectionalLight>(null);
   useLayoutEffect(() => {
     const l = sun.current;
     if (!l) return;
     const cam = l.shadow.camera as THREE.OrthographicCamera;
-    const hw = world.layout.width / 2 + 4;
-    const hd = world.layout.depth / 2 + 4;
+    // Wide enough for the member rooms that stand outside the building, when there are any.
+    const hw = Math.max(-world.bounds.minX, world.bounds.maxX) + 4;
+    const hd = Math.max(-world.bounds.minZ, world.bounds.maxZ) + 4;
     cam.left = -hw;
     cam.right = hw;
     cam.top = hd;
@@ -332,7 +492,7 @@ export function Lights({ quality, world }: { quality: Quality; world: World }) {
     cam.updateProjectionMatrix();
     l.shadow.bias = -0.0004;
     l.shadow.normalBias = 0.03;
-  }, [world]);
+  }, [world.bounds.minX, world.bounds.maxX, world.bounds.minZ, world.bounds.maxZ]);
   const size = quality === 'high' ? 4096 : 2048;
   return (
     <>
@@ -480,21 +640,28 @@ export interface DeskSeatInfo {
   special: { name: string; title: string; level: number; accent: string; taskKey: string | null; progress: number | null; label: string } | null;
 }
 
-export function Desks({ world, seats, subscribe }: { world: World; seats: DeskSeatInfo[]; subscribe: ScreenSubscribe }) {
-  const mats = useMemo(
-    () => ({
-      top: new THREE.MeshStandardMaterial({ color: '#efe6d6', roughness: 0.55 }),
-      frame: new THREE.MeshStandardMaterial({ color: '#f4f6f9', roughness: 0.5, metalness: 0.2 }),
-      dark: new THREE.MeshStandardMaterial({ color: '#1c212b', roughness: 0.45, metalness: 0.3 }),
-      chair: new THREE.MeshStandardMaterial({ color: '#2f3846', roughness: 0.85 }),
-      chrome: new THREE.MeshStandardMaterial({ color: '#aeb6c2', roughness: 0.25, metalness: 0.9 }),
-      divider: new THREE.MeshStandardMaterial({ color: '#7d8aa0', roughness: 0.95 }),
-    }),
-    [],
-  );
+// One set of materials for every desk there is: the office's own and those in member rooms.
+let DESK_MATS: Record<'top' | 'frame' | 'dark' | 'chair' | 'chrome' | 'divider', THREE.MeshStandardMaterial> | null = null;
+function deskMats() {
+  return (DESK_MATS ??= {
+    top: new THREE.MeshStandardMaterial({ color: '#efe6d6', roughness: 0.55 }),
+    frame: new THREE.MeshStandardMaterial({ color: '#f4f6f9', roughness: 0.5, metalness: 0.2 }),
+    dark: new THREE.MeshStandardMaterial({ color: '#1c212b', roughness: 0.45, metalness: 0.3 }),
+    chair: new THREE.MeshStandardMaterial({ color: '#2f3846', roughness: 0.85 }),
+    chrome: new THREE.MeshStandardMaterial({ color: '#aeb6c2', roughness: 0.25, metalness: 0.9 }),
+    divider: new THREE.MeshStandardMaterial({ color: '#7d8aa0', roughness: 0.95 }),
+  });
+}
+
+/**
+ * A set of desks with their chairs and monitors. The scene draws two: the office's own desks, and those in the
+ * rooms of connected members — so a member arriving or leaving does not touch the office's desks.
+ */
+export function Desks({ desks, seats, subscribe }: { desks: Desk[]; seats: DeskSeatInfo[]; subscribe: ScreenSubscribe }) {
+  const mats = deskMats();
   const m = useMemo(() => {
     const out = { top: [] as THREE.Matrix4[], side: [] as THREE.Matrix4[], drawer: [] as THREE.Matrix4[], bezel: [] as THREE.Matrix4[], stand: [] as THREE.Matrix4[], foot: [] as THREE.Matrix4[], keyboard: [] as THREE.Matrix4[], mouse: [] as THREE.Matrix4[], seat: [] as THREE.Matrix4[], back: [] as THREE.Matrix4[], post: [] as THREE.Matrix4[], base: [] as THREE.Matrix4[], divider: [] as THREE.Matrix4[] };
-    for (const d of world.layout.desks) {
+    for (const d of desks) {
       const { x, z, rot } = d;
       out.top.push(place(x, z, rot, 0, DESK_SIZE.h, 0));
       out.side.push(place(x, z, rot, -DESK_SIZE.w / 2 + 0.04, 0.36, 0), place(x, z, rot, DESK_SIZE.w / 2 - 0.04, 0.36, 0));
@@ -513,19 +680,24 @@ export function Desks({ world, seats, subscribe }: { world: World; seats: DeskSe
     }
     // A low privacy divider down the middle of each pod (between desks that face each other).
     const seen = new Set<string>();
-    for (const d of world.layout.desks) {
-      const mate = world.layout.desks.find((o) => o !== d && Math.abs(o.x - d.x) < 0.01 && Math.abs(Math.abs(o.z - d.z) - 1) < 0.06);
+    for (const d of desks) {
+      // Desks turned a quarter (member rooms on the east and west walls) face each other along X instead of Z.
+      const turned = Math.abs(Math.sin(d.rot)) > 0.7;
+      const across = (o: Desk) => (turned ? o.x - d.x : o.z - d.z);
+      const along = (o: Desk) => (turned ? o.z - d.z : o.x - d.x);
+      const mate = desks.find((o) => o !== d && Math.abs(along(o)) < 0.01 && Math.abs(Math.abs(across(o)) - 1) < 0.06);
       if (!mate) continue;
-      const row = world.layout.desks.filter((o) => Math.abs(o.z - d.z) < 0.01 && Math.abs(o.x - d.x) < 2.2);
-      const cx = row.reduce((a, o) => a + o.x, 0) / row.length;
-      const cz = (d.z + mate.z) / 2;
+      const row = desks.filter((o) => Math.abs(across(o)) < 0.01 && Math.abs(along(o)) < 2.2);
+      const mid = row.reduce((a, o) => a + (turned ? o.z : o.x), 0) / row.length;
+      const cx = turned ? (d.x + mate.x) / 2 : mid;
+      const cz = turned ? mid : (d.z + mate.z) / 2;
       const key = `${cx.toFixed(1)}:${cz.toFixed(1)}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      out.divider.push(new THREE.Matrix4().makeTranslation(cx, DESK_SIZE.h + 0.23, cz));
+      out.divider.push(turned ? place(cx, cz, Math.PI / 2, 0, DESK_SIZE.h + 0.23, 0) : new THREE.Matrix4().makeTranslation(cx, DESK_SIZE.h + 0.23, cz));
     }
     return out;
-  }, [world.layout.desks]);
+  }, [desks]);
 
   return (
     <group>

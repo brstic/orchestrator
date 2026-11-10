@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Window } from '@orchestrator/ui';
+import { usePrefs } from '../../lib/prefs.ts';
 import { useOffice } from '../../lib/store.ts';
 import { registerPanel } from './index.tsx';
 import { CONTROL_STATES, keyLabel, type PanelProps } from './company-shared.tsx';
@@ -32,7 +33,7 @@ const BINDINGS: Array<{ id: string; label: string }> = [
 ];
 
 function HelpPanel({ onClose }: PanelProps) {
-  const kb = useOffice((s) => s.settings?.keybindings) ?? {};
+  const kb = usePrefs((p) => p.prefs.keybindings);
   const k = (id: string) => keyLabel(kb[id]);
   return (
     <Window

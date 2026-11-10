@@ -1,5 +1,5 @@
 import { ACTIVITY_LABEL, formatDuration, roleByKey } from '@orchestrator/contracts';
-import { deskPods, type BoardView, type CeoView, type HostView, type PersonView, type WalkRequest, type WallView, type WhiteboardView, type ZoneView } from '@orchestrator/office-3d';
+import { deskPods, withMemberRooms, type MemberOffice, type BoardView, type CeoView, type HostView, type PersonView, type WalkRequest, type WallView, type WhiteboardView, type ZoneView } from '@orchestrator/office-3d';
 import { activityOf, currentTaskOf, sessionOfEmployee, type OfficeState } from './store.ts';
 
 /**
@@ -15,7 +15,38 @@ export const SPECIALIZED_DESK_LEVEL = 5;
 /** Activities in which someone is working without typing: thinking it through or reading. */
 const AWAY_FROM_KEYBOARD = new Set(['thinking', 'reading', 'researching', 'planning']);
 
-export function personViews(s: OfficeState): PersonView[] {
+/** The office as the scene draws it, and who of the members' own employees is in it. */
+export interface OfficeWithRooms extends MemberOffice {
+  /** Personal employees who are not in the office: their member is not connected (or no room could be attached). */
+  away: Set<string>;
+}
+
+let lastOffice: { layout: OfficeState['layout']; key: string; value: OfficeWithRooms } | null = null;
+
+/**
+ * The stored layout plus a room for every member whose own computer is connected, with their personal employees
+ * seated in it. Nothing here is stored: it follows from which personal hosts are online. The same object comes
+ * back for as long as the answer is the same (hosts report in every few seconds), so the scene is not rebuilt.
+ */
+export function officeWithRooms(s: OfficeState, unlocked: string[]): OfficeWithRooms | null {
+  if (!s.layout) return null;
+  const personal = Object.values(s.hosts)
+    .filter((h) => !!h.memberId && h.status !== 'revoked')
+    .sort((a, b) => a.enrolledAt.localeCompare(b.enrolledAt) || a.id.localeCompare(b.id));
+  const staff = Object.values(s.employees)
+    .filter((e) => !e.archived && !!e.hostId)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  const online = personal.filter((h) => h.status === 'online').map((h) => ({ hostId: h.id, memberId: h.memberId!, memberName: h.memberName ?? h.name, employeeIds: staff.filter((e) => e.hostId === h.id).map((e) => e.id) }));
+  const theirs = staff.filter((e) => personal.some((h) => h.id === e.hostId)).map((e) => e.id);
+  const key = JSON.stringify([online, theirs, [...unlocked].sort()]);
+  if (lastOffice && lastOffice.layout === s.layout && lastOffice.key === key) return lastOffice.value;
+  const office = withMemberRooms(s.layout, online, new Set(unlocked));
+  const value: OfficeWithRooms = { ...office, away: new Set(theirs.filter((id) => !office.deskOf.has(id))) };
+  lastOffice = { layout: s.layout, key, value };
+  return value;
+}
+
+export function personViews(s: OfficeState, office?: OfficeWithRooms | null): PersonView[] {
   const meetingSeats = new Map<string, number>();
   for (const m of Object.values(s.meetings)) {
     if (!ACTIVE_MEETING.has(m.status)) continue;
@@ -24,6 +55,8 @@ export function personViews(s: OfficeState): PersonView[] {
   const out: PersonView[] = [];
   for (const e of Object.values(s.employees)) {
     if (e.archived) continue;
+    // A member's own employees are in the office only while that member is: in their room, at a desk there.
+    if (office?.away.has(e.id)) continue;
     const session = sessionOfEmployee(s.sessions, e.id);
     const live = !!session && (session.status === 'running' || session.status === 'starting');
     const activity = activityOf(session);
@@ -42,7 +75,7 @@ export function personViews(s: OfficeState): PersonView[] {
       name: e.name,
       title: e.title,
       appearance: e.appearance,
-      deskId: e.deskId,
+      deskId: office?.deskOf.get(e.id) ?? e.deskId,
       activity,
       label: meetingSeats.has(e.id) && live ? 'IN MEETING' : (ACTIVITY_LABEL[activity] ?? activity.toUpperCase()),
       detail: session?.activityDetail ?? null,
@@ -284,12 +317,15 @@ export function whiteboardView(s: OfficeState): WhiteboardView {
  * Project zones: a desk pod whose seated people all, or mostly, belong to one project is that
  * project's workspace. Mixed and empty pods are nobody's. The counts are that project's real tasks.
  */
-export function zoneViews(s: OfficeState): ZoneView[] {
+export function zoneViews(s: OfficeState, office?: OfficeWithRooms | null): ZoneView[] {
   if (!s.layout) return [];
   const seated = new Map<string, string | null>();
-  for (const e of Object.values(s.employees)) if (!e.archived && e.deskId) seated.set(e.deskId, e.projectId ?? null);
+  for (const e of Object.values(s.employees)) {
+    const deskId = office?.deskOf.get(e.id) ?? (office?.away.has(e.id) ? null : e.deskId);
+    if (!e.archived && deskId) seated.set(deskId, e.projectId ?? null);
+  }
   const out: ZoneView[] = [];
-  for (const pod of deskPods(s.layout.desks)) {
+  for (const pod of deskPods((office?.layout ?? s.layout).desks)) {
     const people = pod.deskIds.filter((id) => seated.has(id)).map((id) => seated.get(id)!);
     if (!people.length) continue;
     const tally = new Map<string, number>();

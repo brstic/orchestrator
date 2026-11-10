@@ -50,6 +50,13 @@ export interface Host {
   revokedAt: ISODate | null;
   /** True for the machine the server itself runs on (local-only mode). */
   local: boolean;
+  /**
+   * A personal host: the computer of a member of the office, connected while they are in it. Everything on it
+   * (employees, sessions, folders) is that member's, not shared. Null or absent: a shared machine.
+   */
+  memberId?: ID | null;
+  /** That member's name, for the sign on their room. */
+  memberName?: string | null;
 }
 
 // ─────────────────────────── Employees ───────────────────────────

@@ -692,16 +692,42 @@ async function scenario() {
   await step('Settings: a key binding is captured from a real key press and reset again', async () => {
     await open('settings');
     await clickText('Controls');
-    const forward = `window.__t.store().settings.keybindings.forward`;
+    // Keys belong to this computer: they are kept here, and the office's own settings are left alone.
+    const forward = `window.__orchPrefs.getState().prefs.keybindings.forward`;
+    const kept = `JSON.parse(localStorage.getItem('orch.prefs')).keybindings.forward`;
     const original = await js(forward);
     await click(`[...window.__t.scope().querySelectorAll('.pc-keyrow')].find((r) => r.textContent.startsWith('Move forward')).querySelector('.pc-key')`, 'the "Move forward" binding');
     await waitFor(`/press a key/.test(window.__t.scope().querySelector('.pc-key-on').textContent)`, 4000);
     await key('I', 'i');
-    await waitFor(`${forward} === 'KeyI'`, 8000);
+    await waitFor(`${forward} === 'KeyI' && ${kept} === 'KeyI'`, 8000);
     await clickText('Reset to defaults');
-    await waitFor(`${forward} === ${JSON.stringify(original)}`, 8000);
+    await waitFor(`${forward} === ${JSON.stringify(original)} && ${kept} === ${JSON.stringify(original)}`, 8000);
     await close();
     return `${original} → KeyI → ${original}`;
+  });
+
+  await step('Settings: the graphics quality is chosen for this computer and kept here, not in the office', async () => {
+    await open('settings');
+    await clickText('Graphics');
+    const mine = `window.__orchPrefs.getState().prefs.quality`;
+    const kept = `JSON.parse(localStorage.getItem('orch.prefs')).quality`;
+    const office = `window.__t.store().settings.quality`;
+    const original = await js(mine);
+    const officeBefore = await js(office);
+    const other = original === 'low' ? 'medium' : 'low';
+    const title = (q) => q[0].toUpperCase() + q.slice(1);
+    const radio = (q) => `[...window.__t.scope().querySelectorAll('label.pc-choice')].find((l) => l.textContent.trim().startsWith(${JSON.stringify(title(q))})).querySelector('input')`;
+    if (!(await js(`/Saved on this computer/.test(window.__t.scope().textContent) && [...window.__t.scope().querySelectorAll('nav .section-title')].map((e) => e.textContent).join('|') === 'This computer|The office'`))) throw new Error('Settings does not show the two groups "This computer" and "The office"');
+    await click(radio(other), title(other));
+    await waitFor(`${mine} === ${JSON.stringify(other)} && ${kept} === ${JSON.stringify(other)} && (${radio(other)}).checked`, 8000);
+    // Long enough for the office to have answered, had anything been sent to it.
+    await sleep(1200);
+    if ((await js(office)) !== officeBefore) throw new Error(`the office's own quality setting changed to ${await js(office)}`);
+    await shot('settings-this-computer');
+    await click(radio(original), title(original));
+    await waitFor(`${mine} === ${JSON.stringify(original)} && ${kept} === ${JSON.stringify(original)}`, 8000);
+    await close();
+    return `this computer: ${original} → ${other} → ${original}; the office's setting stayed ${officeBefore}`;
   });
 
   await step('3D office: walking up to someone, talking (F), sitting down (Space), turning (A/D), sidestepping (Q/E) and walking (W/S)', async () => {
@@ -1425,6 +1451,10 @@ async function scenario() {
     // This runs in a hidden window next to a dozen live sessions; the bar is "smooth enough to use", the number is reported as measured.
     if (avg < 24) throw new Error(`the scene averaged ${avg.toFixed(1)} fps (${fps.join(', ')})`);
     return `${avg.toFixed(1)} fps average over 6 s (${fps.join(', ')}); slowest frame ${Math.max(...samples.map((s) => s.worstFrameMs))} ms`;
+  });
+
+  await step('this computer\'s preferences, as they are stored at the end', async () => {
+    return js(`localStorage.getItem('orch.prefs')`);
   });
 
   await step('the page is still alive and reported no errors', async () => {

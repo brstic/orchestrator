@@ -1,5 +1,6 @@
 import { Door, inviteCode } from './door.ts';
-import { Guests, guestMay, type Who } from './guests.ts';
+import { Guests, whoIs, type Who } from './guests.ts';
+import { mayCall } from './access.ts';
 import { nowPlaying } from './radio.ts';
 import { SshLinks } from './ssh-links.ts';
 import fs from 'node:fs';
@@ -130,7 +131,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   let door: Door | null = null;
   /** Did this request come in through the guest door (from the network), rather than from this computer? */
   const viaDoor = (req: FastifyRequest): boolean => !!door && req.headers['x-orch-door'] === door.secret;
-  /** Who is asking: the owner (never through the guest door), a guest, or nobody. */
+  /** Who is asking: the root owner (never through the door), a member, or nobody. */
   const identify = (req: FastifyRequest): Who | null => {
     const token = tokenOf(req);
     if (!token) return null;
@@ -138,7 +139,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     const guest = guests.byToken(token);
     if (!guest) return null;
     guests.seen(guest.id);
-    return { kind: 'guest', id: guest.id, name: guest.name, role: guest.role };
+    return whoIs(guest);
   };
   const whoOf = (req: FastifyRequest): Who => (req as unknown as { who: Who }).who;
 
@@ -168,7 +169,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   app.get('/healthz', async () => ({ ok: true, name: 'orchestrator', version: '0.1.0' }));
 
   // ───────────── WebSockets ─────────────
-  app.get('/ws/agent', { websocket: true }, (socket, req) => agents.handle(socket as any, isLoopbackAddress(req.socket.remoteAddress)));
+  app.get('/ws/agent', { websocket: true }, (socket, req) => agents.handle(socket as any, isLoopbackAddress(req.socket.remoteAddress), viaDoor(req)));
   app.get('/ws/client', { websocket: true }, (socket, req) => {
     const who = identify(req);
     if (!who) {
@@ -201,11 +202,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       const who = identify(req);
       if (who) {
         (req as unknown as { who: Who }).who = who;
-        if (who.kind === 'owner') return;
-        // A guest: only what their role allows. What they change is on the record under their name.
+        if (who.id === 'owner') return;
+        // A member: what their role allows, on what is shared or theirs. What they change is on the record under their name.
         const route = (req.url.split('?')[0] ?? '').replace(/^\/api/, '');
-        if (!guestMay(who.role, req.method, route)) return reply.code(403).send({ error: `Only the owner can do this — you are in this office as a ${who.role}.` });
-        if (req.method !== 'GET') engine.core.audit(`guest:${who.name}`, 'guest.action', route, { method: req.method, role: who.role });
+        const verdict = mayCall(engine, who, req.method, route, req.body as Record<string, unknown> | null);
+        if (!verdict.ok) return reply.code(403).send({ error: verdict.reason });
+        if (req.method !== 'GET') engine.core.audit(`member:${who.name}`, 'member.action', route, { method: req.method, role: who.role });
         return;
       }
       if (req.headers.authorization) {
@@ -232,8 +234,18 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.get('/usage', async () => engine.sessions.accountUsage());
     // The foreman: who it is, the round in flight and the last ones, and what needs attention right now (owner only).
     api.get('/foreman', async () => engine.foreman.status());
-    api.get('/me', async (req) => ({ kind: whoOf(req).kind, role: whoOf(req).role, name: whoOf(req).name, office: engine.core.settings.companyName }));
+    api.get('/me', async (req) => ({ kind: whoOf(req).kind, role: whoOf(req).role, name: whoOf(req).name, id: whoOf(req).id, office: engine.core.settings.companyName }));
     api.get('/people', async () => clients.people());
+    // A member's own computer: a one-time enrollment for the host agent their desktop app runs while they are here.
+    api.post('/me/host', async (req) => {
+      const who = whoOf(req);
+      if (who.id === 'owner') throw new EngineError('This is the office\'s own computer already; its sessions are the shared ones.');
+      return { ...engine.hosts.createMemberEnrollment({ id: who.id, name: who.name }), hosts: engine.hosts.ofMember(who.id).map((x) => ({ id: x.id, name: x.name, status: x.status })) };
+    });
+    /** Someone who may no longer have a computer in the office (revoked, or now a visitor): theirs are disconnected for good. */
+    const dropHostsOf = (memberId: string) => {
+      for (const x of engine.hosts.ofMember(memberId)) engine.hosts.revoke(x.id, 'system');
+    };
 
     // ── guests and the door they come in through (owner only: not in any guest's allowed routes) ──
     const sharing = () => ({ door: door?.status() ?? { open: false, port: null, addresses: [], fingerprint: null, error: 'the server is still starting' }, wanted: store.kvGet<{ open: boolean; port: number; address: string | null }>('sharing', { open: false, port: 4610, address: null }), guests: guests.list(), present: clients.people() });
@@ -278,11 +290,13 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.patch('/guests/:id', async (req) => {
       const guest = guests.update(param(req, 'id'), { role: body(req).role });
       clients.dropGuest(guest.id); // they come back in with the new role
+      if (guest.role === 'visitor') dropHostsOf(guest.id);
       return guest;
     });
     api.delete('/guests/:id', async (req) => {
       const guest = guests.revoke(param(req, 'id'));
       clients.dropGuest(guest.id);
+      dropHostsOf(guest.id);
       return guest;
     });
     api.get('/roles', async () => ROLE_CATALOGUE);
@@ -346,9 +360,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/employees/:id/message', async (req) => {
       const text = String(body(req).body ?? '').trim();
       if (!text) throw new EngineError('message is empty');
-      // From a guest, the employee is told who is speaking: it is not the boss.
+      // From a colleague, the employee is told who is speaking: it is not the boss.
       const who = whoOf(req);
-      return engine.comms.sendMessage({ from: { kind: 'owner', id: null, name: who.kind === 'owner' ? 'the boss' : `${who.name} (a colleague the boss invited; not the boss)` }, toEmployeeId: param(req, 'id'), body: text });
+      return engine.comms.sendMessage({ from: { kind: 'owner', id: null, name: who.kind === 'owner' ? (who.id === 'owner' ? 'the boss' : `${who.name} (an owner of this office)`) : `${who.name} (a colleague the boss invited; not the boss)` }, toEmployeeId: param(req, 'id'), body: text });
     });
     api.post('/employees/:id/report', async (req) => engine.commands.execute({ input: 'request report', interpretedBy: 'rules', operations: [{ operation: { op: 'employee.report', employeeId: param(req, 'id') }, description: 'Request a status report' }], problems: [] }));
     api.get('/employees/:id/git', async (req) => engine.tasks.gitView({ employeeId: param(req, 'id') }));
@@ -416,9 +430,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
     // questions, notifications, meetings
     api.post('/questions/:id/answer', async (req) => {
-      // A colleague may answer an employee's question; saying yes or no to an action stays with the owner.
-      if (whoOf(req).kind !== 'owner' && engine.core.questions.get(param(req, 'id'))?.kind !== 'question') throw new EngineError('Only the owner can decide a permission request.', 403);
-      return engine.comms.answer(param(req, 'id'), body(req));
+      // Whoever may work with this employee may answer it and decide its requests (`access.ts`); the record says who did.
+      const who = whoOf(req);
+      return engine.comms.answer(param(req, 'id'), body(req), who.id === 'owner' ? 'owner' : `member:${who.name}`);
     });
     api.post('/notifications/read', async (req) => {
       engine.comms.markRead(body(req).ids ?? 'all');

@@ -3,6 +3,7 @@ import { ROLE_CATALOGUE, type Employee, type Host } from '@orchestrator/contract
 import { Badge, Button, Field } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
+import { useAccess } from '../../lib/access.ts';
 
 interface FolderEntry {
   name: string;
@@ -68,11 +69,14 @@ function distinct(rows: Row[], employees: Record<string, Employee>): Row[] {
  * (it becomes their project) and is named after it. Nobody's session is started here: it starts
  * when you first talk to them, give them a task, or press Start.
  */
-export function BulkHire({ onDone }: { onDone: () => void }) {
+export function BulkHire({ onDone, onlyHostId }: { onDone: () => void; onlyHostId?: string }) {
+  const can = useAccess();
+  const thisComputer = useOffice((s) => s.myHost.hostId);
   const hostsById = useOffice((s) => s.hosts);
   const employees = useOffice((s) => s.employees);
-  const hosts = useMemo(() => Object.values(hostsById).filter((h) => h.status === 'online'), [hostsById]);
-  const [hostId, setHostId] = useState(() => (hosts.find((h) => h.local) ?? hosts[0])?.id ?? '');
+  // The machines this person may put employees on: the shared ones and their own (or the one this was opened for).
+  const hosts = useMemo(() => Object.values(hostsById).filter((h) => h.status === 'online' && (onlyHostId ? h.id === onlyHostId : can.usable(h))), [hostsById, onlyHostId, can.me]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [hostId, setHostId] = useState(() => onlyHostId ?? (hosts.find((h) => h.local) ?? hosts.find((h) => !h.memberId) ?? hosts[0])?.id ?? '');
   const host: Host | undefined = hostsById[hostId];
   const [roleKey, setRoleKey] = useState(ROLE_CATALOGUE.find((r) => r.key === 'fullstack')?.key ?? ROLE_CATALOGUE[0]!.key);
   const [rows, setRows] = useState<Row[]>([]);
@@ -80,7 +84,8 @@ export function BulkHire({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [busy, setBusy] = useState(false);
-  const native = host?.local ? nativeFolders() : null;
+  // The system's own folder dialog shows this computer: right when the machine is the one this window is on.
+  const native = (host?.local && !thisComputer && can.root) || (!!host && host.id === thisComputer) ? nativeFolders() : null;
 
   const load = (path: string | null) => {
     if (!hostId) return;

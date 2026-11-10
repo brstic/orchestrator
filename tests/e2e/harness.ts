@@ -173,7 +173,7 @@ export interface Harness {
   restartServer(): Promise<void>;
   tmux(...args: string[]): string;
   /** Enroll and start another host agent (its own state directory and tmux server): a second machine. */
-  addHost(name: string, overrides?: Partial<AgentConfig>): Promise<{ hostId: string; agent: HostAgent; cfg: AgentConfig; root: string; tmux: (...args: string[]) => string; stop: () => Promise<void> }>;
+  addHost(name: string, overrides?: Partial<AgentConfig>, via?: { serverUrl?: string; enrollToken?: string }): Promise<{ hostId: string; agent: HostAgent; cfg: AgentConfig; root: string; tmux: (...args: string[]) => string; stop: () => Promise<void> }>;
   cleanup(): Promise<void>;
 }
 
@@ -296,13 +296,13 @@ export async function createHarness(opts: { timings?: Record<string, number>; ap
       await waitFor(() => agent.isConnected, { label: 'agent reconnect after server restart', timeout: 20000 });
     },
     tmux,
-    async addHost(name, overrides = {}) {
+    async addHost(name, overrides = {}, via = {}) {
       const home = path.join(tmp, `agent-${name}`);
       const root = path.join(fs.realpathSync(tmp), `machine-${name}`);
       fs.mkdirSync(root, { recursive: true });
       const socket = `${tmuxSocket}-${name}`;
-      const hostCfg: AgentConfig = { ...defaultConfig(), serverUrl: url, name, allowedRoots: [root], tmuxSocketName: socket, claudeBin: wrapper, approvalWaitSeconds: 20, remoteAttach: 'any', ...overrides };
-      const enrolledHost = await enroll(url, server.localEnrollToken(), name, { ...info, hostname: name });
+      const hostCfg: AgentConfig = { ...defaultConfig(), serverUrl: via.serverUrl ?? url, name, allowedRoots: [root], tmuxSocketName: socket, claudeBin: wrapper, approvalWaitSeconds: 20, remoteAttach: 'any', ...overrides };
+      const enrolledHost = await enroll(via.serverUrl ?? url, via.enrollToken ?? server.localEnrollToken(), name, { ...info, hostname: name });
       hostCfg.hostId = enrolledHost.hostId;
       hostCfg.credential = enrolledHost.credential;
       saveConfig(hostCfg, home);

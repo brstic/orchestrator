@@ -10,6 +10,11 @@
  *   --json         print one JSON line {url, token} when ready (used by the desktop app)
  *   --root <dir>   directory the agent may work in (repeatable; default: your home directory)
  *
+ * As an office other people connect to (see docs/INSTALL.md, "An office on a server"):
+ *   --door [port]      open the office to its members on the network (TLS; default port 4610) and keep it open
+ *   --address <url>    the address members reach it at, e.g. https://office.example.com:4610 (written into invitations)
+ * Then invite people from this machine with:  pnpm office invite <name> --role owner|colleague|visitor
+ *
  * Ctrl-C stops the server and the agent. Employees' tmux sessions keep running
  * and are picked up again on the next start.
  */
@@ -124,13 +129,30 @@ const cfg = agentConfig();
 if (!cfg?.credential || cfg.serverUrl !== url) await enrollAgent(token);
 startAgent(token);
 
+// An office on a server: the door to its members is opened here, once; the server reopens it by itself after a restart.
+let door = null;
+if (flag('--door') || flag('--address')) {
+  const given = value('--door', '');
+  const wanted = { open: true, ...(/^\d+$/.test(given ?? '') ? { port: Number(given) } : {}), ...(flag('--address') ? { address: value('--address', '') } : {}) };
+  const res = await fetch(`${url}/api/sharing`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(wanted) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body.door?.open) {
+    console.error(`The door could not be opened: ${body.error ?? body.door?.error ?? res.status}`);
+    shutdown(1);
+  } else door = body;
+}
+
 const officeUrl = `${url}/?token=${token}`;
-if (json) console.log(JSON.stringify({ url, token }));
+if (json) console.log(JSON.stringify({ url, token, ...(door ? { door: door.door } : {}) }));
 else {
   say('');
   say('  ORCHESTRATOR is running.');
   say(`  Open your office:  ${officeUrl}`);
   if (!fs.existsSync(path.join(root, 'apps/desktop/dist/index.html'))) say('  (The office UI has not been built yet — run: pnpm build:ui)');
+  if (door) {
+    say(`  Open to its members at:  ${[door.wanted.address, ...door.door.addresses].filter(Boolean).join('   ')}`);
+    say('  Invite someone:  pnpm office invite <name> --role owner|colleague|visitor');
+  }
   say('  Ctrl-C stops the server and agent; tmux sessions keep running.');
   say('');
 }

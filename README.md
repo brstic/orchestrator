@@ -4,6 +4,8 @@
 
 A 3D virtual office where real Claude Code sessions work as employees. Each employee is a persistent identity backed by a real `claude` process in a real tmux session, in a real git worktree. You walk the office, look over a shoulder at a live terminal, sit down and take the keyboard of that exact session, answer questions, approve actions, assign work — and everything the office shows is derived from what the runtime actually reported.
 
+**How it is meant to be used:** the office runs on a server (ideally Linux) and stays open; people connect to it with the desktop app. Everything on the server — sessions, folders, projects — is shared by the people invited, according to their role (*visitor* reads, *colleague* works, *owner* runs it). While a colleague or owner is connected, their own computer is attached as their room: sessions they start there run on their machine, under their Claude account, and are theirs. An office on a single computer still works the same way. Setup: [docs/INSTALL.md](docs/INSTALL.md); who may do what: [docs/ACCESS.md](docs/ACCESS.md); where the project stands: [docs/STATUS.md](docs/STATUS.md).
+
 This is not a dashboard with mascots and it is not a simulation: nothing in the UI is animated unless a hook, an MCP call, a tmux observation or an owner action says it happened.
 
 ```
@@ -77,8 +79,9 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Window
 | Answer from the office | The answer is returned as the tool result or hook decision; it is marked confirmed only when the runtime acts on it |
 | A task turns DONE | Orchestrator itself checked a clean tree, real commits, ran your verification command on the host, got review approval if required, and merged without conflict |
 | An employee walks to a colleague | A real `request_collaboration` was sent through the MCP server and delivered into the colleague's session |
-| The start screen: **My office** / **Join someone's office** | Your own office starts on this computer. Joining needs an invitation: the app connects only to the computer whose certificate the invitation names, with a guest credential that is not the owner's token |
-| Menu → People → **Open the office to guests**, **Invite** | A second, TLS listener starts on your network that forwards only the page, the API and the client socket. A *visitor* can look and talk to people; a *colleague* can also watch terminals, talk to employees and create tasks. Approvals, terminal keyboards, hiring, machines and settings stay with you |
+| The start screen: **Connect to an office** / **An office on this computer** | Connecting needs an invitation: the app talks only to the computer whose certificate the invitation names, and sends the token after checking it. An office on this computer starts a server and agent here |
+| Menu → People → **Open the office to its members**, **Invite** | A second, TLS listener forwards the page, the API, the client socket, and what a member's own computer needs (agent socket for personal hosts only, worker endpoint). Each member has a role — visitor, colleague, owner — enforced by the office for every request and terminal message ([docs/ACCESS.md](docs/ACCESS.md)) |
+| A room with someone's name on it | That member is connected and their computer is one of the office's machines right now; the employees in it run on that computer. The room is gone when they leave; the sessions stay in tmux there |
 | Other people walking around | Each person's app reports where their character is; the office relays it. What they say (Enter) is heard by the people present — never typed into an employee's session |
 | Team → **Hire for several projects** | One employee per folder you tick, named after the folder; each folder becomes that employee's own project. Nobody's session is started by hiring: it starts when you first talk to them or give them work |
 | An empty chair → `Space`; right-click → **Move to another desk…**; Office → **Who sits where** | Only the employee's desk changes (a swap if someone sits there). Their session, project and work are untouched |

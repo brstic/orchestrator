@@ -32,3 +32,4 @@ registerLazyPanels(['radio'], () => import('./radio.tsx'));
 registerLazyPanels(['reports'], () => import('./reports.tsx'));
 registerLazyPanels(['seat'], () => import('./seat.tsx'));
 registerLazyPanels(['people'], () => import('./people.tsx'));
+registerLazyPanels(['myroom'], () => import('./my-room.tsx'));

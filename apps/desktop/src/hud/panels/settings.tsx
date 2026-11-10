@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { ACTIVITY_LABEL, type AuditEntry, type ForemanSettings, type ForemanStatus, type OwnerSettings, type SelfImprovementSettings } from '@orchestrator/contracts';
 import { Badge, Button, Field, Window } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
+import { DEFAULT_KEYS, setPrefs, usePrefs, type ClientPrefs, type PrefsPatch } from '../../lib/prefs.ts';
 import { useOffice } from '../../lib/store.ts';
 import { act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
@@ -10,23 +11,35 @@ import { LoadState, fmtDateTime, keyLabel, useLoad, type PanelProps } from './co
 
 type SectionId = 'company' | 'graphics' | 'controls' | 'game' | 'improve' | 'workers' | 'foreman' | 'commands' | 'audit';
 
-const SECTIONS: Array<{ id: SectionId; label: string }> = [
-  { id: 'company', label: 'Company' },
-  { id: 'graphics', label: 'Graphics' },
-  { id: 'controls', label: 'Controls' },
-  { id: 'game', label: 'Game mechanics' },
-  { id: 'improve', label: 'Self-improvement' },
-  { id: 'workers', label: 'Workers' },
-  { id: 'foreman', label: 'Foreman' },
-  { id: 'commands', label: 'Commands' },
-  { id: 'audit', label: 'Audit log' },
+/** 'mine': kept on this computer, for whoever sits at it. 'office': the office's own settings, which its owners change. */
+const SECTIONS: Array<{ id: SectionId; label: string; group: 'mine' | 'office'; ownerOnly?: boolean }> = [
+  { id: 'graphics', label: 'Graphics', group: 'mine' },
+  { id: 'controls', label: 'Controls', group: 'mine' },
+  { id: 'company', label: 'Company', group: 'office' },
+  { id: 'game', label: 'Game mechanics', group: 'office' },
+  { id: 'improve', label: 'Self-improvement', group: 'office' },
+  { id: 'workers', label: 'Workers', group: 'office' },
+  { id: 'foreman', label: 'Foreman', group: 'office' },
+  { id: 'commands', label: 'Commands', group: 'office' },
+  // The audit log is read from the office on request, and only owners may read it.
+  { id: 'audit', label: 'Audit log', group: 'office', ownerOnly: true },
+];
+const GROUPS: Array<{ id: 'mine' | 'office'; label: string }> = [
+  { id: 'mine', label: 'This computer' },
+  { id: 'office', label: 'The office' },
 ];
 
 type SettingsPatch = Partial<Omit<OwnerSettings, 'selfImprovement' | 'foreman'>> & { selfImprovement?: Partial<SelfImprovementSettings>; foreman?: Partial<ForemanSettings> };
 
-/** Settings are saved one change at a time; the server merges the partial and broadcasts the result. */
+/** The office's settings are saved one change at a time; the server merges the partial and broadcasts the result. */
 function save(patch: SettingsPatch, ok = 'Saved'): Promise<OwnerSettings | undefined> {
   return act(() => api<OwnerSettings>('PATCH', '/settings', patch), ok);
+}
+
+/** This computer's preferences: stored here, nothing is asked of the office. */
+function savePrefs(patch: PrefsPatch, ok: string): void {
+  setPrefs(patch);
+  useOffice.getState().toast(ok, 'success');
 }
 
 function Toggle({ checked, onChange, title, children, disabled }: { checked: boolean; onChange: (v: boolean) => void; title: ReactNode; children?: ReactNode; disabled?: boolean }) {
@@ -87,8 +100,9 @@ function CompanySection({ settings }: { settings: OwnerSettings }) {
   );
 }
 
-function GraphicsSection({ settings }: { settings: OwnerSettings }) {
-  const pick = (quality: OwnerSettings['quality']) => void save({ quality }, `Graphics quality: ${quality}`);
+function GraphicsSection() {
+  const settings = usePrefs((p) => p.prefs);
+  const pick = (quality: ClientPrefs['quality']) => savePrefs({ quality }, `Graphics quality: ${quality}`);
   useTick(2000);
   const perf = (window as unknown as { __orchPerf?: { fps: number; worstFrameMs: number; at: number } }).__orchPerf;
   const fresh = perf && Date.now() - perf.at < 6000 ? perf : null;
@@ -119,7 +133,7 @@ function GraphicsSection({ settings }: { settings: OwnerSettings }) {
         Office extras
       </div>
       <label className="check">
-        <input type="checkbox" checked={settings.projectZones === true} onChange={(ev) => void save({ projectZones: ev.target.checked }, ev.target.checked ? 'Project areas are marked on the floor' : 'Project areas are no longer marked')} />
+        <input type="checkbox" checked={settings.projectZones === true} onChange={(ev) => savePrefs({ projectZones: ev.target.checked }, ev.target.checked ? 'Project areas are marked on the floor' : 'Project areas are no longer marked')} />
         <span>
           <span className="strong">Mark project areas on the floor</span>
           <br />
@@ -127,7 +141,7 @@ function GraphicsSection({ settings }: { settings: OwnerSettings }) {
         </span>
       </label>
       <label className="check">
-        <input type="checkbox" checked={settings.approachZoom === true} onChange={(ev) => void save({ approachZoom: ev.target.checked }, ev.target.checked ? 'The camera moves closer at a desk' : 'The camera keeps its distance at a desk')} />
+        <input type="checkbox" checked={settings.approachZoom === true} onChange={(ev) => savePrefs({ approachZoom: ev.target.checked }, ev.target.checked ? 'The camera moves closer at a desk' : 'The camera keeps its distance at a desk')} />
         <span>
           <span className="strong">Move the camera closer at a desk</span>
           <br />
@@ -137,26 +151,6 @@ function GraphicsSection({ settings }: { settings: OwnerSettings }) {
     </div>
   );
 }
-
-const DEFAULT_KEYS: Record<string, string> = {
-  forward: 'KeyW',
-  back: 'KeyS',
-  left: 'KeyA',
-  right: 'KeyD',
-  strafeLeft: 'KeyQ',
-  strafeRight: 'KeyE',
-  interact: 'Space',
-  talk: 'KeyF',
-  whip: 'KeyR',
-  overview: 'Tab',
-  map: 'KeyM',
-  tasks: 'KeyT',
-  projects: 'KeyP',
-  notifications: 'KeyN',
-  command: 'KeyG',
-  camera: 'KeyC',
-  exit: 'Escape',
-};
 
 const KEY_ACTIONS: Array<{ id: string; label: string; hint: string }> = [
   { id: 'forward', label: 'Move forward', hint: 'Walk / fly forward' },
@@ -180,8 +174,8 @@ const KEY_ACTIONS: Array<{ id: string; label: string; hint: string }> = [
 
 const MODIFIER_CODES = new Set(['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 'CapsLock']);
 
-function ControlsSection({ settings, capturing, setCapturing }: { settings: OwnerSettings; capturing: string | null; setCapturing: (id: string | null) => void }) {
-  const keys = settings.keybindings;
+function ControlsSection({ capturing, setCapturing }: { capturing: string | null; setCapturing: (id: string | null) => void }) {
+  const keys = usePrefs((p) => p.prefs.keybindings);
 
   useEffect(() => {
     if (!capturing) return;
@@ -191,7 +185,7 @@ function ControlsSection({ settings, capturing, setCapturing }: { settings: Owne
       e.stopPropagation();
       if (MODIFIER_CODES.has(e.code) || !e.code) return;
       setCapturing(null);
-      if (keys[capturing] !== e.code) void save({ keybindings: { [capturing]: e.code } }, `${KEY_ACTIONS.find((a) => a.id === capturing)?.label ?? capturing}: ${keyLabel(e.code)}`);
+      if (keys[capturing] !== e.code) savePrefs({ keybindings: { [capturing]: e.code } }, `${KEY_ACTIONS.find((a) => a.id === capturing)?.label ?? capturing}: ${keyLabel(e.code)}`);
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
@@ -243,7 +237,7 @@ function ControlsSection({ settings, capturing, setCapturing }: { settings: Owne
         </div>
       )}
       <div className="row">
-        <Button disabled={isDefault} onClick={() => void save({ keybindings: DEFAULT_KEYS }, 'Keybindings reset to defaults')}>
+        <Button disabled={isDefault} onClick={() => savePrefs({ keybindings: DEFAULT_KEYS }, 'Keybindings reset to defaults')}>
           Reset to defaults
         </Button>
         <span className="small faint">In a terminal, Escape always belongs to the terminal — it is Claude Code's interrupt key. “?” opens the help.</span>
@@ -304,7 +298,7 @@ function roundDid(a: ForemanStatus['rounds'][number]): string {
   return parts.join(' · ');
 }
 
-function ForemanSection({ settings }: { settings: OwnerSettings }) {
+function ForemanSection({ settings, readOnly }: { settings: OwnerSettings; readOnly: boolean }) {
   // An office running an older server has no foreman settings yet: show them as off.
   const f: ForemanSettings = settings.foreman ?? { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true };
   const set = (patch: Partial<ForemanSettings>, ok?: string) => void save({ foreman: patch }, ok);
@@ -317,6 +311,8 @@ function ForemanSection({ settings }: { settings: OwnerSettings }) {
   const [error, setError] = useState<string | null>(null);
   const tick = useTick(5000);
   useEffect(() => {
+    // The live status is the owners' to read; everyone else sees the settings alone.
+    if (readOnly) return;
     let alive = true;
     api<ForemanStatus>('GET', '/foreman').then(
       (data) => {
@@ -329,7 +325,7 @@ function ForemanSection({ settings }: { settings: OwnerSettings }) {
     return () => {
       alive = false;
     };
-  }, [tick, f.enabled, f.minGapSeconds, f.quietCheckMinutes, f.answersQuestions]);
+  }, [tick, readOnly, f.enabled, f.minGapSeconds, f.quietCheckMinutes, f.answersQuestions]);
 
   const gapN = Number(gap);
   const quietN = Number(quiet);
@@ -377,7 +373,7 @@ function ForemanSection({ settings }: { settings: OwnerSettings }) {
         </div>
       </form>
 
-      <div>
+      <div style={readOnly ? { display: 'none' } : undefined}>
         <div className="section-title">Right now</div>
         {error && !st && <div className="small bad">Could not load the foreman's status: {error}</div>}
         {st && (
@@ -487,74 +483,104 @@ function AuditSection() {
 
 function SettingsPanel({ arg, onClose }: PanelProps) {
   const settings = useOffice((s) => s.settings);
-  const [section, setSection] = useState<SectionId>(SECTIONS.some((s) => s.id === arg) ? (arg as SectionId) : 'company');
+  // Only owners change the office; everyone changes what is their own.
+  const owner = useOffice((s) => s.me?.role === 'owner');
+  const role = useOffice((s) => s.me?.role ?? 'visitor');
+  const sections = SECTIONS.filter((s) => owner || !s.ownerOnly);
+  const [picked, setSection] = useState<SectionId>(sections.some((s) => s.id === arg) ? (arg as SectionId) : owner ? 'company' : 'graphics');
+  const section = sections.some((s) => s.id === picked) ? picked : 'graphics';
   const [capturing, setCapturing] = useState<string | null>(null);
   if (!settings) return null;
   const pick = (id: SectionId) => {
     setCapturing(null);
     setSection(id);
   };
+  const current = SECTIONS.find((s) => s.id === section)!;
+  const readOnly = current.group === 'office' && !owner;
   return (
     // While a key is being captured the window must not react to Escape: it may be the key being bound.
-    <Window title="Settings" subtitle={SECTIONS.find((s) => s.id === section)?.label} onClose={capturing ? undefined : onClose} width={940} flush>
+    <Window title="Settings" subtitle={`${GROUPS.find((g) => g.id === current.group)!.label} · ${current.label}`} onClose={capturing ? undefined : onClose} width={940} flush>
       <div className="split pc-fixed" style={{ gridTemplateColumns: '190px 1fr' }}>
         <nav className="split-side list" aria-label="Settings sections">
-          {SECTIONS.map((s) => (
-            <button key={s.id} className={`pc-rowbtn ${section === s.id ? 'list-item-on' : ''}`} aria-current={section === s.id} onClick={() => pick(s.id)}>
-              {s.label}
-            </button>
+          {GROUPS.map((g) => (
+            <div key={g.id} className="pc-navgroup" role="group" aria-label={g.label}>
+              <div className="section-title">{g.label}</div>
+              <div className="small faint pc-navhint">{g.id === 'mine' ? 'Yours, saved on this computer.' : owner ? 'The same for everyone in it.' : 'Changed by its owners.'}</div>
+              {sections
+                .filter((s) => s.group === g.id)
+                .map((s) => (
+                  <button key={s.id} className={`pc-rowbtn ${section === s.id ? 'list-item-on' : ''}`} aria-current={section === s.id} onClick={() => pick(s.id)}>
+                    {s.label}
+                  </button>
+                ))}
+            </div>
           ))}
         </nav>
         <div className="split-main">
-          {section === 'company' && <CompanySection settings={settings} />}
-          {section === 'graphics' && <GraphicsSection settings={settings} />}
-          {section === 'controls' && <ControlsSection settings={settings} capturing={capturing} setCapturing={setCapturing} />}
-          {section === 'game' && (
-            <div className="col" style={{ gap: 12, maxWidth: 640 }}>
-              <Toggle checked={settings.gamification} onChange={(gamification) => void save({ gamification })} title="XP, levels and milestones">
-                Employees earn XP and levels, and the company reaches milestones that unlock office upgrades — all of it awarded only for verified work. When off, no XP is awarded, no milestones are evaluated, and the level, XP and milestone views are hidden.
-              </Toggle>
-              <div className="pc-info">
-                Productivity always comes first. Game mechanics are a view on work that was really delivered: they never change how tasks are assigned, verified, reviewed or merged, and a level says nothing about the capability of the underlying model.
-              </div>
+          {current.group === 'mine' && (
+            <div className="pc-info" style={{ marginBottom: 12 }} data-settings-scope="mine">
+              Saved on this computer, for you alone: nobody else's office looks or behaves differently, and the same choices apply in every office you open from here.
             </div>
           )}
-          {section === 'improve' && <ImproveSection settings={settings} />}
-          {section === 'workers' && (
-            <div className="col" style={{ gap: 12, maxWidth: 640 }}>
-              <Toggle checked={settings.workersInheritMcp} onChange={(workersInheritMcp) => void save({ workersInheritMcp })} title="Workers inherit your MCP servers and connectors">
-                Which MCP servers a worker session loads when it starts.
-              </Toggle>
-              <dl className="kv small">
-                <dt>
-                  <Badge tone={settings.workersInheritMcp ? 'muted' : 'good'}>off</Badge>
-                </dt>
-                <dd>Workers load only the Orchestrator MCP server. Fewer tokens per request (no extra tool definitions) and a smaller blast radius: a worker can reach its repository and Orchestrator, nothing else of yours.</dd>
-                <dt>
-                  <Badge tone={settings.workersInheritMcp ? 'warn' : 'muted'}>on</Badge>
-                </dt>
-                <dd>Workers also load your own MCP servers and connectors, and can use whatever those can reach — including autonomous employees. More tools, and more tokens per request.</dd>
-              </dl>
-              <div className="pc-info">Applies to sessions started afterwards. Sessions that are already running keep the MCP servers they started with until they are stopped and started again.</div>
-              <Toggle checked={settings.autoAsksHighRisk !== false} onChange={(autoAsksHighRisk) => void save({ autoAsksHighRisk })} title="On Auto, still ask me before high-risk commands">
-                Employees on <b>Auto</b> do not ask for permission; Claude Code's own auto mode decides what is safe to run. With this on, commands on the high-risk list — pushing, sudo, deploying, publishing, broad deletions, reading
-                credential files — still come to you first. Turn it off and those are left to Claude Code's auto mode as well.
-              </Toggle>
+          {readOnly && (
+            <div className="pc-info" style={{ marginBottom: 12 }} data-settings-scope="office-readonly">
+              These settings belong to the office and only its owners can change them — you are here as a {role}, so they are shown as they are.
             </div>
           )}
-          {section === 'foreman' && <ForemanSection settings={settings} />}
-          {section === 'commands' && (
-            <div className="col" style={{ gap: 12, maxWidth: 640 }}>
-              <Toggle checked={settings.nlFallback} onChange={(nlFallback) => void save({ nlFallback })} title="Let Claude interpret commands the rules cannot">
-                The command bar first uses deterministic rules. When they do not understand an instruction, a headless Claude run on one of your machines interprets it. That run uses tokens.
-              </Toggle>
-              <div className="pc-info">
-                Its output is never trusted as it is: it is validated against the operations Orchestrator supports, shown to you as an explicit plan, and still needs your confirmation before anything is changed. It needs an online machine with a project repository;
-                without one, only the rules are used.
-              </div>
-            </div>
+          {section === 'graphics' && <GraphicsSection />}
+          {section === 'controls' && <ControlsSection capturing={capturing} setCapturing={setCapturing} />}
+          {current.group === 'office' && (
+            // A disabled fieldset switches off every control inside it at once.
+            <fieldset className="pc-plain" disabled={readOnly}>
+              {section === 'company' && <CompanySection settings={settings} />}
+              {section === 'game' && (
+                <div className="col" style={{ gap: 12, maxWidth: 640 }}>
+                  <Toggle checked={settings.gamification} onChange={(gamification) => void save({ gamification })} title="XP, levels and milestones">
+                    Employees earn XP and levels, and the company reaches milestones that unlock office upgrades — all of it awarded only for verified work. When off, no XP is awarded, no milestones are evaluated, and the level, XP and milestone views are hidden.
+                  </Toggle>
+                  <div className="pc-info">
+                    Productivity always comes first. Game mechanics are a view on work that was really delivered: they never change how tasks are assigned, verified, reviewed or merged, and a level says nothing about the capability of the underlying model.
+                  </div>
+                </div>
+              )}
+              {section === 'improve' && <ImproveSection settings={settings} />}
+              {section === 'workers' && (
+                <div className="col" style={{ gap: 12, maxWidth: 640 }}>
+                  <Toggle checked={settings.workersInheritMcp} onChange={(workersInheritMcp) => void save({ workersInheritMcp })} title="Workers inherit your MCP servers and connectors">
+                    Which MCP servers a worker session loads when it starts.
+                  </Toggle>
+                  <dl className="kv small">
+                    <dt>
+                      <Badge tone={settings.workersInheritMcp ? 'muted' : 'good'}>off</Badge>
+                    </dt>
+                    <dd>Workers load only the Orchestrator MCP server. Fewer tokens per request (no extra tool definitions) and a smaller blast radius: a worker can reach its repository and Orchestrator, nothing else of yours.</dd>
+                    <dt>
+                      <Badge tone={settings.workersInheritMcp ? 'warn' : 'muted'}>on</Badge>
+                    </dt>
+                    <dd>Workers also load your own MCP servers and connectors, and can use whatever those can reach — including autonomous employees. More tools, and more tokens per request.</dd>
+                  </dl>
+                  <div className="pc-info">Applies to sessions started afterwards. Sessions that are already running keep the MCP servers they started with until they are stopped and started again.</div>
+                  <Toggle checked={settings.autoAsksHighRisk !== false} onChange={(autoAsksHighRisk) => void save({ autoAsksHighRisk })} title="On Auto, still ask me before high-risk commands">
+                    Employees on <b>Auto</b> do not ask for permission; Claude Code's own auto mode decides what is safe to run. With this on, commands on the high-risk list — pushing, sudo, deploying, publishing, broad deletions, reading
+                    credential files — still come to you first. Turn it off and those are left to Claude Code's auto mode as well.
+                  </Toggle>
+                </div>
+              )}
+              {section === 'foreman' && <ForemanSection settings={settings} readOnly={readOnly} />}
+              {section === 'commands' && (
+                <div className="col" style={{ gap: 12, maxWidth: 640 }}>
+                  <Toggle checked={settings.nlFallback} onChange={(nlFallback) => void save({ nlFallback })} title="Let Claude interpret commands the rules cannot">
+                    The command bar first uses deterministic rules. When they do not understand an instruction, a headless Claude run on one of your machines interprets it. That run uses tokens.
+                  </Toggle>
+                  <div className="pc-info">
+                    Its output is never trusted as it is: it is validated against the operations Orchestrator supports, shown to you as an explicit plan, and still needs your confirmation before anything is changed. It needs an online machine with a project repository;
+                    without one, only the rules are used.
+                  </div>
+                </div>
+              )}
+              {section === 'audit' && <AuditSection />}
+            </fieldset>
           )}
-          {section === 'audit' && <AuditSection />}
         </div>
       </div>
     </Window>

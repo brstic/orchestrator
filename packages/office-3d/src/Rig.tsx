@@ -192,6 +192,20 @@ export function Rig({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A member's room is gone when they leave the office. Whoever was standing in it is put back inside the building,
+  // by the wall the room was attached to, instead of being left where there is no floor any more.
+  useEffect(() => {
+    const c = world.base.bounds;
+    if (player.x > c.minX && player.x < c.maxX && player.z > c.minZ && player.z < c.maxZ + 6) return;
+    if (world.memberRooms.some((r) => player.x > r.reach.minX && player.x < r.reach.maxX && player.z > r.reach.minZ && player.z < r.reach.maxZ)) return;
+    const back = world.nav.nearestWalkable(THREE.MathUtils.clamp(player.x, c.minX + 0.8, c.maxX - 0.8), THREE.MathUtils.clamp(player.z, c.minZ + 0.8, c.maxZ - 0.8));
+    if (!back) return;
+    player.set(back[0], 0, back[1]);
+    st.current.jump = true;
+    st.current.vf = st.current.vs = st.current.af = st.current.as = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [world]);
+
   // Jump to an employee when asked (map click, "go to Sarah", notification).
   useEffect(() => {
     if (!focus) return;
@@ -201,7 +215,8 @@ export function Rig({
     const seat = deskSeat(desk);
     const bx = seat.x - Math.sin(seat.rot) * 1.5;
     const bz = seat.z - Math.cos(seat.rot) * 1.5;
-    const [fx, fz] = moveWithCollision(world, bx, bz, 0, 0);
+    // Where there is no room to stand a step and a half behind the chair (a wall is close), the nearest free spot.
+    const [fx, fz] = world.nav.walkable(bx, bz) ? [bx, bz] : (world.nav.nearestWalkable(bx, bz) ?? [bx, bz]);
     player.set(fx, 0, fz);
     st.current.playerRot = seat.rot;
     st.current.yaw = seat.rot + Math.PI + 0.4;

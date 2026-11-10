@@ -292,7 +292,19 @@ try {
   const draggedTask = dragged ? s.tasks.find((t) => t.key === dragged[1]) : null;
   check('the task dragged on the board has its new status on the server', !!draggedTask && draggedTask.status !== dragged[2] && draggedTask.history.some((x) => x.status === dragged[3]), dragged ? `${dragged[1]} was moved to ${dragged[3]} (now ${draggedTask?.status}: the scheduler took it from there)` : 'no drag result');
   check('the machine renamed and removed in Machines is gone from the office', before.hosts.some((h) => h.name === ctx.spareHost) && !s.hosts.some((h) => h.name === ctx.spareHost || h.name === ctx.spareRenamed), `${before.hosts.length} → ${s.hosts.length - 1} machines (plus the one enrolled with the UI token)`);
-  check('the key binding captured and reset is back to its default on the server', s.settings.keybindings.forward === before.settings.keybindings.forward && audit.filter((a) => a.action === 'settings.changed' && a.detail?.changed?.includes('keybindings')).length >= 2, `forward = ${s.settings.keybindings.forward}`);
+  // Graphics, keys and the office extras are each person's own: kept on their computer, never sent to the office.
+  const mine = (() => {
+    try {
+      return JSON.parse(res.results.find((x) => /preferences, as they are stored at the end/.test(x.step))?.detail ?? 'null');
+    } catch {
+      return null;
+    }
+  })();
+  const settingsAudited = audit.filter((a) => a.action === 'settings.changed').flatMap((a) => a.detail?.changed ?? []);
+  const clientFields = ['quality', 'keybindings', 'projectZones', 'approachZoom'];
+  check('the key binding captured and reset is back to its default, on this computer', mine?.keybindings?.forward === before.settings.keybindings.forward && /→ KeyI →/.test(res.results.find((x) => /key binding is captured/.test(x.step))?.detail ?? ''), `forward = ${mine?.keybindings?.forward}`);
+  check('the graphics quality changed in Settings was kept on this computer, and the office\'s own setting did not change', /^this computer: (\w+) → (\w+) → \1;/.test(res.results.find((x) => /graphics quality is chosen for this computer/.test(x.step))?.detail ?? '') && mine?.quality === before.settings.quality && s.settings.quality === before.settings.quality, `this computer: ${mine?.quality}; the office: ${before.settings.quality} → ${s.settings.quality}`);
+  check('nothing a person chose for their own computer reached the office: its settings and its audit log have none of it', clientFields.every((f) => JSON.stringify(s.settings[f]) === JSON.stringify(before.settings[f])) && !settingsAudited.some((f) => clientFields.includes(f)), `office settings changed during the run: ${[...new Set(settingsAudited)].join(', ') || 'none'}`);
   const avaReport = events.find((e) => e.employeeId === ava.id && /report/i.test(e.summary) && e.ts > before.sessions.reduce((m, x) => (x.startedAt > m ? x.startedAt : m), ''));
   check('the report requested from the right-click menu was asked of the real session', !!avaReport || s.artifacts.some((a) => a.kind === 'report' && /ava/i.test(a.title)), avaReport?.summary ?? s.artifacts.filter((a) => a.kind === 'report').map((a) => a.title).join(', '));
   const reviewedByOwner = s.tasks.find((t) => t.id === ctx.reviewTaskId);
@@ -329,7 +341,7 @@ try {
   );
   const seated = s.employees.filter((e) => !e.archived && e.deskId);
   check('the seats chosen in the office are the stored ones: Ava and Rev swapped, Scribe moved, and no desk has two people', by('Ava')?.deskId === before.employees.find((e) => e.name === 'Rev')?.deskId && !!by('Scribe')?.deskId && by('Rev')?.deskId !== before.employees.find((e) => e.name === 'Rev')?.deskId && new Set(seated.map((e) => e.deskId)).size === seated.length, `Ava ${by('Ava')?.deskId}, Rev ${by('Rev')?.deskId}, Scribe ${by('Scribe')?.deskId}`);
-  check('the two office extras switched on in Settings are stored (both are off by default)', before.settings.projectZones === false && before.settings.approachZoom === false && s.settings.projectZones === true && s.settings.approachZoom === true);
+  check('the two office extras switched on in Settings are stored on this computer (both are off by default), and stay off in the office', before.settings.projectZones === false && before.settings.approachZoom === false && mine?.projectZones === true && mine?.approachZoom === true && s.settings.projectZones === false && s.settings.approachZoom === false);
   check('the label written on a table and its extra seat are in the stored layout', Object.values(s.layout.podLabels ?? {}).includes(ctx.tableLabel) && s.layout.desks.some((d) => /-[e-h]$/.test(d.id)), JSON.stringify(s.layout.podLabels));
   check('the employee put on another Claude account kept it', s.employees.find((e) => e.name === 'Ava')?.claudeConfigDir === '~/.claude-second', String(s.employees.find((e) => e.name === 'Ava')?.claudeConfigDir));
   check('the office recorded what Claude Code said about the account limits', usage.some((a) => a.email === 'dev@example.test' && a.sevenDay?.usedPercent === 85 && a.fiveHour?.usedPercent === 42), JSON.stringify(usage));

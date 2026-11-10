@@ -3,8 +3,10 @@ import type { CommandPlan, CommandResult, OrchestratorEvent, Question } from '@o
 import { ACTIVITY_LABEL } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Markdown, Progress, clock, timeAgo } from '@orchestrator/ui';
 import { api, connection } from '../lib/api.ts';
+import { usePrefs } from '../lib/prefs.ts';
 import { stopRadio } from '../lib/radio.ts';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice, type CameraMode, type PanelId } from '../lib/store.ts';
+import { may, memberOfHost, whyNot } from '../lib/access.ts';
 import { TerminalView } from '../terminal/TerminalView.tsx';
 
 /** Run an API call and surface failures as a toast instead of swallowing them. */
@@ -38,7 +40,7 @@ export function TopBar() {
     return !['offline', 'unknown', 'idle', 'waiting_input', 'paused'].includes(a);
   }).length;
   const suggestions = Object.values(s.improvements).filter((i) => i.status === 'proposed').length + Object.values(s.lessons).filter((l) => l.status === 'proposed').length;
-  const kb = s.settings?.keybindings ?? {};
+  const kb = usePrefs((p) => p.prefs.keybindings);
   const key = (id: string) => (kb[id] ?? '').replace(/^Key/, '');
   const nav: Array<{ id: PanelId; label: string; k: string; count?: number; bad?: boolean }> = [
     { id: 'overview', label: 'Company', k: key('overview') },
@@ -55,6 +57,8 @@ export function TopBar() {
     { id: 'radio', label: 'Hi-fi', k: '' },
     { id: 'tv', label: 'TV', k: '' },
     { id: 'people', label: 'People', k: '', count: Math.max(0, s.people.length - 1) || undefined },
+    // A member's own computer in this office (not for the office's own machine, nor for a visitor).
+    ...(s.me && s.me.role !== 'visitor' && s.me.id && s.me.id !== 'owner' ? [{ id: 'myroom' as PanelId, label: 'My room', k: '', count: Object.values(s.employees).filter((e) => !e.archived && !!e.hostId && s.hosts[e.hostId]?.memberId === s.me!.id).length || undefined }] : []),
   ];
   // The menu stays out of the way until asked for; it closes on a click elsewhere or once something is chosen.
   const [menu, setMenu] = useState(false);
@@ -159,7 +163,7 @@ export function TopBar() {
       {(s.me?.kind === 'guest' || s.people.length > 1) && (
         <div className="glass pillbar">
           <button className="pill" onClick={() => s.openPanel('people')} title={s.me?.kind === 'guest' ? `You are a guest here (${s.me.role}). Click to see who is here and talk to them.` : 'Other people are in your office. Click to see who, and to talk to them.'}>
-            {s.me?.kind === 'guest' ? `Visiting as ${s.me.role}` : 'People'} · {Math.max(1, s.people.length)} here
+            {s.me?.kind === 'guest' ? `Here as a ${s.me.role}` : 'People'} · {Math.max(1, s.people.length)} here
           </button>
         </div>
       )}
@@ -356,9 +360,9 @@ export function Prompt() {
   const nearby = useOffice((s) => s.nearby);
   const mode = useOffice((s) => s.cameraMode);
   const panel = useOffice((s) => s.panel);
-  const key = useOffice((s) => (s.settings?.keybindings.interact ?? 'Space').replace(/^Key/, ''));
-  const talkKey = useOffice((s) => (s.settings?.keybindings.talk ?? 'KeyF').replace(/^Key/, ''));
-  const whipKey = useOffice((s) => (s.settings?.keybindings.whip ?? 'KeyR').replace(/^Key/, ''));
+  const key = usePrefs((p) => (p.prefs.keybindings.interact ?? 'Space').replace(/^Key/, ''));
+  const talkKey = usePrefs((p) => (p.prefs.keybindings.talk ?? 'KeyF').replace(/^Key/, ''));
+  const whipKey = usePrefs((p) => (p.prefs.keybindings.whip ?? 'KeyR').replace(/^Key/, ''));
   const moving = useOffice((s) => (s.movingEmployeeId ? s.employees[s.movingEmployeeId] : undefined));
   if (panel || mode === 'workstation') return null;
   if (moving) {
@@ -422,6 +426,12 @@ export function EmployeeCard() {
   const task = currentTaskOf(s.tasks, e.id);
   const questions = openQuestionsOf(s.questions, e.id);
   const live = !!session && session.status === 'running';
+  // What this person may do with this employee (the office decides; this saves a refused click).
+  const member = memberOfHost(s.hosts, e.hostId);
+  const work = may(s.me, 'work', member);
+  const read = may(s.me, 'read', member);
+  const why = whyNot(s.me, 'work', member) ?? undefined;
+  const whose = member && s.hosts[e.hostId ?? '']?.memberName;
   return (
     <div className="glass near-card col">
       <div className="row">
@@ -430,6 +440,7 @@ export function EmployeeCard() {
           <div className="strong truncate">{e.name}</div>
           <div className="muted small truncate">
             {e.title} · L{e.level}
+            {whose ? ` · ${member === s.me?.id ? 'yours' : `${whose}'s`}` : ''}
           </div>
         </div>
         <Badge tone={questions.length ? 'warn' : activity === 'blocked' ? 'bad' : live ? 'info' : 'muted'}>{ACTIVITY_LABEL[activity] ?? activity}</Badge>
@@ -446,19 +457,19 @@ export function EmployeeCard() {
       ) : (
         <div className="small muted">{live ? 'No task in progress.' : 'Asleep — no session is running. Talk to them or give them work to wake them.'}</div>
       )}
-      {questions[0] && (
+      {questions[0] && work && (
         <Button variant="primary" small onClick={() => s.openPanel('question', questions[0]!.id)}>
           {questions[0].kind === 'permission' ? 'Review approval request' : 'Answer their question'}
         </Button>
       )}
       <div className="row row-wrap">
-        <Button small variant="primary" onClick={() => s.openPanel('talk', e.id)}>
+        <Button small variant="primary" onClick={() => s.openPanel('talk', e.id)} disabled={!work} title={why}>
           Talk
         </Button>
-        <Button small onClick={() => s.enterWorkstation(e.id)} disabled={!session}>
-          Open workstation
+        <Button small onClick={() => s.enterWorkstation(e.id)} disabled={!session || !read} title={read ? undefined : (whyNot(s.me, 'read', member) ?? undefined)}>
+          {work ? 'Open workstation' : 'Watch terminal'}
         </Button>
-        {(s.docs[e.id]?.files.length ?? 0) > 0 && (
+        {read && (s.docs[e.id]?.files.length ?? 0) > 0 && (
           <Button small onClick={() => s.openPanel('docs', e.id)} title="The Markdown files in their folder">
             Documents ({s.docs[e.id]!.files.length})
           </Button>
@@ -466,7 +477,7 @@ export function EmployeeCard() {
         <Button small onClick={() => s.openPanel('employee', e.id)}>
           Profile
         </Button>
-        {!live && e.hostId && (
+        {!live && e.hostId && work && (
           <Button small variant="success" onClick={() => act(() => api('POST', `/employees/${e.id}/start`, {}), `${e.name}'s session is starting`)}>
             Start session
           </Button>
@@ -651,6 +662,10 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState; onClose
   const live = !!session && session.status === 'running';
   const paused = session?.control === 'PAUSED';
   const q = openQuestionsOf(s.questions, e.id)[0];
+  const member = memberOfHost(s.hosts, e.hostId);
+  const work = may(s.me, 'work', member);
+  const read = may(s.me, 'read', member);
+  const admin = may(s.me, 'admin', null);
   const item = (label: string, fn: () => void, disabled = false) => (
     <button
       disabled={disabled}
@@ -677,26 +692,31 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState; onClose
       <div className="ctx-title">
         {e.name} · {e.title}
       </div>
-      {item('Talk', () => s.openPanel('talk', e.id))}
+      {!work && <div className="small faint" style={{ padding: '2px 10px 6px' }}>{whyNot(s.me, 'work', member)}</div>}
+      {item('Talk', () => s.openPanel('talk', e.id), !work)}
       {item('Crack the whip (just for show)', () => s.whip(e.id))}
-      {item('Move to another desk…', () => {
+      {admin && !member && item('Move to another desk…', () => {
         s.setMoving(e.id);
         if (s.cameraMode !== 'ceo' && s.cameraMode !== 'first') s.toast(`Click a green ring to seat ${e.name} there — or switch to CEO view and walk to a desk`, 'info');
       })}
-      {q && item(q.kind === 'permission' ? 'Review approval request' : 'Answer their question', () => s.openPanel('question', q.id))}
-      {item('Inspect work', () => s.enterWorkstation(e.id), !session)}
-      {item('Open terminal', () => s.enterWorkstation(e.id), !session)}
-      {item('Assign task…', () => s.openPanel('task', `new:${e.id}`))}
+      {q && work && item(q.kind === 'permission' ? 'Review approval request' : 'Answer their question', () => s.openPanel('question', q.id))}
+      {item('Inspect work', () => s.enterWorkstation(e.id), !session || !read)}
+      {item(work ? 'Open terminal' : 'Watch terminal', () => s.enterWorkstation(e.id), !session || !read)}
+      {item('Assign task…', () => s.openPanel('task', `new:${e.id}`), !work)}
       <hr />
-      {item(`Documents${docCount ? ` (${docCount})` : ''}`, () => s.openPanel('docs', e.id), !docCount)}
+      {item(`Documents${docCount ? ` (${docCount})` : ''}`, () => s.openPanel('docs', e.id), !docCount || !read)}
       {item('View skills', () => s.openPanel('employee', e.id))}
       {item('View history', () => s.openPanel('employee', `${e.id}:history`))}
       {item('View current project', () => s.openPanel('projects', e.projectId), !e.projectId)}
-      {item('Change workstation…', () => s.openPanel('employee', `${e.id}:desk`))}
+      {admin && !member && item('Change workstation…', () => s.openPanel('employee', `${e.id}:desk`))}
       <hr />
-      {paused ? item('Resume', () => void act(() => api('POST', `/employees/${e.id}/resume`, {}), `${e.name} resumed`)) : item('Pause (interrupt)', () => void act(() => api('POST', `/employees/${e.id}/pause`, {}), `${e.name} interrupted`), !live)}
-      {item('Request report', () => void act(() => api('POST', `/employees/${e.id}/report`, {}), 'Report requested'), !live)}
-      {!live && item('Start session', () => void act(() => api('POST', `/employees/${e.id}/start`, {}), 'Session starting'), !e.hostId)}
+      {work && (
+        <>
+          {paused ? item('Resume', () => void act(() => api('POST', `/employees/${e.id}/resume`, {}), `${e.name} resumed`)) : item('Pause (interrupt)', () => void act(() => api('POST', `/employees/${e.id}/pause`, {}), `${e.name} interrupted`), !live)}
+          {item('Request report', () => void act(() => api('POST', `/employees/${e.id}/report`, {}), 'Report requested'), !live)}
+          {!live && item('Start session', () => void act(() => api('POST', `/employees/${e.id}/start`, {}), 'Session starting'), !e.hostId)}
+        </>
+      )}
     </div>
   );
 }
@@ -1027,7 +1047,8 @@ export function Workstation() {
           <div className="strong">{e.name}</div>
           <span className="muted small truncate grow mono">{session ? `${session.tmuxSession} · ${session.cwd}${session.branch ? ` · ${session.branch}` : ''}` : 'no session'}</span>
           <span className={`ws-state ws-state-${controlState}`}>{mine ? 'YOU ARE IN CONTROL' : controlState.replace(/_/g, ' ')}</span>
-          {session && live && !mine && (
+          {session && live && !mine && !may(s.me, 'work', memberOfHost(s.hosts, e.hostId)) && <span className="small muted">watching only</span>}
+          {session && live && !mine && may(s.me, 'work', memberOfHost(s.hosts, e.hostId)) && (
             <Button variant="primary" small onClick={() => connection.send({ t: 'control.acquire', sessionId: session.id })} title="Type directly into this exact tmux session">
               Take control
             </Button>

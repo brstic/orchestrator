@@ -8,7 +8,13 @@
  *
  * This is NOT how the product runs. Use `pnpm start` for a real office.
  *
- *   node scripts/dev-office.ts [--port 4611] [--ui <folder with a built UI>]
+ *   node scripts/dev-office.ts [--port 4611] [--ui <folder with a built UI>] [--member-room "Mila:3"]...
+ *
+ * `--member-room "<name>:<employees>"` (may be repeated) adds a member of the office who is connected from "their
+ * own computer": a second host agent in this process, enrolled as that member's personal host, with that many
+ * personal employees. Their room is then attached to the office. DEV ONLY: a real member's host is started by
+ * their desktop app. `kill -USR1 <pid>` disconnects/reconnects all of these hosts, `kill -USR2 <pid>` only the
+ * last one — to watch rooms disappear and come back.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -86,9 +92,63 @@ await api('POST', '/tasks', { projectId: project.id, title: 'Profile page', role
 await api('POST', '/employees/' + team.Ava.id + '/start', {});
 await api('POST', '/employees/' + team.Rev.id + '/start', {});
 
-console.log(JSON.stringify({ url: `${server.url}/?token=${server.ownerToken}`, base, tmux: `tmux -L ${sock} attach`, pid: process.pid }));
+// ── DEV ONLY: members connected from their own computers (see the header) ──
+const members: Array<{ name: string; hostId: string; socket: string; cfg: typeof cfg; home: string; agent: HostAgent | null }> = [];
+const memberArgs = process.argv.flatMap((a, i) => (a === '--member-room' && process.argv[i + 1] ? [process.argv[i + 1]!] : []));
+for (const [n, arg] of memberArgs.entries()) {
+  const [name = `Member ${n + 1}`, count = '2'] = arg.split(':');
+  const root = path.join(fs.realpathSync(base), `member-${n}`);
+  fs.mkdirSync(root, { recursive: true });
+  const socket = `${sock}-m${n}`;
+  const { token } = server.engine.hosts.createMemberEnrollment({ id: `dev-member-${n}`, name });
+  const enrolled = await enroll(server.url, token, `${name}'s computer`, { ...info, hostname: `${name.toLowerCase()}-laptop` });
+  const memberCfg = { ...cfg, name: `${name}'s computer`, allowedRoots: [root], tmuxSocketName: socket, hostId: enrolled.hostId, credential: enrolled.credential };
+  const memberHome = path.join(base, `agent-m${n}`);
+  saveConfig(memberCfg, memberHome);
+  const member = { name, hostId: enrolled.hostId, socket, cfg: memberCfg, home: memberHome, agent: new HostAgent(memberCfg, memberHome, () => undefined) as HostAgent | null };
+  await member.agent!.start();
+  while (!member.agent!.isConnected) await sleep(50);
+  members.push(member);
+  const own = path.join(root, 'notes');
+  fs.mkdirSync(own);
+  git(own, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(own, 'README.md'), `# ${name}'s notes\n`);
+  git(own, 'add', '-A');
+  git(own, 'commit', '-q', '-m', 'initial commit');
+  const mine = await api('POST', '/projects', { name: `${name}'s notes`, repoPath: own, hostId: enrolled.hostId, description: 'A folder on a member\'s own computer.' });
+  const roles = ['fullstack', 'backend', 'frontend', 'qa', 'docs', 'devops'];
+  for (let i = 0; i < Number(count); i++) {
+    const e = await api('POST', '/employees', { name: `${name.slice(0, 3)}-${i + 1}`, roleKey: roles[i % roles.length], projectId: mine.id, hostId: enrolled.hostId });
+    // Most of them work (a live screen); every third is left without a session (asleep at the desk).
+    if (i % 3 !== 2) await api('POST', '/tasks', { projectId: mine.id, title: `Notes, part ${i + 1}`, assigneeId: e.id, description: `@@fake: write part${i + 1}.txt draft; read README.md; progress outline written; ${long}@@`, acceptance: 'Written.' });
+  }
+}
+const toggle = async (which: typeof members) => {
+  for (const m of which) {
+    if (m.agent) {
+      await m.agent.stop().catch(() => undefined);
+      m.agent = null;
+    } else {
+      m.agent = new HostAgent(m.cfg, m.home, () => undefined);
+      await m.agent.start();
+    }
+  }
+};
+process.on('SIGUSR1', () => void toggle(members));
+process.on('SIGUSR2', () => void toggle(members.slice(-1)));
+
+console.log(JSON.stringify({ url: `${server.url}/?token=${server.ownerToken}`, base, tmux: `tmux -L ${sock} attach`, pid: process.pid, members: members.map((m) => ({ name: m.name, hostId: m.hostId })) }));
 const shutdown = async () => {
   await agent.stop().catch(() => undefined);
+  for (const m of members) {
+    await m.agent?.stop().catch(() => undefined);
+    try {
+      execFileSync('tmux', ['-L', m.socket, 'kill-server'], { stdio: 'ignore' });
+    } catch {
+      /* none */
+    }
+    fs.rmSync(path.join(process.env.TMUX_TMPDIR ?? '/tmp', `tmux-${process.getuid?.() ?? 0}`, m.socket), { force: true });
+  }
   try {
     execFileSync('tmux', ['-L', sock, 'kill-server'], { stdio: 'ignore' });
   } catch {

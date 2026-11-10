@@ -38,30 +38,30 @@
   <body>
     <main>
       <h1>ORCHESTRATOR</h1>
-      <p>Whose office do you want to walk into?</p>
+      <p>Which office do you want to walk into?</p>
       <div id="reason"></div>
 
-      <section id="own">
-        <h2>My office</h2>
-        <p id="own-what">Your own company on this computer: your employees, your projects.</p>
-        <button class="primary big" id="open-own" type="button">Open my office</button>
-      </section>
-
       <section>
-        <h2>Join someone's office</h2>
-        <p>Paste the invitation they sent you. You walk around their office as a guest; what you may do there is up to them.</p>
+        <h2>Connect to an office</h2>
+        <p>An office runs on a server and stays open; you walk in from here. Paste the invitation you were sent. While you are in, your own computer has a room there for the sessions you run on it.</p>
         <div id="joined"></div>
         <textarea id="invite" placeholder="orch-invite-v1.…" spellcheck="false" autocomplete="off"></textarea>
         <div id="join-error" role="alert" style="display:none;margin-top:10px;padding:9px 11px;border-radius:8px;background:rgba(255,93,115,0.14);border:1px solid rgba(255,93,115,0.5);color:#ffb3bf"></div>
         <div class="row" style="margin-top:10px">
-          <button id="join" type="button">Join</button>
+          <button class="primary big" id="join" type="button">Connect</button>
           <small>The invitation names the exact computer to trust; nothing is sent anywhere else.</small>
         </div>
       </section>
 
+      <section id="own">
+        <h2>An office on this computer</h2>
+        <p id="own-what">An office of your own that runs here and only while this app is open: your employees, your projects.</p>
+        <button class="big" id="open-own" type="button">Open my office</button>
+      </section>
+
       <section>
         <details id="advanced">
-          <summary>An office of my own on another machine (owner token)</summary>
+          <summary>With the server’s own owner token (on the server’s machine or through a tunnel)</summary>
           <form id="form">
             <label for="url">Server address</label>
             <input id="url" name="url" placeholder="https://office.example.com   or   http://localhost:4600" autocomplete="off" spellcheck="false" required />

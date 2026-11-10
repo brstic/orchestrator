@@ -38,7 +38,7 @@ function showJoined(list) {
     text.append(name, sub);
     const go = document.createElement('button');
     go.type = 'button';
-    go.textContent = 'Join';
+    go.textContent = 'Connect';
     go.disabled = !j.usable;
     go.addEventListener('click', async () => {
       say(joinError, '');

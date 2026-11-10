@@ -2,7 +2,7 @@
   "name": "orchestrator",
   "version": "0.1.0",
   "private": true,
-  "description": "ORCHESTRATOR — a 3D virtual office where real Claude Code sessions work as employees. Your code. Your company. Your world.",
+  "description": "ORCHESTRATOR \u2014 a 3D virtual office where real Claude Code sessions work as employees. Your code. Your company. Your world.",
   "type": "module",
   "engines": {
     "node": ">=22.18.0"
@@ -44,7 +44,9 @@
     "package:windows": "node scripts/package.mjs --windows --no-app",
     "package:all": "node scripts/package.mjs --linux --windows",
     "package:notarize": "node scripts/notarize.mjs",
-    "test:real:auto": "node tests/real/auto.ts"
+    "test:real:auto": "node tests/real/auto.ts",
+    "serve": "node scripts/start-local.mjs --door",
+    "office": "node scripts/office-admin.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

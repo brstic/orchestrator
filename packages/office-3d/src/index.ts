@@ -3,6 +3,7 @@ export * from './OfficeScene.tsx';
 export type { DocsView } from './Documents.tsx';
 export { buildWorld, deskPods, type Box, type DeskPod, type World } from './world.ts';
 export * from './layout-edit.ts';
+export { withMemberRooms, memberRoomTitle, memberDeskCount, MEMBER_DESK_CAP, type EffectiveLayout, type MemberHost, type MemberOffice, type MemberRoom } from './member-rooms.ts';
 export { ownerPosition } from './Rig.tsx';
 export { drawScreen, parseSgrLine } from './terminal-texture.ts';
 export type { TvFrames, TvView } from './TV.tsx';

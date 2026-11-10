@@ -155,16 +155,22 @@ export class Foreman {
    * an employee's open question, a blocked task, someone idle with a task in progress, and
    * ready work nobody has while somebody is free. Permission requests are never in this list.
    */
+  /** Is this host a member's own computer? */
+  private personal(hostId: string | null | undefined): boolean {
+    return !!this.eng.hosts.memberOfHost(hostId);
+  }
+
   attention(now = Date.now(), boss: Employee | undefined = this.foreman()): ForemanAttentionItem[] {
     const core = this.core;
     const settle = core.timings.foremanSettleMs;
     const seen = new Set(this.state.seen);
     const out: ForemanAttentionItem[] = [];
     const add = (i: Omit<ForemanAttentionItem, 'seen' | 'escalated'>) => out.push({ ...i, seen: seen.has(i.key), escalated: !!i.questionId && this.state.escalated.includes(i.questionId) });
-    const active = (projectId: string | null) => !projectId || core.projects.get(projectId)?.status === 'active';
+    // The foreman runs the shared office: what is on a member's own computer is that member's business.
+    const active = (projectId: string | null) => !projectId || (core.projects.get(projectId)?.status === 'active' && !this.personal(core.projects.get(projectId)?.hostId));
 
     if (core.settings.foreman.answersQuestions) {
-      for (const q of core.questions.filter((x) => x.status === 'open' && x.kind === 'question' && !!x.employeeId && x.employeeId !== boss?.id && (x.channel === 'mcp_tool' || x.channel === 'ask_user_question_hook'))) {
+      for (const q of core.questions.filter((x) => x.status === 'open' && x.kind === 'question' && !!x.employeeId && x.employeeId !== boss?.id && !this.personal(core.employees.get(x.employeeId)?.hostId) && (x.channel === 'mcp_tool' || x.channel === 'ask_user_question_hook'))) {
         if (now - Date.parse(q.createdAt) < settle) continue;
         const asker = core.employees.get(q.employeeId);
         if (!asker || asker.archived) continue;
@@ -179,7 +185,7 @@ export class Foreman {
       add({ key: `blocked:${t.id}:${shortHash(t.blockedReason ?? '')}`, kind: 'blocked', text: `${t.key} "${truncate(t.title, 80)}" is blocked${who ? ` (${who.name})` : ''}: ${truncate(oneLine(t.blockedReason ?? 'no reason recorded'), 240)}`, employeeId: t.assigneeId, taskId: t.id, questionId: null, projectId: t.projectId, since });
     }
 
-    for (const t of core.tasks.filter((x) => x.status === 'IN_PROGRESS' && !!x.assigneeId && x.assigneeId !== boss?.id && (x.delivery.status === 'sent' || x.delivery.status === 'confirmed'))) {
+    for (const t of core.tasks.filter((x) => x.status === 'IN_PROGRESS' && !!x.assigneeId && x.assigneeId !== boss?.id && active(x.projectId) && (x.delivery.status === 'sent' || x.delivery.status === 'confirmed'))) {
       const who = core.employees.get(t.assigneeId);
       const s = core.runningSessionOf(t.assigneeId);
       // Only what the session really reported: between turns, with nothing said to be going on.
@@ -191,7 +197,7 @@ export class Foreman {
       add({ key: `stalled:${t.id}:${s.activitySince}`, kind: 'stalled', text: `${who.name} has been idle for ${formatDuration(now - Date.parse(since))} with ${t.key} "${truncate(t.title, 80)}" in progress`, employeeId: who.id, taskId: t.id, questionId: null, projectId: t.projectId, since });
     }
 
-    const free = core.employees.filter((e) => e.roleKey !== FOREMAN_ROLE && this.eng.tasks.isFree(e));
+    const free = core.employees.filter((e) => e.roleKey !== FOREMAN_ROLE && !this.personal(e.hostId) && this.eng.tasks.isFree(e));
     if (free.length) {
       for (const t of core.tasks.filter((x) => x.status === 'READY' && !x.assigneeId && x.kind !== 'review' && active(x.projectId))) {
         // Give the scheduler its turn first: where a project assigns automatically, this is only what it left over.
@@ -521,7 +527,8 @@ export class Foreman {
 
   private findEmployee(ref: string): Employee | undefined {
     const e = this.core.employeeByName(ref) ?? this.core.employees.get(ref.trim());
-    return e && !e.archived ? e : undefined;
+    // Not someone on a member's own computer: the foreman neither looks at nor directs them.
+    return e && !e.archived && !this.personal(e.hostId) ? e : undefined;
   }
 
   /** The round this foreman is on right now, if any. */
@@ -544,7 +551,7 @@ export class Foreman {
   private overview(boss: Employee): string {
     const core = this.core;
     const now = Date.now();
-    const people = core.employees.filter((e) => !e.archived && e.id !== boss.id).sort((a, b) => a.name.localeCompare(b.name));
+    const people = core.employees.filter((e) => !e.archived && e.id !== boss.id && !this.personal(e.hostId)).sort((a, b) => a.name.localeCompare(b.name));
     const projects = core.projects.filter((p) => p.status !== 'archived').sort((a, b) => a.name.localeCompare(b.name));
     const lines: string[] = [`Office overview — ${people.length} employee${people.length === 1 ? '' : 's'}, ${projects.length} project${projects.length === 1 ? '' : 's'}.`, '', 'People:'];
     if (!people.length) lines.push('- nobody else works here yet');
@@ -640,6 +647,7 @@ export class Foreman {
       answer_question: async (a, { employee }) => {
         const q = this.findQuestion(String(a.question_id));
         if (!q) return err(`No question "${a.question_id}". Use office_overview to see the open ones.`);
+        if (this.personal(core.employees.get(q.employeeId ?? '')?.hostId)) return this.refuse(employee, 'answer_question', "That employee is on a member's own computer; their questions are for that member.", q.id);
         // The same line a colleague the owner invited is held to: a question may be answered, an action may not be approved.
         if (q.kind === 'permission' || q.kind === 'trust_prompt') return this.refuse(employee, 'answer_question', 'Only the owner can decide a permission request. Leave it with them; it is already in their inbox.', q.id);
         if (q.kind !== 'question') return this.refuse(employee, 'answer_question', `This is a ${q.kind.replace('_', ' ')} for the owner, not an operational question. Leave it with them (escalate_to_owner if it is urgent).`, q.id);

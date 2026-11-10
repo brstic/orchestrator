@@ -81,6 +81,24 @@ export class HostRegistry {
     return { token, expiresAt: new Date(Date.now() + ttlMs).toISOString() };
   }
 
+  /**
+   * A one-time enrollment for a member's own computer. The host that enrolls with it is theirs: what runs on it is
+   * personal, and it is the only kind of host that may connect from outside (through the door).
+   */
+  createMemberEnrollment(member: { id: string; name: string }, ttlMs = 10 * 60_000): { token: string; expiresAt: string } {
+    return this.createEnrollmentToken(`member:${member.id}:${member.name}`, ttlMs, `member:${member.name}`);
+  }
+
+  /** The hosts that are a member's own computers. */
+  ofMember(memberId: string): Host[] {
+    return this.core.hosts.filter((h) => h.memberId === memberId && h.status !== 'revoked');
+  }
+
+  /** The member whose own computer this host is, or null for a shared machine. */
+  memberOfHost(hostId: string | null | undefined): string | null {
+    return hostId ? (this.core.hosts.get(hostId)?.memberId ?? null) : null;
+  }
+
   private uniqueName(wanted: string): string {
     const base = wanted.trim() || 'host';
     let name = base;
@@ -89,23 +107,28 @@ export class HostRegistry {
   }
 
   /** Authenticate a connecting agent: an existing credential, or a fresh enrollment. */
-  authenticate(hello: { hostId?: string | null; credential?: string | null; enrollmentToken?: string | null; name?: string | null; info: HostInfo }, local = false): { host: Host; credential?: string } | { error: string } {
+  authenticate(hello: { hostId?: string | null; credential?: string | null; enrollmentToken?: string | null; name?: string | null; info: HostInfo }, local = false, outside = false): { host: Host; credential?: string } | { error: string } {
+    // From outside (through the door) only a member's own computer may connect; shared machines are enrolled from the inside.
+    const refused = { error: 'only a member\'s own computer can connect to this office from outside' };
     if (hello.credential && hello.hostId) {
       const cred = this.core.store.checkCredential('host', hello.credential);
       const host = this.core.hosts.get(hello.hostId);
       if (!cred || cred.refId !== hello.hostId || !host) return { error: 'unknown or revoked host credential; enroll this machine again' };
       if (host.status === 'revoked') return { error: 'this host has been revoked' };
+      if (outside && !host.memberId) return refused;
       return { host };
     }
     if (hello.enrollmentToken) {
       const cred = this.core.store.checkCredential('enrollment', hello.enrollmentToken);
       if (!cred) return { error: 'invalid or expired enrollment token' };
       if (cred.usedAt) return { error: 'this enrollment token was already used' };
+      const member = /^member:([^:]+):(.*)$/.exec(cred.label ?? '');
+      if (outside && !member) return refused;
       this.core.store.markCredentialUsed(hello.enrollmentToken);
       this.core.store.revokeCredential(hello.enrollmentToken);
       const host: Host = {
         id: newId(),
-        name: this.uniqueName(hello.name || hello.info.hostname.replace(/\.local$/, '')),
+        name: this.uniqueName(member ? `${member[2]}'s computer` : hello.name || hello.info.hostname.replace(/\.local$/, '')),
         status: 'offline',
         info: hello.info,
         resources: null,
@@ -113,7 +136,9 @@ export class HostRegistry {
         lastSeenAt: null,
         revokedAt: null,
         // A machine linked over SSH arrives through a tunnel that ends on this computer's loopback; it is still a remote machine.
-        local: (local && !cred.label?.startsWith('ssh:')) || cred.label === 'local',
+        local: !member && ((local && !cred.label?.startsWith('ssh:')) || cred.label === 'local'),
+        memberId: member?.[1] ?? null,
+        memberName: member?.[2] ?? null,
       };
       const credential = generateToken('orch_host');
       this.core.store.addCredential('host', credential, { refId: host.id, label: host.name });
@@ -146,7 +171,8 @@ export class HostRegistry {
     this.core.company.hostDisconnects++;
     this.core.saveCompany();
     this.core.event({ type: 'worker.disconnected', source: 'server', summary: `Host "${host.name}" disconnected`, hostId, data: { sessions: sessions.length } });
-    if (sessions.length && host.status !== 'revoked') {
+    // A member's own computer goes when they do: that is not a fault to report.
+    if (sessions.length && host.status !== 'revoked' && !host.memberId) {
       this.eng.comms.notify({
         kind: 'host_disconnected',
         severity: 'critical',
@@ -300,6 +326,20 @@ export class EmployeeRegistry {
     return free.map((d, i) => ({ d, c: cost(d), i })).sort((a, b) => a.c - b.c || a.i - b.i)[0]!.d.id;
   }
 
+  /**
+   * What is on a member's own computer stays there: a personal employee works on projects on that same computer, and
+   * a shared employee is not put on a project that lives on someone's computer.
+   */
+  private assertSameComputer(hostId: string | null, projectIds: Array<string | null | undefined>): void {
+    const mine = this.eng.hosts.memberOfHost(hostId);
+    for (const pid of projectIds) {
+      const p = pid ? this.core.projects.get(pid) : undefined;
+      if (!p) continue;
+      const theirs = this.eng.hosts.memberOfHost(p.hostId);
+      if ((mine || theirs) && p.hostId !== hostId) throw new EngineError(mine ? `"${p.name}" is not on this computer. An employee on a member's own computer works on projects on that computer.` : `"${p.name}" is on a member's own computer; only employees on that computer can work on it.`);
+    }
+  }
+
   create(input: EmployeeInput, actor = 'owner'): Employee {
     const name = input.name?.trim();
     if (!name) throw new EngineError('an employee needs a name');
@@ -308,6 +348,9 @@ export class EmployeeRegistry {
     if (input.hostId && !this.core.hosts.get(input.hostId)) throw new EngineError('unknown host');
     if (input.projectId && !this.core.projects.get(input.projectId)) throw new EngineError('unknown project');
     if (input.deskId && this.core.employees.find((e) => !e.archived && e.deskId === input.deskId)) throw new EngineError('that desk is taken');
+    // On a member's own computer: they sit in that member's room, never at a desk of the shared office.
+    const personal = !!this.eng.hosts.memberOfHost(input.hostId);
+    this.assertSameComputer(input.hostId ?? null, [input.projectId, ...(input.alsoProjectIds ?? [])]);
     const employee: Employee = {
       id: newId(),
       name,
@@ -329,7 +372,7 @@ export class EmployeeRegistry {
       executionMode: input.executionMode ?? 'interactive_cli',
       schedule: input.schedule ?? { available: true },
       alsoProjectIds: [...new Set((input.alsoProjectIds ?? []).map(String))].filter((p) => p !== input.projectId && !!this.core.projects.get(p)),
-      deskId: input.deskId ?? this.deskFor(input.projectId),
+      deskId: personal ? null : (input.deskId ?? this.deskFor(input.projectId)),
       xp: 0,
       level: 1,
       badges: [],
@@ -410,6 +453,8 @@ export class EmployeeRegistry {
       if (e.archived) e.deskId = null;
       else if (!e.deskId) e.deskId = this.freeDesk();
     }
+    this.assertSameComputer(e.hostId, [e.projectId, ...(e.alsoProjectIds ?? [])]);
+    if (this.eng.hosts.memberOfHost(e.hostId)) e.deskId = null;
     this.core.put('employee', e);
     // What an employee may do without asking is on the record in full, not just as a field name.
     this.core.audit(actor, 'employee.updated', id, { fields: Object.keys(patch), ...(patch.allowedTools !== undefined ? { allowedTools: e.allowedTools } : {}), ...(patch.disallowedTools !== undefined ? { disallowedTools: e.disallowedTools } : {}) });

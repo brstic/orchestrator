@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { guestMay } from '../../apps/server/src/guests.ts';
+import { mayCall } from '../../apps/server/src/access.ts';
 import { buildHooksSettings } from '../../packages/execution/src/claude.ts';
 
 // A home folder of its own for this file: the "machine's" Claude logins live in it.
@@ -136,6 +136,5 @@ test('only a session of ours can report, and guests are not told about the accou
     });
   assert.equal(await post('not-the-token'), 403);
   assert.equal((await usage()).find((r) => r.configDir === null).sevenDay.usedPercent, 85);
-  assert.equal(guestMay('visitor', 'GET', '/usage'), false);
-  assert.equal(guestMay('colleague', 'GET', '/usage'), false);
+  for (const role of ['visitor', 'colleague'] as const) assert.equal(mayCall(h.server.engine, { kind: 'guest', id: 'm1', name: 'M', role }, 'GET', '/usage', null).ok, false);
 });

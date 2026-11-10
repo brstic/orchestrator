@@ -54,6 +54,7 @@ export type PanelId =
   | 'tv'
   | 'seat'
   | 'people'
+  | 'myroom'
   | 'reports'
   | 'help';
 
@@ -101,6 +102,8 @@ export interface OfficeState {
   people: PersonPresence[];
   /** Claude accounts the employees run on and how much of each is used (owner only; empty for guests). */
   accounts: AccountUsage[];
+  /** This computer's own host in an office someone else runs (from the desktop app); `none` in one's own office or a browser. */
+  myHost: { state: 'none' | 'starting' | 'online' | 'unavailable' | 'stopped'; reason: string | null; hostId: string | null };
   /** What people said to each other, most recent last. */
   chat: Array<{ id: string; fromId: string; name: string; role: Me['role']; text: string; ts: string }>;
   say: (text: string) => void;
@@ -220,6 +223,7 @@ export const useOffice = create<OfficeState>((set, get) => ({
   me: null,
   people: [],
   accounts: [],
+  myHost: { state: 'none', reason: null, hostId: null },
   chat: [],
   say: (text) => {
     const t = text.trim();
@@ -459,5 +463,14 @@ export async function loadAccounts(): Promise<void> {
     useOffice.setState({ accounts: await api<AccountUsage[]>('GET', '/usage') });
   } catch {
     /* a guest, or the office is not reachable right now: keep what is shown */
+  }
+}
+
+// The desktop app says how this computer's own host in the office is doing.
+{
+  const bridge = (window as unknown as { orchestrator?: { myHost?: { get: () => Promise<OfficeState['myHost']>; onState: (cb: (s: OfficeState['myHost']) => void) => () => void } } }).orchestrator?.myHost;
+  if (bridge) {
+    void bridge.get().then((myHost) => myHost && useOffice.setState({ myHost }), () => undefined);
+    bridge.onState((myHost) => useOffice.setState({ myHost }));
   }
 }

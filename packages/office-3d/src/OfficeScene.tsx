@@ -2,7 +2,8 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { memo, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import type { OfficeLayout } from '@orchestrator/contracts';
+import type { Desk, OfficeLayout } from '@orchestrator/contracts';
+import type { EffectiveLayout } from './member-rooms.ts';
 import { Documents as DocumentsPart, type DocsView } from './Documents.tsx';
 import { HiFi as HiFiPart } from './HiFi.tsx';
 import { Humans as HumansPart, type HumanView } from './Humans.tsx';
@@ -33,6 +34,7 @@ const People = memo(PeoplePart);
 const Rig = memo(RigPart);
 
 export interface OfficeSceneProps {
+  /** The stored layout, or that layout with the rooms of connected members added (see `withMemberRooms`). */
   layout: OfficeLayout;
   /** Office upgrades unlocked by company milestones. */
   unlocked: string[];
@@ -105,19 +107,25 @@ function Reflections() {
  */
 export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
   const unlocked = useMemo(() => new Set(props.unlocked), [props.unlocked.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
-  const world = useMemo(() => buildWorld(props.layout, unlocked), [props.layout, unlocked]);
+  // The stored office and, when members are connected, the same office with their rooms attached. The first is
+  // kept while members come and go: what is drawn from it stays as it is when a room appears or disappears.
+  const stored = (props.layout as Partial<EffectiveLayout>).base ?? props.layout;
+  const core = useMemo(() => buildWorld(stored, unlocked), [stored, unlocked]);
+  const world = useMemo(() => (stored === props.layout ? core : buildWorld(props.layout, unlocked, core)), [core, props.layout, unlocked, stored]);
   const player = useMemo(() => new THREE.Vector3(world.spawn.x, 0, world.spawn.z), []); // eslint-disable-line react-hooks/exhaustive-deps
   const positions = useRef(new Map<string, THREE.Vector3>()).current;
   const cutaway = props.cameraMode === 'ceo' || props.cameraMode === 'management' || props.cameraMode === 'command' || props.cameraMode === 'free';
 
-  const seats = useMemo(() => {
+  const seatsAt = (desks: Desk[]) => {
     const byDesk = new Map(props.people.filter((p) => p.deskId).map((p) => [p.deskId!, p]));
-    return world.layout.desks.map((desk) => {
+    return desks.map((desk) => {
       const p = byDesk.get(desk.id);
       const special = p && p.workstation === 'specialized' ? { name: p.name, title: p.title, level: p.level, accent: p.roleColor ?? p.projectColor ?? '#8aa0c0', taskKey: p.taskKey, progress: p.progress, label: p.label } : null;
       return { desk, sessionId: p?.sessionId ?? null, live: !!p?.live, color: p?.projectColor ?? null, attention: p?.attention ?? null, occupied: !!p, special };
     });
-  }, [props.people, world.layout.desks]);
+  };
+  const seats = useMemo(() => seatsAt(core.layout.desks), [props.people, core.layout.desks]); // eslint-disable-line react-hooks/exhaustive-deps
+  const memberSeats = useMemo(() => seatsAt(world.memberDesks), [props.people, world.memberDesks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cameras that show the whole floor at once: every room's interior is mounted for them.
   const overview = props.cameraMode === 'command' || props.cameraMode === 'management';
@@ -155,7 +163,8 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       <PerfProbe />
       <Lights quality={props.quality} world={world} />
       <Building world={world} cutaway={cutaway} quality={props.quality} />
-      <Desks world={world} seats={seats} subscribe={props.subscribeScreen} />
+      <Desks desks={core.layout.desks} seats={seats} subscribe={props.subscribeScreen} />
+      {world.memberDesks.length > 0 && <Desks desks={world.memberDesks} seats={memberSeats} subscribe={props.subscribeScreen} />}
       <Zones world={world} zones={props.zones} onOpen={props.onOpenProject} />
       <Documents world={world} docs={props.docs} onOpen={props.onOpenDocs} />
       <TV world={world} tv={props.tv} frames={props.tvFrames} onOpen={props.onOpenTv} />

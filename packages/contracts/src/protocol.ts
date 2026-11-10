@@ -255,9 +255,12 @@ export type ClientToServer =
 
 /** Who a connected person is: the owner, or a guest with a role. */
 export interface Me {
+  /** 'owner': full rights (the root owner on the server machine, or a member with the role owner). 'guest': a colleague or visitor. */
   kind: 'owner' | 'guest';
   role: 'owner' | 'colleague' | 'visitor';
   name: string;
+  /** The member's id; 'owner' for the root owner. Personal hosts with this `memberId` are this person's. */
+  id?: string;
 }
 
 /** A person present in the office right now (one entry per open window). */
@@ -265,6 +268,8 @@ export interface PersonPresence {
   id: string;
   name: string;
   role: Me['role'];
+  /** Whose window this is: the member's id ('owner' for the root owner). */
+  memberId?: string;
   x: number;
   z: number;
   rot: number;

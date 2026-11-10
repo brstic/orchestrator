@@ -49,6 +49,7 @@ function stagePayload(dest) {
   copy('apps/host-agent/dist/orchestrator-agent.mjs');
   copy('apps/desktop/dist');
   copy('scripts/start-local.mjs');
+  copy('scripts/office-admin.mjs');
   copy('README.md');
   copy('docs');
   copy('examples');

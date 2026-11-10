@@ -15,6 +15,20 @@ contextBridge.exposeInMainWorld(
     /** The system's folder dialog; resolves to the chosen path, or null when cancelled. */
     pickFolder: () => ipcRenderer.invoke('orch:pick-folder'),
     pickFolders: () => ipcRenderer.invoke('orch:pick-folders'),
+    /** This computer's own preferences (graphics, keys, extras): one file for every office opened from here. */
+    prefs: Object.freeze({
+      get: () => ipcRenderer.invoke('orch:prefs-get'),
+      set: (prefs) => ipcRenderer.invoke('orch:prefs-set', prefs),
+    }),
+    /** This computer's own host in an office someone else runs: { state: none|starting|online|unavailable|stopped, reason, hostId }. */
+    myHost: Object.freeze({
+      get: () => ipcRenderer.invoke('orch:my-host'),
+      onState: (cb) => {
+        const fn = (_e, state) => cb(state);
+        ipcRenderer.on('orch:my-host-state', fn);
+        return () => ipcRenderer.removeListener('orch:my-host-state', fn);
+      },
+    }),
     /** The office TV (an embedded browser): its page state and picture, and forgetting what it stored. */
     tv: Object.freeze({
       partition: 'persist:orch-tv',

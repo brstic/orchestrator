@@ -1,5 +1,6 @@
 import type { Desk, OfficeLayout, RoomDef } from '@orchestrator/contracts';
 import { DESK_SIZE, decorationBox, decorationKind, deskSeat } from '@orchestrator/contracts';
+import type { EffectiveLayout, MemberRoom } from './member-rooms.ts';
 
 /**
  * Everything spatial that is derived from the layout data: walls, obstacles,
@@ -44,7 +45,19 @@ export interface World {
   rooms: RoomDef[];
   walls: Wall[];
   obstacles: Box[];
+  /** The obstacles that are not walls: furniture, desks, solid decorations. */
+  solids: Box[];
+  /** Everything there is a floor under: the building, and the member rooms attached to it. The navigation grid covers this. */
   bounds: Box;
+  /**
+   * The office without member rooms: this same world when it has none. Its rooms, features and layout keep their
+   * identity while members come and go, so what is drawn from them is not rebuilt.
+   */
+  base: World;
+  /** Rooms of the members who are in the office right now (see `member-rooms.ts`); empty in an office without any. */
+  memberRooms: MemberRoom[];
+  /** The desks that stand in member rooms. */
+  memberDesks: Desk[];
   meeting: { x: number; z: number; w: number; d: number; seats: Spot[] } | null;
   breakSpots: Spot[];
   ceoDesk: { x: number; z: number; rot: number } | null;
@@ -166,7 +179,11 @@ function buildWalls(rooms: RoomDef[], bounds: Box): Wall[] {
 }
 
 export function deskBox(d: Desk, grow = 0): Box {
-  return { minX: d.x - DESK_SIZE.w / 2 - grow, maxX: d.x + DESK_SIZE.w / 2 + grow, minZ: d.z - DESK_SIZE.d / 2 - grow, maxZ: d.z + DESK_SIZE.d / 2 + grow };
+  // A desk turned a quarter (as in a member room on the east or west side) is long along Z.
+  const turned = Math.abs(Math.sin(d.rot)) > 0.7;
+  const hw = (turned ? DESK_SIZE.d : DESK_SIZE.w) / 2 + grow;
+  const hd = (turned ? DESK_SIZE.w : DESK_SIZE.d) / 2 + grow;
+  return { minX: d.x - hw, maxX: d.x + hw, minZ: d.z - hd, maxZ: d.z + hd };
 }
 
 function rect(x: number, z: number, w: number, d: number): Box {
@@ -232,6 +249,12 @@ export class NavGrid {
       if (best) return best;
     }
     return null;
+  }
+
+  /** The middle of the walkable cell nearest to a point, or null when there is none close by. */
+  nearestWalkable(x: number, z: number): [number, number] | null {
+    const cell = this.nearestFree(x, z);
+    return cell ? this.center(cell[0], cell[1]) : null;
   }
 
   /** Is this point on a free cell (nothing solid within the clearance)? */
@@ -358,8 +381,14 @@ export class NavGrid {
 
 /** Resolve a circle against the obstacle boxes, sliding along them. */
 export function moveWithCollision(world: World, x: number, z: number, dx: number, dz: number, radius = 0.3): [number, number] {
+  const core = world.base.bounds;
   const hits = (px: number, pz: number) => {
-    if (px < world.bounds.minX + radius || px > world.bounds.maxX - radius || pz < world.bounds.minZ + radius || pz > world.bounds.maxZ + 6) return true;
+    // Outside the building there is floor only in the member rooms (and in front of the entrance).
+    if (px < core.minX + radius || px > core.maxX - radius || pz < core.minZ + radius || pz > core.maxZ + 6) {
+      let inRoom = false;
+      for (const r of world.memberRooms) if (px > r.reach.minX && px < r.reach.maxX && pz > r.reach.minZ && pz < r.reach.maxZ) inRoom = true;
+      if (!inRoom) return true;
+    }
     for (const o of world.obstacles) {
       if (px > o.minX - radius && px < o.maxX + radius && pz > o.minZ - radius && pz < o.maxZ + radius) return true;
     }
@@ -372,15 +401,57 @@ export function moveWithCollision(world: World, x: number, z: number, dx: number
   return [nx, nz];
 }
 
-export function buildWorld(layout: OfficeLayout, unlocked: Set<string>): World {
+const wallBox = (w: Wall): Box => ({ minX: Math.min(w.x1, w.x2) - WALL_T / 2, maxX: Math.max(w.x1, w.x2) + WALL_T / 2, minZ: Math.min(w.z1, w.z2) - WALL_T / 2, maxZ: Math.max(w.z1, w.z2) + WALL_T / 2 });
+
+const NO_ROOMS: MemberRoom[] = [];
+const NO_DESKS: Desk[] = [];
+
+/**
+ * The world of a layout. A layout that carries member rooms (see `withMemberRooms`) gives the stored office,
+ * exactly as it is without them, plus those rooms: `base` is the world of the stored office, and may be handed in
+ * when the caller already has it (the scene keeps it, so nothing of the existing office is rebuilt when a member arrives).
+ */
+export function buildWorld(layout: OfficeLayout, unlocked: Set<string>, base?: World): World {
+  const eff = layout as Partial<EffectiveLayout>;
+  if (!eff.base || !eff.memberRooms?.length) return buildCore(layout, unlocked);
+  return extendWorld(base && base.layout === eff.base ? base : buildCore(eff.base, unlocked), layout as EffectiveLayout);
+}
+
+/** The stored office with the member rooms attached: new walls (the outer wall now has their doors), a wider floor to walk on, the same everything else. */
+function extendWorld(core: World, layout: EffectiveLayout): World {
+  const extra = new Set(layout.memberRooms.map((r) => r.roomId));
+  const rooms = [...core.rooms, ...layout.rooms.filter((r) => extra.has(r.id))];
+  // The outer walls still stand where the building ends; a member room is a closed room on the other side of one, with its door in it.
+  const walls = buildWalls(rooms, core.bounds);
+  const memberDesks = layout.desks.filter((d) => d.id.startsWith('m:'));
+  const solids = [...core.solids];
+  for (const d of memberDesks) solids.push(deskBox(d));
+  for (const d of layout.decorations) {
+    if (!d.id.startsWith('m:')) continue;
+    const box = decorationKind(d.kind)?.solid ? decorationBox(d) : null;
+    if (box) solids.push(box);
+  }
+  const obstacles = [...walls.map(wallBox), ...solids];
+  // The navigation grid starts at the lowest corner: it grows there by whole cells, so every cell of the existing office stays where it was.
+  const cell = 0.4;
+  const b = { ...core.bounds };
+  for (const r of layout.memberRooms) {
+    b.minX = Math.min(b.minX, core.bounds.minX - Math.ceil((core.bounds.minX - r.x) / cell - 1e-6) * cell);
+    b.minZ = Math.min(b.minZ, core.bounds.minZ - Math.ceil((core.bounds.minZ - r.z) / cell - 1e-6) * cell);
+    b.maxX = Math.max(b.maxX, r.x + r.w);
+    b.maxZ = Math.max(b.maxZ, r.z + r.d);
+  }
+  return { ...core, layout, rooms, walls, obstacles, solids, bounds: b, base: core, memberRooms: layout.memberRooms, memberDesks, nav: new NavGrid(b, obstacles) };
+}
+
+function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
   const rooms = layout.rooms.filter((r) => !r.requires || unlocked.has(r.requires));
   const bounds: Box = { minX: -layout.width / 2, maxX: layout.width / 2, minZ: -layout.depth / 2, maxZ: layout.depth / 2 };
   const room = (kind: RoomDef['kind']) => rooms.find((r) => r.kind === kind);
   const walls = buildWalls(rooms, bounds);
+  const wallBoxes = walls.map(wallBox);
+  // Everything pushed from here on is furniture; the walls are put in front of it at the end.
   const obstacles: Box[] = [];
-  for (const w of walls) {
-    obstacles.push({ minX: Math.min(w.x1, w.x2) - WALL_T / 2, maxX: Math.max(w.x1, w.x2) + WALL_T / 2, minZ: Math.min(w.z1, w.z2) - WALL_T / 2, maxZ: Math.max(w.z1, w.z2) + WALL_T / 2 });
-  }
   for (const d of layout.desks) obstacles.push(deskBox(d));
   const interactables: Interactable[] = [];
 
@@ -499,14 +570,50 @@ export function buildWorld(layout: OfficeLayout, unlocked: Set<string>): World {
       const x = bx + ax * off;
       const z = bz + az * off;
       const r = 0.32;
-      if (obstacles.some((o) => x > o.minX - r && x < o.maxX + r && z > o.minZ - r && z < o.maxZ + r)) continue;
+      const blocks = (o: Box) => x > o.minX - r && x < o.maxX + r && z > o.minZ - r && z < o.maxZ + r;
+      if (wallBoxes.some(blocks) || obstacles.some(blocks)) continue;
       boardSpots.push({ x, z, rot: board.rot + Math.PI, sit: false });
     }
   }
 
   const spawn = rr ? { x: rr.x + rr.w / 2, z: rr.z + rr.d - 1.6, rot: Math.PI } : { x: 0, z: bounds.maxZ - 2, rot: Math.PI };
-  const world: World = { layout, rooms, walls, obstacles, bounds, meeting, breakSpots, ceoDesk, hifi, tv, reception, board, boardSpots, whiteboard, opsWall, racks, interactables, spawn, nav: new NavGrid(bounds, obstacles), room };
+  const solids = obstacles;
+  const all = [...wallBoxes, ...solids];
+  const world = { layout, rooms, walls, obstacles: all, solids, bounds, memberRooms: NO_ROOMS, memberDesks: NO_DESKS, meeting, breakSpots, ceoDesk, hifi, tv, reception, board, boardSpots, whiteboard, opsWall, racks, interactables, spawn, nav: new NavGrid(bounds, all), room } as unknown as World;
+  world.base = world;
   return world;
+}
+
+/**
+ * Things on or against the walls that are not obstacles to walk around but would be cut through or hidden by a
+ * door: boards, wall screens, signs, appliances, and the chairs at the desks.
+ */
+export function wallFixtures(world: World): Box[] {
+  const out: Box[] = [];
+  const b = world.board;
+  // The project board hangs on the west wall of the engineering floor.
+  if (b) out.push({ minX: b.x - 0.3, maxX: b.x + 0.3, minZ: b.z - b.w / 2 - 0.2, maxZ: b.z + b.w / 2 + 0.2 });
+  const wb = world.whiteboard;
+  if (wb) out.push({ minX: wb.x - wb.w / 2 - 0.2, maxX: wb.x + wb.w / 2 + 0.2, minZ: wb.z - 0.3, maxZ: wb.z + 0.3 });
+  const ow = world.opsWall;
+  if (ow) out.push({ minX: ow.x - ow.w / 2 - 0.2, maxX: ow.x + ow.w / 2 + 0.2, minZ: ow.z - 0.3, maxZ: ow.z + 0.3 });
+  // The company board and the usage clocks fill the CEO room's north wall.
+  const cr = world.room('ceo');
+  if (cr) out.push({ minX: cr.x, maxX: cr.x + cr.w, minZ: cr.z, maxZ: cr.z + 0.3 });
+  const rr = world.room('reception');
+  if (rr) out.push({ minX: rr.x + rr.w - 0.3, maxX: rr.x + rr.w, minZ: rr.z + rr.d / 2 - 2.7, maxZ: rr.z + rr.d / 2 + 2.7 });
+  const br = world.room('break');
+  if (br) out.push(rect(br.x + br.w - 0.5, br.z + 5.9, 0.9, 0.9)); // the fridge
+  if (world.tv) out.push(rect(world.tv.x, world.tv.z, 3.0, 0.5));
+  for (const d of world.layout.decorations) {
+    const box = decorationKind(d.kind)?.solid ? null : decorationBox(d);
+    if (box) out.push({ minX: box.minX - 0.15, maxX: box.maxX + 0.15, minZ: box.minZ - 0.15, maxZ: box.maxZ + 0.15 });
+  }
+  for (const d of world.layout.desks) {
+    const seat = deskSeat(d);
+    out.push(rect(seat.x, seat.z, 0.7, 0.7));
+  }
+  return out;
 }
 
 /** A group of desks that stand together (a pod): where a team, and so a project, sits. */

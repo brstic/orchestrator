@@ -137,7 +137,8 @@ try {
   app?.kill('SIGTERM');
   office.kill('SIGTERM');
   site.close();
-  fs.rmSync(tmp, { recursive: true, force: true });
+  // The app is still writing its profile while it shuts down.
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 }
 console.log(`\n${checks.filter(Boolean).length}/${checks.length} checks passed`);
 process.exit(exit);

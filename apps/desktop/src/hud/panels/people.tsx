@@ -6,10 +6,13 @@ import { act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { copyText } from './company-shared.tsx';
 
+type Role = 'visitor' | 'colleague' | 'owner';
+const ROLES: Role[] = ['visitor', 'colleague', 'owner'];
+
 interface Guest {
   id: string;
   name: string;
-  role: 'visitor' | 'colleague';
+  role: Role;
   createdAt: string;
   lastSeenAt: string | null;
   revokedAt: string | null;
@@ -23,8 +26,9 @@ interface Sharing {
 
 const ROLE_TONE: Record<string, Tone> = { owner: 'info', colleague: 'good', visitor: 'muted' };
 const ROLE_TEXT: Record<string, string> = {
-  visitor: 'Sees the office and talks to the people in it. No terminals, no documents, cannot change anything.',
-  colleague: 'Also watches terminals, reads documents, talks to employees, creates tasks and answers their questions. Never approvals, never the keyboard of a terminal.',
+  visitor: 'Looks: the office, the people, tasks, and the terminals and documents of what is shared. Changes nothing.',
+  colleague: 'Works on everything shared — talks and types to employees, hires, hands out tasks, answers and approves — and has a room for the sessions on their own computer. Does not run the office.',
+  owner: "Everything: members, settings and policies, machines, the layout — and other members' own computers.",
 };
 
 /** Who is here, what people say to each other, and — for the owner — who is invited and how they get in. */
@@ -99,7 +103,7 @@ function PeoplePanel({ onClose }: { arg: string | null; onClose: () => void }) {
 function GuestsAdmin() {
   const [sharing, setSharing] = useState<Sharing | null>(null);
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'visitor' | 'colleague'>('visitor');
+  const [role, setRole] = useState<Role>('colleague');
   const [address, setAddress] = useState('');
   const [invite, setInvite] = useState<{ name: string; code: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -129,16 +133,16 @@ function GuestsAdmin() {
       <div className="card col" style={{ gap: 8 }}>
         <div className="row">
           <div className="section-title" style={{ margin: 0 }}>
-            Open the office to guests
+            Open the office to its members
           </div>
           <span className="grow" />
           <Badge tone={open ? 'good' : 'muted'}>{open ? 'open' : 'closed'}</Badge>
-          <Button small variant={open ? 'default' : 'primary'} disabled={busy} onClick={() => void run(() => api('POST', '/sharing', { open: !open }), open ? 'The office is closed to guests' : 'The office is open to guests')}>
+          <Button small variant={open ? 'default' : 'primary'} disabled={busy} onClick={() => void run(() => api('POST', '/sharing', { open: !open }), open ? 'The office is closed to the network' : 'The office is open to its members')}>
             {open ? 'Close' : 'Open'}
           </Button>
         </div>
         <div className="small muted">
-          Your office normally answers only on this computer. Open, it also answers on your network — encrypted, with a certificate made here — and only for people you invite. Guests never get your owner token, and nobody outside can enrol a machine or act as an employee.
+          The office normally answers only on its own computer. Open, it also answers on the network — encrypted, with a certificate made here — and only for people who were invited. Nobody gets the server's own owner token, and the only machine that can join from outside is a member's own computer, for their own sessions.
         </div>
         {sharing.door.error && !open && <div className="small bad">{sharing.door.error}</div>}
         {open && (
@@ -174,11 +178,14 @@ function GuestsAdmin() {
           }}
         >
           <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="Their name" maxLength={40} aria-label="Guest name" />
-          <select value={role} onChange={(ev) => setRole(ev.target.value as 'visitor' | 'colleague')} aria-label="Role" style={{ width: 'auto' }}>
-            <option value="visitor">Visitor</option>
-            <option value="colleague">Colleague</option>
+          <select value={role} onChange={(ev) => setRole(ev.target.value as Role)} aria-label="Role" style={{ width: 'auto' }}>
+            {ROLES.map((r) => (
+              <option key={r} value={r}>
+                {r[0]!.toUpperCase() + r.slice(1)}
+              </option>
+            ))}
           </select>
-          <Button variant="primary" type="submit" disabled={!name.trim() || busy || !open} title={open ? undefined : 'Open the office to guests first'}>
+          <Button variant="primary" type="submit" disabled={!name.trim() || busy || !open} title={open ? undefined : 'Open the office to its members first'}>
             Invite
           </Button>
         </form>
@@ -186,7 +193,7 @@ function GuestsAdmin() {
         {invite && (
           <div className="col" style={{ gap: 6 }}>
             <div className="small">
-              Send this to <span className="strong">{invite.name}</span>. They start Orchestrator, choose <span className="strong">Join someone's office</span> and paste it. It is shown only now; anyone who has it can come in as {invite.name}.
+              Send this to <span className="strong">{invite.name}</span>. They start Orchestrator, choose <span className="strong">Connect to an office</span> and paste it. It is shown only now; anyone who has it can come in as {invite.name}.
             </div>
             <textarea className="mono" readOnly value={invite.code} aria-label="Invitation" style={{ minHeight: 76, fontSize: 11 }} onFocus={(ev) => ev.currentTarget.select()} />
             <div className="row">
@@ -202,7 +209,7 @@ function GuestsAdmin() {
       </div>
 
       <div>
-        <div className="section-title">Guests ({active.length})</div>
+        <div className="section-title">Members ({active.length})</div>
         {active.length === 0 && <div className="small faint">Nobody is invited.</div>}
         {active.map((g) => (
           <div key={g.id} className="row" style={{ padding: '5px 0', gap: 8 }}>
@@ -210,8 +217,11 @@ function GuestsAdmin() {
               {g.name}
             </span>
             <select value={g.role} disabled={busy} aria-label={`Role of ${g.name}`} style={{ width: 'auto' }} onChange={(ev) => void run(() => api('PATCH', `/guests/${g.id}`, { role: ev.target.value }), `${g.name} is now a ${ev.target.value}`)}>
-              <option value="visitor">visitor</option>
-              <option value="colleague">colleague</option>
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
             </select>
             <span className="small faint grow truncate">{g.lastSeenAt ? `seen ${timeAgo(g.lastSeenAt)}` : 'has not come in yet'}</span>
             <Button

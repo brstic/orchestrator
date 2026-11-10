@@ -151,7 +151,7 @@ function parseInvite(code) {
   }
   const addresses = (Array.isArray(j.a) ? j.a : []).map(String).filter((a) => /^https:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/.test(a));
   if (!addresses.length || typeof j.t !== 'string' || !/^orch_guest_/.test(j.t) || !/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(String(j.f))) throw new Error('The invitation is incomplete.');
-  return { office: String(j.n || 'An office').slice(0, 80), guest: String(j.g || 'Guest').slice(0, 40), role: j.r === 'colleague' ? 'colleague' : 'visitor', token: j.t, addresses, fingerprint: j.f };
+  return { office: String(j.n || 'An office').slice(0, 80), guest: String(j.g || 'Guest').slice(0, 40), role: ['owner', 'colleague'].includes(j.r) ? j.r : 'visitor', token: j.t, addresses, fingerprint: j.f };
 }
 
 /**
@@ -180,7 +180,7 @@ function askAsGuest(address, token, fingerprint) {
         if (res.statusCode === 401 || res.statusCode === 403) return resolve({ error: 'This invitation is no longer valid: the owner revoked it or sent you a newer one.', final: true });
         try {
           const me = JSON.parse(body);
-          if (res.statusCode === 200 && me && me.kind === 'guest') return resolve({ me });
+          if (res.statusCode === 200 && me && (me.kind === 'guest' || me.kind === 'owner') && me.role) return resolve({ me });
         } catch {
           /* not an office */
         }
@@ -197,6 +197,37 @@ function askAsGuest(address, token, fingerprint) {
   });
 }
 
+// ───────────── this computer's place in someone else's office ─────────────
+
+const { startPersonalHost } = require('./personal-host.cjs');
+let myHost = null;
+let myHostState = { state: 'none', reason: null, hostId: null };
+
+function leaveWithThisComputer() {
+  if (myHost) myHost.stop();
+  myHost = null;
+  myHostState = { state: 'none', reason: null, hostId: null };
+}
+
+function bringThisComputer(target) {
+  leaveWithThisComputer();
+  if (process.env.ORCH_NO_PERSONAL_HOST) return;
+  const agentEntry = [path.join(root, 'apps/host-agent/dist/orchestrator-agent.mjs'), path.join(root, 'apps/host-agent/src/cli.ts')].find((p) => fs.existsSync(p));
+  const PATH = [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', path.join(require('node:os').homedir(), '.local/bin')].filter(Boolean).join(path.delimiter);
+  const forWindow = win;
+  myHost = startPersonalHost({
+    ...target,
+    node: findNode(),
+    agentEntry,
+    PATH,
+    onState: (state) => {
+      myHostState = state;
+      if (forWindow && !forWindow.isDestroyed()) forWindow.webContents.send('orch:my-host-state', state);
+    },
+  });
+}
+ipcMain.handle('orch:my-host', () => myHostState);
+
 /** Try the addresses of an invitation in turn and open the first office that answers as itself. */
 async function joinOffice(invite, remember) {
   const problems = [];
@@ -211,6 +242,8 @@ async function joinOffice(invite, remember) {
       }
       // Your own office keeps running in the background while you visit: its employees stay looked after.
       await openOffice({ url: address, token: invite.token, pin: invite.fingerprint });
+      // A colleague or an owner brings their own computer along: its sessions sit in their room while they are here.
+      if (res.me.role !== 'visitor') bringThisComputer({ address, token: invite.token, fingerprint: invite.fingerprint });
       return { ok: true };
     }
     problems.push(res.error);
@@ -285,6 +318,31 @@ ipcMain.handle('orch:pick-folders', async (event) => {
   const parent = BrowserWindow.fromWebContents(event.sender);
   const res = await dialog.showOpenDialog(parent, { title: 'Choose the project folders — one employee is hired for each', buttonLabel: 'Choose folders', properties: ['openDirectory', 'multiSelections'] });
   return res.canceled ? [] : res.filePaths;
+});
+// This computer's preferences (graphics, keys, extras), the same in every office opened from here. The page that
+// asks may be another office's, so only those four fields are kept, and only in their expected shapes.
+const prefsFile = () => path.join(app.getPath('userData'), 'prefs.json');
+ipcMain.handle('orch:prefs-get', () => {
+  try {
+    return JSON.parse(fs.readFileSync(prefsFile(), 'utf8'));
+  } catch {
+    return null;
+  }
+});
+ipcMain.handle('orch:prefs-set', (_event, input) => {
+  const p = input && typeof input === 'object' ? input : {};
+  const keys = {};
+  for (const [id, code] of Object.entries(p.keybindings && typeof p.keybindings === 'object' ? p.keybindings : {}).slice(0, 64)) {
+    if (typeof code === 'string' && code && code.length <= 40 && id.length <= 40) keys[id] = code;
+  }
+  const prefs = { quality: ['low', 'medium', 'high'].includes(p.quality) ? p.quality : 'medium', keybindings: keys, projectZones: p.projectZones === true, approachZoom: p.approachZoom === true };
+  const file = prefsFile();
+  // Written beside and renamed, so a crash half-way leaves the previous file.
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify(prefs, null, 2), { mode: 0o600 });
+  fs.renameSync(`${file}.tmp`, file);
+  fs.chmodSync(file, 0o600);
+  return true;
 });
 ipcMain.handle('orch:connect-context', () => ({
   ...connectContext,
@@ -371,9 +429,14 @@ async function openOffice(target) {
   });
   // The new window exists before the old ones close, so the app does not quit in between.
   const old = [win, connectWin].filter(Boolean);
+  // Leaving an office takes this computer out of it.
+  leaveWithThisComputer();
   win = next;
   win.on('closed', () => {
-    if (win === next) win = null;
+    if (win === next) {
+      win = null;
+      leaveWithThisComputer();
+    }
   });
   for (const w of old) w.destroy();
   // A guest's office has a certificate made by its owner's computer: accept exactly the one the
@@ -575,7 +638,7 @@ Menu.setApplicationMenu(
     {
       label: 'Office',
       submenu: [
-        { label: 'Switch office… (my office, or join someone’s)', click: () => openConnect('', (loadConnection() || {}).url) },
+        { label: 'Switch office…', click: () => openConnect('', (loadConnection() || {}).url) },
         {
           label: 'Use the local office',
           enabled: canStartLocal,
@@ -607,6 +670,7 @@ app.on('before-quit', (e) => {
   }
   app.isQuitting = app.isQuitting || true;
   // Stops the server and agent. Employees' tmux sessions keep running.
+  leaveWithThisComputer();
   stopBackend();
 });
 app.on('window-all-closed', () => app.quit());

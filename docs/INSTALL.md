@@ -12,6 +12,45 @@
 
 The office UI runs in the bundled desktop app or any modern browser.
 
+## 0. An office on a server (the usual setup)
+
+The office runs on one always-on machine — ideally a Linux server — and everyone walks in with the desktop app. Sessions and folders on the server are shared by the people you invite; each person's own computer joins as *their* room while they are in.
+
+**On the server** (Linux; needs Node.js 22.18+, tmux, git, curl, openssl and the Claude Code CLI logged in as the user that will run the office):
+
+```sh
+git clone <this repository> orchestrator && cd orchestrator
+pnpm install && pnpm build          # server, agent and the office UI
+pnpm serve -- --address https://office.example.com:4610
+```
+
+`pnpm serve` starts the server, a host agent for this machine (the shared one) and opens the door to members on port 4610 with TLS. `--address` is how people reach the server from outside (a DNS name or public IP, a VPN name, or leave it out on a LAN); it is written into invitations. Open that TCP port in the firewall. The office's own port (4600) stays on loopback.
+
+Invite the first owner — yourself — from the same machine:
+
+```sh
+pnpm office invite Branko --role owner     # prints the invitation once
+pnpm office status                         # addresses, certificate fingerprint, members
+```
+
+Keep it running across reboots and logouts:
+
+```sh
+mkdir -p ~/.config/systemd/user
+pnpm -s office service -- --address https://office.example.com:4610 > ~/.config/systemd/user/orchestrator.service
+systemctl --user daemon-reload && systemctl --user enable --now orchestrator
+loginctl enable-linger "$USER"
+journalctl --user -u orchestrator -f
+```
+
+A restart of the service does not stop anyone's work: employees' tmux sessions keep running and are picked up again. The door keeps its certificate, so invitations stay valid.
+
+**On each person's computer:** install the desktop app, choose **Connect to an office**, paste the invitation. The office is remembered on the start screen. A colleague or owner whose computer has tmux, Node.js and Claude Code also gets **Menu → My room**: folders on their own computer become employees that run there, under their own Claude account, visible in their room while they are connected (see [ACCESS.md](ACCESS.md)).
+
+**More members:** any owner can invite from **Menu → People**, or on the server: `pnpm office invite <name> --role owner|colleague|visitor`, `pnpm office role <name> <role>`, `pnpm office reinvite <name>`, `pnpm office revoke <name>`.
+
+Not tried yet on a real server with two people on two computers; it is covered by the automated suites on one machine (see `docs/STATUS.md`).
+
 ## 1. Local office (one machine)
 
 ```bash
@@ -156,13 +195,9 @@ Agent settings live in `~/.orchestrator/agent/config.json`:
 | `sdkPath` | where the Claude Agent SDK is, if not installed with `sdk install` (the package directory or its `sdk.mjs`) |
 | `hookEvents` | override the hook events to install (default: detected from the CLI version) |
 
-### Inviting people into your office
+### Inviting people into an office that runs on your own computer
 
-1. **Menu → People → Open the office to guests.** The office now also answers on your network (port 4610 by default), encrypted.
-2. **Invite**: a name and a role (*visitor* looks and chats; *colleague* can also work with your employees). Copy the invitation and send it to them.
-3. They start Orchestrator, choose **Join someone's office**, and paste it. The office they joined is remembered on their start screen.
-
-People on the same network can join as they are. For someone elsewhere, give the office an address they can reach — a VPN name such as a Tailscale address, or a port you forwarded on your router — under *Another address people can reach you at*; it is included in new invitations. Closing the door, or revoking a guest, shuts them out at once. While you visit someone else's office your own keeps running in the background.
+The same members and roles work for a local office: **Menu → People → Open the office to its members**, invite with a role (*visitor*, *colleague*, *owner*), send the invitation. People on the same network can come in as they are; for someone elsewhere give the office an address they can reach (a VPN name such as a Tailscale address, or a forwarded port) under *Another address people can reach you at*. The office is only there while your app is open — for something that stays up, use a server (section 0).
 
 ## 3. Linux and Windows
 

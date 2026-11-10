@@ -419,3 +419,22 @@
   opacity: 0.6;
   border-style: dashed;
 }
+
+/* Settings: the two groups in the side list, and a fieldset that only groups (and disables) what is inside it. */
+.pc-navgroup + .pc-navgroup {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.pc-navgroup .section-title {
+  margin: 0 10px 2px;
+}
+.pc-navhint {
+  margin: 0 10px 6px;
+}
+fieldset.pc-plain {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
