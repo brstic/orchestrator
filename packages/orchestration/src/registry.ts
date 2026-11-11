@@ -925,9 +925,14 @@ export class SessionRegistry {
     this.onGone(hostId, sessionId, reason);
   }
 
+  /** Sessions that are being stopped on purpose right now, with why (see `stop`). */
+  private onPurpose = new Map<string, string>();
+
   onGone(hostId: string, sessionId: string, reason: string): void {
     const s = this.core.sessions.get(sessionId);
     if (!s || s.hostId !== hostId) return;
+    const meant = this.onPurpose.get(sessionId);
+    if (meant) reason = meant;
     const wasRunning = s.status === 'running' || s.status === 'starting' || s.status === 'host_offline';
     // The office put this one to sleep itself: the host confirming that it is gone changes nothing about why.
     if (s.asleepSince && !wasRunning) return;
@@ -939,7 +944,7 @@ export class SessionRegistry {
     s.activitySince = nowIso();
     this.core.put('session', s);
     this.core.gateway.sessionClosed(sessionId, reason);
-    if (wasRunning) this.sessionDied(s, this.core.employees.get(s.employeeId), reason);
+    if (wasRunning) this.sessionDied(s, this.core.employees.get(s.employeeId), reason, !!meant);
   }
 
   /** A session the office stopped because it sat idle: ended cleanly, nothing lost, nobody alerted. */
@@ -994,7 +999,12 @@ export class SessionRegistry {
     this.turnSince.add(sessionId);
   }
 
-  private sessionDied(s: AgentSession, employee: Employee | undefined, reason: string): void {
+  /**
+   * A session has ended. `onPurpose`: somebody stopped it, or the office did in order to start it again — that is
+   * recorded as a stop, not as a loss: nobody is told that the employee "went offline", and it does not count
+   * against how reliable the machines are.
+   */
+  private sessionDied(s: AgentSession, employee: Employee | undefined, reason: string, onPurpose = false): void {
     if (this.resumeProbes.has(s.id)) {
       const before = this.resumeProbes.get(s.id) ?? null;
       this.resumeProbes.delete(s.id);
@@ -1011,20 +1021,22 @@ export class SessionRegistry {
         if (employee) this.eng.comms.schedulePump(employee.id, 300);
       }
     }
-    this.core.company.sessionsLost++;
-    this.core.saveCompany();
+    if (!onPurpose) {
+      this.core.company.sessionsLost++;
+      this.core.saveCompany();
+    }
     this.core.event({
-      type: 'session.lost',
-      source: 'host',
-      summary: `${employee?.name ?? `Session ${s.tmuxSession}`}'s session stopped (${reason})`,
+      type: onPurpose ? 'session.stopped' : 'session.lost',
+      source: onPurpose ? 'server' : 'host',
+      summary: `${employee?.name ?? `Session ${s.tmuxSession}`}'s session ${onPurpose ? 'was stopped' : 'stopped'} (${reason})`,
       hostId: s.hostId,
       sessionId: s.id,
       employeeId: s.employeeId,
       data: { reason, origin: s.origin },
     });
     this.eng.comms.sessionEnded(s.id);
-    if (employee) {
-      this.eng.comms.employeeSessionGone(employee.id);
+    if (employee) this.eng.comms.employeeSessionGone(employee.id);
+    if (employee && !onPurpose) {
       const task = this.eng.tasks.currentTask(employee.id);
       this.eng.comms.notify({
         kind: 'session_lost',
@@ -1632,9 +1644,17 @@ export class SessionRegistry {
     if (opts.asleep && s.origin !== 'managed') throw new EngineError('only a session the office started can be put to sleep');
     this.core.audit(opts.actor ?? 'owner', opts.asleep ? 'session.asleep' : s.origin === 'managed' ? 'session.stopped' : 'session.detached', s.id, { employee: employee.name, reason: opts.reason ?? null });
     if (s.origin === 'managed') {
-      await this.core.agents.rpc(s.hostId, { method: 'session.kill', params: { sessionId: s.id } });
-      if (opts.asleep) this.fellAsleep(s, employee, opts.reason ?? 'asleep');
-      else this.onGone(s.hostId, s.id, opts.reason ?? 'stopped by the owner');
+      // Stopped on purpose — by a person, or by the office to start it again. Noted before the machine is asked, as
+      // the machine's own report that the session is gone may come first, with its own words for why.
+      const why = opts.reason ?? 'stopped by the owner';
+      if (!opts.asleep) this.onPurpose.set(s.id, why);
+      try {
+        await this.core.agents.rpc(s.hostId, { method: 'session.kill', params: { sessionId: s.id } });
+        if (opts.asleep) this.fellAsleep(s, employee, opts.reason ?? 'asleep');
+        else this.onGone(s.hostId, s.id, why);
+      } finally {
+        this.onPurpose.delete(s.id);
+      }
     } else {
       // Sessions we did not start are only ever detached, never killed.
       await this.core.agents.rpc(s.hostId, { method: 'session.detach', params: { sessionId: s.id } });

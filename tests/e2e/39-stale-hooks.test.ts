@@ -97,3 +97,37 @@ test('hooks of the process that is running are heard as before; one that names n
   const after = (await h.session(stan))!;
   assert.deepEqual([after.lastEventAt, after.inTurn], [before, false], 'it changed nothing');
 });
+
+test('a session stopped on purpose is a stop, not a loss — nobody is told the employee "went offline"; one that dies still is', async () => {
+  const zed = (await h.employee('Zed', 'backend', { projectId: project, autonomy: 'standard' })).id;
+  await h.api('POST', `/employees/${zed}/start`, {});
+  await waitFor(async () => (await h.session(zed))?.inTurn === false, { label: 'Zed is up', timeout: 30000 });
+  const lostBefore = (await h.state()).company.sessionsLost;
+  const alerts = async () => (await h.state()).notifications.filter((n) => n.kind === 'session_lost' && n.employeeId === zed).length;
+  const events = async (type: string) => (await h.state()).events.filter((e) => e.type === type && e.employeeId === zed);
+
+  // Stopped by the owner.
+  await h.api('POST', `/employees/${zed}/stop`, {});
+  await waitFor(async () => (await h.session(zed))?.status !== 'running', { label: 'stopped', timeout: 15000 });
+  await sleep(1500);
+  assert.match((await events('session.stopped')).map((e) => e.summary).join('\n'), /Zed's session was stopped \(stopped by the owner\)/);
+  assert.deepEqual([(await events('session.lost')).length, await alerts(), (await h.state()).company.sessionsLost], [0, 0, lostBefore]);
+
+  // Started again and stopped by the office in order to start it again (a change of model): the same.
+  await h.api('POST', `/employees/${zed}/start`, {});
+  await waitFor(async () => (await h.session(zed))?.inTurn === false, { label: 'Zed is up again', timeout: 30000 });
+  const startedAt = (await h.session(zed))!.startedAt;
+  await h.api('PATCH', `/employees/${zed}`, { model: 'sonnet' });
+  await waitFor(async () => {
+    const s = await h.session(zed);
+    return s?.status === 'running' && s.startedAt !== startedAt && s.inTurn === false;
+  }, { label: 'started again for the change', timeout: 30000 });
+  await sleep(1000);
+  assert.deepEqual([(await events('session.lost')).length, await alerts(), (await h.state()).company.sessionsLost], [0, 0, lostBefore]);
+  assert.match((await events('session.stopped')).map((e) => e.summary).join('\n'), /Zed's session was stopped \(started again for a change of settings\)/);
+
+  // Its tmux session is killed from outside: that is a loss, and it is said.
+  h.tmux('kill-session', '-t', (await h.session(zed))!.tmuxSession!);
+  await waitFor(async () => (await events('session.lost')).length === 1, { label: 'the loss is reported', timeout: 20000 });
+  assert.deepEqual([await alerts(), (await h.state()).company.sessionsLost], [1, lostBefore + 1]);
+});
