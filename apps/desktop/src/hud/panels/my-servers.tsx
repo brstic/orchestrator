@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Host } from '@orchestrator/contracts';
 import { Badge, Button, Empty, Field } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
+import { nativeCall } from '../../lib/native-call.ts';
 import { useOffice } from '../../lib/store.ts';
 import { act, ask } from '../core.tsx';
 
@@ -16,6 +17,18 @@ interface ServerRecord {
   error: string | null;
 }
 
+/** One folder on a server, as the desktop app read it over SSH. */
+interface ServerListing {
+  path: string;
+  home: string;
+  parent: string | null;
+  folders: string[];
+  /** Whether this folder itself can be named as one to work in. */
+  usable: boolean;
+  /** There are more folders here than are listed. */
+  more: boolean;
+}
+
 /** The desktop app's side (electron/member-servers.cjs): it does the reaching over SSH, with the keys on this computer. */
 interface ServersBridge {
   list: () => Promise<ServerRecord[] | null>;
@@ -23,6 +36,8 @@ interface ServersBridge {
   reconnect: (id: string) => Promise<{ ok?: boolean; error?: string }>;
   /** Absent in a desktop app from before folders could be changed. */
   setRoots?: (id: string, roots: string[]) => Promise<{ ok?: boolean; error?: string; cancelled?: boolean; roots?: string[] }>;
+  /** The folders inside one folder on the server ('' for the home folder). Absent in a desktop app from before the folders could be looked through. */
+  browse?: (id: string, dir?: string) => Promise<{ ok?: boolean; error?: string; cancelled?: boolean } & Partial<ServerListing>>;
   remove: (id: string) => Promise<{ ok?: boolean; error?: string; cancelled?: boolean; cleaned?: boolean }>;
   onChange: (cb: () => void) => () => void;
 }
@@ -54,6 +69,12 @@ export function MyServers({ memberId }: { memberId: string }) {
   const [error, setError] = useState<string | null>(null);
   /** The server whose folders are being edited, and what is typed for them. */
   const [editing, setEditing] = useState<{ id: string; text: string; busy: boolean; error: string | null } | null>(null);
+  /** The server's folders being looked through while its folders are edited: what is listed, or why not. */
+  const [look, setLook] = useState<{ loading: boolean; error: string | null; listing: ServerListing | null } | null>(null);
+  const stopEditing = () => {
+    setEditing(null);
+    setLook(null);
+  };
 
   useEffect(() => {
     if (!native) return;
@@ -77,7 +98,7 @@ export function MyServers({ memberId }: { memberId: string }) {
     if (!native) return;
     setBusy(true);
     setError(null);
-    const res = await native.add({ target: target.trim(), name: name.trim() || undefined, roots: roots.split(',').map((r) => r.trim()).filter(Boolean), trustNewHost: trust });
+    const res: Awaited<ReturnType<ServersBridge['add']>> = await nativeCall(() => native.add({ target: target.trim(), name: name.trim() || undefined, roots: roots.split(',').map((r) => r.trim()).filter(Boolean), trustNewHost: trust }));
     setBusy(false);
     if (res.cancelled) return;
     if (res.error) return setError(res.error);
@@ -92,11 +113,30 @@ export function MyServers({ memberId }: { memberId: string }) {
   const saveRoots = async () => {
     if (!editing || !native?.setRoots) return;
     setEditing({ ...editing, busy: true, error: null });
-    const res = await native.setRoots(editing.id, editing.text.split(',').map((r) => r.trim()).filter(Boolean));
+    const setRoots = native.setRoots;
+    // (Through `nativeCall`: an app that was started before it could do this refuses, and that has to be said — the button used to stay on "Changing…" for ever.)
+    const res: Awaited<ReturnType<NonNullable<ServersBridge['setRoots']>>> = await nativeCall(() => setRoots(editing.id, editing.text.split(',').map((r) => r.trim()).filter(Boolean)));
     if (res.cancelled) return setEditing({ ...editing, busy: false });
     if (res.error) return setEditing({ ...editing, busy: false, error: res.error });
-    setEditing(null);
+    stopEditing();
     useOffice.getState().toast(res.ok ? 'The folders are changed' : 'The folders are changed; the server has not come back into the office yet', res.ok ? 'success' : 'info');
+  };
+
+  /** Look into a folder on the server whose folders are being edited ('' or nothing: its home folder). */
+  const lookInto = async (dir?: string) => {
+    const browse = native?.browse;
+    if (!editing || !browse) return;
+    setLook((now) => ({ loading: true, error: null, listing: now?.listing ?? null }));
+    const res: Awaited<ReturnType<NonNullable<ServersBridge['browse']>>> = await nativeCall(() => browse(editing.id, dir ?? ''));
+    if (res.cancelled) return setLook((now) => (now?.listing ? { ...now, loading: false } : null));
+    if (res.error || !res.path) return setLook((now) => ({ loading: false, error: res.error ?? 'The folders could not be read.', listing: now?.listing ?? null }));
+    setLook({ loading: false, error: null, listing: { path: res.path, home: res.home ?? '', parent: res.parent ?? null, folders: res.folders ?? [], usable: res.usable !== false, more: res.more === true } });
+  };
+  const chosen = (text: string) => text.split(',').map((r) => r.trim()).filter(Boolean);
+  /** Put a folder of the server on the list being edited. */
+  const choose = (path: string) => {
+    if (!editing || chosen(editing.text).includes(path)) return;
+    setEditing({ ...editing, text: [...chosen(editing.text), path].join(', '), error: null });
   };
 
   const share = async (h: Host, shared: boolean) => {
@@ -112,7 +152,7 @@ export function MyServers({ memberId }: { memberId: string }) {
     const rec = recordOf(h);
     if (rec && native) {
       // The app asks in a dialog of its own (it is about to reach into the server), then stops the agent there and has the office forget the machine.
-      const res = await native.remove(rec.id);
+      const res: Awaited<ReturnType<ServersBridge['remove']>> = await nativeCall(() => native.remove(rec.id));
       if (res.error) useOffice.getState().toast(res.error, 'error');
       else if (!res.cancelled) useOffice.getState().toast(`${h.name} is out of the office${res.cleaned ? '' : '; what was installed on it could not be removed from here'}`, 'success');
       return;
@@ -162,12 +202,68 @@ export function MyServers({ memberId }: { memberId: string }) {
                   <div className="col" style={{ gap: 6, marginTop: 6 }}>
                     <input value={editing.text} placeholder="~/code, /srv/app" onChange={(ev) => setEditing({ ...editing, text: ev.target.value })} aria-label="Folders employees may work in" spellCheck={false} autoFocus disabled={editing.busy} />
                     <div className="small faint">Separated by commas; absolute, or ~/… for under your home folder (~ alone is the home folder). Only these: a folder you leave out is no longer allowed. The server's user must be able to work in them.</div>
+                    {look && (
+                      <div className="fp" data-server-folders>
+                        {look.listing ? (
+                          <>
+                            <div className="fp-bar">
+                              <Button small type="button" disabled={!look.listing.parent || look.loading} onClick={() => void lookInto(look.listing!.parent ?? '/')} title="Up one folder">
+                                ↑
+                              </Button>
+                              <div className="fp-crumbs mono" title={look.listing.path}>
+                                <span className="strong">{look.listing.path}</span>
+                                {look.loading && <span className="faint"> · reading…</span>}
+                              </div>
+                              {look.listing.home && look.listing.path !== look.listing.home && (
+                                <Button small type="button" disabled={look.loading} onClick={() => void lookInto('')} title={look.listing.home}>
+                                  Home
+                                </Button>
+                              )}
+                              <Button small variant="primary" type="button" disabled={!look.listing.usable || chosen(editing.text).includes(look.listing.path)} onClick={() => choose(look.listing!.path)} title={look.listing.usable ? 'Put this folder on the list' : 'A folder with such a name cannot be used by the office'}>
+                                Add this folder
+                              </Button>
+                            </div>
+                            <div className="fp-list">
+                              {look.listing.folders.length === 0 && <div className="small muted fp-empty">No folders inside this one.</div>}
+                              {look.listing.folders.map((f) => {
+                                const path = `${look.listing!.path === '/' ? '' : look.listing!.path}/${f}`;
+                                const on = chosen(editing.text).includes(path);
+                                return (
+                                  <div key={f} className="fp-row">
+                                    <button type="button" className="fp-open" disabled={look.loading} onClick={() => void lookInto(path)} title="Open this folder">
+                                      <span className="fp-icon" aria-hidden>
+                                        ▸
+                                      </span>
+                                      <span className="truncate">{f}</span>
+                                    </button>
+                                    <Button small type="button" disabled={on} onClick={() => choose(path)}>
+                                      {on ? 'On the list' : 'Add'}
+                                    </Button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="small faint">
+                              Folders on {h.name}, as {rec.target.includes('@') ? rec.target.split('@')[0] : 'your user there'} sees them{look.listing.more ? ' (the first 400)' : ''}. Hidden folders, and folders with unusual characters in their names, are not listed.
+                            </div>
+                          </>
+                        ) : (
+                          !look.error && <div className="small muted">Reading folders on {h.name}…</div>
+                        )}
+                        {look.error && <div className="small bad">{look.error}</div>}
+                      </div>
+                    )}
                     {editing.error && <div className="small bad">{editing.error}</div>}
                     <div className="row" style={{ gap: 8 }}>
                       <Button small variant="primary" disabled={editing.busy} onClick={() => void saveRoots()}>
                         {editing.busy ? 'Changing…' : 'Change the folders'}
                       </Button>
-                      <Button small variant="ghost" disabled={editing.busy} onClick={() => setEditing(null)}>
+                      {native?.browse && (
+                        <Button small disabled={editing.busy || look?.loading} onClick={() => (look ? setLook(null) : void lookInto())} title="Look through the server's folders and pick from them">
+                          {look ? 'Hide the server’s folders' : 'Browse the server…'}
+                        </Button>
+                      )}
+                      <Button small variant="ghost" disabled={editing.busy} onClick={stopEditing}>
                         Cancel
                       </Button>
                     </div>
@@ -176,12 +272,19 @@ export function MyServers({ memberId }: { memberId: string }) {
               </div>
               <Badge tone={h.status === 'online' ? 'good' : 'muted'}>{h.status === 'online' ? 'in the office' : 'not connected'}</Badge>
               {h.status !== 'online' && rec && native && (
-                <Button small onClick={() => void native.reconnect(rec.id).then((r) => r.error && useOffice.getState().toast(r.error, 'error'))} title="Start the agent on the server again (after the server was restarted)">
+                <Button small onClick={() => void nativeCall(() => native.reconnect(rec.id)).then((r) => 'error' in r && r.error && useOffice.getState().toast(r.error, 'error'))} title="Start the agent on the server again (after the server was restarted)">
                   Reconnect
                 </Button>
               )}
               {rec && native?.setRoots && editing?.id !== rec.id && (
-                <Button small onClick={() => setEditing({ id: rec.id, text: rec.roots.join(', '), busy: false, error: null })} title="Which folders on the server employees may work in">
+                <Button
+                  small
+                  onClick={() => {
+                    setLook(null);
+                    setEditing({ id: rec.id, text: rec.roots.join(', '), busy: false, error: null });
+                  }}
+                  title="Which folders on the server employees may work in"
+                >
                   Folders…
                 </Button>
               )}
@@ -201,7 +304,7 @@ export function MyServers({ memberId }: { memberId: string }) {
               <div className={`small ${r.error ? 'bad' : 'faint'}`}>{r.error ?? (r.step ? `${r.step}…` : 'not in the office')}</div>
             </div>
             {native && !r.step && (
-              <Button small variant="ghost" onClick={() => void native.remove(r.id)}>
+              <Button small variant="ghost" onClick={() => void nativeCall(() => native.remove(r.id)).then((res) => 'error' in res && res.error && useOffice.getState().toast(res.error, 'error'))}>
                 Remove…
               </Button>
             )}

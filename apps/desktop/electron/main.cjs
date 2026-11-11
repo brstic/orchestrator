@@ -289,6 +289,26 @@ ipcMain.handle('orch:servers-roots', async (_e, id, roots) => {
     serversChanged();
   }
 });
+// Looking through a server's folders, to choose from. The names are shown in the office's page, so the person is
+// asked first — once for each server, until the app is closed.
+const browseAllowed = new Set();
+ipcMain.handle('orch:servers-browse', async (_e, id, dir) => {
+  if (!myServers) return { error: 'This computer is not in an office as a member.' };
+  const mine = myServers;
+  const rec = mine.servers.list().find((r) => r.id === String(id));
+  if (!rec) return { error: 'That server is not in this computer\'s list.' };
+  try {
+    const key = `${mine.office}|${rec.id}`;
+    if (!browseAllowed.has(key)) {
+      const ok = await confirmServer(`Show the folders on ${rec.name} in this window?`, `Orchestrator will connect to ${rec.target} over SSH with the keys on this computer and read the names of the folders there, so that you can pick the ones employees may work in. Only names of folders are read; nothing on the server is changed, and nothing more is allowed to the office until you change the folders.\n\nThe window they are shown in is the office's (${mine.office}). Asked once, until the app is closed.`, 'Show the folders');
+      if (!ok) return { cancelled: true };
+      browseAllowed.add(key);
+    }
+    return { ok: true, ...(await mine.servers.browse(rec.id, dir == null ? '' : String(dir))) };
+  } catch (e) {
+    return { error: e.message };
+  }
+});
 ipcMain.handle('orch:servers-remove', async (_e, id) => {
   if (!myServers) return { error: 'This computer is not in an office as a member.' };
   const mine = myServers;

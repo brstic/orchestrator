@@ -49,6 +49,37 @@ function cleanRoots(roots) {
   return out;
 }
 
+/** A folder path the way the server's shell is to read it: quoted, with `~` as the home folder there. */
+const shPath = (r) => (r === '~' || r === '~/' ? '"$HOME"' : r.startsWith('~/') ? `"$HOME"/${shq(r.slice(2))}` : shq(r));
+
+/** Where to look on the server: the home folder when nothing is named; otherwise held to the same rules as the folders themselves. */
+function cleanBrowsePath(dir) {
+  const d = String(dir == null ? '' : dir).trim();
+  return d ? cleanRoots([d])[0] : '~/';
+}
+
+const USABLE_NAME = /^[A-Za-z0-9._ @+-]+$/;
+/**
+ * What the listing printed → where it is, and the folders in it. Only folders that can be named as a folder to work
+ * in are kept (the same characters as `cleanRoots`); null when the folder could not be opened.
+ */
+function readListing(stdout) {
+  const text = String(stdout);
+  const pwd = (/^ORCH:PWD=(.*)$/m.exec(text) || [])[1];
+  if (/^ORCH:NODIR$/m.test(text) || !pwd || !pwd.startsWith('/')) return null;
+  const folders = [...text.matchAll(/^ORCH:DIR=(.*)$/gm)].map((m) => m[1]).filter((n) => USABLE_NAME.test(n) && !n.includes('..'));
+  folders.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  return {
+    path: pwd,
+    home: (/^ORCH:HOME=(.*)$/m.exec(text) || [])[1] || '',
+    parent: pwd === '/' ? null : pwd.replace(/\/[^/]*$/, '') || '/',
+    folders,
+    // The folder itself can be chosen only when its own path is one the office can use.
+    usable: /^\/[A-Za-z0-9._ \/@+-]*$/.test(pwd) && !pwd.includes('..'),
+    more: /^ORCH:MORE$/m.test(text),
+  };
+}
+
 /** Non-interactive SSH shells get a bare PATH; node, tmux and claude are usually in one of these. */
 const PATH_PRELUDE = `for d in "$HOME/.local/bin" "$HOME/bin" "$HOME/.npm-global/bin" "$HOME/.volta/bin" "$HOME/.bun/bin" "$HOME/.claude/local" "$HOME/.asdf/shims" "$HOME/.local/share/fnm/aliases/default/bin" /usr/local/bin /opt/homebrew/bin /snap/bin; do [ -d "$d" ] && PATH="$d:$PATH"; done
 ORCH_NVM=$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | sort -V | tail -1 || true)
@@ -193,7 +224,7 @@ function memberServers({ office, file, agentBundle, ssh = 'ssh', log = () => und
   const agentHome = (id) => `$HOME/.orchestrator/member-servers/${id}`;
   // No folder named: the home folder on the server. It is always passed, so that taking a folder away takes effect
   // too (the agent keeps the folders it was last started with).
-  const rootArgs = (roots) => (roots.length ? roots : ['~/']).map((r) => ` --allow-root ${r === '~' || r === '~/' ? '"$HOME"' : r.startsWith('~/') ? `"$HOME"/${shq(r.slice(2))}` : shq(r)}`).join('');
+  const rootArgs = (roots) => (roots.length ? roots : ['~/']).map((r) => ` --allow-root ${shPath(r)}`).join('');
 
   /** Copy the agent to the server when the one there is another build, and write the small launcher beside it. */
   async function installAgent(rec, trustNewHost) {
@@ -235,7 +266,12 @@ if ! enrolled; then
   ORCH_ENROLLMENT_TOKEN="$TOKEN" "$A" login --server "$URL" --name "$NAME"${rootArgs(rec.roots)} >/dev/null
 fi
 running() { [ -f "$ORCH_AGENT_HOME/agent.pid" ] && kill -0 "$(cat "$ORCH_AGENT_HOME/agent.pid")" 2>/dev/null; }
-if running && [ ${restart ? '1' : '0'} = 1 ]; then "$A" stop >/dev/null 2>&1 || true; sleep 1; fi
+if running && [ ${restart ? '1' : '0'} = 1 ]; then
+  "$A" stop >/dev/null 2>&1 || true
+  # Until it is really gone (ten seconds at most): an agent that is still on its way out would be taken for a
+  # running one, not be started again, and leave the server out of the office.
+  i=0; while running && [ $i -lt 40 ]; do sleep 0.25; i=$((i+1)); done
+fi
 if ! running; then "$A" connect --daemon --server "$URL"${rootArgs(rec.roots)} >/dev/null; fi
 echo "ORCH:HOST=$(node -e "console.log(require(process.argv[1]).hostId)" "$CFG")"
 `,
@@ -333,7 +369,7 @@ echo "ORCH:HOST=$(node -e "console.log(require(process.argv[1]).hostId)" "$CFG")
     doing.set(id, { step: 'Changing the folders', error: null });
     try {
       const { dest } = parseTarget(rec.target);
-      const check = await script(rec.target, false, `for d in${roots.map((r) => ` ${r === '~' || r === '~/' ? '"$HOME"' : r.startsWith('~/') ? `"$HOME"/${shq(r.slice(2))}` : shq(r)}`).join('')}; do [ -d "$d" ] || echo "ORCH:MISSING=$d"; done; echo ORCH:CHECKED`, 30000);
+      const check = await script(rec.target, false, `for d in${roots.map((r) => ` ${shPath(r)}`).join('')}; do [ -d "$d" ] || echo "ORCH:MISSING=$d"; done; echo ORCH:CHECKED`, 30000);
       if (!/ORCH:CHECKED/.test(check.stdout)) throw new Error(explain(check.stderr, dest));
       const missing = [...check.stdout.matchAll(/ORCH:MISSING=(.*)/g)].map((m) => m[1]);
       if (missing.length) throw new Error(`${missing.join(', ')} ${missing.length === 1 ? 'is not a folder' : 'are not folders'} on ${dest} (or ${parseTarget(rec.target).dest.split('@')[0] || 'that user'} cannot see ${missing.length === 1 ? 'it' : 'them'}). Nothing was changed.`);
@@ -348,6 +384,39 @@ echo "ORCH:HOST=$(node -e "console.log(require(process.argv[1]).hostId)" "$CFG")
       doing.set(id, { step: null, error: e.message });
       throw e;
     }
+  }
+
+  /**
+   * The folders inside one folder on a server, for choosing the ones employees may work in. Names only, nothing is
+   * changed there; whatever the server's user can open can be looked into (that is the person's own server, reached
+   * with their own keys — what the office may work in is still only what they then choose).
+   */
+  async function browse(id, dir) {
+    const rec = list().find((r) => r.id === id);
+    if (!rec) throw new Error('That server is not in this computer\'s list.');
+    const { dest } = parseTarget(rec.target);
+    const where = cleanBrowsePath(dir);
+    const res = await script(
+      rec.target,
+      false,
+      `cd -- ${shPath(where)} 2>/dev/null || { echo ORCH:NODIR; exit 0; }
+echo "ORCH:PWD=$(pwd -P)"
+echo "ORCH:HOME=$HOME"
+n=0
+for d in */; do
+  [ -d "$d" ] || continue
+  n=$((n+1))
+  if [ $n -gt 400 ]; then echo ORCH:MORE; break; fi
+  printf 'ORCH:DIR=%s\\n' "\${d%/}"
+done
+echo ORCH:LISTED
+`,
+      30000,
+    );
+    if (!/ORCH:(LISTED|NODIR)/.test(res.stdout)) throw new Error(explain(res.stderr, dest));
+    const listing = readListing(res.stdout);
+    if (!listing) throw new Error(`${where} is not a folder on ${dest}, or ${dest.includes('@') ? dest.split('@')[0] : 'that user'} cannot open it.`);
+    return listing;
   }
 
   /** Take a server out of the office: stop the agent there, delete what was installed for it, and have the office forget the machine. */
@@ -381,8 +450,9 @@ rm -rf "$ORCH_AGENT_HOME"
     add,
     reconnect,
     setRoots,
+    browse,
     remove,
   };
 }
 
-module.exports = { memberServers, parseTarget, cleanRoots, readProbe, explain, publiclyTrusted };
+module.exports = { memberServers, parseTarget, cleanRoots, cleanBrowsePath, readListing, readProbe, explain, publiclyTrusted };
