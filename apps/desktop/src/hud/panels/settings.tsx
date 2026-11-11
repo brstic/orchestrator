@@ -591,6 +591,10 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                     Employees on <b>Auto</b> do not ask for permission; Claude Code's own auto mode decides what is safe. With this on, high-risk commands — pushing, sudo, deploying, publishing, broad deletions, reading credential files — still
                     come to you first.
                   </Toggle>
+                  <Toggle checked={settings.employeesManageBoard !== false} onChange={(employeesManageBoard) => void save({ employeesManageBoard })} title="Employees manage the task board themselves">
+                    On: any employee can release a waiting task, unblock one (saying how), give a task to a colleague, review a colleague's finished work, and start a colleague who is needed — so work goes on without you. Off: those are yours.
+                    Either way no employee approves a permission request, marks work done without verification, or deletes anything.
+                  </Toggle>
                   <SleepSetting settings={settings} />
                 </div>
               )}

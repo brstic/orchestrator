@@ -209,7 +209,7 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
   },
   {
     name: 'submit_review',
-    description: 'Give your verdict on a task you were asked to review.',
+    description: 'Give your verdict on a task that is waiting for review: one you were asked to review, or — where employees manage the board — any teammate\'s finished work. Never your own. Read the change before you approve it; "approve" lets it be merged.',
     inputSchema: {
       type: 'object',
       properties: { task: str('Key of the task under review, e.g. "T-12"'), verdict: { type: 'string', enum: ['approve', 'request_changes'], description: 'Your verdict' }, comments: str('Specific, actionable review comments') },
@@ -362,6 +362,39 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
 ];
 
 export type OrchestratorToolName = (typeof ORCHESTRATOR_TOOLS)[number]['name'];
+
+/**
+ * Tools with which any employee keeps the task board moving without the owner (shown, and answered, only while
+ * the office setting "Employees manage the task board themselves" is on). None of them approves a permission
+ * request, marks work done without verification, or deletes anything.
+ */
+export const BOARD_TOOLS: McpToolSpec[] = [
+  {
+    name: 'get_task',
+    description: 'Look at any task you can see, not only your own: status, who has it, what it is blocked on, its review, its description and dependencies.',
+    inputSchema: { type: 'object', properties: { task: str('Task key, e.g. "T-7"') }, required: ['task'] },
+  },
+  {
+    name: 'release_task',
+    description: 'Release a task that is waiting in the backlog so that it is scheduled (it starts when its dependencies are done and someone suitable is free). Use it when the work is clearly wanted and nothing is left to decide; ask the boss when it is a matter of direction or priority.',
+    inputSchema: { type: 'object', properties: { task: str('Task key, e.g. "T-7"') }, required: ['task'] },
+  },
+  {
+    name: 'unblock_task',
+    description: 'Put a BLOCKED task back to work when you know how its blocker is resolved — yours or a teammate\'s. Say how in "note": whoever picks it up reads that. Not for something the boss blocked, and not for what only the boss can decide.',
+    inputSchema: { type: 'object', properties: { task: str('Task key, e.g. "T-7"'), note: str('How the blocker is resolved, in full: what was found, decided or fixed') }, required: ['task', 'note'] },
+  },
+  {
+    name: 'give_task',
+    description: 'Give a task to whoever fits it best — a teammate, or yourself (your own name). It is handed to them as soon as they are free. Not for a task somebody is in the middle of.',
+    inputSchema: { type: 'object', properties: { task: str('Task key, e.g. "T-7"'), employee: str('Employee name') }, required: ['task', 'employee'] },
+  },
+  {
+    name: 'wake_colleague',
+    description: 'Start the session of a teammate who is not at their desk (asleep, or never started) because they are needed now. Say what for: it is delivered to them as your message when they are up. Not needed for someone who is at work; not possible for someone the owner paused.',
+    inputSchema: { type: 'object', properties: { employee: str('Employee name'), reason: str('What they are needed for — they read this first') }, required: ['employee', 'reason'] },
+  },
+];
 
 /**
  * Tools only an employee with the `foreman` role may use (the handlers refuse anyone else, and

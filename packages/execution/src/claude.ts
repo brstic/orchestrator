@@ -31,6 +31,23 @@ export function claudeVersion(bin = 'claude'): Promise<string | null> {
   });
 }
 
+/** The levels `--effort` takes, from Claude Code's help text ("--effort <level>  Effort level … (low, medium, high, xhigh, max)"). Empty when the option is not there. */
+export function parseEffortLevels(help: string): string[] {
+  const at = help.search(/--effort\b/);
+  if (at < 0) return [];
+  const list = /\(([a-z][a-z,\s]*)\)/.exec(help.slice(at, at + 400));
+  const levels = list ? list[1]!.split(',').map((x) => x.trim()).filter((x) => /^[a-z]{2,12}$/.test(x)) : [];
+  // The option is there but its levels are not listed the way we know: the three every version with it has had.
+  return levels.length ? levels : ['low', 'medium', 'high'];
+}
+
+/** Ask this machine's Claude Code which effort levels it has. Nothing is sent to a model: it only prints its help. */
+export function claudeEffortLevels(bin = 'claude'): Promise<string[]> {
+  return new Promise((resolve) => {
+    execFile(bin, ['--help'], { encoding: 'utf8', timeout: 15000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => resolve(err ? [] : parseEffortLevels(String(stdout))));
+  });
+}
+
 export function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map((n) => parseInt(n, 10) || 0);
   const pb = b.split('.').map((n) => parseInt(n, 10) || 0);
@@ -161,6 +178,8 @@ export function planClaudeLaunch(opts: {
   claudeVersion: string | null;
   approvalWaitSeconds: number;
   hookEvents?: string[] | null;
+  /** What `--effort` accepts on this machine (see `claudeEffortLevels`). An effort that is not among them is left out rather than passed to a CLI that would refuse to start. */
+  effortLevels?: string[] | null;
 }): ClaudeLaunchPlan {
   const { spec } = opts;
   const settingsPath = path.join(opts.sessionDir, 'settings.json');
@@ -193,6 +212,7 @@ export function planClaudeLaunch(opts: {
   if (spec.addDirs?.length) argv.push('--add-dir', ...spec.addDirs);
   argv.push('--permission-mode', spec.permissionMode);
   if (spec.model) argv.push('--model', spec.model);
+  if (spec.effort && opts.effortLevels?.includes(spec.effort)) argv.push('--effort', spec.effort);
   if (spec.displayName) argv.push('--name', spec.displayName);
   if (spec.appendSystemPrompt) argv.push('--append-system-prompt', spec.appendSystemPrompt);
   if (spec.mcp) {

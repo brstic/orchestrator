@@ -162,3 +162,22 @@ The owner asked to be able to delete projects, as an owner. Until then a project
 - **Nothing is left pointing at it.** Open questions about it are withdrawn; tasks of other projects no longer depend on its tasks; other projects no longer depend on it; lessons learned for this project alone are retired and suggestions about it dismissed (company and employee lessons stay); meetings and reports stay as a record without a project. Events and outcomes keep its id as history.
 - **What was deleted stays deleted** even if a test run or merge that started before the delete finishes after it: the store drops a write for a project or task that was removed (`Core.put`).
 
+## Model and effort per employee (2026-11-11)
+The owner asked to choose which model and how much effort each hire uses.
+
+- **Two choices in plain view when hiring and in the profile**, both on "Default" until chosen. The model was a free-text field under *More* before; it is a list of the aliases Claude Code keeps current (Fable, Opus, Sonnet, Haiku) plus "Another model…" for a full name. Aliases, so "Opus" stays the newest Opus without anybody editing profiles.
+- **The effort levels are whatever that machine's Claude Code says it has.** The host agent reads them from `claude --help`. Rejected: a version table in our code (it would be a guess, and wrong after the next release); passing `--effort` regardless (a CLI without the option refuses to start, and the employee would not come up at all).
+- **Never silently different from what is shown.** Where a machine cannot set an effort the choice is disabled with the reason, and the session's record says what it was really started with.
+- **Not a per-task or per-turn setting.** It belongs to the employee and applies from the next start of their session; the profile says so when it is changed while they are at work.
+
+## The task board in the employees' hands (2026-11-11)
+The owner asked that any agent can manage tasks — release them, bring them back from blocked and from review — and start other agents, "the system should be as autonomous as possible".
+
+- **On by default, one switch to take it back** (Settings → Employees). The owner asked for it for this office; another office, or this one on another day, may want the board to itself, and a setting is cheaper than a regret.
+- **Any employee, not a role.** A "manager" role was rejected: the point is that whoever sees what is needed does it. The foreman keeps its own tools (it supervises everyone and its actions are counted on its rounds) and gains release, unblock and wake.
+- **What stays the owner's:** permission requests (unchanged: no agent, the foreman included, decides one); marking work DONE without verification; deleting tasks and projects; a project that is paused; a task the owner blocked by hand; project policy. "As autonomous as possible" was read as "work does not stop for want of a board move", not "nothing is the owner's any more".
+- **Reviews: anyone but the author.** With the board in their hands, a teammate who was not appointed may review work that waits. The author may not — that is the one thing that makes it a review.
+- **Unblocking needs the how.** `unblock_task` refuses an empty note: the next person reads the note instead of the reasoning that is gone with the caller's context.
+- **Waking carries a message.** A session started with nothing to read would sit idle and be put back to sleep; so `wake_colleague` requires what the colleague is needed for and delivers it first. An earlier open question — should a waited request start someone the owner stopped — is answered by this request: yes, agents may start colleagues; only someone the owner *paused* stays as they are.
+- **Risk accepted and written down:** a repeating check that proposes tasks (`dedupe_key`) used to wait for the owner to release each one; an employee can now release them. The record says who did.
+

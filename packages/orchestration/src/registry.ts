@@ -14,7 +14,7 @@ import type {
   TerminalScreen,
   ActivityState,
 } from '@orchestrator/contracts';
-import { memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify } from '@orchestrator/contracts';
+import { EFFORT_CHOICES, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify, type EffortLevel } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
 import { trustPromptKeys } from './comms.ts';
 import { EngineError } from './core.ts';
@@ -279,6 +279,21 @@ export class HostRegistry {
 
 // ─────────────────────────── Employees ───────────────────────────
 
+/** A model as the owner chose it: an alias or a full model name — never something that could be read as another option of the CLI. */
+function cleanModel(model: string | null | undefined): string | null {
+  const m = String(model ?? '').trim();
+  if (!m) return null;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:\[\]@/-]{0,99}$/.test(m)) throw new EngineError('a model is an alias such as "opus" or a model\'s full name');
+  return m;
+}
+
+function cleanEffort(effort: string | null | undefined): EffortLevel | null {
+  const v = String(effort ?? '').trim().toLowerCase();
+  if (!v) return null;
+  if (!EFFORT_CHOICES.some((c) => c.value === v)) throw new EngineError(`effort is one of: ${EFFORT_CHOICES.map((c) => c.value).join(', ')}`);
+  return v as EffortLevel;
+}
+
 export interface EmployeeInput {
   name: string;
   claudeConfigDir?: string | null;
@@ -292,6 +307,7 @@ export interface EmployeeInput {
   style?: Employee['style'];
   hostId?: string | null;
   model?: string | null;
+  effort?: string | null;
   projectId?: string | null;
   workingDir?: string | null;
   instructions?: string;
@@ -410,7 +426,8 @@ export class EmployeeRegistry {
       appearance: { ...defaultAppearance(name, role?.color), ...(input.appearance ?? {}) },
       style: input.style ?? 'concise',
       hostId: input.hostId ?? this.core.hosts.find((h) => h.local && h.status !== 'revoked')?.id ?? null,
-      model: input.model ?? null,
+      model: cleanModel(input.model),
+      effort: cleanEffort(input.effort),
       projectId: input.projectId ?? null,
       workingDir: input.workingDir ?? null,
       instructions: input.instructions ?? '',
@@ -485,6 +502,8 @@ export class EmployeeRegistry {
         if (seat) e.deskId = seat.id;
       }
     }
+    if (patch.model !== undefined) patch = { ...patch, model: cleanModel(patch.model) };
+    if (patch.effort !== undefined) e.effort = cleanEffort(patch.effort);
     for (const key of ['title', 'department', 'specialization', 'skills', 'style', 'model', 'workingDir', 'instructions', 'allowedTools', 'disallowedTools', 'autonomy', 'executionMode', 'schedule'] as const) {
       if (patch[key] !== undefined) (e as any)[key] = patch[key];
     }
@@ -953,6 +972,7 @@ export class SessionRegistry {
       capabilities: { terminal: true, hooks: true, mcp: true, structuredApproval: true, structuredMessaging: true, usage: false },
       permissionMode: null,
       model: employee.model,
+      effort: employee.effort ?? null,
       cols: 120,
       rows: 34,
       pid: null,
@@ -973,11 +993,13 @@ export class SessionRegistry {
       cwd,
       mode,
       model: employee.model,
+      // Only an effort that machine's Claude Code has (its agent says which); otherwise Claude Code's own default.
+      effort: employee.effort && host?.info?.claudeEffortLevels?.includes(employee.effort) ? employee.effort : null,
       permissionMode: perms.permissionMode,
       permissions: { allow: perms.allow, deny: perms.deny, ask: perms.ask },
       allowedTools: [],
       disallowedTools: [],
-      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false)),
+      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false),
       mcp: { url: `${this.core.publicUrl}/mcp`, token: mcpToken },
       strictMcp: !this.core.settings.workersInheritMcp,
       // On `auto` the owner can choose to leave even these to Claude Code's auto mode.
@@ -1070,6 +1092,9 @@ export class SessionRegistry {
     // Asked to pick up the conversation Claude Code already has in this folder (one begun outside the office).
     if (opts.continueLast && !resume && mode === 'interactive_cli') spec.continueLast = true;
     session.launchId = spec.launchId = newId();
+    // What this launch runs on (the profile may have changed since the session was last started).
+    session.model = spec.model;
+    session.effort = spec.effort ?? null;
     this.core.put('session', session);
     try {
       const report = await this.core.agents.rpc<AgentSessionReport>(hostId, { method: 'session.create', params: { sessionId: session.id, spec } }, 45000);

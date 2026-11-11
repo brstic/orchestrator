@@ -30,6 +30,11 @@ if (argv.includes('--version')) {
   console.log('2.1.321 (Claude Code)');
   process.exit(0);
 }
+if (argv.includes('--help')) {
+  // The two options the office reads from the real CLI's help.
+  console.log('Usage: claude [options] [command] [prompt]\n\nOptions:\n  --effort <level>                      Effort level for the current session\n                                        (low, medium, high, xhigh, max)\n  --model <model>                       Model for the current session.');
+  process.exit(0);
+}
 function flag(name) {
   const i = argv.indexOf(name);
   return i >= 0 ? argv[i + 1] : null;
@@ -534,6 +539,7 @@ out('\x1b[?2004h');
 say('\x1b[1m✻ FAKE CLAUDE\x1b[0m — test fixture, not Claude Code');
 say(`  cwd: ${cwd}`);
 say(`  session: ${sessionId}${resumeId ? ' (resumed)' : ''} · mode: ${permissionMode}`);
+if (flag('--model') || flag('--effort')) say(`  model: ${flag('--model') ?? 'default'} · effort: ${flag('--effort') ?? 'default'}`);
 if (process.stdin.isTTY) process.stdin.setRawMode(true);
 process.stdin.on('data', onInput);
 process.stdin.resume();

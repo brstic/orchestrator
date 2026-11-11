@@ -205,6 +205,7 @@ const DEFAULT_SETTINGS: OwnerSettings = {
   gamification: true,
   nlFallback: false,
   workersInheritMcp: false,
+  employeesManageBoard: true,
   autoAsksHighRisk: true,
   projectZones: false,
   approachZoom: false,

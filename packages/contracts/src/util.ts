@@ -140,3 +140,20 @@ export const ACTIVITY_LABEL: Record<string, string> = {
   meeting: 'IN MEETING',
   paused: 'PAUSED',
 };
+
+/** The models an employee can be put on by name. Aliases, so "Opus" stays the newest Opus without anyone editing a profile. */
+export const MODEL_CHOICES: Array<{ value: string; label: string; what: string }> = [
+  { value: 'fable', label: 'Fable', what: 'the most capable; uses the most of the account' },
+  { value: 'opus', label: 'Opus', what: 'very capable' },
+  { value: 'sonnet', label: 'Sonnet', what: 'fast and capable; the everyday choice' },
+  { value: 'haiku', label: 'Haiku', what: 'the fastest and lightest' },
+];
+
+/** `claude --effort`: how hard the model works on each turn. More effort is slower and uses more of the account. */
+export const EFFORT_CHOICES: Array<{ value: 'low' | 'medium' | 'high' | 'xhigh' | 'max'; label: string }> = [
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'xhigh', label: 'Extra high' },
+  { value: 'max', label: 'Max' },
+];

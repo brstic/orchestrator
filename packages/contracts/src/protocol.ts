@@ -96,6 +96,8 @@ export interface LaunchSpec {
   cwd: string;
   mode: ExecutionMode;
   model: string | null;
+  /** `claude --effort <level>`; the agent passes it only when its Claude Code has that level. */
+  effort?: string | null;
   permissionMode: string;
   permissions: { allow: string[]; deny: string[]; ask: string[] };
   allowedTools: string[];

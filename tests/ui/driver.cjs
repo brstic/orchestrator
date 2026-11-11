@@ -264,9 +264,17 @@ async function scenario() {
     const pickedDesk = await js(`(() => { const free = [...window.__t.scope().querySelectorAll('.desk-seat:not(.taken)')]; const b = free[free.length - 1]; b.click(); return b.dataset.desk; })()`);
     await waitFor(`window.__t.scope().querySelector('.desk-seat.on')?.dataset.desk === ${JSON.stringify(pickedDesk)}`, 3000);
     ctx.hireDesk = pickedDesk;
+    // Which model they think with and how hard: both in plain view, both on "Default" until chosen.
+    const model = `window.__t.scope().querySelector('select[aria-label="Model"]')`;
+    const effort = `window.__t.scope().querySelector('select[aria-label="Effort"]')`;
+    const defaults = await js(`[(${model}).value, (${effort}).value, [...(${effort}).options].map((o) => o.value).join(',')].join('|')`);
+    if (defaults !== '||,low,medium,high,xhigh,max') throw new Error(`model and effort start as "${defaults}"`);
+    await js(`(() => { window.__t.setSelect(${model}, 'opus'); window.__t.setSelect(${effort}, 'high'); })()`);
     await shot('hire-form');
     await clickText('Hire');
     await waitFor(`!!window.__t.emp(${JSON.stringify(ctx.hireName)})`, 10000);
+    const runsOn = await js(`(() => { const e = window.__t.emp(${JSON.stringify(ctx.hireName)}); return e.model + '/' + e.effort; })()`);
+    if (runsOn !== 'opus/high') throw new Error(`hired on ${runsOn} instead of the chosen opus/high`);
     if ((await js(`window.__t.emp(${JSON.stringify(ctx.hireName)}).deskId`)) !== ctx.hireDesk) throw new Error(`hired at ${await js(`window.__t.emp(${JSON.stringify(ctx.hireName)}).deskId`)} instead of the chosen desk ${ctx.hireDesk}`);
     // Hiring does not start a session: it starts when the owner first talks to them.
     const hasSession = `Object.values(window.__t.store().sessions).some((s) => s.employeeId === window.__t.emp(${JSON.stringify(ctx.hireName)}).id)`;
@@ -278,8 +286,11 @@ async function scenario() {
     await waitFor(`Object.values(window.__t.store().sessions).some((s) => s.employeeId === window.__t.emp(${JSON.stringify(ctx.hireName)}).id && s.status === 'running')`, 20000);
     // (Their reply itself, in their bubble: the window's text also holds what was typed — in my bubble and, for a moment, still in the box.)
     await waitFor(`[...window.__t.scope().querySelectorAll('.talk-them')].some((b) => /glad-to-be-here/.test(b.textContent))`, 25000);
+    // The session that started is on what was chosen.
+    const started = await js(`(() => { const x = Object.values(window.__t.store().sessions).find((s) => s.employeeId === window.__t.emp(${JSON.stringify(ctx.hireName)}).id && s.status === 'running'); return x.model + '/' + x.effort; })()`);
+    if (started !== 'opus/high') throw new Error(`their session runs on ${started}`);
     await js(`window.__t.store().openPanel(null)`);
-    return 'hired with no session; the first message started it and got a reply';
+    return 'hired on Opus with high effort, with no session; the first message started it and got a reply';
   });
 
   await step('hiring for several project folders at once: one employee per folder, named after it, nobody started', async () => {

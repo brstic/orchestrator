@@ -21,6 +21,8 @@ export interface HostInfo {
   agentVersion: string;
   tmuxVersion: string | null;
   claudeVersion: string | null;
+  /** The effort levels this machine's Claude Code accepts (`claude --effort …`), read from its own help text. Empty: it has no such option. Absent: an agent from before this was reported. */
+  claudeEffortLevels?: string[];
   cpus: number;
   totalMemBytes: number;
   user: string;
@@ -148,6 +150,8 @@ export interface EmployeeStats {
   deliverablesAccepted: number;
 }
 
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface Employee {
   id: ID;
   name: string;
@@ -160,7 +164,10 @@ export interface Employee {
   appearance: Appearance;
   style: CommunicationStyle;
   hostId: ID | null;
+  /** The model their sessions run on: an alias Claude Code keeps current (`fable`, `opus`, `sonnet`, `haiku`) or a model's full name. Null: whatever the account's Claude Code uses by default. */
   model: string | null;
+  /** How hard the model works on each turn (`claude --effort`). Null or absent: Claude Code's own default. */
+  effort?: EffortLevel | null;
   projectId: ID | null;
   /**
    * The Claude config folder (CLAUDE_CONFIG_DIR) their sessions use on their machine: a different folder is a
@@ -296,6 +303,8 @@ export interface AgentSession {
   capabilities: SessionCapabilities;
   permissionMode: string | null;
   model: string | null;
+  /** The effort this session was started with (null: Claude Code's default). */
+  effort?: string | null;
   cols: number;
   rows: number;
   pid: number | null;
@@ -1394,6 +1403,13 @@ export interface OwnerSettings {
    * agents gain whatever those connectors can reach.
    */
   workersInheritMcp: boolean;
+  /**
+   * true (default): any employee may keep the task board moving — release a task, unblock one (saying how), give a
+   * task to a colleague, review a colleague's finished work, and start a colleague who is needed. false: those are
+   * the owner's (and, for assigning, the foreman's). Either way no employee approves a permission request, marks
+   * work done without verification, or deletes anything.
+   */
+  employeesManageBoard?: boolean;
   /**
    * true (default): an employee on `auto` still needs the owner's approval for commands that match
    * the high-risk list (pushes, sudo, deploys, broad deletions, …). false: those go to Claude Code's
