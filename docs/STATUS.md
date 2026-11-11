@@ -27,7 +27,7 @@ _Last updated: 2026-11-11. Update this file with every piece of work (see `CLAUD
 
 **The owner token is no longer written to the log (2026-11-11, on the server since `5ea0d89`)** (CHANGELOG; SECURITY "The owner token and the log"). `startupLines` in `main.ts`; `apps/server/test/startup-lines.test.ts`. Found while reading the server's journal for how long a deploy takes (about 3 s from stop to listening, 4.6 s until the machine's agent is back).
 
-**A desktop app with today's agent is built and waiting: `release-next/Orchestrator.app`** (built again from `93b7c2c` after the review's fixes to the agent; see the package checks' result in the line of the same date in CHANGELOG if it is not written here). It is not installed: the running app must be closed first, which is the owner's call. Until then the agents on members' computers (the owner's Mac included) hold no request through a restart, drop no stale hooks, and their sessions' hooks do not try again.
+**A desktop app with today's agent is built and waiting: `release-next/Orchestrator.app`** (built again from `e8fb165` — the code of `93b7c2c` — after the review's fixes to the agent; 15/15 package checks). It is not installed: the running app must be closed first, which is the owner's call. Until then the agents on members' computers (the owner's Mac included) hold no request through a restart, drop no stale hooks, and their sessions' hooks do not try again.
 
 **The server runs build `9076d4b` since 2026-11-11, 16:53 UTC** (fetched, pushed, deployed from the owner's Mac); it adds the entry below. The service came up; nothing else was tried on the server for it.
 
