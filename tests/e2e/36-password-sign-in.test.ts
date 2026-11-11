@@ -185,6 +185,22 @@ test('a window that is open with a sign-in is closed when that sign-in ends; the
   assert.equal(await late.gone(), 4003);
 });
 
+test('a window that is open with a sign-in is closed when that sign-in runs out', async () => {
+  // A session that lasts two seconds instead of thirty days, made the way a sign-in makes one.
+  const token = `orch_guest_${'short-lived-session'.padEnd(32, 'x')}`;
+  h.server.engine.core.store.addCredential('guest', token, { refId: ids.Branko, label: 'login\tBranko', ttlMs: 2000 });
+  const seen = { ready: false, closed: null as number | null };
+  const ws = new WebSocket(`${doorUrl.replace('https', 'wss')}/ws/client`, ['orch.v1', `orch.token.${token}`]);
+  ws.onmessage = (ev) => void (JSON.parse(String(ev.data)).t === 'ready' && (seen.ready = true));
+  ws.onclose = (ev) => (seen.closed = ev.code);
+  ws.onerror = () => undefined;
+  await waitFor(() => seen.ready, { label: 'the window is in' });
+  assert.equal((await door('GET', '/api/me', { token })).body.passwordSession, true);
+  const code = await waitFor(() => seen.closed, { label: 'closed when the session ran out', timeout: 8000 });
+  assert.equal(code, 4003);
+  assert.equal((await door('GET', '/api/me', { token })).status, 401);
+});
+
 test('five wrong passwords close the name for a while — for the right one too — and the office says so', async () => {
   for (let i = 0; i < 5; i++) assert.equal((await signIn('Vera', `guess number ${i}`)).status, 401);
   const closed = await signIn('Vera', 'vera gets one from branko');
