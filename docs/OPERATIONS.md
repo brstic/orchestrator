@@ -149,7 +149,7 @@ Owners can do the member part from the app as well: Menu → Access.
 ### Adding a Claude account
 So that employees do not wait when the server's one account reaches its limit (`ACCOUNTS.md` explains all of it):
 
-1. In the office: **Company → Claude usage → Add a Claude account…** → *Add to* the server. It makes `~/.claude-2` there (or the folder you name) and shows a command.
+1. In the office: **Company → Claude → Add an account…** on the server's line → *Add*. It makes `~/.claude-2` there (or the folder you name) and shows a command.
 2. On the server, as `sparkcan` — the login needs a terminal and a browser, so do it over `ssh`:
    ```sh
    ssh -p <ssh-port> <user>@<server>

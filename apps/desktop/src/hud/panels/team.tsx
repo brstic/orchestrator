@@ -1034,7 +1034,7 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
           </select>
         </Field>
         <RuntimeField value={d.executionMode} onChange={(v) => set('executionMode', v)} host={d.hostId ? hostsById[d.hostId] : undefined} />
-        <Field label="Claude account folder" hint="Leave empty to use the machine's own Claude login. More accounts are added to a machine in Company → Claude usage; pick one here, or write the folder of a login made by hand. Takes effect the next time their session starts. When an account runs out, the office moves its employees to another one by itself (Settings → Employees).">
+        <Field label="Claude account folder" hint="Leave empty to use the machine's own Claude login. More accounts are added to a machine in Company → Claude; pick one here, or write the folder of a login made by hand. Takes effect the next time their session starts. When an account runs out, the office moves its employees to another one by itself (Settings → Employees).">
           <input value={d.claudeConfigDir} onChange={(ev) => set('claudeConfigDir', ev.target.value)} className="mono" placeholder="default login" spellCheck={false} aria-label="Claude account folder" list="claude-accounts-of-machine" />
           <datalist id="claude-accounts-of-machine">
             {(hostsById[d.hostId ?? '']?.claudeAccounts ?? []).map((a) => (

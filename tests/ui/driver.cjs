@@ -1577,7 +1577,7 @@ async function scenario() {
   await step('CEO desk: how much Claude is left on each account, and an employee is put on another account', async () => {
     const card = (text) => `[...window.__t.scope().querySelectorAll('.claude-account')].find((c) => c.textContent.includes(${JSON.stringify(text)}))`;
     await open('overview', `'usage'`);
-    await waitFor(`(() => { const c = ${card('dev@example.test')}; return !!c && /42% used/.test(c.textContent) && /85% used/.test(c.textContent) && /Dev Org/.test(c.textContent); })()`, 20000);
+    await waitFor(`(() => { const c = ${card('dev@example.test')}; return !!c && /42%/.test(c.textContent) && /85%/.test(c.textContent) && /Dev Org/.test(c.textContent); })()`, 20000);
     const before = await js(`window.__t.scope().querySelectorAll('.claude-account').length`);
     // The same reading hangs on the CEO room wall as a clock: the big hand is the week, the small dial the 5 hours.
     await waitFor(`(window.__orchScene.clocks || []).some((c) => c.name === 'dev@example.test' && Math.round(c.week) === 85 && Math.round(c.five) === 42 && /Week: 15% left/.test(c.lines.join(' ')) && /5 hours: 58% left/.test(c.lines.join(' ')))`, 10000);
@@ -1592,7 +1592,7 @@ async function scenario() {
     await close();
     await open('overview', `'usage'`);
     // Her account is listed at once, without figures: nobody has worked on it yet.
-    await waitFor(`(() => { const c = ${card('~/.claude-second')}; return !!c && /Not reported yet/.test(c.textContent) && /used by Ava/.test(c.textContent); })()`, 10000);
+    await waitFor(`(() => { const c = ${card('~/.claude-second')}; return !!c && /Not reported yet/.test(c.textContent) && /used by Ava/.test(c.querySelector('.cl-people').getAttribute('aria-label')); })()`, 10000);
     const after = await js(`window.__t.scope().querySelectorAll('.claude-account').length`);
     await shot('ceo-claude-two');
     await close();
