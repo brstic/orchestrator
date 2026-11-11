@@ -251,3 +251,11 @@ The owner chose way A of `plans/IDEAS-memory-from-mempalace.md`: install MemPala
 - **Not filed:** anything from a member's own computer; permission requests; terminal output. Records go through the redactor, and notes through the vault's capture.
 - **The multilingual model**, 300 MB against 30: tried both on the server — the small one scored a Serbian question at 0.03 against the English record it should find; the multilingual one at 0.60.
 
+## A shared folder is a queue, not a blocker (2026-11-11)
+The owner found many employees standing with a red mark: "T-18 is blocked: … is already changing files in /home/…/xagio (T-3). Two employees must not edit the same working tree". The rule is right — two sessions must not change one folder at once — but reporting it as a blocked task was wrong: nothing was wrong with the task, nobody could do anything about it except wait, and nothing unblocked it when the folder became free.
+
+- **Waiting is not being blocked.** The task stays READY with a note that says whom it waits for; no notification, no red mark. The scheduler tries it again whenever something changes, and hands it over when the other task is no longer in progress.
+- **One at a time per folder, in the order the scheduler already uses** (priority, then age). No separate queue was built.
+- **The real cure is isolation**: a project on a git repository with worktrees gives every employee a folder of their own and nobody waits. That is said in the project's settings, not shouted at the owner per task.
+- Left as it is: a task that is in progress but whose employee has stopped without completing it still holds the folder. That is "someone stopped working", which the foreman and the *stalled* notice already cover.
+

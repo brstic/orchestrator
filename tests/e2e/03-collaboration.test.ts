@@ -240,19 +240,30 @@ test('a meeting is a real workflow: every contribution comes from a participant 
   assert.ok(rounds.filter((t) => t === 'meeting.contribution').length >= 6);
 });
 
-test('two employees are never allowed to edit the same plain directory', async () => {
+test('two employees never edit the same plain directory at once: the second task waits its turn, and starts when the folder is free', async () => {
   const plain = path.join(fs.realpathSync(h.tmp), 'plain-dir');
   fs.mkdirSync(plain);
   const p2 = await h.project('Scratch', plain, { verifyCommand: null });
   const e1 = await h.employee('Uma', 'fullstack', { projectId: p2.id, autonomy: 'standard' });
   const e2 = await h.employee('Vic', 'fullstack', { projectId: p2.id, autonomy: 'standard' });
-  const t1 = await h.task({ projectId: p2.id, title: 'First writer', assigneeId: e1.id, description: '@@fake: write a.txt one; sleep 4000; say still here@@' });
+  const t1 = await h.task({ projectId: p2.id, title: 'First writer', assigneeId: e1.id, description: '@@fake: write a.txt one; sleep 2500; say still here@@' });
   await waitFor(async () => (await h.getTask(t1.id)).status === 'IN_PROGRESS', { label: 'first writer started' });
-  const t2 = await h.task({ projectId: p2.id, title: 'Second writer', assigneeId: e2.id, description: '@@fake: write a.txt two@@' });
-  const blocked = await waitFor(async () => {
+  const t2 = await h.task({ projectId: p2.id, title: 'Second writer', assigneeId: e2.id, description: '@@fake: write b.txt two; complete-nocode second done@@' });
+  // It is not blocked and nobody is told there is a problem: it waits, and says for whom.
+  const waiting = await waitFor(async () => {
     const t = await h.getTask(t2.id);
-    return t.status === 'BLOCKED' ? t : null;
-  }, { label: 'second writer refused' });
-  assert.match(blocked.blockedReason!, /must not edit the same working tree/);
-  assert.equal(await h.session(e2.id), undefined, 'no session was even started for the refused task');
+    return t.progress.note ? t : null;
+  }, { label: 'second writer waiting' });
+  assert.equal(waiting.status, 'READY');
+  assert.match(waiting.progress.note!, new RegExp(`^Waiting for Uma to finish ${t1.key}: they work in the same folder \\(.*plain-dir\\), one at a time$`));
+  assert.equal(waiting.blockedReason ?? null, null);
+  assert.equal(await h.session(e2.id), undefined, 'no session is started for a task that waits');
+  assert.equal((await h.state()).notifications.some((n) => n.kind === 'blocked' && n.taskId === t2.id), false, 'nothing is reported as blocked');
+  assert.equal(waiting.history.filter((x) => /^Waiting for Uma/.test(x.note)).length, 1, 'said once, however often the scheduler looks');
+  // The first one finishes: the second is handed over by itself.
+  await waitFor(async () => (await h.session(e1.id))?.inTurn === false, { label: 'Uma between turns', timeout: 20000 });
+  await h.api('POST', `/employees/${e1.id}/message`, { body: 'Wrap it up. @@fake: complete-nocode first done@@' });
+  await waitFor(async () => (await h.getTask(t1.id)).status === 'DONE', { label: 'first writer done', timeout: 30000 });
+  await waitFor(async () => ['IN_PROGRESS', 'DONE'].includes((await h.getTask(t2.id)).status), { label: 'second writer started by itself', timeout: 30000 });
+  assert.ok(await h.session(e2.id), 'now Vic has a session');
 });

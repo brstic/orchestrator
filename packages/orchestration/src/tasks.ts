@@ -535,6 +535,36 @@ export class TaskManager {
     this.eng.comms.notify({ kind: 'blocked', severity: 'critical', title: `${task.key} is blocked`, body: reason, taskId: task.id, projectId: task.projectId, employeeId: emp?.id ?? null });
   }
 
+  /** A task whose folder somebody else is working in: say so once, on the task itself, and leave it ready. */
+  private waitForFolder(task: Task, clash: Task, cwd: string): void {
+    const other = this.core.employees.get(clash.assigneeId);
+    const note = `Waiting for ${other?.name ?? 'a colleague'} to finish ${clash.key}: they work in the same folder (${cwd}), one at a time`;
+    if (task.progress.note === note) return;
+    task.progress = { percent: null, note, ts: nowIso() };
+    this.history(task, note, 'scheduler');
+    this.core.put('task', task);
+    this.core.event({ type: 'task.updated', source: 'server', summary: `${task.key} waits its turn: ${other?.name ?? 'a colleague'} is working in the same folder (${clash.key})`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, waitingFor: clash.id, folder: cwd } });
+  }
+
+  /**
+   * Tasks that an earlier version blocked because somebody else was working in the same folder: back in the queue.
+   * (They were never the employee's problem to solve, and nothing unblocked them by itself.)
+   */
+  requeueFolderWaits(): number {
+    let n = 0;
+    for (const t of this.core.tasks.filter((x) => x.status === 'BLOCKED' && /Two employees must not edit the same working tree/.test(x.blockedReason ?? ''))) {
+      t.status = 'READY';
+      t.released = true;
+      t.blockedReason = null;
+      this.history(t, 'Back in the queue: it waits for the folder to be free instead of being blocked', 'orchestrator');
+      this.core.put('task', t);
+      this.eng.comms.resolveNotifications((x) => x.kind === 'blocked' && x.taskId === t.id);
+      n++;
+    }
+    if (n) this.schedule();
+    return n;
+  }
+
   /** Prepare an isolated workspace, make sure the employee's real session is up, and hand over the task. */
   async startTask(task: Task): Promise<void> {
     const employee = this.core.employees.require(task.assigneeId!);
@@ -590,8 +620,10 @@ export class TaskManager {
       if (codeTask) {
         const clash = this.core.tasks.find((t) => t.id !== task.id && t.status === 'IN_PROGRESS' && t.assigneeId !== employee.id && !!t.worktree && path.resolve(t.worktree) === path.resolve(cwd) && !NON_CODE_KINDS.has(t.kind));
         if (clash) {
-          const other = this.core.employees.get(clash.assigneeId);
-          throw new Error(`${other?.name ?? 'Another employee'} is already changing files in ${cwd} (${clash.key}). Two employees must not edit the same working tree; use a git repository so each gets an isolated worktree, or switch the project to isolated worktrees.`);
+          // Two employees must not change the same folder at once. That is not a problem to report: this task waits its
+          // turn. It stays ready, no session is started for it, and the scheduler hands it over when the folder is free.
+          this.waitForFolder(task, clash, cwd);
+          return;
         }
       }
       await this.eng.sessions.start(employee.id, { cwd, actor: 'scheduler' });

@@ -110,9 +110,11 @@ test('a second employee in the same folder shares the project but never edits it
   const t1 = await h.task({ projectId: lena.projectId, title: 'Long change', assigneeId: lena.id, description: '@@fake: write long.txt a; sleep 3000; say still going@@' });
   await waitFor(async () => (await h.getTask(t1.id)).delivery.status === 'confirmed', { label: 'Lena working' });
   const t2 = await h.task({ projectId: lena.projectId, title: 'Colliding change', assigneeId: omar.id, description: '@@fake: write long.txt b@@' });
-  const blocked = await waitFor(async () => {
+  // It waits its turn — ready, not blocked — and says for whom.
+  const waiting = await waitFor(async () => {
     const t = await h.getTask(t2.id);
-    return t.status === 'BLOCKED' ? t : null;
-  }, { label: 'collision refused' });
-  assert.match(blocked.blockedReason!, /Lena is already changing files/);
+    return t.progress.note ? t : null;
+  }, { label: 'the second change waits' });
+  assert.equal(waiting.status, 'READY');
+  assert.match(waiting.progress.note!, /^Waiting for Lena to finish T-\d+: they work in the same folder/);
 });

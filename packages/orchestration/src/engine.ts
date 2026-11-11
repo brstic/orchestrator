@@ -118,6 +118,8 @@ export class Engine {
   start(): void {
     void this.memory.start();
     this.sessions.restore();
+    const requeued = this.tasks.requeueFolderWaits();
+    if (requeued) this.core.log('info', `${requeued} task${requeued === 1 ? '' : 's'} that waited for a shared folder ${requeued === 1 ? 'is' : 'are'} back in the queue`);
     this.waits.restore();
     this.comms.restore();
     this.meetings.restore();
