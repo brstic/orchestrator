@@ -8,6 +8,7 @@ import { act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { BulkHire } from './bulk-hire.tsx';
 import { OutsideTmux } from './ssh-links.tsx';
+import { MyServers } from './my-servers.tsx';
 
 const COLORS = ['#e0a23a', '#4fb6a8', '#d0698c', '#7c8fe0', '#8cbf5a', '#d9774a', '#b8a078', '#5a6b8c', '#8a5fbf', '#3f8f5a'];
 const FURNITURE: Record<MemberRoomFurniture, string> = { plant: 'Plant', bookshelf: 'Bookshelf', sofa: 'Sofa', floor_lamp: 'Floor lamp' };
@@ -84,8 +85,15 @@ function RoomEditor({ current, minDesks, memberName }: { current: MemberRoomPref
           ))}
         </div>
       </Field>
+      <label className="check small room-lock" style={{ alignItems: 'flex-start' }}>
+        <input type="checkbox" checked={prefs.locked === true} onChange={(ev) => change({ locked: ev.target.checked })} aria-label="Close my room" />
+        <span>
+          <span className="strong">Close my room.</span> Nobody but you — the owners of the office and the foreman included — can then open your employees' terminals, read what they say, talk to them, start or stop them, or walk in. Everyone still sees that they are there and whether they work. It covers your computer and the servers you keep to yourself, not a server you shared.
+        </span>
+      </label>
       <div className="row">
         <span className="small faint grow">The room grows away from the building, so nobody else's room moves. It is in the office while you are.</span>
+        {/* How the room looks, not whether it is closed: that stays as it is. */}
         <Button small variant="ghost" onClick={() => change({ title: null, color: null, desks: null, extraDepth: null, furniture: null })}>
           Back to how it came
         </Button>
@@ -107,9 +115,13 @@ function MyRoomPanel({ onClose }: { arg: string | null; onClose: () => void }) {
   const myHost = useOffice((s) => s.myHost);
   const roomless = useOffice((s) => s.roomless);
   const [adding, setAdding] = useState(false);
-  // This computer, as the office knows it: the host the desktop app started, else any of mine that is online.
+  // What is mine alone: my computers, and the servers I brought in and keep to myself.
   const mine = useMemo(() => Object.values(hosts).filter((h) => !!me?.id && h.memberId === me.id && h.status !== 'revoked'), [hosts, me?.id]);
-  const host = mine.find((h) => h.id === myHost.hostId) ?? mine.find((h) => h.status === 'online') ?? null;
+  // This computer, as the office knows it: the host the desktop app started, else any computer of mine that is online.
+  const computers = mine.filter((h) => !h.ownerId);
+  const host = computers.find((h) => h.id === myHost.hostId) ?? computers.find((h) => h.status === 'online') ?? null;
+  /** Is the machine this employee lives on in the office right now? */
+  const there = (e: Employee) => hosts[e.hostId ?? '']?.status === 'online';
   const online = host?.status === 'online';
   const people = useMemo(
     () =>
@@ -118,7 +130,7 @@ function MyRoomPanel({ onClose }: { arg: string | null; onClose: () => void }) {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [employees, mine],
   );
-  const elsewhere = people.filter((e) => e.hostId !== host?.id);
+  const elsewhere = people.filter((e) => e.hostId !== host?.id && computers.some((h) => h.id === e.hostId));
 
   const status = online ? (
     <Badge tone="good">this computer is in the office</Badge>
@@ -127,7 +139,7 @@ function MyRoomPanel({ onClose }: { arg: string | null; onClose: () => void }) {
   ) : (
     <Badge tone="muted">this computer is not in the office</Badge>
   );
-  const start = (e: Employee) => act(() => api('POST', `/employees/${e.id}/start`, {}), `${e.name} is starting on your computer`);
+  const start = (e: Employee) => act(() => api('POST', `/employees/${e.id}/start`, {}), `${e.name} is starting on ${hosts[e.hostId ?? '']?.ownerId ? hosts[e.hostId!]!.name : 'your computer'}`);
 
   return (
     <Window title="My room" subtitle="Employees that run on your own computer" onClose={onClose} width={adding ? 1040 : 760}>
@@ -148,7 +160,9 @@ function MyRoomPanel({ onClose }: { arg: string | null; onClose: () => void }) {
           {!online && myHost.state === 'none' && <div className="small muted">Open this office with the Orchestrator desktop app to bring your computer in: a browser tab cannot run sessions.</div>}
         </div>
 
-        {!adding && host && <RoomEditor current={host.room ?? null} minDesks={Math.max(2, Math.ceil(people.filter((e) => e.hostId === host.id).length / 2) * 2)} memberName={me?.name ?? 'My'} />}
+        {!adding && (host ?? mine[0]) && <RoomEditor current={(host ?? mine[0])!.room ?? null} minDesks={Math.max(2, Math.ceil(people.length / 2) * 2)} memberName={me?.name ?? 'My'} />}
+
+        {!adding && me?.id && me.id !== 'owner' && me.role !== 'visitor' && <MyServers memberId={me.id} />}
 
         {adding && host && online ? (
           <div className="card">
@@ -185,13 +199,13 @@ function MyRoomPanel({ onClose }: { arg: string | null; onClose: () => void }) {
                         <span className="strong">{e.name}</span> <span className="small muted">{e.title}</span>
                         <div className="small faint mono truncate">{e.workingDir ?? 'no folder'}</div>
                       </button>
-                      <Badge tone={live ? 'good' : 'muted'}>{live ? (ACTIVITY_LABEL[s!.activity] ?? s!.activity) : e.hostId === host?.id && online ? 'not started' : 'computer away'}</Badge>
+                      <Badge tone={live ? 'good' : 'muted'}>{live ? (ACTIVITY_LABEL[s!.activity] ?? s!.activity) : there(e) ? 'not started' : hosts[e.hostId ?? '']?.ownerId ? 'server not connected' : 'computer away'}</Badge>
                       {live ? (
                         <Button small onClick={() => useOffice.getState().openPanel('talk', e.id)}>
                           Talk
                         </Button>
                       ) : (
-                        <Button small disabled={!(e.hostId === host?.id && online)} onClick={() => void start(e)}>
+                        <Button small disabled={!there(e)} onClick={() => void start(e)}>
                           Start
                         </Button>
                       )}

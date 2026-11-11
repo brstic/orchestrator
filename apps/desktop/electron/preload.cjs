@@ -29,6 +29,21 @@ contextBridge.exposeInMainWorld(
         return () => ipcRenderer.removeListener('orch:my-host-state', fn);
       },
     }),
+    /**
+     * Servers of this person's own in an office someone else runs: the app reaches them over SSH with the keys on this
+     * computer. Adding and removing ask the person in a dialog of the app's own first.
+     */
+    servers: Object.freeze({
+      list: () => ipcRenderer.invoke('orch:servers'),
+      add: (input) => ipcRenderer.invoke('orch:servers-add', input),
+      reconnect: (id) => ipcRenderer.invoke('orch:servers-reconnect', id),
+      remove: (id) => ipcRenderer.invoke('orch:servers-remove', id),
+      onChange: (cb) => {
+        const fn = () => cb();
+        ipcRenderer.on('orch:servers-changed', fn);
+        return () => ipcRenderer.removeListener('orch:servers-changed', fn);
+      },
+    }),
     /** The office TV (an embedded browser): its page state and picture, and forgetting what it stored. */
     tv: Object.freeze({
       partition: 'persist:orch-tv',

@@ -158,6 +158,28 @@ The reasons behind each part are on its page under `docs/learning/`. What was de
 - No ORM: a small document store with SQLite and PostgreSQL back ends.
 - Visual extras and camera behaviour are opt-in (owner preference).
 
+## A member's own servers (2026-11-11)
+The collaborator works on servers of their own and wanted them in the office as theirs — and to be able to share them.
+
+- **The member's computer does the reaching, not the office.** The office's own SSH links (Machines) run `ssh` on the office's machine with the keys of whoever runs it. A member's servers accept the member's keys, which are on the member's computer and stay there: the desktop app runs the system's `ssh` as that person (BatchMode: keys only, never a password; an unknown host key only when they say so).
+- **The server then connects to the office by itself, through the door** — no tunnel through the member's computer. A tunnel (what the office's links use) would hold the server in the office only while the member's app is open, and a server is the thing that should stay. The price: the agent on the server has nobody to tell it which self-made certificate is the office's, so this works only for an office at a domain with a certificate computers trust; an office reached by IP address is refused in words before the server is touched. Chosen by the collaborator over the tunnel.
+- **The page asks, the app confirms.** The office's page is the office's, not the person's; "connect to this server with my keys" from a page is exactly what a hostile office would want. Adding and removing therefore open a dialog of the app itself, naming the server and the office. Reconnecting an already added server does not ask again.
+- **Tokens on no command line.** The enrolment token is inside the script that goes to the server's shell on ssh's channel, and reaches the agent in its environment. (First tried: the script reads it from its own input. dash reads its script ahead, so the line was gone — found by the test.)
+- **Whose a server is: `Host.ownerId`. Whether it is shared: `Host.memberId`.** Everything in the office already decides "personal or shared" by `memberId` (access, the scheduler, the foreman, privacy, rooms — some forty places). So sharing a server sets `memberId` to null, which makes it a shared machine everywhere at once with no second rule to keep in step, and `ownerId` remembers who may take it back or remove it. A host that is, or was, a member's is let in through the door.
+- **Shared means shared**: colleagues work on it and with whoever is on it, and what was said there is then the office's to read. Chosen by the collaborator over "only shown". Taking it back makes all of that the member's again; it is refused while a task for a project on another machine is in progress there, because work does not cross that line.
+- **In the office:** employees on a member's own servers sit in that member's room (a room is a person's, not a machine's; a member with no computer here gets a room for their first server). A shared server stands with the office's machines, with "· <member>" after its name. A server kept private is not among them.
+- **Not done:** a service unit on the server (after a reboot the agent is started with *Reconnect*); an office-side way to see how a member's server is reached (only that member's computer knows the address).
+
+## Closing one's room (2026-11-11)
+The collaborator wanted to lock their office so that others cannot interact with their agents. Other colleagues never could; owners and the foreman could.
+
+- **Closed to everyone but the member — owners, the office's own computer and the foreman included.** Chosen by the collaborator over "owners out, the foreman stays" and "only the door". It is a lock on a room, not a role: whoever asks, the answer for something on that member's own computers is no (`closedTo` in `access.ts`, checked before the owner's "yes to everything").
+- **What stays visible:** that the employees exist and what state they are in — the same that every member sees of a colleague's computer. What they say, their terminals, documents, questions and routines are not.
+- **Owners still run the office.** Routes that are about the office rather than about what is on a machine (members, machines, settings) are not closed: an owner can revoke the member or a machine of theirs. A lock that an owner could not get rid of by removing the member would make the office hostage to it.
+- **The office's own computer is locked out as well.** Whoever sits at the server could read the database; the lock does not pretend otherwise. But the office's own interface refuses, so nobody reads a closed room by accident or habit.
+- **Stored with the room** (`MemberRoomPrefs.locked`, `PUT /api/me/room`): it is the member's own setting, every window already receives it with the room, and it holds for all of that member's computers and private servers. A server they shared is the office's and is not covered.
+- **In 3D** the door is drawn shut for everyone else and nobody else walks in; in the member's own window their room is open. The room stays lit: its people are at work.
+
 ## A member's own computer on Windows: WSL2, started by the app (2026-11-11)
 A collaborator on Windows could use everything shared and had no room: sessions need tmux.
 

@@ -19,6 +19,11 @@ export interface MemberHost {
   prefs?: MemberRoomPrefs | null;
   /** The member is not in the office right now: their room stands where it is, dark and locked. */
   locked?: boolean;
+  /**
+   * The member closed their room to everyone else (and this window is someone else's): the lights are on and the
+   * employees at work, but the door is shut — nobody walks in. In the member's own window this is never set.
+   */
+  closed?: boolean;
   /** Seats chosen for employees (employee id → seat number from 1); the others take the free seats in order. */
   seats?: Record<string, number>;
 }
@@ -33,6 +38,8 @@ export interface MemberRoom {
   title: string;
   /** The member is away: no way in, lights off, drawn grey. */
   locked: boolean;
+  /** The member closed their room to everyone else: lit and at work, and no way in for whoever looks at this window. */
+  closed: boolean;
   /** The wall of the building the room is attached to. */
   side: MemberSide;
   /** Id of the room in the effective layout: `m:<hostId>`. */
@@ -274,6 +281,7 @@ function buildRoom(core: Box, slot: Slot, host: MemberHost): { room: MemberRoom;
     memberName: host.memberName,
     title: prefs.title?.trim() ? prefs.title.trim().toUpperCase() : memberRoomTitle(host.memberName),
     locked: host.locked === true,
+    closed: host.closed === true && host.locked !== true,
     side: slot.side,
     roomId,
     x: round(rect.minX),
@@ -301,8 +309,8 @@ function buildRoom(core: Box, slot: Slot, host: MemberHost): { room: MemberRoom;
     w: room.w,
     d: room.d,
     // The door is on the wall the room shares with the building.
-    // A locked room has no opening: the wall is whole and a closed door is drawn on it.
-    doors: host.locked ? [] : [{ side: slot.side === 'e' ? 'w' : slot.side === 'w' ? 'e' : 's', at: (slot.door - slot.start) / ROOM_ALONG, width: DOOR_WIDTH }],
+    // A locked room has no opening: the wall is whole and a closed door is drawn on it. The same for a room its member closed.
+    doors: host.locked || host.closed ? [] : [{ side: slot.side === 'e' ? 'w' : slot.side === 'w' ? 'e' : 's', at: (slot.door - slot.start) / ROOM_ALONG, width: DOOR_WIDTH }],
   };
   // What the member chose to have in the room, along the back wall: bookshelf and plant in one corner, the sofa
   // (when there is open floor for it) in the middle facing the desks, a lamp beside it.

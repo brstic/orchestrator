@@ -13,6 +13,8 @@ export type EventType =
   | 'worker.disconnected'
   | 'host.enrolled'
   | 'host.revoked'
+  | 'host.shared'
+  | 'host.unshared'
   | 'host.resource_update'
   | 'host.resource_warning'
   | 'session.started'

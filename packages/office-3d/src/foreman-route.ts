@@ -29,7 +29,7 @@ function beside(world: World, desk: Parameters<typeof deskSeat>[0]): { x: number
 export function foremanStops(world: World, seated: Array<{ id: string; deskId: string | null }>): ForemanStop[] {
   const order = new Map(world.layout.desks.map((d, i) => [d.id, i]));
   const desks = new Map(world.layout.desks.map((d) => [d.id, d]));
-  const shut = new Set(world.memberRooms.filter((r) => r.locked).flatMap((r) => r.desks));
+  const shut = new Set(world.memberRooms.filter((r) => r.locked || r.closed).flatMap((r) => r.desks));
   const reachable = world.nav.reach(world.spawn.x, world.spawn.z);
   const out: Array<ForemanStop & { n: number }> = [];
   for (const p of seated) {

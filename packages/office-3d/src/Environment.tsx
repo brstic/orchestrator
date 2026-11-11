@@ -219,7 +219,7 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
   const slabMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#8d95a3', roughness: 0.8 }), []);
 
   // Member rooms: a floor of the member's colour and a ceiling with its own light panels, made when the room appears.
-  const annexKey = world.memberRooms.map((r) => `${r.roomId}:${r.x}:${r.z}:${r.w}:${r.d}:${r.color}:${r.lights.length}:${r.locked ? 'L' : ''}`).join('|');
+  const annexKey = world.memberRooms.map((r) => `${r.roomId}:${r.x}:${r.z}:${r.w}:${r.d}:${r.color}:${r.lights.length}:${r.locked ? 'L' : ''}${r.closed ? 'C' : ''}`).join('|');
   const annex = useMemo(
     () =>
       world.memberRooms.map((r) => {
@@ -331,7 +331,7 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
       })}
       <group ref={group} scale={[1, height.current / 3, 1]}>
         {/* A locked room's door: closed, on the whole wall, with a bar across it. */}
-        {world.memberRooms.filter((r) => r.locked).map((r) => {
+        {world.memberRooms.filter((r) => r.locked || r.closed).map((r) => {
           const alongZ = r.side !== 'n';
           const into = r.side === 'e' ? -1 : 1;
           const px = r.door.x + (alongZ ? into * (WALL_T / 2 + 0.02) : 0);
@@ -443,7 +443,7 @@ function MemberSigns({ room }: { room: MemberRoom }) {
   // Away: the signs lose their colour with the room.
   const tint = room.locked ? '#8a9099' : room.color;
   const seated = room.employees - room.unseated;
-  const sub = room.locked ? 'Away · locked' : !room.employees ? 'No employees yet' : room.unseated ? `${seated} of ${room.employees} employees here` : `${room.employees} employee${room.employees === 1 ? '' : 's'}`;
+  const sub = room.locked ? 'Away · locked' : room.closed ? 'Closed · private' : !room.employees ? 'No employees yet' : room.unseated ? `${seated} of ${room.employees} employees here` : `${room.employees} employee${room.employees === 1 ? '' : 's'}`;
   const PW = 1.2;
   const PH = 0.5;
   const label = useCanvasTexture(

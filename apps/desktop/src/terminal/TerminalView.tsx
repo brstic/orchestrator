@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import { connection } from '../lib/api.ts';
 import { onTerminal, useOffice } from '../lib/store.ts';
 import { copyText, selectionText } from './clipboard.ts';
+import { FIRST_GUESS, MIN_FONT, cellRatios, fontToFit, type CellRatios } from './scale.ts';
 
 interface Props {
   sessionId: string;
@@ -88,15 +89,56 @@ export function TerminalView({ sessionId, interactive = true, fitPane = false, c
     let snapshotSeq = -1;
     const recent: Array<{ seq: number; data: Uint8Array }> = [];
 
-    /** Scale the font so the pane's exact cols×rows fit the panel (no reflow: tmux owns the size). */
+    /** What a character cell really takes in this window, per pixel of font size: measured once the terminal has drawn. */
+    let ratios: CellRatios = FIRST_GUESS;
+    let settling = 0;
+    /** The terminal's drawing as it is on screen right now. */
+    const drawn = (): { width: number; height: number } | null => {
+      const screen = host.querySelector<HTMLElement>('.xterm-screen');
+      return screen && screen.clientWidth > 0 ? { width: screen.clientWidth, height: screen.clientHeight } : null;
+    };
+
+    /**
+     * Scale the font so the pane's exact cols×rows fill the panel (no reflow: tmux owns the size, and someone who only
+     * watches never changes it). As large as fits: in a big window a 120-column pane is drawn with big letters rather
+     * than left in a corner with half the window empty (`scale.ts`).
+     */
     const scaleToPane = () => {
       const { cols, rows } = paneSize.current;
-      const w = host.clientWidth - 8;
-      const h = host.clientHeight - 4;
-      if (w <= 0 || h <= 0) return;
-      const size = Math.max(6, Math.min(16, Math.floor(Math.min(w / (cols * 0.602), h / (rows * 1.15)) * 10) / 10));
-      if (term.options.fontSize !== size) term.options.fontSize = size;
+      const panel = { width: host.clientWidth - 8, height: host.clientHeight - 4 };
+      if (panel.width <= 0 || panel.height <= 0) return;
       if (term.cols !== cols || term.rows !== rows) term.resize(cols, rows);
+      const size = fontToFit(panel, cols, rows, ratios);
+      if (term.options.fontSize !== size) term.options.fontSize = size;
+      // Cells are whole pixels and differ from font to font, so what was worked out is checked against what was drawn:
+      // the real ratios are kept for the next time, and a drawing that came out larger than the panel is stepped down.
+      const round = ++settling;
+      let changes = 0;
+      let frames = 0;
+      // The terminal redraws a frame or two after its font changes: nothing is measured until two frames in a row
+      // show the same drawing, and not before two frames have passed since the last change.
+      let wait = 2;
+      let last: { width: number; height: number } | null = null;
+      const check = () => {
+        if (round !== settling || termRef.current !== term || frames++ > 90) return;
+        const now = drawn();
+        if (!now || term.cols !== cols || term.rows !== rows) return void requestAnimationFrame(check);
+        const steady = wait-- <= 0 && !!last && last.width === now.width && last.height === now.height;
+        last = now;
+        if (!steady) return void requestAnimationFrame(check);
+        const font = term.options.fontSize ?? size;
+        ratios = cellRatios(now, cols, rows, font) ?? ratios;
+        const over = now.width > panel.width + 1 || now.height > panel.height + 1;
+        const better = fontToFit(panel, cols, rows, ratios);
+        // Too large: down to what the measured cells say (or a step, if that says the same). Clearly too small: up.
+        const next = Math.max(MIN_FONT, over ? Math.min(better, font - 0.5) : better - font > 0.5 ? better : font);
+        if (next === font || changes++ >= 8) return;
+        term.options.fontSize = next;
+        wait = 2;
+        last = null;
+        requestAnimationFrame(check);
+      };
+      requestAnimationFrame(check);
     };
 
     /** While the owner is in control they may prefer the pane to fill the panel. */

@@ -455,6 +455,24 @@ test('the whole office is the foreman\'s: employees on members\' own computers t
   assert.match((await call('Mira', 'tell_employee', { employee: 'Lola', message: 'Carry on.' })).text, /Lola is on a member's own computer that is not in the office right now/);
   offline.delete(pc.id);
 
+  // Jovan closes his room: what is on his computer is his alone, and the foreman is kept out like everyone else —
+  // it is not called for her question, does not look at her screen, answer her, tell her anything or give her work.
+  eng.hosts.setMemberRoom('m-jovan', { locked: true }, 'member:Jovan');
+  assert.ok(!eng.foreman.attention().some((i) => i.employeeId === lola.id || i.projectId === notes.id), 'a closed room is passed by');
+  eng.core.gateway.screens.set(eng.core.sessionOf(lola.id)!.id, { cols: 120, rows: 34, lines: ['a private screen'], cursor: { x: 0, y: 0, visible: true }, ts: new Date().toISOString() } as any);
+  const closedLook = await call('Mira', 'look_at', { employee: 'Lola' });
+  assert.deepEqual([closedLook.isError, /closed their room/.test(closedLook.text), /private screen/.test(closedLook.text)], [true, true, false]);
+  for (const [tool, args] of [['tell_employee', { employee: 'Lola', message: 'Carry on.' }], ['answer_question', { question_id: q.id, answer: 'Markdown.' }]] as const) {
+    const refused = await call('Mira', tool, args);
+    assert.deepEqual([refused.isError, /closed their room/.test(refused.text)], [true, true], tool);
+  }
+  assert.equal(eng.core.questions.require(q.id).status, 'open', 'her question waits for Jovan');
+  assert.ok(!eng.core.messages.find((m) => m.toEmployeeId === lola.id && m.from.id === mira.id));
+  // That she is there, and whether she works, is still for everyone — the foreman's overview included.
+  assert.match((await call('Mira', 'office_overview')).text, /- Lola — Full-Stack Engineer/);
+  eng.hosts.setMemberRoom('m-jovan', {}, 'member:Jovan');
+  assert.ok(eng.foreman.attention().some((i) => i.kind === 'question' && i.questionId === q.id), 'open again: as before');
+
   // Seen like everyone else, and marked as being on Jovan's computer.
   const overview = (await call('Mira', 'office_overview')).text;
   assert.match(overview, /- Lola — Full-Stack Engineer · Notes · CODING for [^\n]* · no task in progress · on Jovan's own computer/);

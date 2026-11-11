@@ -61,6 +61,14 @@ export interface Host {
   memberName?: string | null;
   /** How the member wants their room: its size, colour, name and furniture. Null: as it comes. */
   room?: MemberRoomPrefs | null;
+  /**
+   * A server a member brought into the office themselves (over SSH, with their own keys): whose it is. It stays
+   * theirs to share, take back or remove whatever `memberId` says: while it is private `memberId` is the same member;
+   * once they share it `memberId` is null — the server is then a shared machine like the office's own — and this
+   * is what remembers the owner. Absent on a member's own computer and on the office's machines.
+   */
+  ownerId?: ID | null;
+  ownerName?: string | null;
 }
 
 /** A member's own choices for their room in the office. Everything is optional; the room is never smaller than its employees need. */
@@ -75,6 +83,12 @@ export interface MemberRoomPrefs {
   extraDepth?: number | null;
   /** What stands in the room. */
   furniture?: MemberRoomFurniture[] | null;
+  /**
+   * The member closed their room: what is on their own computers and servers is theirs alone — nobody else, the
+   * owners of the office and the foreman included, looks into it or directs it, and nobody else walks in. Others
+   * still see that the employees are there and what state they are in.
+   */
+  locked?: boolean | null;
 }
 /** The id of a seat in a member's room: `m:<host id>:<n>`, n from 1. (The room itself is drawn by each client; see office-3d/member-rooms.) */
 export const memberSeatId = (hostId: ID, n: number): string => `m:${hostId}:${n}`;
@@ -100,6 +114,7 @@ export function sanitizeMemberRoom(input: unknown): MemberRoomPrefs {
   const extra = Number(p.extraDepth);
   if (Number.isFinite(extra) && extra > 0) out.extraDepth = Math.min(MEMBER_ROOM_LIMITS.extraDepth, Math.round(extra * 2) / 2);
   if (Array.isArray(p.furniture)) out.furniture = MEMBER_ROOM_FURNITURE.filter((k) => (p.furniture as unknown[]).includes(k));
+  if (p.locked === true) out.locked = true;
   return out;
 }
 

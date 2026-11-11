@@ -373,7 +373,8 @@ export class ClientHub {
    * everyone only in outline (see `access.ts`): the message as this connection gets it, or null for not at all.
    */
   private heardBy(c: ClientConn, msg: ServerToClient): ServerToClient | null {
-    if (c.who.kind === 'owner') return msg;
+    // An owner hears everything, except from a room its member has closed.
+    if (c.who.kind === 'owner' && !this.engine.hosts.closedMembers().some((id) => id !== c.who.id)) return msg;
     if (msg.t === 'event') {
       const event = eventFor(this.engine, c.who, msg.event);
       return event === msg.event ? msg : event ? { t: 'event', event } : null;

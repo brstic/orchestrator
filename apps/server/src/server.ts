@@ -2,7 +2,7 @@ import { Door, inviteCode } from './door.ts';
 import { Guests, whoIs, type Who } from './guests.ts';
 import { Invites, inviteLink, invitePage } from './invites.ts';
 import { Knocks, type Admission } from './knocks.ts';
-import { allowed, eventFor, mayCall, mayReadRoutine, outcomesScopeFor, stateFor } from './access.ts';
+import { allowed, closedTo, eventFor, mayCall, mayReadRoutine, outcomesScopeFor, stateFor } from './access.ts';
 import { HiFi, nowPlaying } from './radio.ts';
 import { SshLinks } from './ssh-links.ts';
 import fs from 'node:fs';
@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { ROLE_CATALOGUE } from '@orchestrator/contracts';
+import { ROLE_CATALOGUE, type Host } from '@orchestrator/contracts';
 import { NotFoundError, PgStore, Store, generateToken, type Storage } from '@orchestrator/database';
 import { handleMcpPost } from '@orchestrator/integrations';
 import { Engine, EngineError, type Timings } from '@orchestrator/orchestration';
@@ -304,7 +304,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       const who = identify(req);
       if (who) {
         (req as unknown as { who: Who }).who = who;
-        if (who.id === 'owner') return;
+        if (who.id === 'owner') {
+          // The office's own computer does everything — except reach into a room its member has closed.
+          const closed = mayCall(engine, who, req.method, (req.url.split('?')[0] ?? '').replace(/^\/api/, ''), req.body as Record<string, unknown> | null);
+          if (!closed.ok) return reply.code(403).send({ error: closed.reason });
+          return;
+        }
         // A member: what their role allows, on what is shared or theirs. What they change is on the record under their name.
         const route = (req.url.split('?')[0] ?? '').replace(/^\/api/, '');
         const verdict = mayCall(engine, who, req.method, route, req.body as Record<string, unknown> | null);
@@ -335,7 +340,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.get('/state', async (req) => stateFor(engine, whoOf(req), engine.state()));
     // The percentages are for everyone in the office (the clocks on the walls); the account's e-mail and organisation
     // only for those who may work on the machine it lives on — its member and owners, or colleagues for a shared machine.
-    api.get('/usage', async (req) => engine.sessions.accountUsage().map((a) => (allowed(whoOf(req), 'work', engine.hosts.memberOfHost(a.hostId)) ? a : { ...a, email: null, organization: null })));
+    api.get('/usage', async (req) => engine.sessions.accountUsage().map((a) => (allowed(whoOf(req), 'work', engine.hosts.memberOfHost(a.hostId)) && !closedTo(engine, whoOf(req), engine.hosts.memberOfHost(a.hostId)) ? a : { ...a, email: null, organization: null })));
     // The foreman: who it is, the round in flight and the last ones, and what needs attention right now (owner only).
     api.get('/foreman', async () => engine.foreman.status());
     api.get('/me', async (req) => ({ kind: whoOf(req).kind, role: whoOf(req).role, name: whoOf(req).name, id: whoOf(req).id, office: engine.core.settings.companyName }));
@@ -345,6 +350,36 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       const who = whoOf(req);
       if (who.id === 'owner') throw new EngineError('This is the office\'s own computer already; its sessions are the shared ones.');
       return { ...engine.hosts.createMemberEnrollment({ id: who.id, name: who.name }), hosts: engine.hosts.ofMember(who.id).map((x) => ({ id: x.id, name: x.name, status: x.status })) };
+    });
+    // Servers a member brings into the office themselves: their desktop app reaches the server over SSH with the
+    // member's own keys, and the agent it starts there enrols with this one-time token and then connects to the
+    // office by itself, through the door. The server is the member's until they share it.
+    const ownServer = (req: FastifyRequest) => {
+      const who = whoOf(req);
+      const host = engine.core.hosts.get(param(req, 'id'));
+      if (!host || !host.ownerId || host.status === 'revoked') throw new EngineError('there is no such server', 404);
+      // Whose it is decides, not whether it is shared right now: a colleague manages their own, an owner anyone's.
+      if (host.ownerId !== who.id && who.kind !== 'owner') throw new EngineError('That server is another member\'s: only they and the owners of this office can share or remove it.', 403);
+      return host;
+    };
+    const serverView = (x: Host) => ({ id: x.id, name: x.name, status: x.status, shared: !x.memberId, ownerId: x.ownerId ?? null, ownerName: x.ownerName ?? null, hostname: x.info?.hostname ?? null, lastSeenAt: x.lastSeenAt });
+    api.get('/me/servers', async (req) => engine.hosts.serversOf(whoOf(req).id).map(serverView));
+    api.post('/me/servers', async (req) => {
+      const who = whoOf(req);
+      if (who.id === 'owner') throw new EngineError('On the office\'s own computer servers are linked from Machines: they are the office\'s from the start.');
+      return engine.hosts.createMemberServerEnrollment({ id: who.id, name: who.name }, String(body(req).name ?? ''));
+    });
+    api.patch('/me/servers/:id', async (req) => {
+      const host = ownServer(req);
+      const b = body(req);
+      if (typeof b.name === 'string' && b.name.trim()) engine.hosts.rename(host.id, b.name);
+      if (typeof b.shared === 'boolean') engine.hosts.shareMemberServer(host.id, b.shared, actorOf(req));
+      return serverView(engine.core.hosts.require(host.id));
+    });
+    api.delete('/me/servers/:id', async (req) => {
+      const host = ownServer(req);
+      engine.hosts.revoke(host.id, actorOf(req));
+      return { ok: true };
     });
     // How a member wants their own room (size, colour, name, furniture): theirs to decide.
     api.get('/me/room', async (req) => engine.hosts.memberRoom(whoOf(req).id) ?? {});
@@ -474,7 +509,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       const found = await store.queryEvents({ employeeId: q.employeeId, taskId: q.taskId, sessionId: q.sessionId, projectId: q.projectId, since: q.since, beforeSeq: q.before ? Number(q.before) : undefined, limit: q.limit ? Number(q.limit) : 200, excludeTypes: q.includeActivity ? undefined : ['session.activity', 'terminal.output'] });
       // What happened on a member's own computer is theirs and the owners' to read.
       const who = whoOf(req);
-      return who.kind === 'owner' ? found : found.map((e) => eventFor(engine, who, e)).filter(Boolean);
+      return found.map((e) => eventFor(engine, who, e)).filter(Boolean);
     });
     api.post('/seen', async () => {
       engine.commands.touchLastSeen();
@@ -661,7 +696,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.get('/growth/log', async (req) => {
       const found = (await store.queryEvents({ typePrefix: 'learning.', limit: Math.min(500, Number(query(req).limit) || 200) })).reverse();
       const who = whoOf(req);
-      return who.kind === 'owner' ? found : found.map((e) => eventFor(engine, who, e)).filter(Boolean);
+      return found.map((e) => eventFor(engine, who, e)).filter(Boolean);
     });
 
     // natural-language commands: plan first, execute only what the owner confirmed

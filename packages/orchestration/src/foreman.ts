@@ -186,9 +186,22 @@ export class Foreman {
     return !!this.eng.hosts.memberOfHost(hostId);
   }
 
-  /** On a member's own computer that is not in the office right now: nothing can be seen or delivered there, so they are passed by. */
+  /** Has the member whose computer this is closed their room? Then it is theirs alone, and the foreman stays out like everyone else. */
+  private closed(hostId: string | null | undefined): boolean {
+    return this.eng.hosts.isClosed(this.eng.hosts.memberOfHost(hostId));
+  }
+
+  /** What the foreman is told when it reaches for someone in a closed room. */
+  private closedSay(name: string): string {
+    return `${name} is on a member's own computer, and that member has closed their room: what is there is theirs alone. Leave them be.`;
+  }
+
+  /**
+   * On a member's own computer that is not in the office right now, or whose member has closed their room: nothing
+   * can be seen or delivered there, so they are passed by.
+   */
   private away(e: Employee | undefined): boolean {
-    return !!e && this.personal(e.hostId) && !this.core.agents.isOnline(e.hostId!);
+    return !!e && this.personal(e.hostId) && (!this.core.agents.isOnline(e.hostId!) || this.closed(e.hostId));
   }
 
   /** Whose computer someone is on, in words: "" for the office's own machines. */
@@ -240,7 +253,7 @@ export class Foreman {
     // The whole office is the foreman's: the shared floor and members' rooms alike. A member's computer that is away is passed by.
     const there = (projectId: string | null) => {
       const host = core.projects.get(projectId ?? '')?.hostId;
-      return !this.personal(host) || core.agents.isOnline(host!);
+      return !this.personal(host) || (core.agents.isOnline(host!) && !this.closed(host));
     };
     const active = (projectId: string | null) => !projectId || (core.projects.get(projectId)?.status === 'active' && there(projectId));
 
@@ -792,6 +805,7 @@ export class Foreman {
         const target = this.findEmployee(String(a.employee));
         if (!target) return err(`No employee matches "${a.employee}". Use office_overview to see who works here.`);
         if (target.id === employee.id) return err('That is you. Use look_at on someone else.');
+        if (this.closed(target.hostId)) return this.refuse(employee, 'look_at', this.closedSay(target.name), target.id);
         return this.lookAt(employee, target, session.id);
       },
 
@@ -803,6 +817,7 @@ export class Foreman {
         if (q.kind !== 'question') return this.refuse(employee, 'answer_question', `This is a ${q.kind.replace('_', ' ')} for the owner, not an operational question. Leave it with them (escalate_to_owner if it is urgent).`, q.id);
         if (!core.settings.foreman.answersQuestions) return this.refuse(employee, 'answer_question', 'The owner has switched off answering by the foreman; questions wait for the owner.', q.id);
         if (q.employeeId === employee.id) return err('That is your own question; it waits for the owner.');
+        if (this.closed(core.employees.get(q.employeeId)?.hostId)) return this.refuse(employee, 'answer_question', this.closedSay(core.employees.get(q.employeeId)?.name ?? 'That employee'), q.id);
         if (this.state.escalated.includes(q.id)) return this.refuse(employee, 'answer_question', 'You escalated this question to the owner; it stays with them.', q.id);
         if (q.status !== 'open') return err(`That question is no longer open (${q.status}); someone already dealt with it.`);
         const answer = String(a.answer).trim();
@@ -831,6 +846,7 @@ export class Foreman {
         if (!to) return err(`No employee matches "${a.employee}". Use office_overview to see who works here.`);
         if (to.roleKey === FOREMAN_ROLE) return err('A foreman supervises and does not take tasks. Assign it to someone who does the work.');
         if (task.assigneeId === to.id) return `${task.key} is already assigned to ${to.name}.`;
+        if (this.closed(to.hostId)) return this.refuse(employee, 'assign_task', this.closedSay(to.name), task.id);
         if (!this.sameComputer(to, task.projectId)) return this.refuse(employee, 'assign_task', this.notSameComputer(to, task.projectId), task.id);
         this.eng.tasks.updateTask(task.id, { assigneeId: to.id }, actor(employee));
         this.did(employee, 'assigned');
@@ -875,6 +891,7 @@ export class Foreman {
         if (to.roleKey === FOREMAN_ROLE) return err('That is another foreman, not someone you direct.');
         const message = String(a.message ?? '').trim();
         if (!message) return err('Say what they should do: "message" is empty.');
+        if (this.closed(to.hostId)) return this.refuse(employee, 'tell_employee', this.closedSay(to.name), to.id);
         if (this.away(to)) return err(`${to.name} is on a member's own computer that is not in the office right now; nothing can be delivered there. Leave them until it is back.`);
         // The ordinary message queue: it reaches their session when they can read it, under the foreman's name, and is on the record.
         this.eng.comms.sendMessage({ from: { kind: 'employee', id: employee.id, name: `${employee.name} (the foreman)` }, toEmployeeId: to.id, body: truncate(message, 4000), taskId: this.eng.tasks.currentTask(to.id)?.id ?? null });

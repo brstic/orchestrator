@@ -1183,6 +1183,10 @@ table.tbl {
   position: absolute;
   inset: 4px 4px 2px 6px;
   overflow: hidden;
+  /* A pane whose shape differs from the panel's leaves room on one side: it is put in the middle, not in a corner. */
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
 }
 .term-overlay {
   position: absolute;
