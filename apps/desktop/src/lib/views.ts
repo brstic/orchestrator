@@ -69,7 +69,7 @@ export function officeWithRooms(s: OfficeState, unlocked: string[]): OfficeWithR
   /** Dark and locked when nothing of theirs that sits here is in the office: the computer, and for the main room the servers too. */
   const here = (h: (typeof personal)[number]) => h.status === 'online' || (anchor.get(h.memberId!) === h.id && servers.some((x) => x.memberId === h.memberId && x.status === 'online'));
   // A room its member closed is shut to everyone else's character; in the member's own window it stays open.
-  const online = shown.map((h) => ({ hostId: h.id, memberId: h.memberId!, memberName: h.memberName ?? h.name, prefs: h.room ?? null, locked: !here(h), closed: h.room?.locked === true && s.me?.id !== h.memberId, seats: Object.fromEntries(inRoom(h).filter((e) => memberSeatOf(e.deskId)?.hostId === h.id).map((e) => [e.id, memberSeatOf(e.deskId)!.n])), employeeIds: inRoom(h).map((e) => e.id) }));
+  const online = shown.map((h) => ({ hostId: h.id, memberId: h.memberId!, memberName: h.memberName ?? h.name, prefs: h.room ?? null, locked: !here(h), closed: h.room?.locked === true && s.me?.id !== h.memberId, servers: anchor.get(h.memberId!) === h.id ? servers.filter((x) => x.memberId === h.memberId).map((x) => ({ id: x.id })) : [], seats: Object.fromEntries(inRoom(h).filter((e) => memberSeatOf(e.deskId)?.hostId === h.id).map((e) => [e.id, memberSeatOf(e.deskId)!.n])), employeeIds: inRoom(h).map((e) => e.id) }));
   const theirs = staff.filter((e) => personal.some((h) => h.id === e.hostId)).map((e) => e.id);
   const key = JSON.stringify([online, theirs, [...unlocked].sort()]);
   if (lastOffice && lastOffice.layout === s.layout && lastOffice.key === key) return lastOffice.value;
@@ -267,13 +267,14 @@ export function walkRequests(s: OfficeState, now: number): WalkRequest[] {
 
 export function hostViews(s: OfficeState): HostView[] {
   return Object.values(s.hosts)
-    // The machines of the office. A server a member keeps to themselves is not one of them (it is in their room, in
-    // My room); once they share it, it stands here with the rest, with their name on it.
-    .filter((h) => h.status !== 'revoked' && !(h.ownerId && h.memberId))
+    // Every machine. A server a member keeps to themselves is marked: it stands in their room as a small rack, not
+    // among the office's machines; once they share it, it stands in the server room with the rest, with their name on it.
+    .filter((h) => h.status !== 'revoked')
     .sort((a, b) => a.enrolledAt.localeCompare(b.enrolledAt))
     .map((h) => ({
       id: h.id,
-      name: h.ownerId && h.ownerName ? `${h.name} · ${h.ownerName}` : h.name,
+      private: !!(h.ownerId && h.memberId),
+      name: h.ownerId && h.ownerName && !h.memberId ? `${h.name} · ${h.ownerName}` : h.name,
       status: h.status,
       cpu: h.status === 'online' ? (h.resources?.cpuPercent ?? null) : null,
       mem: h.status === 'online' && h.resources?.memUsedBytes != null && h.resources.memTotalBytes ? (h.resources.memUsedBytes / h.resources.memTotalBytes) * 100 : null,

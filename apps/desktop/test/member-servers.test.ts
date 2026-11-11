@@ -25,6 +25,7 @@ test('a server is named the way ssh takes it, and nothing typed can be read as a
 test('folders on the server: absolute or under the home folder, and nothing that climbs out', () => {
   assert.deepEqual(cleanRoots([' ~/code ', '/srv/app', '']), ['~/code', '/srv/app']);
   assert.deepEqual(cleanRoots(undefined), []);
+  assert.deepEqual(cleanRoots(['~', '~/']), ['~/', '~/'], '~ alone is the home folder');
   for (const bad of ['code', '../etc', '/srv/../etc', '~/a; rm -rf /', '/tmp/$(id)', '~root']) assert.throws(() => cleanRoots([bad]), /not a folder path/, bad);
 });
 

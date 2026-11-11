@@ -21,6 +21,8 @@ interface ServersBridge {
   list: () => Promise<ServerRecord[] | null>;
   add: (input: { target: string; name?: string; roots?: string[]; trustNewHost?: boolean }) => Promise<{ ok?: boolean; error?: string; cancelled?: boolean; warnings?: string[] }>;
   reconnect: (id: string) => Promise<{ ok?: boolean; error?: string }>;
+  /** Absent in a desktop app from before folders could be changed. */
+  setRoots?: (id: string, roots: string[]) => Promise<{ ok?: boolean; error?: string; cancelled?: boolean; roots?: string[] }>;
   remove: (id: string) => Promise<{ ok?: boolean; error?: string; cancelled?: boolean; cleaned?: boolean }>;
   onChange: (cb: () => void) => () => void;
 }
@@ -50,6 +52,8 @@ export function MyServers({ memberId }: { memberId: string }) {
   const [trust, setTrust] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The server whose folders are being edited, and what is typed for them. */
+  const [editing, setEditing] = useState<{ id: string; text: string; busy: boolean; error: string | null } | null>(null);
 
   useEffect(() => {
     if (!native) return;
@@ -83,6 +87,16 @@ export function MyServers({ memberId }: { memberId: string }) {
     setRoots('');
     setTrust(false);
     useOffice.getState().toast(`The server is in the office${res.warnings?.length ? ` — ${res.warnings[0]}` : ''}`, res.warnings?.length ? 'info' : 'success');
+  };
+
+  const saveRoots = async () => {
+    if (!editing || !native?.setRoots) return;
+    setEditing({ ...editing, busy: true, error: null });
+    const res = await native.setRoots(editing.id, editing.text.split(',').map((r) => r.trim()).filter(Boolean));
+    if (res.cancelled) return setEditing({ ...editing, busy: false });
+    if (res.error) return setEditing({ ...editing, busy: false, error: res.error });
+    setEditing(null);
+    useOffice.getState().toast(res.ok ? 'The folders are changed' : 'The folders are changed; the server has not come back into the office yet', res.ok ? 'success' : 'info');
   };
 
   const share = async (h: Host, shared: boolean) => {
@@ -138,12 +152,37 @@ export function MyServers({ memberId }: { memberId: string }) {
                   {staff(h)} {staff(h) === 1 ? 'employee' : 'employees'} · {shared ? 'shared: a machine of the office, colleagues work on it' : 'yours alone, in your room'}
                   {rec?.step ? ` · ${rec.step}…` : ''}
                 </div>
+                {rec && (
+                  <div className="small faint">
+                    Folders: <span className="mono">{rec.roots.length ? rec.roots.join(', ') : 'the home folder'}</span>
+                  </div>
+                )}
                 {rec?.error && <div className="small bad">{rec.error}</div>}
+                {rec && editing?.id === rec.id && (
+                  <div className="col" style={{ gap: 6, marginTop: 6 }}>
+                    <input value={editing.text} placeholder="~/code, /srv/app" onChange={(ev) => setEditing({ ...editing, text: ev.target.value })} aria-label="Folders employees may work in" spellCheck={false} autoFocus disabled={editing.busy} />
+                    <div className="small faint">Separated by commas; absolute, or ~/… for under your home folder (~ alone is the home folder). Only these: a folder you leave out is no longer allowed. The server's user must be able to work in them.</div>
+                    {editing.error && <div className="small bad">{editing.error}</div>}
+                    <div className="row" style={{ gap: 8 }}>
+                      <Button small variant="primary" disabled={editing.busy} onClick={() => void saveRoots()}>
+                        {editing.busy ? 'Changing…' : 'Change the folders'}
+                      </Button>
+                      <Button small variant="ghost" disabled={editing.busy} onClick={() => setEditing(null)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
               <Badge tone={h.status === 'online' ? 'good' : 'muted'}>{h.status === 'online' ? 'in the office' : 'not connected'}</Badge>
               {h.status !== 'online' && rec && native && (
                 <Button small onClick={() => void native.reconnect(rec.id).then((r) => r.error && useOffice.getState().toast(r.error, 'error'))} title="Start the agent on the server again (after the server was restarted)">
                   Reconnect
+                </Button>
+              )}
+              {rec && native?.setRoots && editing?.id !== rec.id && (
+                <Button small onClick={() => setEditing({ id: rec.id, text: rec.roots.join(', '), busy: false, error: null })} title="Which folders on the server employees may work in">
+                  Folders…
                 </Button>
               )}
               <Button small onClick={() => void share(h, !shared)}>

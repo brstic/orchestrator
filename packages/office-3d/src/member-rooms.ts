@@ -26,6 +26,8 @@ export interface MemberHost {
   closed?: boolean;
   /** Seats chosen for employees (employee id → seat number from 1); the others take the free seats in order. */
   seats?: Record<string, number>;
+  /** The servers this member brought in and keeps to themselves, in a stable order: each stands in the room as a small rack. */
+  servers?: Array<{ id: string }>;
 }
 
 export type MemberSide = 'n' | 'e' | 'w';
@@ -60,6 +62,8 @@ export interface MemberRoom {
   plaque: { x: number; z: number; rot: number; above: boolean };
   /** The name painted on the room's floor, for the overhead cameras: always read from the south. */
   label: { x: number; z: number; w: number; h: number };
+  /** The member's own servers, as small racks along the back wall: where each stands, its front to the room. Those that do not fit are left out. */
+  servers: Array<{ id: string; x: number; z: number; rot: number }>;
   /** Ceiling light panels (their middles). */
   lights: Array<[number, number]>;
   /** The member's colour: the room's carpet and the accents on its signs. */
@@ -93,6 +97,10 @@ const POD_FIRST = 3.0;
 const POD_PITCH = 4.0;
 const POD_BACK = 3.0;
 const DOOR_WIDTH = 1.6;
+/** A member's server in their room: a rack at a little over half size. From the middle of one to the middle of the next, and from the back wall to its middle. */
+export const SMALL_RACK = 0.55;
+const SERVER_PITCH = 0.62;
+const SERVER_FROM_WALL = 0.4;
 /** The name painted on the floor: as long as the smallest room allows. */
 const LABEL_W = 4.2;
 /** The largest room: five pods. A member with more employees than this is told so on the plaque. */
@@ -275,6 +283,12 @@ function buildRoom(core: Box, slot: Slot, host: MemberHost): { room: MemberRoom;
   const [plantX, plantZ] = at(slot.start + ROOM_ALONG - 0.5, depth - 0.5);
   const [shelfX, shelfZ] = at(slot.start + ROOM_ALONG - 1.7, depth - 0.33);
   const doorIn = boxOf(at(slot.door - DOOR_WIDTH / 2, 0), at(slot.door + DOOR_WIDTH / 2, -0.6));
+  // The member's servers stand against the back wall from the corner opposite the bookshelf: after the floor lamp when
+  // there is one, and as far as the sofa (or, without one, the bookshelf) leaves room. A room has what fits; the rest
+  // are in My room all the same.
+  const firstServer = slot.start + (furniture.includes('floor_lamp') ? 1.2 : 0.5);
+  const lastServer = furniture.includes('sofa') && lounge >= 2 ? mid - 0.6 - 1.3 : slot.start + ROOM_ALONG - 2.8;
+  const serversFit = Math.max(0, Math.floor((lastServer - firstServer) / SERVER_PITCH + 1e-6) + 1);
   const room: MemberRoom = {
     hostId: host.hostId,
     memberId: host.memberId,
@@ -296,6 +310,10 @@ function buildRoom(core: Box, slot: Slot, host: MemberHost): { room: MemberRoom;
     // Along the room's south wall at the end nearest the building, or just inside the door of a room on the north
     // side: clear of the desks either way, and in view of the command centre's camera however far the room reaches.
     label: { x: round(slot.side === 'w' ? rect.maxX - 0.9 - LABEL_W / 2 : slot.side === 'e' ? rect.minX + 0.9 + LABEL_W / 2 : rect.minX + w / 2), z: round(rect.maxZ - 0.72), w: LABEL_W, h: 0.8 },
+    servers: (host.servers ?? []).slice(0, serversFit).map((sv, i) => {
+      const [x, z] = at(firstServer + i * SERVER_PITCH, depth - SERVER_FROM_WALL);
+      return { id: sv.id, x: round(x), z: round(z), rot: facing };
+    }),
     lights: host.locked ? [] : lights,
     color: prefs.color ?? COLORS[hash(host.memberId) % COLORS.length]!,
     reach: { minX: Math.min(rect.minX, doorIn.minX), maxX: Math.max(rect.maxX, doorIn.maxX), minZ: Math.min(rect.minZ, doorIn.minZ), maxZ: Math.max(rect.maxZ, doorIn.maxZ) },

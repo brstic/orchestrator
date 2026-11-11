@@ -43,7 +43,8 @@ const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 /** Folders on the server the office may work in: absolute, or under the home folder; nothing that climbs out. */
 function cleanRoots(roots) {
-  const out = (Array.isArray(roots) ? roots : []).map((r) => String(r).trim()).filter(Boolean);
+  // (`~` alone is the home folder itself.)
+  const out = (Array.isArray(roots) ? roots : []).map((r) => String(r).trim()).filter(Boolean).map((r) => (r === '~' ? '~/' : r));
   for (const r of out) if (!/^(\/|~\/)[A-Za-z0-9._ \/@+-]*$/.test(r) || r.includes('..')) throw new Error(`"${r}" is not a folder path the office can use (absolute, or ~/…).`);
   return out;
 }
@@ -190,7 +191,9 @@ function memberServers({ office, file, agentBundle, ssh = 'ssh', log = () => und
   };
 
   const agentHome = (id) => `$HOME/.orchestrator/member-servers/${id}`;
-  const rootArgs = (roots) => roots.map((r) => ` --allow-root ${r.startsWith('~/') ? `"$HOME"/${shq(r.slice(2))}` : shq(r)}`).join('');
+  // No folder named: the home folder on the server. It is always passed, so that taking a folder away takes effect
+  // too (the agent keeps the folders it was last started with).
+  const rootArgs = (roots) => (roots.length ? roots : ['~/']).map((r) => ` --allow-root ${r === '~' || r === '~/' ? '"$HOME"' : r.startsWith('~/') ? `"$HOME"/${shq(r.slice(2))}` : shq(r)}`).join('');
 
   /** Copy the agent to the server when the one there is another build, and write the small launcher beside it. */
   async function installAgent(rec, trustNewHost) {
@@ -317,6 +320,36 @@ echo "ORCH:HOST=$(node -e "console.log(require(process.argv[1]).hostId)" "$CFG")
     }
   }
 
+  /**
+   * Change the folders employees may work in on a server that is already in the office. The agent is the one that
+   * holds them to those folders, so it is started again with the new list; sessions on the server keep running in
+   * tmux and are picked up again. A folder that does not exist on the server is refused before anything is changed.
+   */
+  async function setRoots(id, wanted) {
+    const records = list();
+    const rec = records.find((r) => r.id === id);
+    if (!rec) throw new Error('That server is not in this computer\'s list.');
+    const roots = cleanRoots(wanted);
+    doing.set(id, { step: 'Changing the folders', error: null });
+    try {
+      const { dest } = parseTarget(rec.target);
+      const check = await script(rec.target, false, `for d in${roots.map((r) => ` ${r === '~' || r === '~/' ? '"$HOME"' : r.startsWith('~/') ? `"$HOME"/${shq(r.slice(2))}` : shq(r)}`).join('')}; do [ -d "$d" ] || echo "ORCH:MISSING=$d"; done; echo ORCH:CHECKED`, 30000);
+      if (!/ORCH:CHECKED/.test(check.stdout)) throw new Error(explain(check.stderr, dest));
+      const missing = [...check.stdout.matchAll(/ORCH:MISSING=(.*)/g)].map((m) => m[1]);
+      if (missing.length) throw new Error(`${missing.join(', ')} ${missing.length === 1 ? 'is not a folder' : 'are not folders'} on ${dest} (or ${parseTarget(rec.target).dest.split('@')[0] || 'that user'} cannot see ${missing.length === 1 ? 'it' : 'them'}). Nothing was changed.`);
+      const next = { ...rec, roots };
+      const hostId = await ensureAgent(next, false, null, true);
+      if (!hostId) throw new Error('The server no longer has its place in the office (it was removed there). Remove it here and add it again.');
+      save(records.map((r) => (r.id === id ? next : r)));
+      const up = await waitOnline(hostId, 30);
+      doing.delete(id);
+      return { ok: up, roots };
+    } catch (e) {
+      doing.set(id, { step: null, error: e.message });
+      throw e;
+    }
+  }
+
   /** Take a server out of the office: stop the agent there, delete what was installed for it, and have the office forget the machine. */
   async function remove(id) {
     const rec = list().find((r) => r.id === id);
@@ -347,6 +380,7 @@ rm -rf "$ORCH_AGENT_HOME"
     probe,
     add,
     reconnect,
+    setRoots,
     remove,
   };
 }

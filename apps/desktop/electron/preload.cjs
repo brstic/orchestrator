@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld(
       list: () => ipcRenderer.invoke('orch:servers'),
       add: (input) => ipcRenderer.invoke('orch:servers-add', input),
       reconnect: (id) => ipcRenderer.invoke('orch:servers-reconnect', id),
+      setRoots: (id, roots) => ipcRenderer.invoke('orch:servers-roots', id, roots),
       remove: (id) => ipcRenderer.invoke('orch:servers-remove', id),
       onChange: (cb) => {
         const fn = () => cb();

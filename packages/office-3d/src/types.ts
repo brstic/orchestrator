@@ -98,6 +98,11 @@ export interface WalkRequest {
 
 export interface HostView {
   id: string;
+  /**
+   * A server a member brought in and keeps to themselves: it stands in their room as a small rack, not among the
+   * office's machines in the server room. (Shared, it is one of the office's machines.)
+   */
+  private?: boolean;
   name: string;
   status: 'online' | 'offline' | 'revoked';
   cpu: number | null;

@@ -272,6 +272,28 @@ test('the app brings a server in over SSH: checks it, installs the agent, enrols
     // This computer remembers how to reach it; the same server is not brought in twice.
     assert.deepEqual(servers.list().map((r: any) => [r.target, r.name, r.hostId, r.error]), [['ana@build.example.com:2222', 'ana box', added.hostId, null]]);
     await assert.rejects(servers.add({ target: 'ana@build.example.com:2222' }), /already one of your servers/);
+    // The folders are changed later: the agent is started again with the new list, as the same machine — and a folder
+    // that is not there is refused before anything is changed.
+    fs.mkdirSync(path.join(home, 'srv', 'app'), { recursive: true });
+    const readRoots = () => JSON.parse(fs.readFileSync(path.join(agentHome, 'config.json'), 'utf8')).allowedRoots;
+    await assert.rejects(servers.setRoots(added.id, ['~/code', path.join(home, 'nowhere')]), /is not a folder on ana@build\.example\.com/);
+    await assert.rejects(servers.setRoots(added.id, ['~/code; rm -rf ~']), /not a folder path/);
+    assert.deepEqual(readRoots(), [path.join(home, 'code')], 'nothing was changed');
+    assert.deepEqual(await servers.setRoots(added.id, ['~/code', path.join(home, 'srv', 'app')]), { ok: true, roots: ['~/code', path.join(home, 'srv', 'app')] });
+    assert.deepEqual(readRoots(), [path.join(home, 'code'), path.join(home, 'srv', 'app')]);
+    assert.deepEqual([(await hostOf(added.hostId)).status, servers.list()[0].roots, servers.list()[0].hostId], ['online', ['~/code', path.join(home, 'srv', 'app')], added.hostId]);
+    // The office holds it to them: a folder outside is refused by the server's own agent, one inside is taken.
+    const outside = await door('Ana', 'POST', '/api/employees', { name: 'Outside', hostId: added.hostId, workingDir: path.join(home, 'srv') });
+    assert.match(outside.body.error ?? '', /outside this host's allowed roots/);
+    const inside = await door('Ana', 'POST', '/api/employees', { name: 'Inside', hostId: added.hostId, workingDir: path.join(home, 'srv', 'app') });
+    assert.equal(inside.status, 200, JSON.stringify(inside.body).slice(0, 200));
+    // No folder named: the home folder, and only that — a folder that was allowed is no longer.
+    assert.deepEqual((await servers.setRoots(added.id, [])).roots, []);
+    assert.deepEqual(readRoots(), [home]);
+    assert.deepEqual((await servers.setRoots(added.id, ['~'])).roots, ['~/'], '~ alone is the home folder too');
+    assert.deepEqual(readRoots(), [home]);
+    await servers.setRoots(added.id, ['~/code']);
+
     // After the server was restarted: the agent is started again and comes back as the same machine.
     process.kill(Number(fs.readFileSync(path.join(agentHome, 'agent.pid'), 'utf8')), 'SIGTERM');
     await waitFor(async () => (await hostOf(added.hostId)).status === 'offline', { label: 'the server is gone', timeout: 20000 });

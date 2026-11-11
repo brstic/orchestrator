@@ -293,6 +293,44 @@ test('a room its member closed to everyone else: in place and lit, its people at
   assert.deepEqual([withMemberRooms(layout, [{ ...host(0, 3), closed: true, locked: true }]).rooms[0]!.closed, withMemberRooms(layout, [{ ...host(0, 3), closed: true, locked: true }]).rooms[0]!.locked], [false, true]);
 });
 
+test('a member\'s own servers stand in their room: small racks along the back wall, clear of the furniture and the desks', () => {
+  const none0 = withMemberRooms(layout, [host(0, 3)]).rooms[0]!;
+  assert.deepEqual(none0.servers, [], 'no server, no rack');
+  const servers = (n: number) => Array.from({ length: n }, (_x, i) => ({ id: `srv-${i}` }));
+  for (const [what, prefs, max] of [
+    ['as the room comes (plant and bookshelf)', undefined, 3],
+    ['with a floor lamp in the corner', { furniture: ['plant', 'bookshelf', 'floor_lamp'] }, 3],
+    ['with a sofa on open floor', { furniture: ['plant', 'bookshelf', 'sofa', 'floor_lamp'], extraDepth: 4 }, 3],
+  ] as const) {
+    for (const side of [0, 1, 2]) {
+      // The first rooms of the default office are on the west wall; a later one is on the east.
+      const office = withMemberRooms(layout, [...hosts(Array.from({ length: side }, () => 1)), { ...host(9, 5), prefs: prefs as never, servers: servers(max) }]);
+      const room = office.rooms[side]!;
+      const eff = office.layout as EffectiveLayout;
+      assert.ok(room.servers.length >= 1, `${what}: at least one fits`);
+      assert.deepEqual(room.servers.map((s) => s.id), servers(room.servers.length).map((s) => s.id), 'in the order given');
+      const box = boxOf(room);
+      for (const [i, s] of room.servers.entries()) {
+        const r: Box = { minX: s.x - 0.3, maxX: s.x + 0.3, minZ: s.z - 0.3, maxZ: s.z + 0.3 };
+        assert.ok(r.minX > box.minX && r.maxX < box.maxX && r.minZ > box.minZ && r.maxZ < box.maxZ, `${what}: ${s.id} is inside the room`);
+        // Against the wall opposite the door.
+        const far = room.side === 'w' ? s.x - box.minX : room.side === 'e' ? box.maxX - s.x : s.z - box.minZ;
+        assert.ok(far < 0.5, `${what}: ${s.id} stands at the back wall (${far.toFixed(2)} m from it)`);
+        for (const o of room.servers.slice(i + 1)) assert.ok(Math.hypot(o.x - s.x, o.z - s.z) > 0.55, 'racks do not stand in each other');
+        // Clear of what else stands in the room, and of every desk.
+        for (const d of eff.decorations.filter((x) => x.id.startsWith(room.roomId))) assert.ok(Math.hypot(d.x - s.x, d.z - s.z) > 0.55, `${what}: ${s.id} is clear of the ${d.kind} (${Math.hypot(d.x - s.x, d.z - s.z).toFixed(2)} m)`);
+        for (const id of room.desks) assert.ok(!overlap(r, deskBox(eff.desks.find((d) => d.id === id)!)), `${s.id} is clear of ${id}`);
+      }
+    }
+  }
+  // More servers than the wall has room for: the room has what fits, and nothing else about it changes.
+  const many = withMemberRooms(layout, [{ ...host(0, 3), servers: servers(40) }]).rooms[0]!;
+  assert.ok(many.servers.length >= 3 && many.servers.length < 40);
+  const { servers: _s, ...rest } = many;
+  const { servers: _s0, ...rest0 } = none0;
+  assert.deepEqual(rest, rest0);
+});
+
 test('chosen seats in a member room: honoured first, the rest fill in order, and the room grows to the furthest one', () => {
   const h0 = { ...host(0, 3), seats: { 'emp-0-2': 1, 'emp-0-0': 7 } };
   const office = withMemberRooms(layout, [h0]);

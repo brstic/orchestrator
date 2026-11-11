@@ -271,6 +271,24 @@ ipcMain.handle('orch:servers-reconnect', async (_e, id) => {
     serversChanged();
   }
 });
+ipcMain.handle('orch:servers-roots', async (_e, id, roots) => {
+  if (!myServers) return { error: 'This computer is not in an office as a member.' };
+  const mine = myServers;
+  const rec = mine.servers.list().find((r) => r.id === String(id));
+  if (!rec) return { error: 'That server is not in this computer\'s list.' };
+  try {
+    const wanted = (Array.isArray(roots) ? roots : []).map((r) => String(r).trim()).filter(Boolean);
+    // More folders is more of the server for the office to work in: asked here, where a page cannot answer.
+    const ok = await confirmServer(`Let the office at ${mine.office} work in these folders on ${rec.name}?`, `${wanted.length ? wanted.join('\n') : 'Your home folder on the server'}\n\nOrchestrator will connect to ${rec.target} over SSH and start the office's agent there again with this list. Whoever may work on that server can then start Claude Code sessions in these folders, and nowhere else. Sessions that are running keep running.`, 'Change the folders');
+    if (!ok) return { cancelled: true };
+    serversChanged();
+    return await mine.servers.setRoots(rec.id, wanted);
+  } catch (e) {
+    return { error: e.message };
+  } finally {
+    serversChanged();
+  }
+});
 ipcMain.handle('orch:servers-remove', async (_e, id) => {
   if (!myServers) return { error: 'This computer is not in an office as a member.' };
   const mine = myServers;

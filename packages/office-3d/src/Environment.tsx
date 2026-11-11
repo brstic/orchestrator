@@ -6,7 +6,7 @@ import type { Desk, RoomDef, TerminalScreen } from '@orchestrator/contracts';
 import { drawScreen } from './terminal-texture.ts';
 import type { BoardView, CeoView, HostView, Quality, ScreenSubscribe, UsageClockView, WallView, WhiteboardView, ZoneView } from './types.ts';
 import { DESK_SIZE, WALL_T, deskBox, deskSeat, type Box, type World } from './world.ts';
-import { memberRoomTitle, type MemberRoom } from './member-rooms.ts';
+import { SMALL_RACK, memberRoomTitle, type MemberRoom } from './member-rooms.ts';
 import { ON_SURFACE } from './surface.ts';
 import { InstancedModel, Model } from './models/Model.tsx';
 import { DESK_TOP, desk as deskModel, divider as dividerModel, lampDome, taskChair } from './models/workplace.ts';
@@ -1262,8 +1262,45 @@ function Rack({ x, z, host, detail }: { x: number; z: number; host: HostView | n
   );
 }
 
+/**
+ * A member's own server, in their room: a rack at a little over half size, with the lights that mean something on
+ * its front and a plate over it that can be read from the door — its name, whether it is connected, how many
+ * sessions run on it. (Shared with the office, the same machine stands full size in the server room.)
+ */
+function SmallServer({ x, z, rot, host }: { x: number; z: number; rot: number; host: HostView | null }) {
+  const color = !host ? '#20262f' : host.status === 'online' ? '#3ddc84' : '#ff4d5e';
+  return (
+    <group position={[x, 0, z]} rotation={[0, rot, 0]}>
+      <group scale={SMALL_RACK}>
+        <Model model={rackModel()} />
+        <RackFront x={x} host={host} plate={false} />
+      </group>
+      {host && (
+        <CanvasPanel
+          width={0.54}
+          height={0.24}
+          px={256}
+          position={[0, 2.0 * SMALL_RACK + 0.2, 0.02]}
+          deps={[host.name, host.status, host.sessions]}
+          draw={(ctx, w, h) => {
+            ctx.fillStyle = '#0b0f17';
+            ctx.fillRect(0, 0, w, h);
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#fff';
+            ctx.font = font(h * 0.34, 700);
+            ctx.fillText(clip(ctx, host.name, w * 0.92), w * 0.04, h * 0.3);
+            ctx.fillStyle = color;
+            ctx.font = font(h * 0.19, 600);
+            ctx.fillText(clip(ctx, host.status === 'online' ? `ONLINE · ${host.sessions} session${host.sessions === 1 ? '' : 's'}` : 'OFFLINE', w * 0.92), w * 0.04, h * 0.72);
+          }}
+        />
+      )}
+    </group>
+  );
+}
+
 /** The lit front of a rack: status LEDs and the machine's name plate. Mounted only when someone is near the server room. */
-function RackFront({ x, host }: { x: number; host: HostView | null }) {
+function RackFront({ x, host, plate = true }: { x: number; host: HostView | null; plate?: boolean }) {
   const leds = useRef<THREE.MeshStandardMaterial>(null);
   useFrame((s) => {
     if (!leds.current) return;
@@ -1279,7 +1316,7 @@ function RackFront({ x, host }: { x: number; host: HostView | null }) {
           <meshStandardMaterial ref={y === 1.1 ? leds : undefined} color={color} emissive={color} emissiveIntensity={host ? 1 : 0} toneMapped={false} />
         </mesh>
       ))}
-      {host && (
+      {host && plate && (
         <CanvasPanel
           width={0.7}
           height={0.26}
@@ -1584,6 +1621,8 @@ export function Rooms({
   const mr = world.room('meeting');
   const sr = world.room('server');
   const tiles = wall.tiles.slice(0, 6);
+  // The office's machines stand in the server room; a server a member keeps to themselves stands in their room.
+  const machines = useMemo(() => hosts.filter((h) => !h.private), [hosts]);
   const near = {
     meeting: useNear('meeting', useMemo(() => roomBox(mr), [mr]), player, overview),
     ops: useNear('ops', useMemo(() => roomBox(or), [or]), player, overview),
@@ -1693,8 +1732,10 @@ export function Rooms({
 
       {/* server room: one rack per connected machine */}
       {world.racks.map((r, i) => (
-        <Rack key={i} x={r.x} z={r.z} host={hosts[i] ?? null} detail={near.server} />
+        <Rack key={i} x={r.x} z={r.z} host={machines[i] ?? null} detail={near.server} />
       ))}
+      {/* a member's own servers: a small rack each, at the back of their room */}
+      {world.memberRooms.flatMap((room) => room.servers.map((sv) => <SmallServer key={sv.id} x={sv.x} z={sv.z} rot={sv.rot} host={hosts.find((h) => h.id === sv.id) ?? null} />))}
 
       {/* CEO office */}
       {world.ceoDesk && cr && (
