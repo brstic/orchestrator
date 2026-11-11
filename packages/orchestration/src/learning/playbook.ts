@@ -642,13 +642,18 @@ export class Playbook {
   private merge(kept: Lesson, other: IncomingLesson & { id: string | null; appliedCount: number; createdAt: string }, similarity: number): Lesson {
     const before = { text: kept.text, appliesWhen: kept.appliesWhen, status: kept.status, createdAt: kept.createdAt, appliedCount: kept.appliedCount };
     const evidence = unionEvidence(kept.evidence, other.evidence);
-    const wording = clearerText(kept, other);
+    // Whose words stand: a lesson the team already works by (active, shared) is not reworded by what an employee
+    // records — that would put an employee's text, unseen by anybody, under "decisions already made by the boss" in
+    // everybody's prompts. Such a recording counts as evidence for the lesson as it is. An employee's own lesson, a
+    // proposal that is still waiting, and anything the owner writes are reworded as before.
+    const mayReword = other.authoredBy.kind === 'owner' || kept.status !== 'active' || kept.scope === 'employee';
+    const wording = mayReword ? clearerText(kept, other) : kept;
     const sameWords = profile(kept.text).norm === profile(other.text).norm;
     // The very same lesson again with nothing new to cite (a repeated call): nothing to record.
     if (sameWords && !other.id && !evidence.added.length && (kept.status === 'active' || other.status !== 'active')) return kept;
     const absorbed = other.id ? this.core.lessons.get(other.id) : undefined;
     kept.text = truncate(wording.text, 400);
-    kept.appliesWhen = truncate(wording.appliesWhen || kept.appliesWhen || other.appliesWhen, 160);
+    kept.appliesWhen = truncate(wording.appliesWhen || kept.appliesWhen || (mayReword ? other.appliesWhen : ''), 160);
     kept.evidence = evidence.all;
     if (other.createdAt < kept.createdAt) kept.createdAt = other.createdAt;
     if (other.status === 'active') kept.status = 'active';

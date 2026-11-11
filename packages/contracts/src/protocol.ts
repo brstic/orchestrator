@@ -166,7 +166,8 @@ export type AgentRpc =
   | { method: 'git.branch.start'; params: { cwd: string; branch: string; base: string } }
   /** Commit what is uncommitted in a worktree on its (task) branch as work in progress — when a task is stopped. */
   | { method: 'git.wip'; params: { cwd: string; branch: string; message: string } }
-  | { method: 'git.merge'; params: { repo: string; worktree: string; into: string; base: string; branch: string; message: string } }
+  // `sha`: the commit of `branch` to merge (the one that was verified); commits made on the branch after it stay out.
+  | { method: 'git.merge'; params: { repo: string; worktree: string; into: string; base: string; branch: string; message: string; sha?: string | null } }
   | { method: 'git.integration.status'; params: { repo: string; base: string; integration: string } }
   | { method: 'git.promote'; params: { repo: string; base: string; integration: string } }
   | { method: 'verify.run'; params: { cwd: string; command: string; timeoutMs: number } }

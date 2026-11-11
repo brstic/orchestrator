@@ -52,7 +52,7 @@ See [OPERATIONS.md](OPERATIONS.md): `pnpm deploy:server` for the office on the s
 
 ## A review by a second reader
 
-On 2026-11-11 four reviews of recent work — each by a reader that was given the code and no conclusions — found thirty-seven defects that the tests and the author had not: a frame that stopped the office, a tool that could put any file of the machine on a task, a held command that ran when the agent restarted. It is worth doing after every piece of work that touches who may do what, what is run where, or what crosses from one machine to another.
+On 2026-11-11 six reviews of recent and older work — each by a reader that was given the code and no conclusions — found some sixty defects that the tests and the author had not: a frame that stopped the office, a tool that could put any file of the machine on a task, a held command that ran when the agent restarted. It is worth doing after every piece of work that touches who may do what, what is run where, or what crosses from one machine to another.
 
 What made those reviews useful:
 - **One subject per review, named by its files and functions** (sign-in and hooks; files on tasks and accounts; the vault, members and the door; the desktop app). A review of "the changes" finds less than a review of "what the office's page may make the app do on the person's computer".

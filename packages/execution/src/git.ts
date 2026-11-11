@@ -232,6 +232,8 @@ export interface MergeResult {
   conflicts: string[];
   detail: string;
   alreadyMerged: boolean;
+  /** Commits on the branch after the one that was merged (made after the work was checked): they were left out. */
+  leftOut?: number;
 }
 
 /**
@@ -239,21 +241,33 @@ export interface MergeResult {
  * dedicated integration worktree, so nobody's working tree is disturbed. A
  * conflicting merge is aborted and reported; it is never forced.
  */
-export async function mergeBranch(opts: { repo: string; worktree: string; into: string; base: string; branch: string; message: string }): Promise<MergeResult> {
+export async function mergeBranch(opts: { repo: string; worktree: string; into: string; base: string; branch: string; message: string; sha?: string | null }): Promise<MergeResult> {
   const wt = await ensureWorktree({ repo: opts.repo, path: opts.worktree, branch: opts.into, base: opts.base });
   const cwd = wt.path;
   const st = await gitStatus(cwd);
   if (st.branch !== opts.into) throw new Error(`integration worktree is on ${st.branch}, expected ${opts.into}`);
   if (st.dirty) throw new Error('integration worktree has uncommitted changes; resolve them before merging');
+  // What is merged is the commit that was checked — not whatever the branch points at by now. The author's worktree
+  // stays on the branch while the work waits for its review; commits made there meanwhile were neither verified nor
+  // seen by the reviewer, and stay out.
+  let leftOut = 0;
+  const branchName = opts.branch;
+  if (opts.sha) {
+    if (!/^[0-9a-f]{7,40}$/i.test(opts.sha)) throw new Error('that is not a commit');
+    const on = await git(cwd, ['merge-base', '--is-ancestor', opts.sha, `refs/heads/${branchName}`], { allowFail: true });
+    if (on.code !== 0) throw new Error(`${opts.sha.slice(0, 7)} is not on ${branchName}: the branch was rewritten since the work was checked`);
+    leftOut = Number((await git(cwd, ['rev-list', '--count', `${opts.sha}..refs/heads/${branchName}`], { allowFail: true })).stdout.trim()) || 0;
+    opts = { ...opts, branch: opts.sha };
+  }
   const anc = await git(cwd, ['merge-base', '--is-ancestor', opts.branch, 'HEAD'], { allowFail: true });
   if (anc.code === 0) {
     const head = (await git(cwd, ['rev-parse', 'HEAD'])).stdout.trim();
-    return { ok: true, sha: head, into: opts.into, conflicts: [], detail: 'already merged', alreadyMerged: true };
+    return { ok: true, sha: head, into: opts.into, conflicts: [], detail: 'already merged', alreadyMerged: true, leftOut };
   }
   const res = await git(cwd, ['-c', 'user.name=Orchestrator', '-c', 'user.email=orchestrator@localhost', 'merge', '--no-ff', '-m', opts.message, opts.branch], { allowFail: true });
   if (res.code === 0) {
     const head = (await git(cwd, ['rev-parse', 'HEAD'])).stdout.trim();
-    return { ok: true, sha: head, into: opts.into, conflicts: [], detail: res.stdout.trim().split('\n').slice(-3).join('\n'), alreadyMerged: false };
+    return { ok: true, sha: head, into: opts.into, conflicts: [], detail: res.stdout.trim().split('\n').slice(-3).join('\n'), alreadyMerged: false, leftOut };
   }
   const conflicted = await git(cwd, ['diff', '--name-only', '--diff-filter=U'], { allowFail: true });
   const conflicts = conflicted.stdout.split('\n').filter(Boolean);

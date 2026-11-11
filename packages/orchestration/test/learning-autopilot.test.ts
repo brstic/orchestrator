@@ -621,4 +621,6 @@ test('"safe" switches on a lesson that is scoped to one employee — once, and o
 
 test('command shapes read the way the analyser names its rules', () => {
   assert.deepEqual(['docker build -t x .', 'npm run test:unit', 'git --version', 'wget https://x', 'node -e "1"', '$(whoami)', '  ls   -la  && rm x'].map(commandShape), ['docker build', 'npm run', 'git', 'wget', 'node', null, 'ls']);
+  // A program named by its path is no shape to write a rule for: `Bash(/bin/bash:*)` would allow everything, and the list of words never to allow alone does not know paths.
+  assert.deepEqual(["/bin/bash -c 'ls'", '/usr/bin/env ls', './run.sh --all', '~/bin/tool x', 'C:\\tools\\x.exe y'].map(commandShape), [null, null, null, null, null]);
 });

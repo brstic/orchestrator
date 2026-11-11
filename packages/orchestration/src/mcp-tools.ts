@@ -174,6 +174,8 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     report_blocker: async (a, { employee }) => {
+      const often = tooMany(employee, 'blocker report', 20);
+      if (often) return err(often);
       const task = eng.tasks.blockFromAgent(employee, String(a.reason), a.needs ? String(a.needs) : undefined);
       return task ? `${task.key} is marked BLOCKED and the boss has been alerted. Stop working on it and wait for instructions.` : 'The boss has been alerted that you are blocked.';
     },
@@ -212,6 +214,9 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       if (!to) return { text: `No teammate matches "${a.to}". Use get_team.`, isError: true };
       const shut = closedTo(employee, to);
       if (shut) return err(shut);
+      // The foreman is called by the office, in rounds the owner sets the pace of: a message would be a turn of its
+      // own outside them, with whatever the message says.
+      if (to.roleKey === FOREMAN_ROLE && employee.roleKey !== FOREMAN_ROLE) return err(`${to.name} is the foreman: the office calls it when something needs it. If it should look at something, tell the boss (ask_boss) or report a blocker.`);
       const many = tooMany(employee, 'message', 120);
       if (many) return err(many);
       eng.comms.sendMessage({ from: { kind: 'employee', id: employee.id, name: `${employee.name} (${employee.title})` }, toEmployeeId: to.id, body: String(a.message), taskId: eng.tasks.currentTask(employee.id)?.id ?? null });
@@ -229,6 +234,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       if (no) return { text: `${no} Nothing was sent. If they only need to know, send it without wait.`, isError: true };
       const shut = target ? closedTo(employee, target) : null;
       if (shut) return err(shut);
+      if (target?.roleKey === FOREMAN_ROLE) return err(`${target.name} is the foreman: the office calls it when something needs it. Ask a colleague who does the work, or the boss (ask_boss).`);
       const many = tooMany(employee, 'request', 60);
       if (many) return err(many);
       const collab = eng.comms.requestCollaboration(employee, target ?? String(a.to), String(a.summary), a.detail ? String(a.detail) : '', { waited: wait });
@@ -248,6 +254,8 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     request_help: async (a, { employee, session, signal }) => {
+      const many = tooMany(employee, 'request', 60);
+      if (many) return err(many);
       const task = eng.tasks.currentTask(employee.id);
       const roleOrder = ['architect', 'fullstack', 'backend', 'frontend', 'qa', 'security', 'devops'];
       const helper = core.employees
@@ -442,6 +450,8 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     wake_colleague: async (a, { employee }) => {
+      const often = tooMany(employee, 'wake-up', 20);
+      if (often) return err(often);
       if (!managing()) return OFF;
       const to = eng.comms.resolveTeammate(employee, String(a.employee ?? ''));
       if (!to || to.archived) return err(`No teammate matches "${a.employee}". Use get_team.`);

@@ -468,8 +468,22 @@ test('the whole office is the foreman\'s: employees on members\' own computers t
   }
   assert.equal(eng.core.questions.require(q.id).status, 'open', 'her question waits for Jovan');
   assert.ok(!eng.core.messages.find((m) => m.toEmployeeId === lola.id && m.from.id === mira.id));
-  // That she is there, and whether she works, is still for everyone — the foreman's overview included.
-  assert.match((await call('Mira', 'office_overview')).text, /- Lola — Full-Stack Engineer/);
+  // That she is there is still for everyone — the foreman's overview included. What she works on, has in hand and
+  // has asked is not: none of it is in the overview while the room is closed.
+  const behindTheDoor = (await call('Mira', 'office_overview')).text;
+  assert.match(behindTheDoor, /- Lola — Full-Stack Engineer · on Jovan's own computer, whose room is closed/);
+  assert.match(behindTheDoor, /- Notes \(on Jovan's own computer, whose room is closed\)/);
+  assert.doesNotMatch(behindTheDoor, /Markdown or plain text|CODING for[^\n]*\n- Notes|Lola[^\n]*(CODING|open question)/);
+  // A routine somebody else set for her does not run into the closed room; one her member set does.
+  const byOwner = eng.routines.create({ employeeId: lola.id, instruction: 'Report what you are working on.', everyMinutes: 60 }, 'owner');
+  const byJovan = eng.routines.create({ employeeId: lola.id, instruction: 'Check the notes for typos.', everyMinutes: 60 }, 'member:Jovan');
+  eng.routines.runNow(byOwner.id);
+  eng.routines.runNow(byJovan.id);
+  const outcome = (id: string) => eng.routines.list().find((r) => r.id === id)!;
+  assert.deepEqual([outcome(byOwner.id).lastOutcome, outcome(byOwner.id).lastNote], ['not_run', "Lola's room is closed"]);
+  assert.notEqual(outcome(byJovan.id).lastNote, "Lola's room is closed");
+  eng.routines.remove(byOwner.id);
+  eng.routines.remove(byJovan.id);
   eng.hosts.setMemberRoom('m-jovan', {}, 'member:Jovan');
   assert.ok(eng.foreman.attention().some((i) => i.kind === 'question' && i.questionId === q.id), 'open again: as before');
 

@@ -519,7 +519,7 @@ export class Foreman {
       const extra = [
         q.context.trim() ? `Context: ${truncate(oneLine(q.context), 400)}` : '',
         q.why.trim() ? `Why it matters: ${truncate(oneLine(q.why), 240)}` : '',
-        q.options.length ? `Options offered: ${q.options.map((o) => o.label).join(' | ')}` : '',
+        q.options.length ? `Options offered: ${q.options.slice(0, 8).map((o) => truncate(oneLine(String(o.label)), 80)).join(' | ')}` : '',
         q.parts.length > 1 ? `It has ${q.parts.length} parts; answer each: ${q.parts.map((p) => `"${p.question}"`).join(', ')}` : '',
       ].filter(Boolean);
       return `QUESTION ${q.id} from ${asker?.name ?? 'an employee'} (${[asker?.title, task?.key].filter(Boolean).join(', ')}): "${truncate(oneLine(q.text), 600)}" — waiting ${waited}${i.escalated ? ' — you escalated it to the boss' : ''}${extra.length ? `\n   ${extra.join('\n   ')}` : ''}`;
@@ -722,6 +722,13 @@ export class Foreman {
     const lines: string[] = [`Office overview — ${people.length} employee${people.length === 1 ? '' : 's'}, ${projects.length} project${projects.length === 1 ? '' : 's'}.`, '', 'People:'];
     if (!people.length) lines.push('- nobody else works here yet');
     for (const e of people) {
+      // A closed room: that somebody is there is for everyone to see; on what they work, what they have in hand and
+      // what they asked is not — for the foreman as for the owners.
+      if (this.closed(e.hostId)) {
+        const owner = core.hosts.get(e.hostId!);
+        lines.push(`- ${e.name} — ${e.title} · on ${owner?.memberName ?? owner?.name ?? 'a member'}'s own computer, whose room is closed: nothing there is yours to look at or direct`);
+        continue;
+      }
       const s = core.sessionOf(e.id);
       const live = s && (s.status === 'running' || s.status === 'starting');
       const task = this.eng.tasks.currentTask(e.id);
@@ -735,6 +742,11 @@ export class Foreman {
     lines.push('', 'Projects:');
     if (!projects.length) lines.push('- no projects yet');
     for (const p of projects) {
+      if (this.closed(p.hostId)) {
+        const owner = core.hosts.get(p.hostId!);
+        lines.push(`- ${p.name} (on ${owner?.memberName ?? owner?.name ?? 'a member'}'s own computer, whose room is closed)`);
+        continue;
+      }
       const tasks = core.tasks.filter((t) => t.projectId === p.id && t.kind !== 'review');
       const owner = this.personal(p.hostId) ? core.hosts.get(p.hostId!) : undefined;
       lines.push(`- ${p.name} (${p.status}${p.policy.autoAssign ? ', assigns ready work automatically' : ', work is assigned by hand'}${owner ? `, on ${owner.memberName ?? owner.name}'s own computer: only employees there work on it` : ''}): ${BOARD.map((st) => `${st} ${tasks.filter((t) => t.status === st).length}`).join(' · ')}`);

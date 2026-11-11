@@ -399,7 +399,8 @@ function routing(eng: Engine, now: number): Proposal[] {
   const since = now - DETECT.lookbackDays * DAY;
   const clean = (t: Task) => t.friction.failedVerifications === 0 && t.friction.reviewRejections === 0;
   for (const project of eng.core.projects.filter((p) => p.status !== 'archived')) {
-    const done = eng.core.tasks.filter((t) => t.projectId === project.id && t.status === 'DONE' && !!t.assigneeId && t.kind !== 'review' && !!t.evidence.summary && at(t.completedAt) >= since);
+    // (Work somebody gave themselves does not count for who is good at what: it can be made to order.)
+    const done = eng.core.tasks.filter((t) => t.projectId === project.id && t.status === 'DONE' && !!t.assigneeId && t.kind !== 'review' && !!t.evidence.summary && at(t.completedAt) >= since && !selfMade(eng, t));
     for (const kind of new Set(done.map((t) => t.kind))) {
       const rows = new Map<string, Task[]>();
       for (const t of done.filter((x) => x.kind === kind)) rows.set(t.assigneeId!, [...(rows.get(t.assigneeId!) ?? []), t]);
@@ -454,6 +455,12 @@ function answerOf(q: Question): string {
   return oneLine(raw.replace(/@@[\s\S]*?@@/g, ''));
 }
 
+/** A task its own assignee put on the board (proposed it for themselves). */
+export function selfMade(eng: Engine, t: Task): boolean {
+  const who = eng.core.employees.get(t.assigneeId);
+  return !!who && t.createdBy === `employee:${who.name}`;
+}
+
 function missingContext(eng: Engine, now: number): Proposal[] {
   const out: Proposal[] = [];
   const since = now - DETECT.lookbackDays * DAY;
@@ -463,7 +470,8 @@ function missingContext(eng: Engine, now: number): Proposal[] {
     for (const q of asked) {
       const known = clusters.find((c) => at(c.source.answeredAt) < at(q.createdAt) && questionSimilarity(c.source.text, q.text) >= DETECT.questionSimilarity);
       if (known) known.repeats.push(q);
-      else if (q.answeredAt && answerOf(q)) clusters.push({ source: q, repeats: [] });
+      // (Only what a person answered is "decided": the foreman's answers are operational, and are its own.)
+      else if (q.answeredAt && answerOf(q) && q.answeredBy?.kind !== 'foreman') clusters.push({ source: q, repeats: [] });
     }
     for (const { source, repeats } of clusters) {
       const recent = repeats.filter((q) => at(q.createdAt) >= since);

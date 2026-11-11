@@ -5,6 +5,7 @@
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { handleMcpPost } from '@orchestrator/integrations';
 import { createHarness, waitFor, type Harness } from './harness.ts';
 
 let h: Harness;
@@ -52,6 +53,26 @@ test('a task that is about the tests may change them: it is noted, not held up',
   const t = await h.task({ projectId, title: 'Cover the cart with tests', kind: 'test', assigneeId: alex, description: '@@fake: write cart.test.js ok; commit tests; complete tests added@@' });
   const done = await settled(t.id, 'DONE', 'the test task done');
   assert.deepEqual(done.evidence.verification!.touchedChecks, ['cart.test.js']);
+});
+
+test('an employee who names its own task "test" has not excused it from review', async () => {
+  await waitFor(async () => ((await h.session(alex))?.inTurn === false ? true : null), { label: 'Alex free', timeout: 40000 });
+  // Alex puts a task on the board for himself and calls it a test task; it replaces the check with one that always passes.
+  const eng = h.server.engine;
+  const me = eng.core.employees.require(alex);
+  const res: any = await handleMcpPost(
+    { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'propose_tasks', arguments: { tasks: [{ title: 'Tidy the checks', kind: 'test', assignee: 'Alex', description: '@@fake: write check.js process.exit(0); commit simpler check; complete checks tidied@@' }] } } },
+    eng.mcp,
+    { employee: me, session: eng.core.sessionOf(alex)! },
+  );
+  assert.match(String(res.body.result.content[0].text), /Created 1 tasks/);
+  const mine = (await h.state()).tasks.find((x) => x.title === 'Tidy the checks')!;
+  assert.deepEqual([mine.kind, mine.createdBy], ['test', 'employee:Alex']);
+  if (!mine.released) await h.api('POST', '/tasks/release', { ids: [mine.id] });
+  const held = await settled(mine.id, 'REVIEW', 'held for review although it calls itself a test task');
+  assert.deepEqual(held.evidence.verification!.touchedChecks, ['check.js']);
+  await h.api('POST', `/tasks/${mine.id}/review`, { verdict: 'request_changes', comments: 'Put the real check back.' });
+  await h.api('PATCH', `/tasks/${mine.id}`, { status: 'BACKLOG' }).catch(() => undefined);
 });
 
 test('someone who keeps hitting the same failure is told at the third time, and the owner at the sixth', async () => {

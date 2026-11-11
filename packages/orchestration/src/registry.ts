@@ -957,6 +957,8 @@ export class SessionRegistry {
     this.eng.tasks.schedule();
     // (A little later: the machine has just come back, and its sessions have just been seen again.)
     setTimeout(() => this.restartIdleOn(hostId), 1500).unref?.();
+    // Approved work that could not be merged while this machine was away is merged now.
+    setTimeout(() => this.eng.tasks.mergeWaiting(hostId), 2000).unref?.();
   }
 
   /**

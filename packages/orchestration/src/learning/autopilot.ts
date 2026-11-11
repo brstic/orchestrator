@@ -120,6 +120,9 @@ export function commandShape(command: string): string | null {
   const first = command.trim().split(/\s*(?:&&|\|\||;|\|)\s*/)[0] ?? '';
   const words = first.split(/\s+/).filter(Boolean);
   if (!words.length || /[`$(){}<>]/.test(words.slice(0, 2).join(' '))) return null;
+  // A program named by its path (`/bin/bash`, `./run.sh`, `~/bin/x`) is no shape to write a rule for: the block
+  // list below knows words, and a path to the same program is not one of them.
+  if (/[\/~\\]/.test(words[0]!)) return null;
   const two = ['npm', 'pnpm', 'yarn', 'git', 'docker', 'cargo', 'go', 'make', 'npx', 'python', 'python3', 'php', 'composer', 'kubectl', 'pip', 'bundle'].includes(words[0]!) && words[1] && !words[1].startsWith('-');
   return two ? `${words[0]} ${words[1]}` : words[0]!;
 }
@@ -141,7 +144,7 @@ const touchesShape = (command: string, shape: string): boolean =>
  * A block list is not proof of safety — the high-risk gate stays in front of every session regardless.
  */
 const NEVER_ALLOW_ALONE = new Set(
-  'sh bash zsh fish dash ksh env xargs eval exec source sudo su doas ssh scp sftp rsync nohup time timeout watch nice rm mv cp dd chmod chown chgrp kill curl wget nc ncat telnet node deno bun ruby perl python python3 php osascript npx git npm pnpm yarn docker kubectl helm terraform make cargo go pip pip3 composer bundle find awk sed tee open'.split(' '),
+  'sh bash zsh fish dash ksh env xargs eval exec source sudo su doas ssh scp sftp rsync nohup time timeout watch nice rm mv cp dd chmod chown chgrp kill curl wget nc ncat telnet node deno bun ruby perl python python3 php osascript npx git npm pnpm yarn docker kubectl helm terraform make cargo go pip pip3 composer bundle find awk sed tee open command builtin bunx pnpx uvx pipx gh glab just task tsx ts-node bash3 busybox script expect parallel'.split(' '),
 );
 /** Shapes whose next argument names what to run (a script, a package, a container): as wide as the word alone. */
 const NEVER_ALLOW_SHAPES = new Set(
@@ -293,6 +296,10 @@ export class Autopilot {
           return { apply: true, widening: false, why: cls.why, evidence: imp.evidence };
         case 'project.verifyTimeout':
           return this.longerTimeout(a.seconds, project!, cls);
+        case 'project.notes.append':
+          // Every employee reads a project's notes as the project's own word, and this text is made of what
+          // employees asked and were answered: it is put there by a person, not by the office on a count.
+          return no("What goes into a project's notes is read by everybody as the project's own word; a person adds it.");
         default:
           return { apply: true, widening: false, why: cls.why, evidence: imp.evidence };
       }
@@ -385,7 +392,9 @@ export class Autopilot {
     if (approved.length < needApprovals) return no(personal ? `${e.name} is on a member's own computer: ${approved.length} of the ${needApprovals} approvals needed are that member's own.` : `${approved.length} of the ${needApprovals} approvals needed are on record.`);
     const need = Math.max(1, t.autopilotAutonomyTasks);
     const last = this.core.tasks
-      .filter((x) => x.assigneeId === e.id && x.status === 'DONE' && x.kind !== 'review' && !!x.evidence.summary)
+      // (Work that somebody else asked for and that is of a kind that gets checked: a task they proposed for
+      // themselves, or research and planning — which are done when they say so — say nothing about how far they can be trusted.)
+      .filter((x) => x.assigneeId === e.id && x.status === 'DONE' && x.kind !== 'review' && !!x.evidence.summary && x.createdBy !== `employee:${e.name}` && x.kind !== 'research' && x.kind !== 'planning' && x.evidence.verification?.passed !== false)
       .sort((x, y) => (x.completedAt ?? '').localeCompare(y.completedAt ?? ''))
       .slice(-need);
     if (last.length < need) return no(`${last.length} of the ${need} completed tasks needed are on record.`);

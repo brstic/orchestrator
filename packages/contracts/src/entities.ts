@@ -487,6 +487,8 @@ export interface TaskEvidence {
   reportedTests: string | null;
   /** Measured on the host by Orchestrator, independent of the agent's claims. */
   commits: Array<{ sha: string; subject: string; author: string; ts: string }>;
+  /** The commit the task's branch stood at when the work was handed in and checked: what is reviewed, and what is merged — not whatever the branch points at later. */
+  headSha?: string | null;
   filesChanged: string[];
   diffStat: string | null;
   verification: VerificationResult | null;

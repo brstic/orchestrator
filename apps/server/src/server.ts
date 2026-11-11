@@ -790,7 +790,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       return engine.tasks.submitReview('owner', param(req, 'id'), b.verdict, String(b.comments ?? ''));
     });
     api.post('/tasks/:id/unblock', async (req) => engine.tasks.unblock(param(req, 'id'), String(body(req).note ?? '')));
-    api.post('/tasks/:id/retry-merge', async (req) => engine.tasks.retryMerge(param(req, 'id')));
+    api.post('/tasks/:id/retry-merge', async (req) => engine.tasks.retryMerge(param(req, 'id'), actorOf(req)));
     api.get('/tasks/:id/git', async (req) => engine.tasks.gitView({ taskId: param(req, 'id') }));
 
     // questions, notifications, meetings

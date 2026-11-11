@@ -184,6 +184,16 @@ export class Routines {
     return null;
   }
 
+  /**
+   * A routine somebody else set for an employee on a member's own computer does not run while that member's room is
+   * closed (it types into their session, and starts it). One the member set themselves goes on.
+   */
+  private closedRoom(r: Routine, employee: Employee | undefined): string | null {
+    const host = employee ? this.core.hosts.get(employee.hostId) : undefined;
+    if (!host?.memberId || !this.eng.hosts.isClosed(host.memberId)) return null;
+    return r.createdBy === `member:${host.memberName}` ? null : `${employee!.name}'s room is closed`;
+  }
+
   /** Why this is not the moment to hand a running session something new, in words; null when it is. */
   private busy(employee: Employee): string | null {
     const session = this.core.runningSessionOf(employee.id)!;
@@ -203,7 +213,7 @@ export class Routines {
   private look(r: Routine, now: number, manual: boolean): void {
     const employee = this.core.employees.get(r.employeeId);
     const every = this.intervalMs(r);
-    const held = this.held(employee);
+    const held = this.held(employee) ?? this.closedRoom(r, employee);
     // Held: nothing is counted down meanwhile, so it runs once when the hold is over.
     if (held || !employee) return this.note(r, 'not_run', held, now, manual ? now + every : 'keep');
 

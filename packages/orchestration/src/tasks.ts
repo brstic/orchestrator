@@ -118,6 +118,9 @@ function emptyEvidence(): Task['evidence'] {
  * command passing on the host, an approved review when required, and a merge
  * that did not conflict.
  */
+/** How the reason of a task begins that is approved and waits only for its merge (its machine was away). */
+const WAITS_FOR_MERGE = 'Waiting to be merged into';
+
 export class TaskManager {
   private eng: Engine;
   private scheduleTimer: NodeJS.Timeout | null = null;
@@ -895,6 +898,9 @@ export class TaskManager {
       task.worktree = cwd;
       task.branch = branch;
       task.baseSha = baseSha;
+      // An approval was for the work as it stood then. Back with its author — to resolve a conflict, after being
+      // unblocked — what comes next is new work, and is reviewed as such.
+      if (task.evidence.review?.verdict === 'approved') task.evidence.review = null;
       task.status = 'IN_PROGRESS';
       task.blockedReason = null;
       task.startedAt = task.startedAt ?? nowIso();
@@ -1134,6 +1140,8 @@ export class TaskManager {
         const base = task.baseSha ?? project.integrationBranch;
         const log = await this.core.agents.rpc(hostId, { method: 'git.log', params: { cwd, range: `${base}..HEAD`, max: 100 } });
         task.evidence.commits = log.commits ?? [];
+        // Where the branch stands now: this is what is checked, reviewed and merged.
+        task.evidence.headSha = task.evidence.commits[0]?.sha ?? null;
         if (!task.evidence.commits.length && codeTask && !args.no_code_changes) {
           return { text: `Not complete: there are no commits on "${task.branch}" since the task started. Commit your work, or — only if the task truly needed no repository changes — call complete_task with no_code_changes=true and explain why in the summary.`, isError: true };
         }
@@ -1182,8 +1190,10 @@ export class TaskManager {
         if (touched.length) {
           task.evidence.verification.touchedChecks = touched;
           this.history(task, `Verification passed, but the task changed what it is checked by: ${touched.slice(0, 6).join(', ')}${touched.length > 6 ? ` and ${touched.length - 6} more` : ''}`, 'orchestrator');
-          // (A task that is about the tests themselves is expected to change them: noted, not held up.)
-          if (task.kind !== 'test' && !task.requiresReview) {
+          // (A task that is about the tests themselves is expected to change them: noted, not held up — when a
+          // person made it such a task. An employee who names its own task "test" has not excused it from review.)
+          const aboutTests = task.kind === 'test' && !/^employee:/.test(task.createdBy ?? '');
+          if (!aboutTests && !task.requiresReview) {
             task.requiresReview = true;
             this.core.event({ type: 'task.updated', source: 'server', summary: `${task.key} passed its checks after changing them (${touched[0]}${touched.length > 1 ? ` and ${touched.length - 1} more` : ''}): it goes to review`, taskId: task.id, projectId: project.id, employeeId: employee.id, data: { key: task.key, touchedChecks: touched } });
           }
@@ -1344,12 +1354,30 @@ export class TaskManager {
   }
 
   /** Merge (when applicable) and mark DONE. A conflicting merge is reported, never forced. */
-  async finalize(task: Task): Promise<void> {
+  /**
+   * `asItStands`: merge the branch as it is now, not the commit that was checked — only on a person's own "Retry
+   * merge": that is how a conflict resolved by hand in the author's folder (a commit made after the check, by or
+   * with the owner) gets in, and whoever presses it has looked.
+   */
+  async finalize(task: Task, opts: { asItStands?: boolean } = {}): Promise<void> {
     const project = this.core.projects.require(task.projectId);
     const employee = this.core.employees.get(task.assigneeId);
     const hostId = employee ? (this.core.runningSessionOf(employee.id)?.hostId ?? employee.hostId) : project.hostId;
     // In-place projects have nothing to merge: the commits are already on the folder's own branch.
     const mergeable = project.workspace !== 'in_place' && !!task.branch && !!task.worktree && task.evidence.commits.length > 0 && project.policy.autoMerge && !NON_CODE_KINDS.has(task.kind);
+    if (mergeable && (!hostId || !employee || !this.core.agents.isOnline(hostId))) {
+      // The work is there and approved, and it cannot be merged right now (its machine is away, or nobody holds the
+      // task any more). It is not "done" until it is in: tasks that wait for it would start without it.
+      task.status = 'BLOCKED';
+      task.blockedReason = `${WAITS_FOR_MERGE} ${project.integrationBranch}: ${employee ? `${employee.name}'s machine is not reachable right now` : 'nobody is assigned to it any more'}. Retry the merge when it is.`;
+      // (Recorded as a merge that has not happened, so that "Retry merge" is there for it — and the office retries
+      // by itself when the machine is back: see `mergeWaiting`.)
+      task.evidence.merge = { ts: nowIso(), ok: false, sha: null, into: project.integrationBranch, detail: 'Not attempted yet: the machine the work is on could not be reached.' };
+      this.history(task, task.blockedReason, 'orchestrator');
+      this.core.put('task', task);
+      this.core.event({ type: 'task.blocked', source: 'server', summary: `${task.key} is approved but could not be merged yet`, taskId: task.id, projectId: project.id, employeeId: task.assigneeId, data: { key: task.key, reason: task.blockedReason } });
+      return;
+    }
     if (mergeable && hostId && employee) {
       const repo = this.repoFor(project, employee);
       if (repo && this.core.agents.isOnline(hostId)) {
@@ -1358,7 +1386,7 @@ export class TaskManager {
         const res = await this.chainMerge(`${hostId}:${insp.repoRoot ?? repo}`, () =>
           this.core.agents.rpc(hostId, {
             method: 'git.merge',
-            params: { repo: insp.repoRoot ?? repo, worktree: paths.integration, into: project.integrationBranch, base: project.baseBranch, branch: task.branch!, message: `Merge ${task.key}: ${task.title}` },
+            params: { repo: insp.repoRoot ?? repo, worktree: paths.integration, into: project.integrationBranch, base: project.baseBranch, branch: task.branch!, message: `Merge ${task.key}: ${task.title}`, sha: opts.asItStands ? null : (task.evidence.headSha ?? null) },
           }),
         ).catch((e) => ({ ok: false, sha: null, into: project.integrationBranch, conflicts: [], detail: (e as Error).message, alreadyMerged: false }));
         task.evidence.merge = { ts: nowIso(), ok: res.ok, sha: res.sha, into: project.integrationBranch, detail: res.ok ? res.detail : `${res.conflicts?.length ? `Conflicts in: ${res.conflicts.join(', ')}. ` : ''}${res.detail}` };
@@ -1390,6 +1418,10 @@ export class TaskManager {
           return;
         }
         this.core.company.mergesSucceeded++;
+        if (res.leftOut) {
+          this.history(task, `${res.leftOut} commit${res.leftOut === 1 ? '' : 's'} made on ${task.branch} after the work was checked ${res.leftOut === 1 ? 'was' : 'were'} not merged: only what was verified${task.requiresReview ? ' and reviewed' : ''} is`, 'orchestrator');
+          this.eng.comms.notify({ kind: 'info', severity: 'warning', title: `${task.key}: commits after the check were left out of the merge`, body: `${employee.name} made ${res.leftOut} more commit${res.leftOut === 1 ? '' : 's'} on ${task.branch} after ${task.key} was handed in. What was merged is the commit that was checked (${String(task.evidence.headSha).slice(0, 7)}); the later ${res.leftOut === 1 ? 'one is' : 'ones are'} still on the branch, in nobody's work.`, employeeId: employee.id, taskId: task.id, projectId: project.id });
+        }
         // The task passed on its own branch; now check the integration branch with it merged in.
         if (!res.alreadyMerged) void this.testIntegration(project, hostId, insp.repoRoot ?? repo, `after merging ${task.key}`, task.id).catch(() => undefined);
         this.core.event({ type: 'task.merged', source: 'server', summary: `${task.key} merged into ${project.integrationBranch}`, taskId: task.id, projectId: project.id, employeeId: task.assigneeId, data: { key: task.key, sha: res.sha, alreadyMerged: res.alreadyMerged } });
@@ -1437,11 +1469,24 @@ export class TaskManager {
   }
 
   /** Owner action after resolving a conflict by hand. */
+  /** A machine is back: approved work on it that was waiting to be merged is merged now. */
+  mergeWaiting(hostId: string): void {
+    for (const t of this.core.tasks.filter((x) => x.status === 'BLOCKED' && !!x.blockedReason?.startsWith(WAITS_FOR_MERGE))) {
+      const e = this.core.employees.get(t.assigneeId);
+      if (!e || (this.core.runningSessionOf(e.id)?.hostId ?? e.hostId) !== hostId) continue;
+      void this.retryMerge(t.id, 'office').catch((err) => this.core.log('warn', `merging ${t.key} after its machine came back: ${(err as Error).message}`));
+    }
+  }
+
   async retryMerge(taskId: string, actor = 'owner'): Promise<Task> {
     const task = this.core.tasks.require(taskId);
     if (task.status !== 'BLOCKED' || !task.evidence.merge || task.evidence.merge.ok) throw new EngineError(`${task.key} is not waiting on a merge`);
     this.core.audit(actor, 'task.retry_merge', taskId, { key: task.key });
-    await this.finalize(task);
+    // A person's retry merges the branch as it stands now (they resolved the conflict there, or saw to it); the
+    // office's own retry — the machine came back — merges the commit that was checked, as always.
+    const byPerson = actor !== 'office';
+    if (byPerson && task.evidence.headSha) this.history(task, `Merge retried by ${actor === 'owner' ? 'the boss' : actor.replace(/^[a-z]+:/, '')}: the branch is merged as it stands now`, actor);
+    await this.finalize(task, { asItStands: byPerson });
     return task;
   }
 
