@@ -5,7 +5,7 @@ import { DECORATION_KINDS, DESK_SIZE } from '@orchestrator/contracts';
 import type { Model } from '../src/models/kit.ts';
 import { DESK_TOP, desk, divider, keyboard, monitor, taskChair } from '../src/models/workplace.ts';
 import { arcade, bookshelf, coffeeTable, deskPlant, floorLamp, mug, notebook, plant, sofa, trophyCase } from '../src/models/decor.ts';
-import { executiveDesk, fridge, hifi, kitchen, mediaConsole, meetingTable, opsConsole, rack, receptionDesk } from '../src/models/rooms.ts';
+import { executiveDesk, fridge, hifi, kitchen, mediaConsole, meetingTable, opsConsole, rack, receptionDesk, vault } from '../src/models/rooms.ts';
 
 /**
  * The furniture is sculpted in code, so its sizes can be checked like any other number: every model must stand
@@ -125,6 +125,11 @@ test('room furniture fits the floor the office keeps free for it', () => {
   fits('operators console', opsConsole(), 5.2, 1.0, 6000);
   fits('media console', mediaConsole(), 2.6, 0.5, 2000);
   fits('hi-fi', hifi(), 3.0, 0.7, 6800);
+  fits('vault', vault(), 1.2, 0.9, 7200);
+  // A safe a person looks up at a little, not a cupboard and not a wardrobe; and its wheel stays inside its place.
+  const safe = box(vault());
+  assert.ok(safe.max.y >= 1.6 && safe.max.y <= 1.85, `the vault is ${safe.max.y.toFixed(2)} m high`);
+  assert.ok(safe.max.z <= 0.45 + SLACK, `the vault's wheel reaches ${safe.max.z.toFixed(3)} m forward of its middle; its place ends at 0.45`);
   fits('waiting sofa', sofa(3.0), 3.0, 0.9, 6500);
   fits('break-room sofa', sofa(2.6, '#c96f4a', { seat: 0.5 }), 2.6, 0.95, 5500);
   fits('coffee table', coffeeTable(1.3, 0.7), 1.3, 0.7, 1500);

@@ -809,6 +809,12 @@ function TaskEvidence({ task }: { task: Task }) {
         )}
       </Section>
 
+      {ev.verification?.touchedChecks?.length ? (
+        <div className="pc-note" data-touched-checks>
+          This task changed what it is checked by — {ev.verification.touchedChecks.slice(0, 8).join(', ')}
+          {ev.verification.touchedChecks.length > 8 ? ` and ${ev.verification.touchedChecks.length - 8} more` : ''}. Its checks passed with those changes, so it was sent to review: look at what was changed in the tests before approving.
+        </div>
+      ) : null}
       <Section title={`Files changed (${ev.filesChanged.length})`} provenance="measured">
         {ev.filesChanged.length ? <div className="code">{ev.filesChanged.join('\n')}</div> : <div className="muted">None recorded.</div>}
         {ev.diffStat && (

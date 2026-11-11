@@ -18,4 +18,4 @@
 
 Plans: [plans/UPDATE-central-office.md](plans/UPDATE-central-office.md) (active) · [plans/2026-original-brief.md](plans/2026-original-brief.md) (done; what is left is listed there).
 
-Ideas, not yet plans: [plans/IDEAS-from-t3code.md](plans/IDEAS-from-t3code.md) (installation, updates, accounts, process) · [plans/IDEAS-memory-from-mempalace.md](plans/IDEAS-memory-from-mempalace.md) (a better memory).
+Ideas, not yet plans: [plans/IDEAS-from-ahoy.md](plans/IDEAS-from-ahoy.md) (what to bring over from the owner's Ahoy project; three of them are built) · [plans/IDEAS-from-t3code.md](plans/IDEAS-from-t3code.md) (installation, updates, accounts, process) · [plans/IDEAS-memory-from-mempalace.md](plans/IDEAS-memory-from-mempalace.md) (a better memory).

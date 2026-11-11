@@ -14,3 +14,5 @@ export * from './learning/outcomes.ts';
 export * from './routines.ts';
 export * from './sleep.ts';
 export * from './waits.ts';
+export * from './vault.ts';
+export * from './vault-detect.ts';

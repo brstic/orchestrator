@@ -8,6 +8,7 @@ import { Core, EngineError, type EngineOptions } from './core.ts';
 import { Foreman } from './foreman.ts';
 import { HookReceiver } from './hook-receiver.ts';
 import { Improver } from './improve.ts';
+import { Vault } from './vault.ts';
 import { MeetingManager } from './meetings.ts';
 import { buildMcpServer, type McpContext } from './mcp-tools.ts';
 import { EmployeeRegistry, HostRegistry, SessionRegistry, type EmployeeInput } from './registry.ts';
@@ -43,6 +44,7 @@ export class Engine {
   readonly routines: Routines;
   readonly sleeper: Sleeper;
   readonly waits: Waits;
+  readonly vault: Vault;
   readonly mcp: McpServerOptions<McpContext>;
   private housekeeping: NodeJS.Timeout | null = null;
 
@@ -61,6 +63,7 @@ export class Engine {
     this.routines = new Routines(this);
     this.sleeper = new Sleeper(this);
     this.waits = new Waits(this);
+    this.vault = new Vault(this.core, opts.vaultKeyFile ?? null);
     this.core.gateway = new TerminalGateway({
       rpc: (hostId, rpc, timeoutMs) => this.core.agents.rpc(hostId, rpc, timeoutMs),
       locate: (sessionId) => {

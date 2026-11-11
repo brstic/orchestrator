@@ -41,7 +41,58 @@ test('the world has every functional area and no locked rooms', () => {
   assert.ok(world.meeting && world.meeting.seats.length >= 8);
   assert.ok(world.breakSpots.length >= 4);
   assert.ok(world.racks.length >= 8);
-  assert.deepEqual(world.interactables.map((i) => i.kind).sort(), ['board', 'break', 'ceo', 'hifi', 'meeting', 'ops', 'reception', 'server', 'tv']);
+  assert.deepEqual(world.interactables.map((i) => i.kind).sort(), ['board', 'break', 'ceo', 'hifi', 'meeting', 'ops', 'reception', 'server', 'tv', 'vault']);
+});
+
+test('the vault stands in the server room, clear of the racks and the door, and the owner can walk up to it', () => {
+  const sr = world.room('server')!;
+  const vault = world.vault!;
+  const box = { minX: vault.x - 0.45, maxX: vault.x + 0.45, minZ: vault.z - 0.6, maxZ: vault.z + 0.6 };
+  assert.ok(box.minX > sr.x + 0.07 && box.maxX < sr.x + sr.w && box.minZ > sr.z && box.maxZ < sr.z + sr.d - 0.07, 'inside the server room, off its walls');
+  assert.ok(Math.abs(Math.sin(vault.rot) - 1) < 1e-9, 'its door faces east, into the room');
+  // People walk around it: it is one of the solid things, and nothing else stands in its place.
+  assert.ok(world.solids.some((o) => Math.abs(o.minX - box.minX) < 1e-9 && Math.abs(o.maxX - box.maxX) < 1e-9 && Math.abs(o.minZ - box.minZ) < 1e-9 && Math.abs(o.maxZ - box.maxZ) < 1e-9), 'it is an obstacle');
+  for (const r of world.racks) assert.ok(r.x - 0.4 > box.maxX + 0.6 || r.z + 0.525 < box.minZ - 0.6 || r.z - 0.525 > box.maxZ + 0.6, `the rack at ${r.x},${r.z} is clear of the vault`);
+  // The room's door (in its south wall) is not behind it or in front of it.
+  for (const d of sr.doors ?? []) {
+    const c = sr.x + sr.w * d.at;
+    assert.ok(d.side !== 'w' && (d.side !== 's' || c - d.width / 2 > box.maxX + 1.2), 'the door stays free');
+  }
+  const spot = world.interactables.find((i) => i.kind === 'vault')!;
+  assert.equal(spot.label, 'VAULT — PASSWORDS AND KEYS');
+  // Standing where the prompt appears is possible, it is in front of the door, and the way there from the entrance is open.
+  const [x, z] = moveWithCollision(world, spot.x, spot.z, 0, 0);
+  assert.ok(Math.hypot(x - spot.x, z - spot.z) < 0.05, 'the spot in front of it is free');
+  assert.ok(spot.x > box.maxX + 0.3 && Math.abs(spot.z - vault.z) < 0.01 && Math.hypot(spot.x - vault.x, spot.z - vault.z) < spot.radius);
+  assert.ok(world.nav.walkable(spot.x, spot.z) && world.nav.reach(world.spawn.x, world.spawn.z)(spot.x, spot.z), 'it can be walked to from the entrance');
+  // In front of the vault means the vault, not the room it stands in.
+  const first = world.interactables.find((i) => Math.hypot(i.x - spot.x, i.z - spot.z) < i.radius)!;
+  assert.equal(first.kind, 'vault');
+  const server = world.interactables.find((i) => i.kind === 'server')!;
+  assert.ok(Math.hypot(server.x - spot.x, server.z - spot.z) > server.radius, 'in the default office the two circles do not meet where one stands');
+});
+
+test('the vault in an office the owner has changed: it gives way to what already stands in its corner, and fits the smallest server room', () => {
+  // A plant the owner put where the vault would stand: the vault takes the other corner, facing the other way.
+  const layout = defaultLayout();
+  const sr = layout.rooms.find((r) => r.kind === 'server')!;
+  const planted = buildWorld({ ...layout, decorations: [...layout.decorations, { id: 'plant-u1', kind: 'plant', x: sr.x + 0.6, z: sr.z + sr.d - 1.0, rot: 0 }] }, new Set());
+  const moved = planted.vault!;
+  assert.ok(Math.abs(moved.x - (sr.x + sr.w - 0.55)) < 1e-9 && Math.abs(Math.sin(moved.rot) + 1) < 1e-9, 'in the east corner, its door facing west');
+  const at = planted.interactables.find((i) => i.kind === 'vault')!;
+  assert.ok(at.x < moved.x - 0.75 && planted.nav.reach(planted.spawn.x, planted.spawn.z)(at.x, at.z), 'one stands in front of its door there too');
+  const plant = planted.solids.find((o) => Math.abs(o.minX - (sr.x + 0.6 - 0.275)) < 1e-9)!;
+  const safe = { minX: moved.x - 0.45, maxX: moved.x + 0.45, minZ: moved.z - 0.6, maxZ: moved.z + 0.6 };
+  assert.ok(plant && !(plant.minX < safe.maxX && plant.maxX > safe.minX && plant.minZ < safe.maxZ && plant.maxZ > safe.minZ), 'the plant and the vault do not stand in each other');
+  // The server room made as small as the editor allows (10.5 × 7 m): the vault is clear of the racks and can be stood in front of.
+  const w = buildWorld({ ...layout, rooms: layout.rooms.map((r) => (r.kind === 'server' ? { ...r, w: 10.5, d: 7 } : r)) }, new Set());
+  const v = w.vault!;
+  assert.ok(Math.sin(v.rot) > 0.99, 'in its own corner');
+  for (const r of w.racks) assert.ok(r.x - 0.4 > v.x + 0.45 || r.z + 0.525 < v.z - 0.6, `the rack at ${r.x},${r.z} is clear of the vault`);
+  const spot = w.interactables.find((i) => i.kind === 'vault')!;
+  const [x, z] = moveWithCollision(w, spot.x, spot.z, 0, 0);
+  assert.ok(Math.hypot(x - spot.x, z - spot.z) < 0.05, 'the spot in front of it is free');
+  assert.ok(w.nav.reach(w.spawn.x, w.spawn.z)(spot.x, spot.z), 'and can be walked to');
 });
 
 test('the hi-fi stands in the break room, out of the way, and the owner can walk up to it', () => {

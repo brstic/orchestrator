@@ -159,8 +159,64 @@ export function buildHooksSettings(opts: {
 
 export interface ClaudeLaunchPlan {
   argv: string[];
-  files: Array<{ path: string; content: string }>;
+  /** `mode`: for a file that is run (default: private, not executable). */
+  files: Array<{ path: string; content: string; mode?: number }>;
   hookEvents: string[];
+}
+
+/**
+ * The vault's helper in a session's own folder: a small program a command calls to take a credential out of the
+ * office's vault by name — `curl -H "Authorization: Bearer $("$ORCH_VAULT" get github-deploy-token)" …` — or to put
+ * one in from a pipe (`openssl rand -hex 24 | "$ORCH_VAULT" put shop-api-key`). The value goes from the office to
+ * the command (or the other way) and never through the model's conversation. It talks to the office's worker
+ * endpoint with the session's own token (read from the `mcp.json` next to it), so it can do only what that
+ * session may, and every use is recorded there.
+ */
+export function vaultHelper(sessionDir: string): { command: string; files: Array<{ path: string; content: string; mode?: number }> } {
+  const script = path.join(sessionDir, 'vault.mjs');
+  const command = path.join(sessionDir, 'vault');
+  const mjs = `// The office's vault, for commands in this session. Usage:
+//   "$ORCH_VAULT" get NAME                      print the value (nothing else, no newline)
+//   … | "$ORCH_VAULT" put NAME [--service S] [--user U] [--kind password|api_key|token|ssh_key|other] [--note "…"]
+//   "$ORCH_VAULT" list [QUERY]                  names and what they are for; never values
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const fail = (msg, code = 1) => { process.stderr.write('vault: ' + msg + '\\n'); process.exit(code); };
+let office;
+try {
+  office = JSON.parse(fs.readFileSync(path.join(here, 'mcp.json'), 'utf8')).mcpServers.orchestrator;
+} catch {
+  fail('this session is not connected to an office');
+}
+async function call(name, args) {
+  let res, body;
+  try {
+    res = await fetch(office.url, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...office.headers }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) });
+    body = await res.json();
+  } catch (e) {
+    fail('the office did not answer (' + (e && e.message) + ')');
+  }
+  const text = (body && body.result && body.result.content && body.result.content[0] && body.result.content[0].text) || '';
+  if (!res.ok || body.error || (body.result && body.result.isError)) fail(String((body.error && body.error.message) || text || res.status).replace(/^Error: /, ''));
+  return text;
+}
+const [cmd, name, ...rest] = process.argv.slice(2);
+const opt = (flag) => { const i = rest.indexOf(flag); return i >= 0 ? rest[i + 1] : undefined; };
+if (cmd === 'get' && name) process.stdout.write(await call('vault_read', { name }));
+else if (cmd === 'list') process.stdout.write((await call('vault_list', { query: name || '' })) + '\\n');
+else if (cmd === 'put' && name) {
+  let value = '';
+  for await (const chunk of process.stdin) value += chunk;
+  value = value.replace(/\\r?\\n$/, '');
+  if (!value) fail('nothing to store: give the value on standard input, e.g.  printf %s "$TOKEN" | "$ORCH_VAULT" put ' + name, 2);
+  process.stdout.write((await call('vault_store', { name, value, service: opt('--service'), username: opt('--user'), kind: opt('--kind'), description: opt('--note') })).split('. ')[0] + '.\\n');
+} else fail('usage: "$ORCH_VAULT" get NAME  |  … | "$ORCH_VAULT" put NAME [--service S] [--user U] [--kind K] [--note "…"]  |  "$ORCH_VAULT" list [QUERY]', 2);
+`;
+  const sh = `#!/bin/sh\nexec ${shellSingleQuote(process.execPath)} ${shellSingleQuote(script)} "$@"\n`;
+  return { command, files: [{ path: script, content: mjs }, { path: command, content: sh, mode: 0o700 }] };
 }
 
 /**
@@ -200,10 +256,13 @@ export function planClaudeLaunch(opts: {
     // Refreshed after each answer, and once a minute while idle.
     statusLine: { type: 'command', command: statusLineCommand({ socketPath: opts.hookSocket, token: opts.hookToken, sessionId: opts.sessionId, label: `Orchestrator · ${spec.displayName}` }), refreshInterval: 60 },
   };
-  const files = [{ path: settingsPath, content: JSON.stringify(settings, null, 2) }];
+  const files: ClaudeLaunchPlan['files'] = [{ path: settingsPath, content: JSON.stringify(settings, null, 2) }];
 
   const unset = NESTED_SESSION_ENV.flatMap((k) => ['-u', k]);
-  const envPairs = Object.entries({ ...spec.env, ORCH_SESSION_ID: opts.sessionId }).map(([k, v]) => `${k}=${v}`);
+  // The vault's helper for this session (see `vaultHelper`): commands reach credentials by name through it.
+  const vault = spec.mcp ? vaultHelper(opts.sessionDir) : null;
+  if (vault) files.push(...vault.files);
+  const envPairs = Object.entries({ ...spec.env, ORCH_SESSION_ID: opts.sessionId, ...(vault ? { ORCH_VAULT: vault.command } : {}) }).map(([k, v]) => `${k}=${v}`);
   const argv = ['/usr/bin/env', ...unset, ...envPairs, opts.claudeBin, '--settings', settingsPath];
   if (spec.resume) argv.push('--resume', spec.claudeSessionId);
   // Pick up the most recent conversation Claude Code has for this folder (one that was started outside the office).

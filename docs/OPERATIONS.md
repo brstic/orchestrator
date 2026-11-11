@@ -147,7 +147,7 @@ Owners can do the member part from the app as well: Menu → Access.
 **Sessions that sleep.** Shared sessions with no work for 30 minutes are stopped by the office to free memory (Settings → Employees → *Put idle sessions to sleep after*; 0 = never). So `tmux ls` on the server shows only the employees who are awake: a missing `orch-<name>-<id>` session of someone shown as *Sleeping* in the office is expected, not a crash. It comes back under the same name when they are next needed. The log line is `session.asleep` in the audit (actor `office`); a wake is `session.resumed` by `office`. To see what the setting gives back, compare `free -m` (or the Machines panel) before and after an idle half hour — this has not been measured yet.
 
 ### Backup and restore
-The whole office is `~/.orchestrator-office/server/` (database, certificate, credentials). The certificate matters: with a new one every invitation has to be made again.
+The whole office is `~/.orchestrator-office/server/` (database, certificate, credentials, and `vault.key` — the key to everything in the vault; a backup without it cannot open the vault). The certificate matters: with a new one every invitation has to be made again.
 
 ```sh
 systemctl --user stop orchestrator-office

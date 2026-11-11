@@ -642,7 +642,11 @@ export class HostAgent {
           hookEvents: this.cfg.hookEvents,
           effortLevels: spec.effort ? (this.info?.claudeEffortLevels ?? (await claudeEffortLevels(this.cfg.claudeBin))) : null,
         });
-    for (const f of plan.files) writePrivate(f.path, f.content);
+    for (const f of plan.files) {
+      writePrivate(f.path, f.content);
+      const mode = (f as { mode?: number }).mode;
+      if (mode) fs.chmodSync(f.path, mode);
+    }
     // Anything queued for a previous run of this worker is stale now.
     const rt = this.rt(sessionId);
     rt.inbox = [];

@@ -266,6 +266,9 @@ export class TaskManager {
     for (const dep of input.dependsOn ?? []) if (!this.core.tasks.get(dep)) throw new EngineError(`unknown dependency ${dep}`);
     const kind = input.kind && TASK_KINDS.includes(input.kind) ? input.kind : 'feature';
     const now = nowIso();
+    // Credentials written into a task are kept in the vault; the task carries their names.
+    const author = by === 'owner' ? { kind: 'owner' as const, id: null, name: 'The boss' } : { kind: by.startsWith('employee:') ? ('employee' as const) : ('member' as const), id: null, name: by.replace(/^[a-z]+:/, '') };
+    input = { ...input, description: this.eng.vault.capture(input.description ?? '', author, [project.name]).text, acceptance: this.eng.vault.capture(input.acceptance ?? '', author, [project.name]).text };
     const task: Task = {
       id: newId(),
       key: `T-${this.core.store.nextCounter('task')}`,
@@ -850,6 +853,17 @@ export class TaskManager {
         this.core.company.testsPassed++;
         this.core.saveCompany();
         this.eng.comms.resolveNotifications((n) => n.kind === 'test_failure' && n.taskId === task.id);
+        // It passed — by its own tests, if the task rewrote them. That is said, and somebody else looks at it.
+        const touched = checksTouched(task.evidence.filesChanged, command);
+        if (touched.length) {
+          task.evidence.verification.touchedChecks = touched;
+          this.history(task, `Verification passed, but the task changed what it is checked by: ${touched.slice(0, 6).join(', ')}${touched.length > 6 ? ` and ${touched.length - 6} more` : ''}`, 'orchestrator');
+          // (A task that is about the tests themselves is expected to change them: noted, not held up.)
+          if (task.kind !== 'test' && !task.requiresReview) {
+            task.requiresReview = true;
+            this.core.event({ type: 'task.updated', source: 'server', summary: `${task.key} passed its checks after changing them (${touched[0]}${touched.length > 1 ? ` and ${touched.length - 1} more` : ''}): it goes to review`, taskId: task.id, projectId: project.id, employeeId: employee.id, data: { key: task.key, touchedChecks: touched } });
+          }
+        }
       } else {
         task.evidence.verification = { ts: nowIso(), command: null, exitCode: null, passed: null, outputTail: '', durationMs: null, provenance: 'unavailable' };
       }
@@ -1349,3 +1363,53 @@ export class TaskManager {
     return { cwd, status, diff, base };
   }
 }
+
+/** Paths that are tests, or settings of what runs them. */
+const CHECK_PATHS = [
+  /(^|\/)(tests?|__tests__|specs?|e2e|cypress|playwright)\//i,
+  /(^|\/)[^/]*[._-](test|spec)\.[a-z0-9]+$/i,
+  /(^|\/)test_[^/]*\.py$/i,
+  /(^|\/)[^/]*_test\.(go|py|rb|exs?)$/i,
+  // A script whose name says it is the check (what `npm test` usually runs when it is not a test runner).
+  /(^|\/)(check|checks|verify|test|tests|run-?tests|lint)\.(c?js|mjs|ts|sh|py)$/i,
+  /(^|\/)(jest|vitest|playwright|cypress|karma|mocha|ava|babel)\.config\.[a-z]+$/i,
+  /(^|\/)(pytest\.ini|tox\.ini|conftest\.py|\.mocharc[^/]*|phpunit\.xml(\.dist)?|Makefile|justfile)$/i,
+  /(^|\/)\.(github\/workflows|gitlab-ci|circleci)(\/|\.yml$)/i,
+];
+
+/**
+ * Which of the files a task changed are part of what it is verified by: tests, the test runner's settings, and
+ * whatever file the verification command itself names (`node check.js`, `sh scripts/verify.sh`). `package.json`
+ * counts when the command goes through it (`npm test`, `pnpm run …`, `yarn …`).
+ */
+export function checksTouched(filesChanged: string[], command: string | null): string[] {
+  const scripts = scriptsRun(command ?? '');
+  const viaPackage = /\b(npm|pnpm|yarn|bun)\b/.test(command ?? '');
+  const clean = (f: string) => f.replace(/^[A-Z?]{1,2}\s+/, '').replace(/^.* -> /, '').trim();
+  return [...new Set(filesChanged.map(clean).filter((f) => !!f && (CHECK_PATHS.some((re) => re.test(f)) || scripts.includes(f) || (viaPackage && /(^|\/)package\.json$/.test(f)))))];
+}
+
+const INTERPRETERS = new Set(['node', 'sh', 'bash', 'zsh', 'python', 'python3', 'ruby', 'perl', 'php', 'deno', 'bun', 'tsx', 'ts-node', 'npx']);
+
+/**
+ * The files a command line runs as programs: `node check.js`, `sh scripts/verify.sh`, `./verify.sh`. A file the
+ * command only looks at (`test -f totals.txt`, `grep -q ON a.txt`) is what is being checked, not the check.
+ */
+function scriptsRun(command: string): string[] {
+  const out: string[] = [];
+  const path = (w: string) => w.replace(/^['"]|['"]$/g, '').replace(/^\.\//, '');
+  for (const segment of command.split(/&&|\|\||[;|()]/)) {
+    const words = segment.trim().split(/\s+/).filter(Boolean);
+    if (!words.length) continue;
+    const first = words[0]!;
+    if (INTERPRETERS.has(first)) {
+      // The first argument that is not an option; `-c` / `-e` mean the program is written inline, so there is no file.
+      const rest = words.slice(1);
+      if (rest.some((w) => /^-(c|e|-eval|-command)$/.test(w))) continue;
+      const file = rest.find((w) => !w.startsWith('-'));
+      if (file) out.push(path(file));
+    } else if (/^\.{0,2}\//.test(first) || /\.(sh|c?js|mjs|ts|py|rb)$/.test(first)) out.push(path(first));
+  }
+  return out;
+}
+

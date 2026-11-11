@@ -32,7 +32,7 @@ export interface Spot {
 }
 
 export interface Interactable {
-  kind: 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv';
+  kind: 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv' | 'vault';
   id: string;
   label: string;
   x: number;
@@ -73,6 +73,8 @@ export interface World {
   whiteboard: { x: number; z: number; rot: number; w: number; h: number } | null;
   opsWall: { x: number; z: number; w: number } | null;
   racks: Array<{ x: number; z: number; rot: number }>;
+  /** The vault: a safe in the server room's south-west corner, against the west wall, its door facing into the room. */
+  vault: { x: number; z: number; rot: number } | null;
   /** The team room, once the company has earned it: a table to gather round and a sofa against the far wall. */
   team: { table: { x: number; z: number; w: number; d: number }; seats: Spot[]; sofa: { x: number; z: number; rot: number; w: number } } | null;
   interactables: Interactable[];
@@ -541,6 +543,7 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
   }
 
   const racks: World['racks'] = [];
+  let vault: World['vault'] = null;
   const sr = room('server');
   if (sr) {
     for (let row = 0; row < 2; row++) {
@@ -551,6 +554,25 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
         obstacles.push(rect(x, z, 0.8, 1.05));
       }
     }
+    // The vault stands in the corner left of the racks, between their front row and the wall with the door, its
+    // back to the west wall (in the default office the wall shared with the operations room, where no member's
+    // door is ever cut): the way from the door to the racks stays open. Where an owner has already put a desk or
+    // a decoration in that corner, it takes the corner at the other end of the same wall instead.
+    const corners = [
+      { x: sr.x + 0.55, z: sr.z + sr.d - 1.0, rot: Math.PI / 2 },
+      { x: sr.x + sr.w - 0.55, z: sr.z + sr.d - 1.0, rot: -Math.PI / 2 },
+    ];
+    const taken = [...layout.desks.map((d) => deskBox(d, 0.3)), ...layout.decorations.filter((d) => !d.requires || unlocked.has(d.requires)).map((d) => (decorationKind(d.kind)?.solid ? decorationBox(d) : null)).filter((b): b is Box => !!b)];
+    const free = (c: { x: number; z: number; rot: number }) => {
+      // The safe itself and the floor in front of its door.
+      const front = Math.sin(c.rot) * 0.9;
+      const b = { minX: c.x - 0.45 + Math.min(0, front), maxX: c.x + 0.45 + Math.max(0, front), minZ: c.z - 0.6, maxZ: c.z + 0.6 };
+      return !taken.some((t) => t.minX < b.maxX && t.maxX > b.minX && t.minZ < b.maxZ && t.maxZ > b.minZ);
+    };
+    vault = corners.find(free) ?? corners[0]!;
+    obstacles.push(rect(vault.x, vault.z, 0.9, 1.2));
+    // Before the room's own spot: in a narrow server room the two circles meet, and in front of the vault means the vault.
+    interactables.push({ kind: 'vault', id: 'vault', label: 'VAULT — PASSWORDS AND KEYS', x: vault.x + Math.sin(vault.rot) * 1.2, z: vault.z, radius: 1.3 });
     interactables.push({ kind: 'server', id: 'server', label: 'SERVER ROOM — CONNECTED MACHINES', x: sr.x + sr.w / 2, z: sr.z + 6.6, radius: 2.6 });
   }
 
@@ -609,7 +631,7 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
   const spawn = rr ? { x: rr.x + rr.w / 2, z: rr.z + rr.d - 1.6, rot: Math.PI } : { x: 0, z: bounds.maxZ - 2, rot: Math.PI };
   const solids = obstacles;
   const all = [...wallBoxes, ...solids];
-  const world = { layout, rooms, walls, obstacles: all, solids, bounds, memberRooms: NO_ROOMS, memberDesks: NO_DESKS, meeting, breakSpots, ceoDesk, hifi, tv, reception, board, boardSpots, whiteboard, opsWall, racks, team, interactables, spawn, nav: new NavGrid(bounds, all), room } as unknown as World;
+  const world = { layout, rooms, walls, obstacles: all, solids, bounds, memberRooms: NO_ROOMS, memberDesks: NO_DESKS, meeting, breakSpots, ceoDesk, hifi, tv, reception, board, boardSpots, whiteboard, opsWall, racks, vault, team, interactables, spawn, nav: new NavGrid(bounds, all), room } as unknown as World;
   world.base = world;
   return world;
 }

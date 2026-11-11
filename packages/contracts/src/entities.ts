@@ -441,6 +441,11 @@ export interface VerificationResult {
   outputTail: string;
   durationMs: number | null;
   provenance: EvidenceProvenance;
+  /**
+   * Files this task changed that are part of what it is checked by: tests, the test runner's settings, the script the
+   * verification command runs. A check that passes after the task edited the check proves less; such work is reviewed.
+   */
+  touchedChecks?: string[];
 }
 
 export interface TaskEvidence {

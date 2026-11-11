@@ -130,11 +130,15 @@ export interface EngineOptions {
   publicUrl: string;
   timings?: Partial<Timings>;
   log?: (level: 'info' | 'warn' | 'error', msg: string) => void;
+  /** Where the vault's key is kept (a file made on first use). Without it, what the vault holds lasts until the process ends. */
+  vaultKeyFile?: string | null;
 }
 
 export interface BusEvents {
   entity: [kind: EntityKind, op: 'upsert' | 'remove', data: any];
   event: [event: OrchestratorEvent];
+  /** Something in the vault changed (what, is asked for by whoever may know). */
+  vault: [];
 }
 
 /** TV bookmarks come from the owner's typing: http(s) addresses with a name, bounded. */

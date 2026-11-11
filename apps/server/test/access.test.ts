@@ -199,6 +199,18 @@ test('deleting a project: a shared one is for owners alone; one on a member’s 
   for (const who of [vera, root]) for (const p of ['p-shared', 'p-jovan', 'p-nohost']) assert.equal(call(who, 'DELETE', `/projects/${p}`), true);
 });
 
+test('the vault: whoever works here sees what it holds and may add; a value, a change and a removal are an owner\u2019s; a visitor gets nothing', () => {
+  for (const [m, r] of [['GET', '/vault'], ['POST', '/vault'], ['PATCH', '/vault/v1'], ['DELETE', '/vault/v1'], ['POST', '/vault/v1/reveal']] as const) {
+    assert.equal(call(mila, m, r), false, `Mila (a visitor): ${m} ${r}`);
+    assert.equal(call(vera, m, r) && call(root, m, r), true, `owners: ${m} ${r}`);
+  }
+  for (const who of [ana, jovan]) {
+    assert.equal(call(who, 'GET', '/vault') && call(who, 'POST', '/vault'), true, `${who.name} sees the names and may add`);
+    for (const [m, r] of [['PATCH', '/vault/v1'], ['DELETE', '/vault/v1'], ['POST', '/vault/v1/reveal']] as const) assert.equal(call(who, m, r), false, `${who.name}: ${m} ${r}`);
+  }
+  assert.match(mayCall(engine, ana, 'POST', '/vault/v1/reveal', null).reason!, /owner/i);
+});
+
 test('routines: set by whoever may work with the employee, read by whoever may read them', () => {
   // A visitor reads the shared ones and changes none.
   assert.ok(call(mila, 'GET', '/routines'));
