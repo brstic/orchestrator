@@ -124,6 +124,8 @@ export class Engine {
     }
     void this.memory.start();
     this.sessions.restore();
+    const reseated = this.repairSeats();
+    if (reseated) this.core.log('info', `${reseated} seat${reseated === 1 ? '' : 's'} that stood in a neighbouring table ${reseated === 1 ? 'was' : 'were'} moved to its own table`);
     const requeued = this.tasks.requeueFolderWaits();
     if (requeued) this.core.log('info', `${requeued} task${requeued === 1 ? '' : 's'} that waited for a shared folder ${requeued === 1 ? 'is' : 'are'} back in the queue`);
     this.waits.restore();
@@ -450,7 +452,14 @@ export class Engine {
     const front = Math.min(...desks.map((d) => d.z));
     const back = Math.max(...desks.map((d) => d.z));
     const rowZ = back - front > 0.5 ? [front, back] : [front, front + 1];
-    const taken = (x: number, z: number) => this.core.layout.desks.some((d) => Math.hypot(d.x - x, d.z - z) < 1.2);
+    // A place is taken when a desk would stand in another: desks are 1.7 m wide and 0.85 m deep, in columns 1.9 m and
+    // rows 1 m apart — so the seat across the table (1 m away) is a place of its own. A desk of ANOTHER table needs
+    // room to walk between the two (0.9 m), or the tables would grow into each other.
+    const taken = (x: number, z: number) =>
+      this.core.layout.desks.some((d) => {
+        const own = Engine.podOf(d.id) === pod;
+        return Math.abs(d.x - x) < (own ? 1.8 : 2.6) && Math.abs(d.z - z) < (own ? 0.9 : 1.9);
+      });
     // First a gap inside the pod's own columns, then a new column on the right, then on the left.
     const columns = [...xs, xs[xs.length - 1]! + 1.9, xs[0]! - 1.9];
     let spot: { x: number; z: number; rot: number } | null = null;
@@ -463,6 +472,48 @@ export class Engine {
     const letters = 'abcdefgh'.split('').filter((l) => !desks.some((d) => d.id === `${pod}-${l}`));
     const desk = { id: `${pod}-${letters[0]}`, x: spot.x, z: spot.z, rot: spot.rot, zone: desks[0]!.zone, kind: 'standard' as const };
     return this.updateLayout({ ...this.core.layout, desks: [...this.core.layout.desks, desk] }, actor);
+  }
+
+  /**
+   * Seats that an earlier version put in the wrong place: it took the seat across the table for taken, so a fifth
+   * and a sixth seat went side by side in one row — into the table next door — instead of facing each other. Such a
+   * seat is moved to where it belongs (the third column of its own table), with whoever sits at it.
+   */
+  repairSeats(): number {
+    const layout = this.core.layout;
+    const pods = new Map<string, OfficeLayout['desks']>();
+    for (const d of layout.desks) pods.set(Engine.podOf(d.id), [...(pods.get(Engine.podOf(d.id)) ?? []), d]);
+    let moved = 0;
+    const desks = layout.desks.map((d) => ({ ...d }));
+    for (const [pod, list] of pods) {
+      if (list.length <= 4) continue;
+      const base = list.filter((d) => /-[a-d]$/.test(d.id));
+      if (base.length < 2) continue;
+      const xs = [...new Set(base.map((d) => Math.round(d.x * 100) / 100))].sort((a, b) => a - b);
+      const front = Math.min(...base.map((d) => d.z));
+      const back = Math.max(...base.map((d) => d.z));
+      if (xs.length !== 2 || back - front < 0.5) continue; // not the usual two by two: left as the owner arranged it
+      const col = xs[1]! + 1.9;
+      for (const extra of list.filter((d) => /-[e-h]$/.test(d.id))) {
+        const inColumn = Math.abs(extra.x - col) < 0.05 || Math.abs(extra.x - (xs[0]! - 1.9)) < 0.05;
+        const inRow = Math.abs(extra.z - front) < 0.05 || Math.abs(extra.z - back) < 0.05;
+        if (inColumn && inRow) continue; // already where a seat of this table can be
+        // The free place of the third column: front first, then back.
+        for (const [z, rot] of [[front, 0], [back, Math.PI]] as const) {
+          const free = !desks.some((d) => d.id !== extra.id && Math.abs(d.x - col) < 1.8 && Math.abs(d.z - z) < 0.9);
+          if (!free) continue;
+          const mine = desks.find((d) => d.id === extra.id)!;
+          mine.x = col;
+          mine.z = z;
+          mine.rot = rot;
+          moved++;
+          break;
+        }
+      }
+      void pod;
+    }
+    if (moved) this.updateLayout({ ...layout, desks }, 'office');
+    return moved;
   }
 
   /** What is written on a table. An empty text removes the sign. */

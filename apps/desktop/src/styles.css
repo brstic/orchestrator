@@ -2922,6 +2922,11 @@ button.ops-row:hover {
   grid-template-columns: 1fr 1fr;
   gap: 5px;
 }
+.seat-gap {
+  border-style: dashed;
+  opacity: 0.25;
+  min-height: 28px;
+}
 .seat {
   display: flex;
   align-items: center;

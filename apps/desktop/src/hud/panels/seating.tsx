@@ -8,6 +8,20 @@ import { act } from '../core.tsx';
 const podOf = (deskId: string): string => deskId.replace(/-[a-z]$/, '');
 
 /**
+ * A table's seats the way they stand in the office: the row on the far side first, then the row facing it, each from
+ * left to right — so the card looks like the table seen from above. A place in the grid with no desk is `null`.
+ */
+export function seatsAsTheyStand(desks: OfficeLayout['desks']): { columns: number; cells: Array<OfficeLayout['desks'][number] | null> } {
+  const round = (n: number) => Math.round(n * 10) / 10;
+  const xs = [...new Set(desks.map((d) => round(d.x)))].sort((a, b) => a - b);
+  const zs = [...new Set(desks.map((d) => round(d.z)))].sort((a, b) => a - b);
+  // Anything that is not a plain grid (a table somebody rearranged by hand) is shown in the order of its seats.
+  if (xs.length * zs.length > 12 || xs.length > 4) return { columns: 2, cells: desks };
+  const cells = zs.flatMap((z) => xs.map((x) => desks.find((d) => round(d.x) === x && round(d.z) === z) ?? null));
+  return { columns: Math.max(1, xs.length), cells };
+}
+
+/**
  * Who sits where. Every table (a desk pod) is a card: what is written on it, its seats and who
  * is in each. Drag a person onto another seat to move them (onto someone else: the two swap),
  * or onto "No desk" to stand them up. Only where people are shown changes — never their work.
@@ -27,7 +41,10 @@ export function Seating({ layout }: { layout: OfficeLayout }) {
     list.push(d);
     pods.set(podOf(d.id), list);
   }
-  const standing = people.filter((e) => !e.deskId || !layout.desks.some((d) => d.id === e.deskId));
+  // Someone in a member's own room has a seat there (the room is that member's to arrange), so they are not "without a desk".
+  const hosts = useOffice((s) => s.hosts);
+  const inRooms = people.filter((e) => !!hosts[e.hostId ?? '']?.memberId);
+  const standing = people.filter((e) => !hosts[e.hostId ?? '']?.memberId && (!e.deskId || !layout.desks.some((d) => d.id === e.deskId)));
 
   const move = (employeeId: string, deskId: string | null) => {
     const who = employees[employeeId];
@@ -81,6 +98,7 @@ export function Seating({ layout }: { layout: OfficeLayout }) {
           const saved = layout.podLabels?.[pod] ?? '';
           const text = labels[pod] ?? saved;
           const seated = desks.filter((d) => at.has(d.id)).length;
+          const stand = seatsAsTheyStand(desks);
           return (
             <div key={pod} className="seat-table" data-pod={pod}>
               <div className="row" style={{ gap: 6 }}>
@@ -97,8 +115,9 @@ export function Seating({ layout }: { layout: OfficeLayout }) {
                   {seated}/{desks.length}
                 </span>
               </div>
-              <div className="seat-grid">
-                {desks.map((d) => {
+              <div className="seat-grid" style={{ gridTemplateColumns: `repeat(${stand.columns}, minmax(0, 1fr))` }}>
+                {stand.cells.map((d, i) => {
+                  if (!d) return <div key={`gap-${i}`} className="seat seat-gap" aria-hidden="true" />;
                   const e = at.get(d.id);
                   return (
                     <div key={d.id} className={`seat ${over === d.id ? 'seat-over' : ''} ${e ? '' : 'seat-empty'}`} data-desk={d.id} {...dropOn(d.id)}>
@@ -132,6 +151,20 @@ export function Seating({ layout }: { layout: OfficeLayout }) {
             {standing.length === 0 && <span className="small faint">Everyone has a seat.</span>}
           </div>
         </div>
+        {inRooms.length > 0 && (
+          <div className="seat-table" data-in-rooms>
+            <div className="strong small">In members' own rooms</div>
+            <div className="small faint">They sit in the room of the computer they run on; its member arranges it (My room).</div>
+            <div className="row row-wrap" style={{ gap: 6 }}>
+              {inRooms.map((e) => (
+                <span key={e.id} className="seat-chip" title={`${e.name} — on ${hosts[e.hostId ?? '']?.memberName ?? 'a member'}'s computer`}>
+                  <Avatar appearance={e.appearance} size={18} />
+                  <span className="truncate">{e.name}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
