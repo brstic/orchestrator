@@ -153,6 +153,8 @@ export type AgentRpc =
   | { method: 'git.log'; params: { cwd: string; range: string; max?: number } }
   | { method: 'git.worktree.ensure'; params: { repo: string; path: string; branch: string; base: string } }
   | { method: 'git.branch.start'; params: { cwd: string; branch: string; base: string } }
+  /** Commit what is uncommitted in a worktree on its (task) branch as work in progress — when a task is stopped. */
+  | { method: 'git.wip'; params: { cwd: string; branch: string; message: string } }
   | { method: 'git.merge'; params: { repo: string; worktree: string; into: string; base: string; branch: string; message: string } }
   | { method: 'git.integration.status'; params: { repo: string; base: string; integration: string } }
   | { method: 'git.promote'; params: { repo: string; base: string; integration: string } }

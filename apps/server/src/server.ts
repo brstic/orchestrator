@@ -662,6 +662,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       engine.tasks.deleteTask(param(req, 'id'));
       return { ok: true };
     });
+    // Stepping into a task somebody is working on: stop it (on hold, or removed), or correct it (they are told at once).
+    api.post('/tasks/:id/stop', async (req) => engine.tasks.stopTask(param(req, 'id'), { then: body(req).then === 'delete' ? 'delete' : 'hold', note: body(req).note ?? null }, actorOf(req)));
+    api.post('/tasks/:id/correct', async (req) => {
+      const b = body(req);
+      return engine.tasks.correctTask(param(req, 'id'), { note: b.note ?? null, title: typeof b.title === 'string' ? b.title : undefined, description: typeof b.description === 'string' ? b.description : undefined, acceptance: typeof b.acceptance === 'string' ? b.acceptance : undefined, now: b.now === true }, actorOf(req));
+    });
     // ── files on a task: what people attach for the employee, and the evidence employees leave ──
     // A file comes in pieces (a first call says what it is; each next one carries up to 512 KB), so that it passes any proxy in front of the office.
     api.post('/tasks/:id/attachments', async (req) => {

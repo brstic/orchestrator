@@ -45,6 +45,7 @@ import {
   readTranscriptUsage,
   runVerify,
   startBranch,
+  commitWip,
 } from '@orchestrator/execution';
 import { AGENT_VERSION, type AgentConfig, paths, readJson, saveConfig, toWsUrl, writePrivate } from './config.ts';
 import type { ManagedSpec } from './managed-runner.ts';
@@ -1046,6 +1047,8 @@ export class HostAgent {
         return this.gitExclusive(() => ensureWorktree(rpc.params));
       case 'git.branch.start':
         return this.gitExclusive(() => startBranch({ ...rpc.params, cwd: this.assertAllowed(rpc.params.cwd) }));
+      case 'git.wip':
+        return this.gitExclusive(() => commitWip({ ...rpc.params, cwd: this.assertAllowed(rpc.params.cwd) }));
       case 'git.merge':
         this.assertAllowed(rpc.params.repo);
         this.assertAllowed(rpc.params.worktree);

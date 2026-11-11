@@ -132,6 +132,8 @@ const RULES: Rule[] = [
   rule('POST', '/tasks/release', 'work', inBody('project', 'projectId')),
   rule('PATCH', '/tasks/:id', 'work', path('task'), inBody('employee', 'assigneeId')),
   rule('DELETE', '/tasks/:id', 'work', path('task')),
+  rule('POST', '/tasks/:id/stop', 'work', path('task')),
+  rule('POST', '/tasks/:id/correct', 'work', path('task')),
   rule('POST', '/tasks/:id/attachments', 'work', path('task')),
   rule('POST', '/tasks/:id/attachments/:id/data', 'work', path('task')),
   rule('DELETE', '/tasks/:id/attachments/:id', 'work', path('task')),

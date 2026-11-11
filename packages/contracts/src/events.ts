@@ -79,6 +79,8 @@ export type EventType =
   | 'project.deleted'
   | 'account.switched'
   | 'task.attachment_added'
+  | 'task.stopped'
+  | 'task.corrected'
   | 'session.cut_off'
   | 'employee.deleted'
   | 'vault.stored'

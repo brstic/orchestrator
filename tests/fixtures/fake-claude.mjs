@@ -479,6 +479,8 @@ async function handlePrompt(text, viaStopHook = false) {
     const stop = await fireHook('Stop', { stop_hook_active: depth > 0 || viaStopHook, last_assistant_message: last });
     if (stop?.decision !== 'block' || !stop.reason) break;
     say(`\x1b[35m⎿ Stop hook feedback:\x1b[0m ${String(stop.reason).split('\n')[0].slice(0, 140)}`);
+    // What comes back from the Stop hook is new input: an interrupt of the work before it does not carry over.
+    interrupted = false;
     last = await runDirectives(stop.reason);
     if (!/@@fake(-retry)?:/.test(stop.reason)) last = (await defaultBehaviour(stop.reason)) ?? 'Continuing.';
   }

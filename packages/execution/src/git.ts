@@ -208,6 +208,23 @@ export async function startBranch(opts: { cwd: string; branch: string; base: str
   return { branch: opts.branch, baseSha, reused: false };
 }
 
+/**
+ * Put whatever is uncommitted in a worktree away as one commit on the branch that is checked out — "work in
+ * progress", made when a task is stopped, so that the folder is clean for the next task and nothing is lost: it is
+ * on the task's own branch when the task is taken up again. Only on the branch named (never on a branch the task
+ * does not own); hooks are not run for it.
+ */
+export async function commitWip(opts: { cwd: string; branch: string; message: string }): Promise<{ committed: boolean; sha: string | null; files: number }> {
+  const st = await gitStatus(opts.cwd);
+  if (!st.repoRoot) throw new Error(`${opts.cwd} is not a git repository`);
+  if (st.branch !== opts.branch) throw new Error(`the folder is on "${st.branch}", not on "${opts.branch}"; nothing was committed`);
+  if (!st.dirty) return { committed: false, sha: st.head ?? null, files: 0 };
+  await git(opts.cwd, ['add', '-A']);
+  await git(opts.cwd, ['-c', 'user.name=Orchestrator', '-c', 'user.email=orchestrator@localhost', 'commit', '--no-verify', '-q', '-m', opts.message]);
+  const sha = (await git(opts.cwd, ['rev-parse', 'HEAD'])).stdout.trim();
+  return { committed: true, sha, files: st.files.length };
+}
+
 export interface MergeResult {
   ok: boolean;
   sha: string | null;

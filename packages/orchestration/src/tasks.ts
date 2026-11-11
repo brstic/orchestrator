@@ -393,6 +393,143 @@ export class TaskManager {
     return this.verifying.has(id);
   }
 
+  /** A real Escape in the real terminal of whoever is working on this task, if they are in a turn. Returns whether one was sent. */
+  private async interruptFor(task: Task, why: string): Promise<boolean> {
+    const session = this.core.runningSessionOf(task.assigneeId);
+    if (!session || !this.core.agents.isOnline(session.hostId)) return false;
+    if (session.inTurn === false) return false;
+    await this.core.agents.rpc(session.hostId, { method: 'session.interrupt', params: { sessionId: session.id } }).catch(() => undefined);
+    if (session.capabilities.hooks) session.inTurn = false;
+    this.eng.sessions.setActivity(session, 'idle', why);
+    this.core.event({ type: 'terminal.interrupt', source: 'owner', summary: `${this.core.employees.get(task.assigneeId)?.name ?? 'Employee'} was interrupted: ${why}`, sessionId: session.id, employeeId: task.assigneeId, hostId: session.hostId, taskId: task.id, data: { via: 'terminal' } });
+    return true;
+  }
+
+  /**
+   * Stop a task somebody is working on. Their turn is interrupted in the real terminal, they are told to leave it,
+   * and the task is put on hold (kept, with its branch and its assignee, until it is released again) or deleted.
+   * A task nobody has in hand is simply put on hold or deleted.
+   */
+  async stopTask(id: string, opts: { then?: 'hold' | 'delete'; note?: string | null } = {}, actor = 'owner'): Promise<{ key: string; interrupted: boolean; deleted: boolean }> {
+    const task = this.core.tasks.require(id);
+    const then = opts.then === 'delete' ? 'delete' : 'hold';
+    if (task.status === 'DONE') throw new EngineError(`${task.key} is done; there is nothing to stop`);
+    if (this.verifying.has(task.id)) throw new EngineError(`${task.key} is being verified right now; stop it when that has finished`, 409);
+    const note = truncate(String(opts.note ?? '').trim(), 2000);
+    const employee = this.core.employees.get(task.assigneeId);
+    const wasInProgress = task.status === 'IN_PROGRESS';
+    const who = actor === 'owner' ? 'the boss' : actor.replace(/^[a-z]+:/, '');
+    // The board first: whatever the session says while it is being stopped no longer concerns this task.
+    this.eng.comms.cancelFor({ kind: 'task', id: task.id });
+    for (const q of this.core.questions.filter((x) => x.taskId === task.id && x.status === 'open' && x.channel !== 'system')) this.eng.comms.supersede(q.id, `${task.key} was stopped.`);
+    task.status = 'BACKLOG';
+    task.released = false;
+    task.blockedReason = null;
+    task.nudges = 0;
+    task.delivery = { status: 'none', via: null, ts: null, detail: null };
+    task.progress = { percent: null, note: null, ts: null };
+    this.history(task, `Stopped by ${who}${note ? `: ${note}` : ''} — ${then === 'delete' ? 'and removed' : 'on hold until it is released again'}`, actor);
+    task.updatedAt = nowIso();
+    this.core.put('task', task);
+    let interrupted = false;
+    let wip: string | null = null;
+    // Nothing new is handed to them until their folder has been dealt with.
+    if (employee) this.startingEmployees.add(employee.id);
+    try {
+    if (wasInProgress && employee) {
+      const running = this.core.runningSessionOf(employee.id);
+      interrupted = await this.interruptFor(task, `${task.key} was stopped`);
+      // In a worktree of their own, what they had half-done is put away on the task's branch: the folder is clean for
+      // the next task (a branch is never switched over uncommitted files), and it is all there if this one is taken
+      // up again. In a folder worked in place nothing is touched: uncommitted files there are never the office's.
+      const project = this.core.projects.get(task.projectId);
+      const hostId = running?.hostId ?? employee.hostId;
+      if (project && project.workspace !== 'in_place' && task.worktree && task.branch && /^orch\//.test(task.branch) && hostId && this.core.agents.isOnline(hostId)) {
+        if (interrupted) await new Promise((r) => setTimeout(r, 400));
+        try {
+          const res = await this.core.agents.rpc<{ committed: boolean; sha: string | null; files: number }>(hostId, { method: 'git.wip', params: { cwd: task.worktree, branch: task.branch, message: `WIP ${task.key}: stopped by ${who} — work in progress, not finished` } }, 20000);
+          if (res.committed) {
+            wip = res.sha;
+            this.history(task, `What was uncommitted (${res.files} file${res.files === 1 ? '' : 's'}) was committed on ${task.branch} as work in progress (${String(res.sha).slice(0, 7)})`, 'orchestrator');
+            this.core.put('task', task);
+          }
+        } catch (e) {
+          // An older agent on that machine, or the folder is not on the task's branch: the employee is asked to do it.
+          this.core.log('info', `stopping ${task.key}: work in progress was not committed by the office (${(e as Error).message})`);
+          wip = 'ask';
+        }
+      }
+      if (running) {
+        const left = wip === 'ask' ? `Before anything else, make your folder clean: commit what you have${task.branch ? ` on ${task.branch}` : ''} as work in progress (or discard it if it is worth nothing) — your next task cannot start over uncommitted files.` : wip ? `What you had uncommitted was committed on ${task.branch} as work in progress; your folder is clean.` : `Leave what you have as it is${task.branch ? ` (what you committed stays on ${task.branch})` : ''}.`;
+        this.eng.comms.sendMessage({
+          from: { kind: 'owner', id: null, name: who },
+          toEmployeeId: employee.id,
+          kind: 'system',
+          body: `${who === 'the boss' ? 'The boss' : who} stopped ${task.key} "${truncate(task.title, 100)}". Stop working on it now: do not continue it and do not call complete_task for it.${note ? `\n\nWhy: ${note}` : ''}\n\n${left} ${then === 'delete' ? 'The task was removed from the board.' : 'It is on hold; if it is released again it comes back to you.'} You are free for other work.`,
+        });
+        this.eng.comms.schedulePump(employee.id, 300);
+      }
+    }
+    } finally {
+      if (employee) this.startingEmployees.delete(employee.id);
+    }
+    this.core.audit(actor, 'task.stopped', task.id, { key: task.key, then, interrupted, note: note || undefined });
+    this.core.event({ type: 'task.stopped', source: 'owner', summary: `${task.key} was stopped by ${who}${employee && wasInProgress ? ` (${employee.name} was working on it)` : ''} — ${then === 'delete' ? 'removed' : 'on hold'}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, then, interrupted, note: note || null } });
+    if (then === 'delete') this.deleteTask(task.id, actor);
+    this.schedule();
+    return { key: task.key, interrupted, deleted: then === 'delete' };
+  }
+
+  /**
+   * Correct a task: change what it says and/or say what should be done differently. Whoever is working on it is told
+   * at once — interrupted first when `now` is set, otherwise as soon as their turn ends — and goes on with the task.
+   */
+  async correctTask(id: string, input: { note?: string | null; title?: string; description?: string; acceptance?: string; now?: boolean }, actor = 'owner'): Promise<Task> {
+    const task = this.core.tasks.require(id);
+    if (task.status === 'DONE') throw new EngineError(`${task.key} is done; make a new task for what should change`);
+    const note = truncate(String(input.note ?? '').trim(), 4000);
+    const changed: string[] = [];
+    for (const key of ['title', 'description', 'acceptance'] as const) {
+      const v = input[key];
+      if (typeof v === 'string' && v.trim() !== task[key].trim() && (key !== 'title' || v.trim())) {
+        task[key] = v.trim();
+        changed.push(key);
+      }
+    }
+    if (!note && !changed.length) throw new EngineError('say what should change, or change the task\'s text');
+    const who = actor === 'owner' ? 'the boss' : actor.replace(/^[a-z]+:/, '');
+    // A correction that carries a credential: the credential goes to the vault, the task names it.
+    const kept = note ? this.eng.vault.capture(note, { kind: 'owner', id: null, name: who }, [this.core.employees.get(task.assigneeId)?.name ?? '']).text : '';
+    this.history(task, `Corrected by ${who}${kept ? `: ${truncate(kept, 300)}` : ''}${changed.length ? ` (changed: ${changed.join(', ')})` : ''}`, actor);
+    task.nudges = 0;
+    task.updatedAt = nowIso();
+    this.core.put('task', task);
+    const employee = this.core.employees.get(task.assigneeId);
+    const running = employee ? this.core.runningSessionOf(employee.id) : undefined;
+    let told = false;
+    if (task.status === 'IN_PROGRESS' && employee && running) {
+      const now = changed.length
+        ? `\n\nThe task now reads:\n${task.title}${task.description.trim() ? `\n\n${task.description.trim()}` : ''}${task.acceptance.trim() ? `\n\nAcceptance criteria:\n${task.acceptance.trim()}` : ''}`
+        : '';
+      this.eng.comms.sendMessage({
+        from: { kind: 'owner', id: null, name: who },
+        toEmployeeId: employee.id,
+        kind: 'chat',
+        taskId: task.id,
+        body: `Correction to ${task.key} "${truncate(task.title, 100)}" from ${who}${kept ? `:\n${kept}` : '.'}${now}\n\nGo on with ${task.key} with this in mind. Where what you have done so far goes against it, change it; then finish as usual (complete_task).`,
+      });
+      told = true;
+      if (input.now) {
+        await this.interruptFor(task, `${task.key} was corrected`);
+        this.eng.comms.schedulePump(employee.id, 300);
+      }
+    }
+    this.core.audit(actor, 'task.corrected', task.id, { key: task.key, changed, told, now: !!input.now });
+    this.core.event({ type: 'task.corrected', source: 'owner', summary: `${task.key} was corrected by ${who}${told ? ` — ${employee!.name} was told${input.now ? ' at once' : ''}` : ''}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, changed, told, now: !!input.now, note: truncate(kept, 600) || null } });
+    this.schedule();
+    return task;
+  }
+
   deleteTask(id: string, actor = 'owner'): void {
     const task = this.core.tasks.require(id);
     if (task.status === 'IN_PROGRESS') throw new EngineError('cannot delete a task that is in progress');

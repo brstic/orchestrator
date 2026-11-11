@@ -549,6 +549,8 @@ function TaskOverview({ task, onClose, onShowChanges }: { task: Task; onClose: (
 
         <TaskFiles task={task} />
 
+        {task.status === 'IN_PROGRESS' && <StepIn task={task} assignee={assignee?.name ?? null} />}
+
         {task.status === 'BLOCKED' && (
           <div className="card col">
             <div className="section-title">Blocked</div>
@@ -752,6 +754,75 @@ function TaskOverview({ task, onClose, onShowChanges }: { task: Task; onClose: (
 }
 
 // ─────────────────────────── task: evidence ──────────────────────────
+
+/**
+ * Stepping into a task somebody is working on: correct it (they are told at once and go on), put it on hold, or
+ * stop and remove it. Each really reaches the employee's session — a correction as a message, a stop as an interrupt.
+ */
+function StepIn({ task, assignee }: { task: Task; assignee: string | null }) {
+  const s = useOffice();
+  const [busy, run] = useAction();
+  const [note, setNote] = useState('');
+  const [now, setNow] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description);
+  const [acceptance, setAcceptance] = useState(task.acceptance);
+  const who = assignee ?? 'the employee';
+  const textChanged = editing && (title.trim() !== task.title.trim() || description.trim() !== task.description.trim() || acceptance.trim() !== task.acceptance.trim());
+  const correct = async () => {
+    const res = await run(() => api('POST', `/tasks/${task.id}/correct`, { note, now, ...(editing ? { title, description, acceptance } : {}) }), `${who} was told`);
+    if (res) {
+      setNote('');
+      setEditing(false);
+    }
+  };
+  const hold = async () => {
+    const res = await run(() => api('POST', `/tasks/${task.id}/stop`, { then: 'hold', note }), `${task.key} stopped and put on hold`);
+    if (res) setNote('');
+  };
+  const remove = async () => {
+    if (!(await ask({ title: `Stop and delete ${task.key}?`, body: `"${task.title}"\n\n${who} is interrupted and told to leave it; the task and its record are removed from the board. This cannot be undone. What was already committed stays on its branch on the machine.`, ok: 'Stop and delete' }))) return;
+    const res = await run(() => api('POST', `/tasks/${task.id}/stop`, { then: 'delete', note }), `${task.key} stopped and deleted`);
+    if (res) s.openPanel('tasks');
+  };
+  return (
+    <div className="card col" data-step-in>
+      <div className="section-title">Step in</div>
+      <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder={`What ${who} should do differently — or why you are stopping it. Sent to ${who} as written.`} aria-label="Correction or reason" />
+      {editing && (
+        <div className="col" style={{ gap: 6 }}>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Title" />
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" aria-label="Description" style={{ minHeight: 90 }} />
+          <textarea value={acceptance} onChange={(e) => setAcceptance(e.target.value)} placeholder="Acceptance criteria" aria-label="Acceptance criteria" />
+        </div>
+      )}
+      <div className="row row-wrap">
+        <Button variant="primary" disabled={busy || (!note.trim() && !textChanged)} onClick={correct} title={`${who} gets the correction and goes on with the task`}>
+          Send correction
+        </Button>
+        <label className="check small" title="On: their current turn is interrupted (Escape in their terminal) and the correction is the next thing they read. Off: they read it when the turn ends.">
+          <input type="checkbox" checked={now} onChange={(e) => setNow(e.target.checked)} /> <span>interrupt now</span>
+        </label>
+        {!editing && (
+          <Button variant="ghost" small onClick={() => setEditing(true)}>
+            Change the task's text…
+          </Button>
+        )}
+        <div className="grow" />
+        <Button disabled={busy} onClick={hold} title={`${who} is interrupted and told to leave it. The task waits in the backlog, with its branch, until you release it again.`}>
+          Stop — put on hold
+        </Button>
+        <Button variant="danger" disabled={busy} onClick={remove}>
+          Stop and delete…
+        </Button>
+      </div>
+      <div className="small faint">
+        A correction changes the task and tells {who}; they go on with it. Stopping interrupts them in their terminal and frees them for other work{note.trim() ? '; what you wrote above is given as the reason' : ''}.
+      </div>
+    </div>
+  );
+}
 
 function Section({ title, provenance, children }: { title: string; provenance?: EvidenceProvenance; children: ReactNode }) {
   return (

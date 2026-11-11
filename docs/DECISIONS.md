@@ -2,6 +2,14 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-11 — Stepping into a task in progress
+The owner: "I need to be able to stop somebody's task, or correct it".
+- **Two acts, both of which reach the session.** *Correct* (`TaskManager.correctTask`): the task's text and/or a note; the task stays theirs and in progress. *Stop* (`stopTask`): the task leaves their hands — on hold (BACKLOG, unreleased, assignee and branch kept) or deleted. Moving a card on the board (`PATCH status`) stays what it was, a change to the record; it never told anybody anything, which is why it was not enough.
+- **Interrupting is a real Escape, and it is the default for a correction.** Someone going the wrong way should stop going that way now; a note that waits for the end of a long turn arrives after the damage. The box can be unticked for "when you get to it".
+- **A stopped task's half-done work is committed by the office on the task's own branch** (`git.wip` on the machine: `add -A`, one commit marked WIP, hooks not run). Without it the employee's next task could not start — a branch is never switched over uncommitted files — and "stop" would leave them stuck, which is what the test found. Only in a worktree of the employee's own and only on a branch the office made (`orch/…`); in a folder worked in place nothing is touched. Rejected: `git stash` (invisible, easily lost, and not on the branch where the task continues); discarding (it is somebody's work); asking the employee to tidy up first (a race with the scheduler; kept only as the fallback when the machine's agent is too old for `git.wip`).
+- **On hold, not "ready and unassigned".** A stopped task that went straight back to READY would be handed out again within seconds — to the same employee, by the scheduler. Releasing it again is the owner's word.
+- Not built: stopping from the board card or the employee's menu (the task's window is one click from both); an employee stopping a colleague's task (they can already block, hand off and ask).
+
 ## 2026-11-11 — What a look at the live office turned up: prompts in the terminal, refused continuations, restarts
 The owner asked for a look at what goes on on the server and for whatever stands in the office's way to be fixed. Three things were found in the records and one in the log; each is fixed with a test that fails without the fix.
 
