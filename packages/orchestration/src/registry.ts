@@ -1177,7 +1177,17 @@ export class SessionRegistry {
   /** Is this session waiting to be started again for a change (so it is not told to go on meanwhile)? */
   restartDue(sessionId: string): boolean {
     const s = this.core.sessions.get(sessionId);
-    return !!s?.employeeId && this.restartWhy.has(s.employeeId);
+    if (!s?.employeeId) return false;
+    if (this.restartWhy.has(s.employeeId)) return true;
+    // Not noted (the office itself was started again since the change), but plain to see: the session runs with or
+    // without Claude Code's checks while its employee's level says the opposite.
+    const e = this.core.employees.get(s.employeeId);
+    if (!e || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || !s.permissionMode) return false;
+    const wantsBypass = e.autonomy === 'unrestricted';
+    const hasBypass = s.permissionMode === 'bypassPermissions';
+    if (wantsBypass === hasBypass) return false;
+    this.restartWhy.set(s.employeeId, `your level is now ${wantsBypass ? 'Unrestricted' : e.autonomy === 'auto' ? 'Auto' : e.autonomy}`);
+    return true;
   }
 
   private restarting = new Set<string>();
@@ -1207,6 +1217,8 @@ export class SessionRegistry {
 
   /** After a machine has reported its sessions: those of its employees that wait for a new start and are between turns get it now. */
   private restartIdleOn(hostId: string): void {
+    // (Asking each running session of this machine also notices one whose mode no longer fits its employee's level.)
+    for (const s of this.core.sessions.filter((x) => x.hostId === hostId && x.status === 'running')) this.restartDue(s.id);
     for (const id of [...this.restartWhy.keys()]) {
       const s = this.core.runningSessionOf(id);
       if (s && s.hostId === hostId && s.inTurn !== true) void this.restartNow(id);

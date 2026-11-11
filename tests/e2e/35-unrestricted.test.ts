@@ -174,6 +174,19 @@ test('a change of level or of Claude account starts the session again: at once w
   assert.equal((await h.getTask(task.id)).nudges, 0, 'not nudged while it waited for the new start');
   const told = await waitFor(async () => (await h.state()).messages.find((m) => m.toEmployeeId === ids.Una && /^Your session was started again because your level is now Unrestricted\. Go on with T-\d+ "Long work"/.test(m.body)), { label: 'told to go on', timeout: 20000 });
   assert.ok(told);
+  // The office itself restarted between the change and the end of the turn: the change is still carried out, because
+  // the session's own mode shows that it no longer fits its employee's level.
+  const long2 = await h.task({ projectId: project, title: 'More long work', assigneeId: ids.Una, description: '@@fake: sleep 3500; say end-of-that-turn@@' });
+  await h.api('POST', `/tasks/${task.id}/stop`, { then: 'delete' });
+  await waitFor(async () => (await h.getTask(long2.id)).delivery.status === 'confirmed' && (await h.session(ids.Una!))?.inTurn === true, { label: 'Una is in a turn again', timeout: 30000 });
+  before = (await h.session(ids.Una!))!;
+  await h.api('PATCH', `/employees/${ids.Una}`, { autonomy: 'auto' });
+  await h.restartServer();
+  now = await restarted('Una', before.startedAt!);
+  assert.match(await cmd('Una'), /--permission-mode auto/);
+  await h.api('POST', `/tasks/${long2.id}/stop`, { then: 'delete' });
+  await h.api('PATCH', `/employees/${ids.Una}`, { autonomy: 'unrestricted' });
+  await restarted('Una', now.startedAt!);
   // A change that needs no new start does not cause one.
   before = (await h.session(ids.Una!))!;
   await idle('Una');
