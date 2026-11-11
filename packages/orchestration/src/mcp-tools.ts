@@ -1,7 +1,7 @@
 import type { AgentSession, Employee, Task } from '@orchestrator/contracts';
 import { ACTIVITY_LABEL, truncate } from '@orchestrator/contracts';
 import type { McpServerOptions, McpToolHandler } from '@orchestrator/integrations';
-import { FOREMAN_TOOLS, ORCHESTRATOR_TOOLS } from '@orchestrator/integrations';
+import { BOARD_TOOLS, FOREMAN_TOOLS, ORCHESTRATOR_TOOLS } from '@orchestrator/integrations';
 import type { Engine } from './engine.ts';
 import { FOREMAN_ROLE } from './foreman.ts';
 import { answerLine } from './prompts.ts';
@@ -20,7 +20,9 @@ function describeTask(eng: Engine, t: Task): string {
   const deps = t.dependsOn.map((id) => core.tasks.get(id)).filter((x): x is Task => !!x);
   const lines = [
     `${t.key}: ${t.title}`,
-    `Status: ${t.status} · Kind: ${t.kind} · Priority: ${t.priority}`,
+    `Status: ${t.status}${t.status === 'BACKLOG' && !t.released ? ' (not released)' : ''} · Kind: ${t.kind} · Priority: ${t.priority}`,
+    `Assigned to: ${core.employees.get(t.assigneeId)?.name ?? 'nobody'}`,
+    t.status === 'BLOCKED' ? `Blocked on: ${t.blockedReason ?? 'not said'}` : '',
     `Project: ${project?.name ?? 'unknown'}`,
     t.branch ? `Branch: ${t.branch}` : '',
     t.worktree ? `Worktree: ${t.worktree}` : '',
@@ -41,6 +43,23 @@ function describeTask(eng: Engine, t: Task): string {
  */
 export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
   const core = eng.core;
+  const err = (text: string) => ({ text, isError: true });
+  // The board tools: on unless the owner switched them off.
+  const managing = () => core.settings.employeesManageBoard !== false;
+  const OFF = err('The owner keeps the task board to themselves in this office (Settings → Employees). Ask the boss (ask_boss).');
+  const by = (e: Employee) => `employee:${e.name}`;
+  const personal = (hostId: string | null | undefined) => !!core.hosts.get(hostId ?? '')?.memberId;
+  const sameSide = (a: Employee, b: Employee) => !(personal(a.hostId) || personal(b.hostId)) || a.hostId === b.hostId;
+  /** A task this employee may know about (their own project's first when two share a key). One answer for "no such task" and "not yours to see". */
+  const seen = (e: Employee, ref: unknown): Task | null => {
+    const t = eng.tasks.taskByKey(String(ref ?? ''), e.projectId);
+    return t && eng.tasks.canSee(e, t) ? t : null;
+  };
+  const noTask = (ref: unknown) => err(`No task "${ref}" that you can see. Use get_project_context to see the tasks of your project.`);
+  const heldProject = (t: Task) => {
+    const p = core.projects.get(t.projectId);
+    return p && p.status !== 'active' ? err(`${p.name} is ${p.status}: the owner decides when work on it continues.`) : null;
+  };
   const handlers: Record<string, McpToolHandler<McpContext>> = {
     get_current_task: async (_a, { employee }) => {
       const task = eng.tasks.currentTask(employee.id);
@@ -278,19 +297,97 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       return recorded ? `${text} ${recorded} team lesson${recorded === 1 ? '' : 's'} recorded.` : text;
     },
 
+    // ── The board in the employees' hands (the office setting "Employees manage the task board themselves") ──
+
+    get_task: async (a, { employee }) => {
+      const task = seen(employee, a.task);
+      return task ? describeTask(eng, task) : noTask(a.task);
+    },
+
+    release_task: async (a, { employee }) => {
+      if (!managing()) return OFF;
+      const task = seen(employee, a.task);
+      if (!task) return noTask(a.task);
+      const held = heldProject(task);
+      if (held) return held;
+      if (task.released) return `${task.key} is already released (${task.status}).`;
+      if (task.status !== 'BACKLOG') return err(`${task.key} is ${task.status}, not waiting in the backlog.`);
+      eng.tasks.release([task.id], by(employee));
+      core.event({ type: 'task.updated', source: 'mcp', summary: `${employee.name} released ${task.key} for scheduling`, taskId: task.id, projectId: task.projectId, employeeId: employee.id, data: { key: task.key, released: true, by: employee.id } });
+      const open = eng.tasks.openDependencies(task);
+      return `${task.key} "${truncate(task.title, 80)}" is released. ${open.length ? `It starts once ${open.map((d) => d.key).join(', ')} ${open.length === 1 ? 'is' : 'are'} done.` : task.assigneeId ? `It is handed to ${core.employees.get(task.assigneeId)?.name ?? 'its assignee'} as soon as they are free.` : 'It is given to someone suitable who is free (or give it to someone with give_task).'}`;
+    },
+
+    unblock_task: async (a, { employee }) => {
+      if (!managing()) return OFF;
+      const task = seen(employee, a.task);
+      if (!task) return noTask(a.task);
+      const held = heldProject(task);
+      if (held) return held;
+      if (task.status !== 'BLOCKED') return err(`${task.key} is not blocked (${task.status}).`);
+      if (task.blockedReason === 'Blocked by the owner') return err(`The boss blocked ${task.key}. It stays blocked until the boss says otherwise (ask_boss if it matters now).`);
+      const note = String(a.note ?? '').trim();
+      if (note.length < 12) return err('Say in "note" how the blocker is resolved — what was found, decided or fixed. Whoever picks the task up reads that.');
+      const done = eng.tasks.unblock(task.id, truncate(note, 2000), by(employee), employee);
+      return `${task.key} is unblocked: ${done.status === 'IN_PROGRESS' ? `${core.employees.get(done.assigneeId)?.name ?? 'its assignee'} was told and continues it` : 'it is back in the queue with your note and is handed out as soon as someone is free'}.`;
+    },
+
+    give_task: async (a, { employee }) => {
+      if (!managing()) return OFF;
+      const task = seen(employee, a.task);
+      if (!task) return noTask(a.task);
+      const held = heldProject(task);
+      if (held) return held;
+      const name = String(a.employee ?? '').trim();
+      const to = name.toLowerCase() === employee.name.toLowerCase() ? employee : eng.comms.resolveTeammate(employee, name);
+      if (!to || to.archived) return err(`No teammate matches "${name}". Use get_team.`);
+      if (to.roleKey === FOREMAN_ROLE) return err(`${to.name} is the foreman and does not take tasks. Give it to someone who does the work.`);
+      if (!eng.tasks.canSee(to, task)) return err(`${to.name} cannot take ${task.key}: work does not cross between the shared office and a member's own computer.`);
+      if (task.assigneeId === to.id) return `${task.key} is already ${to.id === employee.id ? 'yours' : `assigned to ${to.name}`}.`;
+      if (task.status === 'IN_PROGRESS') return err(`${core.employees.get(task.assigneeId)?.name ?? 'Someone'} is in the middle of ${task.key}. Talk to them (send_message); they can hand it over themselves.`);
+      if (task.status === 'DONE') return err(`${task.key} is done.`);
+      eng.tasks.updateTask(task.id, { assigneeId: to.id }, by(employee));
+      const next = task.status === 'READY' ? `It is handed to ${to.id === employee.id ? 'you' : 'them'} as soon as ${to.id === employee.id ? 'your turn ends' : 'they are free'}.` : task.status === 'BACKLOG' ? (task.released ? 'It starts once its dependencies are done.' : 'It is not released yet (release_task).') : `It is ${task.status}.`;
+      return `${task.key} "${truncate(task.title, 80)}" is now ${to.id === employee.id ? 'yours' : `assigned to ${to.name}`}. ${next}`;
+    },
+
+    wake_colleague: async (a, { employee }) => {
+      if (!managing()) return OFF;
+      const to = eng.comms.resolveTeammate(employee, String(a.employee ?? ''));
+      if (!to || to.archived) return err(`No teammate matches "${a.employee}". Use get_team.`);
+      const reason = String(a.reason ?? '').trim();
+      if (reason.length < 8) return err('Say in "reason" what they are needed for: it is the first thing they read.');
+      if (to.roleKey === FOREMAN_ROLE) return err(`${to.name} is the foreman: the office calls it when something needs it. Tell the boss if it should look at something (ask_boss).`);
+      if (!sameSide(employee, to)) return err(`${to.name} works on ${personal(to.hostId) ? "a member's own computer" : 'the shared office'} and you do not. Work does not cross between the two.`);
+      const running = core.runningSessionOf(to.id);
+      if (running && core.gateway.isPaused(running.id)) return err(`${to.name} is paused by the owner and stays so until the owner resumes them.`);
+      const message = { from: { kind: 'employee' as const, id: employee.id, name: `${employee.name} (${employee.title})` }, toEmployeeId: to.id, body: truncate(reason, 2000), taskId: eng.tasks.currentTask(employee.id)?.id ?? null };
+      if (running) {
+        eng.comms.sendMessage(message);
+        return `${to.name} is at their desk already (${(ACTIVITY_LABEL[running.activity] ?? running.activity).toLowerCase()}). Your message is delivered when they can read it.`;
+      }
+      const no = eng.sessions.cannotStart(to);
+      if (no) return err(`${to.name} cannot be started right now: ${no}.`);
+      const s = await eng.sessions.wake(to.id, `${employee.name}: ${truncate(reason, 120)}`);
+      eng.comms.sendMessage(message);
+      return `${to.name} is ${s.resumed ? 'awake again and continues where they left off' : 'started'}. Your message is the first thing they read.`;
+    },
+
     // Foreman-only tools (each refuses a caller who is not a foreman).
     ...eng.foreman.handlers(),
   };
 
   const foremanTools = new Set(FOREMAN_TOOLS.map((t) => t.name));
+  const boardTools = new Set(BOARD_TOOLS.map((t) => t.name));
   return {
     name: 'orchestrator',
     version: '0.1.0',
     instructions:
       'Orchestrator connects you to the virtual office you work in. Use these tools to learn your task, report real progress, ask the boss for decisions, collaborate with teammates and declare work complete. Completion is verified independently, so report honestly.',
-    tools: [...ORCHESTRATOR_TOOLS, ...FOREMAN_TOOLS],
+    tools: [...ORCHESTRATOR_TOOLS, ...BOARD_TOOLS, ...FOREMAN_TOOLS],
     handlers,
     // Only a foreman is shown the foreman's tools; everyone else's tool list (and prompt) stays as small as before.
-    listed: (tool, { employee }) => employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name),
+    // The board tools are shown while the owner leaves the board to the employees (a foreman assigns with its own tool).
+    listed: (tool, { employee }) => (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
   };
 }

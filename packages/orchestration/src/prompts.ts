@@ -129,7 +129,7 @@ const AUTONOMY_GUIDE: Record<AutonomyLevel, string> = {
   auto: 'You work on your own. The boss does not want to be asked for permission: do the work end to end — implement, test, fix, commit — inside your folder and your task\'s scope, and decide routine things yourself. Go to the boss (ask_boss) only when you genuinely need direction: a product decision, a missing requirement, or a choice between approaches that is theirs to make.',
 };
 
-export function systemPromptFor(employee: Employee, project: Project | undefined, companyName: string, hasMcp: boolean, playbook = ''): string {
+export function systemPromptFor(employee: Employee, project: Project | undefined, companyName: string, hasMcp: boolean, playbook = '', manageBoard = false): string {
   const role = roleByKey(employee.roleKey);
   const lines: string[] = [];
   lines.push(`# Orchestrator workplace context`);
@@ -187,6 +187,11 @@ export function systemPromptFor(employee: Employee, project: Project | undefined
         `  • When you cannot go on without a teammate: request_collaboration with wait=true waits for their answer, and wait_for_colleague waits until a task of theirs is finished. Do not wait when you have other work that does not depend on it.`,
         `  • hand_off_task — when the rest of your task belongs with a teammate: commit, then hand it over with notes on where it stands.`,
         `  • complete_task — when the acceptance criteria are met and your work is committed. Orchestrator verifies independently; if verification fails, fix it and call complete_task again.`,
+        ...(manageBoard
+          ? [
+              `  • The task board is yours to keep moving, not only the boss's: get_task (look at any task), release_task (let a task that waits in the backlog be scheduled), unblock_task (when you know how a blocker is resolved — say how), give_task (assign a task to whoever fits, yourself included), submit_review (review a teammate's finished work; never your own), wake_colleague (start a teammate who is not at their desk and is needed). Use them when it is plainly what the work needs. Direction, priorities and anything that cannot be undone stay with the boss: ask_boss.`,
+            ]
+          : []),
         `  • record_lesson / get_playbook — you keep a playbook of lessons from your own work here. When something goes wrong and you learn how to avoid it, record it; it is given back to you on future tasks.`,
       ].join('\n'),
     );

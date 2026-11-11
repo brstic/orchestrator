@@ -76,7 +76,7 @@ Observed with Agent SDK 0.3.321 and Claude Code 2.1.321 (`pnpm test:real:sdk`):
   claude --settings <agent-home>/sessions/<id>/settings.json \
          --session-id <uuid>            # or --resume <uuid>
          --permission-mode <manual|acceptEdits> \
-         --model <model> --name <employee> \
+         --model <model> --effort <level> --name <employee> \
          --append-system-prompt <role, style, standing instructions, playbook, how to work here> \
          --strict-mcp-config --mcp-config <agent-home>/sessions/<id>/mcp.json
 ```
@@ -84,6 +84,7 @@ Observed with Agent SDK 0.3.321 and Claude Code 2.1.321 (`pnpm test:real:sdk`):
 - Per-launch `--settings` carries hooks and permission rules, so the project's own `.claude/settings*.json` is never modified. Observed: hooks from `--settings` fire alongside the user's own configuration.
 - `--session-id` fixes the conversation id so a crashed worker can be resumed with `--resume` in the same tmux pane.
 - `manual` is the interactive default mode on 2.1.200+ (older CLIs call it `default`; chosen by version).
+- **Model and effort** are the employee's own (`Employee.model`, `Employee.effort`), chosen when hiring or in the profile; both are left out when nothing was chosen, so Claude Code uses its own defaults. `--model` takes an alias (`fable`, `opus`, `sonnet`, `haiku` — the window offers these) or a model's full name; anything that could be read as another option is refused when it is saved. `--effort` takes `low`, `medium`, `high`, `xhigh` or `max`. Which levels a machine's Claude Code has is **read from its own help text** by the host agent when it starts (`claude --help`, nothing is sent to a model) and reported as `HostInfo.claudeEffortLevels`; an effort that machine does not have — or any effort, where the agent is from before this was reported — is left out rather than passed to a CLI that would refuse to start, and the window says so next to the choice. A change takes effect the next time the session starts; the session's record (`AgentSession.model`, `.effort`) says what the running one was started with. Seen: Claude Code 2.1.302 on the server and 2.1.322 on the owner's Mac both list `--effort <level> (low, medium, high, xhigh, max)`. **Not verified with a real session:** that the chosen model and effort are what the model then runs with (the scripted worker only shows the options it was started with); whether an alias the account has no access to stops the session or falls back; SDK-managed workers get the model but **not** the effort.
 
 ### Workspace trust prompt
 
@@ -130,6 +131,20 @@ Events newer than the installed CLI are left out of the settings file (`HOOK_EVE
 The Orchestrator MCP server is an HTTP endpoint on the server (`POST /mcp`, JSON responses). Each session gets its own bearer token in `mcp.json`. Observed handshake from the real client: `server/discover` (answered "method not found", which the client accepts), `initialize`, `notifications/initialized`, a `GET` (answered 405: no server-initiated stream), `tools/list`.
 
 `ask_boss` holds the tool call open for up to four minutes (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` and `MCP_TOOL_TIMEOUT` are raised in the worker's environment). If you answer later, the answer is delivered into the session as a message, and `wait_for_answer` lets the agent keep waiting.
+
+### The board in the employees' hands
+While the office setting *Employees manage the task board themselves* is on (the default; Settings → Employees), every employee is also shown these tools (`BOARD_TOOLS` in `packages/integrations/src/mcp.ts`; handlers in `packages/orchestration/src/mcp-tools.ts`). With the setting off they are not listed, and a call is answered "The owner keeps the task board to themselves in this office".
+
+| Tool | What it does | What it refuses |
+| --- | --- | --- |
+| `get_task { task }` | any task the caller can see: status, assignee, what it is blocked on, review, description | a task on the other side of the shared/personal line reads as "no task" |
+| `release_task { task }` | a task waiting in the backlog is released for scheduling | a project that is paused |
+| `unblock_task { task, note }` | a BLOCKED task goes back to work; the assignee is told by the caller's name, with the note | a note that says nothing; a task the owner blocked by hand |
+| `give_task { task, employee }` | assigns a task to a teammate or to the caller | a task somebody is in the middle of; the foreman; across the shared/personal line |
+| `wake_colleague { employee, reason }` | starts the session of a teammate who has none (asleep or never started) and delivers the reason as the caller's message | the foreman; someone the owner paused; someone whose machine is away |
+| `submit_review` (existing) | with the setting on, any teammate may review work that waits for review — not only the appointed reviewer | the author of the work |
+
+Every one of these is recorded under the employee's name (`employee:<name>` in a task's history; `session.woken` says who wanted whom and why). None of them decides a permission request, marks a task DONE without verification, deletes anything, or changes a project's policy. The employee's system prompt names them and says that direction, priorities and anything irreversible stay with the owner. Run with the scripted worker only (`tests/e2e/20-employees-manage.test.ts`); **how real Claude Code uses them — how often, how sensibly — has not been watched.**
 
 ### Waiting for a colleague
 

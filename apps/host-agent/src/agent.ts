@@ -26,6 +26,7 @@ import {
   ResourceSampler,
   Tmux,
   claudeVersion,
+  claudeEffortLevels,
   currentBranch,
   ensureWorktree,
   gitDiff,
@@ -218,6 +219,7 @@ export class HostAgent {
       agentVersion: AGENT_VERSION,
       tmuxVersion: await this.tmux.version(),
       claudeVersion: await claudeVersion(this.cfg.claudeBin),
+      claudeEffortLevels: await claudeEffortLevels(this.cfg.claudeBin),
       cpus: os.cpus().length,
       totalMemBytes: os.totalmem(),
       user: os.userInfo().username,
@@ -638,6 +640,7 @@ export class HostAgent {
           claudeVersion: version,
           approvalWaitSeconds: this.cfg.approvalWaitSeconds,
           hookEvents: this.cfg.hookEvents,
+          effortLevels: spec.effort ? (this.info?.claudeEffortLevels ?? (await claudeEffortLevels(this.cfg.claudeBin))) : null,
         });
     for (const f of plan.files) writePrivate(f.path, f.content);
     // Anything queued for a previous run of this worker is stale now.

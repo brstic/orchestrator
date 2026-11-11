@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Orchestrator">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8b5cf6"/>
+      <stop offset="0.55" stop-color="#4f7dff"/>
+      <stop offset="1" stop-color="#22d3c5"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.28"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="tile"><rect x="24" y="24" width="464" height="464" rx="108"/></clipPath>
+  </defs>
+  <!-- the tile -->
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#bg)"/>
+  <!-- the office floor, seen from above the desks -->
+  <g clip-path="url(#tile)" stroke="#fff" stroke-opacity="0.13" stroke-width="3" fill="none">
+    <path d="M-40 420 L552 250 M-40 500 L552 330 M-40 340 L552 170 M-40 580 L552 410"/>
+    <path d="M40 560 L300 200 M180 600 L440 240 M320 640 L580 280 M-100 520 L160 160"/>
+  </g>
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#shine)"/>
+  <!-- the baton: whoever conducts -->
+  <g stroke-linecap="round">
+    <path d="M150 372 L386 150" stroke="#1b1f3a" stroke-opacity="0.35" stroke-width="22"/>
+    <path d="M146 364 L382 142" stroke="#ffd166" stroke-width="16"/>
+    <circle cx="140" cy="370" r="24" fill="#ffd166" stroke="none"/>
+    <!-- the beat -->
+    <path d="M404 98 q34 22 30 62" stroke="#fff" stroke-width="12" fill="none" stroke-opacity="0.95"/>
+    <path d="M360 76 q22 -6 44 4" stroke="#fff" stroke-width="12" fill="none" stroke-opacity="0.6"/>
+  </g>
+  <!-- the prompt: who plays -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M178 196 L262 262 L178 328" stroke="#1b1f3a" stroke-opacity="0.35" stroke-width="44" transform="translate(6 8)"/>
+    <path d="M178 196 L262 262 L178 328" stroke="#fff" stroke-width="40"/>
+    <path d="M290 332 L366 332" stroke="#1b1f3a" stroke-opacity="0.35" stroke-width="44" transform="translate(6 8)"/>
+    <path d="M290 332 L366 332" stroke="#fff" stroke-width="40"/>
+  </g>
+</svg>

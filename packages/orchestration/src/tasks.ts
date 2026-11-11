@@ -236,6 +236,18 @@ export class TaskManager {
     return this.core.tasks.find((t) => t.key.toUpperCase() === k && (!projectId || t.projectId === projectId)) ?? this.core.tasks.find((t) => t.key.toUpperCase() === k) ?? this.core.tasks.get(key);
   }
 
+  /** May this employee know about a task? Those of the shared office, or of the member's computer they are on themselves. */
+  canSee(e: Employee, t: Task): boolean {
+    const personal = (hostId: string | null | undefined) => !!this.core.hosts.get(hostId ?? '')?.memberId;
+    const projectHost = this.core.projects.get(t.projectId)?.hostId ?? null;
+    return !(personal(e.hostId) || personal(projectHost)) || e.hostId === projectHost;
+  }
+
+  /** Unfinished tasks this one waits for. */
+  openDependencies(task: Task): Task[] {
+    return task.dependsOn.map((id) => this.core.tasks.get(id)).filter((t): t is Task => !!t && t.status !== 'DONE');
+  }
+
   private depsDone(task: Task): boolean {
     return task.dependsOn.every((id) => this.core.tasks.get(id)?.status === 'DONE');
   }
@@ -715,7 +727,8 @@ export class TaskManager {
   }
 
   /** The owner cleared a blocker: the task goes back to the employee with the owner's note. */
-  unblock(taskId: string, note: string, actor = 'owner'): Task {
+  /** `by`: the employee who resolved the blocker, when it was not the owner (it is then their message the assignee reads). */
+  unblock(taskId: string, note: string, actor = 'owner', by?: Employee): Task {
     const task = this.core.tasks.require(taskId);
     if (task.status !== 'BLOCKED') throw new EngineError(`${task.key} is not blocked`);
     const employee = this.core.employees.get(task.assigneeId);
@@ -729,16 +742,16 @@ export class TaskManager {
       task.status = 'IN_PROGRESS';
       this.history(task, `Unblocked: ${note}`, actor);
       this.core.put('task', task);
-      this.eng.comms.sendMessage({ from: { kind: 'owner', id: null, name: 'the boss' }, toEmployeeId: employee!.id, body: `${task.key} is unblocked (was: ${previous ?? 'blocked'}). ${note}\nContinue the task.`, kind: 'system', taskId: task.id });
+      this.eng.comms.sendMessage({ from: by ? { kind: 'employee', id: by.id, name: `${by.name} (${by.title})` } : { kind: 'owner', id: null, name: 'the boss' }, toEmployeeId: employee!.id, body: `${task.key} is unblocked (was: ${previous ?? 'blocked'}). ${note}\nContinue the task.`, kind: 'system', taskId: task.id });
       if (session!.activity === 'blocked') this.eng.sessions.setActivity(session!, 'idle', null);
     } else {
       task.status = 'READY';
       task.released = true;
-      if (note) task.description = `${task.description}\n\nNote from the boss after a blocker (${previous ?? 'blocked'}): ${note}`.trim();
+      if (note) task.description = `${task.description}\n\nNote from ${by ? by.name : 'the boss'} after a blocker (${previous ?? 'blocked'}): ${note}`.trim();
       this.history(task, `Unblocked and requeued: ${note}`, actor);
       this.core.put('task', task);
     }
-    this.core.event({ type: 'task.unblocked', source: 'owner', summary: `${task.key} was unblocked`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, note } });
+    this.core.event({ type: 'task.unblocked', source: by ? 'mcp' : 'owner', summary: by ? `${by.name} unblocked ${task.key}` : `${task.key} was unblocked`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, note } });
     this.schedule();
     return task;
   }
@@ -1165,7 +1178,9 @@ export class TaskManager {
     if (by !== 'owner') {
       if (by.id === task.assigneeId) throw new EngineError('you cannot review your own task');
       const assigned = task.reviewerId === by.id || !!this.core.tasks.find((t) => t.reviewOf === task.id && t.assigneeId === by.id);
-      if (!assigned) throw new EngineError(`you were not asked to review ${task.key}`);
+      // With the board in the employees' hands, any colleague may review finished work — never its own author.
+      if (!assigned && this.core.settings.employeesManageBoard === false) throw new EngineError(`you were not asked to review ${task.key}`);
+      if (!this.canSee(by, task)) throw new EngineError(`no task "${taskRef}"`);
     }
     const approved = verdict === 'approve';
     task.evidence.review = { reviewerId: by === 'owner' ? null : by.id, verdict: approved ? 'approved' : 'changes_requested', comments, ts: nowIso(), by: by === 'owner' ? 'owner' : 'employee' };

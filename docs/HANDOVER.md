@@ -130,9 +130,9 @@ A session that works well here: ask for the change in plain words, let it run th
 
 Read `STATUS.md` for the current version of this list.
 
-- **Live on the server** (build `326f677`): everything up to and including the Access window and invitation links.
-- **Built, not live**: see "Built but not on the server yet" in `STATUS.md` (at the time of writing: deleting a project).
-- **Built but never watched working with real Claude Code**: Growth (the office improving itself), routines, sessions that sleep and wake, an employee waiting for a colleague. They pass with scripted workers only.
+- **Live on the server** (build `a3aa698`, deployed from the collaborator's Windows computer): everything up to and including the Access window, invitation links, deleting a project, the room on Windows through WSL2.
+- **Built, not live**: see "Built but not on the server yet" in `STATUS.md` (at the time of writing: model and effort per employee; the task board in the employees' hands).
+- **Built but never watched working with real Claude Code**: Growth (the office improving itself), routines, sessions that sleep and wake, an employee waiting for a colleague, the employees' board tools, the chosen model and effort. They pass with scripted workers only.
 - **Never checked**: the Windows and Linux desktop bundles; the Linux server trial (`pnpm test:central`) and the TV test since the foreman rework.
-- **Waiting for the owner's word**: how the people look (head and eye size are single constants in `packages/office-3d/src/character/`); whether a waited request should start a colleague the owner stopped; whether a wait should end on the answer or on the finished task; walking pace; who may let people in at the door.
+- **Waiting for the owner's word**: how the people look (head and eye size are single constants in `packages/office-3d/src/character/`); whether a wait should end on the answer or on the finished task; walking pace; who may let people in at the door.
 - **Ideas, not plans**: `docs/plans/IDEAS-from-t3code.md`, `docs/plans/IDEAS-memory-from-mempalace.md`.

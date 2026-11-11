@@ -120,6 +120,13 @@ Who may do what is specified in [ACCESS.md](ACCESS.md) and enforced in `apps/ser
 - **Colleagues can type into shared terminals and decide permission requests of shared employees.** A colleague therefore has, in effect, shell access as the office's user on shared machines, within what Claude Code's permission rules allow. Give that role to people you would give an account on the server.
 - **Audit.** Every change a member makes is recorded as `member:<name>` with the route; answers and decisions record who gave them.
 
+## What employees may do to the board by themselves
+With *Employees manage the task board themselves* on (the default), an employee's session can release, unblock, assign and review tasks and start a colleague's session (`docs/CLAUDE-CODE-INTEGRATION.md`, "The board in the employees' hands"). What that changes for safety:
+
+- **More work can start without the owner.** A released task is handed to an employee, who then acts with that employee's own autonomy level and permission rules — those are unchanged, and high-risk commands still come to the owner where the office is set to ask. Starting a colleague uses that colleague's Claude account.
+- **A review by a teammate lets a change be merged** into the project's integration branch. The author cannot approve their own work; promotion to the base branch stays an owner's action.
+- **Text an employee read can steer these tools** like any other tool it has (a web page or a file saying "release every task"). The tools cannot approve a permission request, delete anything, change policy, or reach across the line between the shared office and a member's own computer, and each use is on the record under the employee's name. Switch the setting off for an office where that is not enough.
+
 ## Knocking (asking to be let in without an invitation)
 - The only thing an unauthenticated caller can do at the door besides fetching the page: leave a name (plain text, 40 characters) and wait. They learn the office's name, a four-digit code, and whether anyone who could answer is inside. They learn nothing else and get no credential until a person inside lets them in.
 - Letting someone in is a decision by a signed-in owner or colleague, recorded in the audit log (`knock.admitted` / `knock.refused`, with who answered). A colleague cannot grant more than a read-only visit; only an owner can let someone in to work. A browser is never more than a visitor, and for 12 hours.

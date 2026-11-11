@@ -2,7 +2,7 @@ import { DeskPicker, WherePicker, useHirePlaces, type HirePlace } from './hire-w
 import { BulkHire } from './bulk-hire.tsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentSession, Appearance, AutonomyLevel, CommunicationStyle, DeliveryStatus, Employee, ExecutionMode, Host, OrchestratorEvent, XpEntry } from '@orchestrator/contracts';
-import { DESK_SIZE, ROLE_CATALOGUE, memberSeatOf, roleByKey } from '@orchestrator/contracts';
+import { DESK_SIZE, EFFORT_CHOICES, MODEL_CHOICES, ROLE_CATALOGUE, memberSeatOf, roleByKey } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field, Progress, Provenance, Stat, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api, connection } from '../../lib/api.ts';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
@@ -120,6 +120,51 @@ function LevelCell({ e }: { e: Employee }) {
   );
 }
 
+/**
+ * Which model an employee's sessions run on, and how hard it works on each turn. Both start on "Default": what
+ * Claude Code on their machine would use by itself. The levels offered are the ones that machine's Claude Code has.
+ */
+function ModelEffortFields({ model, effort, onModel, onEffort, host }: { model: string; effort: string; onModel: (v: string) => void; onEffort: (v: string) => void; host: Host | undefined }) {
+  const [other, setOther] = useState(() => !!model && !MODEL_CHOICES.some((c) => c.value === model));
+  // What that machine can do: its agent reports the levels of its Claude Code. No report: an agent from before this existed.
+  const levels = host?.info ? (host.info.claudeEffortLevels ?? null) : undefined;
+  const none = levels === null || (Array.isArray(levels) && levels.length === 0);
+  const whyNone = levels === null ? `The Orchestrator app on ${host?.name ?? 'that machine'} is older and cannot set an effort yet; update it there.` : `Claude Code on ${host?.name ?? 'that machine'} has no effort setting yet; update it there to use this.`;
+  return (
+    <>
+      <Field label="Model" hint={other ? "A model's full name, as Claude Code takes it." : undefined}>
+        <select
+          value={other ? 'other' : model}
+          aria-label="Model"
+          onChange={(ev) => {
+            setOther(ev.target.value === 'other');
+            onModel(ev.target.value === 'other' ? '' : ev.target.value);
+          }}
+        >
+          <option value="">Default — what their Claude account uses</option>
+          {MODEL_CHOICES.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label} — {c.what}
+            </option>
+          ))}
+          <option value="other">Another model…</option>
+        </select>
+        {other && <input value={model} onChange={(ev) => onModel(ev.target.value)} className="mono" placeholder="the model's full name" spellCheck={false} aria-label="Model name" style={{ marginTop: 6 }} />}
+      </Field>
+      <Field label="Effort" hint={none ? whyNone : 'How hard it thinks on each turn. More is slower and uses more of the account.'}>
+        <select value={effort} disabled={none} aria-label="Effort" onChange={(ev) => onEffort(ev.target.value)}>
+          <option value="">Default</option>
+          {EFFORT_CHOICES.filter((c) => !levels || levels.includes(c.value) || c.value === effort).map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+    </>
+  );
+}
+
 // ───────────────────────────── Hire ─────────────────────────────
 
 /**
@@ -152,6 +197,7 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
   const [autonomy, setAutonomy] = useState<AutonomyLevel | null>(null);
   const [style, setStyle] = useState<CommunicationStyle>('concise');
   const [model, setModel] = useState('');
+  const [effort, setEffort] = useState('');
   const [executionMode, setExecutionMode] = useState<ExecutionMode>('interactive_cli');
   const [instructions, setInstructions] = useState('');
   // Hiring gives someone a desk; their session starts when you first talk to them, give them a task, or press Start.
@@ -185,6 +231,7 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
         autonomy: effectiveAutonomy,
         style,
         model: model.trim() || null,
+        effort: effort || null,
         executionMode,
         instructions,
         ...(self ? { selfDriven: true } : {}),
@@ -226,6 +273,9 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
             </select>
           </Field>
         )}
+      </div>
+      <div className="grid2">
+        <ModelEffortFields model={model} effort={effort} onModel={setModel} onEffort={setEffort} host={host} />
       </div>
       {custom && (
         <div className="grid2">
@@ -309,9 +359,6 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
                   </option>
                 ))}
               </select>
-            </Field>
-            <Field label="Model (optional)" hint="Empty uses that machine's default.">
-              <input value={model} onChange={(ev) => setModel(ev.target.value)} placeholder="default" className="mono" />
             </Field>
             <RuntimeField value={executionMode} onChange={setExecutionMode} host={host} />
             <Field label="Standing instructions" hint="Added to the system prompt of every session they start." wide>
@@ -632,6 +679,7 @@ interface Draft {
   skills: string;
   style: CommunicationStyle;
   model: string;
+  effort: string;
   instructions: string;
   allowedTools: string;
   disallowedTools: string;
@@ -654,6 +702,7 @@ function draftOf(e: Employee): Draft {
     skills: e.skills.join(', '),
     style: e.style,
     model: e.model ?? '',
+    effort: e.effort ?? '',
     instructions: e.instructions,
     allowedTools: e.allowedTools.join('\n'),
     disallowedTools: e.disallowedTools.join('\n'),
@@ -685,6 +734,7 @@ function patchOf(e: Employee, d: Draft): Record<string, unknown> {
   if (role || skills.join('\n') !== e.skills.join('\n')) p.skills = skills;
   if (d.style !== e.style) p.style = d.style;
   if ((d.model.trim() || null) !== e.model) p.model = d.model.trim() || null;
+  if ((d.effort || null) !== (e.effort ?? null)) p.effort = d.effort || null;
   if (d.instructions !== e.instructions) p.instructions = d.instructions;
   if (parseRules(d.allowedTools).join('\n') !== e.allowedTools.join('\n')) p.allowedTools = parseRules(d.allowedTools);
   if (parseRules(d.disallowedTools).join('\n') !== e.disallowedTools.join('\n')) p.disallowedTools = parseRules(d.disallowedTools);
@@ -802,8 +852,8 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
     if (res) onClose();
   };
   // Open from the start when something in it is set, and then as the person leaves it.
-  const [more, setMore] = useState(() => !!(e.claudeConfigDir || e.model || e.instructions || e.allowedTools.length || e.disallowedTools.length || e.executionMode !== 'interactive_cli'));
-  const restartSensitive = live && ('instructions' in patch || 'allowedTools' in patch || 'disallowedTools' in patch || 'autonomy' in patch || 'model' in patch || 'roleKey' in patch || 'executionMode' in patch);
+  const [more, setMore] = useState(() => !!(e.claudeConfigDir || e.instructions || e.allowedTools.length || e.disallowedTools.length || e.executionMode !== 'interactive_cli'));
+  const restartSensitive = live && ('instructions' in patch || 'allowedTools' in patch || 'disallowedTools' in patch || 'autonomy' in patch || 'model' in patch || 'effort' in patch || 'roleKey' in patch || 'executionMode' in patch);
 
   return (
     <div className="col" style={{ gap: 14 }}>
@@ -905,12 +955,18 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
         </div>
       </div>
       <div>
+        <div className="section-title">What they think with</div>
+        <div className="grid2">
+          <ModelEffortFields model={d.model} effort={d.effort} onModel={(v) => set('model', v)} onEffort={(v) => set('effort', v)} host={d.hostId ? hostsById[d.hostId] : undefined} />
+        </div>
+      </div>
+      <div>
         <div className="section-title">How much they may do without asking</div>
         <AutonomyPicker name={`autonomy-${e.id}`} value={d.autonomy} onChange={(v) => set('autonomy', v)} />
       </div>
       {/* What is rarely changed stays folded away, unless something in it is set. */}
       <details className="pc-more" open={more} onToggle={(ev) => setMore((ev.currentTarget as HTMLDetailsElement).open)}>
-        <summary>More settings: account, model, instructions, tools</summary>
+        <summary>More settings: account, instructions, tools</summary>
         <div className="col" style={{ gap: 14, marginTop: 10 }}>
           <div className="grid3">
         <Field label="Department">
@@ -927,9 +983,6 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
               </option>
             ))}
           </select>
-        </Field>
-        <Field label="Model" hint="Empty uses the machine's default.">
-          <input value={d.model} onChange={(ev) => set('model', ev.target.value)} className="mono" placeholder="default" />
         </Field>
         <RuntimeField value={d.executionMode} onChange={(v) => set('executionMode', v)} host={d.hostId ? hostsById[d.hostId] : undefined} />
         <Field label="Claude account folder" hint="Leave empty to use the machine's own Claude login. To put this employee on another account, log in once on their machine with CLAUDE_CONFIG_DIR=~/.claude-second claude, then write that folder here. Takes effect the next time their session starts.">
@@ -1265,7 +1318,9 @@ function SessionTab({ e }: { e: Employee }) {
             <dt>Permission mode</dt>
             <dd className="mono">{session.permissionMode ?? <span className="muted">unknown</span>}</dd>
             <dt>Model</dt>
-            <dd className="mono">{session.model ?? <span className="muted">not reported</span>}</dd>
+            <dd>
+              <span className="mono">{session.model ?? 'default'}</span> <span className="muted">· effort</span> <span className="mono">{session.effort ?? 'default'}</span>
+            </dd>
             <dt>Token usage</dt>
             <dd>
               <UsageValue session={session} />
