@@ -5,13 +5,15 @@ import { VOICE_FRAMES_PER_SECOND, hears, validFrame } from './voice.ts';
 import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, OrchestratorEvent, PersonPresence, RadioNow, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
 import { hueOf, type Who } from './guests.ts';
 import { PROTOCOL_VERSION, ROLE_CATALOGUE, isEmote, matchRole, nowIso, roleByKey } from '@orchestrator/contracts';
-import { EngineError, type AgentLink, type Engine } from '@orchestrator/orchestration';
+import { EngineError, FOREMAN_ROLE, type AgentLink, type Engine } from '@orchestrator/orchestration';
 
 interface AgentConn {
   ws: WebSocket;
   hostId: string;
   pending: Map<string, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>;
   lastSeen: number;
+  /** The office is disconnecting this machine (it was revoked): nothing it still sends is acted on. */
+  dropped?: boolean;
 }
 
 type Log = (level: 'info' | 'warn' | 'error', msg: string) => void;
@@ -116,7 +118,9 @@ export class AgentHub implements AgentLink {
     }
     c.pending.clear();
     this.engine.hosts.disconnected(hostId);
+    c.dropped = true;
     setTimeout(() => c.ws.close(4003, reason.slice(0, 100)), 50);
+    setTimeout(() => c.ws.terminate(), 2000).unref?.();
   }
 
   // ───────────── sockets ─────────────
@@ -136,6 +140,8 @@ export class AgentHub implements AgentLink {
       } catch {
         return;
       }
+      // (Valid JSON that is not a message — `null`, a number, a list: nothing to read a field of.)
+      if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return void (conn ? undefined : ws.close(4001, 'expected hello'));
       if (!conn) {
         if (msg.t !== 'hello') return ws.close(4001, 'expected hello');
         clearTimeout(helloTimer);
@@ -170,6 +176,7 @@ export class AgentHub implements AgentLink {
         this.sendTo(conn, { t: 'welcome', hostId: auth.host.id, credential: auth.credential, serverTime: nowIso(), name: auth.host.name });
         return;
       }
+      if (conn.dropped) return;
       conn.lastSeen = Date.now();
       try {
         this.onMessage(conn, msg);
@@ -260,6 +267,18 @@ export class AgentHub implements AgentLink {
     const eng = this.engine;
     try {
       let result: unknown;
+      // A member's own computer asks for itself only. Its agent may name an employee who already lives on that
+      // computer, or a new one — never one of the shared office or of another member (their messages and the
+      // office's tools would follow them to this machine), never the foreman, and never the level only an owner gives.
+      const personal = eng.hosts.memberOfHost(c.hostId);
+      const mine = (name: unknown) => {
+        if (!personal || typeof name !== 'string' || !name) return;
+        const existing = eng.core.employeeByName(name);
+        if (!existing) return;
+        if (existing.hostId !== c.hostId || existing.roleKey === FOREMAN_ROLE) throw new Error(`"${existing.name}" is not an employee on this computer. From a member's own computer only its own employees can be named; choose another name for a new one.`);
+      };
+      if (personal && req.method === 'create' && req.params.autonomy === 'unrestricted') throw new Error('Unrestricted is an owner\'s level to give, in the office (the employee\'s profile).');
+      if (personal && (req.method === 'bind' || req.method === 'create') && (roleByKey((req.params as { role?: string }).role ?? '') ?? matchRole((req.params as { role?: string }).role ?? ''))?.key === FOREMAN_ROLE) throw new Error('The foreman belongs to the office; it cannot be created from a member\'s own computer.');
       switch (req.method) {
         case 'bind': {
           const session = eng.core.sessions.get(req.params.sessionId);
@@ -268,6 +287,7 @@ export class AgentHub implements AgentLink {
             result = { session, employee: null, created: false };
             break;
           }
+          mine(req.params.employee);
           const { employee, created } = eng.employees.findOrCreate(req.params.employee, req.params.role, c.hostId);
           eng.sessions.bind(session.id, employee.id, `host:${c.hostId}`);
           result = { session, employee: { id: employee.id, name: employee.name, title: employee.title }, created };
@@ -279,6 +299,7 @@ export class AgentHub implements AgentLink {
           if (req.params.autonomy && !['restricted', 'supervised', 'standard', 'autonomous', 'auto', 'unrestricted'].includes(req.params.autonomy)) throw new Error(`unknown autonomy level "${req.params.autonomy}"`);
           const role = req.params.role ? (roleByKey(req.params.role) ?? matchRole(req.params.role)) : undefined;
           if (req.params.role && !role) throw new Error(`unknown role "${req.params.role}". Known roles: ${ROLE_CATALOGUE.map((r) => r.key).join(', ')}`);
+          mine(req.params.name);
           let employee = eng.core.employeeByName(req.params.name);
           if (!employee) {
             employee = await eng.hire({ name: req.params.name, roleKey: role?.key ?? null, hostId: c.hostId, workingDir: req.params.project, model: req.params.model ?? null, ...(req.params.autonomy ? { autonomy: req.params.autonomy as any } : {}) }, actor);
@@ -313,6 +334,8 @@ interface ClientConn {
   who: Who;
   /** Set when this window came in with a password sign-in session: which one (see `Logins.keyOf`). */
   loginKey?: string;
+  /** This window is being closed by the office: nothing it still sends is acted on. */
+  dropped?: boolean;
   /** Where their character is, once they have said so. */
   presence: { x: number; z: number; rot: number; moving: boolean; at?: number } | null;
   /** When this window last cracked the whip. */
@@ -421,12 +444,22 @@ export class ClientHub {
    * member's own credential (the desktop app) are not touched. The page then shows the sign-in again.
    */
   dropLogins(guestId: string, key?: string): void {
-    for (const c of this.clients.values()) if (c.who.id === guestId && c.loginKey && (!key || c.loginKey === key)) c.ws.close(4003, 'signed out');
+    for (const c of this.clients.values()) if (c.who.id === guestId && c.loginKey && (!key || c.loginKey === key)) this.shut(c, 'signed out');
+  }
+
+  /**
+   * Close a window whose right to be here has ended. A polite close waits for the other side to agree (up to half a
+   * minute); until then nothing more is taken from it, and after two seconds the connection is cut.
+   */
+  private shut(c: ClientConn, reason: string): void {
+    c.dropped = true;
+    c.ws.close(4003, reason);
+    setTimeout(() => c.ws.terminate(), 2000).unref?.();
   }
 
   /** Close every window of a guest whose access was revoked. */
   dropGuest(guestId: string): void {
-    for (const c of this.clients.values()) if (c.who.id === guestId) c.ws.close(4003, 'access revoked');
+    for (const c of this.clients.values()) if (c.who.id === guestId) this.shut(c, 'access revoked');
   }
 
   /** Who is at the door: told to those who may let someone in (owners and colleagues), now and when they walk in. */
@@ -519,6 +552,7 @@ export class ClientHub {
       } catch {
         return;
       }
+      if (!msg || typeof msg !== 'object' || Array.isArray(msg) || conn.dropped) return;
       const fail = (e: unknown, ref?: string) => this.send(id, { t: 'error', message: (e as Error).message, ref });
       try {
         switch (msg.t) {
@@ -650,7 +684,7 @@ export class ClientHub {
             break;
         }
       } catch (e) {
-        fail(e, (msg as any).sessionId);
+        fail(e, (msg as { sessionId?: string } | null)?.sessionId);
       }
     });
     ws.on('close', () => {

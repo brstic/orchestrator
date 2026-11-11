@@ -132,7 +132,7 @@ const RULES: Rule[] = [
   // Deleting an employee for good: an owner anywhere, a colleague only their own employee on their own computer.
   onOwn(rule('DELETE', '/employees/:id', 'work', path('employee'))),
   rule('POST', '/tasks', 'work', inBody('project', 'projectId'), inBody('employee', 'assigneeId')),
-  rule('POST', '/tasks/release', 'work', inBody('project', 'projectId')),
+  rule('POST', '/tasks/release', 'work', inBody('project', 'projectId'), inBody('task', 'ids')),
   rule('PATCH', '/tasks/:id', 'work', path('task'), inBody('employee', 'assigneeId')),
   rule('DELETE', '/tasks/:id', 'work', path('task')),
   rule('POST', '/tasks/:id/stop', 'work', path('task')),
@@ -240,13 +240,17 @@ export function mayCall(engine: Engine, who: Who, method: string, route: string,
     if (!owner && !allowed(who, r.need, null)) return { ok: false, reason: who.role === 'visitor' ? 'You are visiting this office: you can look, not change anything.' : 'Only an owner of this office can do this.' };
     for (const s of r.scopes) {
       const raw = s.from === 'path' ? decodeURIComponent(m[1] ?? '') : body?.[s.field];
-      const id = typeof raw === 'string' && raw ? raw : null;
+      // (A field that carries several ids — the tasks to release — is checked id by id; so is one that should
+      // carry a single id and was sent as a list.)
+      for (const one of Array.isArray(raw) ? (raw.length ? raw : [null]) : [raw]) {
+      const id = typeof one === 'string' && one ? one : null;
       const member = memberOf(engine, s.thing, id);
       // A closed room is closed to owners as well: the one thing an owner is refused here.
       if (closedTo(engine, who, member)) return { ok: false, reason: CLOSED };
       if (owner) continue;
       if (r.ownOnly && !member) return { ok: false, reason: 'Only an owner of this office can do this to something shared.' };
       if (!allowed(who, r.need, member)) return { ok: false, reason: member === OWNERS_ONLY ? 'The foreman supervises the whole office, so only the owners can look into it or direct it.' : "That is on another member's own computer; only they and the owners can use it." };
+      }
     }
     if (owner) return { ok: true };
     // Running without Claude Code's permission checks (the Unrestricted level) is an owner's to give.

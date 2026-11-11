@@ -69,6 +69,13 @@ export class Engine {
     this.sleeper = new Sleeper(this);
     this.waits = new Waits(this);
     this.vault = new Vault(this.core, opts.vaultKeyFile ?? null);
+    this.vault.onCaptureFailed = (why) =>
+      void this.comms?.securityAlert({
+        key: 'vault-capture',
+        severity: 'warning',
+        title: 'A credential could not be put into the vault',
+        body: `Something that looks like a credential was written in the office and stays where it was written, because the vault did not take it: ${why}. Make room in the vault (Company → Vault) or see to its key; until then credentials in messages and tasks are not replaced by their names.`,
+      });
     this.memory = new Memory(this, opts.memory ?? { bin: null, dir: null });
     this.attachments = new Attachments(this.core, this, opts.filesDir ?? null);
     // A task that is deleted takes its files with it.

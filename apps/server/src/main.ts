@@ -79,6 +79,18 @@ export async function main(argv: string[]): Promise<void> {
     console.error(`error: ${(e as Error).message}`);
     process.exit(1);
   }
+  // One request that trips over a mistake in the office's own code must not take the office away from everybody:
+  // it is written down and the office goes on. Several in a minute mean something is really wrong — then it stops,
+  // and whatever runs it (systemd) starts it again clean.
+  const stumbles: number[] = [];
+  const stumbled = (kind: string) => (e: unknown) => {
+    console.error(`[${new Date().toISOString()}] ERROR ${kind}: ${(e as Error)?.stack ?? e}`);
+    const now = Date.now();
+    while (stumbles.length && now - stumbles[0]! > 60_000) stumbles.shift();
+    if (stumbles.push(now) >= 10) process.exit(1);
+  };
+  process.on('uncaughtException', stumbled('uncaught exception'));
+  process.on('unhandledRejection', stumbled('unhandled rejection'));
   if (!values.quiet) for (const line of startupLines(server.url, server.ownerToken, path.join(values.data ? path.resolve(values.data) : defaultDataDir(), 'owner-token'), !!process.stderr.isTTY)) console.error(line);
   if (values['print-enroll-token']) console.log(server.localEnrollToken());
   const shutdown = () => {

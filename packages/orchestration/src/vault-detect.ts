@@ -41,10 +41,15 @@ const TOKENS: Array<[name: string, re: RegExp, kind: SecretKind, service: string
 ];
 const BEARER = /\b(?:bearer|basic)\s+([A-Za-z0-9._~+/-]{16,}=*)/gi;
 /** scheme://user:password@host */
-const URL_PASSWORD = /:\/\/([^/\s:@]+):([^/\s@]{3,})@([^/\s:]+)/g;
+// (The password runs to the last `@` before the host: one that contains an `@` is not cut in two, with its tail read as the host.)
+const URL_PASSWORD = /:\/\/([^/\s:@]+):([^/\s]{3,})@([^/\s:@]+)/g;
 const HEADER_LINE = /^(\s*(?:authorization|proxy-authorization|x-api-key|api-key)\s*:\s*)(?:bearer\s+|basic\s+)?(\S.{6,})$/gim;
 /** DB_PASSWORD=…, "api_key": "…", token: … */
 const FIELD = /(["']?[A-Za-z0-9_-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)[A-Za-z0-9_-]*["']?\s*[:=]\s*)(["']?)([^\s"',;&]{6,})\2/gi;
+/** The same with the value in quotes: everything between them, whatever it holds. */
+const FIELD_QUOTED = /(["']?[A-Za-z0-9_-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)[A-Za-z0-9_-]*["']?\s*[:=]\s*)(["'])([^"'\n]{6,})\2/gi;
+/** A line of an env file: the value is the rest of the line, also when it holds a `;`, a `,` or an `&`. */
+const ENV_LINE = /^([ \t]*(?:export[ \t]+)?[A-Za-z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY)[A-Za-z0-9_]*=)(?!["'])(\S{6,})[ \t]*$/gim;
 /** "lozinka za git.example.net je Abc123!x", "password for db: x", "the token is …" */
 const NATURAL =
   /\b(?:password|passwd|passcode|pass|pin|lozinka|lozinku|šifra|šifru|sifra|sifru|token|api\s*key|ključ|kljuc)(?:\s+(?:za|for|od|na|to)\s+((?!(?:je|is|glasi)\b)[^\s:=,]+(?:\s+(?!(?:je|is|glasi)\b)[^\s:=,]+)?))?(?:\s+(?:is|je|glasi))?\s*[:=]?\s+([^\s"'`]{6,})/gi;
@@ -97,8 +102,20 @@ export function detectSecrets(text: string): FoundSecret[] {
     const value = m[3]!;
     if (!notAValue(value) && (strong(value) || value.length >= 12)) add(m.index + m[1]!.length + m[2]!.length, value, 'field', /pass/i.test(m[1]!) ? 'password' : /key/i.test(m[1]!) ? 'api_key' : 'token');
   });
+  const fieldKind = (label: string): SecretKind => (/pass/i.test(label) ? 'password' : /key/i.test(label) ? 'api_key' : 'token');
+  each(FIELD_QUOTED, (m) => {
+    const value = m[3]!;
+    if (!notAValue(value) && (strong(value) || value.length >= 12)) add(m.index + m[1]!.length + 1, value, 'field', fieldKind(m[1]!));
+  });
+  each(ENV_LINE, (m) => {
+    const value = m[2]!;
+    if (!notAValue(value) && (strong(value) || value.length >= 12)) add(m.index + m[1]!.length, value, 'field', fieldKind(m[1]!));
+  });
   each(NATURAL, (m) => {
     const value = trim(m[2]!);
+    // "pass" and "pin" are also plain verbs and nouns ("pass Node22.18 tests"): they name a credential only when
+    // the sentence says so — "pass is …", "pin: …".
+    if (/^(?:pass|pin)\b/i.test(m[0]) && !/(?:\b(?:is|je|glasi)\s|[:=])/i.test(m[0].slice(0, m[0].length - m[2]!.length))) return;
     // "the password is strong" is a sentence; "the password is Jaka123!" is a password. In between is for a reader to judge.
     if (strong(value) && !notAValue(value)) add(m.index + m[0].length - m[2]!.length, value, 'natural', /token/i.test(m[0]) ? 'token' : /key|klju/i.test(m[0]) ? 'api_key' : 'password', trim(m[1] ?? ''));
   });

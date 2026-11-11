@@ -163,6 +163,21 @@ export class HostRegistry {
     return this.core.hosts.filter((h) => h.memberId === memberId && h.status !== 'revoked');
   }
 
+  /**
+   * Every machine a member brought into the office: their own computers, and the servers they linked — also the
+   * ones they have since shared with everybody (those are no longer "theirs" to the rest of the office, but they
+   * still came in on this member's word and connect from outside on it).
+   */
+  broughtBy(memberId: string): Host[] {
+    return this.core.hosts.filter((h) => (h.memberId === memberId || h.ownerId === memberId) && h.status !== 'revoked');
+  }
+
+  /**
+   * Is this member still somebody whose machines may connect? Set by the server, which keeps the members; here
+   * everybody is, by default (an office with no members has no such machines).
+   */
+  memberInGoodStanding: (memberId: string) => boolean = () => true;
+
   /** The member whose own computer this host is, or null for a shared machine. */
   memberOfHost(hostId: string | null | undefined): string | null {
     return hostId ? (this.core.hosts.get(hostId)?.memberId ?? null) : null;
@@ -186,6 +201,8 @@ export class HostRegistry {
       if (host.status === 'revoked') return { error: 'this host has been revoked' };
       // A member's own computer, or a server they brought in (also once they have shared it).
       if (outside && !host.memberId && !host.ownerId) return refused;
+      const of = host.memberId ?? host.ownerId;
+      if (of && !this.memberInGoodStanding(of)) return { error: 'the member this machine came in with is no longer in this office' };
       return { host };
     }
     if (hello.enrollmentToken) {
@@ -196,6 +213,11 @@ export class HostRegistry {
       const server = /^member-server:([^:]+):([^:]*):(.*)$/.exec(cred.label ?? '');
       const member = server ?? /^member:([^:]+):(.*)$/.exec(cred.label ?? '');
       if (outside && !member) return refused;
+      // (A token given to a member who has since been removed, or made a visitor, enrols nothing.)
+      if (member && !this.memberInGoodStanding(member[1]!)) {
+        this.core.store.revokeCredential(hello.enrollmentToken);
+        return { error: 'the member this enrollment was made for is no longer in this office' };
+      }
       this.core.store.markCredentialUsed(hello.enrollmentToken);
       this.core.store.revokeCredential(hello.enrollmentToken);
       const host: Host = {
@@ -308,6 +330,9 @@ export class HostRegistry {
   revoke(hostId: string, actor = 'owner'): void {
     const host = this.core.hosts.require(hostId);
     this.core.store.revokeCredentialsFor('host', hostId);
+    // What its sessions were given to call the office's tools with ends too: those tokens lie in files on that
+    // machine, and would otherwise open the office's tools (the vault among them) for as long as nobody restarts them.
+    for (const s of this.core.sessions.filter((x) => x.hostId === hostId)) this.core.store.revokeCredentialsFor('mcp', s.id);
     host.status = 'revoked';
     host.revokedAt = nowIso();
     this.core.put('host', host);
@@ -1825,9 +1850,18 @@ export class SessionRegistry {
     this.eng.tasks.schedule();
   }
 
+  /**
+   * The session a tools token belongs to — while that session is one that can be calling: it is running (or its
+   * machine is away for a moment), and its machine is still part of the office. A token copied out of a session's
+   * files opens nothing once the session has ended or its machine was taken out.
+   */
   sessionByMcpToken(token: string | null | undefined): AgentSession | undefined {
     const cred = this.core.store.checkCredential('mcp', token);
-    return cred?.refId ? this.core.sessions.get(cred.refId) : undefined;
+    const s = cred?.refId ? this.core.sessions.get(cred.refId) : undefined;
+    if (!s || (s.status !== 'running' && s.status !== 'starting' && s.status !== 'host_offline')) return undefined;
+    const host = this.core.hosts.get(s.hostId);
+    if (!host || host.status === 'revoked') return undefined;
+    return s;
   }
 }
 

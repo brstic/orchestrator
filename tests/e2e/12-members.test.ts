@@ -132,6 +132,29 @@ test('the door lets through what a member’s app and own computer need, and nev
   assert.ok(!(await h.state()).hosts.some((x) => x.name === 'intruder'));
 });
 
+test('a frame that is not a message does nothing — it does not take the office down', async () => {
+  const send = (pathname: string, frames: string[], protocols?: string[]) =>
+    new Promise<void>((resolve) => {
+      const ws = new WebSocket(`${doorUrl.replace('https', 'wss')}${pathname}`, protocols);
+      ws.onopen = () => {
+        for (const f of frames) ws.send(f);
+        setTimeout(() => {
+          ws.close();
+          resolve();
+        }, 400);
+      };
+      ws.onerror = () => resolve();
+      ws.onclose = () => resolve();
+    });
+  // Anybody on the network, before saying who they are; and a visitor who is in.
+  await send('/ws/agent', ['null', '7', '[]', '"hello"', 'true']);
+  await send('/ws/client', ['null', '7', '[]', '"x"'], ['orch.v1', `orch.token.${invites.Mila!.t}`]);
+  await sleep(300);
+  assert.equal((await fetch(`${doorUrl}/healthz`)).status, 200);
+  assert.equal((await door(invites.Mila!.t, 'GET', '/api/me')).status, 200);
+  assert.equal((await h.apiRaw('GET', '/state')).status, 200);
+});
+
 test('a visitor reads what is shared and changes nothing', async () => {
   const mila = invites.Mila!.t;
   const me = (await door(mila, 'GET', '/api/me')).body;
@@ -224,6 +247,19 @@ test('a member’s own computer joins through the door; what is on it is theirs'
   const host = (await h.state()).hosts.find((x) => x.id === jovanHost.hostId)!;
   assert.deepEqual([host.memberId, host.memberName, host.local, host.status, host.name], [guestIds.Jovan, 'Jovan', false, 'online', "Jovan's computer"]);
   await assert.rejects(h.addHost('again', {}, { serverUrl: doorUrl, enrollToken: enrollment.body.token }), /already used|invalid/);
+  // His computer asks for itself only: its agent cannot take an employee of the shared office to this machine by
+  // naming them (their messages and the office's tools would follow), nor make a foreman, nor give the owner's level.
+  const before = (await h.state()).employees.find((e) => e.id === alex)!;
+  for (const req of [
+    { method: 'create', params: { name: before.name, project: jovanHost.root } },
+    { method: 'create', params: { name: 'Brand New', project: jovanHost.root, autonomy: 'unrestricted' } },
+    { method: 'create', params: { name: 'A Foreman', project: jovanHost.root, role: 'foreman' } },
+  ] as const) {
+    await assert.rejects(jovanHost.agent.request(req as any, 15000), /not an employee on this computer|owner's level to give|belongs to the office/, JSON.stringify(req));
+  }
+  const after = (await h.state()).employees.find((e) => e.id === alex)!;
+  assert.deepEqual([after.hostId, after.projectId, after.workingDir], [before.hostId, before.projectId, before.workingDir], 'the shared employee is where they were');
+  assert.ok(!(await h.state()).employees.some((e) => /Brand New|A Foreman/.test(e.name)));
   // He adds a folder on his computer as an employee there. No desk in the shared office: his room is where they sit.
   const folder = path.join(jovanHost.root, 'side-project');
   fs.mkdirSync(folder);
@@ -468,9 +504,16 @@ test('revoking ends a member’s session and their computer’s place in the off
   const fresh = decode(again.invite);
   assert.equal((await door(invites.Jovan!.t, 'GET', '/api/me')).status, 401, 'the old invitation no longer works');
   assert.equal((await door(fresh.t, 'GET', '/api/me')).body.role, 'colleague');
+  // What his employee's session was given to call the office's tools with lies in a file on his computer. While he
+  // is a colleague and the session runs, it works; once he is made a visitor it opens nothing.
+  const mcpFile = path.join(path.dirname(jovanHost.root), 'agent-jovans-laptop', 'sessions', (await h.session(lola))!.id, 'mcp.json');
+  const mcp = JSON.parse(fs.readFileSync(mcpFile, 'utf8')).mcpServers.orchestrator as { headers: { Authorization: string } };
+  const tools = () => fetch(`${doorUrl}/mcp`, { method: 'POST', headers: { authorization: mcp.headers.Authorization, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) }).then((r) => r.status);
+  if ((await h.session(lola))?.status === 'running') assert.equal(await tools(), 200);
   await h.api('PATCH', `/guests/${guestIds.Jovan}`, { role: 'visitor' });
   assert.equal((await door(fresh.t, 'POST', `/api/employees/${alex}/message`, { body: 'x' })).status, 403);
   assert.equal((await h.state()).hosts.find((x) => x.id === jovanHost.hostId)!.status, 'revoked', 'his computer can no longer connect');
+  assert.equal(await tools(), 401, 'and a token copied from a session on it no longer opens the office\'s tools');
   // Promoted to owner, he runs the office.
   await h.api('PATCH', `/guests/${guestIds.Jovan}`, { role: 'owner' });
   assert.equal((await door(fresh.t, 'GET', '/api/audit')).status, 200);

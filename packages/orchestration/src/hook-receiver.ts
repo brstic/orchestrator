@@ -359,7 +359,8 @@ export class HookReceiver {
     // What a tool returned is looked at too (a file with keys in it that was read, a key a command printed).
     const returned = textOf(payload.tool_response).slice(0, 40_000);
     // Whatever it was, it is kept: a credential that only ever lived in a terminal's scrollback is lost with it.
-    const kept = employee ? [...seen, returned].flatMap((text) => (text ? this.eng.vault.noticed(text, { kind: 'employee', id: employee.id, name: employee.name }, [this.core.projects.get(task?.projectId ?? employee.projectId)?.name ?? '']) : [])) : [];
+    // (Not on a member's own computer: what a session reads there is that member's, and does not go into the office's vault.)
+    const kept = employee && !this.eng.hosts.memberOfHost(session.hostId) ? [...seen, returned].flatMap((text) => (text ? this.eng.vault.noticed(text, { kind: 'employee', id: employee.id, name: employee.name }, [this.core.projects.get(task?.projectId ?? employee.projectId)?.name ?? '']) : [])) : [];
     if (employee && (seen.some(containsKnownSecret) || kept.length)) {
       this.eng.comms.securityAlert({
         key: `secret:${session.id}`,

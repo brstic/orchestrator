@@ -164,3 +164,22 @@ test('credentials that already stand in old tasks, messages and questions are mo
   assert.equal(vault.sweep(), 0);
   assert.deepEqual(saved, []);
 });
+
+test('a value is taken whole: a password with an @ in an address, a quoted value, a line of an env file', () => {
+  // The password runs to the last @ before the host; its tail is not read as the host (which is shown to everybody).
+  assert.deepEqual(found('postgres://admin:Pa55@word!@db.example.net:5432/shop'), [['url_password', 'Pa55@word!', 'db.example.net', 'admin']]);
+  assert.deepEqual(found('https://deploy:Tr0ub4dor&3@git.example.net/x.git'), [['url_password', 'Tr0ub4dor&3', 'git.example.net', 'deploy']]);
+  // In quotes: everything between them.
+  assert.deepEqual(found('"db_password": "Secr3t Pass;w0rd"').map((f) => f[1]), ['Secr3t Pass;w0rd']);
+  // A line of an env file: the rest of the line.
+  assert.deepEqual(found('PORT=5432\nDB_PASSWORD=Secr3tPass;w0rd\nNAME=shop').map((f) => f[1]), ['Secr3tPass;w0rd']);
+  assert.deepEqual(found('export API_TOKEN=abc123DEF456,ghi789&more').map((f) => f[1]), ['abc123DEF456,ghi789&more']);
+});
+
+test('"pass" and "pin" name a credential only when the sentence says so', () => {
+  assert.deepEqual(found('make the suite pass Node22.18 tests before merging'), []);
+  assert.deepEqual(found('pin React18.3.1 in package.json'), []);
+  assert.deepEqual(found('the pass is Jaka123!x for the staging site').map((f) => f[1]), ['Jaka123!x']);
+  assert.deepEqual(found('pin: 4821Abc!').map((f) => f[1]), ['4821Abc!']);
+  assert.deepEqual(found('lozinka za git.example.net je Abc123!x').map((f) => f[1]), ['Abc123!x'], 'the other words are as before');
+});

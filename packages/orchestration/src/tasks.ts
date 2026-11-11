@@ -366,6 +366,10 @@ export class TaskManager {
       this.history(task, patch.assigneeId ? `Assigned to ${this.core.employees.get(patch.assigneeId)?.name}` : 'Unassigned', actor);
       if (patch.assigneeId) this.emitAssigned(task, actor);
     }
+    // A credential typed into a task's text when it is edited goes to the vault like one typed when it was made.
+    const editor = actor === 'owner' ? { kind: 'owner' as const, id: null, name: 'The boss' } : { kind: actor.startsWith('employee:') ? ('employee' as const) : ('member' as const), id: null, name: actor.replace(/^[a-z]+:/, '') };
+    const hints = [this.core.projects.get(task.projectId)?.name ?? ''];
+    for (const key of ['description', 'acceptance'] as const) if (typeof patch[key] === 'string' && patch[key] !== task[key]) patch = { ...patch, [key]: this.eng.vault.capture(patch[key] as string, editor, hints).text };
     for (const key of ['title', 'description', 'acceptance', 'kind', 'priority', 'roleHint', 'dependsOn', 'requiresReview', 'reviewerId', 'verifyCommand', 'released'] as const) {
       if (patch[key] !== undefined) (task as any)[key] = patch[key];
     }
@@ -522,15 +526,16 @@ export class TaskManager {
     if (task.status === 'DONE') throw new EngineError(`${task.key} is done; make a new task for what should change`);
     const note = truncate(String(input.note ?? '').trim(), 4000);
     const changed: string[] = [];
+    const who = actor === 'owner' ? 'the boss' : actor.replace(/^[a-z]+:/, '');
     for (const key of ['title', 'description', 'acceptance'] as const) {
       const v = input[key];
       if (typeof v === 'string' && v.trim() !== task[key].trim() && (key !== 'title' || v.trim())) {
-        task[key] = v.trim();
+        // (A credential in the corrected text goes to the vault; the task names it.)
+        task[key] = key === 'title' ? v.trim() : this.eng.vault.capture(v.trim(), { kind: 'owner', id: null, name: who }, [this.core.projects.get(task.projectId)?.name ?? '']).text;
         changed.push(key);
       }
     }
     if (!note && !changed.length) throw new EngineError('say what should change, or change the task\'s text');
-    const who = actor === 'owner' ? 'the boss' : actor.replace(/^[a-z]+:/, '');
     // A correction that carries a credential: the credential goes to the vault, the task names it.
     const kept = note ? this.eng.vault.capture(note, { kind: 'owner', id: null, name: who }, [this.core.employees.get(task.assigneeId)?.name ?? '']).text : '';
     this.history(task, `Corrected by ${who}${kept ? `: ${truncate(kept, 300)}` : ''}${changed.length ? ` (changed: ${changed.join(', ')})` : ''}`, actor);

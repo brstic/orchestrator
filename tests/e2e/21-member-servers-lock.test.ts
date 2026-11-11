@@ -188,6 +188,15 @@ test('a closed room: owners and the office\'s own computer are kept out of the m
     assert.match(asOwner.body.error, /room is closed/);
     assert.equal((await h.apiRaw(method, p, body)).status, 403, `${method} ${p} from the office's own computer`);
   }
+  // The same paths spelled with a percent-encoding are the same paths (the rules used to judge them as typed, find
+  // no rule, and let an owner through to what the router then served).
+  for (const p of [`/employees/${lola}/doc%73`, `/employees/${lola}/%64ocs`, `/hosts/${laptop.hostId}/brows%65`, `/sessions/${sLola.id}/histor%79`]) {
+    assert.equal((await door('Vera', 'GET', `/api${p}`)).status, 403, `GET ${p} as an owner`);
+    assert.equal((await h.apiRaw('GET', p)).status, 403, `GET ${p} from the office's own computer`);
+  }
+  assert.ok([400, 404].includes((await h.apiRaw('GET', `/employees/${lola}%2Fdocs`)).status), 'a slash hidden in a piece of the path is no path of the office');
+  // A list where one id belongs: every id is judged (a release names tasks; a host id sent as a list is still a host id).
+  assert.equal((await door('Vera', 'POST', '/api/employees', { name: 'Planted Two', hostId: [server.hostId] })).status, 403);
   // What is said there: not in an owner's state, not in their feed, not live — and the terminal goes quiet.
   const seen = v.got.length;
   assert.equal((await door('Jovan', 'POST', `/api/employees/${lola}/message`, { body: 'Behind the door. @@fake: say a-secret@@' })).status, 200, 'he works as before');

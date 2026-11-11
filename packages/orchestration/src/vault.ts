@@ -81,6 +81,8 @@ export class Vault {
   private keyFile: string | null;
   private key: Buffer | null = null;
   private entries = new Map<string, Stored>();
+  /** Told when a credential that was found in a text could not be stored (set by the engine: the owner is alerted). */
+  onCaptureFailed: (why: string) => void = () => undefined;
 
   constructor(core: Core, keyFile: string | null) {
     this.core = core;
@@ -293,8 +295,10 @@ export class Vault {
       try {
         name = this.put({ name: nameFor(f, hints), value: f.value, kind: f.kind, service: f.service, username: f.username, description: describe(f) }, by, 'captured').entry.name;
       } catch (e) {
-        // Could not be stored (the vault is full, the key is unreadable): the text goes on as it was written.
+        // Could not be stored (the vault is full, the key is unreadable): the text goes on as it was written — and
+        // the owner is told, because from now on credentials stay where they were typed.
         this.core.log('warn', `vault: a credential in a message was not captured: ${(e as Error).message}`);
+        this.onCaptureFailed((e as Error).message);
         continue;
       }
       out += text.slice(at, f.start) + placeholder(name);

@@ -161,6 +161,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     return typeof q === 'string' ? q : null;
   };
   const guests = new Guests(engine);
+  // Whose machines may connect: a member who is still here, is more than a visitor, and whose time is not up.
+  engine.hosts.memberInGoodStanding = (memberId) => {
+    const g = guests.get(memberId);
+    return !!g && !g.revokedAt && g.role !== 'visitor' && !(g.expiresAt && Date.parse(g.expiresAt) <= Date.now());
+  };
   const logins = new Logins(engine, guests);
   // A sign-in that has ended (signed out, the password changed) is over for the windows that are open with it, too.
   logins.onEnded = (guestId, token) => clients.dropLogins(guestId, token ? Logins.keyOf(token) : undefined);
@@ -179,6 +184,21 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     return whoIs(guest);
   };
   const whoOf = (req: FastifyRequest): Who => (req as unknown as { who: Who }).who;
+  /**
+   * The path under /api that the access rules judge — as the router reads it: with percent-encodings resolved, piece
+   * by piece. (Judged as it was typed, `/employees/x/doc%73` matched no rule while the router served `/docs`.)
+   * A piece that hides a slash is nobody's legitimate request: it matches no rule, so only what needs no rule passes.
+   */
+  const routeOf = (req: FastifyRequest): string => {
+    const raw = (req.url.split('?')[0] ?? '').replace(/^\/api/, '');
+    if (!raw.includes('%')) return raw;
+    try {
+      const parts = raw.split('/').map((p) => decodeURIComponent(p));
+      return parts.some((p) => p.includes('/')) ? '/\u0000not-a-route' : parts.join('/');
+    } catch {
+      return '/\u0000not-a-route';
+    }
+  };
   /** Where a request comes from: what the door says (it sets the header itself), otherwise the connection's own address. */
   const addressOf = (req: FastifyRequest): string => (viaDoor(req) ? String(req.headers['x-forwarded-for'] ?? req.ip) : req.ip);
 
@@ -342,18 +362,22 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         (req as unknown as { who: Who }).who = who;
         if (who.id === 'owner') {
           // The office's own computer does everything — except reach into a room its member has closed.
-          const closed = mayCall(engine, who, req.method, (req.url.split('?')[0] ?? '').replace(/^\/api/, ''), req.body as Record<string, unknown> | null);
+          if (routeOf(req).startsWith('/\u0000')) return reply.code(400).send({ error: 'that is not a path of this office' });
+          const closed = mayCall(engine, who, req.method, routeOf(req), req.body as Record<string, unknown> | null);
           if (!closed.ok) return reply.code(403).send({ error: closed.reason });
           return;
         }
         // A member: what their role allows, on what is shared or theirs. What they change is on the record under their name.
-        const route = (req.url.split('?')[0] ?? '').replace(/^\/api/, '');
+        const route = routeOf(req);
+        if (route.startsWith('/\u0000')) return reply.code(400).send({ error: 'that is not a path of this office' });
         const verdict = mayCall(engine, who, req.method, route, req.body as Record<string, unknown> | null);
         if (!verdict.ok) return reply.code(403).send({ error: verdict.reason });
         if (req.method !== 'GET') engine.core.audit(`member:${who.name}`, 'member.action', route, { method: req.method, role: who.role });
         return;
       }
-      if (req.headers.authorization) {
+      // (Through the door the office's own token is never taken, and anybody on the network can send a wrong
+      // credential: that is not an attempt on the owner token, and nobody outside gets to raise this alarm.)
+      if (req.headers.authorization && !viaDoor(req)) {
         const now = Date.now();
         while (wrongTokens.length && now - wrongTokens[0]! > 60_000) wrongTokens.shift();
         if (wrongTokens.push(now) >= 5) {
@@ -426,8 +450,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       return engine.hosts.setMemberRoom(who.id, body(req), `member:${who.name}`);
     });
     /** Someone who may no longer have a computer in the office (revoked, or now a visitor): theirs are disconnected for good. */
+    // Everything the member brought in: their own computers and the servers they linked, shared or not.
     const dropHostsOf = (memberId: string) => {
-      for (const x of engine.hosts.ofMember(memberId)) engine.hosts.revoke(x.id, 'system');
+      for (const x of engine.hosts.broughtBy(memberId)) engine.hosts.revoke(x.id, 'system');
     };
 
     // ── guests and the door they come in through (owner only: not in any guest's allowed routes) ──
