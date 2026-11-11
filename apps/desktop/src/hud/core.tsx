@@ -1114,6 +1114,44 @@ export function CommandBar() {
 }
 
 /** Answer a question or decide an approval — without opening the terminal. */
+/**
+ * What a permission request would run, for whoever decides it: all of it. Long lines are wrapped (a command pushed
+ * out of sight by spaces is still a command), its size is said when it is long, and whatever else the tool was given
+ * besides the command is shown too — an option that switches a sandbox off is part of what is being allowed.
+ */
+function WhatWouldRun({ input, notShown }: { input: Record<string, unknown>; notShown: number }) {
+  const command = typeof input.command === 'string' ? input.command : null;
+  const text = command ?? JSON.stringify(input, null, 2);
+  const rest = command === null ? [] : Object.entries(input).filter(([k, v]) => k !== 'command' && k !== 'description' && v !== undefined && v !== null && v !== false && v !== '');
+  const lines = text.split('\n').length;
+  const long = text.length > 600 || lines > 12;
+  return (
+    <>
+      {long && (
+        <div className="small warn" data-run-size>
+          {text.length.toLocaleString('en-US')} characters, {lines} line{lines === 1 ? '' : 's'} — read to the end before you decide.
+        </div>
+      )}
+      <div className="code code-wrap" data-run>
+        {text}
+      </div>
+      {rest.length > 0 && (
+        <>
+          <div className="small muted">With these options:</div>
+          <div className="code code-wrap" data-run-options>
+            {JSON.stringify(Object.fromEntries(rest), null, 2)}
+          </div>
+        </>
+      )}
+      {notShown > 0 && (
+        <div className="small bad" data-run-cut>
+          {notShown.toLocaleString('en-US')} more characters are not shown: this request is longer than the office keeps. It cannot be allowed from here — deny it, or decide it at the terminal.
+        </div>
+      )}
+    </>
+  );
+}
+
 export function QuestionBody({ q, onDone }: { q: Question; onDone?: () => void }) {
   const s = useOffice();
   const e = q.employeeId ? s.employees[q.employeeId] : undefined;
@@ -1149,8 +1187,8 @@ export function QuestionBody({ q, onDone }: { q: Question; onDone?: () => void }
       </div>
       {q.kind === 'permission' && q.tool && (
         <div className="col" style={{ gap: 6 }}>
-          <div className="section-title">Exactly what would run</div>
-          <div className="code">{typeof input.command === 'string' ? input.command : JSON.stringify(input, null, 2)}</div>
+          <div className="section-title">Exactly what would run — {q.tool.name}</div>
+          <WhatWouldRun input={input} notShown={q.tool.notShown ?? 0} />
         </div>
       )}
       {q.context && (
@@ -1175,7 +1213,7 @@ export function QuestionBody({ q, onDone }: { q: Question; onDone?: () => void }
         <div className="col">
           <input placeholder="Optional note to them if you deny" value={text} onChange={(ev) => setText(ev.target.value)} />
           <div className="row">
-            <Button variant="success" disabled={busy} onClick={() => send({ decision: 'allow' })}>
+            <Button variant="success" disabled={busy || !!q.tool?.notShown} title={q.tool?.notShown ? 'Not all of it can be shown here, so it cannot be allowed from here' : undefined} onClick={() => send({ decision: 'allow' })}>
               Allow this once
             </Button>
             <Button variant="danger" disabled={busy} onClick={() => send({ decision: 'deny', answer: text || undefined })}>

@@ -146,7 +146,8 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
         eng.comms.answerReturnedByTool(asked.id);
         return answerLine(asked);
       }
-      const q = asked ?? eng.comms.createQuestion({ kind: a.kind ?? 'question', channel: 'mcp_tool', employee, session, text: String(a.question), context: a.context ? String(a.context) : '', why: a.why ? String(a.why) : '', options });
+      // (A question is read by a person, in a window: it has a person's size.)
+      const q = asked ?? eng.comms.createQuestion({ kind: a.kind ?? 'question', channel: 'mcp_tool', employee, session, text: truncate(String(a.question), 4000), context: a.context ? truncate(String(a.context), 8000) : '', why: a.why ? truncate(String(a.why), 2000) : '', options: options.slice(0, 12) });
       eng.sessions.setActivity(session, 'waiting_answer', truncate(q.text, 120));
       const answered = await eng.comms.waitForAnswer(q.id, core.timings.askBossWaitMs, signal);
       // ('delivered': another call of the same question — one that was cut off and is no longer listened to — was

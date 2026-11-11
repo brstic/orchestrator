@@ -345,6 +345,8 @@ export interface AgentSession {
   claudeConfigDir?: string | null;
   /** Which version of the hook commands the session runs with, as its machine's agent reports it (see `HOOKS_VERSION`). */
   hooksVersion?: number;
+  /** Was this session started with the office's high-risk list in front of it? (false: its machine holds nothing of it.) Absent on older records. */
+  highRiskHeld?: boolean;
   model: string | null;
   /** The effort this session was started with (null: Claude Code's default). */
   effort?: string | null;
@@ -631,8 +633,12 @@ export interface Question {
   context: string;
   why: string;
   options: QuestionOption[];
-  /** For permission requests: the real tool and input Claude wants to run. */
-  tool: { name: string; input: unknown } | null;
+  /**
+   * For permission requests: the real tool and input Claude wants to run. `notShown`: how many characters of the
+   * input are not in `input` (it is longer than the office keeps for showing). What is allowed is the whole input,
+   * so a request with anything not shown cannot be allowed from the office — only denied, or decided at the terminal.
+   */
+  tool: { name: string; input: unknown; notShown?: number } | null;
   /** For multi-part questions (Claude Code's AskUserQuestion): every part needs an answer. */
   parts: Array<{ question: string; header: string | null; options: QuestionOption[]; multiSelect: boolean }>;
   answers: Record<string, string> | null;
@@ -1538,6 +1544,13 @@ export interface OwnerSettings {
    * auto mode like everything else.
    */
   autoAsksHighRisk: boolean;
+  /**
+   * The same for employees on `unrestricted` (Claude Code's bypass mode, where the office itself holds such a command
+   * until the owner answers). false: an Unrestricted employee is never stopped for approval — what it runs, runs.
+   * Not set: as `autoAsksHighRisk` says (how it was before this switch existed). The office's own files on a machine
+   * stay fenced off either way.
+   */
+  unrestrictedAsksHighRisk?: boolean;
   /** Mark each project's desks on the floor (outline, sign and counts). Off unless the owner switches it on. */
   projectZones: boolean;
   /** Move the camera in closer when the owner stands at an employee's desk. Off unless the owner switches it on. */

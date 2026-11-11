@@ -19,7 +19,7 @@ import { generateToken } from '@orchestrator/database';
 import { permissionPrompt, trustPromptKeys } from './comms.ts';
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
-import { DEFAULT_HIGH_RISK_PATTERNS, permissionsFor, systemPromptFor } from './prompts.ts';
+import { DEFAULT_HIGH_RISK_PATTERNS, asksHighRisk, permissionsFor, systemPromptFor } from './prompts.ts';
 
 const SKINS = ['#f1c9a5', '#e0ac69', '#c68642', '#8d5524', '#ffdbac', '#a9745a'];
 const HAIRS = ['#2b1d0e', '#4a2f1b', '#0f0f0f', '#b5651d', '#d9b380', '#6b6b6b', '#7a3b1d'];
@@ -1240,6 +1240,19 @@ export class SessionRegistry {
     void this.restartNow(employeeId);
   }
 
+  /**
+   * The owner switched the hold on high-risk commands for a level (Settings → Employees). Switching it **off** needs
+   * nothing here: the office answers what a running session's machine still holds (`HookReceiver`), and the next
+   * start has no list. Switching it **on** does: a session that was started without the list has nothing in front
+   * of it until it is started again — so it is, between turns, like for any other change of what it runs with.
+   */
+  highRiskSwitched(): void {
+    for (const s of this.core.sessions.filter((x) => x.status === 'running' && x.origin === 'managed' && x.highRiskHeld === false)) {
+      const e = s.employeeId ? this.core.employees.get(s.employeeId) : undefined;
+      if (e && asksHighRisk(this.core.settings, e.autonomy)) this.restartForChange(e.id, 'the boss wants to be asked before high-risk commands again');
+    }
+  }
+
   /** Is this session waiting to be started again for a change (so it is not told to go on meanwhile)? */
   restartDue(sessionId: string): boolean {
     const s = this.core.sessions.get(sessionId);
@@ -1571,12 +1584,13 @@ export class SessionRegistry {
       permissions: { allow: perms.allow, deny: perms.deny, ask: perms.ask },
       allowedTools: [],
       disallowedTools: [],
-      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available(), this.eng.attachments.available(), this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser),
+      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available(), this.eng.attachments.available(), this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser, asksHighRisk(this.core.settings, employee.autonomy)),
       mcp: { url: `${this.core.publicUrl}/mcp`, token: mcpToken },
       browser: this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser,
       strictMcp: !this.core.settings.workersInheritMcp,
-      // On `auto` the owner can choose to leave even these to Claude Code's auto mode.
-      highRiskPatterns: (employee.autonomy === 'auto' || employee.autonomy === 'unrestricted') && !this.core.settings.autoAsksHighRisk ? [] : [...DEFAULT_HIGH_RISK_PATTERNS, ...(project?.policy.highRiskPatterns ?? [])],
+      // On `auto` the owner can choose to leave even these to Claude Code's auto mode, and on `unrestricted` to
+      // have nothing held at all (`asksHighRisk`).
+      highRiskPatterns: (session.highRiskHeld = asksHighRisk(this.core.settings, employee.autonomy)) ? [...DEFAULT_HIGH_RISK_PATTERNS, ...(project?.policy.highRiskPatterns ?? [])] : [],
       claudeSessionId: session.claudeSessionId!,
       resume,
       // A project's other repositories, when they are on the machine this employee works on.

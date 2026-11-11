@@ -572,6 +572,9 @@ export class Comms {
     const employee = this.core.employees.get(q.employeeId);
     if (q.kind === 'permission') {
       if (input.decision !== 'allow' && input.decision !== 'deny') throw new EngineError('a permission request needs decision "allow" or "deny"');
+      // What is allowed is everything the tool was given. A request the office cannot show in full is not allowed
+      // from here on the strength of its beginning.
+      if (input.decision === 'allow' && q.tool?.notShown) throw new EngineError(`This request is too long to show in full (${q.tool.notShown} characters are not shown), so it cannot be allowed from the office. Deny it, or decide it at the employee's terminal.`);
     } else if (q.parts.length) {
       for (const part of q.parts) if (!input.answers?.[part.question]) throw new EngineError(`missing answer for: ${part.question}`);
     } else if (!input.answer?.trim()) throw new EngineError('an answer is required');

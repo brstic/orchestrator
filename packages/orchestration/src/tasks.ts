@@ -118,6 +118,25 @@ function emptyEvidence(): Task['evidence'] {
  * command passing on the host, an approved review when required, and a merge
  * that did not conflict.
  */
+/**
+ * Are the fields of a change the kinds of thing they must be? `text`: a string that is not empty; `string?`: a string
+ * or nothing; `list`: an array. A field that is absent is not looked at. Throws with the field's name.
+ */
+export function shaped(patch: Record<string, unknown>, shape: Record<string, 'text' | 'string' | 'string?' | 'number' | 'boolean' | 'list'>): void {
+  for (const [field, kind] of Object.entries(shape)) {
+    const v = patch?.[field];
+    if (v === undefined) continue;
+    const ok =
+      kind === 'text' ? typeof v === 'string' && v.trim().length > 0 && v.length <= 2000
+      : kind === 'string' ? typeof v === 'string' && v.length <= 200_000
+      : kind === 'string?' ? v === null || (typeof v === 'string' && v.length <= 20_000)
+      : kind === 'number' ? typeof v === 'number' && Number.isFinite(v)
+      : kind === 'boolean' ? typeof v === 'boolean'
+      : Array.isArray(v) && v.length <= 500;
+    if (!ok) throw new EngineError(`"${field}" is not ${kind === 'text' ? 'a text' : kind === 'list' ? 'a list' : kind === 'string?' ? 'a text (or nothing)' : `a ${kind}`}, or is too long`);
+  }
+}
+
 /** How the reason of a task begins that is approved and waits only for its merge (its machine was away). */
 const WAITS_FOR_MERGE = 'Waiting to be merged into';
 
@@ -198,6 +217,9 @@ export class TaskManager {
 
   updateProject(id: string, patch: Partial<ProjectInput> & { status?: Project['status']; milestones?: Project['milestones'] }, actor = 'owner'): Project {
     const p = this.core.projects.require(id);
+    // What is stored is what every window renders: a field of the wrong kind (a name that is an object) would be
+    // kept, and blank every window that shows it, at every reload.
+    shaped(patch as Record<string, unknown>, { name: 'text', description: 'string', goals: 'string', requirements: 'string', docs: 'string', verifyCommand: 'string?', verifyTimeoutSec: 'number', color: 'string?', baseBranch: 'text', status: 'text', milestones: 'list', workspace: 'text', ownerEmployeeId: 'string?' });
     for (const key of ['name', 'description', 'goals', 'requirements', 'docs', 'verifyCommand', 'verifyTimeoutSec', 'color', 'baseBranch', 'status', 'milestones', 'workspace', 'ownerEmployeeId'] as const) {
       if (patch[key] !== undefined) (p as any)[key] = patch[key];
     }
@@ -373,6 +395,8 @@ export class TaskManager {
 
   updateTask(id: string, patch: Partial<TaskInput> & { status?: TaskStatus }, actor = 'owner'): Task {
     const task = this.core.tasks.require(id);
+    // Before anything is changed: a change that is refused changes nothing.
+    shaped(patch as Record<string, unknown>, { title: 'text', description: 'string', acceptance: 'string', kind: 'text', priority: 'text', roleHint: 'string?', dependsOn: 'list', requiresReview: 'boolean', reviewerId: 'string?', verifyCommand: 'string?', released: 'boolean', assigneeId: 'string?', status: 'text' });
     if (patch.assigneeId !== undefined && patch.assigneeId !== task.assigneeId) {
       if (task.status === 'IN_PROGRESS') throw new EngineError(`${task.key} is in progress; block or finish it before reassigning`);
       if (patch.assigneeId) this.mayTake(this.core.employees.require(patch.assigneeId), task);

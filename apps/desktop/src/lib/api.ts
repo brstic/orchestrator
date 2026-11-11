@@ -1,4 +1,5 @@
 import type { ClientToServer, ServerToClient } from '@orchestrator/contracts';
+import { adoptUrlToken } from './url-token.ts';
 
 declare global {
   interface Window {
@@ -18,14 +19,20 @@ function resolveToken(): string {
   if (window.orchestrator?.token) return window.orchestrator.token;
   const url = new URL(window.location.href);
   const fromUrl = url.searchParams.get('token');
+  const stored = localStorage.getItem('orch.token') ?? '';
   if (fromUrl) {
-    localStorage.setItem('orch.token', fromUrl);
-    // Keep the token out of the address bar and history.
+    // Keep the token out of the address bar and history, whatever becomes of it.
     url.searchParams.delete('token');
     window.history.replaceState({}, '', url.toString());
-    return fromUrl;
+    // Taken when this browser holds none, or on this computer's own address (the link the office prints for its
+    // owner). Anywhere else a link is not allowed to swap the credential a person is signed in with for another one:
+    // any page could send them here signed out, or signed in as somebody else without their noticing.
+    if (adoptUrlToken(stored, window.location.hostname)) {
+      localStorage.setItem('orch.token', fromUrl);
+      return fromUrl;
+    }
   }
-  return localStorage.getItem('orch.token') ?? '';
+  return stored;
 }
 
 export const serverBase = resolveBase();

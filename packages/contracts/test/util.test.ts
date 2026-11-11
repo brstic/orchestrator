@@ -46,3 +46,26 @@ test('the default office layout is consistent', () => {
     assert.ok(Math.hypot(seat.x - d.x, seat.z - d.z) > 0.5);
   }
 });
+
+test('hiding secrets takes time in step with the text: text built to be slow is not, and what was hidden still is', () => {
+  const n = 200_000;
+  const hostile: Record<string, string> = {
+    'one long word': 'a'.repeat(n),
+    'a word made of the word token': 'TOKEN'.repeat(n / 5),
+    'the same in small letters': 'password'.repeat(n / 8),
+    'a name, then nothing but spaces': `API_KEY${' '.repeat(n)}x`,
+    'tokens that begin and have no dots': 'eyJaaaaaaaaaa-'.repeat(Math.floor(n / 14)),
+    'keys that begin and never end': '-----BEGIN PRIVATE KEY-----'.repeat(Math.floor(n / 27)),
+    'a key header that never closes': `-----BEGIN ${'A '.repeat(n / 2)}`,
+    'dashes after a prefix': `sk-ant-${'-'.repeat(n)} xoxb-${'-'.repeat(n)} github_pat_${'_'.repeat(n)}`,
+    'names with no value': 'TOKEN= '.repeat(Math.floor(n / 7)),
+    'a quote that is never closed': `SECRET="${'x '.repeat(n / 2)}`,
+  };
+  for (const [what, text] of Object.entries(hostile)) {
+    const t0 = process.hrtime.bigint();
+    redactSecrets(text);
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    assert.ok(ms < 1500, `${what}: ${Math.round(ms)} ms for ${text.length} characters`);
+  }
+  assert.equal(redactSecrets(`${'a'.repeat(5000)} --token=abcdef123456 ${'TOKEN'.repeat(500)} MY_DB_PASSWORD: "hunter2hunter2"`), `${'a'.repeat(5000)} --token=[REDACTED] ${'TOKEN'.repeat(500)} MY_DB_PASSWORD:[REDACTED]`);
+});

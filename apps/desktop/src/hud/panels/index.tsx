@@ -2,6 +2,7 @@ import { Suspense, lazy, type ComponentType, type ReactNode } from 'react';
 import { Button, Window } from '@orchestrator/ui';
 import { officeWasUpdated } from '../../lib/page-version.ts';
 import { useOffice, type PanelId } from '../../lib/store.ts';
+import { Boundary, errorLine } from '../boundary.tsx';
 import { QuestionBody } from '../core.tsx';
 
 /** Panels are registered here; each lives in its own file. */
@@ -101,9 +102,13 @@ export function PanelHost() {
   const Component = componentFor(panel);
   if (!Component) return <Unavailable id={panel} why="This panel is not available in this build." onClose={close} />;
   // Nothing is shown for the few milliseconds a panel's module takes to load the first time.
+  // A window that cannot be drawn says so and can be closed; the office behind it stays. Keyed by what is open, so
+  // opening something else starts clean.
   return (
-    <Suspense fallback={null}>
-      <Component arg={arg} onClose={close} />
-    </Suspense>
+    <Boundary key={`${panel}:${arg ?? ''}`} fallback={(error) => <Unavailable id="This window could not be shown" why={`Something in it could not be drawn (${errorLine(error)}). The office is running and nobody's work is affected. Close it and open it again; if it keeps happening, reload this window.`} onClose={close} />}>
+      <Suspense fallback={null}>
+        <Component arg={arg} onClose={close} />
+      </Suspense>
+    </Boundary>
   );
 }

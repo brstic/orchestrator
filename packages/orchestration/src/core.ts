@@ -470,6 +470,8 @@ export class Core {
       selfImprovement: { ...this._settings.selfImprovement, ...(patch.selfImprovement ?? {}) },
       foreman: patch.foreman === undefined ? this._settings.foreman : sanitizeForeman(patch.foreman, this._settings.foreman, this.foremanGapFloor),
       sleepAfterMinutes: patch.sleepAfterMinutes === undefined ? this._settings.sleepAfterMinutes : sanitizeSleep(patch.sleepAfterMinutes, this._settings.sleepAfterMinutes),
+      // A switch is on or off (anything that is not a plain "off" keeps the hold).
+      ...(patch.unrestrictedAsksHighRisk === undefined ? {} : { unrestrictedAsksHighRisk: patch.unrestrictedAsksHighRisk !== false }),
     };
     this._settings.selfImprovement = sanitizeAutopilot(this._settings.selfImprovement, autopilotBefore);
     this.store.kvSet('settings', this._settings);

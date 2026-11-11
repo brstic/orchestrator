@@ -96,6 +96,8 @@ export class Knocks {
 
   knock(input: { name: unknown; via: unknown; ip: string }): { id: string; secret: string; code: string } {
     const name = String(input.name ?? '')
+      .normalize('NFKC')
+      .replace(/\p{Cf}/gu, '') // what cannot be seen is not part of a name (and must not split one)
       .replace(/[\u0000-\u001f\u007f<>]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()

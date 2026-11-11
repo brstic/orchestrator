@@ -1378,7 +1378,7 @@ export class HostAgent {
     if (payload.tool_name !== 'Bash') return null;
     const command = String(payload.tool_input?.command ?? '');
     if (reach.mentioned(command)) {
-      if (t.spec?.permissionMode === 'bypassPermissions') return { orchHold: true, pattern: "the office's own files on this machine" };
+      if (t.spec?.permissionMode === 'bypassPermissions') return { orchHold: true, fence: true, pattern: "the office's own files on this machine" };
       return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: "Orchestrator policy: this command names the office's own files on this machine (another session's folder, the agent's records, or the office's data) and needs the owner's approval." } };
     }
     for (const pattern of t.spec?.highRiskPatterns ?? []) {
@@ -1413,6 +1413,8 @@ export class HostAgent {
     const mine = [real(this.filesRoot()), real(path.join(this.p.sessions, t.sessionId))];
     const servers = [process.env.ORCH_SERVER_HOME, path.join(os.homedir(), '.orchestrator', 'server'), path.join(path.dirname(home), 'server')].filter((d): d is string => !!d && fs.existsSync(path.join(d, 'owner-token')));
     const closed = [real(home), ...servers.map(real)];
+    /** The same places as somebody would write them, a link in their path or not. */
+    const written = [...new Set([...closed, path.resolve(home), ...servers.map((d) => path.resolve(d))])];
     const inside = (p: string, root: string) => p === root || p.startsWith(root + path.sep);
     const holds = (file: string, cwd: string): boolean => {
       let p: string;
@@ -1426,10 +1428,34 @@ export class HostAgent {
     };
     // In a command: any word that is such a path, written out in full or from the home folder (`~/…`, `$HOME/…`).
     // A path put together by the command itself is not seen — this is a fence at the obvious way in, not a wall.
+    //
+    // Every word costs look-ups on the disk, on the agent's one thread, and the command is the session's to shape:
+    // so a word longer than any path is not looked up, a word is looked up once, and the look-ups have a budget.
+    // Words that name one of those places as they are written come first and are all looked at, whatever else the
+    // command holds (padding does not get a plain path past the fence); the rest — which could only lead there
+    // through a link — as far as the budget goes.
     const mentioned = (command: string): boolean => {
       const homeDir = os.homedir();
-      const words = command.replace(/\$\{?HOME\}?/g, homeDir).split(/[\s"'`;|&<>()=]+/).filter((w) => w.includes('/'));
-      return words.some((w) => holds(w.startsWith('~/') ? w : w, t.cwd));
+      const words = [...new Set(command.replace(/\$\{?HOME\}?/g, homeDir).split(/[\s"'`;|&<>()=]+/).filter((w) => w.includes('/') && w.length <= PATH_LONGEST))];
+      const asWritten = (w: string): boolean => {
+        const expanded = w.startsWith('~/') ? path.join(homeDir, w.slice(2)) : w;
+        const abs = path.resolve(path.isAbsolute(expanded) ? expanded : path.join(t.cwd || homeDir, expanded));
+        return written.some((root) => inside(abs, root));
+      };
+      const plain = words.filter(asWritten);
+      let budget = FENCE_LOOKUPS;
+      for (const w of plain) {
+        // More such paths than are worth following one by one: the command is all about the office's folders.
+        if ((budget -= w.split('/').length) < 0) return true;
+        if (holds(w, t.cwd)) return true;
+      }
+      const set = new Set(plain);
+      for (const w of words) {
+        if (set.has(w)) continue;
+        if ((budget -= w.split('/').length) < 0) return false;
+        if (holds(w, t.cwd)) return true;
+      }
+      return false;
     };
     return { holds, mentioned };
   }
@@ -1684,7 +1710,9 @@ export class HostAgent {
     let held: string | null = null;
     if (local?.orchHold) {
       held = String(local.pattern ?? '');
-      payload = { ...payload, orch_policy: 'high_risk_held' };
+      // Which of the two it is held for: the office's own files (always the owner's to decide), or the high-risk
+      // list (which the owner may have switched off for this level since the session was started).
+      payload = { ...payload, orch_policy: 'high_risk_held', orch_held_for: local.fence === true ? 'office_files' : 'pattern' };
       local = null;
     }
     if (local) {
@@ -1838,6 +1866,11 @@ export class HostAgent {
  * directory is judged by where it would really live (and "../" or symlink
  * tricks cannot escape an allowed root).
  */
+/** No path is longer than this on the systems the agent runs on (Linux: 4096, macOS: 1024). */
+const PATH_LONGEST = 4096;
+/** How many folders deep, over all the paths a command names, the fence follows them on the disk. */
+const FENCE_LOOKUPS = 20_000;
+
 function realpathOfDeepestExisting(abs: string): string {
   let current = abs;
   const tail: string[] = [];

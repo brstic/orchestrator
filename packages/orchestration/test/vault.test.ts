@@ -198,3 +198,38 @@ test('when a credential in a text cannot be stored, the text goes on as written 
   assert.ok(told[0]!.length > 0);
   assert.equal(vault.list().length, 0);
 });
+
+test('looking for credentials takes time in step with the text, not with its square: text built to be slow is not', () => {
+  const n = 200_000;
+  const hostile: Record<string, string> = {
+    'one long word': 'a'.repeat(n),
+    'a word made of the word token': 'token'.repeat(n / 5),
+    'the same in capitals, as in an env file': 'TOKEN'.repeat(n / 5),
+    'a name, then nothing but spaces': `password${' '.repeat(n)}abc`,
+    'the password is, then nothing but spaces': `the password for db is${' '.repeat(n)}abc`,
+    'nothing but empty lines': '\n'.repeat(n),
+    'a header, then nothing but spaces': `authorization${' '.repeat(n)}`,
+    'keys that begin and never end': '-----BEGIN PRIVATE KEY-----'.repeat(Math.floor(n / 27)),
+    'a key header that never closes': `-----BEGIN ${'A '.repeat(n / 2)}`,
+    'tokens that begin and have no dots': 'eyJaaaaaaaa-'.repeat(Math.floor(n / 12)),
+    'a token of nothing but dashes': `glpat-${'-'.repeat(n)} xoxb-${'-'.repeat(n)} sk-${'_'.repeat(n)}`,
+    'a name with names inside it': `token for ${'a.token'.repeat(Math.floor(n / 7))}`,
+    'a quote that is never closed': `token='${'x '.repeat(n / 2)}`,
+    'a field whose value never ends': `"api_key": "${'x'.repeat(n)}`,
+    'an address with a password and no host': `postgres://user:${'b'.repeat(n)}`,
+    'addresses, one after another': 'https://a:'.repeat(n / 10),
+    'the words of a sentence, over and over': 'pass for '.repeat(Math.floor(n / 9)),
+    'bearer, over and over': 'bearer '.repeat(Math.floor(n / 7)),
+    'fields with no value': 'token= '.repeat(Math.floor(n / 7)),
+    'quotes only': '"\''.repeat(n / 2),
+  };
+  for (const [what, text] of Object.entries(hostile)) {
+    const t0 = process.hrtime.bigint();
+    detectSecrets(text);
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    assert.ok(ms < 1500, `${what}: ${Math.round(ms)} ms for ${text.length} characters`);
+  }
+  // …and what was found before is still found, at the ends of such text too.
+  const real = `${'a'.repeat(5000)} DB_PASSWORD=Winter2026!ok ${'token'.repeat(1000)} "api_key": "Zx9-Qm27_Lp41-Rt88" ${' '.repeat(5000)}the password for staging is Jaka123!x`;
+  assert.deepEqual(detectSecrets(real).map((f) => f.value), ['Winter2026!ok', 'Zx9-Qm27_Lp41-Rt88', 'Jaka123!x']);
+});

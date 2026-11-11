@@ -28,7 +28,7 @@ export const PLACEHOLDER = /\{\{vault:([a-z0-9][a-z0-9_.-]{0,60})\}\}/g;
 export const placeholder = (name: string): string => `{{vault:${name}}}`;
 
 const TOKENS: Array<[name: string, re: RegExp, kind: SecretKind, service: string]> = [
-  ['private_key', /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, 'ssh_key', ''],
+  ['private_key', /-----BEGIN [A-Z ]{0,40}PRIVATE KEY-----[\s\S]{0,20000}?-----END [A-Z ]{0,40}PRIVATE KEY-----/g, 'ssh_key', ''],
   ['anthropic_key', /\bsk-ant-[A-Za-z0-9_-]{20,}/g, 'api_key', 'anthropic'],
   ['openai_key', /\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}/g, 'api_key', 'openai'],
   ['aws_access_key', /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, 'api_key', 'aws'],
@@ -37,22 +37,31 @@ const TOKENS: Array<[name: string, re: RegExp, kind: SecretKind, service: string
   ['slack_token', /\bxox[abposr]-[A-Za-z0-9-]{10,}\b/g, 'token', 'slack'],
   ['google_api_key', /\bAIza[0-9A-Za-z_-]{35,}/g, 'api_key', 'google'],
   ['stripe_key', /\b(?:sk|rk)_(?:live|test)_[0-9A-Za-z]{16,}\b/g, 'api_key', 'stripe'],
-  ['jwt', /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, 'token', ''],
+  ['jwt', /\beyJ[A-Za-z0-9_-]{8,8000}\.[A-Za-z0-9_-]{8,8000}\.[A-Za-z0-9_-]{8,8000}\b/g, 'token', ''],
 ];
 const BEARER = /\b(?:bearer|basic)\s+([A-Za-z0-9._~+/-]{16,}=*)/gi;
 /** scheme://user:password@host */
 // (The password runs to the last `@` before the host: one that contains an `@` is not cut in two, with its tail read as the host.)
 const URL_PASSWORD = /:\/\/([^/\s:@]+):([^/\s]{3,})@([^/\s:@]+)/g;
-const HEADER_LINE = /^(\s*(?:authorization|proxy-authorization|x-api-key|api-key)\s*:\s*)(?:bearer\s+|basic\s+)?(\S.{6,})$/gim;
-/** DB_PASSWORD=…, "api_key": "…", token: … */
-const FIELD = /(["']?[A-Za-z0-9_-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)[A-Za-z0-9_-]*["']?\s*[:=]\s*)(["']?)([^\s"',;&]{6,})\2/gi;
+const HEADER_LINE = /^([ \t]*(?:authorization|proxy-authorization|x-api-key|api-key)[ \t]*:[ \t]*)(?:bearer[ \t]+|basic[ \t]+)?(\S.{6,})$/gim;
+/**
+ * DB_PASSWORD=…, "api_key": "…", token: …
+ *
+ * Every pattern in this file runs over text that an employee's session, a member or a page they read can shape, on
+ * the office's one thread — so each must take time that grows with the length of the text, not with its square. That
+ * is why a field's name starts where a word starts (the look-behind), why the parts of a name and of a token have a
+ * longest length, and why no two neighbouring parts can share the same run of spaces. `vault.test.ts` times them
+ * on text built to be slow.
+ */
+const LABEL = String.raw`(?<![A-Za-z0-9_-])(["']?[A-Za-z0-9_-]{0,64}(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)[A-Za-z0-9_-]{0,64}["']?\s*[:=]\s*)`;
+const FIELD = new RegExp(String.raw`${LABEL}(["']?)([^\s"',;&]{6,})\2`, 'gi');
 /** The same with the value in quotes: everything between them, whatever it holds. */
-const FIELD_QUOTED = /(["']?[A-Za-z0-9_-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)[A-Za-z0-9_-]*["']?\s*[:=]\s*)(["'])([^"'\n]{6,})\2/gi;
+const FIELD_QUOTED = new RegExp(String.raw`${LABEL}(["'])([^"'\n]{6,})\2`, 'gi');
 /** A line of an env file: the value is the rest of the line, also when it holds a `;`, a `,` or an `&`. */
-const ENV_LINE = /^([ \t]*(?:export[ \t]+)?[A-Za-z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY)[A-Za-z0-9_]*=)(?!["'])(\S{6,})[ \t]*$/gim;
+const ENV_LINE = /^([ \t]*(?:export[ \t]+)?[A-Za-z0-9_]{0,64}(?:PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY)[A-Za-z0-9_]{0,64}=)(?!["'])(\S{6,})[ \t]*$/gim;
 /** "lozinka za git.example.net je Abc123!x", "password for db: x", "the token is …" */
 const NATURAL =
-  /\b(?:password|passwd|passcode|pass|pin|lozinka|lozinku|šifra|šifru|sifra|sifru|token|api\s*key|ključ|kljuc)(?:\s+(?:za|for|od|na|to)\s+((?!(?:je|is|glasi)\b)[^\s:=,]+(?:\s+(?!(?:je|is|glasi)\b)[^\s:=,]+)?))?(?:\s+(?:is|je|glasi))?\s*[:=]?\s+([^\s"'`]{6,})/gi;
+  /\b(?:password|passwd|passcode|pass|pin|lozinka|lozinku|šifra|šifru|sifra|sifru|token|api\s*key|ključ|kljuc)(?:\s+(?:za|for|od|na|to)\s+((?!(?:je|is|glasi)\b)[^\s:=,]+(?:\s+(?!(?:je|is|glasi)\b)[^\s:=,]+)?))?(?:\s+(?:is|je|glasi))?(?:\s*[:=])?\s+([^\s"'`]{6,})/gi;
 const USER_NEAR = /\b(?:user(?:name)?|korisnik|login|nalog|account)\s*[:=]?\s+([^\s,;:]{2,60})/gi;
 const URL = /https?:\/\/(?:[^/\s@]+@)?([^/\s:]+)/g;
 
