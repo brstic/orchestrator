@@ -63,7 +63,7 @@ read STATUS.md → change → tests → docs → commit → push → deploy → 
 
 ### The server (almost every change)
 
-From your checkout, at the commit you want live:
+From your checkout, at the commit you want live. **First `git fetch` and make sure nothing is ahead of you on `origin/main`, and that your `git push` succeeded** — the script builds from your working tree and never looks at GitHub, so deploying after a refused push puts a build without the other person's work on the server (it happened on 2026-11-11, for two minutes). A safe one-liner: `git fetch && test -z "$(git rev-list HEAD..origin/main)" && git push && pnpm deploy:server`.
 
 ```sh
 pnpm deploy:server
