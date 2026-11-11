@@ -2,11 +2,13 @@
  * Small synthesized sound effects (Web Audio, no files): the crack of the owner's whip and the
  * "jao!" of whoever it was aimed at. A joke with no effect on anyone's work.
  */
+import { routeOutput } from './sound-devices.ts';
+
 let ctx: AudioContext | null = null;
 
 function audio(): AudioContext | null {
   try {
-    ctx ??= new (window.AudioContext || (window as any).webkitAudioContext)();
+    ctx ??= routeOutput(new (window.AudioContext || (window as any).webkitAudioContext)() as AudioContext);
     if (ctx.state === 'suspended') void ctx.resume();
     return ctx;
   } catch {

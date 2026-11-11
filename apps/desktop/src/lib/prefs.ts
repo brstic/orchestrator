@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import type { OwnerSettings } from '@orchestrator/contracts';
 import { useOffice } from './store.ts';
-import { voiceHooks } from './voice.ts';
+import { setOutputDevice } from './sound-devices.ts';
+import { applyVoiceSettings, voiceHooks } from './voice.ts';
+import { GATE_DEFAULT, cleanGate } from './voice-gate.ts';
 
 /**
  * What belongs to this person on this computer, not to the office: how the 3D office is drawn, which keys
@@ -25,6 +27,14 @@ export interface ClientPrefs {
   voiceVolume: number;
   /** This person does not want to hear the others talk; they are still heard by the others when they hold the talk key. */
   voiceMuted: boolean;
+  /** How this person talks: 'hold' the talk key (push to talk), or the microphone is always 'open'. */
+  voiceMode: 'hold' | 'open';
+  /** With the microphone always open: how loud a sound has to be to be sent (root mean square, 0…1). */
+  micGate: number;
+  /** The microphone to talk into; '' for the system's own choice. (A device's id belongs to this computer and this page.) */
+  micDevice: string;
+  /** Where the office's sound comes out — voices, hi-fi, effects; '' for the system's own choice. */
+  outputDevice: string;
 }
 
 export const DEFAULT_KEYS: Record<string, string> = {
@@ -49,7 +59,7 @@ export const DEFAULT_KEYS: Record<string, string> = {
   exit: 'Escape',
 };
 
-export const DEFAULT_PREFS: ClientPrefs = { quality: 'medium', keybindings: DEFAULT_KEYS, projectZones: false, approachZoom: false, radioVolume: 0.6, radioMuted: false, voiceVolume: 1, voiceMuted: false };
+export const DEFAULT_PREFS: ClientPrefs = { quality: 'medium', keybindings: DEFAULT_KEYS, projectZones: false, approachZoom: false, radioVolume: 0.6, radioMuted: false, voiceVolume: 1, voiceMuted: false, voiceMode: 'hold', micGate: GATE_DEFAULT, micDevice: '', outputDevice: '' };
 
 export type PrefsPatch = Partial<ClientPrefs>;
 
@@ -79,18 +89,25 @@ function clean(raw: unknown, base: ClientPrefs = DEFAULT_PREFS): ClientPrefs | n
     radioMuted: typeof r.radioMuted === 'boolean' ? r.radioMuted : base.radioMuted,
     voiceVolume: typeof r.voiceVolume === 'number' && Number.isFinite(r.voiceVolume) ? Math.min(1, Math.max(0, r.voiceVolume)) : base.voiceVolume,
     voiceMuted: typeof r.voiceMuted === 'boolean' ? r.voiceMuted : base.voiceMuted,
+    voiceMode: r.voiceMode === 'hold' || r.voiceMode === 'open' ? r.voiceMode : base.voiceMode,
+    micGate: cleanGate(r.micGate, base.micGate),
+    micDevice: typeof r.micDevice === 'string' && r.micDevice.length <= 256 ? r.micDevice : base.micDevice,
+    outputDevice: typeof r.outputDevice === 'string' && r.outputDevice.length <= 256 ? r.outputDevice : base.outputDevice,
   };
 }
 
 /**
  * A desktop app installed before the hi-fi played for the whole office keeps only the fields it knows in its file.
- * So that "my volume" and "mute" still hold there after a restart, they are also kept in this page's own storage.
+ * So that "my volume" and "mute" still hold there after a restart, they are also kept in this page's own storage —
+ * and so is everything about sound that came later (voices, the way of talking, the devices).
  */
+const SOUND_FIELDS = ['radioVolume', 'radioMuted', 'voiceVolume', 'voiceMuted', 'voiceMode', 'micGate', 'micDevice', 'outputDevice'] as const;
+const soundOf = (from: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(SOUND_FIELDS.filter((f) => from[f] !== undefined).map((f) => [f, from[f]]));
 const RADIO_KEY = 'orch.prefs.radio';
 function radioFallback(): Record<string, unknown> {
   try {
     const kept = JSON.parse(window.localStorage.getItem(RADIO_KEY) ?? 'null');
-    return kept && typeof kept === 'object' ? { radioVolume: kept.radioVolume, radioMuted: kept.radioMuted, voiceVolume: kept.voiceVolume, voiceMuted: kept.voiceMuted } : {};
+    return kept && typeof kept === 'object' ? soundOf(kept) : {};
   } catch {
     return {};
   }
@@ -116,7 +133,7 @@ function write(prefs: ClientPrefs): void {
     const b = bridge();
     if (b) {
       void b.set(prefs).catch(() => undefined);
-      window.localStorage.setItem(RADIO_KEY, JSON.stringify({ radioVolume: prefs.radioVolume, radioMuted: prefs.radioMuted, voiceVolume: prefs.voiceVolume, voiceMuted: prefs.voiceMuted }));
+      window.localStorage.setItem(RADIO_KEY, JSON.stringify(soundOf(prefs as unknown as Record<string, unknown>)));
     } else window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
   } catch {
     /* storage is not available (a private window): the choice still holds until the page is closed */
@@ -174,6 +191,18 @@ voiceHooks.volume = () => {
   const p = usePrefs.getState().prefs;
   return p.voiceMuted ? 0 : p.voiceVolume;
 };
+
+// How this person talks and through what: the preferences say, `voice.ts` and everything that makes sound follow.
+voiceHooks.settings = () => {
+  const p = usePrefs.getState().prefs;
+  return { mode: p.voiceMode, input: p.micDevice, gate: p.micGate };
+};
+usePrefs.subscribe((s) => {
+  // Not before the stored preferences were read: an open microphone is only ever this person's own choice.
+  if (!s.ready) return;
+  setOutputDevice(s.prefs.outputDevice);
+  applyVoiceSettings();
+});
 
 // For probes and the UI tests, like `window.__office`.
 (window as any).__orchPrefs = usePrefs;

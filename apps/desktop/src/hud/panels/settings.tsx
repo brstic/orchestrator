@@ -4,18 +4,22 @@ import { ACTIVITY_LABEL, type AuditEntry, type ForemanSettings, type ForemanStat
 import { Badge, Button, Field, Window } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { DEFAULT_KEYS, setPrefs, usePrefs, type ClientPrefs, type PrefsPatch } from '../../lib/prefs.ts';
+import { canChooseOutput, soundChoices } from '../../lib/sound-devices.ts';
+import { micLevel } from '../../lib/voice.ts';
+import { GATE_MAX, GATE_MIN } from '../../lib/voice-gate.ts';
 import { useOffice } from '../../lib/store.ts';
 import { act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { LoadState, fmtDateTime, keyLabel, useLoad, type PanelProps } from './company-shared.tsx';
 import { AutopilotDial } from './growth.tsx';
 
-type SectionId = 'company' | 'graphics' | 'controls' | 'improve' | 'workers' | 'foreman' | 'audit';
+type SectionId = 'company' | 'graphics' | 'controls' | 'sound' | 'improve' | 'workers' | 'foreman' | 'audit';
 
 /** 'mine': kept on this computer, for whoever sits at it. 'office': the office's own settings, which its owners change. */
 const SECTIONS: Array<{ id: SectionId; label: string; group: 'mine' | 'office'; ownerOnly?: boolean }> = [
   { id: 'graphics', label: 'Graphics', group: 'mine' },
   { id: 'controls', label: 'Controls', group: 'mine' },
+  { id: 'sound', label: 'Sound', group: 'mine' },
   { id: 'company', label: 'Company', group: 'office' },
   { id: 'improve', label: 'Growth', group: 'office' },
   { id: 'workers', label: 'Employees', group: 'office' },
@@ -167,7 +171,7 @@ const KEY_ACTIONS: Array<{ id: string; label: string; hint: string }> = [
   { id: 'interact', label: 'Interact', hint: 'Open the workstation or room you are standing next to' },
   { id: 'talk', label: 'Talk', hint: 'Talk to the employee you are standing next to' },
   { id: 'whip', label: 'Crack the whip', hint: 'A sound and an animation for the employee — or the person — next to you. An owner can make it approve what an employee is waiting for permission to do (Settings → Employees)' },
-  { id: 'voice', label: 'Talk to the people near you (hold)', hint: 'Push to talk: while it is held, your microphone is heard by the people near your character — louder the nearer they stand; a meeting room keeps it in' },
+  { id: 'voice', label: 'Talk to the people near you (hold)', hint: 'Push to talk: while it is held, your microphone is heard by the people near your character — louder the nearer they stand; a meeting room keeps it in. With the microphone always on (Sound), this key switches it off and on' },
   { id: 'emotes', label: 'Gestures (hold)', hint: 'A wheel opens: move the mouse to wave, dance, clap… and let go' },
   { id: 'camera', label: 'Next camera mode', hint: 'CEO → first person → management → free → command center' },
   { id: 'overview', label: 'Company overview', hint: 'Toggle the overview panel' },
@@ -190,7 +194,7 @@ function VoicePrefs() {
       <div className="section-title" style={{ margin: 0 }}>
         Voices
       </div>
-      <div className="small muted">People talk by holding the talk key. You hear whoever is near your character, louder the nearer they stand; what is said in the meeting room is heard only in it. Nothing is recorded.</div>
+      <div className="small muted">You hear whoever is near your character, louder the nearer they stand; what is said in the meeting room is heard only in it. Nothing is recorded.</div>
       <div className="row" style={{ gap: 12 }}>
         <label className="small grow" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           Their volume here
@@ -202,6 +206,154 @@ function VoicePrefs() {
           Do not play them
         </label>
       </div>
+    </div>
+  );
+}
+
+/** How loud the office hi-fi is on this computer (what is on belongs to the office: the Hi-fi window). */
+function HiFiPrefs() {
+  const volume = usePrefs((p) => p.prefs.radioVolume);
+  const muted = usePrefs((p) => p.prefs.radioMuted);
+  return (
+    <div className="card col" style={{ gap: 8 }}>
+      <div className="section-title" style={{ margin: 0 }}>
+        Hi-fi
+      </div>
+      <div className="small muted">The office's music, louder the nearer your character stands to the hi-fi. What is on is chosen at the hi-fi itself, for everyone.</div>
+      <div className="row" style={{ gap: 12 }}>
+        <label className="small grow" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          Its volume here
+          <input type="range" min={0} max={1} step={0.05} value={volume} disabled={muted} onChange={(ev) => setPrefs({ radioVolume: Number(ev.target.value) })} aria-label="Volume of the hi-fi" style={{ flex: 1 }} />
+          <span className="mono">{Math.round(volume * 100)}%</span>
+        </label>
+        <label className="check small" style={{ alignItems: 'center' }}>
+          <input type="checkbox" checked={muted} onChange={(ev) => savePrefs({ radioMuted: ev.target.checked }, ev.target.checked ? 'The hi-fi is off on this computer' : 'The hi-fi plays here again')} style={{ marginTop: 0 }} />
+          Do not play it
+        </label>
+      </div>
+    </div>
+  );
+}
+
+/** The open microphone as it is heard right now, against the mark above which it is sent. */
+function MicMeter({ gate }: { gate: number }) {
+  const [level, setLevel] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setLevel(micLevel()), 80);
+    return () => window.clearInterval(timer);
+  }, []);
+  const at = (v: number) => `${Math.min(100, Math.max(0, (v / GATE_MAX) * 100)).toFixed(1)}%`;
+  return (
+    <div className="mic-meter" role="meter" aria-label="Microphone level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.min(1, level / GATE_MAX) * 100)}>
+      <div className={`mic-meter-fill ${level >= gate ? 'on' : ''}`} style={{ width: at(level) }} />
+      <div className="mic-meter-mark" style={{ left: at(gate) }} />
+    </div>
+  );
+}
+
+/** This computer's sound: where it comes out, which microphone is used, how one talks, and how loud everything is. */
+function SoundSection() {
+  const prefs = usePrefs((p) => p.prefs);
+  const micOff = useOffice((s) => s.micOff);
+  const talkKey = keyLabel(prefs.keybindings.voice ?? 'KeyV');
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const media = typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined;
+
+  useEffect(() => {
+    if (!media?.enumerateDevices) return;
+    let gone = false;
+    const list = () => void media.enumerateDevices().then((found) => !gone && setDevices(found), () => undefined);
+    list();
+    // Headphones plugged in or pulled out while the window is open.
+    media.addEventListener?.('devicechange', list);
+    return () => {
+      gone = true;
+      media.removeEventListener?.('devicechange', list);
+    };
+  }, [media]);
+
+  const mics = soundChoices(devices, 'audioinput', prefs.micDevice);
+  const outs = soundChoices(devices, 'audiooutput', prefs.outputDevice);
+  const unnamed = devices.length > 0 && !mics.named && !outs.named;
+  const outputs = canChooseOutput();
+
+  /** The browser names the devices only once the microphone was allowed: ask, and let go of it at once. */
+  const allow = async () => {
+    try {
+      const stream = await media!.getUserMedia({ audio: true, video: false });
+      for (const track of stream.getTracks()) track.stop();
+      setDevices(await media!.enumerateDevices());
+    } catch {
+      useOffice.getState().toast('The microphone was not allowed. Allow it for this page (the icon in the address bar, or your system’s privacy settings).', 'error');
+    }
+  };
+
+  return (
+    <div className="col" style={{ gap: 12, maxWidth: 680 }}>
+      <div className="card col" style={{ gap: 10 }}>
+        <div className="section-title" style={{ margin: 0 }}>
+          Devices
+        </div>
+        <Field label="Sound comes out of" hint={outputs ? 'Everything the office plays here: voices, the hi-fi, the small effects.' : 'This browser plays on the system’s own device only. Choose your headphones in the system’s sound settings, or use the Orchestrator app or a Chromium browser.'}>
+          <select value={prefs.outputDevice} disabled={!outputs} onChange={(ev) => savePrefs({ outputDevice: ev.target.value }, 'The office’s sound comes out there now')} aria-label="Output device">
+            <option value="">System default</option>
+            {outs.choices.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Microphone" hint="What the people near you hear when you talk.">
+          <select value={prefs.micDevice} onChange={(ev) => savePrefs({ micDevice: ev.target.value }, 'That microphone is used from now on')} aria-label="Microphone">
+            <option value="">System default</option>
+            {mics.choices.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {!media?.enumerateDevices && <div className="pc-note">This page cannot see sound devices: it has to be opened over https, or in the Orchestrator app.</div>}
+        {unnamed && (
+          <div className="row" style={{ gap: 10 }}>
+            <Button onClick={() => void allow()}>Show the devices’ names</Button>
+            <span className="small faint">The browser gives their names only once the microphone was allowed for this page. Nothing is sent.</span>
+          </div>
+        )}
+      </div>
+
+      <div className="card col" style={{ gap: 10 }}>
+        <div className="section-title" style={{ margin: 0 }}>
+          Talking
+        </div>
+        <div className="col" style={{ gap: 8 }} role="radiogroup" aria-label="How you talk">
+          <Choice name="voice-mode" value="hold" current={prefs.voiceMode} onPick={(voiceMode) => savePrefs({ voiceMode }, 'You talk while you hold the key')} title={`Hold ${talkKey} to talk`}>
+            Your microphone is on only while the key is held. Nobody hears you otherwise.
+          </Choice>
+          <Choice name="voice-mode" value="open" current={prefs.voiceMode} onPick={(voiceMode) => savePrefs({ voiceMode }, `Your microphone is on. ${talkKey} switches it off`)} title="Microphone always on">
+            You just talk: the people near your character hear you whenever you speak, with no key. {talkKey} switches the microphone off and on, and a light at the bottom of the window shows which it is. Silence and quiet noise are not sent.
+          </Choice>
+        </div>
+        {prefs.voiceMode === 'open' && (
+          <div className="col" style={{ gap: 6 }}>
+            <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              Sent when louder than
+              <input type="range" min={GATE_MIN} max={GATE_MAX} step={0.002} value={prefs.micGate} onChange={(ev) => setPrefs({ micGate: Number(ev.target.value) })} aria-label="How loud a sound has to be to be sent" style={{ flex: 1 }} />
+            </label>
+            <MicMeter gate={prefs.micGate} />
+            <div className="small faint">
+              {micOff
+                ? `The microphone is switched off (${talkKey} switches it on), so the bar stands still.`
+                : 'Say something: the bar should pass the white mark and turn green. If it is green while you are silent, move the mark to the right, above the noise of your room.'}
+            </div>
+          </div>
+        )}
+        <div className="small faint">The key is yours to change in Controls. You need a character in the office to be heard.</div>
+      </div>
+
+      <VoicePrefs />
+      <HiFiPrefs />
     </div>
   );
 }
@@ -268,7 +420,6 @@ function ControlsSection({ capturing, setCapturing }: { capturing: string | null
           ))}
         </div>
       )}
-      <VoicePrefs />
       <div className="row">
         <Button disabled={isDefault} onClick={() => savePrefs({ keybindings: DEFAULT_KEYS }, 'Keybindings reset to defaults')}>
           Reset to defaults
@@ -624,6 +775,7 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
           )}
           {section === 'graphics' && <GraphicsSection />}
           {section === 'controls' && <ControlsSection capturing={capturing} setCapturing={setCapturing} />}
+          {section === 'sound' && <SoundSection />}
           {current.group === 'office' && (
             // A disabled fieldset switches off every control inside it at once.
             <fieldset className="pc-plain" disabled={readOnly}>

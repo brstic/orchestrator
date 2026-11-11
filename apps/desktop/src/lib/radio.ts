@@ -2,6 +2,7 @@ import type { RadioStation } from '@orchestrator/contracts';
 import { hifiLoudnessAt, ownerPosition } from '@orchestrator/office-3d';
 import { api } from './api.ts';
 import { setPrefs, usePrefs } from './prefs.ts';
+import { routeOutput } from './sound-devices.ts';
 import { useOffice } from './store.ts';
 
 /**
@@ -46,7 +47,7 @@ function ramp(): void {
 
 function element(): HTMLAudioElement {
   if (el) return el;
-  el = new Audio();
+  el = routeOutput(new Audio());
   el.preload = 'none';
   el.addEventListener('playing', () => loaded && patch({ status: 'playing', error: null }));
   el.addEventListener('waiting', () => loaded && useOffice.getState().radio.status === 'playing' && patch({ status: 'loading' }));

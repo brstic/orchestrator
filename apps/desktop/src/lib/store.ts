@@ -160,6 +160,9 @@ export interface OfficeState {
   /** Push to talk: this window is sending its microphone; how loud it is (0…1); and who is being heard here right now. */
   talking: boolean;
   micLevel: number;
+  /** The microphone is always on (Settings → Sound), and whether it is switched off for the moment with the talk key. */
+  micOpen: boolean;
+  micOff: boolean;
   speaking: Record<string, true>;
   say: (text: string) => void;
   /** The employee the owner is carrying to another desk (walk to a desk and press the interact key), or null. */
@@ -386,6 +389,8 @@ export const useOffice = create<OfficeState>((set, get) => ({
   },
   talking: false,
   micLevel: 0,
+  micOpen: false,
+  micOff: false,
   speaking: {},
   whips: {},
   whipAt: 0,
@@ -727,6 +732,7 @@ voiceHooks.talking = (on, error) => {
   useOffice.setState({ talking: on, ...(on ? {} : { micLevel: 0 }) });
   if (error) useOffice.getState().toast(error, 'error');
 };
+voiceHooks.mic = (open, off) => useOffice.setState({ micOpen: open, micOff: off });
 voiceHooks.level = (level) => {
   // Ten steps are plenty for a light, and spare the page a re-render for every frame of sound.
   const step = Math.min(1, Math.round(level * 40) / 10);

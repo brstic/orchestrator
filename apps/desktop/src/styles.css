@@ -2559,6 +2559,47 @@ button.ops-row:hover {
   box-shadow: 0 0 10px rgba(255, 77, 94, 0.8);
   transition: transform 80ms linear;
 }
+/* The microphone is always on but nothing is being sent: the same pill, quieter. Switched off: grey. */
+.talking-pill-quiet {
+  opacity: 0.72;
+}
+.talking-pill-quiet .talking-light {
+  box-shadow: none;
+  opacity: 0.55;
+}
+.talking-pill-off {
+  opacity: 0.6;
+}
+.talking-pill-off .talking-light {
+  background: #8a93a6;
+  box-shadow: none;
+}
+/* Settings → Sound: how loud the microphone is, with a mark where the gate opens. */
+.mic-meter {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.mic-meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: #8a93a6;
+  transition: width 80ms linear;
+}
+.mic-meter-fill.on {
+  background: #3ddc84;
+}
+.mic-meter-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ffffff;
+  opacity: 0.85;
+}
 /* The gesture wheel: in the middle of the screen while its key is held. */
 .emote-wheel {
   position: absolute;

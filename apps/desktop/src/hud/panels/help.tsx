@@ -97,7 +97,7 @@ function HelpPanel({ onClose }: PanelProps) {
             <dt>
               <Key>{k('voice')}</Key> (hold)
             </dt>
-            <dd>Talk: the people near your character hear you, louder the nearer they stand. What is said in the meeting room stays in it.</dd>
+            <dd>Talk: the people near your character hear you, louder the nearer they stand. What is said in the meeting room stays in it. Settings → Sound can keep your microphone always on instead; the key then switches it off and on.</dd>
             <dt>
               <Key>{k('emotes')}</Key> (hold)
             </dt>

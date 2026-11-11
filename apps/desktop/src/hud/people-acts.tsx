@@ -11,7 +11,8 @@ export { personInReach } from '../lib/people-acts.ts';
 /**
  * What a person does with their own character among the other people in the office, by holding a key:
  *
- *   - the talk key (V): their microphone is heard by those near their character for as long as it is held;
+ *   - the talk key (V): their microphone is heard by those near their character for as long as it is held — or,
+ *     with the microphone always on (Settings → Sound), the key switches it off and on;
  *   - the gesture key (B): a wheel opens in the middle of the screen; the mouse (or a digit) picks a gesture, and
  *     letting go of the key makes the character do it. Letting go in the middle does nothing.
  *
@@ -29,6 +30,8 @@ export function PeopleActs() {
   const keys = usePrefs((p) => p.prefs.keybindings);
   const talking = useOffice((s) => s.talking);
   const level = useOffice((s) => s.micLevel);
+  const micOpen = useOffice((s) => s.micOpen);
+  const micOff = useOffice((s) => s.micOff);
   const [wheel, setWheel] = useState(false);
   const [picked, setPicked] = useState<number | null>(null);
   const aim = useRef({ x: 0, y: 0 });
@@ -114,11 +117,27 @@ export function PeopleActs() {
   const talkLabel = (keys.voice ?? 'KeyV').replace(/^Key|^Digit/, '');
   return (
     <>
-      {talking && (
-        <div className="talking-pill glass" role="status">
-          <span className="talking-light" style={{ transform: `scale(${1 + level * 0.9})` }} />
-          Talking — people near you hear it. Release <span className="kbd">{talkLabel}</span> to stop
+      {micOpen ? (
+        // Always shown while the microphone is always on: nobody should be on the air without seeing it.
+        <div className={`talking-pill glass ${micOff ? 'talking-pill-off' : talking ? '' : 'talking-pill-quiet'}`} role="status" data-mic={micOff ? 'off' : talking ? 'sending' : 'open'}>
+          <span className="talking-light" style={{ transform: `scale(${1 + (talking ? level : 0) * 0.9})` }} />
+          {micOff ? (
+            <>
+              Microphone off. <span className="kbd">{talkLabel}</span> switches it on
+            </>
+          ) : (
+            <>
+              {talking ? 'Talking — people near you hear it.' : 'Microphone on — people near you hear you when you speak.'} <span className="kbd">{talkLabel}</span> switches it off
+            </>
+          )}
         </div>
+      ) : (
+        talking && (
+          <div className="talking-pill glass" role="status" data-mic="sending">
+            <span className="talking-light" style={{ transform: `scale(${1 + level * 0.9})` }} />
+            Talking — people near you hear it. Release <span className="kbd">{talkLabel}</span> to stop
+          </div>
+        )
       )}
       {wheel && <Wheel picked={picked} />}
     </>

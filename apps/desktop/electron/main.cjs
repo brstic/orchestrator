@@ -428,6 +428,10 @@ ipcMain.handle('orch:prefs-set', (_event, input) => {
     radioMuted: p.radioMuted === true,
     voiceVolume: typeof p.voiceVolume === 'number' && Number.isFinite(p.voiceVolume) ? Math.min(1, Math.max(0, p.voiceVolume)) : 1,
     voiceMuted: p.voiceMuted === true,
+    voiceMode: p.voiceMode === 'open' ? 'open' : 'hold',
+    micGate: typeof p.micGate === 'number' && Number.isFinite(p.micGate) ? Math.min(0.1, Math.max(0.004, p.micGate)) : 0.02,
+    micDevice: typeof p.micDevice === 'string' && p.micDevice.length <= 256 ? p.micDevice : '',
+    outputDevice: typeof p.outputDevice === 'string' && p.outputDevice.length <= 256 ? p.outputDevice : '',
   };
   const file = prefsFile();
   // Written beside and renamed, so a crash half-way leaves the previous file.
