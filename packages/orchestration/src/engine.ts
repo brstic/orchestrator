@@ -136,6 +136,8 @@ export class Engine {
     if (reseated) this.core.log('info', `${reseated} seat${reseated === 1 ? '' : 's'} that stood in a neighbouring table ${reseated === 1 ? 'was' : 'were'} moved to its own table`);
     const requeued = this.tasks.requeueFolderWaits();
     if (requeued) this.core.log('info', `${requeued} task${requeued === 1 ? '' : 's'} that waited for a shared folder ${requeued === 1 ? 'is' : 'are'} back in the queue`);
+    const rerouted = this.tasks.rerouteReviews();
+    if (rerouted) this.core.log('info', `${rerouted} finished task${rerouted === 1 ? '' : 's'} that waited for a review nobody was asked for ${rerouted === 1 ? 'was' : 'were'} given to a colleague to review`);
     this.waits.restore();
     this.comms.restore();
     this.meetings.restore();

@@ -121,11 +121,19 @@ test('where nobody is a reviewer by trade, a colleague reviews — unless the bo
   await h.api('POST', `/employees/${ids['Studio Designer']}/message`, { body: 'Finish it. @@fake: complete-nocode the picture is done@@' });
   await waitFor(async () => !(await h.state()).tasks.some((t) => t.assigneeId === ids['Studio Designer'] && t.status === 'IN_PROGRESS'), { label: 'the designer is free', timeout: 40000 });
   await h.api('PATCH', '/settings', { employeesManageBoard: false });
-  const two = await h.task({ projectId: studio, title: 'Studio: new footer', assigneeId: ids['Studio Designer'], requiresReview: true, description: '@@fake: write footer.txt ok; commit footer; complete footer added@@' });
+  const two = await h.task({ projectId: shop, title: 'Marketplace: new footer', assigneeId: ids['Shop Marketplace'], requiresReview: true, description: '@@fake: write footer.txt ok; commit footer; complete footer added@@' });
   const waiting = await waitFor(async () => {
     const t = await h.getTask(two.id);
     return t.status === 'REVIEW' ? t : null;
   }, { label: 'the second one waits for review', timeout: 40000 });
   assert.equal(waiting.reviewerId ?? null, null);
   await h.api('PATCH', '/settings', { employeesManageBoard: true });
+  // What was left waiting for nobody is given to a colleague when the office next starts.
+  await h.restartServer();
+  const rerouted = await waitFor(async () => {
+    const t = await h.getTask(two.id);
+    return t.reviewerId ? t : null;
+  }, { label: 'a colleague was asked after the restart', timeout: 20000 });
+  assert.notEqual(rerouted.reviewerId, ids['Shop Marketplace']);
+  assert.ok(rerouted.history.some((x) => /No reviewer had been asked: a colleague is asked now/.test(x.note)));
 });

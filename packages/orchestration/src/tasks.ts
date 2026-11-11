@@ -736,6 +736,25 @@ export class TaskManager {
   }
 
   /**
+   * Finished work that waits for a review nobody was asked for — from before a colleague could review where the team
+   * has no reviewer by trade: a colleague is asked now. Only where one can be found; what waits for the boss because
+   * there is nobody else, goes on waiting for the boss.
+   */
+  rerouteReviews(): number {
+    if (this.core.settings.employeesManageBoard === false) return 0;
+    let n = 0;
+    for (const t of this.core.tasks.filter((x) => x.status === 'REVIEW' && !x.reviewerId && !x.evidence.review && !this.core.tasks.find((r) => r.reviewOf === x.id && r.status !== 'DONE'))) {
+      if (!this.pickReviewer(t)) continue;
+      this.history(t, 'No reviewer had been asked: a colleague is asked now', 'orchestrator');
+      this.requestReview(t, null);
+      this.eng.comms.resolveNotifications((x) => x.kind === 'review' && x.taskId === t.id);
+      n++;
+    }
+    if (n) this.schedule();
+    return n;
+  }
+
+  /**
    * Tasks that an earlier version blocked because somebody else was working in the same folder: back in the queue.
    * (They were never the employee's problem to solve, and nothing unblocked them by itself.)
    */
