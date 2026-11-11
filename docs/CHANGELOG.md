@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-11
+- **Deployed as build `ce11e9d`** (the owner's word): the vault and its safe, model and effort, the board in the employees' hands, the two safeguards from Ahoy. The owner's Mac app repackaged from the same commit.
 - **Work that passes its checks after changing them is reviewed.** When a task's own changes touch its tests, the test runner's settings or the script it is verified by, the task is flagged ("This task changed what it is checked by — …"), sent to review even where the project asks for none, and the reviewer is told to look at that first. A task of the kind *test* is noted, not held up. (From Ahoy; `checksTouched` in `tasks.ts`; `tests/e2e/22-checks-touched.test.ts`.)
 - **Going in circles is noticed.** The same failure — the same tool, the same command, the same error with its numbers taken out — coming back during one task: at the third time the employee is told to stop and change approach, at the sixth you get "Alex is going in circles" with what keeps failing. Nobody is stopped. (From Ahoy; `failureKey` in `hook-receiver.ts`.)
 - `docs/plans/IDEAS-from-ahoy.md`: what else is worth bringing over from Ahoy, in order.
