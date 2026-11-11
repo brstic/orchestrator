@@ -655,7 +655,7 @@ export class TaskManager {
         text = taskPrompt(task, project, deps, fb.length ? fb.join('\n\n') : null, [this.eng.improver.capture.onboardingBlock(employee, project), this.eng.improver.playbookBlock(employee, project.id, true, task)].filter(Boolean).join('\n\n'));
         // What the office already knows about this subject, if its memory has something close — and only if it answers in time.
         if (this.eng.memory.available() && !this.core.hosts.get(project.hostId ?? '')?.memberId) {
-          const remembered = await this.eng.memory.recallText(`${task.title}. ${truncate(task.description, 300)}`, { results: 3, timeoutMs: this.core.timings.memoryRecallMs ?? 12_000, chars: 500 }).catch(() => '');
+          const remembered = await this.eng.memory.recallText(`${task.title}. ${truncate(task.description, 300)}`, { results: 3, timeoutMs: this.core.timings.memoryRecallMs ?? 20_000, chars: 500 }).catch(() => '');
           if (remembered) text += `\n\nFrom the office's memory — earlier work, answers and decisions that look related. They may be out of date: check before you rely on one, and use recall to ask for more.\n${remembered}`;
         }
       }

@@ -305,6 +305,54 @@ export class Vault {
   }
 
   /**
+   * Credentials that are already written into the office's own records — a task somebody typed a password into
+   * before there was a vault, a message, a question and its answer — are moved here, and the records go on with
+   * their names. Run when the office starts; it changes only records in which something was found.
+   */
+  sweep(): number {
+    const office: VaultActor = { kind: 'office', id: null, name: 'The office' };
+    let moved = 0;
+    const clean = (text: string | null | undefined, hints: string[]): string | null => {
+      if (!text) return null;
+      const res = this.capture(text, office, hints);
+      if (!res.names.length) return null;
+      moved += res.names.length;
+      return res.text;
+    };
+    const core = this.core;
+    for (const t of core.tasks.all()) {
+      const hints = [core.projects.get(t.projectId)?.name ?? ''];
+      const d = clean(t.description, hints);
+      const a = clean(t.acceptance, hints);
+      const s = clean(t.evidence?.summary, hints);
+      if (d === null && a === null && s === null) continue;
+      if (d !== null) t.description = d;
+      if (a !== null) t.acceptance = a;
+      if (s !== null) t.evidence.summary = s;
+      core.put('task', t);
+    }
+    for (const m of core.messages.all()) {
+      const b = clean(m.body, [core.employees.get(m.toEmployeeId)?.name ?? '']);
+      if (b === null) continue;
+      m.body = b;
+      core.put('message', m);
+    }
+    for (const q of core.questions.all()) {
+      const hints = [core.employees.get(q.employeeId ?? '')?.name ?? ''];
+      const text = clean(q.text, hints);
+      const context = clean(q.context, hints);
+      const answer = clean(q.answer, hints);
+      if (text === null && context === null && answer === null) continue;
+      if (text !== null) q.text = text;
+      if (context !== null) q.context = context;
+      if (answer !== null) q.answer = answer;
+      core.put('question', q);
+    }
+    if (moved) this.core.log('info', `the vault took ${moved} credential${moved === 1 ? '' : 's'} out of tasks, messages and questions that were written before`);
+    return moved;
+  }
+
+  /**
    * Something in a well-known credential format went through a session (a prompt, a command, what a tool returned):
    * keep it, so that it is not lost in a terminal's scrollback. Only formats that cannot be mistaken — a provider's
    * token, a private key, a password inside a URL — are kept this way.

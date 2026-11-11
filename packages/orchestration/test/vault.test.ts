@@ -132,3 +132,35 @@ test('what goes through a session is kept only when its format cannot be mistake
   assert.deepEqual(vault.list().map((e) => [e.name, e.source, e.createdBy.name]), [['aws-api-key', 'noticed', 'Alex']]);
   assert.deepEqual(vault.noticed('AKIAABCDEFGHIJKLMNOP again', alex), [], 'seen before: nothing new');
 });
+
+test('credentials that already stand in old tasks, messages and questions are moved to the vault when the office starts', () => {
+  const f = fakeCore();
+  const saved: Array<[string, any]> = [];
+  const tasks = [
+    { id: 't1', projectId: 'p1', description: 'clone everything from git.example.net, username branko sifra Winter2026!ok', acceptance: '', evidence: { summary: 'Cloned. The password was not stored in any .git/config.' } },
+    { id: 't2', projectId: 'p1', description: 'Add the health endpoint', acceptance: 'GET /healthz answers 200', evidence: { summary: null } },
+  ];
+  const messages = [{ id: 'm1', toEmployeeId: 'e1', body: `push with ghp_${'k4K4'.repeat(9)} please` }, { id: 'm2', toEmployeeId: 'e1', body: 'good morning' }];
+  const questions = [{ id: 'q1', employeeId: 'e1', text: 'Which database?', context: '', answer: 'the staging one, password: Autumn2026!db' }];
+  Object.assign(f.core, {
+    tasks: { all: () => tasks },
+    messages: { all: () => messages },
+    questions: { all: () => questions },
+    projects: { get: () => ({ name: 'Shop' }) },
+    employees: { get: () => ({ name: 'Alex' }) },
+    put: (kind: string, e: any) => void saved.push([kind, e.id]),
+  });
+  const vault = new Vault(f.core, null);
+  assert.equal(vault.sweep(), 3);
+  assert.equal(tasks[0]!.description, 'clone everything from git.example.net, username branko sifra {{vault:branko-password}}');
+  assert.equal(messages[0]!.body, 'push with {{vault:github-token}} please');
+  assert.equal(questions[0]!.answer, 'the staging one, password: {{vault:alex-password}}');
+  // Only the records in which something was found are written back.
+  assert.deepEqual(saved, [['task', 't1'], ['message', 'm1'], ['question', 'q1']]);
+  assert.deepEqual(vault.list().map((e) => [e.name, e.source, e.createdBy.kind]), [['alex-password', 'captured', 'office'], ['branko-password', 'captured', 'office'], ['github-token', 'captured', 'office']]);
+  assert.equal(vault.use('branko-password', { kind: 'owner', id: null, name: 'Boss' }, 'revealed').value, 'Winter2026!ok');
+  // A second start finds nothing left to move.
+  saved.length = 0;
+  assert.equal(vault.sweep(), 0);
+  assert.deepEqual(saved, []);
+});

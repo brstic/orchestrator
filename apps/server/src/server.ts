@@ -501,6 +501,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
     // ── the long memory: whether there is one, and asking it (as an employee would) ──
     api.get('/memory', async () => engine.memory.status());
+    // Owners only (no rule in access.ts): throw the memory away and write the office's record into it again.
+    api.post('/memory/rebuild', async () => engine.memory.rebuild());
     api.post('/memory/recall', async (req) => ({ hits: await engine.memory.recall(String(body(req).query ?? ''), { results: 8, timeoutMs: 45_000 }) }));
     api.get('/roles', async () => ROLE_CATALOGUE);
     api.get('/audit', async (req) => store.recentAudit(Number(query(req).limit) || 200));

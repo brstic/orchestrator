@@ -54,6 +54,9 @@ const WING = 'office';
 /** Below this, a result is about something else. (MemPalace's multilingual model puts a clear match above 0.5.) */
 export const RELEVANT = 0.42;
 const FILED_KV = 'memory.filed';
+/** Which way of writing records the palace on disk was made with (2: every record passes through the vault's capture). */
+const SCHEMA_KV = 'memory.schema';
+const SCHEMA = 2;
 const MAX_FILED = 20_000;
 
 export class Memory {
@@ -146,6 +149,16 @@ export class Memory {
         }
         await this.run(['init', this.records, '--yes', '--no-llm', '--direct'], 120_000);
       }
+      // Records written by the first version were not passed through the vault: they are thrown away once and written again.
+      if (this.eng.core.store.kvGet<number>(SCHEMA_KV, 0) < SCHEMA && fs.existsSync(path.join(this.dir, 'palace'))) {
+        this.eng.core.store.kvSet(SCHEMA_KV, SCHEMA);
+        this.eng.core.log('info', 'long memory: records are written again (they now pass through the vault first)');
+        for (const sub of ['records', 'palace']) fs.rmSync(path.join(this.dir, sub), { recursive: true, force: true });
+        this.filed.clear();
+        this.eng.core.store.kvSet(FILED_KV, []);
+        return this.start();
+      }
+      this.eng.core.store.kvSet(SCHEMA_KV, SCHEMA);
       this.ready = true;
       this.eng.core.log('info', `long memory: MemPalace ${this.version} (${this.bin}); records in ${this.records}`);
       this.catchUp();
@@ -171,6 +184,25 @@ export class Memory {
     }
   }
 
+  /**
+   * Start the memory over: what the office wrote and what MemPalace filed are deleted, and the office's record is
+   * written and filed again. For when records were written that should not have been (an older version wrote a
+   * password that stood in a task), or when what a record says was changed.
+   */
+  async rebuild(): Promise<MemoryStatus> {
+    if (!this.bin || !this.dir) return this.status();
+    if (this.mineTimer) clearTimeout(this.mineTimer);
+    this.mineTimer = null;
+    await this.queue;
+    this.ready = false;
+    for (const sub of ['records', 'palace']) fs.rmSync(path.join(this.dir, sub), { recursive: true, force: true });
+    this.filed.clear();
+    this.eng.core.store.kvSet(FILED_KV, []);
+    this.lastFiledAt = null;
+    await this.start();
+    return this.status();
+  }
+
   /** After the owner switched the memory back on: what happened meanwhile. (Cheap when nothing is new.) */
   caughtUp(): void {
     this.catchUp();
@@ -186,7 +218,9 @@ export class Memory {
   /** Write one record (once per `key`) and have it filed soon. Returns whether it was new. */
   remember(room: MemoryRoom, key: string, title: string, body: string): boolean {
     if (!this.available() || this.filed.has(key)) return false;
-    const text = redactSecrets(`# ${title.trim()}\n\n${body.trim()}\n`);
+    // A credential in what is about to be remembered goes to the vault first: the record carries its name.
+    const kept = this.eng.vault.capture(`# ${title.trim()}\n\n${body.trim()}\n`, { kind: 'office', id: null, name: 'The office' });
+    const text = redactSecrets(kept.text);
     try {
       const file = path.join(this.records, room, `${slug(key, 80) || 'record'}.md`);
       fs.writeFileSync(file, truncate(text, 12_000), { mode: 0o600 });
@@ -252,7 +286,8 @@ export class Memory {
         return parseSearch(out).filter((h) => h.source !== 'README.md');
       },
       (e) => {
-        this.lastError = (e as Error).message;
+        // Asked before anything was filed: MemPalace says "Run: mempalace mine". That is an empty memory, not a fault.
+        if (!/mempalace mine/i.test((e as Error).message)) this.lastError = (e as Error).message;
         return [] as MemoryHit[];
       },
     );

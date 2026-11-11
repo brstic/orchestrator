@@ -116,6 +116,12 @@ export class Engine {
 
   /** Reconstruct runtime state from the database after a (re)start. */
   start(): void {
+    // Before anything is remembered or shown: credentials that stand in old records go to the vault.
+    try {
+      this.vault.sweep();
+    } catch (e) {
+      this.core.log('warn', `vault: ${(e as Error).message}`);
+    }
     void this.memory.start();
     this.sessions.restore();
     const requeued = this.tasks.requeueFolderWaits();
