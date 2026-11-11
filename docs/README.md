@@ -16,3 +16,5 @@
 | [CLAUDE-CODE-INTEGRATION.md](CLAUDE-CODE-INTEGRATION.md) | How workers are launched, hooks, MCP tools, usage, foreman | The integration changes |
 
 Plans: [plans/UPDATE-central-office.md](plans/UPDATE-central-office.md) (active) · [plans/2026-original-brief.md](plans/2026-original-brief.md) (done; what is left is listed there).
+
+Ideas, not yet plans: [plans/IDEAS-from-t3code.md](plans/IDEAS-from-t3code.md) (installation, updates, accounts, process) · [plans/IDEAS-memory-from-mempalace.md](plans/IDEAS-memory-from-mempalace.md) (a better memory).
