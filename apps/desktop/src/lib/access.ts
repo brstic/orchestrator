@@ -48,6 +48,8 @@ export function useAccess() {
     work: (hostId: string | null | undefined) => may(me, 'work', memberOfHost(hosts, hostId)),
     why: (hostId: string | null | undefined, need: 'read' | 'work' = 'work') => whyNot(me, need, memberOfHost(hosts, hostId)),
     admin: me?.kind === 'owner',
+    /** Deleting a project: an owner's act, except for a project on one's own computer (nobody else's work is there). */
+    deleteProject: (hostId: string | null | undefined) => me?.kind === 'owner' || (me?.role === 'colleague' && !!memberOfHost(hosts, hostId) && memberOfHost(hosts, hostId) === me.id),
     /** Machines this person may put employees on: the shared ones, and their own. */
     usable: (h: Host) => may(me, 'work', h.memberId ?? null),
   };

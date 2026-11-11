@@ -182,10 +182,17 @@ test('measured outcomes: everyone may ask, and what is on a member’s own compu
   assert.deepEqual([reportFor(ana).lessons[0]!.given, reportFor(vera).lessons[0]!.given], [1, 3]);
 });
 
-test('deleting a project is for owners alone, wherever the project lives', () => {
-  for (const who of [mila, ana, jovan]) assert.equal(call(who, 'DELETE', '/projects/p-shared'), false, `${who.name} may not delete a project`);
+test('deleting a project: a shared one is for owners alone; one on a member’s own computer also for that member', () => {
+  for (const who of [mila, ana, jovan]) assert.equal(call(who, 'DELETE', '/projects/p-shared'), false, `${who.name} may not delete a shared project`);
   assert.match(mayCall(engine, ana, 'DELETE', '/projects/p-shared', null).reason!, /owner/i);
-  for (const who of [vera, root]) assert.equal(call(who, 'DELETE', '/projects/p-shared'), true);
+  assert.match(mayCall(engine, jovan, 'DELETE', '/projects/p-shared', null).reason!, /owner/i);
+  // A project with no machine is not anybody's own.
+  for (const who of [mila, ana, jovan]) assert.equal(call(who, 'DELETE', '/projects/p-nohost'), false);
+  // Jovan's own project: Jovan, and the owners. Not another colleague, not a visitor.
+  assert.equal(call(jovan, 'DELETE', '/projects/p-jovan'), true);
+  for (const who of [mila, ana]) assert.equal(call(who, 'DELETE', '/projects/p-jovan'), false, `${who.name} may not delete Jovan's project`);
+  assert.match(mayCall(engine, ana, 'DELETE', '/projects/p-jovan', null).reason!, /another member/);
+  for (const who of [vera, root]) for (const p of ['p-shared', 'p-jovan', 'p-nohost']) assert.equal(call(who, 'DELETE', `/projects/${p}`), true);
 });
 
 test('routines: set by whoever may work with the employee, read by whoever may read them', () => {

@@ -34,7 +34,7 @@ pnpm desktop               # the desktop app from source: Connect to an office �
 
 `pnpm desktop` is enough to use the office. A packaged app (`node scripts/package.mjs`, macOS on Apple Silicon) is only a convenience; the Windows and Linux bundles are stale and untested.
 
-Your computer gets a room in the office when the app can run sessions on it: it needs macOS or Linux (or WSL2), tmux and Node.js 22.18+. If the room does not appear, **Menu → My room** says why in one line.
+Your computer gets a room in the office when the app can run sessions on it: it needs macOS or Linux, tmux and Node.js 22.18+ — or, on Windows, WSL2 with those inside it (the app itself runs on Windows; see INSTALL.md, "Linux and Windows"). If the room does not appear, **Menu → My room** says why in one line.
 
 ## 4. From a change to the running office
 

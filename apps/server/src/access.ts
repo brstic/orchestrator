@@ -39,11 +39,16 @@ interface Rule {
   re: RegExp;
   need: Need;
   scopes: Scope[];
+  /** Only on the asker's own computer: the same act on something shared (or on someone else's) is an owner's. */
+  ownOnly?: boolean;
 }
 
 const path = (thing: Thing): Scope => ({ thing, from: 'path' });
 const inBody = (thing: Thing, field: string): Scope => ({ thing, from: 'body', field });
 const rule = (method: string, pattern: string, need: Need, ...scopes: Scope[]): Rule => ({ method, re: new RegExp(`^${pattern.replace(/:id/g, '([^/]+)')}$`), need, scopes });
+
+/** A rule that holds only for what lives on the member's own computer. */
+const onOwn = (r: Rule): Rule => ({ ...r, ownOnly: true });
 
 const RULES: Rule[] = [
   // ── the office as everyone sees it ──
@@ -107,6 +112,9 @@ const RULES: Rule[] = [
   rule('POST', '/projects/:id/plan', 'work', path('project')),
   rule('POST', '/projects/:id/integration/sync', 'work', path('project')),
   rule('POST', '/projects/:id/integration/test', 'work', path('project')),
+  // A delete takes the project's tasks with it and cannot be undone: on what is shared it is an owner's act. A project
+  // on a member's own computer has nobody else's work in it (work does not cross), so that member may delete it too.
+  onOwn(rule('DELETE', '/projects/:id', 'work', path('project'))),
   rule('POST', '/tasks', 'work', inBody('project', 'projectId'), inBody('employee', 'assigneeId')),
   rule('POST', '/tasks/release', 'work', inBody('project', 'projectId')),
   rule('PATCH', '/tasks/:id', 'work', path('task'), inBody('employee', 'assigneeId')),
@@ -193,6 +201,7 @@ export function mayCall(engine: Engine, who: Who, method: string, route: string,
       const raw = s.from === 'path' ? decodeURIComponent(m[1] ?? '') : body?.[s.field];
       const id = typeof raw === 'string' && raw ? raw : null;
       const member = memberOf(engine, s.thing, id);
+      if (r.ownOnly && !member) return { ok: false, reason: 'Only an owner of this office can do this to something shared.' };
       if (!allowed(who, r.need, member)) return { ok: false, reason: member === OWNERS_ONLY ? 'The foreman supervises the whole office, so only the owners can look into it or direct it.' : "That is on another member's own computer; only they and the owners can use it." };
     }
     // Hiring a foreman, or making someone the foreman, is an owner's act.

@@ -124,6 +124,8 @@ export interface OfficeState {
   accounts: AccountUsage[];
   /** This computer's own host in an office someone else runs (from the desktop app); `none` in one's own office or a browser. */
   myHost: { state: 'none' | 'starting' | 'online' | 'unavailable' | 'stopped'; reason: string | null; hostId: string | null };
+  /** Members' computers for which the shared floor has no wall left to attach a room to (set by the scene's owner, `App`). */
+  roomless: string[];
   /** What people said to each other, most recent last. */
   /** `at` is when the line arrived at this computer (0: it was said before this window came in). */
   /** What people said (and did: `emote` lines read "<name> cracks the whip at …"), oldest first. */
@@ -314,6 +316,7 @@ export const useOffice = create<OfficeState>((set, get) => ({
   people: [],
   accounts: [],
   myHost: { state: 'none', reason: null, hostId: null },
+  roomless: [],
   chat: [],
   peopleWhips: {},
   knocks: [],

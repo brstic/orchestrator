@@ -124,6 +124,9 @@ interface Slot {
   quality: 0 | 1 | 2;
 }
 
+/** The only kind of place a member's room is attached to: one whose door opens into the shared part of the office. */
+const SHARED_FLOOR = 0;
+
 /** Wall coordinates → world: `a` along the wall, `v` away from it (positive: out of the building, negative: into it). */
 function frame(core: Box, side: MemberSide): (a: number, v: number) => [number, number] {
   if (side === 'e') return (a, v) => [core.maxX + v, a];
@@ -143,8 +146,14 @@ function boxOf(p: [number, number], q: [number, number]): Box {
  * doorway must be clear on the office side (no furniture, no wall meeting the outer wall there, nothing hanging
  * on it) and reachable on foot. The west wall is filled first, then the north, then the east — the command
  * centre's panel covers the east side of the picture, so rooms there are the last to be used. On each wall the
- * best door goes first (one that opens into a hall or the open floor rather than into a room) and its neighbours
- * follow, so members sit side by side where the wall allows. A door into the CEO's office is the last resort.
+ * door nearest the middle of its room goes first and its neighbours follow, so members sit side by side where the
+ * wall allows.
+ *
+ * The boundary: a member's room hangs off the shared part of the office only — its door opens into a hall, the open
+ * floor or reception, never into a closed room. A room behind the meeting room, reached by walking through a
+ * meeting, is not a place to work; the same goes for the server room, the break room and the CEO's office. Places
+ * are found over the whole wall as before and then kept only where the door is in the shared part, so the places
+ * that were good already stay exactly where they were.
  */
 function slots(core: World): Slot[] {
   const b = core.bounds;
@@ -200,11 +209,10 @@ function slots(core: World): Slot[] {
   }
   const ordered: Slot[] = [];
   for (const { list } of perSide) {
-    const usable = list.filter((x) => x.quality < 2);
-    const first = [...usable].sort((p, q) => p.quality - q.quality)[0];
+    const usable = list.filter((x) => x.quality === SHARED_FLOOR);
+    const first = usable[0];
     if (first) ordered.push(...usable.sort((p, q) => Math.abs(p.start - first.start) - Math.abs(q.start - first.start)));
   }
-  for (const { list } of perSide) ordered.push(...list.filter((x) => x.quality === 2));
   return ordered;
 }
 

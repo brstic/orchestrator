@@ -105,6 +105,7 @@ function MyRoomPanel({ onClose }: { arg: string | null; onClose: () => void }) {
   const employees = useOffice((s) => s.employees);
   const sessions = useOffice((s) => s.sessions);
   const myHost = useOffice((s) => s.myHost);
+  const roomless = useOffice((s) => s.roomless);
   const [adding, setAdding] = useState(false);
   // This computer, as the office knows it: the host the desktop app started, else any of mine that is online.
   const mine = useMemo(() => Object.values(hosts).filter((h) => !!me?.id && h.memberId === me.id && h.status !== 'revoked'), [hosts, me?.id]);
@@ -139,6 +140,11 @@ function MyRoomPanel({ onClose }: { arg: string | null; onClose: () => void }) {
           <div className="small muted">
             What runs here is yours: your folders, your Claude account. Others see your employees and what state they are in; only you and the owners can open their terminals or talk to them. When you leave, your room is locked and the sessions wait on your computer.</div>
           {!online && myHost.state === 'unavailable' && <div className="small bad">{myHost.reason}</div>}
+          {host && roomless.includes(host.id) && (
+            <div className="small bad">
+              There is no free wall on the office's shared floor for your room: rooms are attached only where their door opens into a hall, the open floor or reception. Your employees work as usual and are listed here, but have no desk in the office until a place is free.
+            </div>
+          )}
           {!online && myHost.state === 'none' && <div className="small muted">Open this office with the Orchestrator desktop app to bring your computer in: a browser tab cannot run sessions.</div>}
         </div>
 
