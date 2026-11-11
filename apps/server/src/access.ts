@@ -257,6 +257,17 @@ export function mayCall(engine: Engine, who: Who, method: string, route: string,
     if (/^\/employees(\/[^/]+)?$/.test(route) && (method === 'POST' || method === 'PATCH') && body?.autonomy === 'unrestricted') {
       return { ok: false, reason: 'Only an owner of this office can put an employee on Unrestricted.' };
     }
+    // What a project pre-approves, refuses and holds for approval decides what employees run unasked on the office's
+    // machines (and the patterns are run as written, on every command): an owner's to set — or, for a project on a
+    // member's own computer, that member's.
+    // (The project window sends the whole policy with every save, so what counts is whether one of the three changes.)
+    if (/^\/projects(\/[^/]+)?$/.test(route) && (method === 'POST' || method === 'PATCH') && body?.policy && typeof body.policy === 'object') {
+      const id = method === 'PATCH' ? decodeURIComponent(m[1] ?? '') : null;
+      const now = (id ? engine.core.projects.get(id)?.policy : null) as Record<string, unknown> | null | undefined;
+      const changes = ['allow', 'deny', 'highRiskPatterns'].some((k) => k in (body.policy as object) && JSON.stringify((body.policy as Record<string, unknown>)[k] ?? []) !== JSON.stringify(now?.[k] ?? []));
+      const mine = id ? memberOf(engine, 'project', id) : memberOf(engine, 'host', typeof body.hostId === 'string' ? body.hostId : null);
+      if (changes && mine !== who.id) return { ok: false, reason: "Only an owner of this office can change what a shared project's employees may run without asking." };
+    }
     // Hiring a foreman, or making someone the foreman, is an owner's act.
     if (/^\/employees(\/[^/]+)?$/.test(route) && (method === 'POST' || method === 'PATCH') && typeof body?.roleKey === 'string' && (roleByKey(body.roleKey) ?? matchRole(body.roleKey))?.key === FOREMAN_ROLE) {
       return { ok: false, reason: 'Only an owner of this office can hire a foreman.' };

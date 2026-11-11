@@ -27,6 +27,17 @@ export function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
+/**
+ * The text without the characters of `chars` at its end. Use this instead of `text.replace(/[…]+$/, '')` on text
+ * somebody else can shape: that pattern is tried from every character of every run and takes time with the square of
+ * the run's length (200,000 full stops in the middle of a text: a quarter of a minute); this walks back from the end.
+ */
+export function stripEnd(text: string, chars: string): string {
+  let end = text.length;
+  while (end > 0 && chars.includes(text[end - 1]!)) end--;
+  return end === text.length ? text : text.slice(0, end);
+}
+
 export function truncate(s: string, n: number): string {
   return s.length <= n ? s : s.slice(0, Math.max(0, n - 1)) + '…';
 }

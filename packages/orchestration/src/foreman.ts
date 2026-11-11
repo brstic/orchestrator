@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { DeliveryState, Employee, ForemanAttentionItem, ForemanAttentionKind, ForemanRound, ForemanStatus, OrchestratorEvent, Project, Question, Task, TaskKind, TaskPriority, TaskStatus } from '@orchestrator/contracts';
 import { ACTIVITY_LABEL, correlationMarker, formatDuration, newId, nowIso, redactSecrets, roleByKey, truncate } from '@orchestrator/contracts';
 import type { McpToolHandler, McpToolResult } from '@orchestrator/integrations';
+import { plainScreen } from './comms.ts';
 import type { Engine } from './engine.ts';
 import type { McpContext } from './mcp-tools.ts';
 
@@ -783,7 +784,7 @@ export class Foreman {
     const screen = live ? core.gateway.screens.get(s!.id) : undefined;
     let shown = false;
     if (screen) {
-      const text = screen.lines.map((l) => l.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\s+$/, ''));
+      const text = plainScreen(screen.lines).map((l) => l.trimEnd());
       while (text.length && !text[text.length - 1]) text.pop();
       const tail = text.slice(-SCREEN_LINES).map((l) => redactSecrets(truncate(l, 220)));
       if (tail.length) {

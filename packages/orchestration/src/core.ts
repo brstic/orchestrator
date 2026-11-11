@@ -281,6 +281,20 @@ export class EngineError extends Error {
   }
 }
 
+/**
+ * Is every text of a change no longer than it may be? `limits`: field → the most characters (a list: the most items,
+ * each of them a text of at most `itemMax`). A field that is absent, or not a text or list, is not looked at here.
+ * Text that is kept is read again and again by the office's own patterns and shown in every window; one field of a
+ * megabyte is a way to slow all of that down.
+ */
+export function within(input: Record<string, unknown> | undefined | null, limits: Record<string, number>, itemMax = 400): void {
+  for (const [field, max] of Object.entries(limits)) {
+    const v = input?.[field];
+    if (typeof v === 'string' && v.length > max) throw new EngineError(`"${field}" is too long (${v.length.toLocaleString('en-US')} characters; at most ${max.toLocaleString('en-US')})`);
+    if (Array.isArray(v) && (v.length > max || v.some((x) => typeof x === 'string' && x.length > itemMax))) throw new EngineError(`"${field}" has too many entries, or one that is too long (at most ${max} of ${itemMax} characters)`);
+  }
+}
+
 /** Shared state and plumbing every engine module builds on. */
 export class Core {
   readonly store: Storage;

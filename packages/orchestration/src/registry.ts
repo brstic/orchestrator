@@ -14,10 +14,10 @@ import type {
   TerminalScreen,
   ActivityState,
 } from '@orchestrator/contracts';
-import { EFFORT_CHOICES, HOOKS_VERSION, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify, truncate, type EffortLevel } from '@orchestrator/contracts';
+import { EFFORT_CHOICES, HOOKS_VERSION, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
 import { permissionPrompt, trustPromptKeys } from './comms.ts';
-import { EngineError } from './core.ts';
+import { EngineError, within } from './core.ts';
 import type { Engine } from './engine.ts';
 import { DEFAULT_HIGH_RISK_PATTERNS, asksHighRisk, permissionsFor, systemPromptFor } from './prompts.ts';
 
@@ -373,6 +373,9 @@ function cleanEffort(effort: string | null | undefined): EffortLevel | null {
   return v as EffortLevel;
 }
 
+/** The most characters (for lists: entries) an employee's fields may have. */
+const EMPLOYEE_SIZES: Record<string, number> = { name: 80, title: 160, department: 80, roleKey: 80, specialization: 4000, instructions: 50_000, model: 120, effort: 40, workingDir: 1024, claudeConfigDir: 1024, skills: 100, allowedTools: 200, disallowedTools: 200, alsoProjectIds: 100 };
+
 export interface EmployeeInput {
   name: string;
   claudeConfigDir?: string | null;
@@ -485,6 +488,7 @@ export class EmployeeRegistry {
   }
 
   create(input: EmployeeInput, actor = 'owner'): Employee {
+    within(input as unknown as Record<string, unknown>, EMPLOYEE_SIZES);
     const name = input.name?.trim();
     if (!name) throw new EngineError('an employee needs a name');
     if (this.core.employees.find((e) => !e.archived && e.name.toLowerCase() === name.toLowerCase())) throw new EngineError(`an employee named "${name}" already exists`);
@@ -544,6 +548,7 @@ export class EmployeeRegistry {
   }
 
   update(id: string, patch: Partial<EmployeeInput> & { archived?: boolean }, actor = 'owner'): Employee {
+    within(patch as unknown as Record<string, unknown>, EMPLOYEE_SIZES);
     // Worked out on a copy and stored at the end: a change that is refused half-way leaves the employee as they were.
     const e = structuredClone(this.core.employees.require(id));
     if (patch.name !== undefined) {
@@ -597,7 +602,7 @@ export class EmployeeRegistry {
       if (patch[key] !== undefined) (e as any)[key] = patch[key];
     }
     if (patch.claudeConfigDir !== undefined) {
-      const dir = String(patch.claudeConfigDir ?? '').trim().replace(/\/+$/, '');
+      const dir = stripEnd(String(patch.claudeConfigDir ?? '').trim(), '/');
       if (dir && (!/^(~\/|\/)[A-Za-z0-9._ \/@+-]+$/.test(dir) || dir.includes('..'))) throw new EngineError('the Claude account folder must be a path like ~/.claude-work');
       e.claudeConfigDir = dir || null;
     }
@@ -1386,7 +1391,7 @@ export class SessionRegistry {
    */
   async addAccount(hostId: string, rawDir: string, actor = 'owner'): Promise<{ dir: string; loggedIn: boolean; email: string | null; login: string }> {
     const host = this.core.hosts.require(hostId);
-    const dir = String(rawDir ?? '').trim().replace(/\/+$/, '');
+    const dir = stripEnd(String(rawDir ?? '').trim(), '/');
     if (!/^~\/[A-Za-z0-9._@+-]+$/.test(dir)) throw new EngineError('an account folder is a folder in the home of the machine\'s user, like ~/.claude-2');
     if (dir === '~/.claude') throw new EngineError('~/.claude is the machine\'s default account; it is there already');
     if (!this.core.agents.isOnline(hostId)) throw new EngineError(`${host.name} is offline`);

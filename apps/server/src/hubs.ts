@@ -231,7 +231,8 @@ export class AgentHub implements AgentLink {
         }
         break;
       case 'term.screen':
-        if (eng.core.sessions.get(msg.sessionId)?.hostId === c.hostId) {
+        // (What a machine sends is not believed to be a screen: lines that are texts, as many and as long as a screen has.)
+        if (eng.core.sessions.get(msg.sessionId)?.hostId === c.hostId && Array.isArray(msg.screen?.lines) && msg.screen.lines.length <= 1000 && msg.screen.lines.every((l: unknown) => typeof l === 'string' && l.length <= 20_000)) {
           eng.core.gateway.onScreen(msg.sessionId, msg.screen);
           eng.sessions.onScreen(msg.sessionId, msg.screen);
         }

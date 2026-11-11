@@ -411,7 +411,7 @@ const ROOM_ABOUT: Record<MemoryRoom, string> = {
  */
 export function parseSearch(out: string): MemoryHit[] {
   const hits: MemoryHit[] = [];
-  const blocks = out.split(/^\s*\[\d+\]\s+/m).slice(1);
+  const blocks = out.split(/^[ \t]*\[\d+\][ \t]+/m).slice(1);
   for (const block of blocks) {
     const lines = block.split('\n');
     const room = (lines[0] ?? '').split('/').pop()?.trim() ?? '';
@@ -421,7 +421,7 @@ export function parseSearch(out: string): MemoryHit[] {
     const body = lines
       .slice(start + 1)
       .join('\n')
-      .split(/^\s*-{20,}\s*$/m)[0]!
+      .split(/^[ \t]*-{20,}[ \t]*$/m)[0]!
       .split('\n')
       .map((l) => l.replace(/^ {6}/, '').trimEnd())
       .join('\n')

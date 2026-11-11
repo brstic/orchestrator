@@ -127,7 +127,9 @@ export function terms(text: string): string[] {
 
 /** File paths written in a text ("src/db/schema.ts", "package.json"). */
 export function pathsIn(text: string): string[] {
-  return [...new Set(text.match(/(?:[\w.@-]+\/)+[\w.@-]+|\b[\w-]+\.(?:tsx?|jsx?|mjs|cjs|json|md|py|go|rs|sql|s?css|html|ya?ml|toml|sh|rb|php|java|kt|swift|cpp|c|h)\b/g) ?? [])];
+  // (A path begins where a run of its characters begins, and its parts have a longest length: otherwise a long run of
+  // letters is read again from each of its characters. Only the first stretch of a very long text is looked at.)
+  return [...new Set(text.slice(0, 200_000).match(/(?<![\w.@\/-])(?:[\w.@-]{1,120}\/)+[\w.@-]{1,120}|(?<![\w-])[\w-]{1,120}\.(?:tsx?|jsx?|mjs|cjs|json|md|py|go|rs|sql|s?css|html|ya?ml|toml|sh|rb|php|java|kt|swift|cpp|c|h)\b/g) ?? [])];
 }
 
 const dirOf = (file: string): string => (file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : '');

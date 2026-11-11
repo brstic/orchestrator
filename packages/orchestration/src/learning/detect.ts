@@ -1,5 +1,5 @@
 import type { Employee, EvidenceRef, Improvement, ImprovementAction, ImprovementKind, OrchestratorEvent, OwnerSettings, Project, Question, Task, TaskKind, TaskStatus } from '@orchestrator/contracts';
-import { matchRole, nowIso, roleByKey, truncate } from '@orchestrator/contracts';
+import { matchRole, nowIso, roleByKey, truncate, stripEnd } from '@orchestrator/contracts';
 import { EngineError } from '../core.ts';
 import type { Engine } from '../engine.ts';
 
@@ -439,7 +439,7 @@ const STOPWORDS = new Set('the and for are was were with that this from have has
 
 /** The distinctive words of a sentence: lower case, three letters or more, without the commonest English words. */
 export function distinctiveWords(text: string): Set<string> {
-  return new Set((text.toLowerCase().match(/[a-z0-9][a-z0-9_.-]{2,}/g) ?? []).map((w) => w.replace(/[.-]+$/, '')).filter((w) => w.length >= 3 && !STOPWORDS.has(w)));
+  return new Set((text.toLowerCase().match(/[a-z0-9][a-z0-9_.-]{2,}/g) ?? []).map((w) => stripEnd(w, '.-')).filter((w) => w.length >= 3 && !STOPWORDS.has(w)));
 }
 
 /** Shared distinctive words over all distinctive words (Jaccard). A measure of wording, not of meaning. */
@@ -465,7 +465,7 @@ function missingContext(eng: Engine, now: number): Proposal[] {
   const out: Proposal[] = [];
   const since = now - DETECT.lookbackDays * DAY;
   for (const project of eng.core.projects.filter((p) => p.status !== 'archived')) {
-    const asked = eng.core.questions.filter((q) => q.projectId === project.id && (q.kind === 'question' || q.kind === 'decision')).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const asked = eng.core.questions.filter((q) => q.projectId === project.id && (q.kind === 'question' || q.kind === 'decision')).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-800); // the latest: every one is compared with the ones before it
     const clusters: Array<{ source: Question; repeats: Question[] }> = [];
     for (const q of asked) {
       const known = clusters.find((c) => at(c.source.answeredAt) < at(q.createdAt) && questionSimilarity(c.source.text, q.text) >= DETECT.questionSimilarity);
@@ -709,24 +709,29 @@ function stalls(eng: Engine, now: number): Proposal[] {
 
 /** Errors that are about the machine or the checkout, not about the work that was verified. */
 const ENVIRONMENT_ERRORS: Array<{ name: string; re: RegExp }> = [
-  { name: 'command not found', re: /.*(?:command not found|is not recognized as an internal or external command|: not found\b).*/i },
-  { name: 'missing module', re: /.*(?:Cannot find module|MODULE_NOT_FOUND|ModuleNotFoundError|No module named|ERR_MODULE_NOT_FOUND).*/ },
-  { name: 'missing file', re: /.*(?:ENOENT|No such file or directory).*/ },
-  { name: 'port in use', re: /.*(?:EADDRINUSE|address already in use).*/i },
-  { name: 'connection refused', re: /.*(?:ECONNREFUSED|Connection refused).*/ },
-  { name: 'network', re: /.*(?:ETIMEDOUT|ENOTFOUND|EAI_AGAIN|getaddrinfo|Could not resolve host|network is unreachable).*/i },
-  { name: 'permission denied', re: /.*(?:EACCES|EPERM|Permission denied).*/ },
-  { name: 'disk full', re: /.*(?:ENOSPC|No space left on device).*/ },
-  { name: 'out of memory', re: /.*(?:ENOMEM|out of memory|heap out of memory|Killed\b).*/i },
-  { name: 'docker not running', re: /.*(?:Cannot connect to the Docker daemon|docker daemon is not running).*/i },
-  { name: 'dependencies not installed', re: /.*(?:node_modules missing|Run `?(?:npm|pnpm|yarn) install|ERR_PNPM_|packages? (?:is|are) not installed).*/i },
+  { name: 'command not found', re: /(?:command not found|is not recognized as an internal or external command|: not found\b)/i },
+  { name: 'missing module', re: /(?:Cannot find module|MODULE_NOT_FOUND|ModuleNotFoundError|No module named|ERR_MODULE_NOT_FOUND)/ },
+  { name: 'missing file', re: /(?:ENOENT|No such file or directory)/ },
+  { name: 'port in use', re: /(?:EADDRINUSE|address already in use)/i },
+  { name: 'connection refused', re: /(?:ECONNREFUSED|Connection refused)/ },
+  { name: 'network', re: /(?:ETIMEDOUT|ENOTFOUND|EAI_AGAIN|getaddrinfo|Could not resolve host|network is unreachable)/i },
+  { name: 'permission denied', re: /(?:EACCES|EPERM|Permission denied)/ },
+  { name: 'disk full', re: /(?:ENOSPC|No space left on device)/ },
+  { name: 'out of memory', re: /(?:ENOMEM|out of memory|heap out of memory|Killed\b)/i },
+  { name: 'docker not running', re: /(?:Cannot connect to the Docker daemon|docker daemon is not running)/i },
+  { name: 'dependencies not installed', re: /(?:node_modules missing|Run `?(?:npm|pnpm|yarn) install|ERR_PNPM_|packages? (?:is|are) not installed)/i },
 ];
 
 /** The environment error in a verification's output, if it shows one: which kind, and the line that says so. */
 export function environmentError(output: string): { name: string; line: string } | null {
   for (const { name, re } of ENVIRONMENT_ERRORS) {
+    // (The phrase is looked for, and then the line it stands on is taken — not `.*phrase.*`, which tries the
+    // phrase from every character of every line.)
     const m = re.exec(output);
-    if (m) return { name, line: truncate(oneLine(m[0]), 200) };
+    if (!m) continue;
+    const from = output.lastIndexOf('\n', m.index) + 1;
+    const to = output.indexOf('\n', m.index);
+    return { name, line: truncate(oneLine(output.slice(from, to < 0 ? output.length : to)), 200) };
   }
   return null;
 }
@@ -938,7 +943,7 @@ export function applyDetectAction(eng: Engine, a: DetectAction, actor = 'owner')
     case 'project.notes.append': {
       const project = core.projects.require(a.projectId);
       const previous = { docs: project.docs };
-      if (!project.docs.split('\n').includes(a.text)) eng.tasks.updateProject(project.id, { docs: project.docs.trim() ? `${project.docs.replace(/\s+$/, '')}\n${a.text}` : a.text }, actor);
+      if (!project.docs.split('\n').includes(a.text)) eng.tasks.updateProject(project.id, { docs: project.docs.trim() ? `${project.docs.trimEnd()}\n${a.text}` : a.text }, actor);
       return previous;
     }
   }

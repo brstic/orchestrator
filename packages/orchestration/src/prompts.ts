@@ -317,7 +317,7 @@ export function messagePrompt(msg: Message, collab: CollabRequest | undefined): 
       `${correlationMarker('MSG', msg.id)} Request from ${from} (request id ${collab.id}): ${collab.summary}`,
       collab.detail ? `\n${collab.detail}` : '',
       // The one who asked holds a tool call open for the answer: say so, and ask for the answer first.
-      collab.waited ? `\n${from.replace(/ \(.*\)$/, '')} is waiting for your answer before going on.` : '',
+      collab.waited ? `\n${from.endsWith(')') && from.includes(' (') ? from.slice(0, from.indexOf(' (')) : from} is waiting for your answer before going on.` : '',
       `\n${collab.waited ? 'Answer before anything else: evaluate' : 'Evaluate'} this against your current work, then call respond_to_request with request_id "${collab.id}" and one action: incorporated (you will do it within your current task), new_task (it should be separate work), needs_decision (the boss must prioritise), dependency (it depends on other work) or declined.${collab.waited ? ' Put what they need to know in the note: it is handed to them at once.' : ''} Then carry on with your task.`,
     ].join('');
   }

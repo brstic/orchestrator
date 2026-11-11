@@ -498,7 +498,9 @@ export function inputToSendKeys(paneId: string, data: string): string[] {
   let hex: string[] = [];
   let lit = '';
   const flushHex = () => {
-    while (hex.length) cmds.push(`send-keys -H -t ${paneId} ${hex.splice(0, 256).join(' ')}`);
+    // (By position: taking 256 from the front of one long list, over and over, moves the rest of it each time.)
+    for (let at = 0; at < hex.length; at += 256) cmds.push(`send-keys -H -t ${paneId} ${hex.slice(at, at + 256).join(' ')}`);
+    hex = [];
   };
   const flushLit = () => {
     if (lit) {

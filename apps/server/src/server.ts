@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { ROLE_CATALOGUE, type Host } from '@orchestrator/contracts';
+import { ROLE_CATALOGUE, type Host, stripEnd } from '@orchestrator/contracts';
 import { NotFoundError, PgStore, Store, generateToken, type Storage } from '@orchestrator/database';
 import { handleMcpPost } from '@orchestrator/integrations';
 import { Engine, EngineError, type Timings } from '@orchestrator/orchestration';
@@ -492,7 +492,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new EngineError('choose a port between 1024 and 65535');
       let address = current.address;
       if (b.address !== undefined) {
-        address = String(b.address ?? '').trim().replace(/\/+$/, '') || null;
+        address = stripEnd(String(b.address ?? '').trim(), '/') || null;
         if (address && !/^https:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/.test(address)) throw new EngineError('the extra address must look like https://name-or-ip:port');
       }
       const open = b.open !== undefined ? b.open === true : current.open;

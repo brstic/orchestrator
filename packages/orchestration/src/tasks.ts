@@ -1,8 +1,8 @@
 import path from 'node:path';
 import type { DeliveryState, Employee, Project, ProjectPolicy, Task, TaskKind, TaskPriority, TaskStatus, XpEntry } from '@orchestrator/contracts';
-import { matchRole, newId, nowIso, redactSecrets, roleByKey, slugify, truncate } from '@orchestrator/contracts';
+import { matchRole, newId, nowIso, redactSecrets, roleByKey, slugify, truncate, stripEnd } from '@orchestrator/contracts';
 import { applyXp, evaluateMilestones, xpForCompletedTask, xpForReview } from '@orchestrator/game-systems';
-import { EngineError } from './core.ts';
+import { EngineError, within } from './core.ts';
 import type { Engine } from './engine.ts';
 import { reviewPrompt, taskPrompt } from './prompts.ts';
 import { routingPreference } from './learning/detect.ts';
@@ -137,6 +137,28 @@ export function shaped(patch: Record<string, unknown>, shape: Record<string, 'te
   }
 }
 
+/**
+ * A project's permission policy: lists of short texts, and patterns that are patterns. (The high-risk patterns are run
+ * as written against every command of the project's employees — who may set them is `access.ts`'s business; here
+ * only that they can be run at all and are not a text of any size.)
+ */
+export function policyShaped(policy: Partial<ProjectPolicy> | undefined): void {
+  if (policy === undefined) return;
+  if (!policy || typeof policy !== 'object' || Array.isArray(policy)) throw new EngineError('"policy" is not a set of rules');
+  for (const key of ['allow', 'deny', 'highRiskPatterns'] as const) {
+    const list = policy[key];
+    if (list === undefined) continue;
+    if (!Array.isArray(list) || list.length > 100 || list.some((x) => typeof x !== 'string' || !x || x.length > 300)) throw new EngineError(`"policy.${key}" is a list of at most 100 texts of at most 300 characters`);
+  }
+  for (const pattern of policy.highRiskPatterns ?? []) {
+    try {
+      new RegExp(pattern, 'i');
+    } catch {
+      throw new EngineError(`"${truncate(pattern, 80)}" is not a pattern that can be run (a regular expression)`);
+    }
+  }
+}
+
 /** How the reason of a task begins that is approved and waits only for its merge (its machine was away). */
 const WAITS_FOR_MERGE = 'Waiting to be merged into';
 
@@ -165,6 +187,9 @@ export class TaskManager {
   // ─────────────────────────── projects ────────────────────────────
 
   async createProject(input: ProjectInput, actor = 'owner'): Promise<Project> {
+    shaped(input as unknown as Record<string, unknown>, { name: 'text', description: 'string', goals: 'string', requirements: 'string', docs: 'string', verifyCommand: 'string?', baseBranch: 'string?', repoPath: 'string?' });
+    within(input as unknown as Record<string, unknown>, { name: 120, repoPath: 1024, baseBranch: 200, extraRepos: 20, dependsOn: 100 });
+    policyShaped(input.policy);
     const name = input.name?.trim();
     if (!name) throw new EngineError('a project needs a name');
     if (this.core.projects.find((p) => p.name.toLowerCase() === name.toLowerCase() && p.status !== 'archived')) throw new EngineError(`a project named "${name}" already exists`);
@@ -223,6 +248,8 @@ export class TaskManager {
     for (const key of ['name', 'description', 'goals', 'requirements', 'docs', 'verifyCommand', 'verifyTimeoutSec', 'color', 'baseBranch', 'status', 'milestones', 'workspace', 'ownerEmployeeId'] as const) {
       if (patch[key] !== undefined) (p as any)[key] = patch[key];
     }
+    within(patch as Record<string, unknown>, { name: 120, baseBranch: 200, extraRepos: 20, dependsOn: 100 });
+    policyShaped(patch.policy);
     if (patch.policy) p.policy = { ...p.policy, ...patch.policy };
     if (patch.extraRepos !== undefined) p.extraRepos = this.cleanRepos(patch.extraRepos, p.repoPath);
     if (patch.dependsOn !== undefined) p.dependsOn = this.cleanDependencies(id, patch.dependsOn);
@@ -237,7 +264,7 @@ export class TaskManager {
   private cleanRepos(input: unknown, main: string | null): NonNullable<Project['extraRepos']> {
     const out: NonNullable<Project['extraRepos']> = [];
     for (const r of Array.isArray(input) ? input : []) {
-      const p = String(r?.path ?? '').trim().replace(/\/+$/, '');
+      const p = stripEnd(String(r?.path ?? '').trim(), '/');
       if (!p) continue;
       if (!path.isAbsolute(p) || p.includes('\0') || p.length > 400) throw new EngineError(`"${p}" is not an absolute folder path`);
       if (p === main || out.some((x) => x.path === p)) continue;
@@ -324,6 +351,7 @@ export class TaskManager {
   }
 
   createTask(input: TaskInput, by = 'owner'): Task {
+    shaped(input as unknown as Record<string, unknown>, { title: 'text', description: 'string', acceptance: 'string', roleHint: 'string?', dependsOn: 'list', verifyCommand: 'string?' });
     const project = this.core.projects.require(input.projectId);
     const title = input.title?.trim();
     if (!title) throw new EngineError('a task needs a title');

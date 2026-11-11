@@ -8,6 +8,8 @@
  * (The patterns and the naming follow the owner's Ahoy project, `backend/ahoyyy/vault.py`, minus its model call.)
  */
 
+import { stripEnd } from '@orchestrator/contracts';
+
 export type SecretKind = 'password' | 'api_key' | 'token' | 'ssh_key' | 'other';
 
 export interface FoundSecret {
@@ -81,7 +83,7 @@ function notAValue(value: string): boolean {
   return false;
 }
 
-const trim = (value: string): string => value.replace(/[.,;]+$/, '');
+const trim = (value: string): string => stripEnd(value, '.,;');
 
 /** Credentials in a text, in order, without overlaps (the first and longest wins). */
 export function detectSecrets(text: string): FoundSecret[] {
@@ -142,7 +144,7 @@ export function detectSecrets(text: string): FoundSecret[] {
     if (!f.username) {
       const before = [...text.slice(Math.max(0, f.start - 160), f.start).matchAll(USER_NEAR)].pop();
       const after = new RegExp(USER_NEAR.source, 'i').exec(text.slice(f.end, f.end + 120));
-      f.username = trim((before?.[1] ?? after?.[1] ?? '').replace(/[!?]+$/, ''));
+      f.username = trim(stripEnd(before?.[1] ?? after?.[1] ?? '', '!?'));
       if (new RegExp(PLACEHOLDER.source).test(f.username)) f.username = '';
     }
     if (!f.service) f.service = [...text.slice(Math.max(0, f.start - 300), f.end + 200).matchAll(URL)][0]?.[1] ?? '';

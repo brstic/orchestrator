@@ -327,7 +327,7 @@ export class Improver {
   }
 
   private commandShape(command: string): string | null {
-    const first = command.trim().split(/\s*(?:&&|\|\||;|\|)\s*/)[0] ?? '';
+    const first = (command.split(/&&|\|\||;|\|/)[0] ?? '').trim();
     const words = first.split(/\s+/).filter(Boolean);
     if (!words.length || /[`$(){}<>]/.test(words.slice(0, 2).join(' '))) return null;
     const two = ['npm', 'pnpm', 'yarn', 'git', 'docker', 'cargo', 'go', 'make', 'npx', 'python', 'python3', 'php', 'composer', 'kubectl', 'pip', 'bundle'].includes(words[0]!) && words[1] && !words[1].startsWith('-');
@@ -482,7 +482,7 @@ export class Improver {
       // 6. The same people keep colliding in the same files → the work should be sequenced.
       const conflicts = this.core.store.queryEvents({ projectId: project.id, types: ['task.merge_conflict'], limit: 200 });
       const byFile = new Map<string, typeof conflicts>();
-      for (const c of conflicts) for (const f of (c.data.conflicts as string[] | undefined) ?? []) byFile.set(f, [...(byFile.get(f) ?? []), c]);
+      for (const c of conflicts) for (const f of (c.data.conflicts as string[] | undefined) ?? []) (byFile.get(f) ?? byFile.set(f, []).get(f)!).push(c);
       for (const [file, list] of byFile) {
         if (list.length < 2) continue;
         add(

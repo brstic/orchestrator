@@ -1,5 +1,5 @@
 import type { CaptureOrigin, Employee, EvidenceRef, Lesson, MeasuredSkill, Message, Project, Question, Task } from '@orchestrator/contracts';
-import { correlationMarker, redactSecrets, truncate } from '@orchestrator/contracts';
+import { correlationMarker, redactSecrets, truncate, stripEnd } from '@orchestrator/contracts';
 import { EngineError } from '../core.ts';
 import type { Engine } from '../engine.ts';
 
@@ -32,7 +32,7 @@ const STOP = new Set(
 export function tokens(text: string): string[] {
   const out: string[] = [];
   for (const m of text.toLowerCase().replace(/’/g, "'").matchAll(/[\p{L}\p{N}_][\p{L}\p{N}_./'-]*/gu)) {
-    const w = m[0].replace(/[./'-]+$/, '');
+    const w = stripEnd(m[0], "./'-");
     if (w.length > 1 && !STOP.has(w)) out.push(w);
   }
   return out;
@@ -90,9 +90,11 @@ export function checkLesson(args: LessonArgs): LessonCheck {
     if (reason.split(' ').length < 3) return { ok: false, field: 'reason', message: 'Say why there is nothing to learn: call record_lesson with none=true and reason="…" in one sentence (for example "the failure was a typo I caught on the second run; no rule would have prevented it").' };
     return { ok: true, none: true, reason: truncate(reason, 300) };
   }
-  const rule = (args.lesson ?? '').trim().replace(/\s+/g, ' ');
-  const when = (args.applies_when ?? '').trim().replace(/\s+/g, ' ').replace(/[.]+$/, '');
-  const why = (args.why ?? '').trim().replace(/\s+/g, ' ');
+  // (What a session sends is cut before anything reads it: a lesson is a sentence or two.)
+  const said = (v: unknown) => String(v ?? '').slice(0, 4000).trim().replace(/\s+/g, ' ');
+  const rule = said(args.lesson);
+  const when = stripEnd(said(args.applies_when), '.');
+  const why = said(args.why);
   if (!rule) return { ok: false, field: 'lesson', message: `Provide the lesson, or none=true with a reason. ${SHAPE}` };
   const concrete = tokens(rule).filter((w) => !VAGUE.has(w));
   if (rule.split(' ').length < 4 || concrete.length < 2) {
@@ -247,7 +249,7 @@ export function sameFriction(a: string, b: string): boolean {
   const y = rb.join('|');
   if (ka === 'nudge') return true;
   if (ka === 'denial') return x === y;
-  if (ka === 'conflict') return x.split(',').some((f) => !!f && y.split(',').includes(f));
+  if (ka === 'conflict') return ((files) => x.split(',').some((f) => !!f && files.has(f)))(new Set(y.split(',')));
   if (ka === 'verify') {
     const [ca, ...la] = x.split('\n');
     const [cb, ...lb] = y.split('\n');
@@ -259,9 +261,25 @@ export function sameFriction(a: string, b: string): boolean {
 // ───────────────────────────── repeats ───────────────────────────
 
 /** How alike two questions read, by the words they share (0…1). */
+/**
+ * The words of a question, worked out once per text: questions are compared pair by pair (a new one against every
+ * earlier one; all of a project's against each other), and reading the same text again for every pair is what made
+ * that slow.
+ */
+const spokenWords = new Map<string, string[]>();
+function wordsOf(text: string): string[] {
+  let w = spokenWords.get(text);
+  if (!w) {
+    w = tokens(spoken(text));
+    if (spokenWords.size >= 3000) spokenWords.clear();
+    if (text.length <= 4000) spokenWords.set(text, w);
+  }
+  return w;
+}
+
 export function questionSimilarity(a: string, b: string): number {
-  const x = tokens(spoken(a));
-  const y = tokens(spoken(b));
+  const x = wordsOf(a);
+  const y = wordsOf(b);
   if (x.length < 2 || y.length < 2) return spoken(a).toLowerCase().replace(/\W+/g, ' ').trim() === spoken(b).toLowerCase().replace(/\W+/g, ' ').trim() ? 1 : 0;
   return overlap(x, y);
 }
@@ -282,7 +300,7 @@ export interface RetroFact {
 
 /** The last lines of an output, cut at a line boundary. */
 function tail(output: string, max: number): string {
-  const s = output.replace(/\s+$/, '');
+  const s = output.trimEnd();
   if (s.length <= max) return s;
   const cut = s.slice(-max);
   const nl = cut.indexOf('\n');
@@ -794,7 +812,7 @@ export class Capture {
 
 /** "npm test", "git push": the first words of a command, enough to say which kind it is. */
 function shapeOf(command: string): string {
-  const words = (command.trim().split(/\s*(?:&&|\|\||;|\|)\s*/)[0] ?? '').split(/\s+/).filter(Boolean);
+  const words = ((command.split(/&&|\|\||;|\|/)[0] ?? '').trim()).split(/\s+/).filter(Boolean);
   if (!words.length) return command.trim();
   return words[1] && !words[1].startsWith('-') && /^(npm|pnpm|yarn|git|docker|cargo|go|make|npx|python|python3|php|composer|kubectl|pip|bundle)$/.test(words[0]!) ? `${words[0]} ${words[1]}` : words[0]!;
 }

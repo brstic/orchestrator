@@ -349,8 +349,11 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       return `Created ${created.length} tasks: ${created.map((t) => t.key).join(', ')}. ${fate}${already ? ` ${already}` : ''}`;
     },
 
-    record_lesson: async (a, { employee }) =>
-      eng.improver.recordFromAgent(employee, { lesson: a.lesson ? String(a.lesson) : undefined, applies_when: a.applies_when ? String(a.applies_when) : undefined, why: a.why ? String(a.why) : undefined, scope: a.scope, none: a.none === true, reason: a.reason ? String(a.reason) : undefined, replaces: a.replaces ? String(a.replaces) : undefined }),
+    record_lesson: async (a, { employee }) => {
+      const over = tooMany(employee, 'lessons', 40);
+      if (over) return err(over);
+      return eng.improver.recordFromAgent(employee, { lesson: a.lesson ? String(a.lesson) : undefined, applies_when: a.applies_when ? String(a.applies_when) : undefined, why: a.why ? String(a.why) : undefined, scope: a.scope, none: a.none === true, reason: a.reason ? String(a.reason) : undefined, replaces: a.replaces ? String(a.replaces) : undefined });
+    },
 
     get_playbook: async (_a, { employee }) => {
       const projectId = eng.tasks.currentTask(employee.id)?.projectId ?? employee.projectId;
