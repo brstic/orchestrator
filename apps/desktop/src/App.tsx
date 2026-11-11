@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { unlockedUpgrades } from '@orchestrator/contracts';
 import { OfficeScene, ownerPosition } from '@orchestrator/office-3d';
 import { PeopleActs, myPlace, personInReach } from './hud/people-acts.tsx';
 import { Button } from '@orchestrator/ui';
 import { api, connection, serverBase, setToken } from './lib/api.ts';
-import { Knock } from './Knock.tsx';
 import { loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
 import { loadPrefs, usePrefs } from './lib/prefs.ts';
 import { boardView, ceoView, foremanView, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
@@ -52,6 +51,9 @@ function Login() {
  * means the owner token is asked for. At an office's door on the network (a browser at its public
  * address) it is the place to knock.
  */
+// The page somebody sees at the office's address before they are signed in: its own chunk, fetched only then.
+const EntrancePage = lazy(() => import('./entrance/EntrancePage.tsx'));
+
 function Entrance() {
   const [door, setDoor] = useState<{ office: string } | null | 'none'>(window.orchestrator ? 'none' : null);
   const [ownToken, setOwnToken] = useState(false);
@@ -66,7 +68,11 @@ function Entrance() {
   }, []);
   if (door === null) return <div className="login" />;
   if (door === 'none' || ownToken) return <Login />;
-  return <Knock office={door.office} onOwnToken={() => setOwnToken(true)} />;
+  return (
+    <Suspense fallback={<div className="login" />}>
+      <EntrancePage office={door.office} onOwnToken={() => setOwnToken(true)} />
+    </Suspense>
+  );
 }
 
 const PANEL_KEYS: Array<[string, PanelId]> = [
@@ -187,6 +193,8 @@ export function App() {
     const kb = prefs.keybindings;
     const onKey = (e: KeyboardEvent) => {
       const st = useOffice.getState();
+      // Nobody is in the office: its keys are not in use, and the page shown instead keeps its own (Tab, Space, Enter).
+      if (st.conn === 'unauthorized') return;
       if (e.code === (kb.exit ?? 'Escape')) {
         if (typing(e) && !(e.target as HTMLElement).closest?.('.xterm')) (e.target as HTMLElement).blur();
         // In a terminal, Escape belongs to the terminal (it is Claude Code's interrupt key).

@@ -1,6 +1,6 @@
 # Signing in with a name and a password
 
-How a member gets into the office from a browser with a name and a password, who gives passwords, what ends a session, and what slows a guesser down. Read this before touching `apps/server/src/logins.ts`, the `/login` route, or the sign-in form in `apps/desktop/src/Knock.tsx`.
+How a member gets into the office from a browser with a name and a password, who gives passwords, what ends a session, and what slows a guesser down. Read this before touching `apps/server/src/logins.ts`, the `/login` route, or the sign-in at the door (`useSignIn` in `apps/desktop/src/Knock.tsx`, drawn by `apps/desktop/src/entrance/Door.tsx`; the page around it is `ENTRANCE-PAGE.md`).
 
 _Built on 2026-11-11 on the owner's request: "let me log in at office.sparkcan.com as owner too, say with a username and a password". Why it is built this way: `DECISIONS.md`, "Signing in with a name and a password". What protects what: `SECURITY.md`, the section of the same name._
 
@@ -14,7 +14,7 @@ A password belongs to a **member** (`guests.ts`) — there are no separate accou
 | --- | --- | --- |
 | An owner | **Access → the member's row → Password…** | gives a member a password, or a new one, or takes it away |
 | Whoever has a shell on the server | `printf '%s' 'the password' \| office-admin password "Name"` (`--remove` takes it away) | the same; the password is read from standard input, never an argument (`OPERATIONS.md`) |
-| A member | `https://<the office's address>` → **Sign in with your password** | name (any spelling of capitals) and password; the browser stays signed in for 30 days |
+| A member | `https://<the office's address>` → the door → **Member** | name (any spelling of capitals) and password; the browser stays signed in for 30 days |
 | A member, once in | **Settings → Sign-in** | sets a first password or changes it (knowing the current one); **Sign out** in a browser that was signed in this way |
 
 A password has 8 to 200 characters and is not the member's name. There is no "forgot my password": an owner sets a new one.
@@ -46,7 +46,7 @@ browser ── POST /login {username, password} ──▶ door (4610, TLS) ─�
 | Routes | `apps/server/src/server.ts` — `POST /login` (public, at the door), `POST`/`DELETE /api/guests/:id/password` (owners), `POST /api/me/password`, `POST /api/logout`, `GET /api/me` (`hasPassword`, `passwordSession`); rules for the last three in `access.ts`; `/login` in the door's `ALLOWED` |
 | Ending sessions of a member by label | `revokeCredentialsWhere` in `packages/database/src/index.ts` and `postgres.ts` |
 | Closing open windows | `ClientHub.dropLogins` and the `loginKey` of a connection in `apps/server/src/hubs.ts` |
-| The form | `SignIn` in `apps/desktop/src/Knock.tsx` (the browser's entry page; the name is remembered in `localStorage` as `orch.login-name`, the session token as `orch.token`) |
+| The form | what it does: `useSignIn` in `apps/desktop/src/Knock.tsx` (the request; the name is remembered in `localStorage` as `orch.login-name`, the session token as `orch.token`). How it looks: the **Member** side of the door, `apps/desktop/src/entrance/Door.tsx`, on the entrance page (`ENTRANCE-PAGE.md`) |
 | One's own password, Sign out | `AccountSection` in `apps/desktop/src/hud/panels/settings.tsx`; `forgetToken` in `lib/api.ts` |
 | An owner's button | the member row in `apps/desktop/src/hud/panels/people.tsx` |
 | The server's shell | `password` in `scripts/office-admin.mjs` |
@@ -55,7 +55,8 @@ browser ── POST /login {username, password} ──▶ door (4610, TLS) ─�
 
 - `apps/server/test/logins.test.ts` — the module on a stand-in store with its own clock: hashes, the one answer for every refusal, the lock of a name and its doubling, the address limit, the flood limits, a password changed mid-check, which sessions end when.
 - `tests/e2e/36-password-sign-in.test.ts` — a real office with its door open: who the session is and what it may do per role, who may set whose password, changing one's own, sign-out, open windows closed when a session ends, the locks, a restart, nothing but hashes on disk or in the audit log, the root token still refused from outside, a phone still turned away.
-- By hand: a throwaway office and a browser window (the scripts are not in the repository): the door's page, a wrong password, in, Settings → Sign-in, Sign out.
+- `tests/ui/entrance.mjs` — the form itself in a browser window at the door of a made-up office: a wrong password refused where it was typed, the right one in as that member, the name and the session kept.
+- By hand: `node scripts/entrance-office.ts` (a made-up office with its door open and two members with passwords; it prints the address and the passwords) and a browser window: the door's page, a wrong password, in, Settings → Sign-in, Sign out.
 
 ## Limits, plainly
 

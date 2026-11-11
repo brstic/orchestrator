@@ -1,29 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '@orchestrator/ui';
 import { connection, serverBase, setToken } from './lib/api.ts';
 
-type Stage = { at: 'ask' } | { at: 'waiting'; id: string; secret: string; code: string; anyoneIn: boolean } | { at: 'refused' } | { at: 'gone' };
-
 /**
- * The office's page for someone who has no invitation: say who you are and knock. The people inside
- * see it and one of them lets you in — from a browser, to look around: you can watch, not change
- * anything. Nothing here grants access by itself; the office answers only once someone inside has.
+ * What somebody at the office's door can do, without the page around it: sign in with a name and a password, or
+ * knock and wait to be let in. The page that shows these is `entrance/EntrancePage.tsx` (`entrance/Door.tsx` draws
+ * the forms); the requests, what is remembered in the browser and what counts as an answer are all here.
  */
+
+/** Read something this browser remembered; a private window remembers nothing. */
+function remembered(key: string): string {
+  try {
+    return localStorage.getItem(key) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** Somebody who has signed in here before is shown the sign-in first. */
+export const signedInBefore = (): boolean => !!remembered('orch.login-name');
+
 /**
  * Signing in with a name and a password — for a member who was given one (Access, in the office). What comes back is
  * that member's own session; the form says no more than "does not match" when it does not.
  */
-export function SignIn({ onBack }: { onBack?: () => void }) {
-  const [username, setUsername] = useState(() => {
-    try {
-      return localStorage.getItem('orch.login-name') ?? '';
-    } catch {
-      return '';
-    }
-  });
+export function useSignIn() {
+  const [username, setUsername] = useState(() => remembered('orch.login-name'));
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const ready = !busy && !!username.trim() && !!password;
   const signIn = async () => {
     if (busy || !username.trim() || !password) return;
     setError('');
@@ -46,55 +51,27 @@ export function SignIn({ onBack }: { onBack?: () => void }) {
       setBusy(false);
     }
   };
-  return (
-    <form
-      className="col"
-      style={{ gap: 10 }}
-      onSubmit={(ev) => {
-        ev.preventDefault();
-        void signIn();
-      }}
-    >
-      <input value={username} maxLength={40} placeholder="Name" aria-label="Name" autoComplete="username" autoFocus={!username} onChange={(e) => setUsername(e.target.value)} />
-      <input type="password" value={password} maxLength={200} placeholder="Password" aria-label="Password" autoComplete="current-password" autoFocus={!!username} onChange={(e) => setPassword(e.target.value)} />
-      {error && <div className="small bad">{error}</div>}
-      <Button variant="primary" type="submit" disabled={busy || !username.trim() || !password}>
-        Sign in
-      </Button>
-      {onBack && (
-        <div className="small faint">
-          No password?{' '}
-          <button type="button" className="linklike" onClick={onBack}>
-            Ask to come in instead
-          </button>
-        </div>
-      )}
-    </form>
-  );
+  return { username, setUsername, password, setPassword, error, busy, ready, signIn };
 }
 
-export function Knock({ office, onOwnToken }: { office: string; onOwnToken: () => void }) {
-  // Somebody who has signed in here before is shown the sign-in first.
-  const [signingIn, setSigningIn] = useState(() => {
-    try {
-      return !!localStorage.getItem('orch.login-name');
-    } catch {
-      return false;
-    }
-  });
-  const [name, setName] = useState(() => {
-    try {
-      return localStorage.getItem('orch.knock-name') ?? '';
-    } catch {
-      return '';
-    }
-  });
-  const [stage, setStage] = useState<Stage>({ at: 'ask' });
+export type KnockStage = { at: 'ask' } | { at: 'waiting'; id: string; secret: string; code: string; anyoneIn: boolean } | { at: 'refused' } | { at: 'gone' };
+
+/**
+ * Knocking, for someone who has no invitation: say who you are and knock. The people inside see it and one of them
+ * lets you in — from a browser, to look around: you can watch, not change anything. Nothing here grants access by
+ * itself; the office answers only once someone inside has.
+ */
+export function useKnock() {
+  const [name, setName] = useState(() => remembered('orch.knock-name'));
+  const [stage, setStage] = useState<KnockStage>({ at: 'ask' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const waiting = stage.at === 'waiting' ? stage : null;
   const live = useRef(true);
-  useEffect(() => () => void (live.current = false), []);
+  useEffect(() => {
+    live.current = true;
+    return () => void (live.current = false);
+  }, []);
 
   // While waiting: ask every two seconds how it stands. The office forgets a knocker who stops asking.
   useEffect(() => {
@@ -124,7 +101,9 @@ export function Knock({ office, onOwnToken }: { office: string; onOwnToken: () =
     };
   }, [waiting?.id, waiting?.anyoneIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const ready = !busy && name.trim().length >= 2;
   const knock = async () => {
+    if (busy || name.trim().length < 2) return;
     setError('');
     setBusy(true);
     try {
@@ -147,66 +126,5 @@ export function Knock({ office, onOwnToken }: { office: string; onOwnToken: () =
     if (waiting) void fetch(`${serverBase}/knock/${waiting.id}`, { method: 'DELETE', headers: { 'x-knock-secret': waiting.secret } }).catch(() => undefined);
     setStage({ at: 'ask' });
   };
-
-  return (
-    <div className="login">
-      <div className="glass login-card knock-card col" style={{ gap: 14 }}>
-        <div className="knock-kicker">ORCHESTRATOR</div>
-        <h1 className="knock-office">{office}</h1>
-        {signingIn ? (
-          <>
-            <p className="muted">Sign in with the name and the password you were given for this office.</p>
-            <SignIn onBack={() => setSigningIn(false)} />
-          </>
-        ) : stage.at === 'waiting' ? (
-          <>
-            <p>
-              You knocked as <b>{name.trim()}</b>. {stage.anyoneIn ? 'The people inside can see you at the door; one of them has to let you in.' : 'Nobody who can open the door is inside right now. Your knock stays up while this page is open, for whoever walks in.'}
-            </p>
-            <div className="knock-code" aria-label="Your code">
-              {stage.code}
-            </div>
-            <p className="small muted">They see this code next to your name — tell it to them if they ask whether it is really you.</p>
-            <div className="row">
-              <span className="knock-dots grow" aria-hidden>
-                waiting<i>.</i>
-                <i>.</i>
-                <i>.</i>
-              </span>
-              <Button variant="ghost" onClick={cancel}>
-                Never mind
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="muted">
-              {stage.at === 'refused'
-                ? 'They did not let you in this time.'
-                : stage.at === 'gone'
-                  ? 'Nobody answered the door. You can knock again.'
-                  : 'This is a working office. Ask to come in: someone inside will let you in to look around — you can watch what is going on, not change anything.'}
-            </p>
-            <input value={name} maxLength={40} placeholder="Your name" aria-label="Your name" autoFocus onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && name.trim().length >= 2 && !busy && void knock()} />
-            {error && <div className="small bad">{error}</div>}
-            <Button variant="primary" disabled={busy || name.trim().length < 2} onClick={() => void knock()}>
-              {stage.at === 'ask' ? 'Ask to come in' : 'Knock again'}
-            </Button>
-            <div className="small faint">
-              A member of this office?{' '}
-              <button type="button" className="linklike" onClick={() => setSigningIn(true)}>
-                Sign in with your password
-              </button>
-            </div>
-            <div className="small faint">
-              Working here every day? The Orchestrator desktop app lets you in with your own computer.{' '}
-              <button type="button" className="linklike" onClick={onOwnToken}>
-                I have an owner token
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
+  return { name, setName, stage, error, busy, ready, knock, cancel };
 }

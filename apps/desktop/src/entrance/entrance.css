@@ -1,0 +1,980 @@
+/*
+ * The entrance page (docs/ENTRANCE-PAGE.md). Everything is under `.ent`, and nothing here leans on the office's own
+ * stylesheet: the page has to look the same whether or not that has been loaded.
+ *
+ * The look: the office at night. A dark floor, pools of warm light where something stands, the gold of the baton
+ * and the violet-to-teal of the logo, and type that is loud where the README is loud.
+ *
+ * `--m` is one metre of the little office in pixels (set by the page from the window's width); anything that has to
+ * line up with the drawn furniture is measured in it. `--sin` is how much the floor is foreshortened.
+ */
+.ent {
+  --ink: #eef1f7;
+  --text: #c9d2e3;
+  --dim: #9aa6bb;
+  --night: #080b12;
+  --night-2: #0d1220;
+  --line: rgba(255, 255, 255, 0.1);
+  --line-2: rgba(255, 255, 255, 0.18);
+  --gold: #ffd166;
+  --gold-ink: #1c1503;
+  --pink: #ff5fa2;
+  --violet: #8b5cf6;
+  --blue: #6ea8ff;
+  --teal: #22d3c5;
+  --good: #3ddc84;
+  --warn: #ffb020;
+  --bad: #ff8a98;
+  --gut: clamp(20px, 4.2vw, 72px);
+  --display: ui-rounded, 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', 'Arial Rounded MT Bold', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --body: 'Inter', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --code: 'JetBrains Mono', 'SF Mono', Menlo, Monaco, 'Cascadia Mono', Consolas, monospace;
+  position: fixed;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  background: var(--night);
+  color: var(--text);
+  font: 17px/1.62 var(--body);
+  -webkit-font-smoothing: antialiased;
+  color-scheme: dark;
+  outline: none;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+.ent *,
+.ent *::before,
+.ent *::after {
+  box-sizing: border-box;
+}
+.ent h1,
+.ent h2,
+.ent p,
+.ent ul,
+.ent figure {
+  margin: 0;
+}
+.ent ul {
+  padding: 0;
+  list-style: none;
+}
+.ent b {
+  color: var(--ink);
+  font-weight: 650;
+}
+.ent code {
+  font: 0.88em var(--code);
+  color: var(--gold);
+  background: rgba(255, 209, 102, 0.09);
+  padding: 0.1em 0.38em;
+  border-radius: 6px;
+}
+.ent button {
+  font: inherit;
+  color: inherit;
+}
+.ent :focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+.ent.ent-over-intern {
+  cursor: pointer;
+}
+
+/* ───────────── the page: a floor at night ───────────── */
+.ent-page {
+  position: relative;
+  overflow: hidden;
+  overflow: clip;
+  background:
+    radial-gradient(1100px 760px at 12% 0, rgba(139, 92, 246, 0.2), transparent 70%),
+    radial-gradient(900px 700px at 100% 14%, rgba(34, 211, 197, 0.09), transparent 70%),
+    radial-gradient(1200px 900px at 0 48%, rgba(79, 125, 255, 0.1), transparent 70%),
+    radial-gradient(1000px 800px at 90% 78%, rgba(255, 95, 162, 0.07), transparent 70%),
+    linear-gradient(var(--night), var(--night-2) 55%, var(--night));
+}
+/* The tiles of the floor, very faint: 60 cm squares, flattened as the scene's floor is. */
+.ent-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: calc(var(--m) * 0.6) calc(var(--m) * 0.6 * var(--sin));
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 30%, #000);
+  mask-image: linear-gradient(90deg, transparent, #000 30%, #000);
+}
+.ent-main {
+  position: relative;
+  z-index: 2;
+}
+.ent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--lane);
+  column-gap: clamp(16px, 3vw, 56px);
+  align-items: center;
+  min-height: 100vh;
+  padding: clamp(56px, 9vh, 120px) var(--gut);
+}
+.ent-col {
+  max-width: 900px;
+  min-width: 0;
+}
+.ent-lane {
+  position: relative;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ent-lane-mark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+
+/* Room for something of the scene, with the light that falls on the floor there. */
+.ent-slot {
+  position: relative;
+  flex: none;
+  width: calc(var(--m) * var(--w));
+  height: calc(var(--m) * var(--h));
+  max-width: 100%;
+  pointer-events: none;
+}
+.ent-slot::before,
+.ent-slot::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--ax) * 100%);
+  top: calc(var(--ay) * 100%);
+  width: calc(var(--m) * var(--r) * 2);
+  height: calc(var(--m) * var(--r) * 2 * var(--sin));
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.9s ease;
+}
+.ent-slot::before {
+  background: radial-gradient(closest-side, rgba(255, 220, 165, 0.44), rgba(255, 198, 132, 0.22) 45%, rgba(255, 180, 120, 0.06) 78%, transparent);
+}
+.ent-slot::after {
+  background-image: linear-gradient(rgba(255, 235, 200, 0.13) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 235, 200, 0.13) 1px, transparent 1px);
+  background-size: calc(var(--m) * 0.6) calc(var(--m) * 0.6 * var(--sin));
+  -webkit-mask-image: radial-gradient(closest-side, #000, rgba(0, 0, 0, 0.5) 55%, transparent);
+  mask-image: radial-gradient(closest-side, #000, rgba(0, 0, 0, 0.5) 55%, transparent);
+}
+.ent-staged .ent-slot::before,
+.ent-staged .ent-slot::after {
+  opacity: 1;
+}
+
+/* ───────────── the scene's layer ───────────── */
+.ent-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  z-index: 3;
+  pointer-events: none;
+  will-change: transform;
+  opacity: 0;
+  transition: opacity 0.7s ease;
+}
+.ent-staged .ent-stage {
+  opacity: 1;
+}
+.ent-follow-pool {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--m) * 2.4);
+  height: calc(var(--m) * 2.4 * var(--sin));
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 220, 160, 0.26), rgba(255, 200, 130, 0.1) 55%, transparent);
+  will-change: transform;
+}
+/* The intern's tag, in the manner of the office's own tags. */
+.ent-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 4px 10px 5px;
+  border-radius: 9px;
+  background: rgba(18, 23, 33, 0.92);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  text-align: center;
+  white-space: nowrap;
+  will-change: transform;
+}
+.ent-tag-name {
+  font: 700 12.5px/1.25 var(--body);
+  color: var(--ink);
+}
+.ent-tag-state {
+  font: 700 9.5px/1.3 var(--body);
+  letter-spacing: 0.14em;
+  color: var(--gold);
+}
+.ent-tag-ouch {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%) scale(0.6);
+  padding: 2px 10px;
+  border-radius: 10px;
+  background: #fff;
+  color: #1a1405;
+  font: 800 15px/1.3 var(--display);
+  opacity: 0;
+}
+.ent-tag.is-ouch .ent-tag-ouch {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+  transition: transform 0.12s cubic-bezier(0.3, 1.6, 0.5, 1), opacity 0.08s;
+}
+
+/* ───────────── type ───────────── */
+.ent h1 {
+  font: 800 clamp(38px, 5vw, 76px) / 0.99 var(--display);
+  letter-spacing: -0.035em;
+  color: var(--ink);
+  max-width: 13em;
+  text-wrap: balance;
+}
+.ent h2 {
+  font: 800 clamp(30px, 3.5vw, 54px) / 1.04 var(--display);
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  max-width: 15em;
+  text-wrap: balance;
+}
+.ent-grad {
+  background: linear-gradient(100deg, #b39bff, var(--blue) 45%, var(--teal));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.ent-kicker {
+  font: 700 12.5px/1.3 var(--code);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 14px !important;
+}
+.ent-col > p {
+  max-width: 39em;
+  margin-top: 18px;
+  text-wrap: pretty;
+}
+.ent-aside {
+  color: var(--dim);
+  font-size: 15.5px;
+}
+.ent-chip {
+  display: inline-block;
+  vertical-align: 1px;
+  margin-right: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line-2);
+  background: rgba(18, 23, 33, 0.92);
+  font: 700 10.5px/1.5 var(--body);
+  letter-spacing: 0.14em;
+  color: var(--dim);
+}
+
+/* ───────────── the top ───────────── */
+.ent-hero {
+  align-items: start;
+  min-height: max(100vh, 800px);
+  padding-top: clamp(28px, 5vh, 56px);
+  padding-bottom: 28px;
+}
+.ent-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font: 800 15px/1 var(--display);
+  letter-spacing: 0.24em;
+  color: var(--ink);
+}
+.ent-brand img {
+  border-radius: 10px;
+}
+.ent-eyebrow {
+  margin-top: clamp(22px, 4.6vh, 52px) !important;
+  font: 500 15px/1.4 var(--code);
+  color: var(--dim);
+}
+.ent-eyebrow b {
+  color: var(--gold);
+}
+.ent-hero h1 {
+  margin-top: 14px;
+}
+.ent-lead {
+  font-size: clamp(17px, 1.35vw, 20px);
+  margin-top: 22px !important;
+}
+.ent-stickers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 26px;
+}
+.ent-sticker {
+  display: inline-block;
+  padding: 7px 14px 6px;
+  font: 900 italic 15px/1 var(--display);
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+}
+.ent-sticker-pink {
+  background: #ff3d7f;
+  color: #fff;
+  transform: rotate(-3deg) skewX(-6deg);
+}
+.ent-sticker-gold {
+  background: var(--gold);
+  color: var(--gold-ink);
+  transform: rotate(2deg) skewX(-6deg);
+}
+.ent-hint {
+  margin-top: 26px !important;
+  font: 500 14px/1.4 var(--code);
+  color: var(--dim);
+}
+.ent-hint-arrow {
+  display: inline-block;
+  color: var(--gold);
+  animation: ent-bob 1.6s ease-in-out infinite;
+}
+@keyframes ent-bob {
+  50% {
+    transform: translateY(5px);
+  }
+}
+.ent-slot-pod {
+  margin-top: clamp(4px, 2vh, 28px);
+}
+.ent-hero .ent-lane {
+  align-items: flex-end;
+}
+
+/* ───────────── pictures of the real thing ───────────── */
+.ent-shot {
+  margin-top: 34px !important;
+  max-width: 880px;
+  perspective: 1600px;
+}
+.ent-shot-frame {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  background: #0b0f17;
+  box-shadow:
+    0 50px 100px -40px rgba(0, 0, 0, 0.9),
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 0 90px -30px rgba(110, 168, 255, 0.35);
+  transform-origin: 50% 60%;
+}
+.ent-shot-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  background: #141a26;
+  border-bottom: 1px solid var(--line);
+}
+.ent-shot-bar i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+}
+.ent-shot-bar span {
+  margin-left: auto;
+  font: 500 10.5px/1 var(--code);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.ent-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ent-shot figcaption {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--dim);
+}
+/* Reached for the first time: comes up into place. */
+.ent-reveal {
+  opacity: 0;
+  transform: translateY(34px);
+  transition:
+    opacity 0.7s ease,
+    transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ent-reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+/* And where the browser can tie an animation to the scroll itself, a picture leans back as it comes and goes. */
+@supports (animation-timeline: view()) {
+  .ent:not(.ent-calm) .ent-shot-frame {
+    animation: ent-lean linear both;
+    animation-timeline: view();
+    animation-range: entry 0% exit 100%;
+  }
+  .ent:not(.ent-calm) .ent-shot-right .ent-shot-frame {
+    animation-name: ent-lean-right;
+  }
+}
+@keyframes ent-lean {
+  0% {
+    transform: rotateX(16deg) rotateY(-9deg) scale(0.93);
+  }
+  38%,
+  62% {
+    transform: none;
+  }
+  100% {
+    transform: rotateX(-10deg) rotateY(5deg) scale(0.96);
+  }
+}
+@keyframes ent-lean-right {
+  0% {
+    transform: rotateX(16deg) rotateY(9deg) scale(0.93);
+  }
+  38%,
+  62% {
+    transform: none;
+  }
+  100% {
+    transform: rotateX(-10deg) rotateY(-5deg) scale(0.96);
+  }
+}
+
+/* ───────────── small furniture of the text ───────────── */
+.ent-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 22px;
+  font: 500 13px/1 var(--code);
+  color: var(--dim);
+}
+.ent-keys span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.ent-keys .ent-key:last-of-type {
+  margin-right: 4px;
+}
+.ent-key {
+  display: inline-grid;
+  place-items: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 9px;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 3px;
+  background: #171d2a;
+  font: 700 13px/1 var(--code);
+  color: var(--ink);
+}
+.ent-key-wide {
+  min-width: 92px;
+}
+.ent-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  font: 600 13px/1 var(--code);
+}
+.ent-flow span {
+  padding: 7px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  color: var(--dim);
+}
+.ent-flow span.is-on {
+  border-color: rgba(61, 220, 132, 0.6);
+  color: var(--good);
+  background: rgba(61, 220, 132, 0.08);
+}
+.ent-flow i {
+  font-style: normal;
+  color: var(--dim);
+}
+.ent-flow em {
+  font: 400 14px/1.3 var(--body);
+  color: var(--dim);
+}
+
+/* ───────────── the house rules ───────────── */
+.ent-rules {
+  padding: clamp(70px, 12vh, 150px) var(--gut);
+  padding-right: calc(var(--gut) + var(--lane) + clamp(16px, 3vw, 56px));
+}
+.ent-rules ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 14px;
+  margin-top: 34px;
+  max-width: 900px;
+}
+.ent-rules li {
+  padding: 18px 18px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015));
+  font-size: 15px;
+  line-height: 1.5;
+}
+.ent-rules li b {
+  display: block;
+  margin-bottom: 6px;
+  font: 750 17px/1.25 var(--display);
+}
+.ent-rules li span {
+  color: var(--dim);
+}
+
+/* ───────────── the bottom: the door ───────────── */
+.ent-end {
+  min-height: max(100vh, 800px);
+  padding-bottom: 36px;
+}
+.ent-end .ent-lane {
+  align-items: flex-end;
+}
+.ent-ways {
+  margin-top: 26px !important;
+  display: grid;
+  gap: 12px;
+  max-width: 38em;
+}
+.ent-ways li {
+  padding-left: 18px;
+  border-left: 2px solid rgba(255, 209, 102, 0.5);
+}
+.ent-footer {
+  margin-top: clamp(40px, 9vh, 96px);
+  padding-top: 26px;
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 15px;
+}
+.ent-footer img {
+  border-radius: 11px;
+}
+.ent-footer p {
+  max-width: 46em;
+  margin-top: 12px;
+}
+.ent-small {
+  font-size: 13.5px;
+}
+
+/* ───────────── the door that hangs beside the page ───────────── */
+.ent-rail {
+  position: sticky;
+  top: 0;
+  height: 0;
+  z-index: 6;
+}
+.ent-rig {
+  --rig-w: min(var(--lane), 348px);
+  position: absolute;
+  top: 0;
+  right: calc(var(--gut) + (var(--lane) - var(--rig-w)) / 2);
+  width: var(--rig-w);
+  padding-top: 46px;
+  transform-origin: 50% 0;
+  will-change: transform;
+  perspective: 900px;
+}
+.ent-cable {
+  position: absolute;
+  top: -40px;
+  height: 88px;
+  width: 2px;
+  background: linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.3));
+}
+.ent-cable-l {
+  left: 34px;
+}
+.ent-cable-r {
+  right: 34px;
+}
+.ent-rig-tilt {
+  will-change: transform;
+  transform-style: preserve-3d;
+}
+.ent .ent-door {
+  position: relative;
+  width: auto;
+  max-width: none;
+  padding: 18px 18px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line-2);
+  background: linear-gradient(180deg, rgba(24, 30, 45, 0.94), rgba(13, 17, 27, 0.94));
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow:
+    0 30px 70px -20px rgba(0, 0, 0, 0.85),
+    0 0 60px -20px rgba(139, 92, 246, 0.5);
+  font-size: 14.5px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+.ent-door::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, var(--violet), var(--blue) 50%, var(--teal));
+}
+.ent-door-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ent-door-lamp {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--good);
+  box-shadow: 0 0 12px 2px rgba(61, 220, 132, 0.6);
+}
+.ent-door-lamp.is-waiting {
+  background: var(--warn);
+  box-shadow: 0 0 12px 2px rgba(255, 176, 32, 0.7);
+  animation: ent-pulse 1.2s ease-in-out infinite;
+}
+@keyframes ent-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.ent-door-titles {
+  min-width: 0;
+}
+.ent .knock-kicker {
+  font: 700 10px/1.3 var(--code);
+  letter-spacing: 0.16em;
+  color: var(--dim);
+}
+.ent .knock-office {
+  margin: 2px 0 0;
+  font: 800 21px/1.15 var(--display);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  max-width: none;
+  overflow-wrap: anywhere;
+}
+/* The forms fold away under the name, and come back, by the height of a grid row. */
+.ent-door-fold {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.42s cubic-bezier(0.3, 0.9, 0.3, 1);
+}
+.ent-rig.is-folded .ent-door-fold {
+  grid-template-rows: 0fr;
+}
+.ent-door-body {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
+  /* (Clipped, not scrollable: nothing — a focus, a script — can leave the forms scrolled half out of the door.) */
+  overflow: clip;
+  padding: 14px 4px 4px;
+  margin: 0 -4px -4px;
+  transition: opacity 0.3s ease;
+}
+.ent-rig.is-folded .ent-door-body {
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.ent-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.ent-seg button {
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--dim);
+  font-weight: 650;
+  cursor: pointer;
+}
+.ent-seg button[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--ink);
+}
+.ent-door-say {
+  color: var(--text);
+}
+.ent-form {
+  display: grid;
+  gap: 6px;
+}
+.ent-form label {
+  margin-top: 4px;
+  font: 600 12px/1.3 var(--body);
+  color: var(--dim);
+}
+.ent .ent-form input {
+  width: 100%;
+  height: 42px;
+  min-height: 0;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: rgba(8, 11, 18, 0.7);
+  color: var(--ink);
+  font: 500 15.5px/1 var(--body);
+}
+.ent .ent-form input:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+.ent-error {
+  color: var(--bad);
+  font-size: 13.5px;
+}
+.ent-go {
+  margin-top: 8px;
+  height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--gold);
+  color: var(--gold-ink) !important;
+  font: 800 15.5px/1 var(--display) !important;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    filter 0.12s ease;
+}
+.ent-go:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.ent-go:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.ent-go:disabled {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--dim) !important;
+  cursor: not-allowed;
+}
+.ent-go-big {
+  margin-top: 28px;
+  height: 52px;
+  padding: 0 26px;
+  font-size: 17px !important;
+}
+.ent-door-foot {
+  font-size: 13px;
+  color: var(--dim);
+}
+.ent-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--blue) !important;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.ent-quiet {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line-2);
+  background: transparent;
+  cursor: pointer;
+}
+.ent-waiting {
+  display: grid;
+  gap: 10px;
+}
+.ent-waiting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ent .knock-code {
+  justify-self: center;
+  align-self: center;
+  padding: 6px 22px;
+  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  background: rgba(0, 0, 0, 0.3);
+  font: 700 34px/1.3 var(--code);
+  letter-spacing: 0.28em;
+  text-indent: 0.28em;
+  color: var(--gold);
+}
+.ent .knock-dots {
+  color: var(--dim);
+}
+.ent .knock-dots i {
+  font-style: normal;
+  animation: ent-dot 1.4s infinite;
+}
+.ent .knock-dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.ent .knock-dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes ent-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.2;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+/* Folded: the name on the door and one button. */
+.ent-fold {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  height: 36px;
+  border-radius: 11px;
+  border: 1px solid var(--line-2);
+  background: rgba(13, 17, 27, 0.92);
+  color: var(--ink);
+  font-weight: 650;
+  font-size: 14px;
+  cursor: pointer;
+}
+.ent-fold[hidden] {
+  display: none;
+}
+.ent-rig.is-folded .ent-fold {
+  background: var(--gold);
+  border-color: transparent;
+  color: var(--gold-ink);
+  font: 800 14.5px/1 var(--display);
+}
+
+/* ───────────── a narrow window: text, pictures and the door ───────────── */
+.ent-narrow .ent-row {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+}
+.ent-narrow .ent-lane {
+  display: none;
+}
+.ent-narrow .ent-slot-pod {
+  display: none;
+}
+.ent-narrow .ent-rules {
+  padding-right: var(--gut);
+}
+/* The door is a bar across the top: its name and one button. Opened, it lies over the page until it is folded again. */
+.ent-narrow .ent-rig {
+  --rig-w: auto;
+  left: 10px;
+  right: 10px;
+  padding-top: 10px;
+  transform: none !important;
+}
+.ent-narrow .ent-rig-tilt {
+  transform: none !important;
+}
+.ent-narrow .ent-cable {
+  display: none;
+}
+.ent-narrow .ent-rig.is-folded .ent-rig-tilt {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.ent-narrow .ent-rig.is-folded .ent-door {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+}
+.ent-narrow .ent-rig.is-folded .ent-fold {
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+.ent-narrow .ent-rig.is-open {
+  max-width: 440px;
+  margin-left: auto;
+}
+.ent-narrow .ent-hero {
+  padding-top: 112px;
+  min-height: 0;
+}
+.ent-narrow .ent-end {
+  min-height: 0;
+}
+
+/* ───────────── no drawing (no WebGL): the text, the pictures and the door ───────────── */
+.ent-flat .ent-slot {
+  display: none;
+}
+.ent-flat .ent-col {
+  max-width: 980px;
+}
+
+/* ───────────── a calm page ───────────── */
+.ent-calm .ent-reveal {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+.ent-calm .ent-hint-arrow,
+.ent-calm .ent-door-lamp.is-waiting,
+.ent-calm .knock-dots i {
+  animation: none;
+}
+.ent-calm .ent-stage,
+.ent-calm .ent-slot::before,
+.ent-calm .ent-slot::after,
+.ent-calm .ent-go,
+.ent-calm .ent-door-fold,
+.ent-calm .ent-door-body,
+.ent-calm .ent-tag-ouch {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ent-hint-arrow {
+    animation: none;
+  }
+}
