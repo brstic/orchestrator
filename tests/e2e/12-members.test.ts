@@ -11,6 +11,8 @@ import type { ServerToClient } from '@orchestrator/contracts';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import http from 'node:http';
+import nodeCrypto from 'node:crypto';
 import { createHarness, waitFor, sleep, type Harness } from './harness.ts';
 
 // The door's certificate is made on this machine; guests trust it by its fingerprint (checked below), not by a CA.
@@ -531,6 +533,45 @@ test('people see each other in the office and can talk', async () => {
   await waitFor(async () => (jovan.got.filter((m) => m.t === 'people').pop() as any)?.people.length === 2, { label: 'Mila left' });
   jovan.ws.close();
   boss.close();
+});
+
+test('a window the office is closing is not listened to any more, and is cut if it does not go', async () => {
+  // A member whose window ignores being told to close (a client of their own making): made by hand, so that it does.
+  const made = await h.api<any>('POST', '/guests', { name: 'Dragan', role: 'colleague' });
+  const token = decode(made.invite).t as string;
+  const frame = (text: string) => {
+    const p = Buffer.from(text);
+    const mask = nodeCrypto.randomBytes(4);
+    const head = p.length < 126 ? Buffer.from([0x81, 0x80 | p.length]) : Buffer.from([0x81, 0x80 | 126, p.length >> 8, p.length & 255]);
+    return Buffer.concat([head, mask, Buffer.from(p.map((b, i) => b ^ mask[i % 4]!))]);
+  };
+  const socket = await new Promise<import('node:net').Socket>((resolve, reject) => {
+    const u = new URL(h.url);
+    const req = http.request({ host: u.hostname, port: u.port, path: '/ws/client', headers: { Connection: 'Upgrade', Upgrade: 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': nodeCrypto.randomBytes(16).toString('base64'), 'Sec-WebSocket-Protocol': `orch.v1, orch.token.${token}` } });
+    req.on('upgrade', (_res, sock) => resolve(sock));
+    req.on('response', (res) => reject(new Error(`not upgraded: ${res.statusCode}`)));
+    req.on('error', reject);
+    req.end();
+  });
+  let closedAt = 0;
+  socket.on('close', () => (closedAt = Date.now()));
+  socket.on('data', () => undefined); // whatever the office says, this window answers nothing — not even a close
+  socket.on('error', () => undefined);
+  const boss = await h.client();
+  const heard = () => boss.messages.filter((m: any) => m.t === 'said').map((m: any) => m.text as string);
+  socket.write(frame(JSON.stringify({ t: 'say', text: 'dragan is here' })));
+  await waitFor(() => heard().includes('dragan is here'), { label: 'while he is a member, he is heard' });
+  // He is removed. His window does not go by itself and keeps talking.
+  const removedAt = Date.now();
+  await h.api('DELETE', `/guests/${made.guest.id}`);
+  for (let i = 0; i < 5; i++) {
+    socket.write(frame(JSON.stringify({ t: 'say', text: `dragan after being removed ${i}` })));
+    await sleep(150);
+  }
+  await waitFor(() => closedAt > 0, { label: 'the office cut the connection', timeout: 10000 });
+  assert.ok(closedAt - removedAt < 6000, `cut within seconds, not after the half minute a polite close may take (${closedAt - removedAt} ms)`);
+  await sleep(300);
+  assert.deepEqual(heard().filter((t) => /after being removed/.test(t)), [], 'nothing he sent after he was removed was passed on');
 });
 
 test('revoking ends a member’s session and their computer’s place in the office; roles change; the door survives a restart', async () => {

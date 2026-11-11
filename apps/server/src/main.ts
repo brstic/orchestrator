@@ -25,6 +25,24 @@ OPTIONS
 `;
 
 /**
+ * What stands between a mistake in the office's own code and the office going away for everybody. One request that
+ * trips over such a mistake is written down and the office goes on. Several within a minute mean something is
+ * really wrong: then it stops, and whatever runs it (systemd) starts it again clean.
+ */
+export function stumbleNet(log: (line: string) => void, stop: () => void, opts: { limit?: number; windowMs?: number; now?: () => number } = {}): (kind: string) => (e: unknown) => void {
+  const limit = opts.limit ?? 10;
+  const windowMs = opts.windowMs ?? 60_000;
+  const now = opts.now ?? Date.now;
+  const at: number[] = [];
+  return (kind) => (e) => {
+    log(`[${new Date(now()).toISOString()}] ERROR ${kind}: ${(e as Error)?.stack ?? e}`);
+    const t = now();
+    while (at.length && t - at[0]! > windowMs) at.shift();
+    if (at.push(t) >= limit) stop();
+  };
+}
+
+/**
  * What the office says when it has started. To a person at a terminal: the link that opens it, token and all. To
  * anything else — a service's log, a file, a pipe — only where the token is kept: a log is read by more people and
  * kept for longer than the token file, and the token is the key to the whole office on this machine.
@@ -79,16 +97,7 @@ export async function main(argv: string[]): Promise<void> {
     console.error(`error: ${(e as Error).message}`);
     process.exit(1);
   }
-  // One request that trips over a mistake in the office's own code must not take the office away from everybody:
-  // it is written down and the office goes on. Several in a minute mean something is really wrong — then it stops,
-  // and whatever runs it (systemd) starts it again clean.
-  const stumbles: number[] = [];
-  const stumbled = (kind: string) => (e: unknown) => {
-    console.error(`[${new Date().toISOString()}] ERROR ${kind}: ${(e as Error)?.stack ?? e}`);
-    const now = Date.now();
-    while (stumbles.length && now - stumbles[0]! > 60_000) stumbles.shift();
-    if (stumbles.push(now) >= 10) process.exit(1);
-  };
+  const stumbled = stumbleNet((line) => console.error(line), () => process.exit(1));
   process.on('uncaughtException', stumbled('uncaught exception'));
   process.on('unhandledRejection', stumbled('unhandled rejection'));
   if (!values.quiet) for (const line of startupLines(server.url, server.ownerToken, path.join(values.data ? path.resolve(values.data) : defaultDataDir(), 'owner-token'), !!process.stderr.isTTY)) console.error(line);
