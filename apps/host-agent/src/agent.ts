@@ -1436,7 +1436,8 @@ export class HostAgent {
 
   /** A piece of a task's attachment arrives. One folder per task; the name was made safe by the office and is checked again here. */
   private putFile(p: { folder: string; name: string; offset: number; dataBase64: string; last: boolean }): { path: string; size: number } {
-    const clean = (x: string) => String(x ?? '').replace(/[^A-Za-z0-9._ ()@+-]/g, '_').replace(/^\.+/, '').slice(0, 120) || 'file';
+    // (Letters and digits of any alphabet stay: two names that differ only in such letters must stay two files.)
+    const clean = (x: string) => String(x ?? '').normalize('NFC').replace(/[^\p{L}\p{N}._ ()@+-]/gu, '_').replace(/^\.+/, '').slice(0, 120) || 'file';
     const dir = path.join(this.filesRoot(), clean(p.folder));
     const file = path.join(dir, clean(p.name));
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -1460,13 +1461,22 @@ export class HostAgent {
     const abs = path.resolve(p.cwd && !path.isAbsolute(expanded) ? p.cwd : os.homedir(), expanded);
     if (!fs.existsSync(abs)) throw new Error(`there is no file at ${abs}`);
     const real = fs.realpathSync(abs);
-    const inside = (root: string) => {
-      const r = realpathOfDeepestExisting(path.resolve(root));
-      return real === r || real.startsWith(r + path.sep);
-    };
-    if (![...this.cfg.allowedRoots, path.dirname(this.p.sessions), os.tmpdir(), '/tmp'].some(inside)) throw new Error(`${abs} is outside the folders this machine lets the office read`);
-    // Never the office's own secrets on this machine, wherever the roots reach.
-    if (/(^|\/)(config\.json|mcp\.json|settings\.json|state\.json|outbox\.json|vault(\.mjs)?|\.claude\.json|\.credentials\.json)$/.test(real) && (inside(path.dirname(this.p.sessions)) || /\/\.claude[^/]*\//.test(real))) throw new Error('that file is not one to attach');
+    // Where an employee's evidence comes from: the folder it works in, the folder its browser saves to, the files
+    // the office itself put on this machine for it, and temporary folders. Not "anywhere this machine lets the office
+    // work": that is usually the whole home folder, with keys and the office's own data in it — and what is attached
+    // here can be opened by everyone who sees the task. The agent reads the file itself, so none of Claude Code's
+    // own checks stand in front of this.
+    const tracked = p.sessionId ? this.tracked.get(p.sessionId) : undefined;
+    const bases = [p.cwd, tracked?.cwd, tracked?.repoRoot, tracked ? path.join(this.p.sessions, tracked.sessionId, 'browser') : null, this.filesRoot(), os.tmpdir(), '/tmp']
+      .filter((x): x is string => typeof x === 'string' && !!x)
+      .map((root) => realpathOfDeepestExisting(path.resolve(root)));
+    const base = bases.filter((r) => real === r || real.startsWith(r + path.sep)).sort((x, y) => y.length - x.length)[0];
+    const where = [p.cwd ?? tracked?.cwd, 'the folder your browser saves to', 'a temporary folder'].filter(Boolean).join(', ');
+    if (!base) throw new Error(`${abs} cannot be attached from there. A file is taken from your working folder (${where}); if this is something to show, save or copy it there first.`);
+    // Nothing hidden (a `.git`, a `.env`, a `.ssh`), and nothing that is a key or a credential by its name.
+    const below = real === base ? [] : real.slice(base.length + 1).split(path.sep);
+    if (below.some((part) => part.startsWith('.'))) throw new Error(`${abs} is a hidden file or in a hidden folder; those are not attached to tasks`);
+    if (/(^|\/)(id_(rsa|dsa|ecdsa|ed25519)|[^/]*\.(pem|key|p12|pfx|kdbx|keystore)|owner-token|vault\.key|credentials(\.json)?|config\.json|mcp\.json|settings\.json|managed\.json|state\.json|outbox\.json|vault(\.mjs)?)$/i.test(real)) throw new Error(`${path.basename(real)} looks like a key or a credential; those are not attached to tasks`);
     const st = fs.statSync(real);
     if (!st.isFile()) throw new Error(`${abs} is not a file`);
     const length = Math.max(0, Math.min(Number(p.length) || 0, 2 * 1024 * 1024, st.size - (Number(p.offset) || 0)));

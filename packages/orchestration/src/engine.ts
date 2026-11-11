@@ -141,6 +141,12 @@ export class Engine {
     if (rerouted) this.core.log('info', `${rerouted} finished task${rerouted === 1 ? '' : 's'} that waited for a review nobody was asked for ${rerouted === 1 ? 'was' : 'were'} given to a colleague to review`);
     this.waits.restore();
     this.comms.restore();
+    try {
+      const swept = this.attachments.sweep();
+      if (swept) this.core.log('info', `removed ${swept} unfinished upload${swept === 1 ? '' : 's'} left from before the restart`);
+    } catch (e) {
+      this.core.log('warn', `sweeping unfinished uploads: ${(e as Error).message}`);
+    }
     this.meetings.restore();
     for (const h of this.core.hosts.filter((x) => x.status === 'online')) {
       h.status = 'offline';
@@ -339,6 +345,7 @@ export class Engine {
     const theirs = this.core.tasks.filter((t) => t.assigneeId === e.id);
     const verifying = theirs.find((t) => this.tasks.isVerifying(t.id));
     if (verifying) throw new EngineError(`${verifying.key} is being verified right now. Delete ${e.name} when that has finished.`, 409);
+    if (this.tasks.isStarting(e.id)) throw new EngineError(`A task is being handed to ${e.name} right now. Delete them in a moment, when that has finished.`, 409);
     if (this.core.sessions.find((s) => s.employeeId === e.id && s.status === 'host_offline')) throw new EngineError(`${e.name}'s session is still running on a machine that is away. Delete them when it is back, so the session can be stopped.`, 409);
     if (this.core.runningSessionOf(e.id)) await this.sessions.stop(e.id, { actor, reason: 'the employee was deleted' });
 

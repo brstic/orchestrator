@@ -1082,8 +1082,10 @@ export class SessionRegistry {
     const e = this.core.employees.get(session.employeeId ?? '');
     if (!e || !e.hostId) return;
     this.loadAccounts();
-    const key = `${e.hostId}|${e.claudeConfigDir ?? 'default'}`;
-    const a = this.accounts.get(key) ?? { key, hostId: e.hostId, configDir: e.claudeConfigDir ?? null, email: null, organization: null, fiveHour: null, sevenDay: null, reportedAt: null, reportedBy: null, employeeIds: [] };
+    // The account the refused process runs on — which, right after a move, is not the one its employee is on now.
+    const dir = session.claudeConfigDir !== undefined ? session.claudeConfigDir : (e.claudeConfigDir ?? null);
+    const key = `${e.hostId}|${dir ?? 'default'}`;
+    const a = this.accounts.get(key) ?? { key, hostId: e.hostId, configDir: dir, email: null, organization: null, fiveHour: null, sevenDay: null, reportedAt: null, reportedBy: null, employeeIds: [] };
     const resets = [a.fiveHour, a.sevenDay].filter((w) => !!w && w.usedPercent >= 90 && !!w.resetsAt && Date.parse(w.resetsAt) > Date.now()).map((w) => w!.resetsAt!).sort();
     a.spentUntil = resets[0] ?? new Date(Date.now() + 60 * 60_000).toISOString();
     this.accounts.set(key, a);
@@ -1373,6 +1375,10 @@ export class SessionRegistry {
         for (const id of from.employeeIds) {
           const e = this.core.employees.get(id);
           if (!e || e.archived || (!force && Date.now() - (this.movedAt.get(id) ?? 0) < 10 * 60_000)) continue;
+          // A session somebody started themselves and the office only looks at is theirs: it is not stopped, and no
+          // second Claude is started beside it. (The same for an employee the office gives no work of its own accord.)
+          const theirs = this.core.runningSessionOf(id);
+          if ((theirs && theirs.origin !== 'managed') || e.selfDriven) continue;
           // The account with the most room, counting whom this round already put there.
           const to = [...ready].sort((a, b) => used(a) + (load.get(a.key) ?? 0) * 3 - (used(b) + (load.get(b.key) ?? 0) * 3))[0]!;
           load.set(to.key, (load.get(to.key) ?? 0) + 1);
@@ -1592,6 +1598,7 @@ export class SessionRegistry {
     session.activityDetail = mode === 'managed_sdk' ? (resume ? 'Resuming the SDK-managed worker' : 'Starting the SDK-managed worker') : resume ? 'Resuming Claude Code session' : 'Starting Claude Code';
     session.activitySince = nowIso();
     session.inTurn = null;
+    session.claudeConfigDir = employee.claudeConfigDir ?? null;
     session.endedAt = null;
     session.exitReason = null;
     session.lastEventAt = resume ? session.lastEventAt : null;
@@ -1825,8 +1832,11 @@ export class SessionRegistry {
 }
 
 /** Used up for now: one of the two windows is at its limit and has not reset yet. */
-export function exhausted(a: Pick<AccountUsage, 'fiveHour' | 'sevenDay'> & { spentUntil?: string | null }): boolean {
-  const full = (w: AccountUsage['fiveHour']) => !!w && w.usedPercent >= 99 && (!w.resetsAt || Date.parse(w.resetsAt) > Date.now());
-  return full(a.fiveHour) || full(a.sevenDay) || (!!a.spentUntil && Date.parse(a.spentUntil) > Date.now());
+export function exhausted(a: Pick<AccountUsage, 'fiveHour' | 'sevenDay'> & { spentUntil?: string | null; reportedAt?: string | null }): boolean {
+  // A figure that names no reset time is believed for as long as its window is (five hours, a week) from when it was
+  // reported — not for ever: once everybody has been moved off an account, nobody reports a newer figure for it.
+  const full = (w: AccountUsage['fiveHour'], windowMs: number) =>
+    !!w && w.usedPercent >= 99 && (w.resetsAt ? Date.parse(w.resetsAt) > Date.now() : !a.reportedAt || Date.parse(a.reportedAt) + windowMs > Date.now());
+  return full(a.fiveHour, 5 * 3600_000) || full(a.sevenDay, 7 * 86_400_000) || (!!a.spentUntil && Date.parse(a.spentUntil) > Date.now());
 }
 

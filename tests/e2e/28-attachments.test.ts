@@ -69,11 +69,18 @@ test('files attached to a task reach the employee with the task: on their machin
   assert.deepEqual(png.addedBy, { kind: 'owner', id: null, name: 'the boss' });
   // The same name twice is two files.
   assert.equal((await upload(task.id, 'spec.pdf', Buffer.from('second'))).name, 'spec-2.pdf');
+  // Names in another alphabet stay what they are, and two of them stay two files.
+  const slika = await upload(task.id, 'слика.png', PNG);
+  const skica = await upload(task.id, 'скица.png', Buffer.from('a different picture'));
+  assert.deepEqual([slika.name, skica.name], ['слика.png', 'скица.png']);
   await h.api('POST', '/tasks/release', { ids: [task.id] });
   const started = await waitFor(async () => {
     const t = await h.getTask(task.id);
     return t.delivery.status === 'confirmed' ? t : null;
   }, { label: 'the task was handed over', timeout: 30000 });
+  const there = (name: string) => started.attachments!.find((a) => a.name === name)!.paths![h.hostId]!;
+  assert.notEqual(there('слика.png'), there('скица.png'));
+  assert.deepEqual([sha(fs.readFileSync(there('слика.png'))), fs.readFileSync(there('скица.png'), 'utf8')], [sha(PNG), 'a different picture']);
   // On the machine: in the agent's own folder, one folder per task, byte for byte.
   const at = started.attachments!.find((a) => a.name === 'header-bug.png')!.paths![h.hostId]!;
   assert.equal(at, path.join(h.agentHome, 'files', task.key, 'header-bug.png'));
@@ -145,10 +152,32 @@ test('what may not be attached is refused, in words the employee can act on', as
     fs.rmSync(out, { force: true });
     return text;
   };
-  assert.match(await attempt('/etc/hosts'), /^ERROR .*outside the folders this machine lets the office read/);
+  assert.match(await attempt('/etc/hosts'), /^ERROR .*cannot be attached from there\. A file is taken from your working folder/);
   assert.match(await attempt('nothing-here.png'), /^ERROR .*there is no file at/);
-  assert.match(await attempt(path.join(h.agentHome, 'sessions', sarah.id, 'mcp.json')), /^ERROR .*not one to attach/);
+  // (The session's own files hold its tokens. In a test the agent's home is in a temporary folder, so it is the name that refuses it.)
+  assert.match(await attempt(path.join(h.agentHome, 'sessions', sarah.id, 'mcp.json')), /^ERROR .*(cannot be attached from there|looks like a key or a credential)/);
+  assert.match(await attempt(path.join(h.agentHome, 'sessions', sarah.id, 'settings.json')), /^ERROR .*(cannot be attached from there|looks like a key or a credential)/);
   assert.match(await attempt(sarah.cwd), /^ERROR .*is not a file/);
+  // "Where this machine lets the office work" is not where evidence comes from: that is usually the whole home
+  // folder. Even with /etc among the machine's folders, a file there is not an employee's to put on a task.
+  h.agentCfg.allowedRoots.push('/etc');
+  assert.match(await attempt('/etc/hosts'), /^ERROR .*cannot be attached from there/);
+  h.agentCfg.allowedRoots.pop();
+  // Inside the working folder: nothing hidden, and nothing that is a key or a credential by its name.
+  fs.writeFileSync(path.join(sarah.cwd, '.env'), 'TOKEN=not-a-real-one\n');
+  fs.writeFileSync(path.join(sarah.cwd, 'Deploy.PEM'), 'not a real key\n');
+  assert.match(await attempt('.env'), /^ERROR .*hidden file or in a hidden folder/);
+  fs.mkdirSync(path.join(sarah.cwd, '.cache'), { recursive: true });
+  fs.writeFileSync(path.join(sarah.cwd, '.cache', 'dump.txt'), 'x');
+  assert.match(await attempt('.git'), /^ERROR .*hidden file or in a hidden folder/);
+  assert.match(await attempt('.cache/dump.txt'), /^ERROR .*hidden file or in a hidden folder/);
+  fs.rmSync(path.join(sarah.cwd, '.cache'), { recursive: true });
+  assert.match(await attempt('Deploy.PEM'), /^ERROR .*looks like a key or a credential/);
+  fs.rmSync(path.join(sarah.cwd, '.env'));
+  fs.rmSync(path.join(sarah.cwd, 'Deploy.PEM'));
+  // The office's own token on this machine (in a test it lies in a temporary folder, which is otherwise allowed).
+  assert.match(await attempt(path.join(path.dirname(h.agentHome), 'server', 'owner-token')), /^ERROR .*looks like a key or a credential/);
+  assert.equal((await h.getTask(task.id)).attachments?.length ?? 0, 0, 'nothing of that reached the task');
   // Somebody else's task is not hers to leave evidence on.
   await waitFor(async () => (await h.session(ids.Sarah!))!.inTurn === false, { label: 'Sarah between turns', timeout: 20000 });
   fs.writeFileSync(path.join(sarah.cwd, 'mine.txt'), 'x');
@@ -213,4 +242,20 @@ test('where a browser for employees is installed, a session is started with it �
   const off = JSON.parse(fs.readFileSync(path.join(h.agentHome, 'sessions', sarah.id, 'mcp.json'), 'utf8')).mcpServers;
   assert.deepEqual(Object.keys(off), ['orchestrator']);
   assert.equal(JSON.parse(fs.readFileSync(path.join(h.agentHome, 'sessions', sarah.id, 'settings.json'), 'utf8')).permissions.allow.includes('mcp__browser'), false);
+});
+
+test('files on their way count towards a task\'s limit, and an upload that was never finished is gone after a restart', async () => {
+  const task = await h.task({ projectId: project, title: 'Hold many files', released: false, description: 'nothing to do' });
+  const begun: string[] = [];
+  for (let i = 0; i < 30; i++) begun.push((await h.api<any>('POST', `/tasks/${task.id}/attachments`, { name: `f${i}.txt`, size: 4 })).id);
+  const more = await h.apiRaw('POST', `/tasks/${task.id}/attachments`, { name: 'one-too-many.txt', size: 4 });
+  assert.equal(more.status, 400);
+  assert.match(more.body.error, /at most 30 files/);
+  // Two are finished; the rest are left as they are.
+  for (const id of begun.slice(0, 2)) await h.api('POST', `/tasks/${task.id}/attachments/${id}/data`, { offset: 0, dataBase64: Buffer.from('four').toString('base64') });
+  const folder = path.join(path.dirname(h.agentHome), 'server', 'files', task.id);
+  assert.equal(fs.readdirSync(folder).length, 30);
+  await h.restartServer();
+  assert.deepEqual(fs.readdirSync(folder).sort(), begun.slice(0, 2).sort(), 'only what is on the task is kept');
+  assert.equal((await h.getTask(task.id)).attachments!.length, 2);
 });

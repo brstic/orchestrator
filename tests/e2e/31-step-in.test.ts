@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { mayCall } from '../../apps/server/src/access.ts';
-import { createHarness, waitFor, type Harness } from './harness.ts';
+import { createHarness, waitFor, sleep, type Harness } from './harness.ts';
 
 /** A long job the scripted worker can be interrupted in: it looks for Escape between steps, not during one. */
 const LONG = Array(300).fill('sleep 200').join('; ');
@@ -140,4 +140,31 @@ test('stop and delete: the task is gone, the employee is told so; and who may st
     assert.equal(mayCall(engine, { kind: 'guest', id: 'v', name: 'V', role: 'visitor' }, 'POST', p, {}).ok, false);
     assert.equal(mayCall(engine, { kind: 'guest', id: 'c', name: 'C', role: 'colleague' }, 'POST', p, {}).ok, true);
   }
+});
+
+test('a correction to a task nobody is working on is written into the task, and the office says that nobody was told', async () => {
+  const waiting = await h.task({ projectId: project, title: 'Tidy the footer', released: false, description: 'Make the footer one line.' });
+  const res = await h.api<any>('POST', `/tasks/${waiting.id}/correct`, { note: 'Two lines on a phone, one on a desktop.' });
+  assert.equal(res.told, false);
+  const now = await h.getTask(waiting.id);
+  assert.match(now.description, /^Make the footer one line\.\n\nCorrection from the boss \(\d{4}-\d\d-\d\d\): Two lines on a phone, one on a desktop\.$/);
+  assert.ok((await h.state()).events.some((e) => e.type === 'task.corrected' && e.taskId === waiting.id && !/was told/.test(e.summary)));
+});
+
+test('a task stopped while it is still being handed over is not started after all', async () => {
+  const eve = (await h.employee('Eve', 'backend', { projectId: project })).id;
+  const task = await h.task({ projectId: project, title: 'Write the banner', assigneeId: eve, description: '@@fake: sleep 2500; say eve-got-the-banner-task@@' });
+  // The hand-over has begun (her session is being started for it) and has not arrived yet.
+  await waitFor(async () => !!(await h.session(eve)), { label: 'her session is being started', timeout: 30000, interval: 10 });
+  const stopped = await h.api<any>('POST', `/tasks/${task.id}/stop`, { then: 'hold', note: 'Not yet.' });
+  assert.equal(stopped.deleted, false);
+  await sleep(6000);
+  const after = await h.getTask(task.id);
+  assert.deepEqual([after.status, after.released], ['BACKLOG', false], 'the hand-over that was on its way did not put it back in progress');
+  const s = await h.session(eve);
+  if (s?.tmuxPane) assert.doesNotMatch(h.tmux('capture-pane', '-p', '-J', '-S', '-80', '-t', s.tmuxPane), /eve-got-the-banner-task/);
+  // She is free for other work, once.
+  const next = await h.task({ projectId: project, title: 'Write the notice', assigneeId: eve, description: '@@fake: say eve-got-the-notice-task; complete-nocode done@@' });
+  await waitFor(async () => (await h.getTask(next.id)).status === 'DONE' || /eve-got-the-notice-task/.test(h.tmux('capture-pane', '-p', '-J', '-S', '-80', '-t', (await h.session(eve))!.tmuxPane!)), { label: 'she takes other work', timeout: 40000 });
+  assert.equal((await h.state()).tasks.filter((t) => t.assigneeId === eve && t.status === 'IN_PROGRESS' && t.id === task.id).length, 0);
 });

@@ -335,6 +335,8 @@ export interface AgentSession {
   controllerId: string | null;
   capabilities: SessionCapabilities;
   permissionMode: string | null;
+  /** The Claude account folder this session's process was started with (null: the machine's default login). Absent on older records. */
+  claudeConfigDir?: string | null;
   /** Which version of the hook commands the session runs with, as its machine's agent reports it (see `HOOKS_VERSION`). */
   hooksVersion?: number;
   model: string | null;

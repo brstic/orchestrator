@@ -224,6 +224,9 @@ When the office could not hold a request for approval (nobody answered in time, 
 - **Evidence is read by the machine's agent, not sent by the model.** `attach_file` may name only a regular file inside the agent's allowed roots, the agent's own folders or the temp folder — and never the agent's or Claude Code's own configuration and credential files there. An employee can still attach a file it should not (a `.env` inside its project): its instructions forbid it, nothing prevents it, and what is attached is visible to everyone who may see the task. **The vault does not look inside files.**
 - **Limits:** 25 MB a file, 30 files a task; an upload that goes quiet for ten minutes is dropped.
 
+### What an employee may attach
+An attachment can be opened by everybody who sees its task, visitors included, and the machine's agent reads the file itself — Claude Code's permission rules are not asked. So `attach_file` takes a file only from the employee's working folder, its browser's folder, the office's own files for it, or a temporary folder, and refuses hidden files and anything named like a key or a credential (`getFile` in `apps/host-agent/src/agent.ts`). Until 2026-11-11 it reached wherever the machine's allowed folders did — on the office's server the whole home folder, with `~/.ssh` and the office's token, vault key and database in it. Nothing in the audit log or on the tasks suggests it was used that way; it was found by a review.
+
 ## A browser for employees
 
 Where Playwright's MCP server is installed on a machine and the office's switch is on (Settings → Employees; on by default), every session there has a headless browser of its own, as the same OS user, with a profile kept in memory for that session only.

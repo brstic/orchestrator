@@ -771,8 +771,10 @@ function StepIn({ task, assignee }: { task: Task; assignee: string | null }) {
   const who = assignee ?? 'the employee';
   const textChanged = editing && (title.trim() !== task.title.trim() || description.trim() !== task.description.trim() || acceptance.trim() !== task.acceptance.trim());
   const correct = async () => {
-    const res = await run(() => api('POST', `/tasks/${task.id}/correct`, { note, now, ...(editing ? { title, description, acceptance } : {}) }), `${who} was told`);
+    const res = await run(() => api<{ told?: boolean }>('POST', `/tasks/${task.id}/correct`, { note, now, ...(editing ? { title, description, acceptance } : {}) }));
     if (res) {
+      // Said as it is: somebody was told, or — nobody is on it right now — it stands on the task for whoever gets it.
+      useOffice.getState().toast(res.told ? `${who} was told` : `Saved on ${task.key}. Nobody is working on it right now, so nobody was told; whoever gets it next will read it.`, 'success');
       setNote('');
       setEditing(false);
     }

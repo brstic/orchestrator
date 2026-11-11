@@ -89,8 +89,10 @@ export class Attachments {
     const size = Number(input.size);
     if (!Number.isInteger(size) || size <= 0) throw new EngineError('the file is empty');
     if (size > MAX_FILE_BYTES) throw new EngineError(`the file is larger than ${MAX_FILE_BYTES / 1024 / 1024} MB; put it on the machine and name its path in the task instead`);
-    if (this.list(task).length >= MAX_FILES_PER_TASK) throw new EngineError(`a task holds at most ${MAX_FILES_PER_TASK} files`);
     for (const [id, u] of this.uploads) if (Date.now() - u.touched > 10 * 60_000) this.abandon(id);
+    // Files on their way count: otherwise any number could be begun while the task still holds few.
+    const onTheirWay = [...this.uploads.values()].filter((u) => u.taskId === taskId).length;
+    if (this.list(task).length + onTheirWay >= MAX_FILES_PER_TASK) throw new EngineError(`a task holds at most ${MAX_FILES_PER_TASK} files`);
     const name = this.freeName(task, safeName(input.name));
     const attachment: TaskAttachment = { id: newId(), name, mime: mimeOf(name), size, kind: 'input', caption: truncate(String(input.caption ?? '').trim(), 300) || null, addedBy: by, addedAt: nowIso(), sha256: null, paths: {} };
     const file = this.fileOf(taskId, attachment.id);
@@ -128,9 +130,35 @@ export class Attachments {
     for (let i = 2; ; i++) if (!taken.has(`${stem}-${i}${ext}`.toLowerCase())) return `${stem}-${i}${ext}`;
   }
 
+  /**
+   * Files in the store that no task lists: uploads that were begun and never finished before the office was
+   * restarted (what is being uploaded is remembered only while it runs). Removed when the office starts.
+   */
+  sweep(): number {
+    if (!this.dir || !fs.existsSync(this.dir)) return 0;
+    let removed = 0;
+    for (const taskId of fs.readdirSync(this.dir)) {
+      const folder = path.join(this.dir, taskId);
+      if (!fs.statSync(folder).isDirectory()) continue;
+      const task = this.core.tasks.get(taskId);
+      const listed = new Set((task?.attachments ?? []).map((a) => a.id));
+      for (const id of fs.readdirSync(folder)) {
+        if (listed.has(id) || this.uploads.has(id)) continue;
+        fs.rmSync(path.join(folder, id), { force: true, recursive: true });
+        removed++;
+      }
+      if (!fs.readdirSync(folder).length) fs.rmSync(folder, { recursive: true, force: true });
+    }
+    return removed;
+  }
+
   /** A complete file joins its task. */
   private add(taskId: string, attachment: TaskAttachment, file: string): TaskAttachment {
     const task = this.core.tasks.require(taskId);
+    if (this.list(task).length >= MAX_FILES_PER_TASK) {
+      fs.rmSync(file, { force: true });
+      throw new EngineError(`a task holds at most ${MAX_FILES_PER_TASK} files`);
+    }
     attachment.sha256 = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
     task.attachments = [...this.list(task), attachment];
     task.history.push({ ts: nowIso(), status: task.status, note: `${attachment.kind === 'evidence' ? 'Evidence added' : 'File attached'}: ${attachment.name}${attachment.caption ? ` — ${attachment.caption}` : ''}`, by: attachment.addedBy.name });

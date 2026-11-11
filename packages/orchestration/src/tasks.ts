@@ -122,6 +122,12 @@ export class TaskManager {
   private eng: Engine;
   private scheduleTimer: NodeJS.Timeout | null = null;
   private startingEmployees = new Set<string>();
+  /**
+   * Tasks that were stopped or removed since their hand-over began. A hand-over waits several times (for the session
+   * to start, for files to be copied, for the memory to answer); when it wakes it must not go on with a task that
+   * somebody took back meanwhile.
+   */
+  private takenBack = new Set<string>();
   private verifying = new Set<string>();
   private mergeChains = new Map<string, Promise<unknown>>();
   private celebrateTimers = new Map<string, NodeJS.Timeout>();
@@ -439,6 +445,8 @@ export class TaskManager {
     const employee = this.core.employees.get(task.assigneeId);
     const wasInProgress = task.status === 'IN_PROGRESS';
     const who = actor === 'owner' ? 'the boss' : actor.replace(/^[a-z]+:/, '');
+    // A hand-over of this task that is still on its way ends here.
+    this.takenBack.add(task.id);
     // The board first: whatever the session says while it is being stopped no longer concerns this task.
     this.eng.comms.cancelFor({ kind: 'task', id: task.id });
     for (const q of this.core.questions.filter((x) => x.taskId === task.id && x.status === 'open' && x.channel !== 'system')) this.eng.comms.supersede(q.id, `${task.key} was stopped.`);
@@ -453,11 +461,16 @@ export class TaskManager {
     this.core.put('task', task);
     let interrupted = false;
     let wip: string | null = null;
-    // Nothing new is handed to them until their folder has been dealt with.
-    if (employee) this.startingEmployees.add(employee.id);
+    // Nothing new is handed to them until their folder has been dealt with. (If something is already being handed
+    // to them, that hand-over holds the place and gives it back itself.)
+    const held = !!employee && !this.startingEmployees.has(employee.id);
+    if (held) this.startingEmployees.add(employee!.id);
     try {
     if (wasInProgress && employee) {
       const running = this.core.runningSessionOf(employee.id);
+      // Somebody whose machine is away for a moment is still there, with this task in their head: they are told
+      // when it is back.
+      const live = running ?? this.core.sessions.find((x) => x.employeeId === employee.id && (x.status === 'starting' || x.status === 'host_offline'));
       interrupted = await this.interruptFor(task, `${task.key} was stopped`);
       // In a worktree of their own, what they had half-done is put away on the task's branch: the folder is clean for
       // the next task (a branch is never switched over uncommitted files), and it is all there if this one is taken
@@ -479,7 +492,7 @@ export class TaskManager {
           wip = 'ask';
         }
       }
-      if (running) {
+      if (live) {
         const left = wip === 'ask' ? `Before anything else, make your folder clean: commit what you have${task.branch ? ` on ${task.branch}` : ''} as work in progress (or discard it if it is worth nothing) — your next task cannot start over uncommitted files.` : wip ? `What you had uncommitted was committed on ${task.branch} as work in progress; your folder is clean.` : `Leave what you have as it is${task.branch ? ` (what you committed stays on ${task.branch})` : ''}.`;
         this.eng.comms.sendMessage({
           from: { kind: 'owner', id: null, name: who },
@@ -491,7 +504,7 @@ export class TaskManager {
       }
     }
     } finally {
-      if (employee) this.startingEmployees.delete(employee.id);
+      if (held) this.startingEmployees.delete(employee!.id);
     }
     this.core.audit(actor, 'task.stopped', task.id, { key: task.key, then, interrupted, note: note || undefined });
     this.core.event({ type: 'task.stopped', source: 'owner', summary: `${task.key} was stopped by ${who}${employee && wasInProgress ? ` (${employee.name} was working on it)` : ''} — ${then === 'delete' ? 'removed' : 'on hold'}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, then, interrupted, note: note || null } });
@@ -504,7 +517,7 @@ export class TaskManager {
    * Correct a task: change what it says and/or say what should be done differently. Whoever is working on it is told
    * at once — interrupted first when `now` is set, otherwise as soon as their turn ends — and goes on with the task.
    */
-  async correctTask(id: string, input: { note?: string | null; title?: string; description?: string; acceptance?: string; now?: boolean }, actor = 'owner'): Promise<Task> {
+  async correctTask(id: string, input: { note?: string | null; title?: string; description?: string; acceptance?: string; now?: boolean }, actor = 'owner'): Promise<Task & { told: boolean }> {
     const task = this.core.tasks.require(id);
     if (task.status === 'DONE') throw new EngineError(`${task.key} is done; make a new task for what should change`);
     const note = truncate(String(input.note ?? '').trim(), 4000);
@@ -525,7 +538,8 @@ export class TaskManager {
     task.updatedAt = nowIso();
     this.core.put('task', task);
     const employee = this.core.employees.get(task.assigneeId);
-    const running = employee ? this.core.runningSessionOf(employee.id) : undefined;
+    // (Running, or on a machine that is away for a moment: the message waits for them.)
+    const running = employee ? (this.core.runningSessionOf(employee.id) ?? this.core.sessions.find((x) => x.employeeId === employee.id && (x.status === 'starting' || x.status === 'host_offline'))) : undefined;
     let told = false;
     if (task.status === 'IN_PROGRESS' && employee && running) {
       const now = changed.length
@@ -544,15 +558,22 @@ export class TaskManager {
         this.eng.comms.schedulePump(employee.id, 300);
       }
     }
+    // Nobody to tell: a note that only stood in the task's history would never be read (the hand-over does not carry
+    // the history). It is written into the task itself, so whoever gets the task next gets it too.
+    if (!told && kept) {
+      task.description = `${task.description.trim()}${task.description.trim() ? '\n\n' : ''}Correction from ${who} (${nowIso().slice(0, 10)}): ${kept}`;
+      this.core.put('task', task);
+    }
     this.core.audit(actor, 'task.corrected', task.id, { key: task.key, changed, told, now: !!input.now });
     this.core.event({ type: 'task.corrected', source: 'owner', summary: `${task.key} was corrected by ${who}${told ? ` — ${employee!.name} was told${input.now ? ' at once' : ''}` : ''}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, changed, told, now: !!input.now, note: truncate(kept, 600) || null } });
     this.schedule();
-    return task;
+    return { ...task, told };
   }
 
   deleteTask(id: string, actor = 'owner'): void {
     const task = this.core.tasks.require(id);
     if (task.status === 'IN_PROGRESS') throw new EngineError('cannot delete a task that is in progress');
+    this.takenBack.add(id);
     for (const t of this.core.tasks.filter((x) => x.dependsOn.includes(id))) {
       t.dependsOn = t.dependsOn.filter((d) => d !== id);
       this.core.put('task', t);
@@ -777,6 +798,9 @@ export class TaskManager {
   async startTask(task: Task): Promise<void> {
     const employee = this.core.employees.require(task.assigneeId!);
     const project = this.core.projects.require(task.projectId);
+    this.takenBack.delete(task.id);
+    /** Was the task stopped, removed or given to somebody else while this hand-over waited? */
+    const takenBack = () => this.takenBack.has(task.id) || !this.core.tasks.get(task.id) || this.core.tasks.get(task.id)!.assigneeId !== employee.id || !this.core.employees.get(employee.id);
     try {
       // Someone lent to this project keeps their own; anyone else moves here with the task.
       if (employee.projectId !== project.id && !employee.alsoProjectIds?.includes(project.id)) {
@@ -848,6 +872,7 @@ export class TaskManager {
         }
       }
       await this.eng.sessions.start(employee.id, { cwd, actor: 'scheduler' });
+      if (takenBack()) return;
 
       task.worktree = cwd;
       task.branch = branch;
@@ -885,8 +910,12 @@ export class TaskManager {
           if (remembered) text += `\n\nFrom the office's memory — earlier work, answers and decisions that look related. They may be out of date: check before you rely on one, and use recall to ask for more.\n${remembered}`;
         }
       }
+      // (Copying the files and asking the memory took a while: the task may have been stopped meanwhile — then the
+      // "stopped" message is what they get, not the task after it.)
+      if (takenBack() || this.core.tasks.get(task.id)?.status !== 'IN_PROGRESS') return;
       this.eng.comms.deliver(employee.id, 'TASK', task.id, { kind: 'task', id: task.id }, text);
     } catch (e) {
+      if (takenBack()) return;
       this.fail(task, (e as Error).message);
     }
   }
