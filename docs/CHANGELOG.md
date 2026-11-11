@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-11
+- **Access and invitation links are pushed and deployed** as build `326f677`; the owner's Mac app was repackaged from it. An app built earlier does not understand a link.
 - **Access: inviting someone is a short link.** The window *Who is here* is now **Access** (Menu → People → Access), and is about one thing: who can come into the office, and as what.
   - **An invitation is a link**, `https://office.example.com/join/K7QF-M2XP-9TRD`, instead of one long text. The person pastes it into the app under *Connect to an office*; the app exchanges the code at the door for its own credential. A link works **once** and for **a week**; the member is listed as "invited · the link works until …" until it is used. In a browser the link is a page that says what to do with it.
   - **New link** replaces *New invitation*; for someone who has already come in it asks first, because it disconnects them.
