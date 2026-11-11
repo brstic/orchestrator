@@ -480,8 +480,16 @@ export class ClientHub {
     this.peopleTimer.unref();
   }
 
-  handle(ws: WebSocket, who: Who = { kind: 'owner', id: 'owner', name: 'Owner', role: 'owner' }, loginKey: string | null = null): void {
+  handle(ws: WebSocket, who: Who = { kind: 'owner', id: 'owner', name: 'Owner', role: 'owner' }, loginKey: string | null = null, until: string | null = null): void {
     if (this.closing) return void ws.terminate();
+    // A window that came in with a sign-in is over when that sign-in runs out (a timer cannot be set further ahead
+    // than about 24 days; a window open for longer than that is closed by the next restart of the office anyway).
+    const left = until ? Date.parse(until) - Date.now() : NaN;
+    if (Number.isFinite(left) && left < 2 ** 31 - 1) {
+      const end = setTimeout(() => ws.close(4003, 'signed out'), Math.max(0, left));
+      end.unref?.();
+      ws.on('close', () => clearTimeout(end));
+    }
     const id = crypto.randomUUID();
     const conn: ClientConn = { id, ws, who, presence: null, said: [], ...(loginKey ? { loginKey } : {}) };
     this.clients.set(id, conn);

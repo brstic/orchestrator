@@ -308,7 +308,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       return;
     }
     const token = tokenOf(req);
-    clients.handle(socket as any, who, token && logins.isSession(token) ? Logins.keyOf(token) : null);
+    const session = token && logins.isSession(token) ? store.checkCredential('guest', token) : null;
+    clients.handle(socket as any, who, session ? Logins.keyOf(token!) : null, session?.expiresAt ?? null);
   });
 
   // ───────────── MCP (authenticated per worker session) ─────────────
@@ -501,6 +502,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/guests/:id/reissue', async (req) => {
       needDoor();
       const { guest, token } = guests.reissue(param(req, 'id'), 'owner', { credential: !officeAddress() });
+      // A new invitation is how an owner takes back what a member came in with — all of it. A password is one of
+      // those ways in (and whoever held the member's credential could have set one), so it goes too.
+      logins.clear(guest.id, actorOf(req));
       invites.drop(guest.id);
       clients.dropGuest(guest.id);
       return { guest, ...invite(guest, token) };

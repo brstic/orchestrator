@@ -146,3 +146,28 @@ test('the office stays away longer than the agent waits for it: Claude Code asks
   const wt = (await h.getTask(task.id)).worktree!;
   await waitFor(() => fs.existsSync(path.join(wt, 'changes.txt')), { label: 'the approved write happened', timeout: 15000 });
 });
+
+test('answered while its machine is away, then the office restarts and the machine no longer holds it: the request is not left "answered" for ever', async () => {
+  ids.Tara = (await h.employee('Tara', 'devops', { projectId: project })).id;
+  const task = await h.task({ projectId: project, title: 'Write the manifest', assigneeId: ids.Tara, kind: 'ops', description: '@@fake: write manifest.txt one; say tara-done@@' });
+  const first = await waitFor(() => one('Tara', 'permission_hook'), { label: 'asked through the hook', timeout: 30000 });
+  await pane('Tara');
+  // The machine's agent goes away for longer than the hook waits for it: Claude Code asks in the terminal.
+  await h.stopAgent();
+  await waitFor(async () => /Do you want to proceed\?/.test(await pane('Tara')), { label: 'the prompt is in the terminal', timeout: 20000 });
+  // The owner, who cannot know, answers the request in the office; then the office is restarted, then the machine is back.
+  await h.api('POST', `/questions/${first.id}/answer`, { decision: 'allow' });
+  assert.equal((await status(first.id)).status, 'answered');
+  const restarting = h.restartServer();
+  await sleep(1500);
+  await h.startAgent();
+  await restarting;
+  const over = await waitFor(async () => (['failed', 'delivered', 'superseded'].includes((await status(first.id)).status) ? status(first.id) : null), { label: 'the request is closed', timeout: 30000 });
+  assert.equal(over.status, 'failed');
+  assert.match(over.deliveryDetail ?? '', /no longer waiting when its machine came back/);
+  assert.ok(!fs.existsSync(path.join((await h.getTask(task.id)).worktree!, 'manifest.txt')), 'the answer that could not be delivered approved nothing');
+  // What stands in the terminal is found there and asked about again.
+  const asked = await waitFor(() => one('Tara', 'terminal'), { label: 'found on the screen', timeout: 20000 });
+  await h.api('POST', `/questions/${asked.id}/answer`, { decision: 'allow' });
+  await waitFor(async () => /tara-done/.test(await pane('Tara')), { label: 'Tara went on', timeout: 20000 });
+});

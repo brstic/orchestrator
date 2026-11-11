@@ -15,6 +15,8 @@ export type ISODate = string;
 export type HostStatus = 'online' | 'offline' | 'revoked';
 
 export interface HostInfo {
+  /** The newest hook commands this machine's agent writes for a session (`HOOKS_VERSION` of its build); absent from older agents. */
+  hooksVersion?: number;
   hostname: string;
   platform: string;
   arch: string;

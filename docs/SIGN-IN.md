@@ -36,7 +36,7 @@ browser ── POST /login {username, password} ──▶ door (4610, TLS) ─�
 - **Stored:** per member a random salt and a scrypt hash (N 16384, r 8, p 1; NFKC first) in the office's store under `logins` — apart from the member records, which are sent to windows. Nothing else. The Access list carries only `hasPassword`.
 - **A session is a credential** like any other of the member, told apart by its label (`login` + a tab — a member's name cannot contain a tab). That is how *Sign out* and a new password end browser sessions without touching the desktop app's own credential.
 - **Limits** (`LOGIN_LIMITS`): 5 wrong passwords in a row close a name for 15 minutes, then 30, … up to a day, with a security notification to the owners; 20 wrong attempts in 10 minutes close an address; 120 attempts a minute from everybody together, and 8 checks computed at once. All in memory — a restart of the office clears them.
-- **What ends a session:** *Sign out* (that one), a changed or removed password (all made with it), a new invitation for the member, removing the member. Ending a session closes the live connections opened with it (`ClientHub.dropLogins`); the page falls back to the sign-in form.
+- **What ends a session:** *Sign out* (that one), a changed or removed password (all made with it), a new invitation for the member (which also **takes the password away** — a new invitation is how an owner takes back everything a member came in with), removing the member, and the 30 days running out. Ending a session closes the live connections opened with it (`ClientHub.dropLogins`); the page falls back to the sign-in form.
 
 ## Where things are
 

@@ -201,6 +201,20 @@ test('five wrong passwords close the name for a while — for the right one too 
   assert.equal((await signIn('Vera', 'vera starts over now')).status, 200);
 });
 
+test('a new invitation takes the password away with everything else the member came in with', async () => {
+  // Whoever held Vera's credential could have given her account a password of their own (a first one needs no proof)…
+  assert.equal((await door('POST', '/api/me/password', { token: invited.Vera, body: { current: 'vera starts over now', password: 'set by whoever held it' } })).status, 200);
+  const held = (await signIn('Vera', 'set by whoever held it')).body.token as string;
+  assert.equal((await door('GET', '/api/me', { token: held })).status, 200);
+  // …so when the owner issues a new invitation, that way in is closed as well.
+  const again = await h.api<any>('POST', `/guests/${ids.Vera}/reissue`, {});
+  assert.equal((await door('GET', '/api/me', { token: held })).status, 401);
+  assert.equal((await door('GET', '/api/me', { token: invited.Vera })).status, 401);
+  assert.equal((await signIn('Vera', 'set by whoever held it')).status, 401);
+  assert.equal(((await h.api<any>('GET', '/sharing')).guests as Array<{ name: string; hasPassword: boolean }>).find((g) => g.name === 'Vera')!.hasPassword, false);
+  invited.Vera = again.invite ? decode(again.invite).t : invited.Vera;
+});
+
 test('an address that keeps guessing names is turned away; another address is not', async () => {
   for (let i = 0; i < 20; i++) assert.equal((await signIn(`somebody ${i}`, 'whatever it is', '203.0.113.9')).status, 401);
   const away = await signIn('Branko', GOOD, '203.0.113.9');

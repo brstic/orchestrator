@@ -72,6 +72,7 @@ In tests the times are short: `approvalWaitSeconds`, `agentCfg.linkGraceSeconds`
 - **The refusal in bypass mode covers `Bash` only**, and it is a shell command in the session's own settings file: it guards against the office's own restarts, not against whoever owns the machine.
 - **A question in the terminal cannot be answered from the office.** Only a permission prompt can.
 - **With the agent switched off, an Unrestricted employee cannot run commands** until it is back.
+- A request answered in the office while its machine was away is delivered when the machine sends the request again; if the machine no longer holds it (the hook gave up meanwhile), the answer approves nothing: the request is closed as failed and the prompt in the terminal is asked about anew.
 - A hook that is retried against an agent that never went away (the connection alone broke) loses its question: the first attempt is reported as abandoned before the second arrives. Not seen; the socket is local.
 - When a machine's last tmux session ends, nothing here depends on pane numbers any more (they start again from `%0`); the start's name does that work.
 

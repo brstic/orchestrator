@@ -186,17 +186,18 @@ export class HostAgent {
     this.info = await this.collectInfo();
     if (!this.info.tmuxVersion) this.log('warn', 'tmux was not found on PATH; sessions cannot be created or attached');
     this.loadState();
-    await this.startHookServer();
-    // Hooks that found nobody here stopped waiting for this agent (`hookCommand`); it is back.
-    fs.rmSync(agentAwayMark(this.p.socket), { force: true });
-    await this.reconcile();
     // Until the office has answered for the first time, a request for a decision waits for it (as after a lost
-    // link): a hook that was in flight while this agent was being restarted comes again at once.
+    // link): a hook that was in flight while this agent was being restarted comes again at once — so this stands
+    // before the socket is opened, not after.
     const graceMs = (this.cfg.linkGraceSeconds ?? 90) * 1000;
     if (graceMs > 0) {
       this.linkGrace = setTimeout(() => this.releaseHeld(), graceMs);
       this.linkGrace.unref();
     }
+    await this.startHookServer();
+    // Hooks that found nobody here stopped waiting for this agent (`hookCommand`); it is back.
+    fs.rmSync(agentAwayMark(this.p.socket), { force: true });
+    await this.reconcile();
     this.connect();
     this.timers.push(setInterval(() => void this.tick(), 2000));
     this.timers.push(setInterval(() => void this.reportResources(), 5000));
@@ -255,6 +256,7 @@ export class HostAgent {
       platform: process.platform,
       arch: process.arch,
       agentVersion: AGENT_VERSION,
+      hooksVersion: HOOKS_VERSION,
       tmuxVersion: await this.tmux.version(),
       claudeVersion: await claudeVersion(this.cfg.claudeBin),
       claudeEffortLevels: await claudeEffortLevels(this.cfg.claudeBin),
@@ -730,6 +732,9 @@ export class HostAgent {
     // Whatever was streaming the previous incarnation's pane is over, whether that pane is reused or gone.
     rt.stream?.close();
     rt.stream = null;
+    // From here on the hooks that count are those of the process started now (its first one may arrive before
+    // this function has finished).
+    if (existing && !sdk) existing.hookLaunch = hookLaunch;
     if (existing && existingPane) {
       // Same tmux session, same pane, scrollback preserved: only the dead process is restarted.
       tmuxSession = existing.tmuxSession;

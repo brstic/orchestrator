@@ -153,13 +153,15 @@ export function hookCommand(opts: { socketPath: string; token: string; sessionId
   // $m: a mark beside the socket that says "the agent has been away for longer than a hook waits". While it is there
   // a hook tries once and does not wait — otherwise every tool call of a session whose agent is switched off would
   // stand for the whole retry time. The first hook that gets through takes the mark away, and so does the agent when it starts.
+  // (The mark is written in a subshell: `:` is a special builtin, and a redirection of it that fails — the folder is
+  // gone, the disk is full — would end a POSIX shell right there, before the refusal below is printed.)
   const refuse = opts.failClosed
     ? ` case "$b" in *'"tool_name":"Bash"'*|*'"tool_name": "Bash"'*) printf '%s' ${shellSingleQuote(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: AGENT_UNREACHABLE_REASON } }))} ;; esac;`
     : '';
   return (
     `b=$(cat); i="$$-$(date +%s)"; t=$(date +%s); n=0; m=${shellSingleQuote(agentAwayMark(opts.socketPath))}; while :; do l=$(( ${opts.maxSeconds} - $(date +%s) + t )); [ "$l" -gt 1 ] || break; ` +
     `o=$(printf '%s' "$b" | curl -sSf --max-time "$l" --unix-socket ${shellSingleQuote(opts.socketPath)} -X POST ${headers} -H "x-orch-hook: $i" -H "x-orch-left: $l" --data-binary @- http://orchestrator/hook 2>/dev/null); c=$?; ` +
-    `if [ "$c" -eq 0 ]; then [ ! -e "$m" ] || rm -f "$m"; printf '%s' "$o"; exit 0; fi; case "$c" in 7|52|56) ;; *) break ;; esac; n=$((n+1)); if [ "$n" -gt ${retry} ] || [ -e "$m" ]; then : > "$m" 2>/dev/null; break; fi; sleep 1; done;${refuse} exit 0`
+    `if [ "$c" -eq 0 ]; then [ ! -e "$m" ] || rm -f "$m"; printf '%s' "$o"; exit 0; fi; case "$c" in 7|52|56) ;; *) break ;; esac; n=$((n+1)); if [ "$n" -gt ${retry} ] || [ -e "$m" ]; then (: > "$m") 2>/dev/null; break; fi; sleep 1; done;${refuse} exit 0`
   );
 }
 

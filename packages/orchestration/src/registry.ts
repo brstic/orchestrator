@@ -1194,7 +1194,11 @@ export class SessionRegistry {
     // A session in bypass mode whose hooks are older than what this office relies on: a command of it that waits for
     // the owner would be run if the machine's agent were restarted meanwhile (see `HOOKS_VERSION`). Its machine's
     // agent says which hooks it has — one that does not say is too old to start it with newer ones, and is left alone.
-    if (hasBypass && typeof s.hooksVersion === 'number' && s.hooksVersion < HOOKS_VERSION) {
+    // (And only up to what that machine's agent can write: one that is itself behind this office would start the
+    // session with the same hooks again, and be asked to restart it for ever. An agent that reports sessions'
+    // versions but not its own writes version 2.)
+    const canWrite = Math.min(HOOKS_VERSION, this.core.hosts.get(s.hostId)?.info?.hooksVersion ?? 2);
+    if (hasBypass && typeof s.hooksVersion === 'number' && s.hooksVersion < canWrite) {
       this.restartWhy.set(s.employeeId, 'the office was updated, and your session has to be started again to work with it');
       return true;
     }

@@ -8,6 +8,8 @@
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { createHarness, waitFor, sleep, type Harness } from './harness.ts';
 
 let h: Harness;
@@ -55,18 +57,58 @@ test('asked again after the answer was given but before it was handed over: the 
 });
 
 test('two identical questions left open from before are one after the office starts; the later one stays', async () => {
+  // Lena is on a task and has asked the same thing twice (as an office from before this fix let her).
+  const task = await h.task({ projectId: project, title: 'Ask it', assigneeId: ids.Lena, description: '@@fake: say lena-started; sleep 6000; ask T-40, two things. (1) Is step B right?; say lena-asked@@' });
+  await waitFor(async () => /lena-started/.test(await pane('Lena')), { label: 'Lena is at work', timeout: 30000 });
   const lena = (await h.state()).employees.find((e) => e.id === ids.Lena)!;
-  const make = () => h.server.engine.comms.createQuestion({ kind: 'decision', channel: 'mcp_tool', employee: lena, session: null, text: 'T-40, two things. (1) Is step B right?', context: '', why: '', options: [] } as any);
-  const first = make();
+  const make = (text: string) => h.server.engine.comms.createQuestion({ kind: 'decision', channel: 'mcp_tool', employee: lena, session: null, text, context: '', why: '', options: [] } as any);
+  const first = make('T-40, two things. (1) Is step B right?');
   await sleep(20);
-  const second = make();
-  const other = h.server.engine.comms.createQuestion({ kind: 'decision', channel: 'mcp_tool', employee: lena, session: null, text: 'T-41: a different question', context: '', why: '', options: [] } as any);
+  const second = make('T-40, two things. (1) Is step B right?');
+  const other = make('T-41: a different question');
+  assert.equal(second.taskId, task.id);
   await h.restartServer();
   const after = Object.fromEntries((await questions('Lena')).map((q) => [q.id, q.status]));
   assert.deepEqual([after[first.id], after[second.id], after[other.id]], ['superseded', 'open', 'open']);
   // Asked once more now (the call that waited was cut off by the restart): it is the one that stayed.
-  await h.task({ projectId: project, title: 'Ask it', assigneeId: ids.Lena, description: '@@fake: ask T-40, two things. (1) Is step B right?; say lena-asked@@' });
   await waitFor(async () => /lena-asked/.test(await pane('Lena')), { label: 'Lena asked again', timeout: 40000 });
   assert.equal((await questions('Lena')).filter((q) => q.status === 'open' && /T-40/.test(q.text)).length, 1);
   assert.equal((await questions('Lena')).length, 3);
+});
+
+test('a call that was cut off is still counted as waiting when the employee asks again: the call that is listening gets the answer', async () => {
+  ids.Ivo = (await h.employee('Ivo', 'backend', { projectId: project })).id;
+  const task = await h.task({ projectId: project, title: 'Pick a port', assigneeId: ids.Ivo, description: '@@fake: say ivo-started; sleep 1200; ask Which port for the dev server?; result got.txt; say ivo-done@@' });
+  await waitFor(async () => /ivo-started/.test(await pane('Ivo')), { label: 'Ivo is at work', timeout: 30000 });
+  // The first call, as the office still holds it after its caller hung up without saying so: a question, and
+  // somebody waiting on it who will mark the answer as returned and tell nobody.
+  const comms = h.server.engine.comms;
+  const ivo = (await h.state()).employees.find((e) => e.id === ids.Ivo)!;
+  const first = comms.createQuestion({ kind: 'question', channel: 'mcp_tool', employee: ivo, session: null, text: 'Which port for the dev server?', context: '', why: '', options: [] } as any);
+  assert.equal(first.taskId, task.id);
+  void comms.waitForAnswer(first.id, 60000).then((a) => a && comms.answerReturnedByTool(first.id));
+  // The same words about another task are another question; about this one, this one.
+  assert.equal(comms.sameQuestion(ids.Ivo!, 'Which port  for the dev server?', 'some-other-task'), undefined);
+  assert.equal(comms.sameQuestion(ids.Ivo!, 'Which port  for the dev server?', task.id)?.id, first.id);
+  // Ivo asks again and waits; the boss answers while he does.
+  // (Two are waiting on the one question now: the call that was cut off, and Ivo's.)
+  await waitFor(() => (comms as unknown as { waiters: Map<string, Set<unknown>> }).waiters.get(first.id)?.size === 2, { label: 'Ivo waits on the same question', timeout: 15000, interval: 20 });
+  await h.api('POST', `/questions/${first.id}/answer`, { answer: 'Port 5173.' });
+  await waitFor(async () => /ivo-done/.test(await pane('Ivo')), { label: 'Ivo went on', timeout: 20000 });
+  const got = fs.readFileSync(path.join((await h.getTask(task.id)).worktree!, 'got.txt'), 'utf8');
+  assert.match(got, /Port 5173\./, 'the call that was listening was given the answer');
+  assert.doesNotMatch(got, /has not answered yet/);
+  assert.equal((await questions('Ivo')).length, 1);
+});
+
+test('a call whose caller hangs up stops waiting', async () => {
+  const comms = h.server.engine.comms;
+  const lena = (await h.state()).employees.find((e) => e.id === ids.Lena)!;
+  const q = comms.createQuestion({ kind: 'question', channel: 'mcp_tool', employee: lena, session: null, text: 'Asked by a call that is cut off', context: '', why: '', options: [] } as any);
+  const cut = new AbortController();
+  const waiting = comms.waitForAnswer(q.id, 60000, cut.signal);
+  assert.equal(comms.hasWaiter(q.id), true);
+  cut.abort();
+  assert.equal(await waiting, null);
+  assert.equal(comms.hasWaiter(q.id), false);
 });

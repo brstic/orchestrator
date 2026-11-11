@@ -147,11 +147,22 @@ export class Comms {
       if (q.hookEventId) this.awaitingRejoin.add(q.id);
       else this.supersede(q.id, 'Orchestrator restarted while this request was pending; Claude Code falls back to its own prompt in the terminal.');
     }
+    // Answered, and the office was restarted before it knew the answer had arrived: if the machine still holds the
+    // hook it sends it again and gets the answer (again); if not, the question is closed when the wait for it ends.
+    for (const q of this.core.questions.filter((x) => x.status === 'answered' && (x.channel === 'permission_hook' || x.channel === 'ask_user_question_hook'))) {
+      if (!q.hookEventId) {
+        this.setStatus(q, 'failed', 'The office was restarted before this answer was known to have arrived.');
+        continue;
+      }
+      this.awaitingRejoin.add(q.id);
+      this.unsentAnswers.add(q.id);
+    }
     if (this.awaitingRejoin.size) this.rejoinTimer('*', this.core.timings.hookRejoinMs ?? 120_000);
+    // (The same employee, the same task, the same words.)
     // The same question asked twice by the same employee (before the office knew to recognise it): one stays.
     const kept = new Set<string>();
     for (const q of this.core.questions.filter((x) => x.status === 'open' && x.channel === 'mcp_tool' && !!x.employeeId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
-      const key = `${q.employeeId}|${q.text.trim().replace(/\s+/g, ' ')}`;
+      const key = `${q.employeeId}|${q.taskId ?? ''}|${q.text.trim().replace(/\s+/g, ' ')}`;
       if (kept.has(key)) this.supersede(q.id, 'The same question was asked again; the later one is the one that waits for the answer.');
       else kept.add(key);
     }
@@ -311,11 +322,12 @@ export class Comms {
    * A question this employee has already put to the boss in the same words and that is still waiting (or answered
    * and not handed over yet). Asking it again is waiting for the same answer.
    */
-  sameQuestion(employeeId: string, text: string): Question | undefined {
+  sameQuestion(employeeId: string, text: string, taskId: string | null): Question | undefined {
     const norm = (t: string) => t.trim().replace(/\s+/g, ' ');
     const wanted = norm(text);
+    // (On the same task: the same sentence asked about another task is another question.)
     return this.core.questions
-      .filter((q) => q.employeeId === employeeId && q.channel === 'mcp_tool' && (q.status === 'open' || q.status === 'answered') && norm(q.text) === wanted)
+      .filter((q) => q.employeeId === employeeId && q.channel === 'mcp_tool' && (q.status === 'open' || q.status === 'answered') && (q.taskId ?? null) === taskId && norm(q.text) === wanted)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   }
 
@@ -395,6 +407,11 @@ export class Comms {
       if (q.status === 'open') this.fellToTerminal(q, 'The office was restarted, or the connection to the machine was lost, while this was pending; Claude Code falls back to its own prompt in the terminal.');
       else if (q.status === 'answered' && this.unsentAnswers.delete(qid)) {
         this.setStatus(q, 'failed', 'Claude Code was no longer waiting when its machine came back; answer the prompt in the terminal instead.');
+        if (q.kind === 'permission' && q.sessionId) this.eng.sessions.promptOnScreen(q.sessionId, true);
+      } else if (q.status === 'answered') {
+        // Sent to the machine just before the connection went; whether it arrived was never heard. If it did, the
+        // tool's own report confirms it later; if not, Claude Code asks in the terminal, and that is found there.
+        this.setStatus(q, 'delivered', 'Sent to the machine before the connection to it was lost; its arrival was not confirmed.');
         if (q.kind === 'permission' && q.sessionId) this.eng.sessions.promptOnScreen(q.sessionId, true);
       }
     }
@@ -502,22 +519,34 @@ export class Comms {
   }
 
   /** Used by the ask_boss tool: resolves when the question is answered, or null on timeout. */
-  waitForAnswer(questionId: string, timeoutMs: number): Promise<Question | null> {
+  waitForAnswer(questionId: string, timeoutMs: number, signal?: AbortSignal): Promise<Question | null> {
     const q = this.core.questions.get(questionId);
     if (!q) return Promise.resolve(null);
     if (q.status !== 'open') return Promise.resolve(q);
+    if (signal?.aborted) return Promise.resolve(null);
     return new Promise((resolve) => {
       let set = this.waiters.get(questionId);
       if (!set) this.waiters.set(questionId, (set = new Set()));
+      const gone = () => {
+        clearTimeout(timer);
+        set!.delete(fn);
+        if (!set!.size && this.waiters.get(questionId) === set) this.waiters.delete(questionId);
+        resolve(null);
+      };
       const fn = (answered: Question) => {
         clearTimeout(timer);
+        signal?.removeEventListener('abort', gone);
         resolve(answered);
       };
       const timer = setTimeout(() => {
+        signal?.removeEventListener('abort', gone);
         set!.delete(fn);
         resolve(null);
       }, timeoutMs);
       timer.unref?.();
+      // The call that was waiting is gone (the caller hung up): nobody listens there any more, and an answer must
+      // not be counted as returned by it.
+      signal?.addEventListener('abort', gone, { once: true });
       set.add(fn);
     });
   }
