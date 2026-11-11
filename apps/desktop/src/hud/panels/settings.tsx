@@ -166,7 +166,9 @@ const KEY_ACTIONS: Array<{ id: string; label: string; hint: string }> = [
   { id: 'strafeRight', label: 'Sidestep right', hint: 'Move sideways without turning' },
   { id: 'interact', label: 'Interact', hint: 'Open the workstation or room you are standing next to' },
   { id: 'talk', label: 'Talk', hint: 'Talk to the employee you are standing next to' },
-  { id: 'whip', label: 'Crack the whip', hint: 'A sound and an animation for the employee next to you — it changes nothing about their work' },
+  { id: 'whip', label: 'Crack the whip', hint: 'A sound and an animation for the employee — or the person — next to you. An owner can make it approve what an employee is waiting for permission to do (Settings → Employees)' },
+  { id: 'voice', label: 'Talk to the people near you (hold)', hint: 'Push to talk: while it is held, your microphone is heard by the people near your character — louder the nearer they stand; a meeting room keeps it in' },
+  { id: 'emotes', label: 'Gestures (hold)', hint: 'A wheel opens: move the mouse to wave, dance, clap… and let go' },
   { id: 'camera', label: 'Next camera mode', hint: 'CEO → first person → management → free → command center' },
   { id: 'overview', label: 'Company overview', hint: 'Toggle the overview panel' },
   { id: 'map', label: 'Office map', hint: 'Toggle the map' },
@@ -178,6 +180,31 @@ const KEY_ACTIONS: Array<{ id: string; label: string; hint: string }> = [
 ];
 
 const MODIFIER_CODES = new Set(['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 'CapsLock']);
+
+/** How this person hears the others talk: theirs to set, on this computer. */
+function VoicePrefs() {
+  const volume = usePrefs((p) => p.prefs.voiceVolume);
+  const muted = usePrefs((p) => p.prefs.voiceMuted);
+  return (
+    <div className="card col" style={{ gap: 8 }}>
+      <div className="section-title" style={{ margin: 0 }}>
+        Voices
+      </div>
+      <div className="small muted">People talk by holding the talk key. You hear whoever is near your character, louder the nearer they stand; what is said in the meeting room is heard only in it. Nothing is recorded.</div>
+      <div className="row" style={{ gap: 12 }}>
+        <label className="small grow" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          Their volume here
+          <input type="range" min={0} max={1} step={0.05} value={volume} disabled={muted} onChange={(ev) => setPrefs({ voiceVolume: Number(ev.target.value) })} aria-label="Volume of other people's voices" style={{ flex: 1 }} />
+          <span className="mono">{Math.round(volume * 100)}%</span>
+        </label>
+        <label className="check small" style={{ alignItems: 'center' }}>
+          <input type="checkbox" checked={muted} onChange={(ev) => savePrefs({ voiceMuted: ev.target.checked }, ev.target.checked ? 'You no longer hear the others talk' : 'You hear the others again')} style={{ marginTop: 0 }} />
+          Do not play them
+        </label>
+      </div>
+    </div>
+  );
+}
 
 function ControlsSection({ capturing, setCapturing }: { capturing: string | null; setCapturing: (id: string | null) => void }) {
   const keys = usePrefs((p) => p.prefs.keybindings);
@@ -241,6 +268,7 @@ function ControlsSection({ capturing, setCapturing }: { capturing: string | null
           ))}
         </div>
       )}
+      <VoicePrefs />
       <div className="row">
         <Button disabled={isDefault} onClick={() => savePrefs({ keybindings: DEFAULT_KEYS }, 'Keybindings reset to defaults')}>
           Reset to defaults
@@ -614,6 +642,10 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                   <Toggle checked={settings.employeesManageBoard !== false} onChange={(employeesManageBoard) => void save({ employeesManageBoard })} title="Employees manage the task board themselves">
                     On: any employee can release a waiting task, unblock one (saying how), give a task to a colleague, review a colleague's finished work, and start a colleague who is needed — so work goes on without you. Off: those are yours.
                     Either way no employee approves a permission request, marks work done without verification, or deletes anything.
+                  </Toggle>
+                  <Toggle checked={settings.whipApproves === true} onChange={(whipApproves) => void save({ whipApproves })} title="The whip approves">
+                    Off: the whip is only for show. On: cracking it at an employee who is waiting for a permission approves that request — for whoever may decide it anyway, and on the record as theirs, like an approval from the Inbox.
+                    It approves whatever they asked: look at the request first.
                   </Toggle>
                   <Toggle checked={settings.accountFailover !== false} onChange={(accountFailover) => void save({ accountFailover })} title="Move employees to another Claude account when theirs runs out">
                     On: when the Claude account an employee runs on has used up its allowance and the same machine has another account with room, the employee is put on that one and their session starts again there, so nobody waits for a reset.

@@ -260,9 +260,27 @@ export type ClientToServer =
   | { t: 'presence'; x: number; z: number; rot: number; moving: boolean }
   /** Something said out loud to the other people in the office (not to employees). */
   | { t: 'say'; text: string }
-  /** Cracking the whip at an employee (a visual gag): everyone in the office sees it. */
-  | { t: 'whip'; employeeId: string }
+  /**
+   * Cracking the whip: at an employee, or at another person standing next to one (`personId`: their window).
+   * Everyone in the office sees it. At an employee who is waiting for a permission it also approves that request —
+   * when the office's owners switched that on (`OwnerSettings.whipApproves`) and this person may decide it.
+   */
+  | { t: 'whip'; employeeId?: string; personId?: string }
+  /** A gesture of this person's character (the wheel): everyone in the office sees it. */
+  | { t: 'emote'; name: EmoteName }
+  /**
+   * A frame of this person's voice while they hold the talk key: 40 ms of 16 kHz mono, one byte a sample (µ-law),
+   * as base64. Passed on to those within earshot (the server's `voice.ts`) and kept nowhere.
+   */
+  | { t: 'voice'; seq: number; data: string }
+  /** They let go of the talk key. */
+  | { t: 'voice.end' }
   | { t: 'ping' };
+
+/** What a person's character can do on request (the gesture wheel), in the order the wheel shows them. */
+export const EMOTES = ['wave', 'dance', 'clap', 'thumbsUp', 'shrug', 'point', 'cheer', 'bow'] as const;
+export type EmoteName = (typeof EMOTES)[number];
+export const isEmote = (name: unknown): name is EmoteName => typeof name === 'string' && (EMOTES as readonly string[]).includes(name);
 
 /** Who a connected person is: the owner, or a guest with a role. */
 export interface Me {
@@ -317,8 +335,17 @@ export type ServerToClient =
   | { t: 'said'; from: ChatFrom; text: string; ts: string }
   /** What was said in the office lately, for someone who has just walked in. */
   | { t: 'chat.history'; lines: Array<{ from: ChatFrom; text: string; ts: string; emote?: boolean }> }
-  /** Someone cracked the whip at an employee. */
-  | { t: 'whipped'; from: ChatFrom; employeeId: string; ts: string }
+  /**
+   * Someone cracked the whip: at an employee, or at another person (`personId`: that person's window).
+   * `approved`: how many permission requests of that employee the crack approved (absent: none).
+   */
+  | { t: 'whipped'; from: ChatFrom; employeeId?: string; personId?: string; approved?: number; ts: string }
+  /** Someone's character made a gesture. */
+  | { t: 'emoted'; from: ChatFrom; name: EmoteName; ts: string }
+  /** A frame of someone's voice (`from`: their window), sent only to those within earshot. */
+  | { t: 'voice'; from: string; seq: number; data: string }
+  /** They stopped talking. */
+  | { t: 'voice.end'; from: string }
   | { t: 'entity'; kind: EntityKind; op: 'upsert' | 'remove'; data: any }
   | { t: 'event'; event: OrchestratorEvent }
   | { t: 'term.snapshot'; snapshot: TerminalSnapshot }

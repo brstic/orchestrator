@@ -1463,6 +1463,12 @@ export interface OwnerSettings {
    */
   longMemory?: boolean;
   /**
+   * false (default): the whip is a gag — a sound and a flinch, and nothing else. true: cracking it at an employee who
+   * is waiting for a permission approves that request, for whoever may decide it anyway (it is on the record as
+   * theirs, like an approval from the Inbox). Off unless an owner switches it on: a joke must not approve a command.
+   */
+  whipApproves?: boolean;
+  /**
    * true (default): when the Claude account an employee runs on has used up its allowance and another account on the
    * same machine has room, the office puts the employee on that one and restarts their session there. false: they
    * wait for the account to reset.

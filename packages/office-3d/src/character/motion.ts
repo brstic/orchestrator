@@ -26,7 +26,15 @@ export type PoseName =
   /** One-shot hit reaction layered over whatever the character was doing; eases back by itself within ~0.9 s. */
   | 'ouch'
   /** One-shot whip crack with the right arm (~0.7 s) layered over whatever the character was doing. */
-  | 'whip';
+  | 'whip'
+  /** A gesture a person asked their character to make (the wheel), layered over the standing body for a few seconds. */
+  | EmotePose;
+
+/** The gestures of the wheel, by the names the office passes around (`EMOTES` in contracts). */
+export type EmotePose = 'wave' | 'dance' | 'clap' | 'thumbsUp' | 'shrug' | 'point' | 'cheer' | 'bow';
+/** How long each gesture lasts, in seconds: it eases in, plays, and eases back into standing by itself. */
+export const EMOTE_SECONDS: Record<EmotePose, number> = { wave: 2.6, dance: 6.5, clap: 2.8, thumbsUp: 2.2, shrug: 1.9, point: 2.2, cheer: 2.8, bow: 2.3 };
+export const isEmotePose = (name: string): name is EmotePose => Object.prototype.hasOwnProperty.call(EMOTE_SECONDS, name);
 
 /** How a character on its feet is moving, in its own frame of reference. Written by the owner of the transform, read here every frame. */
 export interface Motion {
@@ -1097,6 +1105,136 @@ export function ouch(o: Pose, tau: number): void {
   o.sRz -= Math.abs(ja) * 0.6;
   o.eL -= ja * 0.5;
   o.eR -= ja * 0.5;
+}
+
+/**
+ * A gesture, layered over the standing body: `tau` seconds since it began. It eases in over a fifth of a second and
+ * out over the last third, so it grows out of however the person stood and settles back into it. Only the upper
+ * body, the head and the sway of the hips are touched: the feet stay where the gait put them.
+ */
+export function emote(o: Pose, name: EmotePose, tau: number): void {
+  const len = EMOTE_SECONDS[name];
+  const w = smooth(0, 0.22, tau) * (1 - smooth(len - 0.35, len, tau));
+  if (w <= 0) return;
+  const s = Math.sin;
+  /** Move a joint toward a value by the gesture's weight. */
+  const to = (k: keyof Pose, v: number) => {
+    o[k] = lerp(o[k], v, w);
+  };
+  switch (name) {
+    case 'wave': {
+      // The right arm up beside the head, the forearm swinging from the elbow; a small tilt of the head toward it.
+      const wag = s(tau * 9.5);
+      to('sRx', -2.55);
+      to('sRz', -0.42 + wag * 0.16);
+      to('tR', 0);
+      to('eR', -0.55 + wag * 0.4);
+      o.headRoll += -0.08 * w;
+      o.side += -0.04 * w;
+      break;
+    }
+    case 'dance': {
+      // Two beats a second: the arms pump in turn, the trunk twists against the hips, the head nods on the beat.
+      const b = s(tau * TAU * 1.0);
+      const b2 = s(tau * TAU * 2.0);
+      to('sLx', -1.15 + b * 0.55);
+      to('sLz', 0.3);
+      to('tL', 0.35);
+      to('eL', -1.5 + b * 0.25);
+      to('sRx', -1.15 - b * 0.55);
+      to('sRz', -0.3);
+      to('tR', 0.35);
+      to('eR', -1.5 - b * 0.25);
+      o.twist += b * 0.34 * w;
+      o.pelYaw += -b * 0.16 * w;
+      o.side += b * 0.09 * w;
+      o.pelRoll += -b * 0.07 * w;
+      o.hipX += b * 0.025 * w;
+      o.shrug += Math.abs(b2) * 0.012 * w;
+      o.headPitch += (0.05 + b2 * 0.07) * w;
+      o.headYaw += -b * 0.2 * w;
+      break;
+    }
+    case 'clap': {
+      // Both forearms in front of the chest, the hands meeting six times a second.
+      const c = 0.5 + 0.5 * s(tau * TAU * 3.2);
+      to('sLx', -1.05);
+      to('sLz', -0.02 - c * 0.2);
+      to('tL', 0.95);
+      to('eL', -1.45);
+      to('sRx', -1.05);
+      to('sRz', 0.02 + c * 0.2);
+      to('tR', 0.95);
+      to('eR', -1.45);
+      o.headPitch += -0.06 * w;
+      o.lean += 0.03 * w;
+      break;
+    }
+    case 'thumbsUp': {
+      // The right fist forward at chest height, held; a nod with it.
+      const nod = s(Math.min(tau, 1.2) * TAU * 1.2) * (1 - smooth(0.9, 1.3, tau));
+      to('sRx', -1.25);
+      to('sRz', -0.14);
+      to('tR', 0.25);
+      to('eR', -0.95);
+      o.lean += 0.04 * w;
+      o.headPitch += (0.05 + nod * 0.1) * w;
+      break;
+    }
+    case 'shrug': {
+      // Shoulders to the ears, forearms out with the palms up, the head to one side.
+      const up = smooth(0.1, 0.5, tau) * (1 - smooth(1.2, 1.7, tau));
+      o.shrug += 0.055 * up * w;
+      to('sLx', -0.35);
+      to('sLz', 0.42);
+      to('tL', -0.55);
+      to('eL', -1.35);
+      to('sRx', -0.35);
+      to('sRz', -0.42);
+      to('tR', -0.55);
+      to('eR', -1.35);
+      o.headRoll += 0.16 * w;
+      o.headPitch += -0.05 * w;
+      break;
+    }
+    case 'point': {
+      // The right arm straight out in front, the body turned a little behind it.
+      to('sRx', -1.5);
+      to('sRz', -0.06);
+      to('tR', 0);
+      to('eR', -0.06);
+      o.twist += 0.14 * w;
+      o.lean += 0.05 * w;
+      o.headPitch += -0.03 * w;
+      break;
+    }
+    case 'cheer': {
+      // Both arms thrown up, pumping.
+      const p = Math.abs(s(tau * TAU * 1.8));
+      to('sLx', -2.7 - p * 0.18);
+      to('sLz', 0.42);
+      to('tL', 0);
+      to('eL', -0.3 - p * 0.25);
+      to('sRx', -2.7 - p * 0.18);
+      to('sRz', -0.42);
+      to('tR', 0);
+      to('eR', -0.3 - p * 0.25);
+      o.headPitch += -0.22 * w;
+      o.lean += -0.06 * w;
+      o.shrug += p * 0.02 * w;
+      break;
+    }
+    case 'bow': {
+      // Forward from the hips and up again, arms at the sides.
+      const down = smooth(0.15, 0.75, tau) * (1 - smooth(1.35, 2.0, tau));
+      o.lean += 0.72 * down * w;
+      o.headPitch += 0.28 * down * w;
+      o.hipZ += -0.05 * down * w;
+      to('sLx', lerp(o.sLx, 0.1, down));
+      to('sRx', lerp(o.sRx, 0.1, down));
+      break;
+    }
+  }
 }
 
 /** Whip timeline, seconds from the start of the pose: wound up, arm snapped forward, and (a moment later, as the wave reaches the tip) the crack. */

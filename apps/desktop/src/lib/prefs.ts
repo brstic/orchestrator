@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { OwnerSettings } from '@orchestrator/contracts';
 import { useOffice } from './store.ts';
+import { voiceHooks } from './voice.ts';
 
 /**
  * What belongs to this person on this computer, not to the office: how the 3D office is drawn, which keys
@@ -20,6 +21,10 @@ export interface ClientPrefs {
   radioVolume: number;
   /** This person has switched their own copy of the hi-fi off; the office's hi-fi plays on for the others. */
   radioMuted: boolean;
+  /** How loud this person hears other people talking, 0–1 (how near they stand is counted on top of it). */
+  voiceVolume: number;
+  /** This person does not want to hear the others talk; they are still heard by the others when they hold the talk key. */
+  voiceMuted: boolean;
 }
 
 export const DEFAULT_KEYS: Record<string, string> = {
@@ -32,6 +37,8 @@ export const DEFAULT_KEYS: Record<string, string> = {
   interact: 'Space',
   talk: 'KeyF',
   whip: 'KeyR',
+  voice: 'KeyV',
+  emotes: 'KeyB',
   overview: 'Tab',
   map: 'KeyM',
   tasks: 'KeyT',
@@ -42,7 +49,7 @@ export const DEFAULT_KEYS: Record<string, string> = {
   exit: 'Escape',
 };
 
-export const DEFAULT_PREFS: ClientPrefs = { quality: 'medium', keybindings: DEFAULT_KEYS, projectZones: false, approachZoom: false, radioVolume: 0.6, radioMuted: false };
+export const DEFAULT_PREFS: ClientPrefs = { quality: 'medium', keybindings: DEFAULT_KEYS, projectZones: false, approachZoom: false, radioVolume: 0.6, radioMuted: false, voiceVolume: 1, voiceMuted: false };
 
 export type PrefsPatch = Partial<ClientPrefs>;
 
@@ -70,6 +77,8 @@ function clean(raw: unknown, base: ClientPrefs = DEFAULT_PREFS): ClientPrefs | n
     approachZoom: typeof r.approachZoom === 'boolean' ? r.approachZoom : base.approachZoom,
     radioVolume: typeof r.radioVolume === 'number' && Number.isFinite(r.radioVolume) ? Math.min(1, Math.max(0, r.radioVolume)) : base.radioVolume,
     radioMuted: typeof r.radioMuted === 'boolean' ? r.radioMuted : base.radioMuted,
+    voiceVolume: typeof r.voiceVolume === 'number' && Number.isFinite(r.voiceVolume) ? Math.min(1, Math.max(0, r.voiceVolume)) : base.voiceVolume,
+    voiceMuted: typeof r.voiceMuted === 'boolean' ? r.voiceMuted : base.voiceMuted,
   };
 }
 
@@ -81,7 +90,7 @@ const RADIO_KEY = 'orch.prefs.radio';
 function radioFallback(): Record<string, unknown> {
   try {
     const kept = JSON.parse(window.localStorage.getItem(RADIO_KEY) ?? 'null');
-    return kept && typeof kept === 'object' ? { radioVolume: kept.radioVolume, radioMuted: kept.radioMuted } : {};
+    return kept && typeof kept === 'object' ? { radioVolume: kept.radioVolume, radioMuted: kept.radioMuted, voiceVolume: kept.voiceVolume, voiceMuted: kept.voiceMuted } : {};
   } catch {
     return {};
   }
@@ -107,7 +116,7 @@ function write(prefs: ClientPrefs): void {
     const b = bridge();
     if (b) {
       void b.set(prefs).catch(() => undefined);
-      window.localStorage.setItem(RADIO_KEY, JSON.stringify({ radioVolume: prefs.radioVolume, radioMuted: prefs.radioMuted }));
+      window.localStorage.setItem(RADIO_KEY, JSON.stringify({ radioVolume: prefs.radioVolume, radioMuted: prefs.radioMuted, voiceVolume: prefs.voiceVolume, voiceMuted: prefs.voiceMuted }));
     } else window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
   } catch {
     /* storage is not available (a private window): the choice still holds until the page is closed */
@@ -159,6 +168,12 @@ export function loadPrefs(): void {
     });
   });
 }
+
+// How loud other people's voices are played here: this computer's own choice.
+voiceHooks.volume = () => {
+  const p = usePrefs.getState().prefs;
+  return p.voiceMuted ? 0 : p.voiceVolume;
+};
 
 // For probes and the UI tests, like `window.__office`.
 (window as any).__orchPrefs = usePrefs;

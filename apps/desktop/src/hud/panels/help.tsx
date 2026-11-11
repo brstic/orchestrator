@@ -93,7 +93,15 @@ function HelpPanel({ onClose }: PanelProps) {
             <dt>
               <Key>{k('whip')}</Key>
             </dt>
-            <dd>Crack the whip. Only for show: nothing reaches the employee.</dd>
+            <dd>Crack the whip at the employee — or the person — next to you. For show; an owner can make it approve what an employee is waiting for permission to do.</dd>
+            <dt>
+              <Key>{k('voice')}</Key> (hold)
+            </dt>
+            <dd>Talk: the people near your character hear you, louder the nearer they stand. What is said in the meeting room stays in it.</dd>
+            <dt>
+              <Key>{k('emotes')}</Key> (hold)
+            </dt>
+            <dd>Gestures: a wheel opens — move the mouse to wave, dance, clap, bow… and let go.</dd>
           </dl>
         </section>
 

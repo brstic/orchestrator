@@ -6,6 +6,8 @@ export * from './layout-edit.ts';
 export { withMemberRooms, memberRoomTitle, memberDeskCount, MEMBER_DESK_CAP, type EffectiveLayout, type MemberHost, type MemberOffice, type MemberRoom } from './member-rooms.ts';
 export { ownerPosition } from './Rig.tsx';
 export { HIFI_FAR, HIFI_FLOOR, HIFI_NEAR, hifiFalloff, hifiLoudnessAt, hifiPosition } from './hifi-sound.ts';
+export { VOICE_FAR, VOICE_NEAR, voiceFalloff } from './voice-sound.ts';
+export { EMOTE_SECONDS, isEmotePose, type EmotePose } from './character/motion.ts';
 export { drawScreen, parseSgrLine } from './terminal-texture.ts';
 export type { TvFrames, TvView } from './TV.tsx';
 export type { HumanView } from './Humans.tsx';

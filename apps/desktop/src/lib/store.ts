@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type {
+  EmoteName,
   AccountUsage,
   AgentSession,
   Artifact,
@@ -33,6 +34,7 @@ import type {
 import { b64decode } from '@orchestrator/contracts';
 import { api, connection, type ConnState } from './api.ts';
 import { playKnock, playOuch, playReply, playWhip } from './sfx.ts';
+import { hearVoice, heardEnd, voiceHooks } from './voice.ts';
 
 export type PanelId =
   | 'tasks'
@@ -146,6 +148,19 @@ export interface OfficeState {
   knocks: KnockView[];
   /** When each other person in the office last cracked the whip (by their window id): their character swings. */
   peopleWhips: Record<string, number>;
+  /** When a whip lands on another person (by their window id): their character flinches. `ouchAt` is the same for this window's own. */
+  peopleOuch: Record<string, number>;
+  ouchAt: number;
+  /** Crack the whip at another person standing next to this one. A gag, like the one for employees. */
+  whipPerson: (personId: string) => void;
+  /** The gesture this person's character last made (the wheel), and other people's by their window id. */
+  emote: { name: string; at: number } | null;
+  peopleEmotes: Record<string, { name: string; at: number }>;
+  doEmote: (name: EmoteName) => void;
+  /** Push to talk: this window is sending its microphone; how loud it is (0…1); and who is being heard here right now. */
+  talking: boolean;
+  micLevel: number;
+  speaking: Record<string, true>;
   say: (text: string) => void;
   /** The employee the owner is carrying to another desk (walk to a desk and press the interact key), or null. */
   movingEmployeeId: string | null;
@@ -238,6 +253,13 @@ function index<T extends { id: string }>(list: T[]): ById<T> {
 }
 
 let toastId = 0;
+
+/** A voice of one's own for the yelp: the same every time for the same employee or person, different from one to the next. */
+function pitchOf(id: string): number {
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return (h % 1000) / 1000;
+}
 let focusN = 0;
 
 const WAITING_KEY = 'orch.talk-waiting';
@@ -346,6 +368,25 @@ export const useOffice = create<OfficeState>((set, get) => ({
   setMoving: (employeeId) => set({ movingEmployeeId: employeeId }),
   tvOpen: (url) => set((s) => ({ tv: { ...s.tv, on: true, goto: url ? { url, n: (s.tv.goto?.n ?? 0) + 1 } : s.tv.goto }, panel: 'tv', panelArg: null })),
   tvOff: () => set((s) => ({ tv: { on: false, goto: null, page: null }, panel: s.panel === 'tv' ? null : s.panel })),
+  peopleOuch: {},
+  ouchAt: 0,
+  whipPerson: (personId) => {
+    const now = Date.now();
+    if (now - get().whipAt < 650) return;
+    set((s) => ({ whipAt: now, peopleOuch: { ...s.peopleOuch, [personId]: now + 230 } }));
+    connection.send({ t: 'whip', personId });
+    playWhip();
+    playOuch(pitchOf(personId));
+  },
+  emote: null,
+  peopleEmotes: {},
+  doEmote: (name) => {
+    set({ emote: { name, at: Date.now() } });
+    connection.send({ t: 'emote', name });
+  },
+  talking: false,
+  micLevel: 0,
+  speaking: {},
   whips: {},
   whipAt: 0,
   whip: (employeeId) => {
@@ -357,9 +398,7 @@ export const useOffice = create<OfficeState>((set, get) => ({
     connection.send({ t: 'whip', employeeId });
     playWhip();
     // Everyone yelps in their own voice.
-    let h = 0;
-    for (const ch of employeeId) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    playOuch((h % 1000) / 1000);
+    playOuch(pitchOf(employeeId));
   },
 
   panel: null,
@@ -511,21 +550,47 @@ function handle(msg: ServerToClient): void {
       break;
     case 'whipped': {
       const st = useOffice.getState();
-      const victim = st.employees[msg.employeeId];
-      const line = { id: `w-${msg.ts}-${msg.from.id}`, fromId: msg.from.id, name: msg.from.name, role: msg.from.role, hue: msg.from.hue, text: `cracks the whip at ${victim?.name ?? 'someone'}`, ts: msg.ts, emote: true, at: Date.now() };
-      if (msg.from.id === st.clientId) {
+      const mine = msg.from.id === st.clientId;
+      const now = Date.now();
+      const say = (text: string) => ({ id: `w-${msg.ts}-${msg.from.id}`, fromId: msg.from.id, name: msg.from.name, role: msg.from.role, hue: msg.from.hue, text, ts: msg.ts, emote: true, at: now });
+      if (msg.personId) {
+        // At a person. The one it was meant for flinches — in every window, their own included.
+        const atMe = msg.personId === st.clientId;
+        const line = say(`cracks the whip at ${atMe ? 'you' : (st.people.find((p) => p.id === msg.personId)?.name ?? 'someone')}`);
+        const personId = msg.personId;
         // My own crack: already swung and heard here; only the line for the chat.
-        useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), line] }));
+        if (mine) {
+          useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), line] }));
+          break;
+        }
+        useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), line], peopleWhips: { ...s.peopleWhips, [msg.from.id]: now }, ...(atMe ? { ouchAt: now + 230 } : { peopleOuch: { ...s.peopleOuch, [personId]: now + 230 } }) }));
+        playWhip();
+        playOuch(pitchOf(personId));
         break;
       }
-      const now = Date.now();
-      useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), line], peopleWhips: { ...s.peopleWhips, [msg.from.id]: now }, whips: { ...s.whips, [msg.employeeId]: now + 230 } }));
+      const employeeId = msg.employeeId ?? '';
+      const victim = st.employees[employeeId];
+      const line = say(`cracks the whip at ${victim?.name ?? 'someone'}${msg.approved ? ` — and approves what ${msg.approved === 1 ? 'was' : 'they'} asked` : ''}`);
+      if (mine) {
+        useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), line] }));
+        if (msg.approved) st.toast(`Approved: ${victim?.name ?? 'they'} can go on`, 'success');
+        break;
+      }
+      useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), line], peopleWhips: { ...s.peopleWhips, [msg.from.id]: now }, whips: { ...s.whips, [employeeId]: now + 230 } }));
       playWhip();
-      let h = 0;
-      for (const ch of msg.employeeId) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-      playOuch((h % 1000) / 1000);
+      playOuch(pitchOf(employeeId));
       break;
     }
+    case 'emoted':
+      // Someone's character made a gesture. (My own already plays here.)
+      if (msg.from.id !== useOffice.getState().clientId) useOffice.setState((s) => ({ peopleEmotes: { ...s.peopleEmotes, [msg.from.id]: { name: msg.name, at: Date.now() } } }));
+      break;
+    case 'voice':
+      hearVoice(msg.from, msg.data);
+      break;
+    case 'voice.end':
+      heardEnd(msg.from);
+      break;
     case 'said':
       useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), { id: `${msg.ts}-${msg.from.id}-${s.chat.length}`, fromId: msg.from.id, name: msg.from.name, role: msg.from.role, hue: msg.from.hue, text: msg.text, ts: msg.ts, at: Date.now() }] }));
       break;
@@ -647,3 +712,23 @@ export async function loadAccounts(): Promise<void> {
     bridge.onState((myHost) => useOffice.setState({ myHost }));
   }
 }
+
+// Talking in the office: `voice.ts` plays and sends; what it needs to know about the office comes from here.
+voiceHooks.people = () => useOffice.getState().people;
+voiceHooks.speaking = (clientId, on) =>
+  useOffice.setState((s) => {
+    if (on === !!s.speaking[clientId]) return s;
+    const speaking = { ...s.speaking };
+    if (on) speaking[clientId] = true;
+    else delete speaking[clientId];
+    return { speaking };
+  });
+voiceHooks.talking = (on, error) => {
+  useOffice.setState({ talking: on, ...(on ? {} : { micLevel: 0 }) });
+  if (error) useOffice.getState().toast(error, 'error');
+};
+voiceHooks.level = (level) => {
+  // Ten steps are plenty for a light, and spare the page a re-render for every frame of sound.
+  const step = Math.min(1, Math.round(level * 40) / 10);
+  if (step !== useOffice.getState().micLevel) useOffice.setState({ micLevel: step });
+};

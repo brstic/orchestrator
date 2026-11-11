@@ -99,6 +99,11 @@ The hi-fi plays for the whole office, so what is on is the office's, not a windo
 - **Owners** keep the list of stations (it is in the settings: **admin**). A play request names one of the saved stations; an address that is not on the list is refused, so nobody can make the other windows load an address of their choosing.
 - Who switched it is shown to everyone (the member's name) and, for members, is in the audit log like any other change.
 
+### Talking, gestures and the whip between people
+- **Everyone with a character in the office** — visitors included — may talk (push-to-talk), make gestures and crack the whip at a person nearby. None of it changes anything in the office, so it needs no level; each is rate-limited per window.
+- **A voice is passed only to those in earshot**: within range of the speaker and on the same side of a closed meeting room's walls. The office decides it per frame from where the characters stand; a window without a character neither speaks nor hears.
+- **The whip approving** (Settings → Employees → *The whip approves*, an owner's setting, off by default) answers only the permission questions the whipper may answer anyway: the same check as the Allow button (level **work**, not a visitor; not in someone's closed room; a personal employee only by its member or an owner). For anyone else the crack stays a crack.
+
 ### What is said on a member's own computer
 Feed events about a member's own employees (they carry what the employee replied), messages to and from them and their questions are sent only to that member and to owners: filtered in `GET /api/state`, `GET /api/events`, the `ready` state and the live `event` / `entity` messages (`stateFor`, `mayReadEvent`, `mayReadMessage`, `mayReadQuestion` in `access.ts`). The same goes for their **routines** (what they are told to repeat): `mayReadRoutine`, in the state, in `GET /api/routines` and on the live connection. A routine is whose its employee is: a colleague sets routines for shared employees and for those on their own computer; the foreman's are the owners'. The sleep setting (Settings → Employees) is an office setting: owners only. Not yet filtered: their tasks, notifications and artifacts.
 

@@ -220,6 +220,7 @@ const DEFAULT_SETTINGS: OwnerSettings = {
   employeesManageBoard: true,
   longMemory: true,
   accountFailover: true,
+  whipApproves: false,
   autoAsksHighRisk: true,
   projectZones: false,
   approachZoom: false,
