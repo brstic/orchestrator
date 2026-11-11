@@ -103,6 +103,17 @@ test('a member brings a server into the office: it is theirs, by name, and priva
   assert.equal((await door('Jovan', 'POST', `/api/employees/${rex}/message`, { body: 'Leave a note. @@fake: write note.txt from-rex; say noted@@' })).status, 200);
   await waitFor(() => fs.existsSync(path.join(folder, 'note.txt')), { label: 'the work happened on his server', timeout: 30000 });
   await waitFor(async () => (await h.session(rex))?.inTurn === false, { label: 'Rex idle' });
+  // His room is his, not a machine's: someone on his server can be given a seat in it — the room is named after his
+  // computer — but not a desk of the shared office, and not a seat in a room that is not his.
+  const seat = `m:${laptop.hostId}:4`;
+  const seated = await door('Jovan', 'POST', '/api/employees', { name: 'Seated On Server', roleKey: 'qa', hostId: server.hostId, workingDir: folder, deskId: seat });
+  assert.deepEqual([seated.status, seated.body.deskId, seated.body.hostId], [200, seat, server.hostId], JSON.stringify(seated.body).slice(0, 200));
+  assert.match((await door('Jovan', 'POST', '/api/employees', { name: 'Twice', hostId: server.hostId, deskId: seat })).body.error, /desk is taken/);
+  assert.match((await door('Jovan', 'POST', '/api/employees', { name: 'Shared Desk', hostId: server.hostId, deskId: 'a-a' })).body.error, /not in this member's room/);
+  assert.match((await door('Jovan', 'POST', '/api/employees', { name: 'Wrong Room', hostId: server.hostId, deskId: 'm:someone-else:1' })).body.error, /not in this member's room/);
+  assert.equal((await door('Jovan', 'PATCH', `/api/employees/${rex}`, { deskId: `m:${laptop.hostId}:6` })).body.deskId, `m:${laptop.hostId}:6`, 'and moved to another seat there');
+  assert.equal((await door('Jovan', 'PATCH', `/api/employees/${rex}`, { deskId: null })).status, 200);
+
   // Another member cannot share or remove it; neither can a visitor.
   assert.equal((await door('Ana', 'PATCH', `/api/me/servers/${server.hostId}`, { shared: true })).status, 403);
   assert.equal((await door('Ana', 'DELETE', `/api/me/servers/${server.hostId}`)).status, 403);

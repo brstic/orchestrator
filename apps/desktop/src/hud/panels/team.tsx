@@ -294,7 +294,7 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
         </div>
       )}
       <div className="section-title" style={{ margin: 0 }}>
-        {self ? 'The folder to open' : '2 · Their folder'} {place.mine ? 'on your computer' : `on ${place.host.name}`}
+        {self ? 'The folder to open' : '2 · Their folder'} {place.mine && !place.host.ownerId ? 'on your computer' : `on ${place.host.name}`}
       </div>
       <Field label={self ? 'Claude Code starts in this folder' : 'Folder they live in'} hint={projectId ? `They join the shared project "${project?.name}", so they get their own worktree instead of a folder.` : undefined} wide>
         <FolderField value={workingDir} onChange={setWorkingDir} host={host} disabled={!!projectId} />
@@ -414,7 +414,8 @@ function TeamPanel({ arg, onClose }: PanelProps) {
   // A desk decides the place: a seat in my room is on my computer, a desk in the office is on a shared machine.
   const seatHost = memberSeatOf(atDesk)?.hostId;
   const only = atDesk ? (seatHost ? 'mine' : 'shared') : undefined;
-  const places = only ? allPlaces.filter((p) => (only === 'mine' ? p.mine && p.host.id === seatHost : !p.mine)) : allPlaces;
+  // (A seat in my room goes with the computer it is named after, or with any server of mine: who works there sits in my room too.)
+  const places = only ? allPlaces.filter((p) => (only === 'mine' ? p.mine && (p.host.id === seatHost || !!p.host.ownerId) : !p.mine)) : allPlaces;
   const [where, setWhere] = useState('');
   const place = places.find((p) => p.host.id === where) ?? (places.length === 1 ? places[0] : undefined);
   // Sitting down oneself: once the session exists, open its terminal and take the keyboard.
@@ -476,7 +477,7 @@ function TeamPanel({ arg, onClose }: PanelProps) {
           </>
         ) : (
           <div className="small muted" style={{ marginBottom: 12 }}>
-            {place.mine ? `On your computer (${place.host.name}), in your room.` : `In the shared office, on ${place.host.name}.`}
+            {place.mine ? (place.host.ownerId ? `On your server ${place.host.name}, in your room.` : `On your computer (${place.host.name}), in your room.`) : `In the shared office, on ${place.host.name}.`}
           </div>
         )}
         {!place ? (

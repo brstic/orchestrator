@@ -1,4 +1,4 @@
-import { ACTIVITY_LABEL, formatDuration, memberSeatOf, roleByKey } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, formatDuration, memberSeatOf, roleByKey, type Host } from '@orchestrator/contracts';
 import { deskPods, withMemberRooms, type ForemanView, type MemberOffice, type BoardView, type CeoView, type HostView, type UsageClockView, type PersonView, type WalkRequest, type WallView, type WhiteboardView, type ZoneView } from '@orchestrator/office-3d';
 import { activityOf, currentTaskOf, sessionOfEmployee, type OfficeState } from './store.ts';
 
@@ -21,6 +21,29 @@ export interface OfficeWithRooms extends MemberOffice {
   away: Set<string>;
 }
 
+/**
+ * The machine each member's room stands for. A room is a member's computer; servers they brought in and keep to
+ * themselves have no room of their own — whoever works on one sits in that member's room: the first computer of
+ * theirs that has a room, or, for a member whose computer is not in the office at all, their first server.
+ * `shown` are the machines that get a room, `servers` the private servers, `anchor` member → the room's machine.
+ */
+export function memberRoomHosts(hosts: Host[], staffed: (hostId: string) => boolean): { shown: Host[]; servers: Host[]; anchor: Map<string, string> } {
+  const personal = hosts.filter((h) => !!h.memberId && h.status !== 'revoked').sort((a, b) => a.enrolledAt.localeCompare(b.enrolledAt) || a.id.localeCompare(b.id));
+  const computers = personal.filter((h) => !h.ownerId);
+  const servers = personal.filter((h) => !!h.ownerId);
+  // (A computer of theirs that is away and has nobody on it gets no room when they have another: an old enrollment
+  // would otherwise leave an empty room behind.)
+  const shown = computers.filter((h) => h.status === 'online' || staffed(h.id) || !computers.some((o) => o.id !== h.id && o.memberId === h.memberId));
+  const anchor = new Map<string, string>();
+  for (const h of shown) if (!anchor.has(h.memberId!)) anchor.set(h.memberId!, h.id);
+  for (const h of servers) {
+    if (anchor.has(h.memberId!)) continue;
+    anchor.set(h.memberId!, h.id);
+    shown.push(h);
+  }
+  return { shown, servers, anchor };
+}
+
 let lastOffice: { layout: OfficeState['layout']; key: string; value: OfficeWithRooms } | null = null;
 
 /**
@@ -40,25 +63,13 @@ export function officeWithRooms(s: OfficeState, unlocked: string[]): OfficeWithR
   // connected, grey and locked while it is not. (A computer of theirs that is away and has nobody on it gets no room
   // when they have another: an old enrollment would otherwise leave an empty room behind.)
   const hasStaff = (id: string) => staff.some((e) => e.hostId === id);
-  // A room is a member's computer. Servers they brought in and keep to themselves have no room of their own: whoever
-  // works on one sits in that member's room — the first computer of theirs that has one, or, for a member whose
-  // computer is not in the office at all, a room that stands for their first server.
-  const computers = personal.filter((h) => !h.ownerId);
-  const servers = personal.filter((h) => !!h.ownerId);
-  const shown = computers.filter((h) => h.status === 'online' || hasStaff(h.id) || !computers.some((o) => o.id !== h.id && o.memberId === h.memberId));
-  const anchor = new Map<string, string>();
-  for (const h of shown) if (!anchor.has(h.memberId!)) anchor.set(h.memberId!, h.id);
-  for (const h of servers) {
-    if (anchor.has(h.memberId!)) continue;
-    anchor.set(h.memberId!, h.id);
-    shown.push(h);
-  }
+  const { shown, servers, anchor } = memberRoomHosts(personal, hasStaff);
   /** Everyone who sits in the room of this machine: who works on it, and, in the member's main room, who works on their servers. */
   const inRoom = (h: (typeof personal)[number]) => staff.filter((e) => e.hostId === h.id || (anchor.get(h.memberId!) === h.id && servers.some((x) => x.id === e.hostId && x.memberId === h.memberId)));
   /** Dark and locked when nothing of theirs that sits here is in the office: the computer, and for the main room the servers too. */
   const here = (h: (typeof personal)[number]) => h.status === 'online' || (anchor.get(h.memberId!) === h.id && servers.some((x) => x.memberId === h.memberId && x.status === 'online'));
   // A room its member closed is shut to everyone else's character; in the member's own window it stays open.
-  const online = shown.map((h) => ({ hostId: h.id, memberId: h.memberId!, memberName: h.memberName ?? h.name, prefs: h.room ?? null, locked: !here(h), closed: h.room?.locked === true && s.me?.id !== h.memberId, seats: Object.fromEntries(staff.filter((e) => e.hostId === h.id && memberSeatOf(e.deskId)?.hostId === h.id).map((e) => [e.id, memberSeatOf(e.deskId)!.n])), employeeIds: inRoom(h).map((e) => e.id) }));
+  const online = shown.map((h) => ({ hostId: h.id, memberId: h.memberId!, memberName: h.memberName ?? h.name, prefs: h.room ?? null, locked: !here(h), closed: h.room?.locked === true && s.me?.id !== h.memberId, seats: Object.fromEntries(inRoom(h).filter((e) => memberSeatOf(e.deskId)?.hostId === h.id).map((e) => [e.id, memberSeatOf(e.deskId)!.n])), employeeIds: inRoom(h).map((e) => e.id) }));
   const theirs = staff.filter((e) => personal.some((h) => h.id === e.hostId)).map((e) => e.id);
   const key = JSON.stringify([online, theirs, [...unlocked].sort()]);
   if (lastOffice && lastOffice.layout === s.layout && lastOffice.key === key) return lastOffice.value;

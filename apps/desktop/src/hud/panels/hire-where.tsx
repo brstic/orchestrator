@@ -4,6 +4,7 @@ import { MEMBER_ROOM_LIMITS, memberSeatId, memberSeatOf } from '@orchestrator/co
 import { Badge } from '@orchestrator/ui';
 import { useAccess } from '../../lib/access.ts';
 import { useOffice } from '../../lib/store.ts';
+import { memberRoomHosts } from '../../lib/views.ts';
 
 /** A place a new employee can live: a machine everyone shares, or the hiring person's own computer (their room). */
 export interface HirePlace {
@@ -27,8 +28,10 @@ export function useHirePlaces(): { places: HirePlace[]; myRoomUnavailable: strin
     const own = all.filter((h) => !!can.me?.id && h.memberId === can.me.id).sort((a, b) => Number(b.id === myHost.hostId) - Number(a.id === myHost.hostId) || Number(b.status === 'online') - Number(a.status === 'online'));
     const places: HirePlace[] = [
       ...shared.map((host) => ({ host, mine: false, problem: host.status === 'online' ? null : `${host.name} is offline right now` })),
-      // One room: the computer this window is on, else whichever of theirs is connected.
-      ...own.slice(0, 1).map((host) => ({ host, mine: true, problem: host.status === 'online' ? null : 'Your computer is not connected to the office right now' })),
+      // One room, and every machine of mine that someone in it can work on: the computer this window is on (else
+      // whichever of mine is connected), and each server I brought in and keep to myself.
+      ...own.filter((h) => !h.ownerId).slice(0, 1).map((host) => ({ host, mine: true, problem: host.status === 'online' ? null : 'Your computer is not connected to the office right now' })),
+      ...own.filter((h) => !!h.ownerId).sort((a, b) => a.name.localeCompare(b.name)).map((host) => ({ host, mine: true, problem: host.status === 'online' ? null : `${host.name} is not connected to the office right now` })),
     ];
     // Why there is no "my room" to offer, when there could be one.
     const myRoomUnavailable = own.length || can.root || can.visitor ? null : myHost.state === 'unavailable' ? myHost.reason : myHost.state === 'starting' ? 'Your computer is still connecting to the office…' : 'Open this office with the Orchestrator desktop app to have a room of your own here.';
@@ -42,6 +45,7 @@ export function WherePicker({ value, onChange, only }: { value: string; onChange
   const places = only ? all.filter((p) => (only === 'mine' ? p.mine : !p.mine)) : all;
   // More than one shared machine: each is named, or the choices would read the same.
   const severalShared = places.filter((p) => !p.mine).length > 1;
+  const severalMine = places.filter((p) => p.mine).length > 1;
   const employees = useOffice((s) => s.employees);
   const count = (hostId: string) => Object.values(employees).filter((e) => !e.archived && e.hostId === hostId).length;
   return (
@@ -50,11 +54,13 @@ export function WherePicker({ value, onChange, only }: { value: string; onChange
         {places.map(({ host, mine, problem }) => (
           <button key={host.id} type="button" role="radio" aria-checked={value === host.id} className={`hire-place${value === host.id ? ' on' : ''}`} onClick={() => onChange(host.id)} data-place={mine ? 'mine' : 'shared'}>
             <span className="row" style={{ gap: 8 }}>
-              <span className="strong grow">{mine ? 'In my room' : severalShared ? `In the shared office · ${host.name}` : 'In the shared office'}</span>
+              <span className="strong grow">{mine ? (host.ownerId ? `In my room · on my server ${host.name}` : severalMine ? 'In my room · on this computer' : 'In my room') : severalShared ? `In the shared office · ${host.name}` : 'In the shared office'}</span>
               <Badge tone={problem ? 'warn' : 'good'}>{problem ? 'offline' : 'online'}</Badge>
             </span>
             <span className="small muted">
-              {mine
+              {mine && host.ownerId
+                ? `On ${host.name}, a server you brought in. Yours: its folders and the Claude account there. They sit in your room; only you and the owners can work with them, and they keep working when your computer is off.`
+                : mine
                 ? `On this computer (${host.name}). Yours: your folders and your Claude account. Others see them in your room; only you and the owners can work with them.`
                 : `On the server (${host.name}). Everyone in the office can work with them; they use the server's folders and its Claude account.`}
             </span>
@@ -89,11 +95,16 @@ export function DeskPicker({ place, value, onChange }: { place: HirePlace; value
     </button>
   );
 
+  const hosts = useOffice((s) => s.hosts);
   if (place.mine) {
-    const here = active.filter((e) => e.hostId === place.host.id);
+    // The room is the member's, whichever of their machines the new employee works on: its seats are named after the
+    // machine the room stands for, and everyone on any of those machines sits in it.
+    const mine = Object.values(hosts).filter((h) => h.memberId === place.host.memberId && h.status !== 'revoked');
+    const roomHostId = memberRoomHosts(Object.values(hosts), (id) => active.some((e) => e.hostId === id)).anchor.get(place.host.memberId ?? '') ?? place.host.id;
+    const here = active.filter((e) => mine.some((h) => h.id === e.hostId));
     const chosen = here.map((e) => memberSeatOf(e.deskId)?.n ?? 0);
     // The seats the room has now, and one more pair to grow into.
-    const seats = Math.min(MEMBER_ROOM_LIMITS.desks, Math.max(2, Math.ceil((here.length + 1) / 2) * 2, place.host.room?.desks ?? 0, ...chosen) + 2);
+    const seats = Math.min(MEMBER_ROOM_LIMITS.desks, Math.max(2, Math.ceil((here.length + 1) / 2) * 2, (hosts[roomHostId] ?? place.host).room?.desks ?? 0, ...chosen) + 2);
     return (
       <div className="col" style={{ gap: 8 }}>
         <div className="row row-wrap" style={{ gap: 6 }}>
@@ -108,7 +119,7 @@ export function DeskPicker({ place, value, onChange }: { place: HirePlace; value
                 {[1, 2, 3, 4].map((k) => {
                   const n = pod * 4 + k;
                   if (n > seats) return <span key={k} />;
-                  const id = memberSeatId(place.host.id, n);
+                  const id = memberSeatId(roomHostId, n);
                   const who = occupant(id);
                   return (
                     <button key={k} type="button" className={`desk-seat${value === id ? ' on' : ''}${who ? ' taken' : ''}`} disabled={!!who} onClick={() => onChange(id)} title={who ? `${who.name} sits here` : `Seat ${n}`} data-desk={id}>

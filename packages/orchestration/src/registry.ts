@@ -385,6 +385,16 @@ export class EmployeeRegistry {
     return this.eng.core;
   }
 
+  /**
+   * Is this seat in the room of the member whose machine `hostId` is? A room is a member's, not a machine's: whoever
+   * works on that member's computer or on a server they keep to themselves sits in the one room, so a seat named
+   * after any of those machines will do.
+   */
+  private sameRoom(seatHostId: string | null | undefined, hostId: string | null | undefined): boolean {
+    const member = this.eng.hosts.memberOfHost(hostId);
+    return !!member && !!seatHostId && this.eng.hosts.memberOfHost(seatHostId) === member;
+  }
+
   freeDesk(preferZone?: string): string | null {
     const taken = new Set(this.core.employees.filter((e) => !e.archived && !!e.deskId).map((e) => e.deskId));
     const desks = this.core.layout.desks.filter((d) => !taken.has(d.id));
@@ -466,7 +476,7 @@ export class EmployeeRegistry {
     }
     const seat = memberSeatOf(input.deskId);
     if (input.deskId && !personal && !this.core.layout.desks.find((d) => d.id === input.deskId)) throw new EngineError('unknown desk');
-    if (input.deskId && personal && seat?.hostId !== input.hostId) throw new EngineError('that seat is not in this member\'s room');
+    if (input.deskId && personal && !this.sameRoom(seat?.hostId, input.hostId)) throw new EngineError('that seat is not in this member\'s room');
     if (input.deskId && this.core.employees.find((e) => !e.archived && e.deskId === input.deskId)) throw new EngineError('that desk is taken');
     this.assertSameComputer(input.hostId ?? null, [input.projectId, ...(input.alsoProjectIds ?? [])]);
     const employee: Employee = {
@@ -530,7 +540,7 @@ export class EmployeeRegistry {
       // A desk of the shared office, or — for someone on a member's own computer — a seat in that member's room.
       const seat = memberSeatOf(patch.deskId);
       const mine = !!this.eng.hosts.memberOfHost(e.hostId);
-      if (patch.deskId && (mine ? seat?.hostId !== e.hostId : !this.core.layout.desks.find((d) => d.id === patch.deskId))) throw new EngineError(mine ? 'that seat is not in this member\'s room' : 'unknown desk');
+      if (patch.deskId && (mine ? !this.sameRoom(seat?.hostId, e.hostId) : !this.core.layout.desks.find((d) => d.id === patch.deskId))) throw new EngineError(mine ? 'that seat is not in this member\'s room' : 'unknown desk');
       const occupant = patch.deskId ? this.core.employees.find((x) => x.id !== id && !x.archived && x.deskId === patch.deskId) : undefined;
       if (occupant) {
         // Changing workstation with someone sitting there: they swap desks.
@@ -590,7 +600,7 @@ export class EmployeeRegistry {
       e.deskId = null;
     }
     this.assertSameComputer(e.hostId, [e.projectId, ...(e.alsoProjectIds ?? [])]);
-    if (this.eng.hosts.memberOfHost(e.hostId) && memberSeatOf(e.deskId)?.hostId !== e.hostId) e.deskId = null;
+    if (this.eng.hosts.memberOfHost(e.hostId) && !this.sameRoom(memberSeatOf(e.deskId)?.hostId, e.hostId)) e.deskId = null;
     else if (!this.eng.hosts.memberOfHost(e.hostId) && memberSeatOf(e.deskId)) e.deskId = this.freeDesk();
     this.core.put('employee', e);
     // What an employee may do without asking is on the record in full, not just as a field name.
