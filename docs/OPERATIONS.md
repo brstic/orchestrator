@@ -60,14 +60,16 @@ There is one office and it lives on the server. Desktop apps are clients; the pa
 ## Updating
 
 ### 1. The server (the usual update)
-From a checkout with the change, on a machine that can ssh to the server:
+(New here? [`HANDOVER.md`](HANDOVER.md) walks through the whole loop, including what you need before the first deploy.)
+
+From a checkout with the change, on a machine that can ssh to the server (your public key in `~/.ssh/authorized_keys` of `sparkcan`; from outside the LAN: `ORCH_DEPLOY_HOST=<user>@<server-vpn-ip>`):
 
 ```sh
 pnpm typecheck && pnpm test && pnpm test:e2e     # at least these; UI changes: pnpm build:ui && node tests/ui/run.mjs
 pnpm deploy:server                               # = sh scripts/deploy-server.sh
 ```
 
-What it does: builds the portable package (`scripts/package.mjs --no-app`), copies it over, unpacks it to `app.new`, moves the running `app` to `app.old`, swaps, restarts the service, and prints the status. It takes about half a minute.
+What it does: builds the portable package **on your computer, from your working tree as it is** (`scripts/package.mjs --no-app`; the server never runs `git` or `pnpm`, so commit and push first — `app/BUILD` says `+uncommitted` otherwise), copies it over, unpacks it to `app.new`, moves the running `app` to `app.old`, swaps, restarts the service, and prints the status. It takes about half a minute.
 
 What happens to people: the office is unreachable for a few seconds. Shared Claude Code sessions keep running in tmux and are picked up again. Members' apps reconnect by themselves; their invitations and the door's certificate do not change. **To get a new UI they reload the window: View → Reload (Cmd/Ctrl+R).**
 
@@ -140,7 +142,7 @@ journalctl --user -u orchestrator-office -f         # the log
 tmux ls                                             # shared sessions; attach: tmux attach -t orch-<name>-<id>
 ```
 
-Owners can do the member part from the app as well: Menu → People.
+Owners can do the member part from the app as well: Menu → Access.
 
 **Sessions that sleep.** Shared sessions with no work for 30 minutes are stopped by the office to free memory (Settings → Employees → *Put idle sessions to sleep after*; 0 = never). So `tmux ls` on the server shows only the employees who are awake: a missing `orch-<name>-<id>` session of someone shown as *Sleeping* in the office is expected, not a crash. It comes back under the same name when they are next needed. The log line is `session.asleep` in the audit (actor `office`); a wake is `session.resumed` by `office`. To see what the setting gives back, compare `free -m` (or the Machines panel) before and after an idle half hour — this has not been measured yet.
 

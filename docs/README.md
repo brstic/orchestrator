@@ -2,6 +2,7 @@
 
 | File | What it is | Update when |
 | --- | --- | --- |
+| [HANDOVER.md](HANDOVER.md) | For whoever continues the work: what you need, how a change gets from your editor to the running office (test, commit, push, deploy), what must not be touched | The way of working or of deploying changes |
 | [STATUS.md](STATUS.md) | Where the project is right now: shipped, in progress, known problems, next steps | Every piece of work |
 | [CHANGELOG.md](CHANGELOG.md) | What changed, newest first | Every shipped change |
 | [plans/](plans/) | One file per plan. The active one has checkboxes | A plan item starts or finishes |

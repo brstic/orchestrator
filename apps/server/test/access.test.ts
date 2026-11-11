@@ -182,6 +182,12 @@ test('measured outcomes: everyone may ask, and what is on a member’s own compu
   assert.deepEqual([reportFor(ana).lessons[0]!.given, reportFor(vera).lessons[0]!.given], [1, 3]);
 });
 
+test('deleting a project is for owners alone, wherever the project lives', () => {
+  for (const who of [mila, ana, jovan]) assert.equal(call(who, 'DELETE', '/projects/p-shared'), false, `${who.name} may not delete a project`);
+  assert.match(mayCall(engine, ana, 'DELETE', '/projects/p-shared', null).reason!, /owner/i);
+  for (const who of [vera, root]) assert.equal(call(who, 'DELETE', '/projects/p-shared'), true);
+});
+
 test('routines: set by whoever may work with the employee, read by whoever may read them', () => {
   // A visitor reads the shared ones and changes none.
   assert.ok(call(mila, 'GET', '/routines'));

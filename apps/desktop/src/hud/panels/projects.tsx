@@ -2,6 +2,7 @@ import { useEffect, useState, type Dispatch, type FormEvent, type SetStateAction
 import type { Project, Task, TaskStatus } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field, Stat, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
+import { useAccess } from '../../lib/access.ts';
 import { sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { ask } from '../core.tsx';
 import { registerPanel } from './index.tsx';
@@ -37,6 +38,7 @@ function workTasks(tasks: Record<string, Task>, projectId: string): Task[] {
 
 function ProjectOverview({ project }: { project: Project }) {
   const s = useOffice();
+  const can = useAccess();
   const [busy, run] = useAction();
   const [draft, setDraft, dirty] = useDraft({ description: project.description, goals: project.goals, requirements: project.requirements, docs: project.docs });
   const tasks = workTasks(s.tasks, project.id);
@@ -58,6 +60,25 @@ function ProjectOverview({ project }: { project: Project }) {
     if (inProgress && !(await ask({ title: `Pause ${project.name}?`, body: `${plural(inProgress, 'task')} in progress will be stopped where they are and wait. Nothing new starts until you resume.`, ok: 'Pause project' }))) return;
     const res = await run(() => api<{ interrupted: number }>('POST', `/projects/${project.id}/pause`, {}));
     if (res) s.toast(`${project.name} paused${res.interrupted ? `: ${plural(res.interrupted, 'task')} stopped and waiting` : ''}`, 'success');
+  };
+
+  const remove = async () => {
+    const all = Object.values(s.tasks).filter((t) => t.projectId === project.id);
+    const running = all.filter((t) => t.status === 'IN_PROGRESS').length;
+    const staying = activeEmployees(s.employees).filter((e) => e.projectId === project.id).map((e) => e.name);
+    const body = [
+      all.length ? `Its ${plural(all.length, 'task')} ${all.length === 1 ? 'is' : 'are'} deleted with it${running ? ` — ${running} in progress ${running === 1 ? 'is' : 'are'} stopped first` : ''}.` : 'It has no tasks.',
+      staying.length ? `${staying.join(', ')} ${staying.length === 1 ? 'stays' : 'stay'} in the office, without a project.` : '',
+      `Nothing on disk is touched${project.repoPath ? `: ${project.repoPath} stays exactly as it is` : ''}.`,
+      'This cannot be undone.',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    if (!(await ask({ title: `Delete ${project.name}?`, body, ok: 'Delete project', danger: true }))) return;
+    const res = await run(() => api<{ name: string }>('DELETE', `/projects/${project.id}`));
+    if (!res) return;
+    if (s.filter.projectId === project.id) s.setFilter({ projectId: null });
+    s.toast(`${res.name} deleted`, 'success');
   };
 
   return (
@@ -95,6 +116,11 @@ function ProjectOverview({ project }: { project: Project }) {
         {project.status === 'paused' && (
           <Button small variant="success" disabled={busy} onClick={() => run(() => api('POST', `/projects/${project.id}/resume`, {}), `${project.name} resumed`)}>
             Resume project
+          </Button>
+        )}
+        {can.admin && (
+          <Button small variant="ghost" disabled={busy} onClick={remove} title="Remove the project and its tasks from the office. Its people stay; nothing on disk is touched">
+            Delete project…
           </Button>
         )}
       </div>
@@ -623,6 +649,10 @@ function ProjectsPanel({ arg, onClose }: PanelProps) {
   const projects = Object.values(s.projects).sort((a, b) => Number(a.status === 'archived') - Number(b.status === 'archived') || a.name.localeCompare(b.name));
   const [selected, setSelected] = useState(() => (arg && s.projects[arg] ? arg : (projects[0]?.id ?? NEW)));
   const project = s.projects[selected];
+  // The selected project was deleted (here or by someone else): show the next one, not an empty form.
+  useEffect(() => {
+    if (selected !== NEW && !s.projects[selected]) setSelected(projects[0]?.id ?? NEW);
+  }, [selected, s.projects]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Window title="Projects" subtitle="The folders your employees work in, and the rules for each" onClose={onClose} width={1120} flush>
       <div className="pw-frame">

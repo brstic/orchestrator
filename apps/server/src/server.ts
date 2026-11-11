@@ -565,6 +565,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     // projects & tasks
     api.post('/projects', async (req) => engine.tasks.createProject(body(req) as any));
     api.patch('/projects/:id', async (req) => engine.tasks.updateProject(param(req, 'id'), body(req)));
+    // Owners only (no rule in access.ts): the project, its tasks and what was learned for it go; nothing on disk does.
+    api.delete('/projects/:id', async (req) => engine.deleteProject(param(req, 'id'), actorOf(req)));
     api.post('/projects/:id/pause', async (req) => ({ interrupted: await engine.pauseProject(param(req, 'id')) }));
     api.post('/projects/:id/resume', async (req) => engine.tasks.updateProject(param(req, 'id'), { status: 'active' }));
     api.post('/projects/:id/plan', async (req) => engine.tasks.planProject(param(req, 'id'), String(body(req).objective ?? ''), String(body(req).plannerId)));

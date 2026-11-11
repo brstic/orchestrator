@@ -360,14 +360,23 @@ export class Core {
     }
   }
 
+  /**
+   * Projects and tasks that were deleted while this process runs. Work that was already under way when one was
+   * deleted (a test run, a merge) still holds the record and writes it back when it finishes; that write is
+   * dropped here, so what was deleted stays deleted. (Ids are never used twice.)
+   */
+  private deleted = new Set<string>();
+
   /** Persist an entity and broadcast the change to every connected office client. */
   put<T extends { id: string }>(kind: EntityKind, entity: T): T {
+    if (this.deleted.has(`${kind}:${entity.id}`)) return entity;
     this.col(kind).put(entity);
     this.bus.emit('entity', kind, 'upsert', entity);
     return entity;
   }
 
   remove(kind: EntityKind, id: string): void {
+    if (kind === 'project' || kind === 'task') this.deleted.add(`${kind}:${id}`);
     if (this.col(kind).delete(id)) this.bus.emit('entity', kind, 'remove', { id });
   }
 

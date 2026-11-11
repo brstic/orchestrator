@@ -150,3 +150,15 @@ The reasons behind each part are on its page under `docs/learning/`. What was de
 - "Done" means verification ran and passed; XP counts only verified work.
 - No ORM: a small document store with SQLite and PostgreSQL back ends.
 - Visual extras and camera behaviour are opt-in (owner preference).
+
+## Deleting a project (2026-11-11)
+The owner asked to be able to delete projects, as an owner. Until then a project could only be paused; `archived` exists as a status but nothing in the app sets it.
+
+- **A real delete, not an archive.** What the owner wants gone is usually a project made by mistake or one that is over; a list that keeps it greyed out is not "deleted". The project record and all its tasks are removed.
+- **Owners only, wherever the project lives.** Colleagues create and pause projects, but a delete takes other people's tasks with it and cannot be undone. The route has no rule in `access.ts`, which makes it an owner's (routes fail closed).
+- **Nothing on disk is touched.** The folder, its branches and the worktrees employees worked in are the owner's files; the office deletes its own records only. The confirmation says so, with the folder's path. Left behind on purpose: `orchestrator/*` branches and `.orchestrator-worktrees/` of that repository.
+- **People stay.** Employees of the project keep their session and their desk and have no project until they are given one; hiring into the same folder later makes a new project. Deleting the people with the project was rejected: an employee is a running Claude Code session with its own history.
+- **Work in progress is interrupted first, in the real terminal** (the same as pausing), so nobody goes on working for a project that is gone. A project one of whose tasks is being verified at that moment is refused, with the task's name: the verification would write its result into a task that no longer exists.
+- **Nothing is left pointing at it.** Open questions about it are withdrawn; tasks of other projects no longer depend on its tasks; other projects no longer depend on it; lessons learned for this project alone are retired and suggestions about it dismissed (company and employee lessons stay); meetings and reports stay as a record without a project. Events and outcomes keep its id as history.
+- **What was deleted stays deleted** even if a test run or merge that started before the delete finishes after it: the store drops a write for a project or task that was removed (`Core.put`).
+

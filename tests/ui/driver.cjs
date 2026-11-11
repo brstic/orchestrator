@@ -1731,6 +1731,28 @@ async function scenario() {
     return link;
   });
 
+  await step('Projects: an owner deletes a project after being told what goes and what stays', async () => {
+    await close();
+    const made = await js(`(async () => { const r = await fetch('/api/projects', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + ((window.orchestrator && window.orchestrator.token) || localStorage.getItem('orch.token') || '') }, body: JSON.stringify({ name: 'Made By Mistake' }) }); return { status: r.status, body: await r.json() }; })()`);
+    if (made.status !== 200) throw new Error(`making a project to delete: ${JSON.stringify(made).slice(0, 200)}`);
+    const there = `Object.values(window.__t.store().projects).some((p) => p.name === 'Made By Mistake')`;
+    await waitFor(there, 8000);
+    await js(`window.__t.store().openPanel('projects', ${JSON.stringify(made.body.id)})`);
+    await waitFor(`!!window.__t.byText('Delete project…')`, 8000);
+    await sleep(250);
+    await shot('project-delete');
+    await js(`window.__confirms = []; true`);
+    await clickText('Delete project…');
+    await waitFor(`!(${there})`, 8000);
+    const asked = await js(`(window.__confirms || []).slice(-1)[0] || ''`);
+    if (!/Delete Made By Mistake\?/.test(asked) || !/It has no tasks\./.test(asked) || !/Nothing on disk is touched/.test(asked) || !/cannot be undone/.test(asked)) throw new Error(`deleting asked: "${asked.replace(/\s+/g, ' ').slice(0, 240)}"`);
+    // The window shows another project, not an empty form; the deleted one is not in the list.
+    await waitFor(`![...window.__t.scope().querySelectorAll('button.pw-list-btn')].some((b) => b.textContent.includes('Made By Mistake'))`, 5000);
+    if (await js(`!!window.__t.field('Name')`)) throw new Error('after deleting, the window shows the new-project form instead of another project');
+    await close();
+    return asked.replace(/\s+/g, ' ');
+  });
+
   await step('the command bar opens with its shortcut and previews before doing anything', async () => {
     await key('G', 'g');
     await waitFor(`!!document.querySelector('.cmd input')`, 5000);

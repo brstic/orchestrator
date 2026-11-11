@@ -272,6 +272,71 @@ export class Engine {
     return interrupted;
   }
 
+  /**
+   * Delete a project from the office. Its tasks go with it (work in progress is interrupted first, in the real
+   * terminals); its people stay, with no project; what was learned for this project alone is retired, and
+   * suggestions about it are dismissed. Nothing on disk is touched: the folder, its branches and its worktrees
+   * are the owner's, and stay exactly as they are.
+   */
+  async deleteProject(projectId: string, actor = 'owner'): Promise<{ name: string; tasks: number; interrupted: number; employees: string[] }> {
+    const project = this.core.projects.require(projectId);
+    const mine = (t: { projectId: string | null }) => t.projectId === project.id;
+    const verifying = this.core.tasks.filter(mine).find((t) => this.tasks.isVerifying(t.id));
+    if (verifying) throw new EngineError(`${verifying.key} is being verified right now. Delete the project when that has finished.`, 409);
+    const interrupted = await this.pauseProject(projectId, actor);
+
+    const tasks = this.core.tasks.filter(mine);
+    const gone = new Set(tasks.map((t) => t.id));
+    // Questions nobody needs answered any more: the work they were about does not exist.
+    for (const q of this.core.questions.filter((x) => x.status === 'open' && (x.projectId === project.id || (!!x.taskId && gone.has(x.taskId))))) this.comms.supersede(q.id, `The project ${project.name} was deleted.`);
+    for (const t of tasks) {
+      this.comms.cancelFor({ kind: 'task', id: t.id });
+      this.core.remove('task', t.id);
+    }
+    // Tasks of other projects that waited for one of these no longer wait for it.
+    for (const t of this.core.tasks.filter((x) => x.dependsOn.some((d) => gone.has(d)))) {
+      t.dependsOn = t.dependsOn.filter((d) => !gone.has(d));
+      this.core.put('task', t);
+    }
+    const employees: string[] = [];
+    for (const e of this.core.employees.filter((x) => x.projectId === project.id || !!x.alsoProjectIds?.includes(project.id))) {
+      if (e.projectId === project.id) {
+        e.projectId = null;
+        if (!e.archived) employees.push(e.name);
+      }
+      if (e.alsoProjectIds) e.alsoProjectIds = e.alsoProjectIds.filter((id) => id !== project.id);
+      this.core.put('employee', e);
+    }
+    for (const p of this.core.projects.filter((x) => !!x.dependsOn?.includes(project.id))) {
+      p.dependsOn = p.dependsOn!.filter((id) => id !== project.id);
+      this.core.put('project', p);
+    }
+    for (const l of this.core.lessons.filter((x) => x.scope === 'project' && x.projectId === project.id && x.status !== 'retired')) {
+      l.status = 'retired';
+      l.updatedAt = nowIso();
+      this.core.put('lesson', l);
+    }
+    for (const imp of this.core.improvements.filter((x) => x.status === 'proposed' && x.projectId === project.id)) {
+      imp.status = 'dismissed';
+      imp.decidedAt = nowIso();
+      this.core.put('improvement', imp);
+    }
+    // Meetings and reports stay as a record; they simply no longer point at a project.
+    for (const m of this.core.meetings.filter((x) => x.projectId === project.id)) {
+      m.projectId = null;
+      this.core.put('meeting', m);
+    }
+    for (const a of this.core.artifacts.filter((x) => x.projectId === project.id)) {
+      a.projectId = null;
+      this.core.put('artifact', a);
+    }
+    this.core.remove('project', project.id);
+    this.core.audit(actor, 'project.deleted', project.id, { name: project.name, repoPath: project.repoPath, tasks: tasks.length, interrupted, employees });
+    this.core.event({ type: 'project.deleted', source: 'owner', summary: `Project "${project.name}" was deleted${tasks.length ? ` with its ${tasks.length} task${tasks.length === 1 ? '' : 's'}` : ''}`, data: { name: project.name, tasks: tasks.length, interrupted, employees } });
+    this.tasks.schedule();
+    return { name: project.name, tasks: tasks.length, interrupted, employees };
+  }
+
   /** Answers to questions Orchestrator itself raised (merge conflicts, priority calls). */
   async onSystemAnswer(q: Question): Promise<void> {
     const answer = (q.answer ?? '').toLowerCase();

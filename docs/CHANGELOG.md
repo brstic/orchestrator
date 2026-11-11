@@ -3,6 +3,8 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-11
+- **An owner can delete a project.** Projects → the project → **Delete project…** (owners only). The confirmation says what goes and what stays: its tasks are deleted (work in progress is stopped first), its people stay in the office without a project, and nothing on disk is touched. Questions about it are withdrawn, lessons learned for it alone are retired, other projects and tasks stop depending on it. `DELETE /api/projects/:id`; audit `project.deleted`. Tests: `tests/e2e/18-delete-project.test.ts`, a step of the UI suite, `apps/server/test/access.test.ts`.
+- **`docs/HANDOVER.md`** — for whoever continues the work: what you need (repository, SSH to the server, a place in the office), the loop from a change to the running office, how the deploy script works and how to undo it, what must not be touched.
 - **Access and invitation links are pushed and deployed** as build `326f677`; the owner's Mac app was repackaged from it. An app built earlier does not understand a link.
 - **Access: inviting someone is a short link.** The window *Who is here* is now **Access** (Menu → People → Access), and is about one thing: who can come into the office, and as what.
   - **An invitation is a link**, `https://office.example.com/join/K7QF-M2XP-9TRD`, instead of one long text. The person pastes it into the app under *Connect to an office*; the app exchanges the code at the door for its own credential. A link works **once** and for **a week**; the member is listed as "invited · the link works until …" until it is used. In a browser the link is a page that says what to do with it.

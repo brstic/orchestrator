@@ -370,6 +370,11 @@ export class TaskManager {
     return out;
   }
 
+  /** Is this task's verification command running right now? */
+  isVerifying(id: string): boolean {
+    return this.verifying.has(id);
+  }
+
   deleteTask(id: string, actor = 'owner'): void {
     const task = this.core.tasks.require(id);
     if (task.status === 'IN_PROGRESS') throw new EngineError('cannot delete a task that is in progress');

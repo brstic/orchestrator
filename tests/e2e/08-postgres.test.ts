@@ -38,6 +38,10 @@ test('an office backed by PostgreSQL runs real work and survives a restart', asy
   assert.equal(pg.psql(`SELECT count(*) FROM orch_credentials WHERE hash = '${h.token}'`), '0');
   assert.equal(pg.psql("SELECT count(*) FROM orch_credentials WHERE kind = 'owner'"), '1');
 
+  // The worker's turn ends a moment after its task is DONE. Let it end before the office is restarted: a restart
+  // in that very instant loses the end of the turn (the session then reads "in a turn" until its next signal),
+  // which is a different matter from what this test is about — that the office's state is in PostgreSQL.
+  await waitFor(async () => (await h!.session(alex.id))!.inTurn === false, { label: 'the turn over before the restart' });
   const sessionBefore = (await h.session(alex.id))!;
   const restartedAt = new Date().toISOString();
   await h.restartServer();
