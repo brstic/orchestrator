@@ -1,12 +1,57 @@
-# ORCHESTRATOR
+<p align="center">
+  <img src="docs/assets/banner.jpg" alt="ORCHESTRATOR — Your code. Your company. Your world. A 3D office where real Claude Code sessions sit at desks and work as your employees." width="100%">
+</p>
 
-**Your code. Your company. Your world.**
+<p align="center">
+  <a href="#-two-minutes-to-your-first-hire"><b>Quick start</b></a> ·
+  <a href="#-screenshots-yes-it-really-looks-like-this"><b>Screenshots</b></a> ·
+  <a href="#-what-you-press-and-what-really-happens"><b>What really happens</b></a> ·
+  <a href="#-the-foreman"><b>The foreman</b></a> ·
+  <a href="docs/README.md"><b>Docs</b></a>
+</p>
 
-A 3D virtual office where real Claude Code sessions work as employees. Each employee is a persistent identity backed by a real `claude` process in a real tmux session, in a real git worktree. You walk the office, look over a shoulder at a live terminal, sit down and take the keyboard of that exact session, answer questions, approve actions, assign work — and everything the office shows is derived from what the runtime actually reported.
+<h3 align="center">You hire. They code. You walk around and look important.</h3>
 
-**How it is meant to be used:** the office runs on a server (ideally Linux) and stays open; people connect to it with the desktop app. Everything on the server — sessions, folders, projects — is shared by the people invited, according to their role (*visitor* reads, *colleague* works, *owner* runs it). While a colleague or owner is connected, their own computer is attached as their room: sessions they start there run on their machine, under their Claude account, and are theirs. An office on a single computer still works the same way. Setup: [docs/INSTALL.md](docs/INSTALL.md); who may do what: [docs/ACCESS.md](docs/ACCESS.md); where it runs and how to update it: [docs/OPERATIONS.md](docs/OPERATIONS.md); where the project stands: [docs/STATUS.md](docs/STATUS.md).
+**Orchestrator is a 3D office in which real Claude Code sessions work as employees.** Every person at a desk is a persistent identity backed by a real `claude` process in a real tmux session, in a real git worktree. You walk the floor, look over shoulders, sit down at somebody's terminal, hand out tasks, hold meetings, and answer the hand that goes up when somebody needs a decision.
 
-This is not a dashboard with mascots and it is not a simulation: nothing in the UI is animated unless a hook, an MCP call, a tmux observation or an owner action says it happened.
+It is **not** a dashboard with mascots, and it is **not** a simulation: nothing in the office moves unless a hook, an MCP call, a tmux observation or something you did says it happened. If the office does not know what somebody is doing, their tag says `UNKNOWN` — not "working".
+
+**How it is meant to be used:** the office runs on a server (ideally Linux) and stays open; people walk in with the desktop app. What is on the server — sessions, folders, projects — is shared by the people invited to it. A colleague's own computer gets a room of its own while they are in, and what runs there stays theirs.
+
+## 📸 Screenshots (yes, it really looks like this)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/shot-team.jpg" alt="Zero NPCs: employees at their desks, each with a tag that says what their real session is doing"></td>
+    <td width="50%"><img src="docs/assets/shot-floor.jpg" alt="Walk the floor: the engineering floor, the meeting room, the wall of terminals"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/shot-command.jpg" alt="Command center: the office from above, with who needs you, everyone's state and the machines"></td>
+    <td><img src="docs/assets/shot-quests.jpg" alt="Quest board: the task board, from backlog to done"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/shot-whip.jpg" alt="Crack the whip: the owner's character next to an employee, with the keys F talk, Space open terminal, R whip"></td>
+    <td><img src="docs/assets/shot-break.jpg" alt="Break room: a hi-fi, a television and a sofa"></td>
+  </tr>
+</table>
+
+<sub>Every picture is the real app, taken from a demo office whose employees are scripted stand-ins (so no Claude usage was spent on looking good). Only the frames and the shouting were added — <code>scripts/readme-shots.cjs</code> and <code>scripts/readme-art.cjs</code> make them again.</sub>
+
+## 🎮 The game, if it were one
+
+| | |
+| --- | --- |
+| 🧑‍💻 **Hire** | A name, a role, a folder, a desk. Pick the **model** (Fable, Opus, Sonnet, Haiku) and the **effort** for each hire. |
+| 🚶 **Walk** | `W` `A` `S` `D` through your company. `F` talks to whoever you stand next to, `Space` sits you at their real terminal. |
+| ✋ **Answer** | A raised hand is a real question or a real permission request, held open until you decide. |
+| 📋 **Quests** | Tasks get a worktree and a branch. *Done* means the office ran your tests, got the review, and merged — not that somebody said so. |
+| 🤝 **Teamwork** | Employees ask each other, wait for each other, hand work over, review each other, release and unblock tasks, and wake a colleague who is needed. |
+| 🧢 **The foreman** | One supervisor walks the floor, answers the operational questions and keeps people moving, so you are asked only about direction. |
+| 🛋️ **Break room** | A hi-fi with internet radio for the whole office and a TV with a real browser in it. |
+| 🪢 **The whip** | `R`. A crack, a flinch, a "jao!". It sends nothing to anybody's session. It stays in. |
+| 👥 **Multiplayer** | Invite people with a link. Owners, colleagues, visitors; each colleague's own computer becomes a room. |
+
+## 🧱 How it is built
 
 ```
  ┌──────────────── 3D office (Electron / browser) ────────────────┐
@@ -30,7 +75,9 @@ This is not a dashboard with mascots and it is not a simulation: nothing in the 
                                         or SDK-managed workers)
 ```
 
-## Quick start (one machine, nothing leaves localhost)
+## 🚀 Two minutes to your first hire
+
+One machine, nothing leaves localhost.
 
 Requirements: **Node.js 22.18+**, **tmux**, **git**, the **Claude Code CLI** (`claude`) logged in, and pnpm.
 
@@ -66,7 +113,7 @@ pnpm apply-config examples/team.json --repo ~/code/your-repo --plan
 
 More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Windows/WSL).
 
-## What you can do
+## 🔍 What you press, and what really happens
 
 | In the office | What really happens |
 | --- | --- |
@@ -80,7 +127,7 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Window
 | A task turns DONE | Orchestrator itself checked a clean tree, real commits, ran your verification command on the host, got review approval if required, and merged without conflict |
 | An employee walks to a colleague | A real `request_collaboration` was sent through the MCP server and delivered into the colleague's session |
 | The start screen: **Connect to an office** / **An office on this computer** | Connecting needs an invitation link (or the office's address, to ask at the door): the app talks only to a computer whose certificate it can check, and sends nothing before checking it. An office on this computer starts a server and agent here |
-| Menu → People → **Open the office to its members**, **Invite** | A second, TLS listener forwards the page, the API, the client socket, and what a member's own computer needs (agent socket for personal hosts only, worker endpoint). Each member has a role — visitor, colleague, owner — enforced by the office for every request and terminal message ([docs/ACCESS.md](docs/ACCESS.md)) |
+| Menu → **Access** → **Open**, **Invite** | You get a short link that works once (`https://your.office/join/K7QF-M2XP-9TRD`); the person pastes it into the app, and the app exchanges the code at the office's door for a credential of its own. A second, TLS listener forwards the page, the API, the client socket, and what a member's own computer needs (agent socket for personal hosts only, worker endpoint). Each member has a role — visitor, colleague, owner — enforced by the office for every request and terminal message ([docs/ACCESS.md](docs/ACCESS.md)) |
 | A room with someone's name on it | That member is connected and their computer is one of the office's machines right now; the employees in it run on that computer. The room is gone when they leave; the sessions stay in tmux there |
 | Other people walking around | Each person's app reports where their character is; the office relays it. What they say (Enter) is heard by the people present — never typed into an employee's session |
 | Team → **Hire for several projects** | One employee per folder you tick, named after the folder; each folder becomes that employee's own project. Nobody's session is started by hiring: it starts when you first talk to them or give them work |
@@ -93,10 +140,13 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Window
 | A security notification | Claude Code refused an action, a known credential format went through a session (it is redacted in the records), a machine was refused a connection, or someone presented wrong owner tokens |
 | The **Foreman** stands at someone's desk during a round | The foreman's own session looked at that employee (`look_at`: the last lines of their real terminal, their task, their open question), answered them, gave them work or told them what to do next. Between rounds it walks the office from desk to desk; that walk is only a walk — nothing is read or sent |
 | An employee's question is answered without you | The foreman's session called `answer_question`; the employee gets the answer as usual and the record says the foreman gave it. Approving or denying an action is never the foreman's |
+| Hire → **Model**, **Effort** | That employee's sessions are started with `claude --model … --effort …`. The effort levels offered are the ones the Claude Code on that machine says it has |
+| An employee releases, unblocks, assigns or reviews a task, or wakes a colleague | Their session called `release_task`, `unblock_task`, `give_task`, `submit_review` or `wake_colleague`; it is on the record under their name. They cannot approve a permission request, mark work done unverified, or delete anything. Settings → Employees takes the board back |
+| Projects → **Delete project…** | The project and its tasks are removed from the office, work in progress is interrupted first, its people stay. Nothing on disk is touched |
 | Meeting room | Each participant's session writes a proposal and a response; the facilitator's session writes the decision document and follow-up tasks |
 | Growth | Workers record lessons after real friction; Orchestrator proposes policy and process changes from its own history |
 
-## Honesty rules the code enforces
+## 🤞 Honesty rules the code enforces
 
 - **Backend is the source of truth.** The 3D layer receives view models and callbacks; it cannot reach sessions or tasks.
 - **Unknown is shown as unknown.** A session without hooks, or on a host that is offline, is `UNKNOWN` — never “working”.
@@ -104,7 +154,7 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Window
 - **Measured, reported, unavailable.** Verification results are measured on the host; an agent's summary is “reported”; token usage is read from the real transcript or shown as “not available”. Cost is never invented. **How much Claude is left** on each account (5-hour and weekly percentages, exactly as Claude Code reports them) is shown at the CEO desk; employees can be put on different Claude accounts.
 - **Autonomy never bypasses permissions.** Autonomy levels map to Claude Code's own permission modes and allow-rules. High-risk commands are escalated at every level. `--dangerously-skip-permissions` is never used.
 
-## The foreman
+## 🧢 The foreman
 
 Hire the **Foreman** (Team → Hire, role *Foreman*; give it any folder — that is only where its Claude Code session runs). There is one for the whole office, it runs on the office's own machine, and it has **no desk**: it walks the office — the shared floor and every member's room that is open — and keeps the work going. Hiring it switches its rounds on; **Settings → Foreman** pauses them.
 
@@ -117,12 +167,12 @@ Hire the **Foreman** (Team → Hire, role *Foreman*; give it any folder — that
 
 *Settings → Foreman* shows who the foreman is, who it is with, the last round and its summary, and what currently needs attention (`GET /api/foreman`).
 
-## Self-improvement
+## 🌱 Self-improvement
 
 - **Workers**: after a task that hit real friction (failed verification, rejected review, merge conflict, a question, a denial), the employee's own session is shown the recorded facts and asked what it would do differently. Lessons are stored with their evidence, fed back into that employee's future prompts, and counted. Your answers to questions become project knowledge so nobody asks twice.
 - **Orchestrator**: routes unassigned work using measured first-pass rates per employee and task kind, and proposes changes from its record — pre-approve a command you keep approving, require review where work keeps failing, sequence tasks that keep colliding. Anything that widens what agents may do waits for you.
 
-## Repository
+## 🗂️ Repository
 
 ```
 apps/
@@ -148,11 +198,11 @@ tests/
 docs/            architecture, install, security, Claude Code integration
 ```
 
-## Tests
+## 🧪 Tests
 
 ```bash
 pnpm test                  # unit tests
-pnpm test:e2e              # 111 end-to-end scenarios: real server, real agents, real tmux, real git; scripted worker
+pnpm test:e2e              # 165 end-to-end scenarios: real server, real agents, real tmux, real git; scripted worker
 pnpm test:ui               # the UI used for real in Electron (clicks, typing, keys) against a live development office
 pnpm package && pnpm package:smoke   # build the tarball and macOS app, then run them (incl. the connect screen)
 pnpm package:linux         # .deb and Linux desktop bundles;  pnpm test:linux:deb / test:linux:desktop run them (Docker)
@@ -172,6 +222,13 @@ pnpm test:real:sdk         # an SDK-managed worker with the real Agent SDK (need
 
 `tests/fixtures/fake-claude.mjs` behaves like Claude Code at the protocol level (runs the configured hooks, calls the MCP endpoint, edits files, commits) and `tests/fixtures/fake-agent-sdk` does the same for the Agent SDK's `query()`, so the whole system can be tested deterministically without tokens. Neither is ever used by the product.
 
-## Status and limits
+## 🚧 Status and limits
 
 Working and verified on macOS (Apple silicon) with Claude Code 2.1.321/2.1.322 and tmux 3.8; the host agent, the `.deb` and the desktop bundle are also verified on Linux (Debian 12, Ubuntu 24.04). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#status) for exactly what was and was not validated. In short: both worker runtimes; reviews, rework, meetings, retrospectives, merge conflicts, nudges and restarts with real sessions; three machines on three operating systems with a real network partition; PostgreSQL; and every package except the Windows one were run for real. Three things could not be done on the development machine: running anything on Windows itself, testing on physically separate computers, and notarizing the macOS app.
+
+---
+
+<p align="center">
+  <img src="docs/assets/logo.svg" width="72" alt="The Orchestrator logo: a conductor's baton over a terminal prompt"><br>
+  <sub><b>ORCHESTRATOR</b> — the baton conducts, the prompt plays.<br>No employees were harmed by the whip. It sends nothing.</sub>
+</p>

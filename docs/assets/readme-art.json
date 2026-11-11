@@ -1,0 +1,21 @@
+[
+  { "kind": "banner", "name": "banner", "image": "desks.png", "at": "100% 58%", "zoom": "112%" },
+  { "name": "shot-team", "image": "desks.png", "palette": "PURPLE", "tilt": -1.6, "at": "40% 60%",
+    "title": "Zero NPCs", "sub": "Everyone at a desk is a real Claude Code session in a real terminal. Thinking, blocked, needs you: the tag is the truth.",
+    "sticker": "100% real", "stickerSub": "TERMINALS" },
+  { "name": "shot-floor", "image": "floor.png", "palette": "TEAL", "tilt": 1.4,
+    "title": "Walk the floor", "sub": "W, A, S, D through your own company. Meeting room, server room, a wall of live terminals.",
+    "sticker": "Open world", "stickerSub": "(ONE OFFICE)", "spin": 12 },
+  { "name": "shot-quests", "image": "panel-tasks.png", "palette": "BLUE", "tilt": -1.2,
+    "title": "Quest board", "sub": "Hand out tasks, or let the team pick them up. A quest is DONE when the office itself ran the tests and merged it.",
+    "sticker": "No fake", "stickerSub": "PROGRESS BARS", "spin": 30 },
+  { "name": "shot-command", "image": "command.png", "palette": "ORANGE", "tilt": 1.6,
+    "title": "Command center", "sub": "Who needs you, who is blocked, which machine is sweating. Top-down, like a proper strategy game.",
+    "sticker": "Boss mode", "stickerSub": "UNLOCKED", "spin": 50 },
+  { "name": "shot-whip", "image": "whip.png", "palette": "PINK", "tilt": -1.8,
+    "title": "Crack the whip", "sub": "Press R. A crack, a flinch and a “jao!”. It does nothing at all for productivity. It stays in.",
+    "sticker": "+0 XP", "stickerSub": "WORTH IT", "spin": 70 },
+  { "name": "shot-break", "image": "break.png", "palette": "GREEN", "tilt": 1.2, "at": "50% 70%",
+    "title": "Break room", "sub": "A hi-fi that plays internet radio for the whole office, a TV with a real browser in it, a sofa nobody has earned.",
+    "sticker": "Vibes", "stickerSub": "+10", "spin": 20 }
+]
