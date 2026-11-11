@@ -332,3 +332,32 @@ test('the owner switches the hold off for Unrestricted: nothing is held, at once
   await h.api('POST', `/questions/${q2.id}/answer`, { decision: 'allow' });
   await waitFor(async () => /tried-again/.test(await paneOf('Una')), { label: 'went on', timeout: 20000 });
 });
+
+test('on a machine whose agent is older than the switch, switching the hold off starts the session again without the list', async () => {
+  // (Such an agent does not say what it holds a command for — and one from before Unrestricted answers "ask", which
+  // Claude Code shows as its own prompt in the terminal. Either way the session would go on asking.)
+  await idle('Una');
+  const host = h.server.engine.core.hosts.get(h.hostId)!;
+  const info = host.info!;
+  host.info = { ...info, saysHeldFor: undefined };
+  try {
+    const before = (await h.session(ids.Una!))!;
+    assert.equal(before.highRiskHeld, true);
+    await h.api('PATCH', '/settings', { unrestrictedAsksHighRisk: false });
+    const again = await waitFor(async () => { const x = await h.session(ids.Una!); return x && x.startedAt !== before.startedAt && x.status === 'running' && x.inTurn === false ? x : undefined; }, { label: 'started again without the list', timeout: 40000 });
+    assert.equal(again.highRiskHeld, false);
+    assert.equal(again.resumed, true);
+    assert.ok((await h.api<any[]>('GET', '/audit')).some((a) => a.action === 'session.restarted_for_change' && /no longer wants to be asked/.test(a.detail?.why ?? '')));
+    const asks = (await h.state()).questions.filter((x) => x.employeeId === ids.Una && x.kind === 'permission').length;
+    await say('Una', 'bash git push -q origin2 HEAD:refs/heads/old-agent; say ran-on-old-agent');
+    await waitFor(async () => /ran-on-old-agent/.test(await paneOf('Una')), { label: 'ran through', timeout: 20000 });
+    assert.equal((await h.state()).questions.filter((x) => x.employeeId === ids.Una && x.kind === 'permission').length, asks, 'nobody was asked');
+    // …and it is not started again and again: it has no list now.
+    await idle('Una');
+    await sleep(1500);
+    assert.equal((await h.session(ids.Una!))!.startedAt, again.startedAt);
+  } finally {
+    host.info = info;
+    await h.api('PATCH', '/settings', { unrestrictedAsksHighRisk: true });
+  }
+});

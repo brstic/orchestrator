@@ -257,6 +257,7 @@ export class HostAgent {
       arch: process.arch,
       agentVersion: AGENT_VERSION,
       hooksVersion: HOOKS_VERSION,
+      saysHeldFor: true,
       tmuxVersion: await this.tmux.version(),
       claudeVersion: await claudeVersion(this.cfg.claudeBin),
       claudeEffortLevels: await claudeEffortLevels(this.cfg.claudeBin),

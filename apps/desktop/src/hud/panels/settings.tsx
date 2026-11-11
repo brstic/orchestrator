@@ -880,7 +880,7 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                     title="On Unrestricted, still ask me before high-risk commands"
                   >
                     Employees on <b>Unrestricted</b> run without any permission checks. With this on, the same high-risk commands are still held until you answer. <b>Off: an Unrestricted employee is never stopped for approval</b> — pushing, sudo,
-                    deploying, deleting, reading credential files all run at once, and nothing asks you. Switching it off takes effect at once, also for sessions that are already running (on a member's own computer with an older app: at the session's next start); switching it back on starts each such session again between turns.
+                    deploying, deleting, reading credential files all run at once, and nothing asks you. Switching it off takes effect at once, also for sessions that are already running (on a computer with an older desktop app, the session is started again between turns, once); switching it back on starts each such session again between turns.
                     Either way the office's own files on a machine stay fenced off, and a project's deny rules still refuse what they refuse.
                   </Toggle>
                   <Toggle checked={settings.employeesManageBoard !== false} onChange={(employeesManageBoard) => void save({ employeesManageBoard })} title="Employees manage the task board themselves">

@@ -17,6 +17,8 @@ export type HostStatus = 'online' | 'offline' | 'revoked';
 export interface HostInfo {
   /** The newest hook commands this machine's agent writes for a session (`HOOKS_VERSION` of its build); absent from older agents. */
   hooksVersion?: number;
+  /** This machine's agent says what it holds a command for (`orch_held_for`), so the office can answer for the high-risk list by itself where the owner switched the hold off. Absent from older agents. */
+  saysHeldFor?: boolean;
   hostname: string;
   platform: string;
   arch: string;

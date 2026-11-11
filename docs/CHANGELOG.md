@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-11
+- **Switching the hold off reaches every running session.** An Unrestricted employee on a computer whose desktop app is older than the switch kept being stopped at a prompt (seen on the owner's own Mac an hour after the switch); so did a running Auto employee after the Auto switch. Such a session is now started again once, between turns, with the same conversation and without the list.
 - **An eighth review went through the rest of the code that reads other people's text** (the seventh had found four slow places by accident and said the rest had not been looked at). It measured fourteen more places where one long text held the office for over twenty seconds, and a handful of slower ones; all are fixed, each timed by a test on text built to be slow:
   - **Every hook of every session** read the command twice with a pattern that started again at each quote of a string that was never closed (200,000 characters: 16 s), and with deploy detectors that started again at every `aws`, `gcloud`, `git push` (a long script full of them did it with nobody meaning to). Now read in one walk.
   - **Trimming dots, slashes or spaces off the end of a text** with a pattern (`/[.]+$/`) takes time with the square of a run in the middle; it stood in twelve places — a lesson an employee records, the words of a question, the command bar, a folder's path, the vault's detector, the reader of a terminal's screen. All use one helper that walks back from the end.

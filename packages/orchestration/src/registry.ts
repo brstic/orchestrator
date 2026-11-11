@@ -1252,9 +1252,12 @@ export class SessionRegistry {
    * of it until it is started again — so it is, between turns, like for any other change of what it runs with.
    */
   highRiskSwitched(): void {
-    for (const s of this.core.sessions.filter((x) => x.status === 'running' && x.origin === 'managed' && x.highRiskHeld === false)) {
+    for (const s of this.core.sessions.filter((x) => x.status === 'running' && x.origin === 'managed')) {
       const e = s.employeeId ? this.core.employees.get(s.employeeId) : undefined;
-      if (e && asksHighRisk(this.core.settings, e.autonomy)) this.restartForChange(e.id, 'the boss wants to be asked before high-risk commands again');
+      if (!e) continue;
+      if (s.highRiskHeld === false && asksHighRisk(this.core.settings, e.autonomy)) this.restartForChange(e.id, 'the boss wants to be asked before high-risk commands again');
+      // Switched off, and nothing else takes the list away from this session (see `restartDue`): now if it is between turns.
+      else if (this.restartDue(s.id) && s.inTurn !== true) void this.restartNow(e.id);
     }
   }
 
@@ -1271,6 +1274,15 @@ export class SessionRegistry {
     const hasBypass = s.permissionMode === 'bypassPermissions';
     if (wantsBypass !== hasBypass) {
       this.restartWhy.set(s.employeeId, `your level is now ${wantsBypass ? 'Unrestricted' : e.autonomy === 'auto' ? 'Auto' : e.autonomy}`);
+      return true;
+    }
+    // A session that was started with the high-risk list in front of it, whose employee the owner no longer wants to
+    // be asked about (the switches in Settings → Employees). Where nothing else takes the list away — the office
+    // answering for it at once, which needs a session in bypass mode on a machine whose agent says what it holds a
+    // command for — the session keeps asking until it is started again. So it is: once, between turns.
+    // (A session from before the office recorded this is taken as started with the list.)
+    if (s.highRiskHeld !== false && !asksHighRisk(this.core.settings, e.autonomy) && !(hasBypass && this.core.hosts.get(s.hostId)?.info?.saysHeldFor === true)) {
+      this.restartWhy.set(s.employeeId, 'the boss no longer wants to be asked before high-risk commands');
       return true;
     }
     // A session in bypass mode whose hooks are older than what this office relies on: a command of it that waits for
