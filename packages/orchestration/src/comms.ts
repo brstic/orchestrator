@@ -96,7 +96,8 @@ export interface Delivery {
 interface HookPending {
   hostId: string;
   requestId: string;
-  kind: 'permission' | 'ask_user';
+  /** `pretool`: a high-risk call held before it runs (bypass mode), answered in the shape of a PreToolUse hook. */
+  kind: 'permission' | 'ask_user' | 'pretool';
   toolInput: any;
 }
 
@@ -434,7 +435,11 @@ export class Comms {
           break;
         }
         const decision = q.decision === 'allow' ? { behavior: 'allow' } : { behavior: 'deny', message: q.answer || 'Denied by the boss in Orchestrator.' };
-        const ok = this.core.agents.respondHook(pending.hostId, pending.requestId, { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision } });
+        const output =
+          pending.kind === 'pretool'
+            ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: q.decision === 'allow' ? 'allow' : 'deny', permissionDecisionReason: q.decision === 'allow' ? 'Allowed by the boss in Orchestrator.' : q.answer || 'Denied by the boss in Orchestrator.' } }
+            : { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision } };
+        const ok = this.core.agents.respondHook(pending.hostId, pending.requestId, output);
         if (!ok) this.setStatus(q, 'failed', 'The host is offline; the decision could not be delivered.');
         break;
       }
@@ -490,6 +495,22 @@ export class Comms {
             }
             await this.core.agents.rpc(session.hostId, { method: 'session.keys', params: { sessionId: session.id, keys } });
             this.setStatus(q, 'delivered', `Selected "Yes" on the trust prompt in the terminal (${keys.join(' ')})`);
+            // Claude Code's bypass warning is accepted per account: sessions of the same account on the same machine
+            // that stand at it too (several were started together) are answered with it, not asked one by one.
+            if (q.tool?.name === 'bypass_warning') {
+              for (const other of this.core.questions.filter((x) => x.id !== q.id && x.status === 'open' && x.channel === 'terminal' && x.tool?.name === 'bypass_warning' && JSON.stringify(x.tool.input) === JSON.stringify(q.tool!.input))) {
+                const os = this.core.sessions.get(other.sessionId);
+                const ok = os ? trustPromptKeys(this.core.gateway.screens.get(os.id)?.lines ?? []) : null;
+                if (!os || !ok) continue;
+                other.answer = q.answer;
+                other.answeredAt = nowIso();
+                this.core.put('question', other);
+                await this.core.agents.rpc(os.hostId, { method: 'session.keys', params: { sessionId: os.id, keys: ok } }).then(
+                  () => this.setStatus(other, 'delivered', 'Accepted with your answer for the same Claude account'),
+                  () => undefined,
+                );
+              }
+            }
           } catch (e) {
             this.setStatus(q, 'failed', (e as Error).message);
           }
@@ -541,6 +562,7 @@ export class Comms {
     const qid = this.requestToQuestion.get(requestId);
     if (!qid) return;
     this.requestToQuestion.delete(requestId);
+    const wasHeld = this.hookPending.get(qid)?.kind === 'pretool';
     this.hookPending.delete(qid);
     const q = this.core.questions.get(qid);
     if (!q) return;
@@ -549,6 +571,12 @@ export class Comms {
     } else if (q.status === 'open' || q.status === 'answered') {
       this.setStatus(q, 'superseded', detail ?? 'Claude Code stopped waiting; the prompt is now in the terminal.');
       const emp = this.core.employees.get(q.employeeId);
+      if (wasHeld) {
+        // A high-risk call of an employee in bypass mode, held for an answer that did not come: it was refused, and
+        // there is no prompt anywhere to answer later. The employee was told to wait or to ask.
+        this.notify({ kind: 'permission', severity: 'warning', title: `${emp?.name ?? 'Employee'} was refused a high-risk command: nobody answered`, body: `${truncate(q.text, 300)}\n\nIt was not run. If you want it done, tell ${emp?.name ?? 'them'} to try again and answer the request when it comes.`, employeeId: q.employeeId, sessionId: q.sessionId });
+        return;
+      }
       // The prompt is in the terminal now. When the office can see it there, it asks again — answerable from here.
       if (q.kind === 'permission' && q.sessionId && this.eng.sessions.promptOnScreen(q.sessionId, true)) return;
       if (q.kind === 'permission') {

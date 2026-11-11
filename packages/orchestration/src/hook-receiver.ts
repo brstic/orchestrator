@@ -14,7 +14,7 @@ interface SessionRuntime {
   failures?: { taskId: string | null; counts: Map<string, number> };
 }
 
-const NUDGE_LIMIT: Record<string, number> = { restricted: 0, supervised: 0, standard: 1, autonomous: 3, auto: 3 };
+const NUDGE_LIMIT: Record<string, number> = { restricted: 0, supervised: 0, standard: 1, autonomous: 3, auto: 3, unrestricted: 3 };
 
 /**
  * Receives raw Claude Code hook invocations forwarded by host agents and turns
@@ -92,6 +92,29 @@ export class HookReceiver {
         return;
       }
       case 'PreToolUse': {
+        if (payload.orch_policy === 'high_risk_held') {
+          // An employee in bypass mode ran into the high-risk list: Claude Code would ask nobody, so the machine
+          // holds the call and the owner decides here.
+          const tool = payload.tool_name ?? 'tool';
+          const q = this.eng.comms.createQuestion({
+            kind: 'permission',
+            channel: 'permission_hook',
+            employee,
+            session,
+            text: `${employee?.name ?? 'This session'} wants to run: ${describeTool(tool, payload.tool_input, payload.cwd)}`,
+            context: this.permissionContext(payload),
+            why: 'This command matches a high-risk pattern, so it always needs your approval — also for an employee who runs without permission checks.',
+            options: [
+              { label: 'Allow', description: 'Let this one action run' },
+              { label: 'Deny', description: 'Refuse it; the agent is told and continues without it' },
+            ],
+            tool: { name: tool, input: this.trimInput(payload.tool_input) },
+            quietEvent: true,
+          });
+          if (session.activity !== 'paused') this.eng.sessions.setActivity(session, 'needs_approval', describeTool(tool, payload.tool_input, payload.cwd));
+          this.eng.comms.holdHook(q, { hostId, requestId, kind: 'pretool', toolInput: payload.tool_input });
+          return;
+        }
         if (payload.tool_name !== 'AskUserQuestion') return void respond(null);
         const parts = this.askUserParts(payload.tool_input);
         if (!parts.length) return void respond(null);
@@ -168,6 +191,8 @@ export class HookReceiver {
     if (this.core.gateway.isHumanControlled(session.id) || this.core.gateway.isPaused(session.id)) return null;
     // Cut off from the office's tools: it could not complete, ask or report whatever it is told. It is started again instead.
     if (this.eng.sessions.cutOff(session.id)) return null;
+    // About to be started again for a change of its settings: the same.
+    if (this.eng.sessions.restartDue(session.id)) return null;
     // Stopped because a colleague has not answered or finished yet: there is nothing to be nudged on with.
     if (session.waitingOn) return null;
     if (this.core.questions.find((q) => q.employeeId === employee.id && (q.status === 'open' || q.status === 'answered') && q.channel !== 'system')) return null;
@@ -184,6 +209,7 @@ export class HookReceiver {
     session.inTurn = false;
     this.core.put('session', session);
     if (employee && this.eng.sessions.cutOff(session.id)) void this.eng.sessions.reconnect(employee.id);
+    else if (employee && this.eng.sessions.restartDue(session.id)) void this.eng.sessions.restartNow(employee.id);
     if (!employee) {
       this.eng.sessions.setActivity(session, 'idle', null);
       return;

@@ -602,7 +602,18 @@ export class EmployeeRegistry {
     this.assertSameComputer(e.hostId, [e.projectId, ...(e.alsoProjectIds ?? [])]);
     if (this.eng.hosts.memberOfHost(e.hostId) && !this.sameRoom(memberSeatOf(e.deskId)?.hostId, e.hostId)) e.deskId = null;
     else if (!this.eng.hosts.memberOfHost(e.hostId) && memberSeatOf(e.deskId)) e.deskId = this.freeDesk();
+    // What a running session was started with and cannot change while it runs: how far it is trusted, which Claude
+    // account it uses, which model and effort. A change of any of them starts the session again — at once if it is
+    // idle, at the end of its turn if not — so that nobody goes on working "on the old one".
+    const was = this.core.employees.require(id);
+    const LEVEL: Record<string, string> = { restricted: 'Restricted', supervised: 'Supervised', standard: 'Standard', autonomous: 'Autonomous', auto: 'Auto', unrestricted: 'Unrestricted' };
+    const changed = [
+      was.autonomy !== e.autonomy ? `your level is now ${LEVEL[e.autonomy] ?? e.autonomy}` : '',
+      (was.claudeConfigDir ?? null) !== (e.claudeConfigDir ?? null) ? 'you were put on another Claude account' : '',
+      (was.model ?? null) !== (e.model ?? null) || (was.effort ?? null) !== (e.effort ?? null) ? 'your model or effort was changed' : '',
+    ].filter(Boolean);
     this.core.put('employee', e);
+    if (changed.length && !e.archived) this.eng.sessions.restartForChange(id, changed.join(', and '));
     // What an employee may do without asking is on the record in full, not just as a field name.
     this.core.audit(actor, 'employee.updated', id, { fields: Object.keys(patch), ...(patch.allowedTools !== undefined ? { allowedTools: e.allowedTools } : {}), ...(patch.disallowedTools !== undefined ? { disallowedTools: e.disallowedTools } : {}) });
     this.core.event({ type: 'employee.updated', source: 'owner', summary: `${e.name}'s profile was updated`, employeeId: id, data: { fields: Object.keys(patch), quiet: true } });
@@ -622,11 +633,46 @@ export class EmployeeRegistry {
 
 // ─────────────────────────── Sessions ────────────────────────────
 
+/** Claude Code's warning at the first start in bypass mode (its wording, as in the installed program). */
+const BYPASS_WARNING = /Bypass Permissions mode/i;
 const TRUST_PROMPT = /(do you trust the files in this folder|trust this folder|is this a project you (created|trust))/i;
 
 export class SessionRegistry {
   private eng: Engine;
   private trustAsked = new Set<string>();
+  private bypassAsked = new Set<string>();
+
+  /**
+   * The first time a Claude account is used in bypass mode, Claude Code shows a warning and asks whoever is at the
+   * keyboard to accept responsibility for what runs without checks ("Yes, I accept" / "No, exit"). Nobody is at the
+   * keyboard: the owner is asked in the office, once — Claude Code remembers the answer for that account. It is the
+   * owner's to accept, never the office's by itself, whatever the employee's level.
+   */
+  private bypassWarningOnScreen(sessionId: string, screen: TerminalScreen): void {
+    if (this.bypassAsked.has(sessionId)) return;
+    const s = this.core.sessions.get(sessionId);
+    if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || s.lastEventAt) return;
+    const text = screen.lines.join('\n').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+    if (!BYPASS_WARNING.test(text) || !/Yes, I accept/.test(text)) return;
+    this.bypassAsked.add(sessionId);
+    const employee = this.core.employees.get(s.employeeId) ?? null;
+    const host = this.core.hosts.get(s.hostId);
+    this.setActivity(s, 'needs_approval', 'Claude Code asks you to accept running without permission checks');
+    this.eng.comms.createQuestion({
+      kind: 'trust_prompt',
+      channel: 'terminal',
+      employee,
+      session: s,
+      text: `Claude Code asks you to accept responsibility before ${employee?.name ?? 'this session'} can run without permission checks on ${host?.name ?? 'that machine'}.`,
+      context: 'Claude Code\'s own warning, shown once per Claude account: "In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous commands. This mode should only be used in a sandboxed container/VM that has restricted internet access and can easily be restored if damaged. By proceeding, you accept all responsibility for actions taken while running in Bypass Permissions mode."',
+      why: `${employee?.name ?? 'The employee'} is set to Unrestricted. The session waits at this warning; "No" ends it (put the employee on Auto instead).`,
+      tool: { name: 'bypass_warning', input: { hostId: s.hostId, account: employee?.claudeConfigDir ?? null } },
+      options: [
+        { label: 'Yes, I accept', description: 'Choose "Yes, I accept" on the warning', consequence: 'The session starts in bypass mode; Claude Code does not ask again for this account on this machine.' },
+        { label: 'Decide in the terminal', description: 'Leave the warning for you to answer at the workstation' },
+      ],
+    });
+  }
   /** Sessions whose screen shows a permission prompt nobody is asking about yet, and the timer that asks once it has stood a moment. */
   private promptTimers = new Map<string, NodeJS.Timeout>();
 
@@ -849,6 +895,8 @@ export class SessionRegistry {
     // Whoever on this machine has something waiting and no session is looked at again now that it is back.
     this.eng.comms.hostBack(hostId);
     this.eng.tasks.schedule();
+    // (A little later: the machine has just come back, and its sessions have just been seen again.)
+    setTimeout(() => this.restartIdleOn(hostId), 1500).unref?.();
   }
 
   /**
@@ -1075,6 +1123,86 @@ export class SessionRegistry {
     }
   }
 
+  /**
+   * The owner's decision of 2026-11-11: everybody runs Unrestricted (bypass) unless the owner puts them back on Auto.
+   * Done once, for employees who were on Auto on the office's own machines — a member's own computer is that member's
+   * to decide (the profile has the choice). Afterwards an employee put back on Auto stays there.
+   */
+  adoptUnrestrictedDefault(): number {
+    if (this.core.store.kvGet<number>('autonomy.unrestrictedDefault', 0) >= 1) return 0;
+    let n = 0;
+    for (const e of this.core.employees.filter((x) => !x.archived && x.autonomy === 'auto' && x.roleKey !== 'foreman')) {
+      if (this.eng.hosts.memberOfHost(e.hostId)) continue;
+      e.autonomy = 'unrestricted';
+      this.core.put('employee', e);
+      // Whoever has a session running gets a new one in the new mode (idle ones as soon as their machine is back, the others when their turn ends).
+      this.restartWhy.set(e.id, 'your level is now Unrestricted');
+      n++;
+    }
+    this.core.store.kvSet('autonomy.unrestrictedDefault', 1);
+    if (n) {
+      this.core.audit('office', 'autonomy.unrestricted_default', 'employees', { count: n });
+      this.core.event({ type: 'employee.updated', source: 'server', summary: `${n} employee${n === 1 ? '' : 's'} on the office's own machines ${n === 1 ? 'is' : 'are'} on Unrestricted now (the owner's default); each takes effect when their session next starts`, data: { count: n } });
+    }
+    return n;
+  }
+
+  /** Employees whose running session has to be started again because what it was started with has changed, and why. */
+  private restartWhy = new Map<string, string>();
+
+  /**
+   * Something a session is started with has changed for this employee (their level, their Claude account, their
+   * model): the session is started again with the same conversation — now if it is between turns, otherwise as soon
+   * as its turn ends. Nothing to do when no session runs: the next start has the change anyway.
+   */
+  restartForChange(employeeId: string, why: string): void {
+    const s = this.core.runningSessionOf(employeeId);
+    if (!s || s.origin !== 'managed') return;
+    const earlier = this.restartWhy.get(employeeId);
+    this.restartWhy.set(employeeId, earlier && !earlier.includes(why) ? `${earlier}, and ${why}` : why);
+    if (s.inTurn === true) return; // at the end of the turn (see the hook receiver)
+    void this.restartNow(employeeId);
+  }
+
+  /** Is this session waiting to be started again for a change (so it is not told to go on meanwhile)? */
+  restartDue(sessionId: string): boolean {
+    const s = this.core.sessions.get(sessionId);
+    return !!s?.employeeId && this.restartWhy.has(s.employeeId);
+  }
+
+  private restarting = new Set<string>();
+
+  async restartNow(employeeId: string): Promise<void> {
+    const why = this.restartWhy.get(employeeId);
+    const e = this.core.employees.get(employeeId);
+    if (!why || !e || this.restarting.has(employeeId)) return;
+    const s = this.core.runningSessionOf(employeeId);
+    if (!s) return void this.restartWhy.delete(employeeId);
+    this.restarting.add(employeeId);
+    this.restartWhy.delete(employeeId);
+    try {
+      this.core.audit('office', 'session.restarted_for_change', s.id, { employee: e.name, why });
+      this.core.event({ type: 'session.started', source: 'server', summary: `${e.name}'s session is being started again: ${why.replace(/\byour\b/g, 'their').replace(/\byou were\b/g, 'they were')}`, employeeId, sessionId: s.id, hostId: s.hostId, data: { restartedFor: why } });
+      await this.stop(employeeId, { actor: 'office', reason: 'started again for a change of settings' });
+      await this.wake(employeeId, 'a change of their settings');
+      // Somebody in the middle of a task is told to go on; somebody idle needs no message (it would only cost a turn).
+      const task = this.eng.tasks.currentTask(employeeId);
+      if (task) this.eng.comms.sendMessage({ from: { kind: 'system', id: null, name: 'the office' }, toEmployeeId: employeeId, kind: 'system', taskId: task.id, body: `Your session was started again because ${why}. Go on with ${task.key} "${truncate(task.title, 80)}" from where you were.` });
+    } catch (err) {
+      this.core.log('warn', `restarting ${e.name} for a change of settings: ${(err as Error).message}`);
+    } finally {
+      this.restarting.delete(employeeId);
+    }
+  }
+
+  /** After a machine has reported its sessions: those of its employees that wait for a new start and are between turns get it now. */
+  private restartIdleOn(hostId: string): void {
+    for (const id of [...this.restartWhy.keys()]) {
+      const s = this.core.runningSessionOf(id);
+      if (s && s.hostId === hostId && s.inTurn !== true) void this.restartNow(id);
+    }
+  }
+
   /** Sessions that could not reach the office's own tools (their Claude Code reports the connection gone). */
   private unreachable = new Set<string>();
   /** When each employee's session was last started again for that, most recent last. */
@@ -1243,6 +1371,7 @@ export class SessionRegistry {
    */
   onScreen(sessionId: string, screen: TerminalScreen): void {
     this.promptOnScreen(sessionId, false, screen);
+    this.bypassWarningOnScreen(sessionId, screen);
     if (this.trustAsked.has(sessionId)) return;
     const s = this.core.sessions.get(sessionId);
     // Only the interactive CLI shows a trust prompt; an SDK-managed worker's pane is a transcript.
@@ -1251,7 +1380,7 @@ export class SessionRegistry {
     if (!TRUST_PROMPT.test(text)) return;
     this.trustAsked.add(sessionId);
     const employee = this.core.employees.get(s.employeeId) ?? null;
-    if (employee?.autonomy === 'auto') {
+    if (employee?.autonomy === 'auto' || employee?.autonomy === 'unrestricted') {
       // The owner put this employee in this folder and asked not to be asked: answer "yes" for them, on the record.
       const keys = trustPromptKeys(screen.lines);
       if (keys) {
@@ -1322,7 +1451,8 @@ export class SessionRegistry {
   buildSpec(employee: Employee, session: AgentSession, cwd: string, resume: boolean, mcpToken: string, mode: Employee['executionMode'] = 'interactive_cli'): LaunchSpec {
     const project = this.core.projects.get(employee.projectId);
     const host = this.core.hosts.get(session.hostId);
-    const perms = permissionsFor(employee.autonomy, project, employee, host?.info?.claudeVersion ?? null);
+    // An SDK-managed worker is not run in bypass mode (the SDK asks for a separate, explicit switch for it): it gets Auto.
+    const perms = permissionsFor(employee.autonomy === 'unrestricted' && mode === 'managed_sdk' ? 'auto' : employee.autonomy, project, employee, host?.info?.claudeVersion ?? null);
     return {
       displayName: employee.name,
       cwd,
@@ -1339,7 +1469,7 @@ export class SessionRegistry {
       browser: this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser,
       strictMcp: !this.core.settings.workersInheritMcp,
       // On `auto` the owner can choose to leave even these to Claude Code's auto mode.
-      highRiskPatterns: employee.autonomy === 'auto' && !this.core.settings.autoAsksHighRisk ? [] : [...DEFAULT_HIGH_RISK_PATTERNS, ...(project?.policy.highRiskPatterns ?? [])],
+      highRiskPatterns: (employee.autonomy === 'auto' || employee.autonomy === 'unrestricted') && !this.core.settings.autoAsksHighRisk ? [] : [...DEFAULT_HIGH_RISK_PATTERNS, ...(project?.policy.highRiskPatterns ?? [])],
       claudeSessionId: session.claudeSessionId!,
       resume,
       // A project's other repositories, when they are on the machine this employee works on.

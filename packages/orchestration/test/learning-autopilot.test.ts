@@ -79,8 +79,8 @@ test('the table: every kind and every action is classified, and anything unknown
   assert.equal(widening('verify_timeout', { type: 'project.verifyTimeout', projectId: p, seconds: 5 }).widening, true, 'only "longer" is known to be harmless');
   assert.equal(widening('verify_timeout', { type: 'project.verifyTimeout', projectId: 'gone', seconds: 9999 }).widening, true, 'an unknown project: direction cannot be told');
   // Autonomy: down is not widening; up, sideways and "whose?" are.
-  const levels: AutonomyLevel[] = ['restricted', 'supervised', 'standard', 'autonomous', 'auto'];
-  assert.deepEqual(levels.map((level) => widening('autonomy', { type: 'employee.autonomy', employeeId: o.alex.id, level }).widening), [false, true, true, true, true], 'Alex is supervised');
+  const levels: AutonomyLevel[] = ['restricted', 'supervised', 'standard', 'autonomous', 'auto', 'unrestricted'];
+  assert.deepEqual(levels.map((level) => widening('autonomy', { type: 'employee.autonomy', employeeId: o.alex.id, level }).widening), [false, true, true, true, true, true], 'Alex is supervised');
   assert.equal(widening('autonomy', { type: 'employee.autonomy', employeeId: 'nobody', level: 'restricted' }).widening, true);
   for (const kind of ['verify_command', 'sequencing', 'acceptance_criteria', 'routing']) assert.equal(widening(kind, { type: 'advice' }).widening, false);
 

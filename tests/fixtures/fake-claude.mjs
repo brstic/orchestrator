@@ -141,6 +141,8 @@ function allowed(tool, input) {
   if (tool.startsWith('mcp__orchestrator')) return 'allow';
   // "auto" is Claude Code's own classifier deciding; the fixture stands in for it by letting tools through.
   if (permissionMode === 'auto') return 'allow';
+  // Bypass mode: Claude Code checks and asks nothing (deny rules, above, still hold).
+  if (permissionMode === 'bypassPermissions') return 'allow';
   if (tool === 'Write' || tool === 'Edit') return permissionMode === 'acceptEdits' || rules.includes(tool) ? 'allow' : 'ask';
   if (tool === 'Bash') {
     const cmd = String(input.command ?? '');
@@ -193,11 +195,11 @@ async function useTool(tool, input, run) {
       say(` ❯ 1. Yes`);
       say(`   2. No`);
       say(` Esc to cancel · Tab to amend`);
+      dialogOpen = true;
       let key = await nextKey();
       let moved = false;
       if (key === '\x1b') {
-        // Keys come one byte at a time. An arrow (ESC [ B) moves the choice to "No" and the Enter after it confirms
-        // that; an Escape on its own cancels.
+        // An arrow (ESC [ B) moves the choice to "No" and the Enter after it confirms that; an Escape on its own cancels.
         moved = true;
         const next = await Promise.race([nextKey(), sleep(150).then(() => null)]);
         if (next === '[' || next === 'O') {
@@ -205,6 +207,8 @@ async function useTool(tool, input, run) {
           key = await nextKey();
         } else keyWaiter = null;
       }
+      dialogOpen = false;
+      keyQueue.length = 0;
       // The dialog goes away once it is answered, as the real one does.
       out('\x1b[6A\x1b[J');
       if (moved || (key !== '1' && key !== 'y' && key !== '\r')) {
@@ -499,7 +503,12 @@ let inPaste = false;
 let keyWaiter = null;
 const queue = [];
 
+// While a dialog is open every key belongs to it — also the ones that arrive together in one read (an arrow key
+// is three bytes, and the Enter after it often comes with them): they wait in a queue for the dialog to take them.
+let dialogOpen = false;
+const keyQueue = [];
 function nextKey() {
+  if (keyQueue.length) return Promise.resolve(keyQueue.shift());
   return new Promise((resolve) => {
     keyWaiter = resolve;
   });
@@ -542,8 +551,12 @@ function onInput(chunk) {
     if (keyWaiter) {
       const w = keyWaiter;
       keyWaiter = null;
-      out(`${ch === '\r' ? '' : ch}\r\n`);
+      if (!dialogOpen) out(`${ch === '\r' ? '' : ch}\r\n`);
       w(ch);
+      continue;
+    }
+    if (dialogOpen) {
+      keyQueue.push(ch);
       continue;
     }
     if (ch === '\x03') return shutdown('other');
@@ -588,5 +601,44 @@ if (process.stdin.isTTY) process.stdin.setRawMode(true);
 process.stdin.on('data', onInput);
 process.stdin.resume();
 process.on('SIGTERM', () => void shutdown('other'));
+// The first start of an account in bypass mode: Claude Code's warning, which somebody has to accept — once.
+// (Remembered per Claude config folder, as the real one remembers it in that folder's settings.)
+if (permissionMode === 'bypassPermissions') {
+  const accepted = path.join(process.env.CLAUDE_CONFIG_DIR ?? process.env.HOME ?? '/nonexistent', '.fake-bypass-accepted');
+  if (!fs.existsSync(accepted)) {
+    say(' \x1b[31mWARNING: Claude Code running in Bypass Permissions mode\x1b[0m');
+    say(' In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous commands.');
+    say(' By proceeding, you accept all responsibility for actions taken while running in Bypass Permissions mode.');
+    say(' ❯ 1. No, exit');
+    say('   2. Yes, I accept');
+    // Keys come one byte at a time: an arrow (ESC [ B) moves to "Yes, I accept", Enter confirms the choice.
+    let onYes = false;
+    dialogOpen = true;
+    for (;;) {
+      const key = await nextKey();
+      if (key === '\x1b') {
+        const a = await nextKey();
+        const b = a === '[' || a === 'O' ? await nextKey() : '';
+        if (b === 'B') onYes = true;
+        else if (b === 'A') onYes = false;
+        continue;
+      }
+      if (key === '2') onYes = true;
+      if (key === '\r' || key === '2' || key === '1') break;
+    }
+    dialogOpen = false;
+    keyQueue.length = 0;
+    if (!onYes) {
+      say(' Exiting.');
+      process.exit(1);
+    }
+    try {
+      fs.writeFileSync(accepted, new Date().toISOString());
+    } catch {
+      /* not remembered: asked again next time */
+    }
+    out('\x1b[5A\x1b[J');
+  }
+}
 await fireHook('SessionStart', { source: resumeId ? 'resume' : 'startup' });
 prompt();

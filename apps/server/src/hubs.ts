@@ -275,7 +275,7 @@ export class AgentHub implements AgentLink {
         case 'create': {
           // `orchestrator-agent create --name X --project <dir>`: X lives in that folder and owns the project in it.
           const actor = `host:${c.hostId}`;
-          if (req.params.autonomy && !['restricted', 'supervised', 'standard', 'autonomous', 'auto'].includes(req.params.autonomy)) throw new Error(`unknown autonomy level "${req.params.autonomy}"`);
+          if (req.params.autonomy && !['restricted', 'supervised', 'standard', 'autonomous', 'auto', 'unrestricted'].includes(req.params.autonomy)) throw new Error(`unknown autonomy level "${req.params.autonomy}"`);
           const role = req.params.role ? (roleByKey(req.params.role) ?? matchRole(req.params.role)) : undefined;
           if (req.params.role && !role) throw new Error(`unknown role "${req.params.role}". Known roles: ${ROLE_CATALOGUE.map((r) => r.key).join(', ')}`);
           let employee = eng.core.employeeByName(req.params.name);

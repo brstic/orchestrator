@@ -65,6 +65,7 @@ const AUTONOMY: Array<{ id: AutonomyLevel; label: string; text: string; maps: st
   { id: 'standard', label: 'Standard', text: 'Edits and routine commands are allowed; everything else asks you.', maps: 'acceptEdits permission mode plus an allow-list of routine commands', tone: 'neutral' },
   { id: 'autonomous', label: 'Autonomous', text: 'Works end to end on its task; risky commands still ask you.', maps: 'acceptEdits permission mode plus a wider allow-list; high-risk commands always escalate', tone: 'accent' },
   { id: 'auto', label: 'Auto', text: 'Works on their own and asks you only for decisions and direction, not for permission.', maps: "Claude Code's auto permission mode: its own safety check decides what may run. High-risk commands (push, sudo, deploy…) still ask you unless you turn that off in Settings → Employees", tone: 'good' },
+  { id: 'unrestricted', label: 'Unrestricted', text: 'Nothing is checked or asked by Claude Code: what they run, runs. Only the high-risk list (push, sudo, deploy, broad deletions…) and the project\'s deny rules still stand.', maps: "Claude Code's bypass-permissions mode. It protects against nothing — not a mistaken command, not an instruction hidden in a page or a ticket they read. The office still holds high-risk commands for your answer (Settings → Employees), and deny rules still apply. The first start on a Claude account asks you once to accept Claude Code's own warning. Owners only.", tone: 'bad' },
 ];
 
 const HIRE_NAMES = ['Alex', 'Sarah', 'Mike', 'Emma', 'David', 'Ava', 'Noah', 'Mia', 'Leo', 'Zoe', 'Ivan', 'Nina', 'Omar', 'Lena', 'Theo', 'Ruth'];
@@ -195,6 +196,7 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
   const [deskId, setDeskId] = useState<string | null>(desk ?? null);
   const [projectId, setProjectId] = useState('');
   const [workingDir, setWorkingDir] = useState('');
+  const can = useAccess();
   const [autonomy, setAutonomy] = useState<AutonomyLevel | null>(null);
   const [style, setStyle] = useState<CommunicationStyle>('concise');
   const [model, setModel] = useState('');
@@ -209,7 +211,8 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
   const role = custom ? undefined : roleByKey(roleKey);
   const existingForeman = useOffice((s) => Object.values(s.employees).find((e) => !e.archived && e.roleKey === 'foreman'));
   // Default: they work on their own and come to the owner only for decisions.
-  const effectiveAutonomy = autonomy ?? 'auto';
+  // The owner's default since 2026-11-11: everybody runs Unrestricted unless put back on Auto. It is an owner's to give; a colleague's hires start on Auto.
+  const effectiveAutonomy = autonomy ?? (can.admin ? 'unrestricted' : 'auto');
   const host = hostId ? hostsById[hostId] : undefined;
   const project = projectId ? projectsById[projectId] : undefined;
   const hasCwd = !!workingDir.trim() || !!project?.repoPath;
@@ -902,7 +905,9 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
   };
   // Open from the start when something in it is set, and then as the person leaves it.
   const [more, setMore] = useState(() => !!(e.claudeConfigDir || e.instructions || e.allowedTools.length || e.disallowedTools.length || e.executionMode !== 'interactive_cli'));
-  const restartSensitive = live && ('instructions' in patch || 'allowedTools' in patch || 'disallowedTools' in patch || 'autonomy' in patch || 'model' in patch || 'effort' in patch || 'roleKey' in patch || 'executionMode' in patch);
+  // What the office starts their session again for by itself, and what waits for the next start.
+  const restartsNow = live && ('autonomy' in patch || 'model' in patch || 'effort' in patch || 'claudeConfigDir' in patch);
+  const restartSensitive = live && ('instructions' in patch || 'allowedTools' in patch || 'disallowedTools' in patch || 'roleKey' in patch || 'executionMode' in patch);
 
   return (
     <div className="col" style={{ gap: 14 }}>
@@ -1034,7 +1039,7 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
           </select>
         </Field>
         <RuntimeField value={d.executionMode} onChange={(v) => set('executionMode', v)} host={d.hostId ? hostsById[d.hostId] : undefined} />
-        <Field label="Claude account folder" hint="Leave empty to use the machine's own Claude login. More accounts are added to a machine in Company → Claude; pick one here, or write the folder of a login made by hand. Takes effect the next time their session starts. When an account runs out, the office moves its employees to another one by itself (Settings → Employees).">
+        <Field label="Claude account folder" hint="Leave empty to use the machine's own Claude login. More accounts are added to a machine in Company → Claude; pick one here, or write the folder of a login made by hand. A running session is started again on the new account. When an account runs out, the office moves its employees to another one by itself (Settings → Employees).">
           <input value={d.claudeConfigDir} onChange={(ev) => set('claudeConfigDir', ev.target.value)} className="mono" placeholder="default login" spellCheck={false} aria-label="Claude account folder" list="claude-accounts-of-machine" />
           <datalist id="claude-accounts-of-machine">
             {(hostsById[d.hostId ?? '']?.claudeAccounts ?? []).map((a) => (
@@ -1061,8 +1066,12 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
           </div>
         </div>
       </details>
-      <div className={restartSensitive ? 'pc-note' : 'pc-info'}>
-        {live ? 'Autonomy, role, model, instructions and tools reach a session when it starts: stop and start theirs to apply a change.' : 'Changes take effect the next time their session is started.'}
+      <div className={restartSensitive || restartsNow ? 'pc-note' : 'pc-info'}>
+        {!live
+          ? 'Changes take effect the next time their session is started.'
+          : restartsNow
+            ? `Saving this starts ${e.name}'s session again with the same conversation — now if they are between turns, otherwise when their turn ends.${restartSensitive ? ' Role, instructions and tools come with that start too.' : ''}`
+            : 'A change of autonomy, model or Claude account starts their session again by itself. Role, instructions and tools reach a session when it starts: stop and start theirs to apply those.'}
       </div>
       <div className="row">
         <Button variant="primary" disabled={!dirty || !valid || busy} onClick={save}>

@@ -118,7 +118,7 @@ function Evidence({ evidence }: { evidence: EvidenceRef[] }) {
 
 // ──────────────────────────── waiting for you ────────────────────────────
 
-const AUTONOMY: AutonomyLevel[] = ['restricted', 'supervised', 'standard', 'autonomous', 'auto'];
+const AUTONOMY: AutonomyLevel[] = ['restricted', 'supervised', 'standard', 'autonomous', 'auto', 'unrestricted'];
 
 /** What saying yes really does, in plain words, and whether it lets agents do more without asking. */
 function describeAction(a: ImprovementAction, projects: Record<string, Project>, employees: Record<string, Employee>, tasks: Record<string, Task>): { text: string; widens: boolean } {

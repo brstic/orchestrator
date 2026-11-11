@@ -296,7 +296,7 @@ export function OutsideTmux({ host }: { host: Host }) {
   const adopt = async (p: Proc) => {
     if (!p.cwd) return;
     setBusy(p.pid);
-    const created = await act(() => api<Employee>('POST', '/employees', { name: freeEmployeeName(p.cwd!, employees), roleKey: 'fullstack', hostId: host.id, workingDir: p.cwd, autonomy: 'auto' }));
+    const created = await act(() => api<Employee>('POST', '/employees', { name: freeEmployeeName(p.cwd!, employees), roleKey: 'fullstack', hostId: host.id, workingDir: p.cwd, autonomy: useOffice.getState().me?.kind === 'owner' ? 'unrestricted' : 'auto' }));
     if (created) await act(() => api('POST', `/employees/${created.id}/start`, { continueLast: true }), `${created.name} is starting in ${p.cwd}, continuing the last conversation there`);
     setBusy(null);
     void load();

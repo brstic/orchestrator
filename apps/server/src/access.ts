@@ -246,6 +246,10 @@ export function mayCall(engine: Engine, who: Who, method: string, route: string,
       if (!allowed(who, r.need, member)) return { ok: false, reason: member === OWNERS_ONLY ? 'The foreman supervises the whole office, so only the owners can look into it or direct it.' : "That is on another member's own computer; only they and the owners can use it." };
     }
     if (owner) return { ok: true };
+    // Running without Claude Code's permission checks (the Unrestricted level) is an owner's to give.
+    if (/^\/employees(\/[^/]+)?$/.test(route) && (method === 'POST' || method === 'PATCH') && body?.autonomy === 'unrestricted') {
+      return { ok: false, reason: 'Only an owner of this office can put an employee on Unrestricted.' };
+    }
     // Hiring a foreman, or making someone the foreman, is an owner's act.
     if (/^\/employees(\/[^/]+)?$/.test(route) && (method === 'POST' || method === 'PATCH') && typeof body?.roleKey === 'string' && (roleByKey(body.roleKey) ?? matchRole(body.roleKey))?.key === FOREMAN_ROLE) {
       return { ok: false, reason: 'Only an owner of this office can hire a foreman.' };

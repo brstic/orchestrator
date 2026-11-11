@@ -26,7 +26,7 @@ export const AUTOPILOT_AREA = 'autopilot';
 /** The name automatic changes carry in the audit log and on the improvement. */
 export const AUTOPILOT_ACTOR = 'autopilot';
 
-export const AUTONOMY_ORDER: AutonomyLevel[] = ['restricted', 'supervised', 'standard', 'autonomous', 'auto'];
+export const AUTONOMY_ORDER: AutonomyLevel[] = ['restricted', 'supervised', 'standard', 'autonomous', 'auto', 'unrestricted'];
 const rank = (level: AutonomyLevel | undefined): number => (level ? AUTONOMY_ORDER.indexOf(level) : -1);
 
 /** The highest autonomy the office gives by itself. "autonomous" and "auto" are always a person's decision. */

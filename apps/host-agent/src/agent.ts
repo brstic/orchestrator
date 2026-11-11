@@ -1308,6 +1308,9 @@ export class HostAgent {
     for (const pattern of t.spec?.highRiskPatterns ?? []) {
       try {
         if (new RegExp(pattern, 'i').test(command)) {
+          // In bypass mode Claude Code asks nobody, so "ask" would mean nothing there: the call is held here until
+          // the owner has answered in the office (see the hook handler), and refused if no answer comes.
+          if (t.spec?.permissionMode === 'bypassPermissions') return { orchHold: true, pattern };
           return {
             hookSpecificOutput: {
               hookEventName: 'PreToolUse',
@@ -1529,7 +1532,14 @@ export class HostAgent {
       payload,
     };
 
-    const local = this.localPolicy(tracked, payload);
+    let local = this.localPolicy(tracked, payload);
+    // Bypass mode and a high-risk command: wait for the owner's decision; without one, the call is refused.
+    let held: string | null = null;
+    if (local?.orchHold) {
+      held = String(local.pattern ?? '');
+      payload = { ...payload, orch_policy: 'high_risk_held' };
+      local = null;
+    }
     if (local) {
       const granted = local.orchGranted === true;
       delete local.orchGranted;
@@ -1540,7 +1550,15 @@ export class HostAgent {
       return;
     }
 
-    if (!this.isBlocking(payload) || !this.connected) {
+    if (held !== null) event.payload = payload;
+    const refuse = (why: string) => JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Orchestrator policy: this command matches a high-risk pattern (${held}) and needs the owner's approval. ${why} Do not try it another way: wait, or ask the boss (ask_boss).` } });
+    if (held !== null && !this.connected) {
+      this.enqueue(event);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(refuse('The office cannot be reached right now, so nobody could be asked.'));
+      return;
+    }
+    if (held === null && (!this.isBlocking(payload) || !this.connected)) {
       this.enqueue(event);
       res.writeHead(200);
       res.end();
@@ -1580,6 +1598,10 @@ export class HostAgent {
     if (output) {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(output), () => this.send({ t: 'hook.settled', requestId, outcome: 'delivered' }));
+    } else if (held !== null) {
+      // Nobody answered in time, and in bypass mode there is no prompt to fall back to: refused, in so many words.
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(refuse('The owner has not answered yet.'), () => this.send({ t: 'hook.settled', requestId, outcome: 'abandoned', detail: 'no decision in time; the command was refused' }));
     } else {
       res.writeHead(200);
       res.end(() => this.send({ t: 'hook.settled', requestId, outcome: 'abandoned', detail: 'no decision in time; Claude Code falls back to its own prompt' }));

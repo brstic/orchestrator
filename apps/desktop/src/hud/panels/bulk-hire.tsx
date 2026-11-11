@@ -129,7 +129,7 @@ export function BulkHire({ onDone, onlyHostId }: { onDone: () => void; onlyHostI
     for (const r of rows) {
       if (r.result?.ok) continue;
       try {
-        await api<Employee>('POST', '/employees', { name: r.name.trim(), roleKey, hostId, workingDir: r.path, autonomy: 'auto' });
+        await api<Employee>('POST', '/employees', { name: r.name.trim(), roleKey, hostId, workingDir: r.path, autonomy: can.admin ? 'unrestricted' : 'auto' });
         made++;
         setRows((prev) => prev.map((x) => (x.path === r.path ? { ...x, result: { ok: true } } : x)));
       } catch (e) {

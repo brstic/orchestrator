@@ -27,5 +27,5 @@ Every change that alters behaviour, finishes or starts a plan item, or changes h
 - Product text is English. The owner writes Serbian; answer them in Serbian.
 - Never run the real `claude` CLI or `tests/real/*` without being asked: it spends the owner's Claude usage. Tests use `tests/fixtures/fake-claude.mjs`.
 - Never package (`scripts/package.mjs`) while `release/Orchestrator.app` is running; never kill the owner's tmux server or `orch-*` sessions; no `pkill`/`killall`.
-- No permission-bypass flags for workers. No unauthenticated remote terminal access. Nothing mocked may be presented as a product feature.
+- Workers run in Claude Code's bypass-permissions mode only as the autonomy level **Unrestricted** — the owner's decision of 2026-11-11 and their default (`docs/DECISIONS.md`, "Unrestricted"; `docs/SECURITY.md`). Never add the flag any other way, never for SDK-managed workers, never `CLAUDE_CODE_EVEN_MORE_DANGEROUSLY_SKIP_PERMISSIONS`; the office's high-risk gate and the project's deny rules stay in front of every level, and nobody but the owner accepts Claude Code's bypass warning. No unauthenticated remote terminal access. Nothing mocked may be presented as a product feature.
 - Commit or push only when asked.

@@ -48,17 +48,30 @@ test('someone hired with a model and an effort is started with exactly those', a
   assert.match(await pane(), /model: opus · effort: high/, 'what the worker itself was started with');
 });
 
-test('changed in the profile, they take effect the next time the session starts; "default" leaves both to Claude Code', async () => {
+test('changed in the profile, the session is started again with them at once; "default" leaves both to Claude Code', async () => {
+  // A running session cannot change its model: the office starts it again (the same conversation) with the new one.
+  const startedAgain = async (since: string) =>
+    waitFor(async () => {
+      const s = await h.session(alex);
+      return s?.status === 'running' && s.startedAt !== since && s.inTurn === false ? s : null;
+    }, { label: 'started again by the office', timeout: 40000 });
+  let before = (await h.session(alex))!;
   const patched = await h.api<any>('PATCH', `/employees/${alex}`, { model: null, effort: 'max' });
   assert.deepEqual([patched.model, patched.effort], [null, 'max']);
-  assert.match(await pane(), /model: opus · effort: high/, 'the running session is not touched');
-  const session = await restart();
+  let session = await startedAgain(before.startedAt!);
+  assert.equal(session.resumed, true);
   assert.deepEqual([session.model, session.effort], [null, 'max']);
   assert.match(await pane(), /model: default · effort: max/);
 
+  before = session;
   await h.api('PATCH', `/employees/${alex}`, { effort: null });
-  await restart();
+  session = await startedAgain(before.startedAt!);
   assert.doesNotMatch(await pane(), /effort:/, 'neither option is passed');
+  // The same values again change nothing, and nothing is started.
+  before = session;
+  await h.api('PATCH', `/employees/${alex}`, { effort: null, model: null });
+  await new Promise((r) => setTimeout(r, 1200));
+  assert.equal((await h.session(alex))!.startedAt, before.startedAt);
 });
 
 test('a model or an effort that is not one is refused in words', async () => {
