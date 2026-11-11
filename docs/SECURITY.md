@@ -189,6 +189,18 @@ An employee on Auto is governed by Claude Code's own safety check. When it refus
 - the employee is told so in a message from the owner.
 Deny rules of the project still win (Claude Code evaluates them whatever a hook says). The decision is audited (`approval.decide`, `approval.granted_once`). What is shown to the owner is the command as Claude Code reported it and the reason it gave. This is the same act as approving an ordinary permission request — it does not widen what the session may do afterwards.
 
+## Signing in with a name and a password
+
+`apps/server/src/logins.ts`; `POST /login` at the door. A member who has a password can sign in at the office's address with their name; what they get is a credential of that member with that member's role, valid for 30 days, kept by the browser like any member credential.
+
+- **What is stored:** per member a random 16-byte salt and a 64-byte scrypt hash (N 16384, r 8, p 1; the password NFKC-normalised first), in the office's store under `logins`, apart from the member records that are sent to windows. A password is never written to a log, an audit entry, a notification or an answer; the Access list says only *has one*.
+- **What an attempt is told:** "That name and password do not match a member of this office" — the same for an unknown name, a member with no password, one who was removed or whose time is up, and a wrong password; the hash is computed in every case so the answer takes the same time.
+- **What slows guessing:** five wrong passwords in a row close the name (for the right password too) for 15 minutes, then 30, and so on up to a day; the owners get a security notification and the audit log an entry (`login.locked`). Twenty wrong attempts from one address within ten minutes close that address (429). The address is the one the door reports (the peer, or what a proxy on the same machine says) — not a header a caller sends. These counters are in memory and a restart clears them.
+- **What ends a session:** *Sign out* (that one session), a changed or removed password (every session made with it), a new invitation for the member, removing the member. The desktop app's own credential is ended only by the last two.
+- **Who sets a password:** an owner for anybody (`POST`/`DELETE /api/guests/:id/password`), a member for themselves knowing the current one (`POST /api/me/password`, counted like a sign-in attempt), and whoever has a shell on the server (`office-admin password`, read from standard input — not from the command line, which other users of the machine can see).
+- **What it does not change:** the office's own owner token is not accepted through the door; an owner who signs in is a *member with the role owner*. A phone is turned away before the password is looked at. There is no second factor: for an owner, the password is as strong a key as their invitation was — choose it accordingly, and note that somebody who knows a member's name can keep that name's password sign-in closed by guessing wrongly (the app and invitations still work).
+- **Audit:** `login.password_set`, `login.password_removed`, `login.signed_in` (with the address), `login.failed` (the name tried, cut to 40 characters, and the address), `login.locked`.
+
 ## Phones
 
 A phone's browser is refused at the server (`phone.ts`): a page that says the office is for a computer, or a 403 for everything that is not a page. It is recognised by its User-Agent, so it is **not a security boundary** — it keeps people from entering something that does not work on a phone, nothing more. Access is decided by invitations, tokens and roles as before.

@@ -7,6 +7,7 @@
  *   close                                close it
  *   invite <name> [--role owner|colleague|visitor]   make an invitation link (printed once)
  *   reinvite <name>                      a new invitation for a member; the old one stops working
+ *   password <name> [--remove]           let a member sign in with a name and password (the password is read from standard input)
  *   role <name> <role>                   change what a member may do
  *   revoke <name>                        take a member's access away
  *   service [--door 4610] [--address <url>]   print a systemd unit that keeps the office running (Linux)
@@ -114,6 +115,23 @@ switch (command) {
     if (!ROLES.includes(role)) die(`pnpm office role <name> <${ROLES.join('|')}>`);
     const g = await api('PATCH', `/guests/${(await member(positional.join(' '))).id}`, { role });
     console.log(`${g.name} is now ${g.role}: ${WHAT[g.role]}. They are reconnected with the new role.`);
+    break;
+  }
+  case 'password': {
+    // The password comes on standard input, so that it is neither in the shell's history nor in the process list:
+    //   printf '%s' 'the password' | pnpm office password <name>        (--remove takes it away)
+    const g = await member(positional.join(' '));
+    if (opts.remove) {
+      await api('DELETE', `/guests/${g.id}/password`);
+      console.log(`${g.name} can no longer sign in with a password.`);
+      break;
+    }
+    if (process.stdin.isTTY) die(`Give the password on standard input:  printf '%s' '…' | pnpm office password ${JSON.stringify(g.name)}`);
+    let pw = '';
+    for await (const chunk of process.stdin) pw += chunk;
+    pw = pw.replace(/\r?\n$/, '');
+    await api('POST', `/guests/${g.id}/password`, { password: pw });
+    console.log(`${g.name} (${g.role}) can now sign in at the office's address with the name "${g.name}" and that password.`);
     break;
   }
   case 'revoke': {

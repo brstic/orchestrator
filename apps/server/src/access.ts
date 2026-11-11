@@ -57,6 +57,9 @@ const onOwn = (r: Rule): Rule => ({ ...r, ownOnly: true });
 const RULES: Rule[] = [
   // ── the office as everyone sees it ──
   rule('GET', '/me', 'read'),
+  // One's own password and one's own session: anybody who is in.
+  rule('POST', '/me/password', 'read'),
+  rule('POST', '/logout', 'read'),
   rule('GET', '/state', 'read'),
   rule('GET', '/people', 'read'),
   rule('GET', '/roles', 'read'),

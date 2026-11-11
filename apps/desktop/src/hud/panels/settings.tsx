@@ -2,7 +2,7 @@ import { useTick } from './company-shared.tsx';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ACTIVITY_LABEL, type AuditEntry, type ForemanSettings, type ForemanStatus, type OwnerSettings, type SelfImprovementSettings } from '@orchestrator/contracts';
 import { Badge, Button, Field, Window } from '@orchestrator/ui';
-import { api } from '../../lib/api.ts';
+import { api, forgetToken } from '../../lib/api.ts';
 import { DEFAULT_KEYS, setPrefs, usePrefs, type ClientPrefs, type PrefsPatch } from '../../lib/prefs.ts';
 import { canChooseOutput, soundChoices } from '../../lib/sound-devices.ts';
 import { micLevel } from '../../lib/voice.ts';
@@ -13,13 +13,15 @@ import { registerPanel } from './index.tsx';
 import { LoadState, fmtDateTime, keyLabel, useLoad, type PanelProps } from './company-shared.tsx';
 import { AutopilotDial } from './growth.tsx';
 
-type SectionId = 'company' | 'graphics' | 'controls' | 'sound' | 'improve' | 'workers' | 'foreman' | 'audit';
+type SectionId = 'company' | 'graphics' | 'controls' | 'sound' | 'account' | 'improve' | 'workers' | 'foreman' | 'audit';
 
 /** 'mine': kept on this computer, for whoever sits at it. 'office': the office's own settings, which its owners change. */
-const SECTIONS: Array<{ id: SectionId; label: string; group: 'mine' | 'office'; ownerOnly?: boolean }> = [
+const SECTIONS: Array<{ id: SectionId; label: string; group: 'mine' | 'office'; ownerOnly?: boolean; memberOnly?: boolean }> = [
   { id: 'graphics', label: 'Graphics', group: 'mine' },
   { id: 'controls', label: 'Controls', group: 'mine' },
   { id: 'sound', label: 'Sound', group: 'mine' },
+  // A member's own way in: their password, and signing out of a browser. The office's own computer has neither.
+  { id: 'account', label: 'Sign-in', group: 'mine', memberOnly: true },
   { id: 'company', label: 'Company', group: 'office' },
   { id: 'improve', label: 'Growth', group: 'office' },
   { id: 'workers', label: 'Employees', group: 'office' },
@@ -728,12 +730,92 @@ function AuditSection() {
   );
 }
 
+/**
+ * A member's own sign-in: the password they come in with at the office's address, and leaving a browser they signed in on.
+ * (Whether a member may have a password at all is not decided here — anybody who is in may give themselves one.)
+ */
+function AccountSection() {
+  const me = useOffice((s) => s.me);
+  const load = useLoad<{ hasPassword: boolean; passwordSession: boolean }>('/me');
+  const data = load.data;
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [again, setAgain] = useState('');
+  const [busy, setBusy] = useState(false);
+  if (!data) return <LoadState load={load} what="your sign-in" />;
+  const mismatch = !!again && next !== again;
+  const ready = next.length >= 8 && next === again && (!data.hasPassword || !!current) && !busy;
+  const change = async () => {
+    setBusy(true);
+    const done = await act(() => api('POST', '/me/password', { current, password: next }), data.hasPassword ? 'Password changed' : 'Password set');
+    setBusy(false);
+    if (!done) return;
+    // Sessions made with the old password are over — this one too, when it was one.
+    if (data.passwordSession) {
+      forgetToken();
+      window.location.reload();
+      return;
+    }
+    setCurrent('');
+    setNext('');
+    setAgain('');
+    load.reload();
+  };
+  const signOut = async () => {
+    await api('POST', '/logout').catch(() => undefined);
+    forgetToken();
+    window.location.reload();
+  };
+  return (
+    <div className="col" style={{ gap: 16 }} data-settings-section="account">
+      <div className="pc-info">
+        You are in this office as <b>{me?.name}</b> ({me?.role}). {data.hasPassword ? 'You can sign in at the office’s address in a browser with that name and your password.' : 'With a password you can also sign in at the office’s address in a browser, with that name.'}
+      </div>
+      <form
+        className="col"
+        style={{ gap: 8, maxWidth: 360 }}
+        onSubmit={(ev) => {
+          ev.preventDefault();
+          if (ready) void change();
+        }}
+      >
+        <div className="section-title">{data.hasPassword ? 'Change your password' : 'Set a password'}</div>
+        {/* For a password manager: which account this is. */}
+        <input type="text" value={me?.name ?? ''} autoComplete="username" readOnly hidden />
+        {data.hasPassword && <input type="password" value={current} maxLength={200} placeholder="Current password" aria-label="Current password" autoComplete="current-password" onChange={(e) => setCurrent(e.target.value)} />}
+        <input type="password" value={next} maxLength={200} placeholder="New password (at least 8 characters)" aria-label="New password" autoComplete="new-password" onChange={(e) => setNext(e.target.value)} />
+        <input type="password" value={again} maxLength={200} placeholder="New password, once more" aria-label="New password, once more" autoComplete="new-password" onChange={(e) => setAgain(e.target.value)} />
+        {mismatch && <div className="small bad">The two do not match.</div>}
+        <div className="row" style={{ gap: 8 }}>
+          <Button variant="primary" type="submit" disabled={!ready}>
+            {data.hasPassword ? 'Change password' : 'Set password'}
+          </Button>
+        </div>
+        <div className="small faint">Changing it signs out every browser that was signed in with the old one. The desktop app stays in.</div>
+      </form>
+      {data.passwordSession && !window.orchestrator && (
+        <div className="col" style={{ gap: 8 }}>
+          <div className="section-title">This browser</div>
+          <div className="small muted">Signed in with your password. It stays signed in for 30 days unless you sign out.</div>
+          <div className="row">
+            <Button onClick={() => void signOut()} data-sign-out>
+              Sign out
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SettingsPanel({ arg, onClose }: PanelProps) {
   const settings = useOffice((s) => s.settings);
   // Only owners change the office; everyone changes what is their own.
   const owner = useOffice((s) => s.me?.role === 'owner');
   const role = useOffice((s) => s.me?.role ?? 'visitor');
-  const sections = SECTIONS.filter((s) => owner || !s.ownerOnly);
+  // The office's own computer is not a member: nothing to sign in with.
+  const member = useOffice((s) => !!s.me && s.me.id !== 'owner' && !!s.me.id);
+  const sections = SECTIONS.filter((s) => (owner || !s.ownerOnly) && (member || !s.memberOnly));
   const [picked, setSection] = useState<SectionId>(sections.some((s) => s.id === arg) ? (arg as SectionId) : owner ? 'company' : 'graphics');
   const section = sections.some((s) => s.id === picked) ? picked : 'graphics';
   const [capturing, setCapturing] = useState<string | null>(null);
@@ -764,7 +846,7 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
           ))}
         </nav>
         <div className="split-main">
-          {current.group === 'mine' && (
+          {current.group === 'mine' && section !== 'account' && (
             <div className="pc-info" style={{ marginBottom: 12 }} data-settings-scope="mine">
               Yours alone, kept on this computer, and the same in every office you open from here.</div>
           )}
@@ -776,6 +858,7 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
           {section === 'graphics' && <GraphicsSection />}
           {section === 'controls' && <ControlsSection capturing={capturing} setCapturing={setCapturing} />}
           {section === 'sound' && <SoundSection />}
+          {section === 'account' && <AccountSection />}
           {current.group === 'office' && (
             // A disabled fieldset switches off every control inside it at once.
             <fieldset className="pc-plain" disabled={readOnly}>

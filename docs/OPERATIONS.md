@@ -133,6 +133,8 @@ A="env ORCH_SERVER_HOME=$HOME/.orchestrator-office/server $N $HOME/orchestrator-
 $A status                                   # open? addresses, certificate fingerprint, members and when they were last in
 $A invite "Name" --role colleague           # owner | colleague | visitor — prints the invitation link once (works once, for a week)
 $A reinvite "Name"                          # new link; what they had stops working at once
+printf '%s' 'the password' | $A password "Name"   # let them sign in at the office's address with that name; read from standard input, never an argument
+$A password "Name" --remove                 # no more signing in with a password (the app and invitations still work)
 $A role "Name" visitor                      # change what they may do (their window reconnects)
 $A revoke "Name"                            # take their access and their computer's place away
 

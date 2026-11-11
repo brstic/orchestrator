@@ -2,6 +2,7 @@ import { Door, inviteCode } from './door.ts';
 import { Guests, whoIs, type Who } from './guests.ts';
 import { Invites, inviteLink, invitePage } from './invites.ts';
 import { PHONE_MESSAGE, isPhone, phonePage } from './phone.ts';
+import { Logins, SESSION_DAYS } from './logins.ts';
 import { Knocks, type Admission } from './knocks.ts';
 import { allowed, closedTo, eventFor, mayCall, mayReadRoutine, outcomesScopeFor, stateFor } from './access.ts';
 import { HiFi, nowPlaying } from './radio.ts';
@@ -160,6 +161,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     return typeof q === 'string' ? q : null;
   };
   const guests = new Guests(engine);
+  const logins = new Logins(engine, guests);
   const invites = new Invites(store);
   let door: Door | null = null;
   /** Did this request come in through the guest door (from the network), rather than from this computer? */
@@ -175,6 +177,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     return whoIs(guest);
   };
   const whoOf = (req: FastifyRequest): Who => (req as unknown as { who: Who }).who;
+  /** Where a request comes from: what the door says (it sets the header itself), otherwise the connection's own address. */
+  const addressOf = (req: FastifyRequest): string => (viaDoor(req) ? String(req.headers['x-forwarded-for'] ?? req.ip) : req.ip);
 
   app.setErrorHandler((err: any, _req, reply) => {
     if (err instanceof EngineError) return reply.code(err.status).send({ error: err.message });
@@ -250,6 +254,15 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     if (!atDoor(req, reply)) return reply;
     knocks.leave(String((req.params as any).id), knockSecret(req));
     return { ok: true };
+  });
+
+  // Signing in with a name and a password: a member's second way in. What comes back is a session of that member
+  // (their role, thirty days) — never the office's own owner token. Wrong attempts are counted per name and per address.
+  app.post('/login', { bodyLimit: 2048 }, async (req, reply) => {
+    void reply.header('cache-control', 'no-store');
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const { guest, token, expiresAt } = logins.signIn(b.username, b.password, addressOf(req));
+    return { token, name: guest.name, role: guest.role, office: engine.core.settings.companyName, expiresAt, days: SESSION_DAYS };
   });
 
   // An invitation link. In a browser it is a page that says what to do with it; the app exchanges its code, once,
@@ -362,7 +375,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.get('/usage', async (req) => engine.sessions.accountUsage().map((a) => (allowed(whoOf(req), 'work', engine.hosts.memberOfHost(a.hostId)) && !closedTo(engine, whoOf(req), engine.hosts.memberOfHost(a.hostId)) ? a : { ...a, email: null, organization: null })));
     // The foreman: who it is, the round in flight and the last ones, and what needs attention right now (owner only).
     api.get('/foreman', async () => engine.foreman.status());
-    api.get('/me', async (req) => ({ kind: whoOf(req).kind, role: whoOf(req).role, name: whoOf(req).name, id: whoOf(req).id, office: engine.core.settings.companyName }));
+    // `hasPassword`: may this member sign in with a name and password; `passwordSession`: is this very session such a sign-in.
+    api.get('/me', async (req) => ({ kind: whoOf(req).kind, role: whoOf(req).role, name: whoOf(req).name, id: whoOf(req).id, office: engine.core.settings.companyName, hasPassword: logins.has(whoOf(req).id), passwordSession: logins.isSession(tokenOf(req)) }));
     api.get('/people', async () => clients.people());
     // A member's own computer: a one-time enrollment for the host agent their desktop app runs while they are here.
     api.post('/me/host', async (req) => {
@@ -414,7 +428,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
     // ── guests and the door they come in through (owner only: not in any guest's allowed routes) ──
     // `inviteExpiresAt`: until when the member's invitation link can still be used (null: it was used, or there is none).
-    const sharing = () => ({ door: door?.status() ?? { open: false, port: null, addresses: [], fingerprint: null, error: 'the server is still starting' }, wanted: store.kvGet<{ open: boolean; port: number; address: string | null }>('sharing', { open: false, port: 4610, address: null }), guests: guests.list().map((g) => ({ ...g, inviteExpiresAt: g.revokedAt ? null : invites.expiresAtOf(g.id) })), present: clients.people() });
+    const sharing = () => ({ door: door?.status() ?? { open: false, port: null, addresses: [], fingerprint: null, error: 'the server is still starting' }, wanted: store.kvGet<{ open: boolean; port: number; address: string | null }>('sharing', { open: false, port: 4610, address: null }), guests: guests.list().map((g) => ({ ...g, hasPassword: logins.has(g.id) })).map((g) => ({ ...g, inviteExpiresAt: g.revokedAt ? null : invites.expiresAtOf(g.id) })), present: clients.people() });
     const invitation = connectionOf;
     /** The address people come to, as the owner set it; with it an invitation is a short link. */
     const officeAddress = () => store.kvGet<{ address: string | null }>('sharing', { address: null }).address;
@@ -494,8 +508,31 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       if (guest.role === 'visitor') dropHostsOf(guest.id);
       return guest;
     });
+    // A member's password for signing in at the door (owners; no rule in access.ts). The password itself is never read back.
+    api.post('/guests/:id/password', async (req) => {
+      logins.set(param(req, 'id'), body(req).password, actorOf(req));
+      return { ok: true, hasPassword: true };
+    });
+    api.delete('/guests/:id/password', async (req) => {
+      logins.clear(param(req, 'id'), actorOf(req));
+      return { ok: true, hasPassword: false };
+    });
+    // One's own: change it (knowing the current one), and end the session one is signed in with.
+    api.post('/me/password', async (req) => {
+      const who = whoOf(req);
+      if (who.id === 'owner') throw new EngineError('The office\'s own computer needs no password; give a member one in Access.');
+      const b = body(req);
+      const guest = guests.get(who.id);
+      if (!guest) throw new EngineError('unknown member', 404);
+      // Proved again with the current password (through the same counting as at the door), unless none was set yet.
+      if (logins.has(who.id)) logins.check(guest.name, b.current, addressOf(req));
+      logins.set(who.id, b.password, `member:${guest.name}`);
+      return { ok: true };
+    });
+    api.post('/logout', async (req) => ({ ok: logins.signOut(tokenOf(req)) }));
     api.delete('/guests/:id', async (req) => {
       const guest = guests.revoke(param(req, 'id'));
+      logins.clear(guest.id, actorOf(req));
       invites.drop(guest.id);
       clients.dropGuest(guest.id);
       dropHostsOf(guest.id);

@@ -36,6 +36,16 @@ export function setToken(t: string): void {
   localStorage.setItem('orch.token', token);
 }
 
+/** Forget the token kept in this browser (after signing out). The desktop app's own token is not kept here. */
+export function forgetToken(): void {
+  token = '';
+  try {
+    localStorage.removeItem('orch.token');
+  } catch {
+    /* nothing was kept */
+  }
+}
+
 export function hasToken(): boolean {
   return !!token;
 }

@@ -20,6 +20,8 @@ interface Guest {
   expiresAt?: string | null;
   /** Until when their invitation link can still be used; null once it was used (or there is none). */
   inviteExpiresAt?: string | null;
+  /** They can sign in at the office's address with their name and a password (never the password itself). */
+  hasPassword?: boolean;
 }
 
 interface Sharing {
@@ -91,6 +93,9 @@ function OwnerAccess({ here }: { here: Set<string> }) {
   const [role, setRole] = useState<Role>('colleague');
   const [address, setAddress] = useState('');
   const [made, setMade] = useState<Made | null>(null);
+  // Whose password is being set (the form opens under their row).
+  const [passwordFor, setPasswordFor] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const load = () =>
     api<Sharing>('GET', '/sharing').then((s) => {
@@ -210,7 +215,7 @@ function OwnerAccess({ here }: { here: Set<string> }) {
         <div className="section-title">Members ({active.length})</div>
         {active.length === 0 && <div className="small faint">Nobody is invited.</div>}
         {active.map((g) => (
-          <div key={g.id} className="row" style={{ padding: '5px 0', gap: 8 }} data-member={g.name}>
+          <div key={g.id} className="row" style={{ padding: '5px 0', gap: 8, flexWrap: 'wrap' }} data-member={g.name}>
             <span className="strong truncate" style={{ minWidth: 90 }}>
               {g.name}
             </span>
@@ -236,9 +241,57 @@ function OwnerAccess({ here }: { here: Set<string> }) {
             >
               New link
             </Button>
+            <Button
+              small
+              disabled={busy}
+              title={g.hasPassword ? `${g.name} can sign in at the office's address with their name and a password. Set a new one, or remove it.` : `Let ${g.name} sign in at the office's address with their name and a password — beside their invitation.`}
+              onClick={() => setPasswordFor(passwordFor === g.id ? null : g.id)}
+            >
+              {g.hasPassword ? 'Password ✓' : 'Password…'}
+            </Button>
             <Button small variant="ghost" disabled={busy} onClick={() => void ask({ title: `Take away ${g.name}'s access?`, body: 'They are disconnected at once and their invitation stops working.', ok: 'Take away access', danger: true }).then((yes) => { if (yes) void run(() => api('DELETE', `/guests/${g.id}`), `${g.name} can no longer come in`); })}>
               Revoke…
             </Button>
+            {passwordFor === g.id && (
+              <form
+                className="row"
+                style={{ gap: 6, flexBasis: '100%', flexWrap: 'wrap' }}
+                onSubmit={async (ev) => {
+                  ev.preventDefault();
+                  const ok = await run(() => api('POST', `/guests/${g.id}/password`, { password }), `${g.name} can sign in with that password`);
+                  if (ok) {
+                    setPassword('');
+                    setPasswordFor(null);
+                    await load();
+                  }
+                }}
+              >
+                <input type="password" className="grow" value={password} minLength={8} maxLength={200} autoFocus autoComplete="new-password" placeholder={`A password for ${g.name} (8 characters or more)`} aria-label={`Password for ${g.name}`} onChange={(ev) => setPassword(ev.target.value)} style={{ minWidth: 220 }} />
+                <Button small variant="primary" type="submit" disabled={busy || password.length < 8}>
+                  {g.hasPassword ? 'Set the new password' : 'Set password'}
+                </Button>
+                {g.hasPassword && (
+                  <Button
+                    small
+                    variant="ghost"
+                    type="button"
+                    disabled={busy}
+                    onClick={async () => {
+                      const ok = await run(() => api('DELETE', `/guests/${g.id}/password`), `${g.name} can no longer sign in with a password`);
+                      if (ok) {
+                        setPasswordFor(null);
+                        await load();
+                      }
+                    }}
+                  >
+                    Remove password
+                  </Button>
+                )}
+                <span className="small faint" style={{ flexBasis: '100%' }}>
+                  They sign in at the office's address with the name “{g.name}” and this password, as {g.role}. Five wrong passwords in a row close the name for a while. Tell them the password yourself; the office does not show it again.
+                </span>
+              </form>
+            )}
           </div>
         ))}
       </div>

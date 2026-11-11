@@ -135,7 +135,7 @@ test('the door lets through what a member’s app and own computer need, and nev
 test('a visitor reads what is shared and changes nothing', async () => {
   const mila = invites.Mila!.t;
   const me = (await door(mila, 'GET', '/api/me')).body;
-  assert.deepEqual(me, { kind: 'guest', role: 'visitor', name: 'Mila', id: guestIds.Mila, office: 'My Company' });
+  assert.deepEqual(me, { kind: 'guest', role: 'visitor', name: 'Mila', id: guestIds.Mila, office: 'My Company', hasPassword: false, passwordSession: false });
   const state = await door(mila, 'GET', '/api/state');
   assert.equal(state.status, 200);
   projectId = state.body.projects[0].id;
@@ -203,7 +203,7 @@ test('a colleague works on everything shared, and does not run the office', asyn
 
 test('an owner who was invited does everything, from outside', async () => {
   const vera = invites.Vera!.t;
-  assert.deepEqual((await door(vera, 'GET', '/api/me')).body, { kind: 'owner', role: 'owner', name: 'Vera', id: guestIds.Vera, office: 'My Company' });
+  assert.deepEqual((await door(vera, 'GET', '/api/me')).body, { kind: 'owner', role: 'owner', name: 'Vera', id: guestIds.Vera, office: 'My Company', hasPassword: false, passwordSession: false });
   assert.equal((await door(vera, 'GET', '/api/audit')).status, 200);
   assert.equal((await door(vera, 'PATCH', '/api/settings', { companyName: 'Shared Office' })).status, 200);
   assert.equal((await h.state()).settings.companyName, 'Shared Office');

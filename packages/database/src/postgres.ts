@@ -348,6 +348,13 @@ export class PgStore implements Storage {
     this.write('UPDATE orch_credentials SET revoked_at = $1 WHERE kind = $2 AND ref_id = $3 AND revoked_at IS NULL', [now, kind, refId]);
   }
 
+  revokeCredentialsWhere(kind: CredentialKind, refId: string, labelPrefix: string): void {
+    if (this.closed) return;
+    const now = nowIso();
+    for (const r of this.creds.values()) if (r.kind === kind && r.refId === refId && !r.revokedAt && (r.label ?? '').startsWith(labelPrefix)) r.revokedAt = now;
+    this.write('UPDATE orch_credentials SET revoked_at = $1 WHERE kind = $2 AND ref_id = $3 AND revoked_at IS NULL AND left(label, $4) = $5', [now, kind, refId, labelPrefix.length, labelPrefix]);
+  }
+
   listCredentials(kind: CredentialKind): Array<CredentialRecord & { hashPrefix: string }> {
     return [...this.creds.values()]
       .filter((r) => r.kind === kind)

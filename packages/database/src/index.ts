@@ -126,6 +126,8 @@ export interface Storage {
   markCredentialUsed(token: string): void;
   revokeCredential(token: string): void;
   revokeCredentialsFor(kind: CredentialKind, refId: string): void;
+  /** Revoke the credentials of one owner whose label starts with a prefix (a member's sign-in sessions, not their app's own). */
+  revokeCredentialsWhere(kind: CredentialKind, refId: string, labelPrefix: string): void;
   listCredentials(kind: CredentialKind): Array<CredentialRecord & { hashPrefix: string }>;
   audit(actor: string, action: string, target: string, detail?: Record<string, unknown>): AuditEntry;
   recentAudit(limit?: number): AuditEntry[];
@@ -434,6 +436,10 @@ export class Store implements Storage {
 
   revokeCredentialsFor(kind: CredentialKind, refId: string): void {
     this.stmt.credRevokeRef!.run(nowIso(), kind, refId);
+  }
+
+  revokeCredentialsWhere(kind: CredentialKind, refId: string, labelPrefix: string): void {
+    this.db.prepare("UPDATE credentials SET revoked_at = ? WHERE kind = ? AND ref_id = ? AND revoked_at IS NULL AND substr(label, 1, ?) = ?").run(nowIso(), kind, refId, labelPrefix.length, labelPrefix);
   }
 
   listCredentials(kind: CredentialKind): Array<CredentialRecord & { hashPrefix: string }> {

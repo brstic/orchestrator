@@ -1,0 +1,155 @@
+/**
+ * Signing in to the office with a name and a password — a second way in for a member, beside their invitation.
+ *
+ * A member is still a member (`guests.ts`): the password only proves who is asking, and what they get is a session
+ * credential of *that member*, with that member's role, for thirty days. It is never the office's own owner token
+ * (which is not accepted from the network at all).
+ *
+ * The password is kept as a salted scrypt hash, apart from the member records (those are sent to clients). Guessing
+ * is slowed down twice: a name is closed for a while after a run of wrong passwords, and so is an address that keeps
+ * trying names.
+ */
+import crypto from 'node:crypto';
+import { generateToken } from '@orchestrator/database';
+import { EngineError, type Engine } from '@orchestrator/orchestration';
+import type { Guest, Guests } from './guests.ts';
+
+const KV = 'logins';
+const MIN = 8;
+const MAX = 200;
+export const SESSION_DAYS = 30;
+/** Wrong passwords in a row for one name before it is closed, and for how long (doubling up to a day). */
+const NAME_TRIES = 5;
+const NAME_LOCK_MS = 15 * 60_000;
+/** Wrong attempts from one address within the window before that address is turned away. */
+const IP_TRIES = 20;
+const IP_WINDOW_MS = 10 * 60_000;
+/** How a session made by signing in is told from the credential a member's app keeps. A member's name never holds a tab. */
+const SESSION = 'login\t';
+export const LOGIN_LIMITS = { nameTries: NAME_TRIES, nameLockMs: NAME_LOCK_MS, ipTries: IP_TRIES, ipWindowMs: IP_WINDOW_MS, min: MIN };
+
+interface Stored {
+  salt: string;
+  hash: string;
+  setAt: string;
+  setBy: string;
+}
+
+const scrypt = (password: string, salt: Buffer): Buffer => crypto.scryptSync(password.normalize('NFKC'), salt, 64, { N: 16384, r: 8, p: 1 });
+
+export class Logins {
+  private engine: Engine;
+  private guests: Guests;
+  private stored: Record<string, Stored>;
+  private names = new Map<string, { fails: number; until: number; locks: number }>();
+  private ips = new Map<string, number[]>();
+
+  private now: () => number;
+
+  constructor(engine: Engine, guests: Guests, now: () => number = Date.now) {
+    this.engine = engine;
+    this.guests = guests;
+    this.now = now;
+    this.stored = engine.core.store.kvGet<Record<string, Stored>>(KV, {});
+  }
+
+  has(guestId: string): boolean {
+    return !!this.stored[guestId];
+  }
+
+  /** Give a member a password (or a new one). What they are signed in with elsewhere through a password stops working. */
+  set(guestId: string, password: unknown, actor: string): void {
+    const guest = this.guests.get(guestId);
+    if (!guest || guest.revokedAt) throw new EngineError('unknown member', 404);
+    const pw = typeof password === 'string' ? password : '';
+    if (pw.length < MIN) throw new EngineError(`a password has at least ${MIN} characters`);
+    if (pw.length > MAX) throw new EngineError('that password is too long');
+    if (pw.toLowerCase() === guest.name.toLowerCase()) throw new EngineError('the password must not be the name');
+    const salt = crypto.randomBytes(16);
+    this.stored[guestId] = { salt: salt.toString('hex'), hash: scrypt(pw, salt).toString('hex'), setAt: new Date().toISOString(), setBy: actor };
+    this.save();
+    this.endSessions(guestId);
+    this.names.delete(guest.name.toLowerCase());
+    this.engine.core.audit(actor, 'login.password_set', guestId, { name: guest.name });
+  }
+
+  clear(guestId: string, actor: string): void {
+    if (!this.stored[guestId]) return;
+    delete this.stored[guestId];
+    this.save();
+    this.endSessions(guestId);
+    this.engine.core.audit(actor, 'login.password_removed', guestId, { name: this.guests.get(guestId)?.name });
+  }
+
+  private save(): void {
+    this.engine.core.store.kvSet(KV, this.stored);
+  }
+
+  /** Sessions made by signing in (not the member's own app's credential) end. */
+  private endSessions(guestId: string): void {
+    this.engine.core.store.revokeCredentialsWhere('guest', guestId, SESSION);
+  }
+
+  /**
+   * A name and a password at the door. The member's session credential, or an error that says no more than it must:
+   * the same words for a wrong name and a wrong password.
+   */
+  signIn(username: unknown, password: unknown, ip: string): { guest: Guest; token: string; expiresAt: string } {
+    const guest = this.check(username, password, ip);
+    const ttlMs = SESSION_DAYS * 24 * 60 * 60_000;
+    const token = generateToken('orch_guest');
+    this.engine.core.store.addCredential('guest', token, { refId: guest.id, label: `${SESSION}${guest.name}`, ttlMs });
+    this.engine.core.audit(`member:${guest.name}`, 'login.signed_in', guest.id, { name: guest.name, role: guest.role, ip });
+    return { guest, token, expiresAt: new Date(this.now() + ttlMs).toISOString() };
+  }
+
+  /** Is this the member's password? Counted like an attempt at the door (the same locks), and it throws like one. */
+  check(username: unknown, password: unknown, ip: string): Guest {
+    const name = String(username ?? '').trim().toLowerCase();
+    const pw = typeof password === 'string' ? password : '';
+    const now = this.now();
+    const recent = (this.ips.get(ip) ?? []).filter((t) => now - t < IP_WINDOW_MS);
+    if (recent.length >= IP_TRIES) throw new EngineError('Too many attempts from here. Try again in a few minutes.', 429);
+    const lock = this.names.get(name);
+    if (lock && lock.until > now) throw new EngineError(`Too many wrong passwords for this name. Try again in ${Math.max(1, Math.ceil((lock.until - now) / 60_000))} minutes.`, 429);
+    const guest = name && pw && pw.length <= MAX ? this.guests.list().find((g) => !g.revokedAt && !(g.expiresAt && Date.parse(g.expiresAt) <= now) && g.name.toLowerCase() === name) : undefined;
+    const rec = guest ? this.stored[guest.id] : undefined;
+    // The work of checking is done either way, so that a name that exists does not answer differently in time.
+    const salt = rec ? Buffer.from(rec.salt, 'hex') : Buffer.alloc(16, 7);
+    const got = scrypt(pw || 'x', salt);
+    const ok = !!rec && crypto.timingSafeEqual(got, Buffer.from(rec.hash, 'hex'));
+    if (!guest || !ok) {
+      this.ips.set(ip, [...recent, now]);
+      if (this.ips.size > 5000) this.ips.clear();
+      if (name) {
+        const n = this.names.get(name) ?? { fails: 0, until: 0, locks: 0 };
+        n.fails++;
+        if (n.fails >= NAME_TRIES) {
+          n.locks++;
+          n.fails = 0;
+          n.until = now + Math.min(NAME_LOCK_MS * 2 ** (n.locks - 1), 24 * 60 * 60_000);
+          this.engine.core.audit('door', 'login.locked', guest?.id ?? name, { name, ip, minutes: Math.round((n.until - now) / 60_000) });
+          if (guest) this.engine.comms.notify({ kind: 'security', severity: 'warning', title: `Sign-in for ${guest.name} is closed for a while`, body: `Five wrong passwords in a row (last from ${ip}). Nobody can sign in under that name for ${Math.round((n.until - now) / 60_000)} minutes; an invitation and the desktop app still work.` });
+        }
+        this.names.set(name, n);
+        if (this.names.size > 5000) this.names.clear();
+      }
+      this.engine.core.audit('door', 'login.failed', guest?.id ?? 'unknown', { name: name.slice(0, 40), ip });
+      throw new EngineError('That name and password do not match a member of this office.', 401);
+    }
+    this.names.delete(name);
+    return guest;
+  }
+
+  /** Is this token a session made by signing in with a password (rather than the credential a member's app keeps)? */
+  isSession(token: string | null): boolean {
+    return !!token && !!this.engine.core.store.checkCredential('guest', token)?.label?.startsWith(SESSION);
+  }
+
+  /** End the session this token is — only one made by signing in; a member's app keeps its own credential. */
+  signOut(token: string | null): boolean {
+    if (!token || !this.isSession(token)) return false;
+    this.engine.core.store.revokeCredential(token);
+    return true;
+  }
+}

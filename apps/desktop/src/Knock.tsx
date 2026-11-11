@@ -9,7 +9,79 @@ type Stage = { at: 'ask' } | { at: 'waiting'; id: string; secret: string; code: 
  * see it and one of them lets you in — from a browser, to look around: you can watch, not change
  * anything. Nothing here grants access by itself; the office answers only once someone inside has.
  */
+/**
+ * Signing in with a name and a password — for a member who was given one (Access, in the office). What comes back is
+ * that member's own session; the form says no more than "does not match" when it does not.
+ */
+export function SignIn({ onBack }: { onBack?: () => void }) {
+  const [username, setUsername] = useState(() => {
+    try {
+      return localStorage.getItem('orch.login-name') ?? '';
+    } catch {
+      return '';
+    }
+  });
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const signIn = async () => {
+    if (busy || !username.trim() || !password) return;
+    setError('');
+    setBusy(true);
+    try {
+      const res = await fetch(`${serverBase}/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: username.trim(), password }) });
+      const a = await res.json().catch(() => ({}));
+      if (!res.ok || !a.token) throw new Error(a?.error ?? 'The office did not answer.');
+      try {
+        localStorage.setItem('orch.login-name', username.trim());
+      } catch {
+        /* private window */
+      }
+      setPassword('');
+      setToken(a.token);
+      connection.connect();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="col"
+      style={{ gap: 10 }}
+      onSubmit={(ev) => {
+        ev.preventDefault();
+        void signIn();
+      }}
+    >
+      <input value={username} maxLength={40} placeholder="Name" aria-label="Name" autoComplete="username" autoFocus={!username} onChange={(e) => setUsername(e.target.value)} />
+      <input type="password" value={password} maxLength={200} placeholder="Password" aria-label="Password" autoComplete="current-password" autoFocus={!!username} onChange={(e) => setPassword(e.target.value)} />
+      {error && <div className="small bad">{error}</div>}
+      <Button variant="primary" type="submit" disabled={busy || !username.trim() || !password}>
+        Sign in
+      </Button>
+      {onBack && (
+        <div className="small faint">
+          No password?{' '}
+          <button type="button" className="linklike" onClick={onBack}>
+            Ask to come in instead
+          </button>
+        </div>
+      )}
+    </form>
+  );
+}
+
 export function Knock({ office, onOwnToken }: { office: string; onOwnToken: () => void }) {
+  // Somebody who has signed in here before is shown the sign-in first.
+  const [signingIn, setSigningIn] = useState(() => {
+    try {
+      return !!localStorage.getItem('orch.login-name');
+    } catch {
+      return false;
+    }
+  });
   const [name, setName] = useState(() => {
     try {
       return localStorage.getItem('orch.knock-name') ?? '';
@@ -81,7 +153,12 @@ export function Knock({ office, onOwnToken }: { office: string; onOwnToken: () =
       <div className="glass login-card knock-card col" style={{ gap: 14 }}>
         <div className="knock-kicker">ORCHESTRATOR</div>
         <h1 className="knock-office">{office}</h1>
-        {stage.at === 'waiting' ? (
+        {signingIn ? (
+          <>
+            <p className="muted">Sign in with the name and the password you were given for this office.</p>
+            <SignIn onBack={() => setSigningIn(false)} />
+          </>
+        ) : stage.at === 'waiting' ? (
           <>
             <p>
               You knocked as <b>{name.trim()}</b>. {stage.anyoneIn ? 'The people inside can see you at the door; one of them has to let you in.' : 'Nobody who can open the door is inside right now. Your knock stays up while this page is open, for whoever walks in.'}
@@ -115,6 +192,12 @@ export function Knock({ office, onOwnToken }: { office: string; onOwnToken: () =
             <Button variant="primary" disabled={busy || name.trim().length < 2} onClick={() => void knock()}>
               {stage.at === 'ask' ? 'Ask to come in' : 'Knock again'}
             </Button>
+            <div className="small faint">
+              A member of this office?{' '}
+              <button type="button" className="linklike" onClick={() => setSigningIn(true)}>
+                Sign in with your password
+              </button>
+            </div>
             <div className="small faint">
               Working here every day? The Orchestrator desktop app lets you in with your own computer.{' '}
               <button type="button" className="linklike" onClick={onOwnToken}>
