@@ -50,6 +50,19 @@ See [OPERATIONS.md](OPERATIONS.md): `pnpm deploy:server` for the office on the s
 
 - **Clocks in tests:** what the office does by the clock has its interval in `Timings` (`packages/orchestration/src/core.ts`), so a test can run it fast: `routineTickMs` and `routineMinuteMs` (how long "a minute" of a routine is), `sleepTickMs` and `sleepIdleMs` (overrides the owner's "asleep after … minutes"), `wakeRetryMs`. `tests/e2e/16-routines-sleep.test.ts` runs a five-minute routine every second and a half and puts a session to sleep after two seconds.
 
+## A review by a second reader
+
+On 2026-11-11 four reviews of recent work — each by a reader that was given the code and no conclusions — found thirty-seven defects that the tests and the author had not: a frame that stopped the office, a tool that could put any file of the machine on a task, a held command that ran when the agent restarted. It is worth doing after every piece of work that touches who may do what, what is run where, or what crosses from one machine to another.
+
+What made those reviews useful:
+- **One subject per review, named by its files and functions** (sign-in and hooks; files on tasks and accounts; the vault, members and the door; the desktop app). A review of "the changes" finds less than a review of "what the office's page may make the app do on the person's computer".
+- **The questions to ask, not the answers expected**: who can cause this, with which role, from where; what is the attacker's position (an employee steered by a web page, a member's own computer, anybody at the door); what must never happen.
+- **Read-only, and said so**: no edits, no tests, no git command that changes anything, no real `claude`.
+- **A finding is a scenario**: file and line, what state and input lead to what wrong outcome, how sure the reader is and what they checked — and a list of what was checked and found sound, so the next review does not repeat it.
+- **Every finding is checked against the code before it is fixed**, and a fix that can be tested gets a test that fails without it (taken out with a reverse patch — see below). Some findings are decisions, not defects: those go to the owner, with a recommendation, in `SECURITY.md`.
+
+The findings and what became of them are in `CHANGELOG.md` (2026-11-11: "After a review…", "A second review…", "A third review…", "A fourth review…") and `STATUS.md`.
+
 ## Conventions
 - **Seeing a test fail without its fix: with a reverse patch, never with `git stash`.** `git diff HEAD -- <file> > /tmp/fix.patch && git apply -R /tmp/fix.patch`, run the test, `git apply /tmp/fix.patch` (for a fix that is already committed: `git show <commit> -- <file> | git apply -R`). The repository holds an old stash (`stash@{0}`, "The office remodelled…", 39 files) that belongs to whoever made it: `git stash pop` applies *that* whenever the stash you meant to make had nothing to save — which is what happened on 2026-11-11, with conflicts in twenty files (restored from HEAD; the stash was kept). Do not pop, drop or clear stashes here.
 - Comments say why, in plain words. No narration of the change itself.
