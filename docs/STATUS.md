@@ -19,7 +19,9 @@ _Last updated: 2026-11-11. Update this file with every piece of work (see `CLAUD
 - Its state was moved, not deleted: `~/.orchestrator-local-office-backup-2026-11-10/` on the Mac (server database + agent), and `~/.orchestrator-mac-link-backup-2026-11-10/` on Sparkcan (the SSH-link agent of that office, stopped). Nothing was migrated to the server office — the owner chose to start from zero. Delete the backups when they are no longer wanted.
 - The desktop app (`release/Orchestrator.app`, latest build) now opens the server office by itself at start ("open at start" on the saved office; Office → Switch office… shows the start screen). The owner comes in as *Branko · owner*, and the Mac joins as "Branko's computer" with its room; local Claude sessions are added from Menu → My room.
 
-**The server runs build `b01aaa1` since 2026-11-11, 17:55 UTC** (fetched, pushed, deployed from the owner's Mac); it adds the entry below.
+**The server runs build `efbda83` since 2026-11-11, 18:06 UTC** (fetched, pushed, deployed from the owner's Mac): the same behaviour as `b01aaa1`, with the net for stray exceptions as a tested function. Ten sessions running, every machine back, no error in the log.
+
+**Before it, build `b01aaa1`, since 2026-11-11, 17:55 UTC** (fetched, pushed, deployed from the owner's Mac); it adds the entry below.
 - After it: ten sessions running; every machine came back, the members' computers included (none was refused by the new check of whose machine it is); nothing was revoked; nothing in the service's log.
 - **The held command of 17:24 (see `dec0203` below) ended as it should:** nobody answered it, and half an hour after it was asked the agent refused it ("no decision in time; the command was refused") — through the hook that had been taken up again after the deploy of 17:32. With real Claude Code, then: held, kept through a restart of office and agent, refused for want of an answer. Still not seen: an owner's *allow* or *deny* arriving through a hook that was taken up again.
 - The desktop app that waits in `release-next` was built from `b428659`; the machine's agent has not changed since, so it was not built again.
