@@ -19,6 +19,7 @@ tests/linux containers (multi-machine, SSH)                 tests/real the real 
 ## Commands
 | | |
 | --- | --- |
+| `pnpm check:changed` | the fast loop: typecheck (only when a typechecked `.ts` changed) and the unit tests *beside* what you touched, plus any changed `tests/e2e` file. Runs the tests of the packages you changed, not of their dependents — a quick gate, not a substitute for the full suites. `--base <ref>` for a whole branch, `--dry` to print the plan |
 | `pnpm typecheck` and `pnpm --filter @orchestrator/desktop typecheck` | both must be clean (the second covers `App.tsx` and panels) |
 | `pnpm test` | unit |
 | `pnpm test:e2e` | end to end with `tests/fixtures/fake-claude.mjs` (no tokens) |

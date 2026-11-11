@@ -38,8 +38,8 @@ Only the items that fit Orchestrator as it is are listed. Each names the gap in 
 
 | Idea | What they do | What it gives us |
 | --- | --- | --- |
-| **"Hit every surface" checklist; a bug fix starts with a failing test** | A checklist in their `AGENTS.md` that must be walked and reported for each change | Two additions to our `CLAUDE.md`. Ours would list: roles, shared vs personal, local vs server office, desktop vs browser, both runtimes |
-| **`check:changed`** | Lint, typecheck and only the tests beside what changed (`scripts/check-changed.ts`) | Faster loop than running every suite |
+| **"Hit every surface" checklist; a bug fix starts with a failing test** ✅ _taken 2026-11-11_ | A checklist in their `AGENTS.md` that must be walked and reported for each change | Added to `CLAUDE.md` ("Checking a change"): roles, shared vs personal, local vs server office, desktop vs browser, both runtimes, and a bug fix starts with a failing test |
+| **`check:changed`** ✅ _taken 2026-11-11_ | Lint, typecheck and only the tests beside what changed (`scripts/check-changed.ts`) | Faster loop than running every suite. Built as `scripts/check-changed.mjs` (`pnpm check:changed`), written for our layout; no lint step (no linter here). See `DECISIONS.md`. |
 | **Isolation per worktree** | Ports derived from the worktree path, state in the worktree, seeded test data (`scripts/dev-runner.ts:256-263`) | Several agents can work on Orchestrator at once on one machine without colliding |
 
 ## Considered and left out
