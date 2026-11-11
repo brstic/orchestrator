@@ -214,3 +214,43 @@ test('several sessions of one account at the warning: the owner accepts once, an
   const audit = await h.api<any[]>('GET', '/audit');
   assert.equal(audit.filter((a) => a.action === 'question.answer' && (a.target === asked[0]!.id || a.target === asked[1]!.id)).length, 1, 'the owner answered once');
 });
+
+test('a session that continues a conversation in a folder Claude Code does not trust yet: the prompt is seen and answered, as at a first start', async () => {
+  // Seen live on 2026-11-11: sessions started again in their own subfolder stood at "Is this a project you trust?"
+  // while the office showed nothing — it only looked for that prompt in sessions that had never given a sign of life.
+  await idle('Una');
+  const cwd = (await h.session(ids.Una!))!.cwd;
+  // (Marked before the stop: with work in hand she may be started again by the office before this test does it.)
+  // (In every folder she may be started in: the folder of the task she has in hand, or the project's.)
+  const folders = [...new Set([cwd, path.join(fs.realpathSync(h.tmp), 'shop')])];
+  for (const f of folders) fs.writeFileSync(path.join(f, '.fake-untrusted'), '');
+  const answered = () => folders.some((f) => !fs.existsSync(path.join(f, '.fake-untrusted')));
+  const before = (await h.session(ids.Una!))!.startedAt;
+  await h.api('POST', `/employees/${ids.Una}/stop`, {});
+  await h.apiRaw('POST', `/employees/${ids.Una}/start`, {});
+  const session = await waitFor(async () => {
+    const x = await h.session(ids.Una!);
+    return x?.status === 'running' && x.startedAt !== before ? x : null;
+  }, { label: 'started again', timeout: 20000 });
+  assert.equal(session.resumed, true, 'the same conversation');
+  // On Unrestricted (as on Auto) the folder the owner put them in is trusted for them, on the record.
+  await waitFor(async () => (await h.session(ids.Una!))?.inTurn === false && answered(), { label: 'past the prompt and up', timeout: 20000 }).catch(async (e) => {
+    const x = await h.session(ids.Una!);
+    throw new Error(`${e.message}\nmarker in ${cwd} exists=${fs.existsSync(path.join(cwd, '.fake-untrusted'))} session.cwd now=${x?.cwd}\nstatus=${x?.status} inTurn=${x?.inTurn} startedAt=${x?.startedAt} lastEventAt=${x?.lastEventAt} activity=${x?.activity}\n${(await paneOf('Una')).split('\n').filter((l) => l.trim()).slice(-8).join('\n')}`);
+  });
+  const audit = await h.api<any[]>('GET', '/audit');
+  assert.ok(audit.some((a) => a.action === 'trust.auto_accepted' && a.detail?.employee === 'Una'));
+  for (const f of folders) fs.rmSync(path.join(f, '.fake-untrusted'), { force: true });
+  // Somebody on a lower level is asked instead — and the answer is given in the terminal.
+  ids.Stan = (await h.employee('Stan', 'backend', { projectId: project, autonomy: 'standard' })).id;
+  await h.api('POST', `/employees/${ids.Stan}/start`, {});
+  await idle('Stan');
+  const stanCwd = (await h.session(ids.Stan!))!.cwd;
+  fs.writeFileSync(path.join(stanCwd, '.fake-untrusted'), '');
+  await h.api('POST', `/employees/${ids.Stan}/stop`, {});
+  await waitFor(async () => (await h.session(ids.Stan!))?.status !== 'running', { label: 'Stan stopped', timeout: 15000 });
+  await h.api('POST', `/employees/${ids.Stan}/start`, {});
+  const q = await waitFor(async () => (await h.state()).questions.find((x) => x.employeeId === ids.Stan && x.kind === 'trust_prompt' && x.status === 'open'), { label: 'the owner is asked about the folder', timeout: 30000 });
+  await h.api('POST', `/questions/${q.id}/answer`, { answer: 'Trust this folder' });
+  await idle('Stan');
+});

@@ -633,6 +633,16 @@ export class EmployeeRegistry {
 
 // ─────────────────────────── Sessions ────────────────────────────
 
+/**
+ * Has Claude Code given a sign of life since this session was last started? The prompts it shows before it starts
+ * working (trust this folder, the bypass warning) come before any; a session that continues an earlier conversation
+ * still carries the time of its last sign from the run before, which must not be mistaken for one.
+ */
+function heardFromSinceStart(s: AgentSession): boolean {
+  if (!s.lastEventAt) return false;
+  return !s.startedAt || Date.parse(s.lastEventAt) >= Date.parse(s.startedAt);
+}
+
 /** Claude Code's warning at the first start in bypass mode (its wording, as in the installed program). */
 const BYPASS_WARNING = /Bypass Permissions mode/i;
 const TRUST_PROMPT = /(do you trust the files in this folder|trust this folder|is this a project you (created|trust))/i;
@@ -651,7 +661,7 @@ export class SessionRegistry {
   private bypassWarningOnScreen(sessionId: string, screen: TerminalScreen): void {
     if (this.bypassAsked.has(sessionId)) return;
     const s = this.core.sessions.get(sessionId);
-    if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || s.lastEventAt) return;
+    if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || heardFromSinceStart(s)) return;
     const text = screen.lines.join('\n').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
     if (!BYPASS_WARNING.test(text) || !/Yes, I accept/.test(text)) return;
     this.bypassAsked.add(sessionId);
@@ -1375,7 +1385,9 @@ export class SessionRegistry {
     if (this.trustAsked.has(sessionId)) return;
     const s = this.core.sessions.get(sessionId);
     // Only the interactive CLI shows a trust prompt; an SDK-managed worker's pane is a transcript.
-    if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || s.lastEventAt) return;
+    // (Also a session that continues an earlier conversation: started in another folder than before — its own
+    // subfolder, say — Claude Code asks about that folder too, before anything else happens.)
+    if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || heardFromSinceStart(s)) return;
     const text = screen.lines.join('\n').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
     if (!TRUST_PROMPT.test(text)) return;
     this.trustAsked.add(sessionId);
@@ -1547,6 +1559,8 @@ export class SessionRegistry {
     session.asleepSince = null;
     session.resumed = resume;
     this.turnSince.delete(session.id);
+    this.trustAsked.delete(session.id);
+    this.bypassAsked.delete(session.id);
     if (resume) this.resumeProbes.set(session.id, session.lastEventAt);
     else this.resumeProbes.delete(session.id);
     this.trustAsked.delete(session.id);

@@ -601,6 +601,41 @@ if (process.stdin.isTTY) process.stdin.setRawMode(true);
 process.stdin.on('data', onInput);
 process.stdin.resume();
 process.on('SIGTERM', () => void shutdown('other'));
+// A folder Claude Code has not been told to trust: it asks before anything else — also when it continues an earlier
+// conversation there. A test asks for this with a file named `.fake-untrusted` in the working folder.
+if (fs.existsSync(path.join(cwd, '.fake-untrusted'))) {
+  say(` ${cwd}`);
+  say(' Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source');
+  say(" project, or work from your team). If not, take a moment to review what's in this folder first.");
+  say(' ❯ No, exit');
+  say('   Yes, I trust this folder');
+  say(' Enter to confirm · Esc to cancel');
+  let onYes = false;
+  dialogOpen = true;
+  for (;;) {
+    const key = await nextKey();
+    if (key === '\x1b') {
+      const a = await Promise.race([nextKey(), sleep(150).then(() => null)]);
+      if (a === null) {
+        keyWaiter = null;
+        break; // a bare Escape cancels
+      }
+      const b = a === '[' || a === 'O' ? await nextKey() : '';
+      if (b === 'B') onYes = true;
+      else if (b === 'A') onYes = false;
+      continue;
+    }
+    if (key === '\r') break;
+  }
+  dialogOpen = false;
+  keyQueue.length = 0;
+  if (!onYes) {
+    say(' Exiting.');
+    process.exit(1);
+  }
+  fs.rmSync(path.join(cwd, '.fake-untrusted'), { force: true });
+  out('\x1b[6A\x1b[J');
+}
 // The first start of an account in bypass mode: Claude Code's warning, which somebody has to accept — once.
 // (Remembered per Claude config folder, as the real one remembers it in that folder's settings.)
 if (permissionMode === 'bypassPermissions') {
