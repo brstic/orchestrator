@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { connection } from '../lib/api.ts';
 import { onTerminal, useOffice } from '../lib/store.ts';
+import { copyText, selectionText } from './clipboard.ts';
 
 interface Props {
   sessionId: string;
@@ -55,6 +56,9 @@ export function TerminalView({ sessionId, interactive = true, fitPane = false, c
   const paneSize = useRef({ cols: 120, rows: 34 });
   const [closed, setClosed] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Something is selected in this terminal: the Copy button is shown. */
+  const [selected, setSelected] = useState(false);
+  const copyRef = useRef<() => void>(() => undefined);
   const controlling = useOffice((s) => s.control[sessionId]?.you === true);
   const controllingRef = useRef(controlling);
   controllingRef.current = controlling;
@@ -126,6 +130,48 @@ export function TerminalView({ sessionId, interactive = true, fitPane = false, c
       }
     });
 
+    // ── copying out of the terminal, and pasting into it ──
+    // A terminal has no copy of its own in a window: Ctrl+C is the program's interrupt, and Electron has no menu on
+    // the right button. So: with something selected, Ctrl/Cmd+C (or Ctrl+Shift+C), the right button and the Copy
+    // button copy it — for whoever watches as well as for whoever holds the keyboard. Nothing is copied by selecting alone.
+    const copySelection = () => {
+      const text = selectionText(term.getSelection());
+      if (!text) return;
+      void copyText(text).then((ok) => useOffice.getState().toast(ok ? 'Copied' : 'Could not copy: the clipboard refused it', ok ? 'success' : 'error'));
+    };
+    copyRef.current = copySelection;
+    /** Pasting is typing: only into a terminal one holds the keyboard of. */
+    const pasteClipboard = () => {
+      if (!interactive || !controllingRef.current) return;
+      void navigator.clipboard
+        .readText()
+        .then((text) => text && term.paste(text))
+        .catch(() => useOffice.getState().toast('The clipboard cannot be read from here: press Ctrl+V to paste', 'info'));
+    };
+    const selectionSub = term.onSelectionChange(() => setSelected(term.hasSelection()));
+    // On the window, before the terminal sees the key: with a selection, Ctrl+C must not reach the program as an interrupt.
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 'c' && term.hasSelection()) {
+        e.preventDefault();
+        e.stopPropagation();
+        copySelection();
+      } else if (key === 'v' && host.contains(document.activeElement)) {
+        // Ctrl+V (and Ctrl+Shift+V) paste, as everywhere else on the computer: the key is kept from the terminal, which
+        // would send it to the program as a control character, and the browser's own paste — which needs no permission —
+        // puts the text in. What is pasted goes the way of everything typed: only from whoever holds the keyboard.
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    const onMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      if (term.hasSelection()) copySelection();
+      else pasteClipboard();
+    };
+    host.addEventListener('contextmenu', onMenu);
+
     const dataSub = term.onData((data) => {
       // Observers never send input. (The server would drop it anyway.)
       if (interactive && controllingRef.current) connection.send({ t: 'term.input', sessionId, data });
@@ -137,6 +183,9 @@ export function TerminalView({ sessionId, interactive = true, fitPane = false, c
 
     return () => {
       ro.disconnect();
+      window.removeEventListener('keydown', onKey, true);
+      host.removeEventListener('contextmenu', onMenu);
+      selectionSub.dispose();
       dataSub.dispose();
       off();
       connection.send({ t: 'term.close', sessionId });
@@ -159,6 +208,12 @@ export function TerminalView({ sessionId, interactive = true, fitPane = false, c
   return (
     <div className={`term ${controlling ? 'term-controlled' : ''} ${className ?? ''}`}>
       <div ref={hostRef} className="term-host" />
+      {selected && !closed && (
+        // The mouse button must not take the selection (or the keyboard) away before the click arrives.
+        <button type="button" className="term-copy" title="Copy what is selected (Ctrl+C, or the right mouse button)" onMouseDown={(e) => e.preventDefault()} onClick={() => copyRef.current()}>
+          Copy
+        </button>
+      )}
       {loading && !closed && <div className="term-overlay">Connecting to the real terminal…</div>}
       {closed && <div className="term-overlay term-overlay-closed">Terminal unavailable: {closed}</div>}
     </div>

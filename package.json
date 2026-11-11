@@ -17,6 +17,7 @@
     "start": "node scripts/start-local.mjs",
     "desktop": "node scripts/repair-electron.mjs && pnpm --filter @orchestrator/desktop electron",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check:changed": "node scripts/check-changed.mjs",
     "test": "node --test --test-concurrency=1 \"packages/*/test/*.test.ts\" \"apps/*/test/*.test.ts\"",
     "test:e2e": "node --test --test-concurrency=1 \"tests/e2e/*.test.ts\"",
     "test:all": "pnpm test && pnpm test:e2e",
