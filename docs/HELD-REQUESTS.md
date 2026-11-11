@@ -80,6 +80,8 @@ In tests the times are short: `approvalWaitSeconds`, `agentCfg.linkGraceSeconds`
 
 - 2026-11-11, on the office's server: a high-risk command of an Unrestricted employee, held since 17:24, was still held — the same request, open in the office — after the deploy of 17:32 had restarted the office and the agent together. So the hook command's loop runs under Claude Code, finds the agent that comes back, and the office takes the request up again.
 
+- The same request, half an hour after it was asked and with no answer from the owner: refused by the agent through the hook ("no decision in time; the command was refused"), and the session went on.
+
 ## Not verified with real Claude Code
 
 - That a `deny` printed by the hook in bypass mode is treated as a refusal (the agent has answered in that shape since the level exists — also only run with the scripted worker).
