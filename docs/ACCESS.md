@@ -55,6 +55,8 @@ There is one foreman, on one of the office's own machines, never on a member's c
 - **work** (own only) — `GET`/`PUT /me/room`: how one's own room looks. Nobody arranges someone else's.
 - **work** — employees: hire, edit, start/stop/pause/resume, talk, request a report; routines of an employee: `POST /routines` (the employee named in the body), `PATCH`/`DELETE /routines/:id`, `POST /routines/:id/run`; sessions: attach, adopt, bind; typing into and taking control of a terminal; browsing a machine's folders and its Claude processes; projects: create, edit, pause/resume, plan, integration sync/test; tasks: create, edit, delete, release, review, unblock, retry merge; answering questions **and deciding permission requests**; notifications; meetings; lessons; planning a command; `POST /me/host`; switching the office's hi-fi on and off (`POST /radio/play`, `POST /radio/stop`).
 - **work, on one's own computer only** — deleting a project that lives there (`DELETE /projects/:id`): nobody else's work is in it. The same on a shared project is **admin**.
+- **work** (the shared office) — the vault's list and adding to it: `GET /vault` (names, what each is for, who put it there and who used it last — never a value), `POST /vault`. A visitor gets neither, not even the names.
+- **admin** — a value out of the vault (`POST /vault/:id/reveal`, recorded), changing what is known about a credential and removing one (`PATCH`/`DELETE /vault/:id`).
 - **admin** — everything else, including: **deleting a shared project** (`DELETE /projects/:id`; a member may delete the projects on their own computer, see above), members and the door, settings and policies, layout, machines (enrollment tokens, revoke, rename, remove), SSH links, foreman status, audit log, improvements, promoting to the main branch, executing a command plan.
 
 A route that is not listed in `access.ts` needs an owner.
@@ -65,6 +67,13 @@ Applying an improvement, and undoing one (`POST /api/improvements/:id/apply`, `/
 - on **shared** machines, the permission decisions of anyone who may make them (owners and colleagues) count as evidence;
 - on **a member's own computer**, allow rules, deny rules and a higher autonomy level are applied only on decisions that member made themselves (each decision records who made it). An owner's approvals there do not count, and changes that rest on nobody's decision (lower autonomy, review off) are never automatic there;
 - the **foreman** is never changed by it.
+
+### The vault
+The office's credentials (`packages/orchestration/src/vault.ts`; `docs/SECURITY.md`, "The vault").
+
+- **People:** owners see the list, add, look at a value (recorded), change and remove. Colleagues see the list and add. Visitors get nothing.
+- **Employees' sessions:** every employee — on the office's machines or on a member's own computer — may list what is there (`vault_list`), put a credential in (`vault_store`, or the helper's `put`) and take a value out for a command (the helper's `get`). A session is known by its own token at the worker endpoint; each use is recorded under the employee's name. There is no per-credential permission: what is in the vault is the office's, for everyone who works in it.
+- **By itself:** the office moves a credential out of a message, a task or an answer somebody wrote (it goes on with `{{vault:name}}`), and keeps a key in a well-known format that went through a session.
 
 ### The door bell (knocking)
 A person with no invitation can knock at the office's door — the office's page in a browser, or the desktop app given only the address. Knocking grants nothing; it puts a name and a four-digit code in front of the people inside.

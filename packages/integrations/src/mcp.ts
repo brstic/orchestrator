@@ -397,6 +397,41 @@ export const BOARD_TOOLS: McpToolSpec[] = [
 ];
 
 /**
+ * The vault, for employees: what is in it (names, never values) and putting a credential in. Taking a value out
+ * is not a tool the model is shown — it is done by a command, through the helper in the session
+ * (`$("$ORCH_VAULT" get name)`), so that the value goes into the command and not into the conversation.
+ * `vault_read` is that helper's own call.
+ */
+export const VAULT_TOOLS: McpToolSpec[] = [
+  {
+    name: 'vault_list',
+    description: 'What the office\'s vault holds: each credential\'s name, what it is for, the login it goes with — never a value. To use one in a command write $("$ORCH_VAULT" get NAME) where the value is needed.',
+    inputSchema: { type: 'object', properties: { query: str('Optional: part of a name, a service or a login') } },
+  },
+  {
+    name: 'vault_store',
+    description: 'Put a credential you were given, found or created into the office\'s vault, so that it is kept and your colleagues can use it. Name it for what it opens: <service>-<account or environment>-<kind>, e.g. "github-deploy-token", "shop-db-admin-password". Afterwards refer to it by name ({{vault:NAME}}), never by its value. (To store something a command produced without it passing through you: … | "$ORCH_VAULT" put NAME.)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: str('A short name in lower case with dashes that says what it opens'),
+        value: str('The credential itself'),
+        kind: { type: 'string', enum: ['password', 'api_key', 'token', 'ssh_key', 'other'] },
+        service: str('The site, host or product it is for'),
+        username: str('The login it goes with, if any'),
+        description: str('A few words: what it is for'),
+      },
+      required: ['name', 'value'],
+    },
+  },
+  {
+    name: 'vault_read',
+    description: 'The helper\'s own call. Use $("$ORCH_VAULT" get NAME) in a command instead.',
+    inputSchema: { type: 'object', properties: { name: str('The credential\'s name') }, required: ['name'] },
+  },
+];
+
+/**
  * Tools only an employee with the `foreman` role may use (the handlers refuse anyone else, and
  * nobody else is shown them). With these a foreman's session supervises the office; none of them
  * can approve a permission request or touch anybody's terminal.

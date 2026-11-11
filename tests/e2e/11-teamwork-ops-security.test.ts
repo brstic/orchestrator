@@ -124,9 +124,19 @@ test('security issues reach the owner: a refused action, a secret in a session, 
   assert.equal(refused.employeeId, ids.Alex);
   // 2. A credential-shaped value goes through a session: reported, and never stored in the clear.
   const key = `sk-${'a1B2c3D4'.repeat(4)}`;
-  await h.api('POST', `/employees/${ids.Sarah}/message`, { body: `Use this. @@fake: bash echo ${key} > /dev/null; say used@@` });
-  await waitFor(async () => (await security()).find((n) => /looks like a secret appeared in Sarah's session/.test(n.title)), { label: 'secret alert' });
-  assert.ok(!JSON.stringify(await events(`employeeId=${ids.Sarah}`)).includes(key), 'the value itself is not in the event log');
+  // Written into a message, it never gets as far as the session: the office moves it to the vault and delivers its name.
+  await h.api('POST', `/employees/${ids.Sarah}/message`, { body: `Use this: ${key} @@fake: say used@@` });
+  await waitFor(async () => ((await events(`employeeId=${ids.Sarah}`)).some((e) => e.type === 'agent.prompt_submitted' && /Use this: \{\{vault:openai-api-key\}\}/.test(String(e.data.prompt ?? ''))) ? true : null), { label: 'delivered with the name in its place' });
+  assert.ok(!(await security()).some((n) => /looks like a secret/.test(n.title)), 'nothing reached a session, so there is nothing to warn about');
+  // Met inside the session — a file with a key in it that the employee reads — it is reported, kept in the vault, and never stored in the clear.
+  const found = `sk-${'z9Y8x7W6'.repeat(4)}`;
+  const sarahCwd = (await h.session(ids.Sarah!))!.cwd;
+  fs.writeFileSync(path.join(sarahCwd, 'old-config.txt'), `OPENAI key in use: ${found}\n`);
+  await waitFor(async () => ((await h.session(ids.Sarah!))?.inTurn === false ? true : null), { label: 'Sarah between turns' });
+  await h.api('POST', `/employees/${ids.Sarah}/message`, { body: 'Read the old config. @@fake: read old-config.txt; say read@@' });
+  const alert = await waitFor(async () => (await security()).find((n) => /looks like a secret appeared in Sarah's session/.test(n.title)), { label: 'secret alert' });
+  assert.match(alert.body, /It was put in the vault as "openai-api-key-/);
+  for (const value of [key, found]) assert.ok(!JSON.stringify([await events(`employeeId=${ids.Sarah}`), await h.state()]).includes(value), 'the value itself is not in the event log or the office state');
   // 3. A machine with a made-up credential is turned away.
   const reply: any = await new Promise((resolve) => {
     const ws = new WebSocket(`${h.url.replace('http', 'ws')}/ws/agent`);

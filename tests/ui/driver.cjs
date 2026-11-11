@@ -1764,6 +1764,41 @@ async function scenario() {
     return asked.replace(/\s+/g, ' ');
   });
 
+  await step('Vault: a credential is added through the window, listed by name without its value, shown to the owner on request, and removed', async () => {
+    await close();
+    await js(`window.__t.store().openPanel('vault')`);
+    await waitFor(`!!window.__t.scope().querySelector('.win-titles') && /^Vault/.test(window.__t.scope().querySelector('.win-titles').textContent.trim())`, 8000);
+    await waitFor(`!!window.__t.byText('Add a credential')`, 8000);
+    const secret = 'Ui-Suite-S3cret!42';
+    await clickText('Add a credential');
+    await type(`window.__t.field('What it opens')`, 'registry.example.test');
+    await type(`window.__t.field('Login (if it has one)')`, 'ci');
+    await type(`window.__t.scope().querySelector('input[aria-label="The value"]')`, secret);
+    await type(`window.__t.field('Note (optional)')`, 'Pulls images in the pipeline');
+    await sleep(250);
+    await shot('vault-add');
+    await click(`window.__t.submit('Put it in the vault')`, 'Put it in the vault');
+    const row = `window.__t.scope().querySelector('[data-vault="example-ci-password"]')`;
+    await waitFor(`!!(${row})`, 8000);
+    const text = await js(`(${row}).textContent`);
+    if (!/example-ci-password/.test(text) || !/Password/.test(text) || !/registry\.example\.test · login ci/.test(text) || !/Pulls images in the pipeline/.test(text) || !/added by .* · not used yet · 18 characters/.test(text)) throw new Error(`the row reads: ${text.slice(0, 260)}`);
+    if ((await js(`document.body.innerHTML.includes(${JSON.stringify(secret)})`)) || (await js(`JSON.stringify(window.__t.store()).includes(${JSON.stringify(secret)})`))) throw new Error('the value is in the page or in the office state without having been asked for');
+    // An owner asks to see it: the value appears, and can be put away again.
+    await click(`[...(${row}).querySelectorAll('button')].find((b) => b.textContent.trim() === 'Show')`, 'Show');
+    await waitFor(`(() => { const t = (${row}).querySelector('textarea'); return !!t && t.value === ${JSON.stringify(secret)}; })()`, 8000);
+    await sleep(250);
+    await shot('vault');
+    await click(`[...(${row}).querySelectorAll('button')].find((b) => b.textContent.trim() === 'Hide')`, 'Hide');
+    await waitFor(`!(${row}).querySelector('textarea')`, 5000);
+    await js(`window.__confirms = []; true`);
+    await click(`[...(${row}).querySelectorAll('button')].find((b) => b.textContent.trim() === 'Remove…')`, 'Remove…');
+    await waitFor(`!(${row})`, 8000);
+    const asked = await js(`(window.__confirms || []).slice(-1)[0] || ''`);
+    if (!/Remove example-ci-password from the vault\?/.test(asked) || !/cannot be brought back/.test(asked)) throw new Error(`removing asked: "${asked.replace(/\s+/g, ' ').slice(0, 200)}"`);
+    await close();
+    return 'example-ci-password: added, listed without its value, shown, hidden, removed';
+  });
+
   await step('the command bar opens with its shortcut and previews before doing anything', async () => {
     await key('G', 'g');
     await waitFor(`!!document.querySelector('.cmd input')`, 5000);

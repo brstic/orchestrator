@@ -132,6 +132,16 @@ The Orchestrator MCP server is an HTTP endpoint on the server (`POST /mcp`, JSON
 
 `ask_boss` holds the tool call open for up to four minutes (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` and `MCP_TOOL_TIMEOUT` are raised in the worker's environment). If you answer later, the answer is delivered into the session as a message, and `wait_for_answer` lets the agent keep waiting.
 
+### The vault
+Three tools and a helper (`VAULT_TOOLS` in `packages/integrations/src/mcp.ts`; `vaultHelper` in `packages/execution/src/claude.ts`):
+
+- `vault_list { query? }` — names, kinds, what each is for, the login it goes with. Never a value.
+- `vault_store { name, value, kind?, service?, username?, description? }` — put in a credential the employee was given, found or made. The same value twice is the same entry; a taken name gets a qualifier.
+- **Taking a value out is not a tool the model is shown.** Each session is launched with `ORCH_VAULT=<session folder>/vault`, a two-line shell script that runs `vault.mjs` with the agent's own Node. `"$ORCH_VAULT" get NAME` prints the value and nothing else; `… | "$ORCH_VAULT" put NAME [--service S] [--user U] [--kind K] [--note "…"]` stores what a command produced; `"$ORCH_VAULT" list` lists. It calls the worker endpoint with the session's token from the `mcp.json` beside it (`vault_read` is its call: unlisted, answered only to a session's token). So a credential is used as `curl -H "Authorization: Bearer $("$ORCH_VAULT" get github-deploy-token)" …`.
+- The system prompt explains this and that `{{vault:NAME}}` in a message means that credential.
+
+Run with the scripted worker (`tests/e2e/21-vault.test.ts`). **Not verified with real Claude Code.**
+
 ### The board in the employees' hands
 While the office setting *Employees manage the task board themselves* is on (the default; Settings → Employees), every employee is also shown these tools (`BOARD_TOOLS` in `packages/integrations/src/mcp.ts`; handlers in `packages/orchestration/src/mcp-tools.ts`). With the setting off they are not listed, and a call is answered "The owner keeps the task board to themselves in this office".
 

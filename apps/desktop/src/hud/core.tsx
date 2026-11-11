@@ -123,6 +123,7 @@ export function TopBar() {
         { id: 'office', label: 'Floor plan' },
         { id: 'hosts', label: 'Machines' },
         { id: 'wall', label: 'Terminals' },
+        { id: 'vault', label: 'Vault' },
       ],
     },
     {

@@ -266,6 +266,9 @@ export class TaskManager {
     for (const dep of input.dependsOn ?? []) if (!this.core.tasks.get(dep)) throw new EngineError(`unknown dependency ${dep}`);
     const kind = input.kind && TASK_KINDS.includes(input.kind) ? input.kind : 'feature';
     const now = nowIso();
+    // Credentials written into a task are kept in the vault; the task carries their names.
+    const author = by === 'owner' ? { kind: 'owner' as const, id: null, name: 'The boss' } : { kind: by.startsWith('employee:') ? ('employee' as const) : ('member' as const), id: null, name: by.replace(/^[a-z]+:/, '') };
+    input = { ...input, description: this.eng.vault.capture(input.description ?? '', author, [project.name]).text, acceptance: this.eng.vault.capture(input.acceptance ?? '', author, [project.name]).text };
     const task: Task = {
       id: newId(),
       key: `T-${this.core.store.nextCounter('task')}`,

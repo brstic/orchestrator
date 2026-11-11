@@ -1,7 +1,7 @@
 import type { AgentSession, Employee, Task } from '@orchestrator/contracts';
 import { ACTIVITY_LABEL, truncate } from '@orchestrator/contracts';
 import type { McpServerOptions, McpToolHandler } from '@orchestrator/integrations';
-import { BOARD_TOOLS, FOREMAN_TOOLS, ORCHESTRATOR_TOOLS } from '@orchestrator/integrations';
+import { BOARD_TOOLS, FOREMAN_TOOLS, ORCHESTRATOR_TOOLS, VAULT_TOOLS } from '@orchestrator/integrations';
 import type { Engine } from './engine.ts';
 import { FOREMAN_ROLE } from './foreman.ts';
 import { answerLine } from './prompts.ts';
@@ -373,6 +373,29 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       return `${to.name} is ${s.resumed ? 'awake again and continues where they left off' : 'started'}. Your message is the first thing they read.`;
     },
 
+    // ── The vault ──
+
+    vault_list: async (a, _ctx) => {
+      const entries = eng.vault.list(String(a.query ?? ''));
+      if (!entries.length) return a.query ? `Nothing in the vault matches "${a.query}".` : 'The vault is empty.';
+      return [
+        `${entries.length} in the vault. Use one in a command as $("$ORCH_VAULT" get NAME); the value is never shown.`,
+        ...entries.map((e) => `- ${e.name} (${e.kind.replace('_', ' ')})${e.service ? ` · ${e.service}` : ''}${e.username ? ` · login ${e.username}` : ''}${e.description ? ` — ${e.description}` : ''}`),
+      ].join('\n');
+    },
+
+    vault_store: async (a, { employee }) => {
+      const value = String(a.value ?? '');
+      if (/^\{\{vault:[^}]+\}\}$/.test(value.trim())) return err('That is the name of something already in the vault, not a value. Nothing to store.');
+      const { entry, created } = eng.vault.put({ name: String(a.name ?? ''), value, kind: a.kind, service: a.service ? String(a.service) : '', username: a.username ? String(a.username) : '', description: a.description ? String(a.description) : '' }, { kind: 'employee', id: employee.id, name: employee.name }, 'stored');
+      return created
+        ? `Stored as "${entry.name}". From now on write {{vault:${entry.name}}} when you mention it, and $("$ORCH_VAULT" get ${entry.name}) where a command needs it. Do not repeat the value anywhere.`
+        : `That value is already in the vault as "${entry.name}". Use that name.`;
+    },
+
+    // The helper's call: the value goes to the command that asked, and the use is on the record.
+    vault_read: async (a, { employee }) => eng.vault.use(String(a.name ?? ''), { kind: 'employee', id: employee.id, name: employee.name }).value,
+
     // Foreman-only tools (each refuses a caller who is not a foreman).
     ...eng.foreman.handlers(),
   };
@@ -384,10 +407,10 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     version: '0.1.0',
     instructions:
       'Orchestrator connects you to the virtual office you work in. Use these tools to learn your task, report real progress, ask the boss for decisions, collaborate with teammates and declare work complete. Completion is verified independently, so report honestly.',
-    tools: [...ORCHESTRATOR_TOOLS, ...BOARD_TOOLS, ...FOREMAN_TOOLS],
+    tools: [...ORCHESTRATOR_TOOLS, ...BOARD_TOOLS, ...VAULT_TOOLS, ...FOREMAN_TOOLS],
     handlers,
     // Only a foreman is shown the foreman's tools; everyone else's tool list (and prompt) stays as small as before.
     // The board tools are shown while the owner leaves the board to the employees (a foreman assigns with its own tool).
-    listed: (tool, { employee }) => (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
+    listed: (tool, { employee }) => tool.name !== 'vault_read' && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
   };
 }

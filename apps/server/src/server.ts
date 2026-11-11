@@ -111,7 +111,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const agents = new AgentHub(log);
   const clients = new ClientHub(log);
   const publicUrl = (opts.publicUrl ?? `${scheme}://${isLoopbackHost(opts.host) ? '127.0.0.1' : opts.host}:${opts.port}`).replace(/\/+$/, '');
-  const engine = new Engine({ store, agents, publicUrl, timings: opts.timings, log }, { send: (clientId, msg) => clients.send(clientId, msg) });
+  const engine = new Engine({ store, agents, publicUrl, timings: opts.timings, log, vaultKeyFile: path.join(opts.dataDir, 'vault.key') }, { send: (clientId, msg) => clients.send(clientId, msg) });
   agents.attach(engine);
   clients.attach(engine);
   // The office's hi-fi: what is on is told to every window, and follows the list of stations when an owner edits it.
@@ -428,6 +428,23 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       clients.dropGuest(guest.id);
       dropHostsOf(guest.id);
       return guest;
+    });
+    // ── the vault: the office's credentials. The list never carries a value; a value comes out only for an owner (reveal). ──
+    const vaultActor = (req: FastifyRequest) => {
+      const who = whoOf(req);
+      return who.id === 'owner' ? { kind: 'owner' as const, id: null, name: who.name } : { kind: 'member' as const, id: who.id, name: who.name };
+    };
+    api.get('/vault', async (req) => ({ entries: engine.vault.list(String(query(req).q ?? '')) }));
+    api.post('/vault', async (req) => {
+      const b = body(req);
+      return engine.vault.put({ name: String(b.name ?? ''), value: String(b.value ?? ''), kind: b.kind, service: String(b.service ?? ''), username: String(b.username ?? ''), description: String(b.description ?? '') }, vaultActor(req), 'added');
+    });
+    api.patch('/vault/:id', async (req) => engine.vault.update(param(req, 'id'), body(req), vaultActor(req)));
+    api.delete('/vault/:id', async (req) => engine.vault.remove(param(req, 'id'), vaultActor(req)));
+    api.post('/vault/:id/reveal', async (req, reply) => {
+      void reply.header('cache-control', 'no-store');
+      const { entry, value } = engine.vault.use(param(req, 'id'), vaultActor(req), 'revealed');
+      return { name: entry.name, value };
     });
     api.get('/roles', async () => ROLE_CATALOGUE);
     api.get('/audit', async (req) => store.recentAudit(Number(query(req).limit) || 200));

@@ -129,6 +129,9 @@ const RULES: Rule[] = [
   rule('POST', '/meetings', 'work'),
   rule('POST', '/meetings/:id/cancel', 'work'),
   rule('POST', '/lessons', 'work'),
+  // ── the vault: whoever works in the office sees what it holds (names) and may add; values and removing are an owner's ──
+  rule('GET', '/vault', 'work'),
+  rule('POST', '/vault', 'work'),
   rule('PATCH', '/lessons/:id', 'work'),
   rule('POST', '/commands/plan', 'work'),
   // Whether what the office learned helped. Counted, for anyone but an owner, only from what they may see (`outcomesScopeFor`).

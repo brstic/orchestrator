@@ -342,6 +342,8 @@ export class Comms {
       for (const part of q.parts) if (!input.answers?.[part.question]) throw new EngineError(`missing answer for: ${part.question}`);
     } else if (!input.answer?.trim()) throw new EngineError('an answer is required');
 
+    // An answer that carries a credential ("the password is …"): the credential goes to the vault, the answer names it.
+    if (input.answer) input = { ...input, answer: this.eng.vault.capture(input.answer, by ? { kind: 'employee', id: by.id, name: by.name } : { kind: 'owner', id: null, name: actor === 'owner' ? 'The boss' : actor.replace(/^[a-z]+:/, '') }, [employee?.name ?? '']).text };
     q.answer = input.answer?.trim() ?? (q.parts.length ? Object.values(input.answers ?? {}).join('; ') : null);
     q.answers = input.answers ?? null;
     q.decision = input.decision ?? null;
@@ -509,6 +511,9 @@ export class Comms {
   /** `returned`: it is handed to the recipient as the result of a tool call of theirs that is waiting for it, so nothing is typed into their terminal. */
   sendMessage(input: { from: Message['from']; toEmployeeId: string; body: string; kind?: MessageKind; taskId?: string | null; threadId?: string | null; routineId?: string | null; returned?: boolean }): Message {
     const to = this.core.employees.require(input.toEmployeeId);
+    // A credential somebody wrote into a message goes to the vault; the message goes on with its name there.
+    const body = input.from.kind === 'system' || input.kind === 'system' ? input.body : this.eng.vault.capture(input.body, input.from.kind === 'employee' ? { kind: 'employee', id: input.from.id, name: input.from.name.replace(/ \(.*\)$/, '') } : { kind: 'owner', id: null, name: input.from.name.replace(/ \(.*\)$/, '') }, [to.name]).text;
+    input = { ...input, body };
     const msg: Message = {
       id: newId(),
       kind: input.kind ?? 'chat',

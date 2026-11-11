@@ -41,3 +41,18 @@ Ideas 1 and 2 are the cheapest: server only, no new dependency, no new tool for 
 
 - **A vector database and a local embedding model**: a large install for a gain we do not need yet. Semantic search can be added later behind the same `recall` tool.
 - **The compressed index (AAAK)**: complex, and only worth it for a far larger memory than an office has.
+
+## 2026-11-11 — asked again: "integrate it where it helps self-improvement"
+
+The owner asked whether MemPalace itself should be integrated to help the office improve itself. Looked at again (its README and site; still not installed or run). **Nothing was built; this is the assessment and two ways to go.**
+
+**Where things stand since this page was written.** Growth has in the meantime built ideas 1 and 5 its own way: lessons are chosen by how well they fit the task (`learning/playbook.ts`), merged when they say the same, and retired when the record shows they hurt (`learning/outcomes.ts`). What is still missing is everything about *what was said and done*, as opposed to rules: an employee cannot ask "what do we know about X" (idea 3), nothing is written down when a task ends or before a session is compacted (ideas 2 and 4). That is exactly what MemPalace is for, so the answer to "would it help" is **yes, for recall — not for the rules, the measuring or the autopilot, which it does not do.**
+
+**What it is, for our purposes.** A Python program (3.10+) with ChromaDB and a local embedding model (about 300 MB, or 30 MB for the English-only one), MIT. It stores text word for word and searches it by meaning. It offers a command line (`mempalace mine`, `mempalace search`), an MCP server with some 47 tools (search, diaries per agent, a knowledge graph), and hooks for Claude Code that save on *Stop* and before compaction (`mempalace init` registers them). Its palace lives in `~/.mempalace` on the machine.
+
+**Way A — use MemPalace itself, optionally, per machine.** Where it is installed on a machine, the office gives each employee's session its MCP server next to the office's own, and its hooks; employees are told to search it before starting and to file what they learned. Where it is not installed, nothing changes. Cost: Python and the model on every machine that should remember (the server first); memory is per machine, so a member's own computer has its own; what it stores is verbatim, so it has to stay behind the vault's capture and off machines the text should not be on; and there is a second thing to back up. Needs doing first, with the owner's word: installing it on the server (and on the development Mac, to try it — the exact command that starts its MCP server without Docker was not found in what was read and has to be seen on a real install).
+
+**Way B — the same ideas in the office's own store, no new dependency.** A `recall` tool over what the office already records (task summaries and outcomes, the owner's answers, messages, lessons), a short diary entry per employee when a task ends and before compaction (`PreCompact` reaches the office already), and the last entries given to a session when it starts. Search by words (SQLite FTS), not by meaning. Cost: ours to build and keep; weaker search than embeddings. Gain: works on every machine as it is, one store, one backup, the office's access rules and the vault's capture apply by construction.
+
+**Recommendation:** B first (it closes the gap for everyone with nothing to install), built so that the search behind `recall` can be MemPalace on machines that have it (A) later.
+

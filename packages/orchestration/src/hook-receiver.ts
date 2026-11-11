@@ -303,11 +303,15 @@ export class HookReceiver {
     }
     // Something shaped like a credential went through this session: it is redacted in the office's records, and the owner is told.
     const seen = [payload.prompt, payload.tool_input?.command, payload.last_assistant_message].filter((x): x is string => typeof x === 'string' && x.length > 0);
-    if (employee && seen.some(containsKnownSecret)) {
+    // What a tool returned is looked at too (a file with keys in it that was read, a key a command printed).
+    const returned = textOf(payload.tool_response).slice(0, 40_000);
+    // Whatever it was, it is kept: a credential that only ever lived in a terminal's scrollback is lost with it.
+    const kept = employee ? [...seen, returned].flatMap((text) => (text ? this.eng.vault.noticed(text, { kind: 'employee', id: employee.id, name: employee.name }, [this.core.projects.get(task?.projectId ?? employee.projectId)?.name ?? '']) : [])) : [];
+    if (employee && (seen.some(containsKnownSecret) || kept.length)) {
       this.eng.comms.securityAlert({
         key: `secret:${session.id}`,
         title: `Something that looks like a secret appeared in ${employee.name}'s session`,
-        body: 'A value in a known credential format (an API key, a token or a private key) was seen in a prompt, a command or a reply. It is redacted in the office\'s records; if it is a real secret, consider rotating it.',
+        body: 'A value in a known credential format (an API key, a token or a private key) was seen in a prompt, a command or a reply. It is redacted in the office\'s records; if it is a real secret, consider rotating it.' + (kept.length ? ` It was put in the vault as ${kept.map((n) => `"${n}"`).join(', ')}.` : ''),
         employeeId: employee.id,
         sessionId: session.id,
         projectId: task?.projectId ?? employee.projectId ?? null,
@@ -374,4 +378,11 @@ export class HookReceiver {
   forgetSession(sessionId: string): void {
     this.rt.delete(sessionId);
   }
+}
+
+/** Every piece of text in what a tool returned, one per line (so that a file's lines are still lines). */
+function textOf(value: unknown, depth = 0): string {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object' || depth > 5) return '';
+  return (Array.isArray(value) ? value : Object.values(value as Record<string, unknown>)).map((v) => textOf(v, depth + 1)).filter(Boolean).join('\n');
 }

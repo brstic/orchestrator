@@ -59,6 +59,7 @@ export type PanelId =
   | 'people'
   | 'myroom'
   | 'reports'
+  | 'vault'
   | 'help';
 
 export type CameraMode = 'ceo' | 'first' | 'management' | 'free' | 'workstation' | 'command';
