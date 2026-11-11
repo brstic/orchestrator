@@ -34,13 +34,13 @@ function office() {
   return { logins: make(), make, kv, creds, audits, notes, store, tick: (ms: number) => (now += ms) };
 }
 const fails = (fn: () => unknown, status: number, text?: RegExp) =>
-  assert.throws(fn, (e: any) => {
+  assert.rejects(async () => fn(), (e: any) => {
     assert.equal(e.status, status, e.message);
     if (text) assert.match(e.message, text);
     return true;
   });
 
-test('a password is kept as a salted hash and lets its member in — under any spelling of the name, with their role', () => {
+test('a password is kept as a salted hash and lets its member in — under any spelling of the name, with their role', async () => {
   const o = office();
   o.logins.set('m1', 'correct horse battery', 'owner');
   o.logins.set('m2', 'correct horse battery', 'owner');
@@ -49,84 +49,82 @@ test('a password is kept as a salted hash and lets its member in — under any s
   const stored = o.kv.get('logins') as Record<string, { salt: string; hash: string }>;
   assert.notEqual(stored.m1!.hash, stored.m2!.hash, 'the same password of two members is not the same hash');
   assert.equal(stored.m1!.hash.length, 128);
-  const got = o.logins.signIn('  vErA ', 'correct horse battery', '1.1.1.1');
+  const got = (await o.logins.signIn('  vErA ', 'correct horse battery', '1.1.1.1'));
   assert.deepEqual([got.guest.id, got.guest.role], ['m1', 'owner']);
   assert.match(got.token, /^orch_guest_/);
   assert.equal(Date.parse(got.expiresAt) - Date.parse('2026-11-11T10:00:00Z'), SESSION_DAYS * 86_400_000);
   assert.equal(o.store.checkCredential('guest', got.token)?.refId, 'm1');
-  assert.equal(o.logins.signIn('jovan jovanović', 'correct horse battery', '1.1.1.1').guest.id, 'm2');
+  assert.equal((await o.logins.signIn('jovan jovanović', 'correct horse battery', '1.1.1.1')).guest.id, 'm2');
   // It is still there after the office starts again.
-  assert.equal(o.make().signIn('Vera', 'correct horse battery', '1.1.1.1').guest.id, 'm1');
+  assert.equal((await o.make().signIn('Vera', 'correct horse battery', '1.1.1.1')).guest.id, 'm1');
   assert.deepEqual([o.logins.has('m1'), o.logins.has('m3')], [true, false]);
 });
 
-test('what is refused as a password, and for whom', () => {
+test('what is refused as a password, and for whom', async () => {
   const o = office();
-  fails(() => o.logins.set('m1', 'short', 'owner'), 400, /at least 8/);
-  fails(() => o.logins.set('m1', 'x'.repeat(201), 'owner'), 400, /too long/);
-  fails(() => o.logins.set('m2', 'JOVAN jovanović', 'owner'), 400, /must not be the name/);
-  fails(() => o.logins.set('m1', 12345678, 'owner'), 400);
-  fails(() => o.logins.set('m3', 'a good password', 'owner'), 404);
-  fails(() => o.logins.set('nobody', 'a good password', 'owner'), 404);
+  await fails(() => o.logins.set('m1', 'short', 'owner'), 400, /at least 8/);
+  await fails(() => o.logins.set('m1', 'x'.repeat(201), 'owner'), 400, /too long/);
+  await fails(() => o.logins.set('m2', 'JOVAN jovanović', 'owner'), 400, /must not be the name/);
+  await fails(() => o.logins.set('m1', 12345678, 'owner'), 400);
+  await fails(() => o.logins.set('m3', 'a good password', 'owner'), 404);
+  await fails(() => o.logins.set('nobody', 'a good password', 'owner'), 404);
   assert.equal(o.kv.has('logins'), false);
 });
 
-test('a wrong name, a wrong password, a member with no password, one who left and one whose time is up all get the same answer', () => {
+test('a wrong name, a wrong password, a member with no password, one who left and one whose time is up all get the same answer', async () => {
   const o = office();
   o.logins.set('m1', 'correct horse battery', 'owner');
   const said: string[] = [];
   const tries: Array<[unknown, unknown]> = [['Vera', 'wrong password'], ['Nobody', 'correct horse battery'], ['Jovan Jovanović', 'anything at all'], ['Gone', 'x'], ['Short stay', 'x'], ['', ''], [undefined, undefined], ['Vera', { $ne: '' }], ['Vera', 'x'.repeat(5000)]];
-  tries.forEach(([name, pw], i) =>
-    fails(() => o.logins.signIn(name, pw, `9.9.9.${i}`), 401, /do not match a member/),
-  );
+  for (const [i, [name, pw]] of tries.entries()) await fails(() => o.logins.signIn(name, pw, `9.9.9.${i}`), 401, /do not match a member/);
   for (const a of o.audits.filter((x) => x.action === 'login.failed')) said.push(JSON.stringify(a.detail));
   assert.equal(said.length, tries.length);
   assert.doesNotMatch(said.join(), /correct horse|wrong password|anything at all/, 'what was typed as a password is never written down');
   assert.equal(o.creds.size, 0, 'nothing was handed out');
 });
 
-test('five wrong passwords close the name — for the right password too — for a while that doubles; the owner is told', () => {
+test('five wrong passwords close the name — for the right password too — for a while that doubles; the owner is told', async () => {
   const o = office();
   o.logins.set('m1', 'correct horse battery', 'owner');
-  for (let i = 0; i < LOGIN_LIMITS.nameTries; i++) fails(() => o.logins.signIn('Vera', `guess ${i}`, `2.2.2.${i}`), 401);
-  fails(() => o.logins.signIn('Vera', 'correct horse battery', '3.3.3.3'), 429, /Try again in 15 minutes/);
+  for (let i = 0; i < LOGIN_LIMITS.nameTries; i++) await fails(() => o.logins.signIn('Vera', `guess ${i}`, `2.2.2.${i}`), 401);
+  await fails(() => o.logins.signIn('Vera', 'correct horse battery', '3.3.3.3'), 429, /Try again in 15 minutes/);
   assert.equal(o.notes.length, 1);
   assert.match(o.notes[0]!.title, /Sign-in for Vera is closed/);
   assert.equal(o.notes[0]!.kind, 'security');
   assert.equal(o.audits.filter((a) => a.action === 'login.locked').length, 1);
   o.tick(LOGIN_LIMITS.nameLockMs - 1000);
-  fails(() => o.logins.signIn('Vera', 'correct horse battery', '3.3.3.3'), 429, /Try again in 1 minutes/);
+  await fails(() => o.logins.signIn('Vera', 'correct horse battery', '3.3.3.3'), 429, /Try again in 1 minutes/);
   o.tick(2000);
   // Open again; one more run of wrong ones closes it for twice as long.
-  for (let i = 0; i < LOGIN_LIMITS.nameTries; i++) fails(() => o.logins.signIn('vera', `guess ${i}`, `4.4.4.${i}`), 401);
-  fails(() => o.logins.signIn('Vera', 'correct horse battery', '3.3.3.3'), 429, /Try again in 30 minutes/);
+  for (let i = 0; i < LOGIN_LIMITS.nameTries; i++) await fails(() => o.logins.signIn('vera', `guess ${i}`, `4.4.4.${i}`), 401);
+  await fails(() => o.logins.signIn('Vera', 'correct horse battery', '3.3.3.3'), 429, /Try again in 30 minutes/);
   o.tick(2 * LOGIN_LIMITS.nameLockMs + 1000);
-  assert.equal(o.logins.signIn('Vera', 'correct horse battery', '3.3.3.3').guest.id, 'm1');
+  assert.equal((await o.logins.signIn('Vera', 'correct horse battery', '3.3.3.3')).guest.id, 'm1');
   // A good sign-in forgets the wrong ones before it: four more wrong ones do not close the name.
-  for (let i = 0; i < LOGIN_LIMITS.nameTries - 1; i++) fails(() => o.logins.signIn('Vera', `guess ${i}`, `5.5.5.${i}`), 401);
-  assert.equal(o.logins.signIn('Vera', 'correct horse battery', '3.3.3.3').guest.id, 'm1');
+  for (let i = 0; i < LOGIN_LIMITS.nameTries - 1; i++) await fails(() => o.logins.signIn('Vera', `guess ${i}`, `5.5.5.${i}`), 401);
+  assert.equal((await o.logins.signIn('Vera', 'correct horse battery', '3.3.3.3')).guest.id, 'm1');
   // A name nobody has is closed the same way (so that a closed name does not say "this one exists"), without a notification.
-  for (let i = 0; i < LOGIN_LIMITS.nameTries; i++) fails(() => o.logins.signIn('Nobody', 'whatever', `6.6.6.${i}`), 401);
-  fails(() => o.logins.signIn('Nobody', 'whatever', '6.6.6.9'), 429);
+  for (let i = 0; i < LOGIN_LIMITS.nameTries; i++) await fails(() => o.logins.signIn('Nobody', 'whatever', `6.6.6.${i}`), 401);
+  await fails(() => o.logins.signIn('Nobody', 'whatever', '6.6.6.9'), 429);
   assert.equal(o.notes.length, 2, 'one for each time Vera was closed, none for a name nobody has');
 });
 
-test('an address that keeps trying names is turned away, others are not', () => {
+test('an address that keeps trying names is turned away, others are not', async () => {
   const o = office();
   o.logins.set('m1', 'correct horse battery', 'owner');
-  for (let i = 0; i < LOGIN_LIMITS.ipTries; i++) fails(() => o.logins.signIn(`name ${i}`, 'whatever', '7.7.7.7'), 401);
-  fails(() => o.logins.signIn('Vera', 'correct horse battery', '7.7.7.7'), 429, /Too many attempts from here/);
-  assert.equal(o.logins.signIn('Vera', 'correct horse battery', '8.8.8.8').guest.id, 'm1');
+  for (let i = 0; i < LOGIN_LIMITS.ipTries; i++) await fails(() => o.logins.signIn(`name ${i}`, 'whatever', '7.7.7.7'), 401);
+  await fails(() => o.logins.signIn('Vera', 'correct horse battery', '7.7.7.7'), 429, /Too many attempts from here/);
+  assert.equal((await o.logins.signIn('Vera', 'correct horse battery', '8.8.8.8')).guest.id, 'm1');
   o.tick(LOGIN_LIMITS.ipWindowMs + 1000);
-  assert.equal(o.logins.signIn('Vera', 'correct horse battery', '7.7.7.7').guest.id, 'm1');
+  assert.equal((await o.logins.signIn('Vera', 'correct horse battery', '7.7.7.7')).guest.id, 'm1');
 });
 
-test('a new password, or none, ends what was signed in with the old one — and only that', () => {
+test('a new password, or none, ends what was signed in with the old one — and only that', async () => {
   const o = office();
   o.store.addCredential('guest', 'the-app-token', { refId: 'm1', label: 'Vera' });
   o.logins.set('m1', 'correct horse battery', 'owner');
-  const a = o.logins.signIn('Vera', 'correct horse battery', '1.1.1.1').token;
-  const b = o.logins.signIn('Vera', 'correct horse battery', '1.1.1.2').token;
+  const a = (await o.logins.signIn('Vera', 'correct horse battery', '1.1.1.1')).token;
+  const b = (await o.logins.signIn('Vera', 'correct horse battery', '1.1.1.2')).token;
   // Signing out ends that session; the app's own credential is not a session and is not ended by it.
   assert.equal(o.logins.signOut(a), true);
   assert.equal(o.logins.signOut(a), false);
@@ -135,19 +133,41 @@ test('a new password, or none, ends what was signed in with the old one — and 
   assert.deepEqual([o.store.checkCredential('guest', a), !!o.store.checkCredential('guest', b), !!o.store.checkCredential('guest', 'the-app-token')], [null, true, true]);
   o.logins.set('m1', 'another good password', 'member:Vera');
   assert.equal(o.store.checkCredential('guest', b), null);
-  fails(() => o.logins.signIn('Vera', 'correct horse battery', '1.1.1.1'), 401);
-  const c = o.logins.signIn('Vera', 'another good password', '1.1.1.1').token;
+  await fails(() => o.logins.signIn('Vera', 'correct horse battery', '1.1.1.1'), 401);
+  const c = (await o.logins.signIn('Vera', 'another good password', '1.1.1.1')).token;
   o.logins.clear('m1', 'owner');
   assert.equal(o.store.checkCredential('guest', c), null);
   assert.ok(o.store.checkCredential('guest', 'the-app-token'), 'the app is still in');
-  fails(() => o.logins.signIn('Vera', 'another good password', '1.1.1.9'), 401);
+  await fails(() => o.logins.signIn('Vera', 'another good password', '1.1.1.9'), 401);
   assert.deepEqual(o.audits.filter((x) => /password/.test(x.action)).map((x) => [x.actor, x.action]), [['owner', 'login.password_set'], ['member:Vera', 'login.password_set'], ['owner', 'login.password_removed']]);
 });
 
-test('checking a password alone hands nothing out', () => {
+test('checking a password alone hands nothing out', async () => {
   const o = office();
   o.logins.set('m1', 'correct horse battery', 'owner');
-  assert.equal(o.logins.check('Vera', 'correct horse battery', '1.1.1.1').id, 'm1');
-  fails(() => o.logins.check('Vera', 'not it', '1.1.1.1'), 401);
+  assert.equal((await o.logins.check('Vera', 'correct horse battery', '1.1.1.1')).id, 'm1');
+  await fails(() => o.logins.check('Vera', 'not it', '1.1.1.1'), 401);
+  assert.equal(o.creds.size, 0);
+});
+
+test('a flood from many addresses is turned away as a whole, and checks are not computed without end', async () => {
+  const o = office();
+  o.logins.set('m1', 'correct horse battery', 'owner');
+  // More at once than are computed side by side: the ones over the mark are told "later", at once.
+  const burst = await Promise.allSettled(Array.from({ length: LOGIN_LIMITS.busy + 3 }, (_, i) => o.logins.signIn(`someone ${i}`, 'whatever', `11.0.0.${i}`)));
+  assert.deepEqual(burst.map((r) => (r as PromiseRejectedResult).reason.status).sort(), [...Array(LOGIN_LIMITS.busy).fill(401), 429, 429, 429]);
+  // Everybody's attempts within a minute have a ceiling too, whatever addresses and names they come with.
+  for (let i = LOGIN_LIMITS.busy; i < LOGIN_LIMITS.allTries; i++) await fails(() => o.logins.signIn(`name ${i}`, 'whatever', `12.${i >> 8}.${i & 255}.1`), 401);
+  await fails(() => o.logins.signIn('Vera', 'correct horse battery', '13.1.1.1'), 429, /Too many people are signing in/);
+  o.tick(LOGIN_LIMITS.allWindowMs + 1000);
+  assert.equal((await o.logins.signIn('Vera', 'correct horse battery', '13.1.1.1')).guest.id, 'm1');
+});
+
+test('a password changed while a check is being computed: the old one does not get in', async () => {
+  const o = office();
+  o.logins.set('m1', 'correct horse battery', 'owner');
+  const pending = o.logins.signIn('Vera', 'correct horse battery', '1.1.1.1');
+  o.logins.set('m1', 'another good password', 'owner');
+  await fails(() => pending, 401);
   assert.equal(o.creds.size, 0);
 });

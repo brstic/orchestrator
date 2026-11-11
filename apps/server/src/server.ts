@@ -261,7 +261,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   app.post('/login', { bodyLimit: 2048 }, async (req, reply) => {
     void reply.header('cache-control', 'no-store');
     const b = (req.body ?? {}) as Record<string, unknown>;
-    const { guest, token, expiresAt } = logins.signIn(b.username, b.password, addressOf(req));
+    const { guest, token, expiresAt } = await logins.signIn(b.username, b.password, addressOf(req));
     return { token, name: guest.name, role: guest.role, office: engine.core.settings.companyName, expiresAt, days: SESSION_DAYS };
   });
 
@@ -525,7 +525,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       const guest = guests.get(who.id);
       if (!guest) throw new EngineError('unknown member', 404);
       // Proved again with the current password (through the same counting as at the door), unless none was set yet.
-      if (logins.has(who.id)) logins.check(guest.name, b.current, addressOf(req));
+      if (logins.has(who.id)) await logins.check(guest.name, b.current, addressOf(req));
       logins.set(who.id, b.password, `member:${guest.name}`);
       return { ok: true };
     });

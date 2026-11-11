@@ -24,9 +24,14 @@ const NAME_LOCK_MS = 15 * 60_000;
 /** Wrong attempts from one address within the window before that address is turned away. */
 const IP_TRIES = 20;
 const IP_WINDOW_MS = 10 * 60_000;
+/** Checks in flight at once, and attempts of everybody together within a minute, before the door says "later". */
+// (Each check takes 16 MB while it is computed; eight side by side is more than this office's people will ever need.)
+const BUSY = 8;
+const ALL_TRIES = 120;
+const ALL_WINDOW_MS = 60_000;
 /** How a session made by signing in is told from the credential a member's app keeps. A member's name never holds a tab. */
 const SESSION = 'login\t';
-export const LOGIN_LIMITS = { nameTries: NAME_TRIES, nameLockMs: NAME_LOCK_MS, ipTries: IP_TRIES, ipWindowMs: IP_WINDOW_MS, min: MIN };
+export const LOGIN_LIMITS = { nameTries: NAME_TRIES, nameLockMs: NAME_LOCK_MS, ipTries: IP_TRIES, ipWindowMs: IP_WINDOW_MS, min: MIN, busy: BUSY, allTries: ALL_TRIES, allWindowMs: ALL_WINDOW_MS };
 
 interface Stored {
   salt: string;
@@ -35,7 +40,13 @@ interface Stored {
   setBy: string;
 }
 
-const scrypt = (password: string, salt: Buffer): Buffer => crypto.scryptSync(password.normalize('NFKC'), salt, 64, { N: 16384, r: 8, p: 1 });
+const COST = { N: 16384, r: 8, p: 1 };
+/** Setting a password (an owner's act, or one's own): computed at once. */
+const scrypt = (password: string, salt: Buffer): Buffer => crypto.scryptSync(password.normalize('NFKC'), salt, 64, COST);
+/** Checking one at the door: computed off the office's own thread, so that people who guess cannot hold the office up. */
+const scryptLater = (password: string, salt: Buffer): Promise<Buffer> =>
+  new Promise((resolve, reject) => crypto.scrypt(password.normalize('NFKC'), salt, 64, COST, (err, key) => (err ? reject(err) : resolve(key))));
+
 
 export class Logins {
   private engine: Engine;
@@ -43,6 +54,9 @@ export class Logins {
   private stored: Record<string, Stored>;
   private names = new Map<string, { fails: number; until: number; locks: number }>();
   private ips = new Map<string, number[]>();
+  /** Checks being computed right now, and when the attempts of the last minute were made (everybody's). */
+  private inFlight = 0;
+  private recentAll: number[] = [];
 
   private now: () => number;
 
@@ -94,8 +108,8 @@ export class Logins {
    * A name and a password at the door. The member's session credential, or an error that says no more than it must:
    * the same words for a wrong name and a wrong password.
    */
-  signIn(username: unknown, password: unknown, ip: string): { guest: Guest; token: string; expiresAt: string } {
-    const guest = this.check(username, password, ip);
+  async signIn(username: unknown, password: unknown, ip: string): Promise<{ guest: Guest; token: string; expiresAt: string }> {
+    const guest = await this.check(username, password, ip);
     const ttlMs = SESSION_DAYS * 24 * 60 * 60_000;
     const token = generateToken('orch_guest');
     this.engine.core.store.addCredential('guest', token, { refId: guest.id, label: `${SESSION}${guest.name}`, ttlMs });
@@ -104,22 +118,34 @@ export class Logins {
   }
 
   /** Is this the member's password? Counted like an attempt at the door (the same locks), and it throws like one. */
-  check(username: unknown, password: unknown, ip: string): Guest {
+  async check(username: unknown, password: unknown, ip: string): Promise<Guest> {
     const name = String(username ?? '').trim().toLowerCase();
     const pw = typeof password === 'string' ? password : '';
     const now = this.now();
     const recent = (this.ips.get(ip) ?? []).filter((t) => now - t < IP_WINDOW_MS);
     if (recent.length >= IP_TRIES) throw new EngineError('Too many attempts from here. Try again in a few minutes.', 429);
+    // Everybody together: a flood of attempts from many addresses is turned away as a whole, before any work is done for it.
+    this.recentAll = this.recentAll.filter((t) => now - t < ALL_WINDOW_MS);
+    if (this.recentAll.length >= ALL_TRIES || this.inFlight >= BUSY) throw new EngineError('Too many people are signing in right now. Try again in a minute.', 429);
     const lock = this.names.get(name);
     if (lock && lock.until > now) throw new EngineError(`Too many wrong passwords for this name. Try again in ${Math.max(1, Math.ceil((lock.until - now) / 60_000))} minutes.`, 429);
     const guest = name && pw && pw.length <= MAX ? this.guests.list().find((g) => !g.revokedAt && !(g.expiresAt && Date.parse(g.expiresAt) <= now) && g.name.toLowerCase() === name) : undefined;
     const rec = guest ? this.stored[guest.id] : undefined;
     // The work of checking is done either way, so that a name that exists does not answer differently in time.
     const salt = rec ? Buffer.from(rec.salt, 'hex') : Buffer.alloc(16, 7);
-    const got = scrypt(pw || 'x', salt);
-    const ok = !!rec && crypto.timingSafeEqual(got, Buffer.from(rec.hash, 'hex'));
+    this.recentAll.push(now);
+    this.inFlight++;
+    let got: Buffer;
+    try {
+      got = await scryptLater(pw || 'x', salt);
+    } finally {
+      this.inFlight--;
+    }
+    // (The password may have been changed or taken away while this was computed: what is stored now decides.)
+    const ok = !!rec && this.stored[guest!.id] === rec && crypto.timingSafeEqual(got, Buffer.from(rec.hash, 'hex'));
     if (!guest || !ok) {
-      this.ips.set(ip, [...recent, now]);
+      // (Counted from what is known now: other attempts from this address may have ended while this one was computed.)
+      this.ips.set(ip, [...(this.ips.get(ip) ?? []).filter((t) => now - t < IP_WINDOW_MS), now]);
       if (this.ips.size > 5000) this.ips.clear();
       if (name) {
         const n = this.names.get(name) ?? { fails: 0, until: 0, locks: 0 };
