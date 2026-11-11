@@ -68,6 +68,8 @@ function runnerCommand(): string[] {
 }
 
 interface Tracked {
+  /** The name of the start this session's running process belongs to (null: its hooks do not say). */
+  hookLaunch?: string | null;
   /** The version of the hook commands in this session's settings (`HOOKS_VERSION` when it was started). */
   hooksVersion?: number;
   sessionId: string;
@@ -693,6 +695,9 @@ export class HostAgent {
     const sessionDir = path.join(this.p.sessions, sessionId);
     fs.mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
     const hookToken = existing?.hookToken ?? crypto.randomBytes(24).toString('hex');
+    // This start's own name: hooks of the process started now carry it, and hooks that carry another one come from
+    // a process of an earlier start (see `onHook`).
+    const hookLaunch = crypto.randomBytes(9).toString('hex');
     const plan = sdk
       ? this.planManagedLaunch({ ...spec, cwd }, sessionId, sessionDir, hookToken, sdk.entry)
       : planClaudeLaunch({
@@ -706,6 +711,7 @@ export class HostAgent {
           approvalWaitSeconds: this.cfg.approvalWaitSeconds,
           hookEvents: this.cfg.hookEvents,
           hookRetrySeconds: this.cfg.hookRetrySeconds,
+          hookLaunch,
           effortLevels: spec.effort ? (this.info?.claudeEffortLevels ?? (await claudeEffortLevels(this.cfg.claudeBin))) : null,
           browser: spec.browser ? this.browserMcp() : null,
         });
@@ -747,6 +753,7 @@ export class HostAgent {
       hookToken,
       spec: { ...spec, cwd },
       hooksVersion: HOOKS_VERSION,
+      hookLaunch: sdk ? null : hookLaunch,
       startedAt: new Date().toISOString(),
       transcriptPath: existing?.transcriptPath ?? null,
       hooksSeen: false,
@@ -1535,6 +1542,17 @@ export class HostAgent {
     const authorized = tracked?.hookToken ? safeEqual(token, tracked.hookToken) : safeEqual(token, this.cfg.localToken);
     if (!authorized) {
       res.writeHead(403);
+      res.end();
+      return;
+    }
+    // The last words of a process that was replaced: the session was started again since, and this hook belongs to
+    // the start before. It says nothing about the process that runs now — not that it is alive, not that it is
+    // between turns — and it gets no answer.
+    // (A hook that names no start at all is one too, when the running process was given a name: it comes from a
+    // process started before starts had names.)
+    const launch = String(req.headers['x-orch-launch'] ?? '');
+    if (tracked?.hookLaunch && launch !== tracked.hookLaunch) {
+      res.writeHead(200);
       res.end();
       return;
     }

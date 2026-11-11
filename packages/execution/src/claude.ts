@@ -133,11 +133,14 @@ export function agentAwayMark(socketPath: string): string {
   return `${socketPath}.away`;
 }
 
-export function hookCommand(opts: { socketPath: string; token: string; sessionId: string | null; maxSeconds: number; retrySeconds?: number; failClosed?: boolean }): string {
+export function hookCommand(opts: { socketPath: string; token: string; sessionId: string | null; maxSeconds: number; retrySeconds?: number; failClosed?: boolean; launch?: string | null }): string {
   const headers = [
     `-H 'content-type: application/json'`,
     `-H ${shellSingleQuote(`x-orch-token: ${opts.token}`)}`,
     opts.sessionId ? `-H ${shellSingleQuote(`x-orch-session: ${opts.sessionId}`)}` : '',
+    // Which start of the session this process is: a session is started again under the same name, and what the
+    // process before it still reports (its end) must not be taken for the new one's.
+    opts.launch && /^[A-Za-z0-9-]{4,64}$/.test(opts.launch) ? `-H 'x-orch-launch: ${opts.launch}'` : '',
     `-H "x-tmux-pane: \${TMUX_PANE:-}"`,
   ]
     .filter(Boolean)
@@ -182,6 +185,8 @@ export function buildHooksSettings(opts: {
   retrySeconds?: number;
   /** The session runs in bypass mode: a command nobody could look at is refused. */
   bypass?: boolean;
+  /** The name of this start of the session (see `hookCommand`). */
+  launch?: string | null;
 }): Record<string, unknown> {
   const hooks: Record<string, unknown[]> = {};
   for (const ev of supportedHookEvents(opts.claudeVersion, opts.events)) {
@@ -194,6 +199,7 @@ export function buildHooksSettings(opts: {
             socketPath: opts.socketPath,
             token: opts.token,
             sessionId: opts.sessionId,
+            launch: opts.launch,
             maxSeconds: timeout,
             // Those that decide — what may run (PreToolUse: the high-risk list, a question to the boss), a permission
             // request — and the end of a turn, which the office must not miss (the session would look busy for good).
@@ -292,6 +298,8 @@ export function planClaudeLaunch(opts: {
   hookEvents?: string[] | null;
   /** How long a deciding hook keeps trying to reach the agent while it is being restarted. Default `HOOK_RETRY_SECONDS`. */
   hookRetrySeconds?: number;
+  /** A name for this start of the session, sent with every hook of the process started now. */
+  hookLaunch?: string | null;
   /** What `--effort` accepts on this machine (see `claudeEffortLevels`). An effort that is not among them is left out rather than passed to a CLI that would refuse to start. */
   effortLevels?: string[] | null;
   /** A browser for this session: the command of an MCP server that drives one (see `findBrowserMcp`). */
@@ -309,6 +317,7 @@ export function planClaudeLaunch(opts: {
     events: opts.hookEvents,
     retrySeconds: opts.hookRetrySeconds ?? HOOK_RETRY_SECONDS,
     bypass: spec.permissionMode === 'bypassPermissions',
+    launch: opts.hookLaunch,
   });
   const browser = spec.mcp && opts.browser ? opts.browser : null;
   const allow = [...new Set([...spec.permissions.allow, ...spec.allowedTools, ...(spec.mcp ? ['mcp__orchestrator'] : []), ...(browser ? ['mcp__browser'] : [])])];
