@@ -420,6 +420,36 @@ test('another colleague sees that she is there and nothing more; an owner can wo
   for (const c of [a, m, j, v]) c.ws.close();
 });
 
+const vaultList = async () => (await h.api<{ entries: any[] }>('GET', '/vault')).entries;
+test('a credential that goes through a session on a member\'s own computer stays theirs: it is not put into the office\'s vault', async () => {
+  const before = (await vaultList()).length;
+  // A file with a key in it, read by his employee on his computer…
+  const sLola = (await h.session(lola))!;
+  fs.writeFileSync(path.join(sLola.cwd, 'mine.env'), 'AWS_ACCESS_KEY_ID=AKIAJOVANSOWNKEY1234\nREGION=eu-central-1\n');
+  assert.equal((await door(invites.Jovan!.t, 'POST', `/api/employees/${lola}/message`, { body: 'Read my settings. @@fake: read mine.env; say lola-read-it@@' })).status, 200);
+  await waitFor(() => /lola-read-it/.test(jovanHost.tmux('capture-pane', '-p', '-J', '-S', '-60', '-t', sLola.tmuxPane!)), { label: 'Lola read it', timeout: 30000 });
+  // …and the same on a machine of the shared office.
+  const sAlex = (await h.session(alex))!;
+  fs.writeFileSync(path.join(sAlex.cwd, 'shared.env'), 'AWS_ACCESS_KEY_ID=AKIASHAREDOFFICEKEY9\nREGION=eu-central-1\n');
+  await waitFor(async () => (await h.session(alex))?.inTurn === false, { label: 'Alex between turns', timeout: 30000 });
+  await h.api('POST', `/employees/${alex}/message`, { body: 'Read the old settings. @@fake: read shared.env; say alex-read-it@@' });
+  // What is on a shared machine is kept (that is what the vault is for); his is not.
+  const kept = await waitFor(async () => {
+    const now = await vaultList();
+    return now.length > before ? now : null;
+  }, { label: 'kept from the shared machine', timeout: 30000 }).catch(async (e) => {
+    const x = await h.session(alex);
+    throw new Error(`${e.message}\nalex: ${x?.status} inTurn=${x?.inTurn} cwd=${x?.cwd}\n${h.tmux('capture-pane', '-p', '-J', '-S', '-30', '-t', x!.tmuxPane!).split('\n').filter((l) => l.trim()).slice(-12).join('\n')}\nmessages: ${JSON.stringify((await h.state()).messages.filter((m) => m.toEmployeeId === alex).slice(-2).map((m) => [m.body.slice(0, 40), m.delivery]))}`);
+  });
+  await sleep(1000);
+  const values = await Promise.all((await vaultList()).map((e) => h.api<any>('POST', `/vault/${e.id}/reveal`, {}).then((r) => r.value as string)));
+  assert.ok(values.includes('AKIASHAREDOFFICEKEY9'));
+  assert.ok(!values.includes('AKIAJOVANSOWNKEY1234'), 'nothing of his was taken into the vault');
+  assert.equal(kept.length, before + 1);
+  fs.rmSync(path.join(sLola.cwd, 'mine.env'));
+  fs.rmSync(path.join(sAlex.cwd, 'shared.env'));
+});
+
 test('the office’s own alerts leave a member’s computer alone; when the member goes, the computer is offline, not an incident', async () => {
   const before = (await h.state()).notifications.length;
   await jovanHost.stop();
@@ -427,6 +457,16 @@ test('the office’s own alerts leave a member’s computer alone; when the memb
   await sleep(300);
   assert.ok(!(await h.state()).notifications.slice(before).some((n) => n.kind === 'host_disconnected'), 'no alarm for a member leaving');
   assert.equal((await h.session(lola))!.status, 'host_offline');
+});
+
+test('a wrong credential at the door raises no "wrong owner token" alarm; one on the office\'s own computer does', async () => {
+  const alarms = async () => (await h.state()).notifications.filter((n) => /wrong owner token/.test(n.title)).length;
+  const before = await alarms();
+  for (let i = 0; i < 8; i++) assert.equal((await fetch(`${doorUrl}/api/me`, { headers: { authorization: `Bearer orch_owner_not-a-real-one-${i}` } })).status, 401);
+  await sleep(300);
+  assert.equal(await alarms(), before, 'anybody outside can send a wrong credential: that is no attempt on the owner token');
+  for (let i = 0; i < 6; i++) assert.equal((await fetch(`${h.url}/api/me`, { headers: { authorization: `Bearer orch_owner_not-a-real-one-${i}` } })).status, 401);
+  await waitFor(async () => (await alarms()) === before + 1, { label: 'the alarm for the office\'s own address' });
 });
 
 test('a window’s token is not in its address; a wrong one is turned away either way', async () => {
@@ -514,6 +554,13 @@ test('revoking ends a member’s session and their computer’s place in the off
   assert.equal((await door(fresh.t, 'POST', `/api/employees/${alex}/message`, { body: 'x' })).status, 403);
   assert.equal((await h.state()).hosts.find((x) => x.id === jovanHost.hostId)!.status, 'revoked', 'his computer can no longer connect');
   assert.equal(await tools(), 401, 'and a token copied from a session on it no longer opens the office\'s tools');
+  // An enrollment he was given and has not used is worth nothing now either.
+  await h.api('PATCH', `/guests/${guestIds.Jovan}`, { role: 'colleague' });
+  const unused = (await door(fresh.t, 'POST', '/api/me/host', {})).body.token as string;
+  assert.match(unused, /^orch_enroll_/);
+  await h.api('PATCH', `/guests/${guestIds.Jovan}`, { role: 'visitor' });
+  await assert.rejects(h.addHost('jovans-second', {}, { serverUrl: doorUrl, enrollToken: unused }), /no longer in this office|invalid|refused|rejected/i);
+  assert.ok(!(await h.state()).hosts.some((x) => x.name.includes('second') || (x.memberId === guestIds.Jovan && x.status !== 'revoked')), 'no machine of his is in the office');
   // Promoted to owner, he runs the office.
   await h.api('PATCH', `/guests/${guestIds.Jovan}`, { role: 'owner' });
   assert.equal((await door(fresh.t, 'GET', '/api/audit')).status, 200);

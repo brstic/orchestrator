@@ -183,3 +183,18 @@ test('"pass" and "pin" name a credential only when the sentence says so', () => 
   assert.deepEqual(found('pin: 4821Abc!').map((f) => f[1]), ['4821Abc!']);
   assert.deepEqual(found('lozinka za git.example.net je Abc123!x').map((f) => f[1]), ['Abc123!x'], 'the other words are as before');
 });
+
+test('when a credential in a text cannot be stored, the text goes on as written and the office is told why', () => {
+  // The vault's key cannot be made (where it should be kept is not a folder): nothing can be stored.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-vault-'));
+  fs.writeFileSync(path.join(dir, 'not-a-folder'), 'x');
+  const f = fakeCore();
+  const vault = new Vault(f.core, path.join(dir, 'not-a-folder', 'vault.key'));
+  const told: string[] = [];
+  vault.onCaptureFailed = (why) => void told.push(why);
+  const text = 'the password is Winter2026!ok for staging';
+  assert.equal(vault.capture(text, boss).text, text, 'left as it was written');
+  assert.equal(told.length, 1);
+  assert.ok(told[0]!.length > 0);
+  assert.equal(vault.list().length, 0);
+});

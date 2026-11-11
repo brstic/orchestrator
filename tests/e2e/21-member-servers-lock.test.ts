@@ -320,3 +320,16 @@ test('the app brings a server in over SSH: checks it, installs the agent, enrols
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('a member who is removed takes with them every machine they brought — also a server they had shared with everybody', async () => {
+  // Ana brings a server of her own into the office and shares it.
+  const token = (await door('Ana', 'POST', '/api/me/servers', { name: 'Ana build box' })).body;
+  assert.match(String(token.token ?? token.enrollToken ?? ''), /^orch_enroll_/);
+  const box = await h.addHost('ana-build-box', {}, { serverUrl: doorUrl, enrollToken: token.token ?? token.enrollToken });
+  assert.equal((await door('Ana', 'PATCH', `/api/me/servers/${box.hostId}`, { shared: true })).status, 200);
+  const shared = await hostOf(box.hostId);
+  assert.deepEqual([shared.memberId ?? null, shared.status], [null, 'online'], 'shared: a machine of the office, no longer "hers" to the others');
+  await h.api('DELETE', `/guests/${ids.Ana}`);
+  await waitFor(async () => (await hostOf(box.hostId)).status === 'revoked', { label: 'her server left with her', timeout: 15000 });
+  await box.stop().catch(() => undefined);
+});

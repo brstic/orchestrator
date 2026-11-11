@@ -51,6 +51,7 @@ See [OPERATIONS.md](OPERATIONS.md): `pnpm deploy:server` for the office on the s
 - **Clocks in tests:** what the office does by the clock has its interval in `Timings` (`packages/orchestration/src/core.ts`), so a test can run it fast: `routineTickMs` and `routineMinuteMs` (how long "a minute" of a routine is), `sleepTickMs` and `sleepIdleMs` (overrides the owner's "asleep after … minutes"), `wakeRetryMs`. `tests/e2e/16-routines-sleep.test.ts` runs a five-minute routine every second and a half and puts a session to sleep after two seconds.
 
 ## Conventions
+- **Seeing a test fail without its fix: with a reverse patch, never with `git stash`.** `git diff HEAD -- <file> > /tmp/fix.patch && git apply -R /tmp/fix.patch`, run the test, `git apply /tmp/fix.patch` (for a fix that is already committed: `git show <commit> -- <file> | git apply -R`). The repository holds an old stash (`stash@{0}`, "The office remodelled…", 39 files) that belongs to whoever made it: `git stash pop` applies *that* whenever the stash you meant to make had nothing to save — which is what happened on 2026-11-11, with conflicts in twenty files (restored from HEAD; the stash was kept). Do not pop, drop or clear stashes here.
 - Comments say why, in plain words. No narration of the change itself.
 - New owner-visible behaviour that is automatic (camera, overlays, effects) ships switched off behind a setting.
 - Every permission decision goes through `apps/server/src/access.ts`; do not add ad-hoc role checks in routes.

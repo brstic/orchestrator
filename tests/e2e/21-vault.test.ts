@@ -97,6 +97,18 @@ test('a password the boss writes in a message is moved to the vault: the employe
   // A task is read the same way.
   const t = await h.task({ projectId: (await h.state()).projects[0]!.id, title: 'Rotate the key', released: false, description: 'The old one is sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWX1234, replace it.' });
   assert.equal((await h.getTask(t.id)).description, 'The old one is {{vault:anthropic-api-key}}, replace it.');
+  // …also when it is written into the task later: by editing it, or with a correction.
+  const stripe = `sk_live_${'9aB8cD7e'.repeat(3)}`;
+  await h.api('PATCH', `/tasks/${t.id}`, { description: `Use ${stripe} for the payments test.`, acceptance: 'postgres://shop:Pa55@word!x@db.example.net:5432/shop answers' });
+  const edited = await h.getTask(t.id);
+  assert.match(edited.description, /^Use \{\{vault:[a-z0-9-]+\}\} for the payments test\.$/);
+  assert.match(edited.acceptance, /^postgres:\/\/shop:\{\{vault:[a-z0-9-]+\}\}@db\.example\.net:5432\/shop answers$/, 'a password with an @ in it is taken whole');
+  const github = `ghp_${'z9Y8'.repeat(9)}`;
+  await h.api('POST', `/tasks/${t.id}/correct`, { description: `Push with ${github} when it is green.` });
+  assert.match((await h.getTask(t.id)).description, /^Push with \{\{vault:[a-z0-9-]+\}\} when it is green\./);
+  const all = await everything();
+  for (const secret of [stripe, 'Pa55@word!x', github]) assert.ok(!all.includes(secret), 'none of them stands anywhere in the office');
+  for (const secret of [stripe, 'Pa55@word!x', github]) assert.ok((await Promise.all((await vault()).map((e) => h.api<any>('POST', `/vault/${e.id}/reveal`, {})))).some((r) => r.value === secret), 'and each is in the vault');
 });
 
 test('an employee puts in what it was given or made: through the tool, and straight from a pipe', async () => {
