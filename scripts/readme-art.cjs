@@ -4,7 +4,7 @@
 //
 // <shots-dir> holds what `scripts/readme-shots.cjs` took (and, for the pictures of windows, the screenshots of a run
 // of the UI suite: `node tests/ui/run.mjs --out <dir>`). Each picture here is a page — the screenshot, a frame, a
-// caption — drawn by the browser and saved as a PNG. Nothing in a screenshot is retouched: what is added is around it.
+// caption — drawn by the browser and saved as a picture. Nothing in a screenshot is retouched: what is added is around it.
 const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -73,12 +73,12 @@ function card(o) {
     body { width: 1400px; height: 900px; position: relative; background: linear-gradient(135deg, ${c1} 0%, ${c2} 100%); }
     .rays { position: absolute; inset: -40%; background: repeating-conic-gradient(from ${o.spin || 0}deg at 50% 50%, rgba(255,255,255,0.09) 0 7deg, transparent 7deg 15deg); }
     .dots { position: absolute; inset: 0; background: radial-gradient(circle, rgba(0,0,0,0.22) 2px, transparent 2.6px) 0 0 / 18px 18px; mask-image: linear-gradient(${o.dots || 200}deg, #000 0%, transparent 55%); }
-    .frame { position: absolute; left: 96px; top: 150px; width: 1208px; height: 664px; transform: rotate(${o.tilt}deg); background: #0b0d1a;
+    .frame { position: absolute; left: 110px; top: 146px; width: 1180px; height: 606px; transform: rotate(${o.tilt}deg); background: #0b0d1a;
       border: 10px solid #fff; border-radius: 18px; box-shadow: 16px 18px 0 ${ink}, 16px 18px 0 6px rgba(0,0,0,0.35); overflow: hidden; }
     .frame img { width: 100%; height: 100%; object-fit: cover; object-position: ${o.at || '50% 50%'}; display: block; }
     .title { position: absolute; left: 54px; top: 34px; transform: rotate(${-o.tilt * 1.6 - 2}deg); transform-origin: left center; }
     .title div { display: inline-block; font-size: ${o.size || 84}px; padding: 12px 34px 8px 26px; background: ${ink}; color: #fff; box-shadow: 9px 9px 0 rgba(0,0,0,0.55); clip-path: polygon(0 0, 100% 0, calc(100% - 22px) 100%, 0 100%); }
-    .sub { position: absolute; left: 72px; bottom: 26px; right: 330px; font: 600 27px/1.22 ${FONT}; color: #fff; text-shadow: 0 3px 0 rgba(0,0,0,0.45); }
+    .sub { position: absolute; left: 72px; bottom: 24px; right: 320px; font: 600 28px/1.2 ${FONT}; color: #fff; text-shadow: 0 3px 0 rgba(0,0,0,0.5); }
     .burst { position: absolute; right: 44px; bottom: 30px; width: 236px; height: 236px; display: grid; place-items: center; text-align: center; transform: rotate(${o.tilt * -5}deg);
       background: #ffd166; color: #1b1338; clip-path: polygon(50% 0%, 61% 13%, 77% 6%, 80% 23%, 96% 25%, 90% 41%, 100% 54%, 87% 63%, 91% 80%, 74% 80%, 67% 96%, 52% 87%, 38% 98%, 31% 82%, 14% 84%, 16% 67%, 1% 59%, 12% 46%, 3% 31%, 19% 27%, 21% 10%, 37% 15%);
       filter: drop-shadow(8px 9px 0 rgba(0,0,0,0.5)); }
@@ -110,7 +110,10 @@ const PINK = ['#f0479b', '#5b1a8a', '#2563eb'];
 const GREEN = ['#22b573', '#0c4a55', '#f43f5e'];
 
 // What each picture shows is what the office does; the words around it are the README's own.
-const ASSETS = JSON.parse(process.env.README_ART || 'null') || [];
+const ASSETS = process.env.README_SHEET ? [] : JSON.parse(fs.readFileSync(path.join(root, 'docs/assets/readme-art.json'), 'utf8'));
+
+// One window per picture: closing one must not end the program.
+app.on('window-all-closed', () => undefined);
 
 app.whenReady().then(async () => {
   fs.mkdirSync(outDir, { recursive: true });
@@ -127,9 +130,12 @@ app.whenReady().then(async () => {
       win.setContentSize(width, Math.min(h, 8000));
       await new Promise((r) => setTimeout(r, 300));
     }
-    fs.writeFileSync(path.join(outDir, `${name}.png`), (await win.webContents.capturePage()).toPNG());
+    // JPEG: these are photographs of a 3D scene with flat lettering on top; a tenth of the size of a PNG and no visible loss.
+    const image = await win.webContents.capturePage();
+    const file2 = name === 'contact-sheet' ? `${name}.png` : `${name}.jpg`;
+    fs.writeFileSync(path.join(outDir, file2), name === 'contact-sheet' ? image.toPNG() : image.toJPEG(90));
     win.destroy();
-    console.log(`${name}.png`);
+    console.log(file2);
   };
   const palettes = { PURPLE, TEAL, ORANGE, BLUE, PINK, GREEN };
   try {
