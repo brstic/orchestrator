@@ -84,6 +84,8 @@ In tests the times are short: `approvalWaitSeconds`, `agentCfg.linkGraceSeconds`
 
 - The same request, half an hour after it was asked and with no answer from the owner: refused by the agent through the hook ("no decision in time; the command was refused"), and the session went on.
 
+- 2026-11-11, 20:25:58 UTC, a minute after the owner's switch for Unrestricted was set to off: a command of an Unrestricted employee whose session had been started with the high-risk list was held by the server's agent, answered *allow* by the office at once (`highrisk.not_held` in the audit log, no question), **and ran** — tool started, tool finished five seconds later, the session went on in bypass mode. So an `allow` printed by the hook is what lets a held command run there.
+
 ## Not verified with real Claude Code
 
 - That a `deny` printed by the hook in bypass mode is treated as a refusal (the agent has answered in that shape since the level exists — also only run with the scripted worker).
