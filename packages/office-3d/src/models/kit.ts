@@ -418,6 +418,9 @@ const pebble = once(() =>
   ),
 );
 
+/** The height maps themselves, for what is not furniture (people's clothes). */
+export const textures = { weave, pebble };
+
 const cache = new Map<string, THREE.MeshStandardMaterial>();
 function cached(key: string, make: () => THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
   let m = cache.get(key);
