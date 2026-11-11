@@ -103,6 +103,8 @@ interface Runtime {
   inboxWaiter: (() => void) | null;
   /** SDK-managed workers: the running cost estimate last reported by the SDK. */
   costUsdEstimate: number | null;
+  /** Exact tool calls the owner allowed once after Claude Code refused them (see `session.grant`). */
+  grants?: Array<{ key: string; until: number }>;
 }
 
 interface PendingHook {
@@ -120,6 +122,14 @@ const OUTBOX_LIMIT = 5000;
  * The host agent daemon. It owns nothing but observation and delivery: tmux
  * sessions keep running whether or not this process (or the server) is alive.
  */
+/** What makes two tool calls "the same call": for a shell command its text, otherwise the tool and its whole input. */
+export function grantKey(tool: string, input: unknown): string {
+  const i = (input ?? {}) as Record<string, unknown>;
+  if (tool === 'Bash' && typeof i.command === 'string') return `Bash\u0000${i.command.trim()}`;
+  const { description: _d, ...rest } = i;
+  return `${tool}\u0000${JSON.stringify(rest, Object.keys(rest).sort())}`;
+}
+
 export class HostAgent {
   readonly cfg: AgentConfig;
   readonly home: string;
@@ -985,6 +995,13 @@ export class HostAgent {
         }
         await this.requireStream(rpc.params.sessionId).paste(rpc.params.text, rpc.params.submit);
         return { ok: true, via: 'terminal' };
+      case 'session.grant': {
+        const t = this.requireTracked(rpc.params.sessionId);
+        const rt = this.rt(t.sessionId);
+        const now = Date.now();
+        rt.grants = [...(rt.grants ?? []).filter((g) => g.until > now), { key: grantKey(rpc.params.tool, rpc.params.input), until: now + Math.max(10_000, Math.min(Number(rpc.params.ttlMs) || 0, 30 * 60_000)) }].slice(-20);
+        return { ok: true };
+      }
       case 'session.keys':
         await this.requireStream(rpc.params.sessionId).keys(rpc.params.keys);
         return { ok: true };
@@ -1275,7 +1292,18 @@ export class HostAgent {
    * the owner's approval) no matter how permissive the session's mode is.
    */
   private localPolicy(t: Tracked, payload: HookPayload): Record<string, unknown> | null {
-    if (payload.hook_event_name !== 'PreToolUse' || payload.tool_name !== 'Bash') return null;
+    if (payload.hook_event_name !== 'PreToolUse') return null;
+    // The owner allowed exactly this call, once, after Claude Code had refused it: it is let through — and the grant is used up.
+    const rt = this.runtime.get(t.sessionId);
+    if (rt?.grants?.length) {
+      const key = grantKey(String(payload.tool_name ?? ''), payload.tool_input);
+      const i = rt.grants.findIndex((g) => g.key === key && g.until > Date.now());
+      if (i >= 0) {
+        rt.grants.splice(i, 1);
+        return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Allowed once by the owner of the office, for exactly this call.' }, orchGranted: true };
+      }
+    }
+    if (payload.tool_name !== 'Bash') return null;
     const command = String(payload.tool_input?.command ?? '');
     for (const pattern of t.spec?.highRiskPatterns ?? []) {
       try {
@@ -1503,7 +1531,9 @@ export class HostAgent {
 
     const local = this.localPolicy(tracked, payload);
     if (local) {
-      event.payload = { ...payload, orch_policy: 'high_risk' };
+      const granted = local.orchGranted === true;
+      delete local.orchGranted;
+      event.payload = { ...payload, orch_policy: granted ? 'granted_once' : 'high_risk' };
       this.enqueue(event);
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(local));

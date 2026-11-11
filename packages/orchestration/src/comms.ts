@@ -498,6 +498,27 @@ export class Comms {
         }
         break;
       }
+      case 'auto_denied': {
+        // Claude Code's own check refused it. The owner's word is given to the session the two ways Claude Code
+        // takes one: the machine lets exactly that call through once, and the employee is told — as a message from
+        // the owner, in the conversation — that it may run it again.
+        const session = this.core.sessions.get(q.sessionId);
+        const employee = this.core.employees.get(q.employeeId);
+        if (!session || session.status !== 'running' || !employee) {
+          this.setStatus(q, 'failed', 'The session is no longer running.');
+          break;
+        }
+        const what = typeof (q.tool?.input as any)?.command === 'string' ? String((q.tool!.input as any).command) : `${q.tool?.name ?? 'the tool'} ${JSON.stringify(q.tool?.input ?? {})}`;
+        if (q.decision === 'allow') {
+          const granted = await this.eng.sessions.grantOnce(session, q.tool?.name ?? '', q.tool?.input ?? {}).catch(() => false);
+          this.sendMessage({ from: { kind: 'owner', id: null, name: 'the boss' }, toEmployeeId: employee.id, kind: 'system', taskId: q.taskId, body: `I, the owner of this office, allow this once — exactly as you tried it:\n${truncate(what, 1500)}\n\nRun exactly the same call again now. If it is refused again, do not look for a way around it: say so with report_blocker.` });
+          this.setStatus(q, 'delivered', granted ? 'Allowed once: the machine lets exactly that call through, and the employee was told to run it again' : 'The employee was told that you allow it (this machine could not be told to let the call through)');
+        } else {
+          this.sendMessage({ from: { kind: 'owner', id: null, name: 'the boss' }, toEmployeeId: employee.id, kind: 'system', taskId: q.taskId, body: `The action that was refused stays refused (${truncate(what, 200)}).${q.answer ? ` ${q.answer}` : ''} Do it another way, or report_blocker if the task cannot be done without it.` });
+          this.setStatus(q, 'confirmed', 'Left refused; the employee was told');
+        }
+        break;
+      }
       case 'system':
         await this.eng.onSystemAnswer(q);
         if (q.status === 'answered') this.setStatus(q, 'confirmed', 'Handled by Orchestrator');
@@ -544,12 +565,13 @@ export class Comms {
   }
 
   /** Real evidence that the runtime acted on our answer (e.g. the approved tool actually ran). */
-  confirmBySignal(sessionId: string, signal: { tool?: string | null; orchestratorTool?: string | null; sessionStarted?: boolean }): void {
+  confirmBySignal(sessionId: string, signal: { tool?: string | null; orchestratorTool?: string | null; sessionStarted?: boolean; ran?: boolean }): void {
     for (const q of this.core.questions.filter((x) => x.sessionId === sessionId && x.status === 'delivered')) {
       if (q.channel === 'permission_hook' && signal.tool && q.tool?.name === signal.tool) this.setStatus(q, 'confirmed', q.decision === 'deny' ? 'Claude Code reported the denial to the agent' : 'The approved tool ran');
       else if (q.channel === 'ask_user_question_hook' && signal.tool === 'AskUserQuestion') this.setStatus(q, 'confirmed', 'AskUserQuestion completed with the supplied answer');
       else if (q.channel === 'mcp_tool' && (signal.orchestratorTool === 'ask_boss' || signal.orchestratorTool === 'wait_for_answer')) this.setStatus(q, 'confirmed', 'The tool result reached the agent');
       else if (q.channel === 'terminal' && q.kind === 'permission' && signal.tool) this.setStatus(q, 'confirmed', q.decision === 'deny' ? 'Claude Code went on without it' : 'The approved tool ran');
+      else if (q.channel === 'auto_denied' && signal.ran && signal.tool && q.tool?.name === signal.tool) this.setStatus(q, 'confirmed', 'The allowed call ran');
       else if (q.channel === 'terminal' && signal.sessionStarted) this.setStatus(q, 'confirmed', 'The session started after the prompt was accepted');
     }
     // A colleague's answer that was returned by the tool call that waited for it: that call has now come back.

@@ -1063,6 +1063,18 @@ export class SessionRegistry {
     return [...out.values()].sort((a, b) => (b.sevenDay?.usedPercent ?? -1) - (a.sevenDay?.usedPercent ?? -1));
   }
 
+  /** Tell a session's machine to let one exact tool call through, once, in the next ten minutes (the owner allowed it after Claude Code refused it). False: that machine's agent does not know how (an older one). */
+  async grantOnce(session: AgentSession, tool: string, input: unknown): Promise<boolean> {
+    try {
+      await this.core.agents.rpc(session.hostId, { method: 'session.grant', params: { sessionId: session.id, tool, input, ttlMs: 10 * 60_000 } }, 8000);
+      this.core.audit('owner', 'approval.granted_once', session.id, { employee: this.core.employees.get(session.employeeId)?.name, tool });
+      return true;
+    } catch (e) {
+      this.core.log('info', `granting a refused call once: ${(e as Error).message}`);
+      return false;
+    }
+  }
+
   /** Sessions that could not reach the office's own tools (their Claude Code reports the connection gone). */
   private unreachable = new Set<string>();
   /** When each employee's session was last started again for that, most recent last. */

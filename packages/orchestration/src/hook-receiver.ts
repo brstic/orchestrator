@@ -1,4 +1,4 @@
-import type { AgentSession, Employee, HookPayload, QuestionOption, RawHookEvent, Task } from '@orchestrator/contracts';
+import type { AgentSession, Employee, HookPayload, Question, QuestionOption, RawHookEvent, Task } from '@orchestrator/contracts';
 import { containsKnownSecret, redactSecrets, truncate } from '@orchestrator/contracts';
 import { describeTool, interpretHook } from '@orchestrator/integrations';
 import type { Engine } from './engine.ts';
@@ -321,6 +321,9 @@ export class HookReceiver {
         projectId: task?.projectId ?? employee.projectId ?? null,
         data: { tool: payload.tool_name ?? null },
       });
+      // Claude Code's own check (it gives its reason): nobody in the office decided this, so the owner is asked
+      // whether to allow it once — the employee cannot get past it any other way, and should not.
+      this.askAboutRefusal(session, employee, task ?? null, payload);
     }
     // Something shaped like a credential went through this session: it is redacted in the office's records, and the owner is told.
     const seen = [payload.prompt, payload.tool_input?.command, payload.last_assistant_message].filter((x): x is string => typeof x === 'string' && x.length > 0);
@@ -343,7 +346,7 @@ export class HookReceiver {
 
     // Any hook after a permission prompt proves the prompt was dealt with (possibly in the terminal).
     if (payload.hook_event_name === 'PostToolUse' || payload.hook_event_name === 'PostToolUseFailure' || payload.hook_event_name === 'PermissionDenied') {
-      this.eng.comms.confirmBySignal(session.id, { tool: payload.tool_name ?? null, orchestratorTool: interp.orchestratorTool });
+      this.eng.comms.confirmBySignal(session.id, { tool: payload.tool_name ?? null, orchestratorTool: interp.orchestratorTool, ran: payload.hook_event_name === 'PostToolUse' });
       this.eng.comms.resolveNotifications((n) => n.kind === 'permission' && n.sessionId === session.id && !n.questionId);
       // A prompt the office was asking about through the terminal: the session has moved past it.
       for (const q of this.core.questions.filter((x) => x.sessionId === session.id && x.status === 'open' && x.kind === 'permission' && x.channel === 'terminal')) this.eng.comms.supersede(q.id, 'The prompt was answered in the terminal.');
@@ -395,6 +398,50 @@ export class HookReceiver {
     // A Stop that arrived through the non-blocking path (host had no server link at the time).
     if (interp.turnFinished && payload.hook_event_name === 'Stop' && !this.isRequest(raw)) this.afterTurn(session, employee, payload);
     return { session, employee, payload };
+  }
+
+  /**
+   * An action Claude Code refused by itself becomes a request to the owner: allow it once, or leave it refused.
+   * Once per action while it is open; not for something the owner has just refused, and not without end for one
+   * employee (somebody who is refused again and again has a different problem).
+   */
+  private askAboutRefusal(session: AgentSession, employee: Employee, task: Task | null, payload: HookPayload): void {
+    const reason = typeof payload.reason === 'string' ? payload.reason.trim() : '';
+    if (!reason) return;
+    const tool = String(payload.tool_name ?? 'tool');
+    const same = (q: Question) => q.tool?.name === tool && JSON.stringify(q.tool?.input ?? null) === JSON.stringify(this.trimInput(payload.tool_input));
+    const mine = this.core.questions.filter((q) => q.sessionId === session.id && q.kind === 'permission');
+    // The owner's own "no" a moment ago (through the hook or at the terminal) is not asked about again.
+    if (mine.some((q) => q.decision === 'deny' && same(q) && !!q.answeredAt && Date.now() - Date.parse(q.answeredAt) < 60_000)) return;
+    const asked = mine.filter((q) => q.channel === 'auto_denied');
+    const again = asked.find((q) => same(q) && (q.status === 'open' || q.status === 'delivered'));
+    if (again) {
+      // Allowed once already, and refused again: the owner's word did not get it past Claude Code's check.
+      if (again.status === 'delivered' && again.decision === 'allow') {
+        again.status = 'failed';
+        again.deliveryDetail = 'Claude Code refused it again although you allowed it. Its own check cannot be overruled from the office: do it at the workstation yourself, or put this employee on Standard (where your approval is the decision).';
+        this.core.put('question', again);
+        this.eng.comms.notify({ kind: 'permission', severity: 'warning', title: `${employee.name} was refused again`, body: again.deliveryDetail, employeeId: employee.id, sessionId: session.id });
+      }
+      return;
+    }
+    if (asked.filter((q) => Date.now() - Date.parse(q.createdAt) < 60 * 60_000).length >= 8) return;
+    const what = describeTool(tool, payload.tool_input, payload.cwd);
+    this.eng.comms.createQuestion({
+      kind: 'permission',
+      channel: 'auto_denied',
+      employee,
+      session,
+      text: `Claude Code refused ${employee.name}'s action: ${what}`,
+      context: `${this.permissionContext(payload)}\n\nReason given: ${truncate(redactSecrets(reason), 400)}`,
+      why: `${employee.name} runs on Auto: Claude Code's own safety check decides what is allowed, and it refused this. Nothing was run. You can allow exactly this call once; the employee is then told to run it again.`,
+      options: [
+        { label: 'Allow', description: 'Let exactly this call run, once', consequence: 'The employee is told to run it again; an identical call is let through once in the next ten minutes.' },
+        { label: 'Deny', description: 'Leave it refused', consequence: 'The employee is told to find another way or to report a blocker.' },
+      ],
+      tool: { name: tool, input: this.trimInput(payload.tool_input) },
+      quietEvent: true,
+    });
   }
 
   private requestIds = new Set<string>();

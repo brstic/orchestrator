@@ -559,5 +559,5 @@ test("skills are counted from finished work, and the declared ones are left as t
   assert.equal(eng.improver.capture.skillsLine(kim), 'delivered: bug 1/2 first pass, feature 1/1 first pass; mostly in src/api, migrations, .ts, .md');
   // A colleague deciding whom to ask sees the record, not the job title alone.
   session(id.Alex!);
-  assert.match((await call('Alex', 'get_team')).text, /- Kim — [^·]+\(other project\) · OFFLINE · delivered: bug 1\/2 first pass, feature 1\/1 first pass; mostly in src\/api/);
+  assert.match((await call('Alex', 'get_team')).text, /- Kim — [^·]+ · project Skills(?: · folder \S+)? · OFFLINE · delivered: bug 1\/2 first pass, feature 1\/1 first pass; mostly in src\/api/);
 });

@@ -131,6 +131,8 @@ export type AgentRpc =
   | { method: 'session.interrupt'; params: { sessionId: ID } }
   | { method: 'session.paste'; params: { sessionId: ID; text: string; submit: boolean } }
   | { method: 'session.keys'; params: { sessionId: ID; keys: string[] } }
+  /** The owner allowed one exact tool call that Claude Code had refused: the next identical call from this session is let through, once, within `ttlMs`. */
+  | { method: 'session.grant'; params: { sessionId: ID; tool: string; input: unknown; ttlMs: number } }
   | { method: 'term.subscribe'; params: { sessionId: ID } }
   | { method: 'term.unsubscribe'; params: { sessionId: ID } }
   | { method: 'term.input'; params: { sessionId: ID; data: string } }

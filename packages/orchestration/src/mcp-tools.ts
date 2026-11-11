@@ -236,6 +236,16 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     get_team: async (_a, { employee }) => {
       const team = core.employees.filter((e) => !e.archived && e.id !== employee.id);
       if (!team.length) return 'You are the only employee.';
+      // What part of the office each one keeps: their project and folder say more than a title everyone shares. And
+      // whether work can be given to them at all — it cannot cross to or from a member's own computer (a message can).
+      const where = (e: Employee): string => {
+        const project = core.projects.get(e.projectId);
+        const folder = e.workingDir ? e.workingDir.split('/').filter(Boolean).pop() : null;
+        const own = e.projectId === employee.projectId ? '' : project ? ` · project ${project.name}` : ' · no project';
+        const keeps = folder && folder.toLowerCase() !== project?.name.toLowerCase() ? ` · folder ${folder}` : '';
+        const far = sameSide(employee, e) ? '' : " · on a member's own computer (send_message only; no tasks or waiting across)";
+        return `${own}${keeps}${far}`;
+      };
       return team
         .map((e) => {
           const s = core.runningSessionOf(e.id);
@@ -243,7 +253,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
           // What their finished work here shows (counted, not declared): whom to ask about what.
           const record = eng.improver.capture.skillsLine(e);
           const waiting = s?.waitingOn ? ` · waiting for ${eng.waits.words(s.waitingOn)}` : '';
-          return `- ${e.name} — ${e.title}${e.projectId === employee.projectId ? '' : ' (other project)'} · ${s ? (ACTIVITY_LABEL[s.activity] ?? s.activity) : 'OFFLINE'}${waiting}${t ? ` · working on ${t.key} "${truncate(t.title, 50)}"` : ''}${record ? ` · ${record}` : ''}`;
+          return `- ${e.name} — ${e.title}${where(e)} · ${s ? (ACTIVITY_LABEL[s.activity] ?? s.activity) : 'OFFLINE'}${waiting}${t ? ` · working on ${t.key} "${truncate(t.title, 50)}"` : ''}${record ? ` · ${record}` : ''}`;
         })
         .join('\n');
     },
@@ -362,6 +372,9 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       if (to.roleKey === FOREMAN_ROLE) return err(`${to.name} is the foreman and does not take tasks. Give it to someone who does the work.`);
       if (!eng.tasks.canSee(to, task)) return err(`${to.name} cannot take ${task.key}: work does not cross between the shared office and a member's own computer.`);
       if (task.assigneeId === to.id) return `${task.key} is already ${to.id === employee.id ? 'yours' : `assigned to ${to.name}`}.`;
+      // Someone from another project is lent to this one, and keeps their own.
+      const cannot = eng.tasks.lend(to, task.projectId);
+      if (cannot) return err(cannot);
       if (task.status === 'IN_PROGRESS') return err(`${core.employees.get(task.assigneeId)?.name ?? 'Someone'} is in the middle of ${task.key}. Talk to them (send_message); they can hand it over themselves.`);
       if (task.status === 'DONE') return err(`${task.key} is done.`);
       eng.tasks.updateTask(task.id, { assigneeId: to.id }, by(employee));

@@ -589,7 +589,8 @@ export type QuestionKind = 'question' | 'decision' | 'permission' | 'priority' |
 export type QuestionStatus = 'open' | 'answered' | 'delivered' | 'confirmed' | 'failed' | 'superseded';
 
 /** How a question reached us, which also determines how the answer travels back. */
-export type QuestionChannel = 'mcp_tool' | 'permission_hook' | 'ask_user_question_hook' | 'terminal' | 'system';
+/** `auto_denied`: Claude Code's own safety check (auto mode) refused an action; the owner may allow it once (see `SessionRegistry.grantOnce`). */
+export type QuestionChannel = 'mcp_tool' | 'permission_hook' | 'ask_user_question_hook' | 'terminal' | 'system' | 'auto_denied';
 
 export interface QuestionOption {
   label: string;

@@ -12,6 +12,24 @@ const PROJECT_COLORS = ['#4f8cff', '#ff8c5a', '#5ad67d', '#c58cff', '#f5c542', '
 /** Task kinds that produce documents or verdicts rather than commits. */
 const NON_CODE_KINDS = new Set<TaskKind>(['review', 'research', 'planning']);
 
+const GENERIC = new Set(['engineer', 'developer', 'senior', 'junior', 'full', 'stack', 'fullstack', 'full-stack', 'backend', 'frontend', 'project', 'manager', 'team', 'work', 'task', 'with', 'from', 'that', 'this', 'the', 'and', 'for', 'code', 'server', 'admin', 'test', 'tests', 'docs', 'home', 'users', 'projects', 'src', 'app', 'apps', 'office', 'claude']);
+const words = (s: string): string[] => s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !GENERIC.has(w));
+
+/**
+ * How much a task's own words point at one employee: 0 … 3. Counted from distinctive words shared between the task's
+ * title (and the start of its description) and the employee's name, title, speciality, skills and folder. Only ever
+ * a tie-breaker between people who suit the task anyway.
+ */
+export function about(task: Pick<Task, 'title' | 'description'>, e: Pick<Employee, 'name' | 'title' | 'specialization' | 'skills' | 'workingDir'>): number {
+  const theirs = new Set(words([e.name, e.title, e.specialization ?? '', ...(e.skills ?? []), path.basename(e.workingDir ?? '')].join(' ')));
+  if (!theirs.size) return 0;
+  const inTitle = new Set(words(task.title));
+  const inText = new Set(words(String(task.description ?? '').slice(0, 400)));
+  let score = 0;
+  for (const w of theirs) score += inTitle.has(w) ? 1.5 : inText.has(w) ? 0.5 : 0;
+  return Math.min(3, score);
+}
+
 /** What everyone in a shared folder is told. */
 export const SHARED_FOLDER_RULES = 'You share this folder: stage only the files you changed yourself, by path (never `git add -A`, `git add .` or `git commit -a`); do not change, revert, stash or delete files you did not touch; if git says another git process is running (index.lock), wait a few seconds and try again.';
 /** How long a task was actually being worked on: the time it spent IN_PROGRESS, from its own history. */
@@ -84,6 +102,8 @@ export interface ProposedTask {
   depends_on?: number[];
   /** What the task is about (a ticket id, a URL): a task of this project with the same key is not added again. */
   dedupe_key?: string;
+  /** The colleague it is for, by name. Without one it goes to whoever suits it and is free. */
+  assignee?: string;
 }
 
 function emptyEvidence(): Task['evidence'] {
@@ -609,6 +629,9 @@ export class TaskManager {
       // Measured track record on this kind of task breaks ties between suitable people.
       const learned = this.eng.improver.routingBonus(e, task.kind);
       score += learned.bonus;
+      // In an office where everyone has the same trade, the task usually says whose it is: the part of the product in
+      // a colleague's name, title, speciality or folder ("Marketplace: …" → the one who keeps the marketplace).
+      score += about(task, e);
       // A preference the owner accepted from the record ("give this kind to X first") decides between suitable people.
       const preferred = routingPreference(this.core.settings, this.core.projects.get(task.projectId), task.kind, e.id);
       score += preferred.bonus;
@@ -914,7 +937,9 @@ export class TaskManager {
     const to = this.eng.comms.resolveTeammate(from, toRef);
     if (!to || to.archived) return { text: `No teammate matches "${toRef}". Use get_team.`, isError: true };
     if (!to.hostId) return { text: `${to.name} has no machine to work on; choose someone else or tell the boss.`, isError: true };
-    if (to.projectId && to.projectId !== task.projectId) return { text: `${to.name} works on another project; choose a teammate on this one or ask the boss.`, isError: true };
+    // Someone from another project (the specialist for this, in an office of small projects) is lent to this one.
+    const cannot = this.lend(to, task.projectId);
+    if (cannot) return { text: cannot, isError: true };
     if (this.verifying.has(task.id)) return { text: `Verification of ${task.key} is running; wait for its result.`, isError: true };
     const project = this.core.projects.require(task.projectId);
     const codeTask = !NON_CODE_KINDS.has(task.kind);
@@ -966,7 +991,8 @@ export class TaskManager {
       task.status = 'IN_PROGRESS';
       this.history(task, `Unblocked: ${note}`, actor);
       this.core.put('task', task);
-      this.eng.comms.sendMessage({ from: by ? { kind: 'employee', id: by.id, name: `${by.name} (${by.title})` } : { kind: 'owner', id: null, name: 'the boss' }, toEmployeeId: employee!.id, body: `${task.key} is unblocked (was: ${previous ?? 'blocked'}). ${note}\nContinue the task.`, kind: 'system', taskId: task.id });
+      // (Somebody who unblocks their own task knows it: no message to themselves, which would only cost them a turn.)
+      if (by?.id !== employee!.id) this.eng.comms.sendMessage({ from: by ? { kind: 'employee', id: by.id, name: `${by.name} (${by.title})` } : { kind: 'owner', id: null, name: 'the boss' }, toEmployeeId: employee!.id, body: `${task.key} is unblocked (was: ${previous ?? 'blocked'}). ${note}\nContinue the task.`, kind: 'system', taskId: task.id });
       if (session!.activity === 'blocked') this.eng.sessions.setActivity(session!, 'idle', null);
     } else {
       task.status = 'READY';
@@ -1369,7 +1395,38 @@ export class TaskManager {
     const preferred = task.kind === 'security' ? ['security', 'reviewer', 'architect'] : ['reviewer', 'architect', 'security', 'qa'];
     const pool = this.core.employees.filter((e) => !e.archived && e.id !== task.assigneeId && preferred.includes(e.roleKey) && !!e.hostId && e.schedule.available && (e.projectId === task.projectId || e.projectId === null));
     pool.sort((a, b) => preferred.indexOf(a.roleKey) - preferred.indexOf(b.roleKey));
-    return pool[0];
+    if (pool[0] || this.core.settings.employeesManageBoard === false) return pool[0];
+    // No reviewer by trade on the team. Where employees keep the board themselves, a colleague who does this kind of
+    // work reviews it — a second pair of eyes from the team, instead of the task waiting for the boss. Never the
+    // author, never a foreman or a person's own session, never across the line to a member's own computer.
+    const author = this.core.employees.get(task.assigneeId);
+    const peers = this.core.employees.filter(
+      (e) => !e.archived && e.id !== task.assigneeId && e.roleKey !== 'foreman' && !e.selfDriven && !!e.hostId && e.schedule.available && this.canSee(e, task) && (e.projectId === task.projectId || !!e.alsoProjectIds?.includes(task.projectId)),
+    );
+    const rank = (e: Employee) => {
+      const does = roleByKey(e.roleKey)?.handles.includes(task.kind) ? 0 : 2;
+      const sameTrade = author && e.roleKey === author.roleKey ? 0 : 1;
+      const busy = this.isFree(e) ? 0 : 1;
+      return does * 4 + sameTrade * 2 + busy;
+    };
+    return peers.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))[0];
+  }
+
+  /**
+   * Somebody from another project is given work on this one by a colleague: they are lent to it — they keep their
+   * own project and folder, and can be routed work here. (When the owner assigns across projects the employee moves,
+   * as before.) Refused across the line between the shared office and a member's own computer.
+   */
+  lend(to: Employee, projectId: string): string | null {
+    if (to.projectId === projectId || to.alsoProjectIds?.includes(projectId)) return null;
+    const project = this.core.projects.get(projectId);
+    const personal = (hostId: string | null | undefined) => !!this.core.hosts.get(hostId ?? '')?.memberId;
+    if ((personal(to.hostId) || personal(project?.hostId)) && to.hostId !== project?.hostId) return `${to.name} cannot take work of ${project?.name ?? 'that project'}: work does not cross between the shared office and a member's own computer.`;
+    if (!to.projectId) return null; // nobody's yet: they simply come here with the task
+    to.alsoProjectIds = [...(to.alsoProjectIds ?? []), projectId];
+    this.core.put('employee', to);
+    this.core.event({ type: 'employee.updated', source: 'server', summary: `${to.name} also works on ${project?.name ?? 'another project'} now (given work there by a colleague)`, employeeId: to.id, projectId, data: { lentTo: projectId, quiet: true } });
+    return null;
   }
 
   /** Ask for a review of a task. Returns the reviewing employee, or null when the owner reviews. */
@@ -1487,6 +1544,19 @@ export class TaskManager {
     // By position in the proposal, so "after the second task" still means that one when another was already there.
     const at: Task[] = [];
     const auto = project.policy.autoAssign;
+    // Everybody named must exist and be able to take work here — checked before anything is created.
+    const whom = specs.map((spec, i) => {
+      const name = String(spec?.assignee ?? '').trim();
+      if (!name) return null;
+      const to = name.toLowerCase() === by.name.toLowerCase() ? by : this.eng.comms.resolveTeammate(by, name);
+      if (!to || to.archived) throw new EngineError(`task ${i} ("${truncate(String(spec?.title ?? ''), 40)}"): no teammate matches "${name}". Use get_team for exact names.`);
+      if (to.roleKey === 'foreman') throw new EngineError(`task ${i}: ${to.name} is the foreman and does not take tasks.`);
+      return to;
+    });
+    for (const [i, to] of whom.entries()) {
+      const cannot = to ? this.lend(to, projectId) : null;
+      if (cannot) throw new EngineError(`task ${i}: ${cannot}`);
+    }
     for (const [i, spec] of specs.entries()) {
       if (!spec?.title?.trim()) throw new EngineError(`task ${i} has no title`);
       const key = dedupeKeyOf(spec.dedupe_key);
@@ -1500,7 +1570,7 @@ export class TaskManager {
       const role = spec.role ? (roleByKey(spec.role) ?? matchRole(spec.role)) : undefined;
       const kind = TASK_KINDS.includes(spec.kind as TaskKind) ? (spec.kind as TaskKind) : 'feature';
       const priority = (['low', 'normal', 'high', 'urgent'] as const).includes(spec.priority as TaskPriority) ? (spec.priority as TaskPriority) : 'normal';
-      const task = this.createTask({ projectId, title: spec.title.trim(), description: spec.description ?? '', acceptance: spec.acceptance ?? '', kind, priority, roleHint: role?.key ?? null, dependsOn: deps, released: auto && !key, dedupeKey: key }, `employee:${by.name}`);
+      const task = this.createTask({ projectId, title: spec.title.trim(), description: spec.description ?? '', acceptance: spec.acceptance ?? '', kind, priority, roleHint: whom[i] ? null : (role?.key ?? null), assigneeId: whom[i]?.id ?? null, dependsOn: deps, released: auto && !key, dedupeKey: key }, `employee:${by.name}`);
       created.push(task);
       at.push(task);
     }
