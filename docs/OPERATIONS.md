@@ -146,6 +146,9 @@ Owners can do the member part from the app as well: Menu → Access.
 
 **Sessions that sleep.** Shared sessions with no work for 30 minutes are stopped by the office to free memory (Settings → Employees → *Put idle sessions to sleep after*; 0 = never). So `tmux ls` on the server shows only the employees who are awake: a missing `orch-<name>-<id>` session of someone shown as *Sleeping* in the office is expected, not a crash. It comes back under the same name when they are next needed. The log line is `session.asleep` in the audit (actor `office`); a wake is `session.resumed` by `office`. To see what the setting gives back, compare `free -m` (or the Machines panel) before and after an idle half hour — this has not been measured yet.
 
+### The employees' browser
+Sessions on the server have a headless browser (Playwright's MCP server on the server's own Chrome), installed on 2026-11-11 in `~/orchestrator-office/browser/` — beside `app`, so a deploy does not touch it. How it was installed, how to update or remove it, and what it may reach: `ATTACHMENTS.md`, "A browser". The office's agent looks for it when it starts and says so in Machines (and `GET /api/state` → the host's `info.browser`). Screenshots a session takes land in `~/.orchestrator-office/agent/sessions/<id>/browser/`; files attached to tasks in `~/.orchestrator-office/agent/files/<task>/` on the machine and in `~/.orchestrator-office/server/files/` in the office (**the last one belongs in the backup**).
+
 ### Adding a Claude account
 So that employees do not wait when the server's one account reaches its limit (`ACCOUNTS.md` explains all of it):
 
@@ -178,7 +181,7 @@ MEMPALACE_CONFIG_DIR=$D/config MEMPALACE_EMBEDDING_MODEL=embeddinggemma MEMPALAC
 (`< /dev/null` matters for `init`: it asks a question when it has someone to ask.) It is not the MemPalace that Ahoy runs in Docker on the same machine; they share nothing.
 
 ### Backup and restore
-The whole office is `~/.orchestrator-office/server/` (database, certificate, credentials, and `vault.key` — the key to everything in the vault; a backup without it cannot open the vault). The certificate matters: with a new one every invitation has to be made again.
+The whole office is `~/.orchestrator-office/server/` (database, certificate, credentials, the files attached to tasks in `files/`, and `vault.key` — the key to everything in the vault; a backup without it cannot open the vault). The certificate matters: with a new one every invitation has to be made again.
 
 ```sh
 systemctl --user stop orchestrator-office

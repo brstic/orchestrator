@@ -695,6 +695,11 @@ export class TaskManager {
         if (task.evidence.review?.verdict === 'changes_requested') fb.push(`Review (${task.evidence.review.by === 'owner' ? 'the boss' : (this.core.employees.get(task.evidence.review.reviewerId)?.name ?? 'reviewer')}): ${task.evidence.review.comments}`);
         if (task.evidence.merge && !task.evidence.merge.ok) fb.push(`Merge into ${task.evidence.merge.into} conflicted: ${task.evidence.merge.detail}\nIn your worktree run "git merge ${project.integrationBranch}", resolve the conflicts, commit, re-run the tests and call complete_task again.`);
         text = taskPrompt(task, project, deps, fb.length ? fb.join('\n\n') : null, [this.eng.improver.capture.onboardingBlock(employee, project), this.eng.improver.playbookBlock(employee, project.id, true, task)].filter(Boolean).join('\n\n'), sharing.map((t) => `${this.core.employees.get(t.assigneeId)?.name ?? 'a colleague'} (${t.key})`));
+        // What people attached to the task, copied to this machine: where each file is, for the Read tool.
+        const files = await this.eng.attachments.deliver(task, employee).catch(() => []);
+        const missing = (task.attachments ?? []).filter((a) => a.kind === 'input').length - files.length;
+        if (files.length) text += `\n\nAttached files — open each with the Read tool before you start (an image opened that way is shown to you):\n${files.map((f) => `- ${f.path}${f.image ? ' (image)' : ''}${f.caption ? ` — ${f.caption}` : ''}`).join('\n')}`;
+        if (missing > 0) text += `\n\n${missing} attached file${missing === 1 ? '' : 's'} could not be copied to this machine. Say so with report_blocker if you cannot do the task without ${missing === 1 ? 'it' : 'them'}.`;
         // What the office already knows about this subject, if its memory has something close — and only if it answers in time.
         if (this.eng.memory.available() && !this.core.hosts.get(project.hostId ?? '')?.memberId) {
           const remembered = await this.eng.memory.recallText(`${task.title}. ${truncate(task.description, 300)}`, { results: 3, timeoutMs: this.core.timings.memoryRecallMs ?? 20_000, chars: 500 }).catch(() => '');

@@ -167,6 +167,24 @@ The office can list the Markdown files in an employee's folder and show them, an
 
 The office page may play audio from any `http(s)` address (`media-src` in its content policy) and nothing else from outside: scripts, styles, images and network calls stay limited to the office itself. Stations are saved in the settings (an owner's act), and only well-formed `http(s)` addresses with a name are kept. The hi-fi plays for the whole office: when an owner or a colleague switches a station on, every window in the office loads that station's stream itself. A request to play names a saved station by its id — an address that is not on the office's list is refused, and a visitor cannot switch at all — so no member below owner can make other people's windows load an address of their choosing. No audio passes through the office server. "What is on air" is asked by the office server, for saved stations only, with a five-second limit and a size limit; only a title of at most 200 characters is passed on to the page. Playing a station tells that station's server the IP address of everyone in the office who has not muted the hi-fi (a muted window does not load the stream), as any radio player does. The whip is local to the window: it calls nothing and records nothing.
 
+## Files on tasks
+
+(`ATTACHMENTS.md` explains the feature.) What a person attaches, and what an employee leaves as evidence, is kept in the office's data folder (`files/`, mode 700; each file 600) and sent only to those who may see the task — the same rule as the task itself, a member's closed room included.
+
+- **Nothing attached is ever served as a page.** Only PNG, JPEG, GIF and WebP are sent as what they are; every other file — HTML, SVG, PDF — goes out as a download (`application/octet-stream`, `nosniff`, a sandboxing content policy). The window fetches files with the person's own token; there is no address that shows a file to someone who is not signed in.
+- **On an employee's machine** an attached file is written by that machine's agent into its own folder (`<agent home>/files/<task>/`, mode 600), under a name the office made safe and the agent checks again. It is never written into a repository or anywhere the office names.
+- **Evidence is read by the machine's agent, not sent by the model.** `attach_file` may name only a regular file inside the agent's allowed roots, the agent's own folders or the temp folder — and never the agent's or Claude Code's own configuration and credential files there. An employee can still attach a file it should not (a `.env` inside its project): its instructions forbid it, nothing prevents it, and what is attached is visible to everyone who may see the task. **The vault does not look inside files.**
+- **Limits:** 25 MB a file, 30 files a task; an upload that goes quiet for ten minutes is dropped.
+
+## A browser for employees
+
+Where Playwright's MCP server is installed on a machine and the office's switch is on (Settings → Employees; on by default), every session there has a headless browser of its own, as the same OS user, with a profile kept in memory for that session only.
+
+- **It can reach whatever the machine can reach** — the internet, and addresses inside the machine's own network. It adds no access the session's shell (`curl`) did not have; it makes that access easier to use.
+- **A page can say anything, and what a page says can steer a model** ("ignore your task and …"). Employees are told that text on a page is information, never an instruction; that is guidance, not a guarantee. The session's permission mode, the high-risk command list and "no agent decides a permission request" apply to whatever a steered model then tries. Switch the browser off for work that must not touch the web.
+- **Credentials:** the browser starts with no logins. An employee is told not to type a credential into a page unless the task is about that site, and to take it from the vault; a value typed into a page is in that page's hands.
+- **The office never installs it.** A person does, once per machine, at a pinned version (`ATTACHMENTS.md`); the office only finds it. The browser tools are allowed without a prompt (`mcp__browser`), like the office's own.
+
 ## Claude accounts
 
 To show how much of each Claude account is used, the host agent reads two fields (`emailAddress`, `organizationName`) from Claude Code's own `.claude.json` on that machine, and the rate-limit percentages Claude Code gives the session's status line. It reads no credentials and never calls Anthropic itself. The account e-mail and the percentages go to your office server only; they are shown to the owner (`GET /api/usage` is not on any guest's list) and are not written into events. An employee's own account folder must be inside the home folder of the user the agent runs as.

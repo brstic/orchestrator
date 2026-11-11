@@ -129,7 +129,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const agents = new AgentHub(log);
   const clients = new ClientHub(log);
   const publicUrl = (opts.publicUrl ?? `${scheme}://${isLoopbackHost(opts.host) ? '127.0.0.1' : opts.host}:${opts.port}`).replace(/\/+$/, '');
-  const engine = new Engine({ store, agents, publicUrl, timings: opts.timings, log, vaultKeyFile: path.join(opts.dataDir, 'vault.key'), memory: { bin: opts.memoryBin === undefined ? findMemPalace() : opts.memoryBin, dir: path.join(opts.dataDir, 'palace') } }, { send: (clientId, msg) => clients.send(clientId, msg) });
+  const engine = new Engine({ store, agents, publicUrl, timings: opts.timings, log, vaultKeyFile: path.join(opts.dataDir, 'vault.key'), filesDir: path.join(opts.dataDir, 'files'), memory: { bin: opts.memoryBin === undefined ? findMemPalace() : opts.memoryBin, dir: path.join(opts.dataDir, 'palace') } }, { send: (clientId, msg) => clients.send(clientId, msg) });
   agents.attach(engine);
   clients.attach(engine);
   // The office's hi-fi: what is on is told to every window, and follows the list of stations when an owner edits it.
@@ -660,6 +660,34 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.patch('/tasks/:id', async (req) => engine.tasks.updateTask(param(req, 'id'), body(req)));
     api.delete('/tasks/:id', async (req) => {
       engine.tasks.deleteTask(param(req, 'id'));
+      return { ok: true };
+    });
+    // ── files on a task: what people attach for the employee, and the evidence employees leave ──
+    // A file comes in pieces (a first call says what it is; each next one carries up to 512 KB), so that it passes any proxy in front of the office.
+    api.post('/tasks/:id/attachments', async (req) => {
+      const b = body(req);
+      const who = whoOf(req);
+      return engine.attachments.begin(param(req, 'id'), { name: String(b.name ?? ''), size: Number(b.size), caption: b.caption ? String(b.caption) : null }, { kind: who.kind === 'owner' ? 'owner' : 'member', id: who.id === 'owner' ? null : who.id, name: who.id === 'owner' ? 'the boss' : who.name });
+    });
+    api.post('/tasks/:id/attachments/:aid/data', async (req) => {
+      const b = body(req);
+      return engine.attachments.append(param(req, 'id'), param(req, 'aid'), Number(b.offset) || 0, Buffer.from(String(b.dataBase64 ?? ''), 'base64'));
+    });
+    api.get('/tasks/:id/attachments/:aid', async (req, reply) => {
+      const { attachment, file } = engine.attachments.open(param(req, 'id'), param(req, 'aid'));
+      // Only the picture formats a browser shows safely are sent as what they are; everything else is a download.
+      const inline = /^image\/(png|jpeg|gif|webp)$/.test(attachment.mime);
+      reply
+        .header('content-type', inline ? attachment.mime : 'application/octet-stream')
+        .header('content-length', String(fs.statSync(file).size))
+        .header('content-disposition', `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(attachment.name)}`)
+        .header('x-content-type-options', 'nosniff')
+        .header('content-security-policy', "default-src 'none'; sandbox")
+        .header('cache-control', 'private, max-age=3600');
+      return reply.send(fs.createReadStream(file));
+    });
+    api.delete('/tasks/:id/attachments/:aid', async (req) => {
+      engine.attachments.remove(param(req, 'id'), param(req, 'aid'), actorOf(req));
       return { ok: true };
     });
     api.post('/tasks/:id/review', async (req) => {

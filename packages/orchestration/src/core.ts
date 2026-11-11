@@ -138,6 +138,8 @@ export interface EngineOptions {
   log?: (level: 'info' | 'warn' | 'error', msg: string) => void;
   /** Where the vault's key is kept (a file made on first use). Without it, what the vault holds lasts until the process ends. */
   vaultKeyFile?: string | null;
+  /** Where the files attached to tasks are kept. Absent: the office keeps none. */
+  filesDir?: string | null;
   /** The long memory: the `mempalace` program and the folder its records live in. Absent: none. */
   memory?: { bin: string | null; dir: string | null };
 }
@@ -218,6 +220,7 @@ const DEFAULT_SETTINGS: OwnerSettings = {
   nlFallback: false,
   workersInheritMcp: false,
   employeesManageBoard: true,
+  employeesBrowser: true,
   longMemory: true,
   accountFailover: true,
   autoAsksHighRisk: true,

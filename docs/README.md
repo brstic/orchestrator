@@ -13,6 +13,7 @@
 | [ACCESS.md](ACCESS.md) | Members, roles, shared vs personal: who may do what | A permission changes |
 | [MEMORY.md](MEMORY.md) | The long memory (MemPalace): what is remembered, how employees ask it, how the program is run, installed, tested and extended | Anything about the memory changes |
 | [ACCOUNTS.md](ACCOUNTS.md) | Several Claude accounts on one machine: adding one, when an account counts as used up, how employees are moved, what is not verified | Anything about accounts or limits changes |
+| [ATTACHMENTS.md](ATTACHMENTS.md) | Files on tasks (for the employee, and evidence from them), how an employee sees a picture, the employees' browser and how to install it on a machine | Anything about files, screenshots or the browser changes |
 | [VAULT.md](VAULT.md) | The vault: how credentials get in and out, what is recognised, where the code is, its limits | Anything about the vault changes |
 | [SECURITY.md](SECURITY.md) | Threat model and what protects what | Anything security-relevant changes |
 | [SECURITY-REVIEW.md](SECURITY-REVIEW.md) | Review against the original brief's security section | A review is repeated |

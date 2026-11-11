@@ -9,6 +9,7 @@ import { Foreman } from './foreman.ts';
 import { HookReceiver } from './hook-receiver.ts';
 import { Improver } from './improve.ts';
 import { Vault } from './vault.ts';
+import { Attachments } from './attachments.ts';
 import { Memory } from './memory.ts';
 import { MeetingManager } from './meetings.ts';
 import { buildMcpServer, type McpContext } from './mcp-tools.ts';
@@ -47,6 +48,7 @@ export class Engine {
   readonly waits: Waits;
   readonly vault: Vault;
   readonly memory: Memory;
+  readonly attachments: Attachments;
   readonly mcp: McpServerOptions<McpContext>;
   private housekeeping: NodeJS.Timeout | null = null;
   private accountsTimer: NodeJS.Timeout | null = null;
@@ -68,6 +70,11 @@ export class Engine {
     this.waits = new Waits(this);
     this.vault = new Vault(this.core, opts.vaultKeyFile ?? null);
     this.memory = new Memory(this, opts.memory ?? { bin: null, dir: null });
+    this.attachments = new Attachments(this.core, this, opts.filesDir ?? null);
+    // A task that is deleted takes its files with it.
+    this.core.bus.on('entity', (kind, op, data) => {
+      if (kind === 'task' && op === 'remove') this.attachments.dropTask(String((data as { id?: string })?.id ?? ''));
+    });
     // What is worth remembering is filed as it happens: a task that is done, an answer that was given, a lesson in use, a meeting's decision.
     this.core.bus.on('entity', (kind, op, data) => {
       if (op !== 'upsert' || !this.memory.available()) return;

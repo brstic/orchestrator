@@ -23,6 +23,11 @@ export interface HostInfo {
   claudeVersion: string | null;
   /** The effort levels this machine's Claude Code accepts (`claude --effort …`), read from its own help text. Empty: it has no such option. Absent: an agent from before this was reported. */
   claudeEffortLevels?: string[];
+  /**
+   * A browser the employees on this machine can drive (Playwright's MCP server, headless): its version, and which
+   * browser it runs. Absent or null: none is installed here.
+   */
+  browser?: { mcp: string; engine: string } | null;
   cpus: number;
   totalMemBytes: number;
   user: string;
@@ -472,6 +477,23 @@ export interface TaskEvidence {
   merge: { ts: ISODate; ok: boolean; sha: string | null; into: string; detail: string } | null;
 }
 
+/** A file on a task: something a person attached for the employee to work from, or evidence an employee left. The bytes are in the office's data folder. */
+export interface TaskAttachment {
+  id: ID;
+  /** The file's name, safe to stand in a folder and unique within its task. */
+  name: string;
+  mime: string;
+  size: number;
+  /** `input`: attached by a person for whoever does the task. `evidence`: left by the employee to show the work. */
+  kind: 'input' | 'evidence';
+  caption: string | null;
+  addedBy: { kind: 'owner' | 'member' | 'employee'; id: ID | null; name: string };
+  addedAt: ISODate;
+  sha256: string | null;
+  /** Where a copy stands on each machine it was sent to (host id → path there), for the employee to open. */
+  paths?: Record<ID, string>;
+}
+
 export interface TaskHistoryEntry {
   ts: ISODate;
   status: TaskStatus;
@@ -512,6 +534,8 @@ export interface Task {
   sharedWith?: string[];
   /** Files this task's session wrote or edited (relative to `repoRoot`), as its hooks reported them. Kept only while the folder is shared. */
   touched?: string[];
+  /** Files on the task (see `TaskAttachment`). Absent: none. */
+  attachments?: TaskAttachment[];
   requiresReview: boolean;
   reviewerId: ID | null;
   /** For kind=review: the task under review. */
@@ -1456,6 +1480,11 @@ export interface OwnerSettings {
    * work done without verification, or deletes anything.
    */
   employeesManageBoard?: boolean;
+  /**
+   * true (default): on machines where a browser for employees is installed, every session gets it as tools of its own
+   * (open a page, click, read it, take a screenshot). false: no session gets it.
+   */
+  employeesBrowser?: boolean;
   /**
    * true (default): where MemPalace is installed on the office's own machine, the office keeps a long memory in it —
    * finished tasks, answers, resolved blockers, lessons, meeting decisions, employees' notes — and employees can ask it.

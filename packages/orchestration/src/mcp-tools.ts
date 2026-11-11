@@ -1,7 +1,7 @@
 import type { AgentSession, Employee, Task } from '@orchestrator/contracts';
 import { ACTIVITY_LABEL, truncate } from '@orchestrator/contracts';
 import type { McpServerOptions, McpToolHandler } from '@orchestrator/integrations';
-import { BOARD_TOOLS, FOREMAN_TOOLS, MEMORY_TOOLS, ORCHESTRATOR_TOOLS, VAULT_TOOLS } from '@orchestrator/integrations';
+import { BOARD_TOOLS, FILE_TOOLS, FOREMAN_TOOLS, MEMORY_TOOLS, ORCHESTRATOR_TOOLS, VAULT_TOOLS } from '@orchestrator/integrations';
 import type { Engine } from './engine.ts';
 import { FOREMAN_ROLE } from './foreman.ts';
 import { answerLine } from './prompts.ts';
@@ -34,6 +34,9 @@ function describeTask(eng: Engine, t: Task): string {
     (t.verifyCommand ?? project?.verifyCommand) ? `\nVerified by: ${t.verifyCommand ?? project?.verifyCommand}` : '',
     t.evidence.review?.verdict === 'changes_requested' ? `\nReview feedback to address: ${t.evidence.review.comments}` : '',
     t.evidence.verification && t.evidence.verification.passed === false ? `\nLast verification failed:\n${truncate(t.evidence.verification.outputTail, 1500)}` : '',
+    t.attachments?.length
+      ? `\nFiles on the task:\n${t.attachments.map((x) => `- ${x.name} (${x.kind === 'evidence' ? `evidence from ${x.addedBy.name}` : `attached by ${x.addedBy.name}`}${x.caption ? `: ${x.caption}` : ''})${x.kind === 'input' && Object.values(x.paths ?? {}).length ? ` — on the machine it was sent to: ${Object.values(x.paths!).join(', ')}` : ''}`).join('\n')}`
+      : '',
   ];
   return lines.filter((l) => l !== '').join('\n');
 }
@@ -305,6 +308,20 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       return task ? describeTask(eng, task) : noTask(a.task);
     },
 
+    attach_file: async (a, { employee }) => {
+      const task = a.task ? seen(employee, a.task) : eng.tasks.currentTask(employee.id);
+      if (!task) return a.task ? noTask(a.task) : err('You have no task in progress. Name the task this file belongs to ("task").');
+      if (task.assigneeId !== employee.id && !core.tasks.find((t) => t.reviewOf === task.id && t.assigneeId === employee.id)) return err(`${task.key} is not your task. Evidence is left by whoever does or reviews the work.`);
+      const file = String(a.path ?? '').trim();
+      if (!file) return err('Give the path of the file on this machine.');
+      try {
+        const att = await eng.attachments.attachFrom(task, employee, file, a.caption ? String(a.caption) : null);
+        return `${att.name} (${att.size < 1024 ? `${att.size} bytes` : att.size < 1024 * 1024 ? `${Math.round(att.size / 1024)} KB` : `${(att.size / 1024 / 1024).toFixed(1)} MB`}) is on ${task.key} as evidence${att.caption ? `: ${att.caption}` : ''}. The boss and reviewers can open it in the office.`;
+      } catch (e) {
+        return err((e as Error).message);
+      }
+    },
+
     release_task: async (a, { employee }) => {
       if (!managing()) return OFF;
       const task = seen(employee, a.task);
@@ -430,10 +447,10 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     version: '0.1.0',
     instructions:
       'Orchestrator connects you to the virtual office you work in. Use these tools to learn your task, report real progress, ask the boss for decisions, collaborate with teammates and declare work complete. Completion is verified independently, so report honestly.',
-    tools: [...ORCHESTRATOR_TOOLS, ...BOARD_TOOLS, ...VAULT_TOOLS, ...MEMORY_TOOLS, ...FOREMAN_TOOLS],
+    tools: [...ORCHESTRATOR_TOOLS, ...BOARD_TOOLS, ...FILE_TOOLS, ...VAULT_TOOLS, ...MEMORY_TOOLS, ...FOREMAN_TOOLS],
     handlers,
     // Only a foreman is shown the foreman's tools; everyone else's tool list (and prompt) stays as small as before.
     // The board tools are shown while the owner leaves the board to the employees (a foreman assigns with its own tool).
-    listed: (tool, { employee }) => tool.name !== 'vault_read' && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
+    listed: (tool, { employee }) => tool.name !== 'vault_read' && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
   };
 }

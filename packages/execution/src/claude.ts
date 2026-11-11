@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import type { LaunchSpec } from '@orchestrator/contracts';
 
@@ -236,6 +237,8 @@ export function planClaudeLaunch(opts: {
   hookEvents?: string[] | null;
   /** What `--effort` accepts on this machine (see `claudeEffortLevels`). An effort that is not among them is left out rather than passed to a CLI that would refuse to start. */
   effortLevels?: string[] | null;
+  /** A browser for this session: the command of an MCP server that drives one (see `findBrowserMcp`). */
+  browser?: { command: string; args: string[] } | null;
 }): ClaudeLaunchPlan {
   const { spec } = opts;
   const settingsPath = path.join(opts.sessionDir, 'settings.json');
@@ -248,7 +251,8 @@ export function planClaudeLaunch(opts: {
     approvalWaitSeconds: opts.approvalWaitSeconds,
     events: opts.hookEvents,
   });
-  const allow = [...new Set([...spec.permissions.allow, ...spec.allowedTools, ...(spec.mcp ? ['mcp__orchestrator'] : [])])];
+  const browser = spec.mcp && opts.browser ? opts.browser : null;
+  const allow = [...new Set([...spec.permissions.allow, ...spec.allowedTools, ...(spec.mcp ? ['mcp__orchestrator'] : []), ...(browser ? ['mcp__browser'] : [])])];
   const deny = [...new Set([...spec.permissions.deny, ...spec.disallowedTools])];
   const settings = {
     permissions: { allow, deny, ask: spec.permissions.ask },
@@ -281,6 +285,8 @@ export function planClaudeLaunch(opts: {
         {
           mcpServers: {
             orchestrator: { type: 'http', url: spec.mcp.url, headers: { Authorization: `Bearer ${spec.mcp.token}` } },
+            // A browser of this session's own: headless, with a profile that is gone when the session ends.
+            ...(browser ? { browser: { type: 'stdio', command: browser.command, args: [...browser.args, '--output-dir', path.join(opts.sessionDir, 'browser')] } } : {}),
           },
         },
         null,
@@ -297,4 +303,33 @@ export function planClaudeLaunch(opts: {
 /** Heuristic used only for *discovery* of existing sessions; the owner confirms the attachment. */
 export function looksLikeClaude(pane: { currentCommand: string; startCommand: string; title: string }): boolean {
   return /\bclaude\b/i.test(pane.currentCommand) || /\bclaude\b/i.test(pane.startCommand) || /claude/i.test(pane.title);
+}
+
+/**
+ * A browser the employees on this machine can drive: Playwright's MCP server, if it is installed where the office
+ * looks for it. Never downloaded by the office itself — somebody installs it once (docs/ATTACHMENTS.md, "A browser").
+ *
+ * Looked for, in order: `ORCH_BROWSER_MCP` (the path of its `cli.js`), then `browser/node_modules/@playwright/mcp/cli.js`
+ * in each of `dirs` (beside the office program; in the agent's home). It runs headless with a profile kept in memory,
+ * on the machine's own Chrome when there is one (else the browser Playwright installed).
+ */
+export function findBrowserMcp(dirs: string[], env: NodeJS.ProcessEnv = process.env): { command: string; args: string[]; version: string; engine: string } | null {
+  const candidates = [env.ORCH_BROWSER_MCP, ...dirs.map((d) => path.join(d, 'browser', 'node_modules', '@playwright', 'mcp', 'cli.js'))].filter((x): x is string => !!x);
+  for (const cli of candidates) {
+    try {
+      if (!fs.statSync(cli).isFile()) continue;
+      let version = 'unknown';
+      try {
+        version = String(JSON.parse(fs.readFileSync(path.join(path.dirname(cli), 'package.json'), 'utf8')).version ?? 'unknown');
+      } catch {
+        /* a cli on its own (a test's stand-in): no version to tell */
+      }
+      const chrome = env.ORCH_BROWSER_CHROME ?? ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/opt/google/chrome/chrome', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find((p) => fs.existsSync(p)) ?? null;
+      const args = [cli, '--headless', '--isolated', '--file-paths', 'absolute', ...(chrome && chrome !== 'none' ? ['--browser', 'chrome'] : [])];
+      return { command: process.execPath, args, version, engine: chrome && chrome !== 'none' ? 'chrome' : 'chromium' };
+    } catch {
+      /* not there: the next place */
+    }
+  }
+  return null;
 }

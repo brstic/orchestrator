@@ -76,6 +76,8 @@ const RULES: Rule[] = [
   rule('GET', '/employees/:id/git', 'read', path('employee')),
   rule('GET', '/employees/:id/xp', 'read', path('employee')),
   rule('GET', '/tasks/:id/git', 'read', path('task')),
+  // Files on a task: whoever may see the task may open them; whoever may work with it may add and remove them.
+  rule('GET', '/tasks/:id/attachments/:id', 'read', path('task')),
   rule('GET', '/projects/:id/integration', 'read', path('project')),
   rule('GET', '/sessions/:id/history', 'read', path('session')),
   // ── a member's own computer ──
@@ -130,6 +132,9 @@ const RULES: Rule[] = [
   rule('POST', '/tasks/release', 'work', inBody('project', 'projectId')),
   rule('PATCH', '/tasks/:id', 'work', path('task'), inBody('employee', 'assigneeId')),
   rule('DELETE', '/tasks/:id', 'work', path('task')),
+  rule('POST', '/tasks/:id/attachments', 'work', path('task')),
+  rule('POST', '/tasks/:id/attachments/:id/data', 'work', path('task')),
+  rule('DELETE', '/tasks/:id/attachments/:id', 'work', path('task')),
   rule('POST', '/tasks/:id/review', 'work', path('task')),
   rule('POST', '/tasks/:id/unblock', 'work', path('task')),
   rule('POST', '/tasks/:id/retry-merge', 'work', path('task')),

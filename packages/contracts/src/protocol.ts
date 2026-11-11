@@ -114,6 +114,8 @@ export interface LaunchSpec {
   resume: boolean;
   /** Further directories the session may read and change (other repositories of the same project). */
   addDirs?: string[];
+  /** Give the session this machine's browser tools, if it has them (see `HostInfo.browser`). */
+  browser?: boolean;
   /** Start by continuing the latest conversation Claude Code already has in this folder, instead of a new one. */
   continueLast?: boolean;
   env: Record<string, string>;
@@ -139,6 +141,10 @@ export type AgentRpc =
   | { method: 'fs.inspect'; params: { path: string } }
   /** Claude accounts of this machine's user: for each config folder, is anybody logged in there, and who. `prepare`: make the folder (and let it share the conversations of the default one) so that it only needs a login. */
   | { method: 'claude.accounts'; params: { dirs: Array<string | null>; prepare?: boolean } }
+  /** A piece of a file for an employee on this machine (a task's attachment). Kept in the agent's own folder; answers with its path there. */
+  | { method: 'files.put'; params: { folder: string; name: string; offset: number; dataBase64: string; last: boolean } }
+  /** A piece of a file an employee on this machine leaves as evidence. Read only from the allowed roots, the agent's own folders and the temp folder. */
+  | { method: 'files.get'; params: { path: string; cwd?: string | null; sessionId?: ID | null; offset: number; length: number } }
   | { method: 'fs.browse'; params: { path?: string | null } }
   | { method: 'fs.docs.list'; params: { cwd: string } }
   | { method: 'fs.docs.read'; params: { cwd: string; path: string } }

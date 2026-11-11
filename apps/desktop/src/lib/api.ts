@@ -65,6 +65,21 @@ export async function api<T = any>(method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'D
   return parsed as T;
 }
 
+/** The bytes of something the office keeps (a file on a task), fetched as this person — a plain link could not say who asks. */
+export async function apiBlob(path: string): Promise<Blob> {
+  const res = await fetch(`${serverBase}/api${path}`, { headers: { authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    let message = `GET ${path} failed (${res.status})`;
+    try {
+      message = (await res.json())?.error ?? message;
+    } catch {
+      /* not JSON: keep the status */
+    }
+    throw new ApiError(message, res.status);
+  }
+  return res.blob();
+}
+
 export type ConnState = 'connecting' | 'online' | 'offline' | 'unauthorized';
 
 type Handler = (msg: ServerToClient) => void;

@@ -432,6 +432,23 @@ export const VAULT_TOOLS: McpToolSpec[] = [
 ];
 
 /**
+ * Files on tasks, for employees: leaving something to look at as evidence of the work.
+ * (What people attach to a task is copied to the employee's machine and named in the task; it needs no tool.)
+ */
+export const FILE_TOOLS: McpToolSpec[] = [
+  {
+    name: 'attach_file',
+    description:
+      'Leave a file from this machine on a task as evidence of your work, for the boss and reviewers to open in the office: a screenshot of the page or screen you built or changed, a rendered report or PDF, a log, a recording. Do it before complete_task whenever the work has something to look at. Give the file\'s path (absolute, or relative to your working folder) and a few words saying what it shows. At most 25 MB; never a file that holds a credential.',
+    inputSchema: {
+      type: 'object',
+      properties: { path: str('Path of the file on this machine'), caption: str('What it shows, in a few words'), task: str('Task key, e.g. "T-7". Default: your current task') },
+      required: ['path'],
+    },
+  },
+];
+
+/**
  * The office's long memory, for employees (shown only where the office has one: MemPalace on its own machine).
  */
 export const MEMORY_TOOLS: McpToolSpec[] = [
