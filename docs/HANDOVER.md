@@ -91,7 +91,7 @@ curl -s https://office.sparkcan.com/healthz                                     
 
 There is one `app.old`: a rollback goes back one deploy, not two. The office's state (`~/.orchestrator-office`) is not part of a deploy and is not rolled back; back it up before a change that rewrites stored records (`OPERATIONS.md`, "Backup and restore").
 
-Deploying has only ever been done from the owner's Mac. The script is plain `sh`, `ssh`, `scp` and `tar`, so another Mac or a Linux machine should do — that has not been tried.
+Deploying was done from the owner's Mac, and once (2026-11-11, build `a3aa698`) from a Windows computer: the package built in WSL2 and the script's server-side steps run by hand over `ssh` from Windows, because the SSH key was on the Windows side. The script as it is has not been run anywhere but the Mac; it is plain `sh`, `ssh`, `scp` and `tar`, so another Mac or a Linux machine (or WSL2 with the key in it) should do.
 
 ### The desktop app (rarely)
 
