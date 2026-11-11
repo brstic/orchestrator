@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Character, type PoseName } from './Character.tsx';
+import { Lineup } from './character/Lineup.tsx';
 import type { PersonView, WalkRequest } from './types.ts';
 import { deskSeat, type World } from './world.ts';
 
@@ -461,6 +462,7 @@ export function People({
       {people.map((v) => (
         <Person key={v.id} v={v} whippedAt={whips[v.id] ?? 0} world={world} dest={dests.get(v.id)!} player={player} selected={selectedId === v.id} cutaway={cutaway} hideLabels={hideLabels} onSelect={onSelect} onContext={onContext} positions={positions} />
       ))}
+      <Lineup />
     </group>
   );
 }
