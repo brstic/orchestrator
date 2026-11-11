@@ -112,7 +112,15 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
 
     ask_boss: async (a, { employee, session }) => {
       const options = Array.isArray(a.options) ? a.options.filter((o: any) => o && typeof o.label === 'string').map((o: any) => ({ label: String(o.label), description: o.description ? String(o.description) : undefined, consequence: o.consequence ? String(o.consequence) : undefined })) : [];
-      const q = eng.comms.createQuestion({ kind: a.kind ?? 'question', channel: 'mcp_tool', employee, session, text: String(a.question), context: a.context ? String(a.context) : '', why: a.why ? String(a.why) : '', options });
+      // The same question once more — the call that was waiting for the answer was cut off (the office restarted, a
+      // connection dropped) and the employee asks again: it is the question the boss already has, not a second one.
+      const asked = eng.comms.sameQuestion(employee.id, String(a.question));
+      if (asked?.status === 'answered') {
+        eng.comms.cancelFor({ kind: 'question', id: asked.id });
+        eng.comms.answerReturnedByTool(asked.id);
+        return answerLine(asked);
+      }
+      const q = asked ?? eng.comms.createQuestion({ kind: a.kind ?? 'question', channel: 'mcp_tool', employee, session, text: String(a.question), context: a.context ? String(a.context) : '', why: a.why ? String(a.why) : '', options });
       eng.sessions.setActivity(session, 'waiting_answer', truncate(q.text, 120));
       const answered = await eng.comms.waitForAnswer(q.id, core.timings.askBossWaitMs);
       if (answered && answered.status === 'answered') {

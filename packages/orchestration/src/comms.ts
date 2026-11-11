@@ -148,6 +148,13 @@ export class Comms {
       else this.supersede(q.id, 'Orchestrator restarted while this request was pending; Claude Code falls back to its own prompt in the terminal.');
     }
     if (this.awaitingRejoin.size) this.rejoinTimer('*', this.core.timings.hookRejoinMs ?? 120_000);
+    // The same question asked twice by the same employee (before the office knew to recognise it): one stays.
+    const kept = new Set<string>();
+    for (const q of this.core.questions.filter((x) => x.status === 'open' && x.channel === 'mcp_tool' && !!x.employeeId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+      const key = `${q.employeeId}|${q.text.trim().replace(/\s+/g, ' ')}`;
+      if (kept.has(key)) this.supersede(q.id, 'The same question was asked again; the later one is the one that waits for the answer.');
+      else kept.add(key);
+    }
   }
 
   // ───────────────────────── notifications ─────────────────────────
@@ -298,6 +305,18 @@ export class Comms {
       });
     }
     return question;
+  }
+
+  /**
+   * A question this employee has already put to the boss in the same words and that is still waiting (or answered
+   * and not handed over yet). Asking it again is waiting for the same answer.
+   */
+  sameQuestion(employeeId: string, text: string): Question | undefined {
+    const norm = (t: string) => t.trim().replace(/\s+/g, ' ');
+    const wanted = norm(text);
+    return this.core.questions
+      .filter((q) => q.employeeId === employeeId && q.channel === 'mcp_tool' && (q.status === 'open' || q.status === 'answered') && norm(q.text) === wanted)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   }
 
   /** A blocking hook is being held open on a host until this question is answered. */

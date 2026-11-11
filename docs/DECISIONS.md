@@ -2,6 +2,12 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-11 — Asking the same question again is waiting for the same question
+`ask_boss` made a new question at every call. A call cut off by a restart of the office and repeated by the employee therefore doubled the question.
+- **Same employee, same words (spaces aside), still open or answered-and-not-handed-over: the same question** (`CommunicationHub.sameQuestion`). No second notification, no second card. Rejected: recognising "nearly the same" wording — a reworded question may be a different one, and the cost of a miss is a duplicate card, not a wrong answer.
+- **A question that was already handed over is not reused:** asking it again later is asking again.
+- **At start the office folds identical open questions of one employee into the later one** — the one a repeated call is waiting on. This is a repair of what older versions left, not a rule for anything else.
+
 ## 2026-11-11 — Every start of a session has a name; hooks of an earlier start are dropped
 A session of the office is one record, one tmux name, one hook token — and, over time, several Claude Code processes (stopped and started, moved to another account, restarted for a change of level). Hooks said which session they belong to, not which process. A late `SessionEnd` of the process before was therefore read as the new process's sign of life and its "between turns", which is the one thing the office waits for before it types (`blockedReason` in `comms.ts`), and the one thing that switches off looking for the trust prompt (`heardFromSinceStart`).
 - **A name per start** (`hookLaunch`, random, made by the agent when it starts the process), sent by every hook command of that process as `x-orch-launch`. The agent keeps the current one with the session and drops, unanswered, any hook with another name or with none.
