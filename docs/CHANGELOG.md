@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-11
+- **Pushed and deployed.** Everything since `7675985` is on GitHub and on the server office as build `781644c` (a collaborator's docs-only commit was merged first); the owner's Mac app was repackaged from the same commit. See `docs/STATUS.md` for what changes in the live office.
 - **An employee can wait for a colleague.** Asking a teammate with `wait: true` (`request_collaboration`, `request_help`) keeps the tool call open until they answer with `respond_to_request`, and returns their answer. The new `wait_for_colleague` waits until a task somebody else has is finished — and says what happened: done, blocked and why, or removed — or picks a wait up again. A call waits four minutes at most; then it says "not yet" and how to keep waiting, and whatever comes later is delivered as a message.
   - The colleague is told who is waiting ("Alex is waiting for your answer before going on"), is started for it if they have no session, and `respond_to_request` says whom it let go on.
   - Someone who waits is shown as **WAITING** with *Waiting for Sarah (T-12)* or *Waiting for Sarah's answer*; the awaited one's card and Talk window say "Alex is waiting for an answer from them". While waiting they are not put to sleep, get no routine run and are not nudged to carry on.
