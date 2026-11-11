@@ -28,6 +28,8 @@ const idle = (name: string) => waitFor(async () => ['idle', 'waiting_input', 'no
 before(async () => {
   // The hook waits half a minute for an answer; after the machine is back the office waits a second and a half for what it still holds.
   h = await createHarness({ approvalWaitSeconds: 30, timings: { terminalPromptMs: 1000, hookRejoinGraceMs: 1500, hookRejoinMs: 8000 } });
+  // A hook waits two seconds for an agent that is not there (45 in a real office).
+  h.agentCfg.hookRetrySeconds = 2;
   project = (await h.project('Shop', h.makeRepo('shop'), { verifyCommand: null })).id;
   for (const name of ['Dana', 'Omar', 'Lena', 'Ivo', 'Mara', 'Nela']) ids[name] = (await h.employee(name, 'devops', { projectId: project })).id;
 });
@@ -110,10 +112,14 @@ test('a request made while the office is away for a moment waits for it instead 
   await waitFor(async () => /ivo-done/.test(await pane('Ivo')), { label: 'Ivo went on', timeout: 15000 });
 });
 
-test('the agent itself is restarted while a question waits: the hook is gone, the question is given up, and the owner is told where the employee waits', async () => {
+test('the agent itself stays away while a question waits: the hook is gone, the question is given up, and the owner is told where the employee waits', async () => {
   await h.task({ projectId: project, title: 'Choose the queue', assigneeId: ids.Mara, kind: 'ops', description: '@@fake: askuser Which queue?|Redis|SQS; say mara-went-on@@' });
   const q = await waitFor(() => one('Mara', 'ask_user_question_hook'), { label: 'the question came through the hook', timeout: 30000 });
-  await h.restartAgent();
+  // (A restart alone the hook outlives — 38-hook-outlives-agent. Here the agent is away longer than the hook waits.)
+  await pane('Mara');
+  await h.stopAgent();
+  await waitFor(async () => /none supplied by hook/.test(await pane('Mara')), { label: 'the hook gave up on the agent', timeout: 20000 });
+  await h.startAgent();
   const over = await waitFor(async () => ((await status(q.id)).status === 'superseded' ? status(q.id) : null), { label: 'the held question is given up', timeout: 20000 });
   assert.match(over.deliveryDetail ?? '', /falls back to its own prompt in the terminal|stopped waiting|closed before/);
   assert.equal((await open('Mara')).length, 0);

@@ -16,6 +16,8 @@ let danaId = '';
 
 before(async () => {
   h = await createHarness({ approvalWaitSeconds: 30, timings: { hookRejoinGraceMs: 1000 } });
+  // A hook waits two seconds for an agent that is not there (45 in a real office).
+  h.agentCfg.hookRetrySeconds = 2;
   repo = h.makeRepo('ledger');
   projectId = (await h.project('Ledger', repo, { verifyCommand: 'npm test --silent' })).id;
   alexId = (await h.employee('Alex', 'backend', { projectId, autonomy: 'standard' })).id;
@@ -80,7 +82,7 @@ test('work done while the server is down is reported afterwards, exactly once', 
   fs.rmSync(path.join(session.cwd, 'offline.txt'));
 });
 
-test('an approval pending during a server restart is still pending afterwards; when the machine\'s agent loses the hook, it falls back to the real terminal prompt', async () => {
+test('an approval pending during a server restart is still pending afterwards; when the machine\'s agent stays away, it falls back to the real terminal prompt', async () => {
   const task = await h.task({ projectId, title: 'Rotate logs', assigneeId: danaId, kind: 'ops', verifyCommand: 'true', description: '@@fake: write rotate.txt weekly; say rotation-configured@@' });
   const q = await waitFor(() => h.openQuestion(danaId, 'permission'), { label: 'permission pending' });
   const wt = (await h.getTask(task.id)).worktree!;
@@ -92,9 +94,13 @@ test('an approval pending during a server restart is still pending afterwards; w
   assert.equal((await h.state()).questions.find((x) => x.id === q.id)!.status, 'open');
   assert.ok(!fs.existsSync(path.join(wt, 'rotate.txt')), 'nothing was approved implicitly');
 
-  // The agent itself is restarted: now the held hook is gone, and Orchestrator says so instead of pretending the
-  // request is still answerable.
-  await h.restartAgent();
+  // The agent itself goes away for longer than the hook waits for it (a restart alone the hook outlives:
+  // 38-hook-outlives-agent): now the held hook is gone, and Orchestrator says so instead of pretending the request
+  // is still answerable.
+  await h.stopAgent();
+  const pane = (await h.session(danaId))!.tmuxPane!;
+  await waitFor(() => /Do you want to proceed\?/.test(h.tmux('capture-pane', '-p', '-t', pane)), { label: 'Claude Code asks in the terminal', timeout: 20000 });
+  await h.startAgent();
   await waitFor(async () => (await h.state()).questions.find((x) => x.id === q.id)!.status === 'superseded', { label: 'the request through the hook is over', timeout: 20000 });
   const late = await h.apiRaw('POST', `/questions/${q.id}/answer`, { decision: 'allow' });
   assert.equal(late.status, 409);

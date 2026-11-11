@@ -24,6 +24,8 @@ export interface AgentConfig {
   approvalWaitSeconds: number;
   /** How long a request for a decision goes on waiting after the office is lost (its restart), before Claude Code's own prompt is let through. Default 90; 0: not at all. */
   linkGraceSeconds?: number;
+  /** How long a deciding hook of a session started from here keeps trying to reach this agent while it is restarted. Default 45. */
+  hookRetrySeconds?: number;
   /** Allow the server to run project verification commands (tests) on this host. */
   allowVerify: boolean;
   /** Allow headless `claude -p` runs for command interpretation. */

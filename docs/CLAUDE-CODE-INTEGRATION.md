@@ -100,6 +100,8 @@ curl -sS --max-time <t> --unix-socket <agent-home>/agent.sock -X POST \
   --data-binary @- http://orchestrator/hook 2>/dev/null || true
 ```
 
+For `PreToolUse`, `PermissionRequest` and `Stop` the same `curl` stands inside a small `sh` loop (`hookCommand` in `packages/execution/src/claude.ts`; hooks version 2, `HOOKS_VERSION`): the event is read once, and when the agent does not answer because it is not there (curl exits 7, 52 or 56) the hook tries again once a second for up to 45 seconds, within its own time limit, sending the same `x-orch-hook` name each time (the agent makes the event's id from it) and how many seconds it has left (`x-orch-left`). A hook that waited in vain leaves `<agent-home>/agent.sock.away`, so the following ones try once without waiting; the agent removes it when it starts. In a session started in bypass mode the `PreToolUse` command ends, when no agent was reached, by printing a `permissionDecision: "deny"` for the `Bash` tool. Tried under `dash` with curl 7.81 (the server) and under macOS's `sh`.
+
 | Event | Used for | Blocking? |
 | --- | --- | --- |
 | `SessionStart` | session started/resumed; employee becomes available | no |

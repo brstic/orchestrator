@@ -19,7 +19,7 @@ import type {
   ServerToAgent,
   SessionCapabilities,
 } from '@orchestrator/contracts';
-import { PROTOCOL_VERSION, redactSecrets, slugify } from '@orchestrator/contracts';
+import { HOOKS_VERSION, PROTOCOL_VERSION, redactSecrets, slugify } from '@orchestrator/contracts';
 import {
   NESTED_SESSION_ENV,
   PaneStream,
@@ -28,6 +28,7 @@ import {
   claudeVersion,
   claudeEffortLevels,
   findBrowserMcp,
+  agentAwayMark,
   currentBranch,
   ensureWorktree,
   gitDiff,
@@ -67,6 +68,8 @@ function runnerCommand(): string[] {
 }
 
 interface Tracked {
+  /** The version of the hook commands in this session's settings (`HOOKS_VERSION` when it was started). */
+  hooksVersion?: number;
   sessionId: string;
   launchId?: string | null;
   origin: 'managed' | 'attached';
@@ -182,7 +185,16 @@ export class HostAgent {
     if (!this.info.tmuxVersion) this.log('warn', 'tmux was not found on PATH; sessions cannot be created or attached');
     this.loadState();
     await this.startHookServer();
+    // Hooks that found nobody here stopped waiting for this agent (`hookCommand`); it is back.
+    fs.rmSync(agentAwayMark(this.p.socket), { force: true });
     await this.reconcile();
+    // Until the office has answered for the first time, a request for a decision waits for it (as after a lost
+    // link): a hook that was in flight while this agent was being restarted comes again at once.
+    const graceMs = (this.cfg.linkGraceSeconds ?? 90) * 1000;
+    if (graceMs > 0) {
+      this.linkGrace = setTimeout(() => this.releaseHeld(), graceMs);
+      this.linkGrace.unref();
+    }
     this.connect();
     this.timers.push(setInterval(() => void this.tick(), 2000));
     this.timers.push(setInterval(() => void this.reportResources(), 5000));
@@ -211,9 +223,13 @@ export class HostAgent {
     } catch {
       /* ignore */
     }
-    // Release the runners' long-polls and any hook still being held: an unanswered hook just means
-    // "no decision", and the worker falls back to asking at its own terminal.
+    // Release the runners' long-polls. A hook that is being held is not answered: its connection is closed below,
+    // and the hook tries again — the agent that is started next takes the request up (see `hookCommand`).
     for (const rt of this.runtime.values()) rt.inboxWaiter?.();
+    if (this.linkGrace) clearTimeout(this.linkGrace);
+    this.linkGrace = null;
+    for (const pending of this.pendingHooks.values()) clearTimeout(pending.timer);
+    this.pendingHooks.clear();
     await new Promise<void>((r) => {
       if (!this.hookServer) return r();
       this.hookServer.close(() => r());
@@ -358,7 +374,7 @@ export class HostAgent {
     // The office was there a moment ago: for a while (its restart takes seconds) what waits for a decision goes on
     // waiting. If it is not back by then, those are let go as well (`releaseHeld`).
     const graceMs = (this.cfg.linkGraceSeconds ?? 90) * 1000;
-    if (was && graceMs > 0 && !this.linkGrace) {
+    if (was && graceMs > 0 && !this.linkGrace && !this.stopping) {
       this.linkGrace = setTimeout(() => this.releaseHeld(), graceMs);
       this.linkGrace.unref();
     }
@@ -546,6 +562,8 @@ export class HostAgent {
       claudeSessionId: t.claudeSessionId,
       capabilities: this.capabilities(t),
       permissionMode: t.permissionMode,
+      // (A session started before this agent knew of versions runs with the first ones.)
+      ...(t.origin === 'managed' && t.mode === 'interactive_cli' ? { hooksVersion: t.hooksVersion ?? 1 } : {}),
       model: t.spec?.model ?? null,
       startedAt: t.startedAt,
       exitReason: t.exitReason,
@@ -687,6 +705,7 @@ export class HostAgent {
           claudeVersion: version,
           approvalWaitSeconds: this.cfg.approvalWaitSeconds,
           hookEvents: this.cfg.hookEvents,
+          hookRetrySeconds: this.cfg.hookRetrySeconds,
           effortLevels: spec.effort ? (this.info?.claudeEffortLevels ?? (await claudeEffortLevels(this.cfg.claudeBin))) : null,
           browser: spec.browser ? this.browserMcp() : null,
         });
@@ -727,6 +746,7 @@ export class HostAgent {
       claudeSessionId: spec.claudeSessionId,
       hookToken,
       spec: { ...spec, cwd },
+      hooksVersion: HOOKS_VERSION,
       startedAt: new Date().toISOString(),
       transcriptPath: existing?.transcriptPath ?? null,
       hooksSeen: false,
@@ -1555,8 +1575,13 @@ export class HostAgent {
     }
     if (payload.hook_event_name === 'Stop' || payload.hook_event_name === 'SessionEnd') this.scheduleUsage(tracked);
 
+    // A hook that tries again after this agent was restarted comes under the same name: the event keeps its id, so
+    // the office knows it for the request it is already asking about.
+    const named = /^[0-9]{1,10}-[0-9]{9,11}$/.test(String(req.headers['x-orch-hook'] ?? '')) ? String(req.headers['x-orch-hook']) : null;
+    const hex = named ? crypto.createHash('sha256').update(`${tracked.sessionId}|${named}|${payload.hook_event_name}`).digest('hex') : '';
+    const left = Number(req.headers['x-orch-left']);
     const event: RawHookEvent = {
-      id: crypto.randomUUID(),
+      id: named ? `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}` : crypto.randomUUID(),
       ts: new Date().toISOString(),
       hostSeq: ++this.hostSeq,
       sessionId: tracked.sessionId,
@@ -1601,7 +1626,9 @@ export class HostAgent {
 
     // Blocking hook: hold the request open while the server (and possibly the owner) decides.
     const requestId = crypto.randomUUID();
-    const waitMs = payload.hook_event_name === 'Stop' ? 5000 : this.cfg.approvalWaitSeconds * 1000;
+    // Not longer than the hook itself still waits (it says how long): the answer "nobody answered" must come from
+    // here, not from a hook that ran out of time and said nothing.
+    const waitMs = payload.hook_event_name === 'Stop' ? 5000 : Math.max(1, Math.min(this.cfg.approvalWaitSeconds, Number.isFinite(left) && left > 0 ? left - 4 : Infinity)) * 1000;
     let finished = false;
     const output = await new Promise<Record<string, unknown> | null>((resolve) => {
       const timer = setTimeout(() => {
@@ -1610,7 +1637,8 @@ export class HostAgent {
       }, waitMs);
       this.pendingHooks.set(requestId, { resolve, timer, event, keep: payload.hook_event_name !== 'Stop' });
       res.on('close', () => {
-        if (finished) return;
+        // (When this agent is being stopped the hook is not over: it tries again, and the next agent takes it up.)
+        if (finished || this.stopping) return;
         // Claude Code gave up on the hook (timeout, interrupt, session ended).
         const pending = this.pendingHooks.get(requestId);
         if (pending) {

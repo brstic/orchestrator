@@ -61,6 +61,13 @@ export interface TerminalSnapshot {
 
 // ─────────────────────── Host agent ⇄ server ─────────────────────
 
+/**
+ * The version of the commands Claude Code runs for a session's hooks (written into the session's settings when it is
+ * started; a running session keeps the ones it has). 2: a deciding hook tries again while the machine's agent is
+ * being restarted, and in bypass mode a command nobody could look at is refused.
+ */
+export const HOOKS_VERSION = 2;
+
 export interface AgentSessionReport {
   sessionId: ID;
   /** The launch this report is about (see LaunchSpec.launchId). Absent for attached sessions. */
@@ -80,6 +87,8 @@ export interface AgentSessionReport {
   claudeSessionId: string | null;
   capabilities: SessionCapabilities;
   permissionMode: string | null;
+  /** Which version of the hook commands this session was started with (`HOOKS_VERSION`); absent from an agent that does not say. */
+  hooksVersion?: number;
   model: string | null;
   startedAt: string;
   exitReason: string | null;

@@ -109,7 +109,31 @@ function shellSingleQuote(s: string): string {
  * nothing). It never fails the hook: if the agent is down Claude Code simply
  * behaves as if no hook were installed.
  */
-export function hookCommand(opts: { socketPath: string; token: string; sessionId: string | null; maxSeconds: number }): string {
+/**
+ * What a command hook answers when the machine's agent cannot be reached and the session runs without Claude Code's
+ * own permission checks: the command is refused, because nobody could look at it. (No answer at all would mean "run it".)
+ */
+export const AGENT_UNREACHABLE_REASON =
+  "Orchestrator: the office's agent on this machine cannot be reached, so this command could not be checked against the office's high-risk list and was not run. Wait a minute and try once more; if it is refused again, stop and wait — do not look for another way to run it.";
+
+/**
+ * The command Claude Code runs for a hook: the event (JSON on standard input) is handed to the machine's agent over
+ * its socket, and what the agent answers is the hook's answer.
+ *
+ * `retrySeconds` (hooks that may decide something): when the agent does not answer because it is not there — being
+ * restarted, as at a deploy — the hook tries again once a second for that long, under the same name (`x-orch-hook`),
+ * so the agent that comes back takes the same request up. Without this, a hook in flight got no answer, and no answer
+ * means Claude Code goes on by its own rules.
+ *
+ * `failClosed` (a session in bypass mode): if the agent cannot be reached at all, a Bash command is refused instead
+ * of being run with nothing having looked at it. Other tools, and other modes, go on as Claude Code decides.
+ */
+/** The mark a hook leaves beside the agent's socket when the agent stayed away (see `hookCommand`). */
+export function agentAwayMark(socketPath: string): string {
+  return `${socketPath}.away`;
+}
+
+export function hookCommand(opts: { socketPath: string; token: string; sessionId: string | null; maxSeconds: number; retrySeconds?: number; failClosed?: boolean }): string {
   const headers = [
     `-H 'content-type: application/json'`,
     `-H ${shellSingleQuote(`x-orch-token: ${opts.token}`)}`,
@@ -118,7 +142,22 @@ export function hookCommand(opts: { socketPath: string; token: string; sessionId
   ]
     .filter(Boolean)
     .join(' ');
-  return `curl -sS --max-time ${opts.maxSeconds} --unix-socket ${shellSingleQuote(opts.socketPath)} -X POST ${headers} --data-binary @- http://orchestrator/hook 2>/dev/null || true`;
+  const retry = Math.max(0, Math.floor(opts.retrySeconds ?? 0));
+  if (!retry && !opts.failClosed) return `curl -sS --max-time ${opts.maxSeconds} --unix-socket ${shellSingleQuote(opts.socketPath)} -X POST ${headers} --data-binary @- http://orchestrator/hook 2>/dev/null || true`;
+  // Plain sh, one line. $b: the event; $i: this hook's name, the same at every try; $l: the seconds this hook has left.
+  // curl's 7 / 52 / 56: nobody listens on the socket, or the connection ended without an answer — the agent is gone
+  // for now. Anything else (a refusal, a timeout) is not tried again.
+  // $m: a mark beside the socket that says "the agent has been away for longer than a hook waits". While it is there
+  // a hook tries once and does not wait — otherwise every tool call of a session whose agent is switched off would
+  // stand for the whole retry time. The first hook that gets through takes the mark away, and so does the agent when it starts.
+  const refuse = opts.failClosed
+    ? ` case "$b" in *'"tool_name":"Bash"'*|*'"tool_name": "Bash"'*) printf '%s' ${shellSingleQuote(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: AGENT_UNREACHABLE_REASON } }))} ;; esac;`
+    : '';
+  return (
+    `b=$(cat); i="$$-$(date +%s)"; t=$(date +%s); n=0; m=${shellSingleQuote(agentAwayMark(opts.socketPath))}; while :; do l=$(( ${opts.maxSeconds} - $(date +%s) + t )); [ "$l" -gt 1 ] || break; ` +
+    `o=$(printf '%s' "$b" | curl -sSf --max-time "$l" --unix-socket ${shellSingleQuote(opts.socketPath)} -X POST ${headers} -H "x-orch-hook: $i" -H "x-orch-left: $l" --data-binary @- http://orchestrator/hook 2>/dev/null); c=$?; ` +
+    `if [ "$c" -eq 0 ]; then [ ! -e "$m" ] || rm -f "$m"; printf '%s' "$o"; exit 0; fi; case "$c" in 7|52|56) ;; *) break ;; esac; n=$((n+1)); if [ "$n" -gt ${retry} ] || [ -e "$m" ]; then : > "$m" 2>/dev/null; break; fi; sleep 1; done;${refuse} exit 0`
+  );
 }
 
 /**
@@ -139,6 +178,10 @@ export function buildHooksSettings(opts: {
   /** How long a blocking hook may wait for the owner, in seconds. */
   approvalWaitSeconds: number;
   events?: string[] | null;
+  /** How long a hook that may decide something keeps trying to reach an agent that is not there (see `hookCommand`). 0: not at all. */
+  retrySeconds?: number;
+  /** The session runs in bypass mode: a command nobody could look at is refused. */
+  bypass?: boolean;
 }): Record<string, unknown> {
   const hooks: Record<string, unknown[]> = {};
   for (const ev of supportedHookEvents(opts.claudeVersion, opts.events)) {
@@ -147,7 +190,16 @@ export function buildHooksSettings(opts: {
       hooks: [
         {
           type: 'command',
-          command: hookCommand({ socketPath: opts.socketPath, token: opts.token, sessionId: opts.sessionId, maxSeconds: timeout }),
+          command: hookCommand({
+            socketPath: opts.socketPath,
+            token: opts.token,
+            sessionId: opts.sessionId,
+            maxSeconds: timeout,
+            // Those that decide — what may run (PreToolUse: the high-risk list, a question to the boss), a permission
+            // request — and the end of a turn, which the office must not miss (the session would look busy for good).
+            retrySeconds: ev.name === 'PreToolUse' || ev.name === 'PermissionRequest' || ev.name === 'Stop' ? (opts.retrySeconds ?? 0) : 0,
+            failClosed: ev.name === 'PreToolUse' && !!opts.bypass,
+          }),
           timeout: timeout + 5,
         },
       ],
@@ -157,6 +209,9 @@ export function buildHooksSettings(opts: {
   }
   return hooks;
 }
+
+/** A restart of the agent takes a few seconds (at a deploy: stop, unpack, start); a hook waits this long for it. */
+export const HOOK_RETRY_SECONDS = 45;
 
 export interface ClaudeLaunchPlan {
   argv: string[];
@@ -235,6 +290,8 @@ export function planClaudeLaunch(opts: {
   claudeVersion: string | null;
   approvalWaitSeconds: number;
   hookEvents?: string[] | null;
+  /** How long a deciding hook keeps trying to reach the agent while it is being restarted. Default `HOOK_RETRY_SECONDS`. */
+  hookRetrySeconds?: number;
   /** What `--effort` accepts on this machine (see `claudeEffortLevels`). An effort that is not among them is left out rather than passed to a CLI that would refuse to start. */
   effortLevels?: string[] | null;
   /** A browser for this session: the command of an MCP server that drives one (see `findBrowserMcp`). */
@@ -250,6 +307,8 @@ export function planClaudeLaunch(opts: {
     claudeVersion: opts.claudeVersion,
     approvalWaitSeconds: opts.approvalWaitSeconds,
     events: opts.hookEvents,
+    retrySeconds: opts.hookRetrySeconds ?? HOOK_RETRY_SECONDS,
+    bypass: spec.permissionMode === 'bypassPermissions',
   });
   const browser = spec.mcp && opts.browser ? opts.browser : null;
   const allow = [...new Set([...spec.permissions.allow, ...spec.allowedTools, ...(spec.mcp ? ['mcp__orchestrator'] : []), ...(browser ? ['mcp__browser'] : [])])];

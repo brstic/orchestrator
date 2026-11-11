@@ -14,7 +14,7 @@ import type {
   TerminalScreen,
   ActivityState,
 } from '@orchestrator/contracts';
-import { EFFORT_CHOICES, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify, truncate, type EffortLevel } from '@orchestrator/contracts';
+import { EFFORT_CHOICES, HOOKS_VERSION, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify, truncate, type EffortLevel } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
 import { permissionPrompt, trustPromptKeys } from './comms.ts';
 import { EngineError } from './core.ts';
@@ -819,6 +819,7 @@ export class SessionRegistry {
         controllerId: null,
         capabilities: r.capabilities,
         permissionMode: r.permissionMode,
+        ...(typeof r.hooksVersion === 'number' ? { hooksVersion: r.hooksVersion } : {}),
         model: r.model,
         cols: r.cols,
         rows: r.rows,
@@ -855,6 +856,7 @@ export class SessionRegistry {
     s.capabilities = r.capabilities;
     s.mode = r.mode;
     s.permissionMode = r.permissionMode ?? s.permissionMode;
+    if (typeof r.hooksVersion === 'number') s.hooksVersion = r.hooksVersion;
     s.model = r.model ?? s.model;
     s.claudeSessionId = r.claudeSessionId ?? s.claudeSessionId;
     s.startedAt = r.startedAt;
@@ -1185,9 +1187,18 @@ export class SessionRegistry {
     if (!e || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || !s.permissionMode) return false;
     const wantsBypass = e.autonomy === 'unrestricted';
     const hasBypass = s.permissionMode === 'bypassPermissions';
-    if (wantsBypass === hasBypass) return false;
-    this.restartWhy.set(s.employeeId, `your level is now ${wantsBypass ? 'Unrestricted' : e.autonomy === 'auto' ? 'Auto' : e.autonomy}`);
-    return true;
+    if (wantsBypass !== hasBypass) {
+      this.restartWhy.set(s.employeeId, `your level is now ${wantsBypass ? 'Unrestricted' : e.autonomy === 'auto' ? 'Auto' : e.autonomy}`);
+      return true;
+    }
+    // A session in bypass mode whose hooks are older than what this office relies on: a command of it that waits for
+    // the owner would be run if the machine's agent were restarted meanwhile (see `HOOKS_VERSION`). Its machine's
+    // agent says which hooks it has — one that does not say is too old to start it with newer ones, and is left alone.
+    if (hasBypass && typeof s.hooksVersion === 'number' && s.hooksVersion < HOOKS_VERSION) {
+      this.restartWhy.set(s.employeeId, 'the office was updated, and your session has to be started again to work with it');
+      return true;
+    }
+    return false;
   }
 
   private restarting = new Set<string>();

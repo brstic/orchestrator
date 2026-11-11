@@ -333,6 +333,8 @@ export interface AgentSession {
   controllerId: string | null;
   capabilities: SessionCapabilities;
   permissionMode: string | null;
+  /** Which version of the hook commands the session runs with, as its machine's agent reports it (see `HOOKS_VERSION`). */
+  hooksVersion?: number;
   model: string | null;
   /** The effort this session was started with (null: Claude Code's default). */
   effort?: string | null;
