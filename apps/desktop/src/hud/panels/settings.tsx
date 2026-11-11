@@ -617,7 +617,7 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                   </Toggle>
                   <Toggle checked={settings.accountFailover !== false} onChange={(accountFailover) => void save({ accountFailover })} title="Move employees to another Claude account when theirs runs out">
                     On: when the Claude account an employee runs on has used up its allowance and the same machine has another account with room, the employee is put on that one and their session starts again there, so nobody waits for a reset.
-                    Off: they wait. Accounts are added in Company → Claude usage.
+                    Off: they wait. Accounts are added in Company → Claude.
                   </Toggle>
                   <SleepSetting settings={settings} />
                 </div>

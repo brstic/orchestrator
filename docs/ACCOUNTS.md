@@ -10,18 +10,18 @@ To Claude Code an account is a **config folder**: `~/.claude` by default, any ot
 
 ## Adding an account (an owner)
 
-1. **Company → Claude usage → Add a Claude account…** Pick the machine (the office's own machines; a member's computer is theirs to arrange), keep or change the folder (`~/.claude-2` is offered), **Add**.
+1. **Company → Claude**: the accounts are listed machine by machine. **Add an account…** on the machine's line (the office's own machines; a member's computer is theirs to arrange), keep or change the folder (`~/.claude-2` is offered), **Add**.
    The machine's agent makes the folder (mode 700) and, inside it, a link `projects` → the default account's `projects` folder, so the conversations are shared (see "Continuing the conversation").
 2. The window shows a command. **Run it on that machine, as the user the office runs as**, and log in with the other account:
    ```
    CLAUDE_CONFIG_DIR=/home/<user>/.claude-2 claude
    ```
    then `/login`, finish in the browser, `/exit`. (On the server: `ssh` in first; see `OPERATIONS.md`, "Adding a Claude account".) The office never logs in for anybody and never sees a credential — the login is between that person and Claude Code.
-3. **Check** in the window (or reopen Claude usage): the account shows who is logged in. From now on it takes employees.
+3. **Check** in the window (or reopen the Claude tab): the account shows who is logged in. From now on it takes employees.
 
 An account can also be made by hand as before (`CLAUDE_CONFIG_DIR=~/.claude-second claude` on the machine, then the folder in an employee's profile); such a folder works, but the office moves people *to* an account only when it is on the machine's list, so add it there too. Adding a folder that already exists changes nothing in it except the `projects` link, and that only when the folder has no `projects` yet.
 
-**Remove from the list** takes an account nobody is on off the list. Nothing on the machine is deleted.
+**Remove from the list** (open the account's row) takes an account nobody is on off the list. Nothing on the machine is deleted.
 
 ## When an account counts as used up
 
@@ -50,7 +50,7 @@ Rules that keep it calm:
 - Only accounts on the machine's list or already in use on it are candidates, and only with somebody logged in.
 - **Settings → Employees → "Move employees to another Claude account when theirs runs out"** switches it off (`OwnerSettings.accountFailover`, on by default). Off: they wait for the reset.
 
-**Move … to another account** on an account's card does the same at once for that account, whatever its figures, the ten minutes and the setting (`POST /api/hosts/:id/accounts/move`).
+**Move … to another account** (open the account's row) does the same at once for that account, whatever its figures, the ten minutes and the setting (`POST /api/hosts/:id/accounts/move`).
 
 ## Continuing the conversation
 

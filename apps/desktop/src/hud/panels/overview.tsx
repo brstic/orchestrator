@@ -152,7 +152,7 @@ function OverviewPanel({ arg, onClose }: PanelProps) {
         tabs={[
           { id: 'now', label: 'Now', count: attention.length || undefined },
           { id: 'projects', label: 'Projects' },
-          { id: 'usage', label: 'Claude usage' },
+          { id: 'usage', label: 'Claude' },
           { id: 'history', label: 'History' },
           ...(settings?.gamification !== false ? [{ id: 'record' as const, label: 'Record' }] : []),
         ]}
@@ -272,7 +272,10 @@ function OverviewPanel({ arg, onClose }: PanelProps) {
         {tab === 'usage' && (
           <div className="col" style={{ gap: 14 }}>
             <ClaudeAccounts />
-            <Usage />
+            <details className="pc-details">
+              <summary>Tokens used by the sessions</summary>
+              <Usage untitled />
+            </details>
           </div>
         )}
         {tab === 'history' && (
