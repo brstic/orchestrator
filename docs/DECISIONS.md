@@ -289,3 +289,15 @@ The owner found many employees standing with a red mark: "T-18 is blocked: … i
 - **The real cure is isolation**: a project on a git repository with worktrees gives every employee a folder of their own and nobody waits. That is said in the project's settings, not shouted at the owner per task.
 - Left as it is: a task that is in progress but whose employee has stopped without completing it still holds the folder. That is "someone stopped working", which the foreman and the *stalled* notice already cover.
 
+## Voices go through the office, not between the windows (2026-11-11)
+The owner asked for push-to-talk whose loudness follows the distance between characters and which does not leave the conference room.
+
+- **Relayed by the office over the WebSocket it already has, not WebRTC.** Peer-to-peer would need STUN/TURN and signalling, and members sit behind the TLS door, Tailscale and a reverse proxy; the office already has an authenticated socket to every window and already knows where every character stands. Cost: a little more delay and the office's bandwidth (about 22 kB/s per speaker per listener). For the handful of people an office has, that is the simpler thing that works everywhere the office works.
+- **Who hears is decided by the office, how loud by the window.** The office drops a frame for anyone out of range (26 m) or on the other side of a closed meeting room's wall, so a window cannot listen in by ignoring the rule. The window plays what arrives at a loudness from the distance (`voiceFalloff`, silent from 22 m — inside the office's range, so a voice fades and is never cut).
+- **A meeting room is sound-proof only while it is a room**: `kind: 'meeting'` and closed walls. Member rooms are not: a member's closed room is about who may act on their employees, not about sound.
+- **Telephone quality, no codec library**: 16 kHz mono, µ-law, 512 samples a frame, base64 in JSON. Opus would be a third of the size but needs WebCodecs or a WASM build; not worth it yet.
+- **Nothing is stored.** Frames are passed on and forgotten; there is no recording and no history of who spoke.
+- **Push-to-talk only.** No open microphone, so nobody is on the air without holding a key; the microphone is released a minute after the last use.
+
+## The whip approves only when the owner switched it on (2026-11-11)
+The owner asked that whipping an employee who asks for approval approves it. A gag that silently grants permissions would be a trap for whoever cracks it for fun, and new owner-visible automatic behaviour ships switched off; so it is `settings.whipApproves`, off by default. When on, the whip answers *allow* only on the questions the whipper could answer with the button (checked through `access.ts` like the button's request), and the chat line says that it approved. People whipping people changes nothing but the picture.

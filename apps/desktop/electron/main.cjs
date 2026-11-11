@@ -426,6 +426,8 @@ ipcMain.handle('orch:prefs-set', (_event, input) => {
     approachZoom: p.approachZoom === true,
     radioVolume: typeof p.radioVolume === 'number' && Number.isFinite(p.radioVolume) ? Math.min(1, Math.max(0, p.radioVolume)) : 0.6,
     radioMuted: p.radioMuted === true,
+    voiceVolume: typeof p.voiceVolume === 'number' && Number.isFinite(p.voiceVolume) ? Math.min(1, Math.max(0, p.voiceVolume)) : 1,
+    voiceMuted: p.voiceMuted === true,
   };
   const file = prefsFile();
   // Written beside and renamed, so a crash half-way leaves the previous file.

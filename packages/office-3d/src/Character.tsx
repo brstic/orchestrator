@@ -28,6 +28,8 @@ import {
   lerp,
   newLoco,
   newPose,
+  emote,
+  isEmotePose,
   ouch,
   poseAt,
   shapeLash,
@@ -262,9 +264,10 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
     const first = A.applied === null;
     const changed = first || A.applied !== name || A.cue !== cueRef.current;
     A.since = changed ? 0 : A.since + dt;
-    const reaction = name === 'ouch' || name === 'whip';
+    const gesture = isEmotePose(name);
+    const reaction = name === 'ouch' || name === 'whip' || gesture;
     if (!reaction) A.base = name;
-    else if (first) A.base = name === 'whip' ? 'stand' : 'still';
+    else if (first) A.base = name === 'whip' || gesture ? 'stand' : 'still';
     const base = A.base;
     const L = A.loco;
     let pumping = 0;
@@ -333,6 +336,7 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
     }
     if (name === 'ouch') ouch(TARGET, A.since);
     else if (name === 'whip') whipArm(TARGET, A.since);
+    else if (gesture) emote(TARGET, name, A.since);
     if (look) TARGET.headYaw += look.current;
 
     // ── blend: what is left of the previous pose rides on top of the new one and dies away ──

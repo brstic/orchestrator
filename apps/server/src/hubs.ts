@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
 import type { WebSocket } from 'ws';
-import { eventFor, mayDrive, mayReadMessage, mayReadQuestion, mayReadRoutine, maySee, stateFor } from './access.ts';
+import { eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, mayReadRoutine, maySee, stateFor } from './access.ts';
+import { VOICE_FRAMES_PER_SECOND, hears, validFrame } from './voice.ts';
 import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, OrchestratorEvent, PersonPresence, RadioNow, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
 import { hueOf, type Who } from './guests.ts';
-import { PROTOCOL_VERSION, ROLE_CATALOGUE, matchRole, nowIso, roleByKey } from '@orchestrator/contracts';
+import { PROTOCOL_VERSION, ROLE_CATALOGUE, isEmote, matchRole, nowIso, roleByKey } from '@orchestrator/contracts';
 import { EngineError, type AgentLink, type Engine } from '@orchestrator/orchestration';
 
 interface AgentConn {
@@ -313,6 +314,10 @@ interface ClientConn {
   presence: { x: number; z: number; rot: number; moving: boolean } | null;
   /** When this window last cracked the whip. */
   whippedAt?: number;
+  /** When this window's character last made a gesture. */
+  emotedAt?: number;
+  /** Frames of voice in the current second (for the rate limit), and whether they are talking right now. */
+  voice?: { since: number; frames: number; on: boolean };
   /** When they last spoke (for the rate limit). */
   said: number[];
 }
@@ -518,15 +523,74 @@ export class ClientHub {
             break;
           }
           case 'whip': {
-            // A gag everyone sees: the person swings, the employee yelps. One crack has to land before the next.
-            const employee = this.engine.core.employees.get(String(msg.employeeId ?? ''));
+            // A gag everyone sees: the person swings, whoever it was meant for yelps. One crack has to land before the next.
             const now = Date.now();
-            if (!employee || employee.archived || now - (conn.whippedAt ?? 0) < 600) break;
-            conn.whippedAt = now;
+            if (now - (conn.whippedAt ?? 0) < 600) break;
             const from = { id, name: who.name, role: who.role, hue: hueOf(who.id) };
             const ts = new Date(now).toISOString();
-            this.remember({ from, text: `cracks the whip at ${employee.name}`, ts, emote: true });
-            this.broadcast({ t: 'whipped', from, employeeId: employee.id, ts });
+            if (typeof msg.personId === 'string') {
+              // At another person: only someone standing next to them (a whip is two metres long, not an office wide).
+              const victim = this.clients.get(msg.personId);
+              if (!victim || victim.id === id || !victim.presence || !conn.presence) break;
+              if (Math.hypot(victim.presence.x - conn.presence.x, victim.presence.z - conn.presence.z) > 4.5) break;
+              conn.whippedAt = now;
+              this.remember({ from, text: `cracks the whip at ${victim.who.name}`, ts, emote: true });
+              this.broadcast({ t: 'whipped', from, personId: victim.id, ts });
+              break;
+            }
+            const employee = this.engine.core.employees.get(String(msg.employeeId ?? ''));
+            if (!employee || employee.archived) break;
+            conn.whippedAt = now;
+            // Where the owners switched it on: the crack approves what that employee is waiting for permission to do —
+            // for someone who may decide it anyway (the same rule as the Inbox: `access.ts`), and on the record as theirs.
+            let approved = 0;
+            if (this.engine.core.settings.whipApproves === true) {
+              for (const q of this.engine.core.questions.filter((x) => x.employeeId === employee.id && x.kind === 'permission' && x.status === 'open')) {
+                if (!mayCall(this.engine, who, 'POST', `/questions/${q.id}/answer`, null).ok) continue;
+                approved++;
+                void this.engine.comms.answer(q.id, { decision: 'allow' }, who.id === 'owner' ? 'owner' : `member:${who.name}`).catch((e) => this.log('warn', `the whip could not approve ${q.id}: ${(e as Error).message}`));
+              }
+            }
+            this.remember({ from, text: approved ? `cracks the whip at ${employee.name} — and approves what ${approved === 1 ? 'was' : 'they'} asked` : `cracks the whip at ${employee.name}`, ts, emote: true });
+            this.broadcast({ t: 'whipped', from, employeeId: employee.id, ...(approved ? { approved } : {}), ts });
+            break;
+          }
+          case 'emote': {
+            // A gesture of their character, seen by everyone. Not faster than a person can pick one.
+            const now = Date.now();
+            if (!isEmote(msg.name) || now - (conn.emotedAt ?? 0) < 400) break;
+            conn.emotedAt = now;
+            this.broadcast({ t: 'emoted', from: { id, name: who.name, role: who.role, hue: hueOf(who.id) }, name: msg.name, ts: new Date(now).toISOString() });
+            break;
+          }
+          case 'voice': {
+            // A frame of their voice: passed on to those within earshot of their character, and kept nowhere.
+            if (!conn.presence || !validFrame(msg.data)) break;
+            const now = Date.now();
+            const v = (conn.voice ??= { since: now, frames: 0, on: false });
+            if (now - v.since >= 1000) {
+              v.since = now;
+              v.frames = 0;
+            }
+            if (++v.frames > VOICE_FRAMES_PER_SECOND) break;
+            v.on = true;
+            const frame = JSON.stringify({ t: 'voice', from: id, seq: Number(msg.seq) || 0, data: msg.data } satisfies ServerToClient);
+            const layout = this.engine.core.layout;
+            for (const c of this.clients.values()) {
+              if (c.id === id || !c.presence || c.ws.readyState !== 1 || !hears(layout, conn.presence, c.presence)) continue;
+              try {
+                c.ws.send(frame);
+              } catch {
+                /* ignore */
+              }
+            }
+            break;
+          }
+          case 'voice.end': {
+            if (!conn.voice?.on) break;
+            conn.voice.on = false;
+            // To everyone: who was in earshot a moment ago may have walked on, and "they stopped" is no secret.
+            this.broadcast({ t: 'voice.end', from: id });
             break;
           }
           case 'term.open':
@@ -573,6 +637,8 @@ export class ClientHub {
       // Control is released automatically when its holder disappears.
       gateway.clientGone(id);
       this.clients.delete(id);
+      // Someone who went away in the middle of a sentence has stopped talking.
+      if (conn.voice?.on) this.broadcast({ t: 'voice.end', from: id });
       if (conn.presence) this.schedulePeople();
     });
     ws.on('error', () => undefined);

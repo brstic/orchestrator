@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { unlockedUpgrades } from '@orchestrator/contracts';
 import { OfficeScene, ownerPosition } from '@orchestrator/office-3d';
+import { PeopleActs, myPlace, personInReach } from './hud/people-acts.tsx';
 import { Button } from '@orchestrator/ui';
 import { api, connection, serverBase, setToken } from './lib/api.ts';
 import { Knock } from './Knock.tsx';
@@ -218,11 +219,17 @@ export function App() {
         setSaying(true);
         return;
       }
-      // The whip: a sound and an animation, nothing more. Only at someone the owner is standing next to.
-      if (e.code === (kb.whip ?? 'KeyR') && !st.panel && st.nearby?.kind === 'employee' && (st.cameraMode === 'ceo' || st.cameraMode === 'first')) {
-        e.preventDefault();
-        st.whip(st.nearby.id);
-        return;
+      // The whip: a sound and an animation. Only at someone this person is standing next to: an employee — where the
+      // office's owners switched it on, that also approves what the employee is waiting for permission to do — or,
+      // with no employee there, another person.
+      if (e.code === (kb.whip ?? 'KeyR') && !st.panel && (st.cameraMode === 'ceo' || st.cameraMode === 'first')) {
+        const person = st.nearby?.kind === 'employee' ? null : personInReach(st.people, myPlace(), st.clientId);
+        if (st.nearby?.kind === 'employee' || person) {
+          e.preventDefault();
+          if (person) st.whipPerson(person);
+          else st.whip(st.nearby!.id);
+          return;
+        }
       }
       if (e.code === (kb.talk ?? 'KeyF') && !st.panel && st.cameraMode !== 'free' && st.cameraMode !== 'workstation') {
         e.preventDefault();
@@ -295,9 +302,9 @@ export function App() {
       .filter((p) => p.id !== s.clientId)
       .map((p) => {
         const last = [...s.chat].reverse().find((c) => c.fromId === p.id && !c.emote);
-        return { ...p, saying: last && now - last.at < 7000 ? last.text : null, whipAt: s.peopleWhips[p.id] };
+        return { ...p, saying: last && now - last.at < 7000 ? last.text : null, whipAt: s.peopleWhips[p.id], ouchAt: s.peopleOuch[p.id], emote: s.peopleEmotes[p.id] ?? null, speaking: !!s.speaking[p.id] };
       });
-  }, [s.people, s.clientId, s.chat, s.peopleWhips, sayTick]);
+  }, [s.people, s.clientId, s.chat, s.peopleWhips, s.peopleOuch, s.peopleEmotes, s.speaking, sayTick]);
   // My own conversations: dots over whoever is working on what I said, a bubble over whoever has answered.
   const talkMarks = useMemo(
     () => [
@@ -362,6 +369,8 @@ export function App() {
           onPickSeat={on.pickSeat}
           whips={s.whips}
           whipAt={s.whipAt}
+          ouchAt={s.ouchAt}
+          emote={s.emote}
           walks={walks}
           hosts={hosts}
           board={board}
@@ -388,6 +397,7 @@ export function App() {
       </div>
       <div className="hud">
         <TopBar />
+        <PeopleActs />
         {s.conn !== 'online' && <div className="glass banner">Connection to the server lost — the office is frozen at its last known state. Reconnecting…</div>}
         {inWorkstation ? (
           <div className="left-dock">

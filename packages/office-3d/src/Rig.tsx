@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { Appearance } from '@orchestrator/contracts';
 import { Character, type Motion } from './Character.tsx';
+import { useActs } from './character/acts.ts';
 import { sceneProbe } from './Environment.tsx';
 import type { CameraMode, NearbyTarget, PersonView } from './types.ts';
 import { deskSeat, moveWithCollision, type World } from './world.ts';
@@ -10,8 +11,6 @@ import { deskSeat, moveWithCollision, type World } from './world.ts';
 /** The owner: a navy two-piece suit, burgundy tie, dark brown oxfords. */
 const CEO_LOOK: Appearance = { skin: '#e0ac69', hair: '#241c17', hairStyle: 'short', shirt: '#2b3c66', pants: '#2b3c66', accessory: 'none', build: 1.03 };
 const CEO_DETAIL = { tie: '#8f2738', shoes: '#4a2c1c' };
-/** How long the avatar holds the 'whip' pose after `whipAt` changes. */
-const WHIP_MS = 700;
 /** Standing at someone's desk, the third-person camera comes in to at most this distance. */
 const APPROACH_DIST = 4.2;
 /**
@@ -110,6 +109,8 @@ export function Rig({
   onNearby,
   onLeaveWorkstation,
   whipAt,
+  ouchAt,
+  emote,
   approachZoom = false,
 }: {
   world: World;
@@ -123,6 +124,10 @@ export function Rig({
   onLeaveWorkstation: () => void;
   /** Timestamp (ms) of the owner's latest whip crack; the avatar plays the swing each time it changes. 0/undefined = never. */
   whipAt?: number;
+  /** When someone else's whip lands on this person (ms): the avatar flinches. */
+  ouchAt?: number;
+  /** The gesture this person last asked for (the wheel), and when. */
+  emote?: { name: string; at: number } | null;
   /** Ease the camera in at a desk (an owner setting; off by default). */
   approachZoom?: boolean;
 }) {
@@ -600,25 +605,17 @@ export function Rig({
 
   return (
     <group ref={avatar}>
-      <PlayerBody motion={motion} whipAt={whipAt} />
+      <PlayerBody motion={motion} whipAt={whipAt} ouchAt={ouchAt} emote={emote} />
     </group>
   );
 }
 
-function PlayerBody({ motion, whipAt }: { motion: { current: Motion }; whipAt?: number }) {
-  // The gait reads `motion` every frame, so walking never re-renders; only a whip crack does (twice: start and end).
-  const [swing, setSwing] = useState(0);
-  const seen = useRef(whipAt);
-  useEffect(() => {
-    if (!whipAt || whipAt === seen.current) return;
-    seen.current = whipAt;
-    setSwing(whipAt);
-    const id = setTimeout(() => setSwing(0), WHIP_MS);
-    return () => clearTimeout(id);
-  }, [whipAt]);
+function PlayerBody({ motion, whipAt, ouchAt, emote }: { motion: { current: Motion }; whipAt?: number; ouchAt?: number; emote?: { name: string; at: number } | null }) {
+  // The gait reads `motion` every frame, so walking never re-renders; only a whip crack, a flinch or a gesture does (twice: start and end).
+  const act = useActs({ whipAt, ouchAt, emote });
   return (
     <>
-      <Character appearance={CEO_LOOK} detail={CEO_DETAIL} pose={swing ? 'whip' : 'stand'} cue={swing} level={10} motion={motion} whip />
+      <Character appearance={CEO_LOOK} detail={CEO_DETAIL} pose={act.pose ?? 'stand'} cue={act.cue ?? 0} level={10} motion={motion} whip />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <ringGeometry args={[0.34, 0.4, 32]} />
         <meshBasicMaterial color="#ffd166" transparent opacity={0.85} toneMapped={false} />
