@@ -8,8 +8,18 @@ import { useOffice } from './store.ts';
 
 type Hosts = Record<string, Host>;
 
-/** The member a machine belongs to; null for a shared machine. */
-export const memberOfHost = (hosts: Hosts, hostId: string | null | undefined): string | null => (hostId ? (hosts[hostId]?.memberId ?? null) : null);
+/**
+ * Before a member's id: that member has closed their room, so what is on their computers is theirs alone — owners
+ * included (`closedTo` in the office's `access.ts`). `may` reads it; `memberIdOf` gives the plain id back.
+ */
+const CLOSED = '#closed:';
+export const memberIdOf = (member: string | null): string | null => (member?.startsWith(CLOSED) ? member.slice(CLOSED.length) : member);
+
+/** The member a machine belongs to; null for a shared machine. (Marked when that member has closed their room.) */
+export const memberOfHost = (hosts: Hosts, hostId: string | null | undefined): string | null => {
+  const host = hostId ? hosts[hostId] : undefined;
+  return host?.memberId ? (host.room?.locked ? `${CLOSED}${host.memberId}` : host.memberId) : null;
+};
 
 /** In place of a member's id: the foreman's own things, which only owners may look into or direct (as the office's `access.ts` has it). */
 export const OWNERS_ONLY = '#owners';
@@ -19,15 +29,18 @@ export const memberOfEmployee = (hosts: Hosts, e: Pick<Employee, 'hostId' | 'rol
 
 export function may(me: Me | null, need: 'read' | 'work' | 'admin', member: string | null): boolean {
   if (!me) return false;
+  // A closed room: its member alone, whoever else asks.
+  if (member?.startsWith(CLOSED) && me.id !== memberIdOf(member)) return false;
   if (me.kind === 'owner') return true;
   if (need === 'admin') return false;
-  if (member) return me.role === 'colleague' && me.id === member;
+  if (member) return me.role === 'colleague' && me.id === memberIdOf(member);
   return need === 'read' || me.role === 'colleague';
 }
 
 /** Why not, in a few words for a tooltip. */
 export function whyNot(me: Me | null, need: 'read' | 'work' | 'admin', member: string | null): string | null {
   if (may(me, need, member)) return null;
+  if (member?.startsWith(CLOSED)) return 'Their room is closed: what is on their own computers is theirs alone until they open it again.';
   if (need === 'admin') return 'Only an owner of this office can do this.';
   if (member === OWNERS_ONLY) return 'The foreman supervises the whole office: only its owners can look into it or direct it.';
   if (member) return "This is on another member's own computer.";
@@ -49,7 +62,7 @@ export function useAccess() {
     why: (hostId: string | null | undefined, need: 'read' | 'work' = 'work') => whyNot(me, need, memberOfHost(hosts, hostId)),
     admin: me?.kind === 'owner',
     /** Deleting a project: an owner's act, except for a project on one's own computer (nobody else's work is there). */
-    deleteProject: (hostId: string | null | undefined) => me?.kind === 'owner' || (me?.role === 'colleague' && !!memberOfHost(hosts, hostId) && memberOfHost(hosts, hostId) === me.id),
+    deleteProject: (hostId: string | null | undefined) => me?.kind === 'owner' || (me?.role === 'colleague' && !!memberOfHost(hosts, hostId) && memberIdOf(memberOfHost(hosts, hostId)) === me.id),
     /** Machines this person may put employees on: the shared ones, and their own. */
     usable: (h: Host) => may(me, 'work', h.memberId ?? null),
   };

@@ -264,6 +264,35 @@ test('a member who is away keeps their room where it is: locked, dark, no way in
   assert.ok(inside[0] !== a!.x + a!.w / 2 || inside[1] !== a!.z + a!.d / 2 || true);
 });
 
+test('a room its member closed to everyone else: in place and lit, its people at work — and no way in', () => {
+  const open = withMemberRooms(layout, [host(0, 3), host(1, 2)]);
+  const shut = withMemberRooms(layout, [{ ...host(0, 3), closed: true }, host(1, 2)]);
+  const [a, b] = shut.rooms;
+  assert.deepEqual([a!.closed, a!.locked, b!.closed], [true, false, false]);
+  // Nothing else about it differs from the open room: the same place, size, desks and lights (it is not dark: they work).
+  const { closed: _c, ...rest } = a!;
+  const { closed: _c2, ...restOpen } = open.rooms[0]!;
+  assert.deepEqual(rest, restOpen);
+  assert.ok(a!.lights.length > 0);
+  assert.deepEqual(b, open.rooms[1]);
+  assert.deepEqual([...shut.deskOf], [...open.deskOf], 'everyone keeps their seat');
+  // No door: nobody else walks in.
+  const eff = shut.layout as EffectiveLayout;
+  assert.deepEqual(eff.rooms.find((r) => r.id === a!.roomId)!.doors, []);
+  assert.equal(eff.rooms.find((r) => r.id === b!.roomId)!.doors.length, 1);
+  const world = buildWorld(eff, none);
+  const reach = world.nav.reach(world.spawn.x, world.spawn.z);
+  for (const id of a!.desks) {
+    const seat = deskSeat(eff.desks.find((d) => d.id === id)!);
+    assert.equal(reach(seat.x, seat.z), false, `${id} is behind a closed door`);
+  }
+  // Someone put inside it (their character stood there when it was closed) has no floor to walk on, as in a locked room.
+  const mid: [number, number] = [a!.x + a!.w / 2, a!.z + a!.d / 2];
+  assert.deepEqual(moveWithCollision(world, mid[0], mid[1], 0.2, 0.2), moveWithCollision(buildWorld(withMemberRooms(layout, [{ ...host(0, 3), locked: true }, host(1, 2)]).layout, none), mid[0], mid[1], 0.2, 0.2));
+  // A room that is both (its member is away) is simply locked.
+  assert.deepEqual([withMemberRooms(layout, [{ ...host(0, 3), closed: true, locked: true }]).rooms[0]!.closed, withMemberRooms(layout, [{ ...host(0, 3), closed: true, locked: true }]).rooms[0]!.locked], [false, true]);
+});
+
 test('chosen seats in a member room: honoured first, the rest fill in order, and the room grows to the furthest one', () => {
   const h0 = { ...host(0, 3), seats: { 'emp-0-2': 1, 'emp-0-0': 7 } };
   const office = withMemberRooms(layout, [h0]);

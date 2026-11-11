@@ -40,8 +40,25 @@ export function officeWithRooms(s: OfficeState, unlocked: string[]): OfficeWithR
   // connected, grey and locked while it is not. (A computer of theirs that is away and has nobody on it gets no room
   // when they have another: an old enrollment would otherwise leave an empty room behind.)
   const hasStaff = (id: string) => staff.some((e) => e.hostId === id);
-  const shown = personal.filter((h) => h.status === 'online' || hasStaff(h.id) || !personal.some((o) => o.id !== h.id && o.memberId === h.memberId));
-  const online = shown.map((h) => ({ hostId: h.id, memberId: h.memberId!, memberName: h.memberName ?? h.name, prefs: h.room ?? null, locked: h.status !== 'online', seats: Object.fromEntries(staff.filter((e) => e.hostId === h.id && memberSeatOf(e.deskId)?.hostId === h.id).map((e) => [e.id, memberSeatOf(e.deskId)!.n])), employeeIds: staff.filter((e) => e.hostId === h.id).map((e) => e.id) }));
+  // A room is a member's computer. Servers they brought in and keep to themselves have no room of their own: whoever
+  // works on one sits in that member's room — the first computer of theirs that has one, or, for a member whose
+  // computer is not in the office at all, a room that stands for their first server.
+  const computers = personal.filter((h) => !h.ownerId);
+  const servers = personal.filter((h) => !!h.ownerId);
+  const shown = computers.filter((h) => h.status === 'online' || hasStaff(h.id) || !computers.some((o) => o.id !== h.id && o.memberId === h.memberId));
+  const anchor = new Map<string, string>();
+  for (const h of shown) if (!anchor.has(h.memberId!)) anchor.set(h.memberId!, h.id);
+  for (const h of servers) {
+    if (anchor.has(h.memberId!)) continue;
+    anchor.set(h.memberId!, h.id);
+    shown.push(h);
+  }
+  /** Everyone who sits in the room of this machine: who works on it, and, in the member's main room, who works on their servers. */
+  const inRoom = (h: (typeof personal)[number]) => staff.filter((e) => e.hostId === h.id || (anchor.get(h.memberId!) === h.id && servers.some((x) => x.id === e.hostId && x.memberId === h.memberId)));
+  /** Dark and locked when nothing of theirs that sits here is in the office: the computer, and for the main room the servers too. */
+  const here = (h: (typeof personal)[number]) => h.status === 'online' || (anchor.get(h.memberId!) === h.id && servers.some((x) => x.memberId === h.memberId && x.status === 'online'));
+  // A room its member closed is shut to everyone else's character; in the member's own window it stays open.
+  const online = shown.map((h) => ({ hostId: h.id, memberId: h.memberId!, memberName: h.memberName ?? h.name, prefs: h.room ?? null, locked: !here(h), closed: h.room?.locked === true && s.me?.id !== h.memberId, seats: Object.fromEntries(staff.filter((e) => e.hostId === h.id && memberSeatOf(e.deskId)?.hostId === h.id).map((e) => [e.id, memberSeatOf(e.deskId)!.n])), employeeIds: inRoom(h).map((e) => e.id) }));
   const theirs = staff.filter((e) => personal.some((h) => h.id === e.hostId)).map((e) => e.id);
   const key = JSON.stringify([online, theirs, [...unlocked].sort()]);
   if (lastOffice && lastOffice.layout === s.layout && lastOffice.key === key) return lastOffice.value;
@@ -239,11 +256,13 @@ export function walkRequests(s: OfficeState, now: number): WalkRequest[] {
 
 export function hostViews(s: OfficeState): HostView[] {
   return Object.values(s.hosts)
-    .filter((h) => h.status !== 'revoked')
+    // The machines of the office. A server a member keeps to themselves is not one of them (it is in their room, in
+    // My room); once they share it, it stands here with the rest, with their name on it.
+    .filter((h) => h.status !== 'revoked' && !(h.ownerId && h.memberId))
     .sort((a, b) => a.enrolledAt.localeCompare(b.enrolledAt))
     .map((h) => ({
       id: h.id,
-      name: h.name,
+      name: h.ownerId && h.ownerName ? `${h.name} · ${h.ownerName}` : h.name,
       status: h.status,
       cpu: h.status === 'online' ? (h.resources?.cpuPercent ?? null) : null,
       mem: h.status === 'online' && h.resources?.memUsedBytes != null && h.resources.memTotalBytes ? (h.resources.memUsedBytes / h.resources.memTotalBytes) * 100 : null,

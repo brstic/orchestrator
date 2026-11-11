@@ -17,6 +17,10 @@
  * conversation with it are for owners only, and only an owner can hire one or change who it is. Everyone
  * still sees that it is there and what it is doing.
  *
+ * A member can close their room. Then what is on their own computers is theirs alone: the owners of the
+ * office and the foreman are kept out like everyone else (`closedTo`), until the member opens it again. Running
+ * the office stays with the owners — they can still revoke that member or their machines.
+ *
  * A route that is not listed here needs an owner: forgetting to list a new route fails closed.
  */
 import { matchRole, roleByKey, type FullState, type Message, type OrchestratorEvent, type Question, type Routine } from '@orchestrator/contracts';
@@ -104,6 +108,11 @@ const RULES: Rule[] = [
   rule('GET', '/hosts/:id/browse', 'work', path('host')),
   rule('GET', '/hosts/:id/claude-processes', 'work', path('host')),
   rule('GET', '/hosts/:id/discover', 'work', path('host')),
+  // Servers a member brings into the office and may share with it. Whose a server is, is checked by the route itself.
+  rule('GET', '/me/servers', 'work'),
+  rule('POST', '/me/servers', 'work'),
+  rule('PATCH', '/me/servers/:id', 'work'),
+  rule('DELETE', '/me/servers/:id', 'work'),
   // ── projects and tasks ──
   rule('POST', '/projects', 'work', inBody('host', 'hostId')),
   rule('PATCH', '/projects/:id', 'work', path('project'), inBody('host', 'hostId')),
@@ -183,6 +192,21 @@ export function allowed(who: Who, need: Need, member: string | null): boolean {
   return need === 'read' || who.role === 'colleague';
 }
 
+/**
+ * Has the member this thing belongs to closed their room to this person? True for everyone but that member — the
+ * owners of the office included. (The foreman's own things belong to no member and are never closed.)
+ */
+export function closedTo(engine: Engine, who: Who, member: string | null): boolean {
+  return !!member && member !== OWNERS_ONLY && who.id !== member && engine.hosts.isClosed(member);
+}
+
+const CLOSED = 'Their room is closed: what is on their own computers is theirs alone until they open it again.';
+
+/** `allowed`, with closed rooms taken into account: the question every check about one thing asks. */
+function can(engine: Engine, who: Who, need: Need, member: string | null): boolean {
+  return !closedTo(engine, who, member) && allowed(who, need, member);
+}
+
 export interface Verdict {
   ok: boolean;
   /** Why not, in words for the person. */
@@ -191,36 +215,40 @@ export interface Verdict {
 
 /** Decide one request to the owner API. `route` is the path under /api, without the query. */
 export function mayCall(engine: Engine, who: Who, method: string, route: string, body: Record<string, unknown> | null | undefined): Verdict {
-  if (who.kind === 'owner') return { ok: true };
+  const owner = who.kind === 'owner';
   for (const r of RULES) {
     if (r.method !== method) continue;
     const m = r.re.exec(route);
     if (!m) continue;
-    if (!allowed(who, r.need, null)) return { ok: false, reason: who.role === 'visitor' ? 'You are visiting this office: you can look, not change anything.' : 'Only an owner of this office can do this.' };
+    if (!owner && !allowed(who, r.need, null)) return { ok: false, reason: who.role === 'visitor' ? 'You are visiting this office: you can look, not change anything.' : 'Only an owner of this office can do this.' };
     for (const s of r.scopes) {
       const raw = s.from === 'path' ? decodeURIComponent(m[1] ?? '') : body?.[s.field];
       const id = typeof raw === 'string' && raw ? raw : null;
       const member = memberOf(engine, s.thing, id);
+      // A closed room is closed to owners as well: the one thing an owner is refused here.
+      if (closedTo(engine, who, member)) return { ok: false, reason: CLOSED };
+      if (owner) continue;
       if (r.ownOnly && !member) return { ok: false, reason: 'Only an owner of this office can do this to something shared.' };
       if (!allowed(who, r.need, member)) return { ok: false, reason: member === OWNERS_ONLY ? 'The foreman supervises the whole office, so only the owners can look into it or direct it.' : "That is on another member's own computer; only they and the owners can use it." };
     }
+    if (owner) return { ok: true };
     // Hiring a foreman, or making someone the foreman, is an owner's act.
     if (/^\/employees(\/[^/]+)?$/.test(route) && (method === 'POST' || method === 'PATCH') && typeof body?.roleKey === 'string' && (roleByKey(body.roleKey) ?? matchRole(body.roleKey))?.key === FOREMAN_ROLE) {
       return { ok: false, reason: 'Only an owner of this office can hire a foreman.' };
     }
     return { ok: true };
   }
-  return { ok: false, reason: `Only an owner of this office can do this — you are here as a ${who.role}.` };
+  return owner ? { ok: true } : { ok: false, reason: `Only an owner of this office can do this — you are here as a ${who.role}.` };
 }
 
 /** May this person see the terminal of a session (watch it, and the live monitor on its desk)? */
 export function maySee(engine: Engine, who: Who, sessionId: string): boolean {
-  return allowed(who, 'read', memberOf(engine, 'session', sessionId));
+  return can(engine, who, 'read', memberOf(engine, 'session', sessionId));
 }
 
 /** May this person type into, resize or take control of a session's terminal? */
 export function mayDrive(engine: Engine, who: Who, sessionId: string): boolean {
-  return allowed(who, 'work', memberOf(engine, 'session', sessionId));
+  return can(engine, who, 'work', memberOf(engine, 'session', sessionId));
 }
 
 // ── what is said on a member's own computer ──
@@ -245,10 +273,11 @@ const FOREMAN_PUBLIC: Record<string, (e: OrchestratorEvent) => Pick<Orchestrator
 
 /** An event as this person may read it: whole, with only what is public in it, or not at all (null). */
 export function eventFor(engine: Engine, who: Who, e: OrchestratorEvent): OrchestratorEvent | null {
-  if (who.kind === 'owner') return e;
+  // An owner reads everything — except what is said in a room its member has closed.
+  if (who.kind === 'owner') return closedTo(engine, who, memberOfEvent(engine, e)) ? null : e;
   const pub = FOREMAN_PUBLIC[e.type];
   if (pub) return { ...e, sessionId: null, taskId: null, projectId: null, ...pub(e) };
-  return allowed(who, 'read', memberOfEvent(engine, e)) ? e : null;
+  return can(engine, who, 'read', memberOfEvent(engine, e)) ? e : null;
 }
 
 /**
@@ -256,24 +285,24 @@ export function eventFor(engine: Engine, who: Who, e: OrchestratorEvent): Orches
  * read that one — except that the foreman as sender hides nothing: what it tells an employee is that employee's.
  */
 export function mayReadMessage(engine: Engine, who: Who, m: Message): boolean {
-  if (who.kind === 'owner') return true;
-  if (!allowed(who, 'read', memberOf(engine, 'employee', m.toEmployeeId))) return false;
+  if (!can(engine, who, 'read', memberOf(engine, 'employee', m.toEmployeeId))) return false;
   const sender = m.from.kind === 'employee' ? memberOf(engine, 'employee', m.from.id) : null;
-  return sender === OWNERS_ONLY || allowed(who, 'read', sender);
+  return sender === OWNERS_ONLY || can(engine, who, 'read', sender);
 }
 
 export function mayReadQuestion(engine: Engine, who: Who, q: Question): boolean {
-  return who.kind === 'owner' || allowed(who, 'read', memberOf(engine, 'employee', q.employeeId));
+  return can(engine, who, 'read', memberOf(engine, 'employee', q.employeeId));
 }
 
 /** A routine says what an employee is told to do: read by whoever may read that employee. */
 export function mayReadRoutine(engine: Engine, who: Who, r: Pick<Routine, 'employeeId'>): boolean {
-  return who.kind === 'owner' || allowed(who, 'read', memberOf(engine, 'employee', r.employeeId));
+  return can(engine, who, 'read', memberOf(engine, 'employee', r.employeeId));
 }
 
 /** The office's state as this person may read it. */
 export function stateFor(engine: Engine, who: Who, state: FullState): FullState {
-  if (who.kind === 'owner') return state;
+  // An owner reads the whole state unless some member has closed their room; then what is said there is left out for them too.
+  if (who.kind === 'owner' && !engine.hosts.closedMembers().some((id) => id !== who.id)) return state;
   return { ...state, events: state.events.map((e) => eventFor(engine, who, e)).filter((e): e is OrchestratorEvent => !!e), messages: state.messages.filter((m) => mayReadMessage(engine, who, m)), questions: state.questions.filter((q) => mayReadQuestion(engine, who, q)), routines: (state.routines ?? []).filter((r) => mayReadRoutine(engine, who, r)) };
 }
 
@@ -283,7 +312,7 @@ export function stateFor(engine: Engine, who: Who, state: FullState): FullState 
  * tasks, employees and projects of other members' computers, and the lessons and improvements about those are left out.
  */
 export function outcomesScopeFor(engine: Engine, who: Who): OutcomesScope | null {
-  if (who.kind === 'owner') return null;
-  const reads = (thing: Thing) => (id: string) => allowed(who, 'read', memberOf(engine, thing, id));
+  if (who.kind === 'owner' && !engine.hosts.closedMembers().some((id) => id !== who.id)) return null;
+  const reads = (thing: Thing) => (id: string) => can(engine, who, 'read', memberOf(engine, thing, id));
   return { task: (t) => reads('task')(t.id), employee: reads('employee'), project: reads('project') };
 }

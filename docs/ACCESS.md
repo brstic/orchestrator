@@ -27,6 +27,8 @@ A machine (host) is either **shared** or **a member's own computer** (`Host.memb
 - A member's own computer joins while their desktop app has the office open, and only through the door. Its employees sit in the member's room.
 - Work does not cross: a personal employee works only on projects on the same computer; a shared employee is never put on a project that lives on someone's computer; the scheduler never routes shared work to a personal employee, and the foreman — which supervises everyone — never assigns across that line either. An employee cannot wait for a colleague on the other side either (`wait: true`, `wait_for_colleague`), and a task on the other side is answered like one that does not exist.
 
+A **server a member brought in themselves** (My room → My servers; `Host.ownerId`) is that member's own machine like their computer — until they share it. Shared, it is a shared machine in every respect (`Host.memberId` is null); it stays theirs to take back or remove (`PATCH`/`DELETE /me/servers/:id`: its owner, or an owner of the office).
+
 ## The rules
 
 `need` is what an action requires: **read** (look), **work** (change, or reach into a machine), **admin** (run the office).
@@ -38,6 +40,9 @@ A machine (host) is either **shared** or **a member's own computer** (`Host.memb
 | admin | owners | owners |
 
 Other members still see that a personal employee exists and its state (name, activity, in the member's room). They do not get its terminal, monitor frames, documents, diffs or history, and cannot talk to it.
+
+### A closed room
+A member can close their room (`PUT /me/room` with `locked: true`). Then, for everything on that member's own computers and the servers they keep to themselves, the table above has one line: **that member, and nobody else** — at every level, for owners, the office's own computer and the foreman alike (`closedTo`). Everyone still sees that the employees are there and what state they are in. Not closed: a server the member shared; and what is about the office rather than about what is on a machine — members, machines, settings — so an owner can still revoke that member or their machines. The foreman passes a closed room by: it is not called for what happens there and its tools refuse (`look_at`, `answer_question`, `tell_employee`, `assign_task`).
 
 ### The foreman: owners only
 The foreman is neither shared nor a member's. It supervises the whole office — **including members' own employees while their computer is connected**: it is shown the last lines of their terminals, answers their questions and tells them what to do next, as an owner could. So what is the foreman's is for owners alone (`memberOf` answers `OWNERS_ONLY` for its profile, its session and its questions):
@@ -53,6 +58,7 @@ There is one foreman, on one of the office's own machines, never on a member's c
 - **read** — the office state, people, events, performance; `GET /routines` (the routines of employees one may read); what the hi-fi is playing (`GET /radio`, `GET /radio/now`, and the `radio` message every window gets); how much of each Claude account is used (`GET /usage`: percentages for everyone; whose account it is only for those who may *work* on the machine it lives on); documents, git view, XP of an employee; a task's diff; a project's integration status; a session's history; watching a terminal.
 - **read** (counted from what one may see) — `GET /growth/outcomes`: whether what the office learned helped. An owner gets the whole office; anyone else gets figures counted without the tasks, employees and projects on other members' computers, and without the lessons and improvements about them (`outcomesScopeFor`; `docs/learning/outcomes.md`).
 - **work** (own only) — `GET`/`PUT /me/room`: how one's own room looks. Nobody arranges someone else's.
+- **work** (own only) — `GET`/`POST /me/servers`, `PATCH`/`DELETE /me/servers/:id`: bringing a server of one's own into the office, sharing it, taking it back, removing it. The route checks whose the server is; an owner may do it for any member's.
 - **work** — employees: hire, edit, start/stop/pause/resume, talk, request a report; routines of an employee: `POST /routines` (the employee named in the body), `PATCH`/`DELETE /routines/:id`, `POST /routines/:id/run`; sessions: attach, adopt, bind; typing into and taking control of a terminal; browsing a machine's folders and its Claude processes; projects: create, edit, pause/resume, plan, integration sync/test; tasks: create, edit, delete, release, review, unblock, retry merge; answering questions **and deciding permission requests**; notifications; meetings; lessons; planning a command; `POST /me/host`; switching the office's hi-fi on and off (`POST /radio/play`, `POST /radio/stop`).
 - **work, on one's own computer only** — deleting a project that lives there (`DELETE /projects/:id`): nobody else's work is in it. The same on a shared project is **admin**.
 - **admin** — everything else, including: **deleting a shared project** (`DELETE /projects/:id`; a member may delete the projects on their own computer, see above), members and the door, settings and policies, layout, machines (enrollment tokens, revoke, rename, remove), SSH links, foreman status, audit log, improvements, promoting to the main branch, executing a command plan.

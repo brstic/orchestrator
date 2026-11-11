@@ -90,6 +90,56 @@ export class HostRegistry {
     return this.createEnrollmentToken(`member:${member.id}:${member.name}`, ttlMs, `member:${member.name}`);
   }
 
+  /**
+   * A one-time enrollment for a server a member brings into the office themselves. The host that enrolls with it is
+   * theirs like their own computer — personal, and allowed to connect from outside — and stays theirs to share.
+   */
+  createMemberServerEnrollment(member: { id: string; name: string }, serverName: string, ttlMs = 10 * 60_000): { token: string; expiresAt: string } {
+    const name = serverName.replace(/[\x00-\x1f:]+/g, ' ').trim().slice(0, 40) || 'server';
+    return this.createEnrollmentToken(`member-server:${member.id}:${member.name}:${name}`, ttlMs, `member:${member.name}`);
+  }
+
+  /** The servers a member brought into the office, private and shared alike. */
+  serversOf(memberId: string): Host[] {
+    return this.core.hosts.filter((h) => h.ownerId === memberId && h.status !== 'revoked');
+  }
+
+  /**
+   * A member shares a server of theirs with the office, or takes it back. Shared, it is a machine like the office's
+   * own: everything on it is the office's, colleagues work on it, and it stands with the other machines. Private, it
+   * is the member's alone again — with what is on it.
+   */
+  shareMemberServer(hostId: string, shared: boolean, actor: string): Host {
+    const host = this.core.hosts.require(hostId);
+    if (!host.ownerId || host.status === 'revoked') throw new EngineError('that is not a server a member brought into the office', 404);
+    if (shared === !host.memberId) return host;
+    if (!shared) {
+      // Work does not cross between the shared office and a member's computers: what is in progress here for a
+      // project on another machine would be cut off from it.
+      const busy = this.core.tasks.find((t) => t.status === 'IN_PROGRESS' && this.core.employees.get(t.assigneeId ?? '')?.hostId === host.id && this.core.projects.get(t.projectId)?.hostId !== host.id);
+      if (busy) throw new EngineError(`${busy.key} is in progress on this server for a project that lives on another machine. Take the server back when that is finished.`, 409);
+    }
+    host.memberId = shared ? null : host.ownerId;
+    host.memberName = shared ? null : (host.ownerName ?? null);
+    host.room = shared ? null : this.memberRoom(host.ownerId);
+    this.core.put('host', host);
+    this.core.audit(actor, shared ? 'host.shared' : 'host.unshared', host.id, { name: host.name, owner: host.ownerId });
+    this.core.event({ type: shared ? 'host.shared' : 'host.unshared', source: 'server', summary: shared ? `${host.ownerName ?? 'A member'} shared the server "${host.name}" with the office` : `${host.ownerName ?? 'A member'} took the server "${host.name}" back`, hostId: host.id, data: { ownerId: host.ownerId } });
+    return host;
+  }
+
+  /** Has this member closed their room? Then what is on their computers is theirs alone. */
+  isClosed(memberId: string | null | undefined): boolean {
+    return !!memberId && this.memberRoom(memberId)?.locked === true;
+  }
+
+  /** Every member whose room is closed. */
+  closedMembers(): string[] {
+    return Object.entries(this.core.store.kvGet<Record<string, MemberRoomPrefs>>('memberRooms', {}))
+      .filter(([, prefs]) => prefs?.locked === true)
+      .map(([id]) => id);
+  }
+
   /** A member arranges their room: remembered for them, and shown on every computer of theirs. */
   setMemberRoom(memberId: string, input: unknown, actor: string): MemberRoomPrefs {
     const prefs = sanitizeMemberRoom(input);
@@ -134,20 +184,23 @@ export class HostRegistry {
       const host = this.core.hosts.get(hello.hostId);
       if (!cred || cred.refId !== hello.hostId || !host) return { error: 'unknown or revoked host credential; enroll this machine again' };
       if (host.status === 'revoked') return { error: 'this host has been revoked' };
-      if (outside && !host.memberId) return refused;
+      // A member's own computer, or a server they brought in (also once they have shared it).
+      if (outside && !host.memberId && !host.ownerId) return refused;
       return { host };
     }
     if (hello.enrollmentToken) {
       const cred = this.core.store.checkCredential('enrollment', hello.enrollmentToken);
       if (!cred) return { error: 'invalid or expired enrollment token' };
       if (cred.usedAt) return { error: 'this enrollment token was already used' };
-      const member = /^member:([^:]+):(.*)$/.exec(cred.label ?? '');
+      // `member:<id>:<name>` is the member's own computer; `member-server:<id>:<name>:<server>` a server they bring in.
+      const server = /^member-server:([^:]+):([^:]*):(.*)$/.exec(cred.label ?? '');
+      const member = server ?? /^member:([^:]+):(.*)$/.exec(cred.label ?? '');
       if (outside && !member) return refused;
       this.core.store.markCredentialUsed(hello.enrollmentToken);
       this.core.store.revokeCredential(hello.enrollmentToken);
       const host: Host = {
         id: newId(),
-        name: this.uniqueName(member ? `${member[2]}'s computer` : hello.name || hello.info.hostname.replace(/\.local$/, '')),
+        name: this.uniqueName(server ? server[3]! : member ? `${member[2]}'s computer` : hello.name || hello.info.hostname.replace(/\.local$/, '')),
         status: 'offline',
         info: hello.info,
         resources: null,
@@ -159,6 +212,7 @@ export class HostRegistry {
         memberId: member?.[1] ?? null,
         memberName: member?.[2] ?? null,
         room: member ? this.memberRoom(member[1]!) : null,
+        ...(server ? { ownerId: server[1]!, ownerName: server[2]! } : {}),
       };
       const credential = generateToken('orch_host');
       this.core.store.addCredential('host', credential, { refId: host.id, label: host.name });
@@ -191,7 +245,7 @@ export class HostRegistry {
     this.core.company.hostDisconnects++;
     this.core.saveCompany();
     this.core.event({ type: 'worker.disconnected', source: 'server', summary: `Host "${host.name}" disconnected`, hostId, data: { sessions: sessions.length } });
-    // A member's own computer goes when they do: that is not a fault to report.
+    // A member's own computer goes when they do: that is not a fault to report. (A server they shared is the office's to miss.)
     if (sessions.length && host.status !== 'revoked' && !host.memberId) {
       this.eng.comms.notify({
         kind: 'host_disconnected',

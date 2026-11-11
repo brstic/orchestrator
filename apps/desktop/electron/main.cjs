@@ -209,6 +209,8 @@ function leaveWithThisComputer() {
   if (myHost) myHost.stop();
   myHost = null;
   myHostState = { state: 'none', reason: null, hostId: null };
+  // Servers this person brought into that office stay in it; only the means to look after them go with the window.
+  myServers = null;
 }
 
 function bringThisComputer(target) {
@@ -217,6 +219,7 @@ function bringThisComputer(target) {
   const agentEntry = [path.join(root, 'apps/host-agent/dist/orchestrator-agent.mjs'), path.join(root, 'apps/host-agent/src/cli.ts')].find((p) => fs.existsSync(p));
   const PATH = [process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', path.join(require('node:os').homedir(), '.local/bin')].filter(Boolean).join(path.delimiter);
   const forWindow = win;
+  myServers = { office: new URL(target.address).host, forWindow, servers: memberServers({ office: target, file: path.join(app.getPath('userData'), 'servers.json'), agentBundle: agentEntry && /\.mjs$/.test(agentEntry) ? agentEntry : null }) };
   myHost = startPersonalHost({
     ...target,
     node: findNode(),
@@ -229,6 +232,60 @@ function bringThisComputer(target) {
   });
 }
 ipcMain.handle('orch:my-host', () => myHostState);
+
+// ───────────── this person's own servers in someone else's office ─────────────
+// The page asks; the app does the reaching, over SSH, as the person. A page is the office's, not the person's, so
+// before the app connects anywhere it asks in a dialog of its own — one a page cannot draw or answer.
+const { memberServers, parseTarget } = require('./member-servers.cjs');
+let myServers = null;
+const serversChanged = () => myServers && myServers.forWindow && !myServers.forWindow.isDestroyed() && myServers.forWindow.webContents.send('orch:servers-changed');
+const confirmServer = async (message, detail, button) => {
+  if (process.env.ORCH_NO_SERVER_CONFIRM) return true; // the automated tests answer for themselves
+  const res = await dialog.showMessageBox(myServers.forWindow, { type: 'question', buttons: [button, 'Cancel'], defaultId: 1, cancelId: 1, message, detail });
+  return res.response === 0;
+};
+ipcMain.handle('orch:servers', () => (myServers ? myServers.servers.list() : null));
+ipcMain.handle('orch:servers-add', async (_e, input) => {
+  if (!myServers) return { error: 'This computer is not in an office as a member.' };
+  const mine = myServers;
+  try {
+    const { dest } = parseTarget(input && input.target);
+    const ok = await confirmServer(`Bring ${dest} into the office at ${mine.office}?`, `Orchestrator will connect to ${dest} over SSH with the keys on this computer, install the office's agent there (in ~/.orchestrator) and start it. The agent then stays connected to ${mine.office} by itself: people you allow can start Claude Code sessions on that server, in the folders you named.\n\nOnly do this for an office you trust with that server.`, 'Connect and bring it in');
+    if (!ok) return { cancelled: true };
+    const server = await mine.servers.add({ target: input.target, name: input.name, roots: input.roots, trustNewHost: input.trustNewHost === true }, serversChanged);
+    serversChanged();
+    return { ok: true, warnings: server.warnings };
+  } catch (e) {
+    serversChanged();
+    return { error: e.message };
+  }
+});
+ipcMain.handle('orch:servers-reconnect', async (_e, id) => {
+  if (!myServers) return { error: 'This computer is not in an office as a member.' };
+  try {
+    serversChanged();
+    return await myServers.servers.reconnect(String(id));
+  } catch (e) {
+    return { error: e.message };
+  } finally {
+    serversChanged();
+  }
+});
+ipcMain.handle('orch:servers-remove', async (_e, id) => {
+  if (!myServers) return { error: 'This computer is not in an office as a member.' };
+  const mine = myServers;
+  const rec = mine.servers.list().find((r) => r.id === String(id));
+  if (!rec) return { ok: true, cleaned: false };
+  try {
+    const ok = await confirmServer(`Take ${rec.name} out of the office at ${mine.office}?`, `Orchestrator will connect to ${rec.target} over SSH, stop the office's agent there and delete what it installed for this office. The office forgets the machine. Claude Code sessions on the server keep running in tmux; nothing else there is touched.`, 'Remove it');
+    if (!ok) return { cancelled: true };
+    return await mine.servers.remove(rec.id);
+  } catch (e) {
+    return { error: e.message };
+  } finally {
+    serversChanged();
+  }
+});
 
 /** Try the addresses of an invitation in turn and open the first office that answers as itself. */
 async function joinOffice(invite, remember) {

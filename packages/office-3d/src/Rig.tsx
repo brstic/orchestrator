@@ -199,7 +199,7 @@ export function Rig({
   useEffect(() => {
     const c = world.base.bounds;
     if (player.x > c.minX && player.x < c.maxX && player.z > c.minZ && player.z < c.maxZ + 6) return;
-    if (world.memberRooms.some((r) => !r.locked && player.x > r.reach.minX && player.x < r.reach.maxX && player.z > r.reach.minZ && player.z < r.reach.maxZ)) return;
+    if (world.memberRooms.some((r) => !r.locked && !r.closed && player.x > r.reach.minX && player.x < r.reach.maxX && player.z > r.reach.minZ && player.z < r.reach.maxZ)) return;
     const back = world.nav.nearestWalkable(THREE.MathUtils.clamp(player.x, c.minX + 0.8, c.maxX - 0.8), THREE.MathUtils.clamp(player.z, c.minZ + 0.8, c.maxZ - 0.8));
     if (!back) return;
     player.set(back[0], 0, back[1]);
