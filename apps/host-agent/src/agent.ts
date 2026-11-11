@@ -27,6 +27,7 @@ import {
   Tmux,
   claudeVersion,
   claudeEffortLevels,
+  findBrowserMcp,
   currentBranch,
   ensureWorktree,
   gitDiff,
@@ -220,6 +221,7 @@ export class HostAgent {
       tmuxVersion: await this.tmux.version(),
       claudeVersion: await claudeVersion(this.cfg.claudeBin),
       claudeEffortLevels: await claudeEffortLevels(this.cfg.claudeBin),
+      browser: ((b) => (b ? { mcp: b.version, engine: b.engine } : null))(this.browserMcp()),
       cpus: os.cpus().length,
       totalMemBytes: os.totalmem(),
       user: os.userInfo().username,
@@ -609,10 +611,12 @@ export class HostAgent {
     const cwd = this.assertAllowed(spec.cwd);
     if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new Error(`working directory does not exist: ${cwd}`);
     // Additional repositories obey the same limits as the working directory.
-    if (spec.addDirs?.length) {
-      const dirs = spec.addDirs.map((d) => this.assertAllowed(d));
+    {
+      const dirs = (spec.addDirs ?? []).map((d) => this.assertAllowed(d));
       for (const d of dirs) if (!fs.existsSync(d) || !fs.statSync(d).isDirectory()) throw new Error(`additional repository does not exist on this machine: ${d}`);
-      spec = { ...spec, addDirs: dirs };
+      // The files people attach to tasks are kept in a folder of this agent's own; every session may read there.
+      fs.mkdirSync(this.filesRoot(), { recursive: true, mode: 0o700 });
+      spec = { ...spec, addDirs: [...new Set([...dirs, this.filesRoot()])] };
     }
     const sdk = spec.mode === 'managed_sdk' ? locateSdk(this.cfg, this.p.home) : null;
     if (spec.mode === 'managed_sdk' && !sdk) throw new Error('the Claude Agent SDK is not installed on this host (run `orchestrator-agent sdk install`, then restart the agent)');
@@ -641,6 +645,7 @@ export class HostAgent {
           approvalWaitSeconds: this.cfg.approvalWaitSeconds,
           hookEvents: this.cfg.hookEvents,
           effortLevels: spec.effort ? (this.info?.claudeEffortLevels ?? (await claudeEffortLevels(this.cfg.claudeBin))) : null,
+          browser: spec.browser ? this.browserMcp() : null,
         });
     for (const f of plan.files) {
       writePrivate(f.path, f.content);
@@ -1010,6 +1015,10 @@ export class HostAgent {
         const panes = await this.discover();
         return { panes: policy === 'any' ? panes : policy === 'none' ? panes.filter((p) => p.connectedAs) : panes.filter((p) => p.looksLikeClaude || p.connectedAs), policy };
       }
+      case 'files.put':
+        return this.putFile(rpc.params);
+      case 'files.get':
+        return this.getFile(rpc.params);
       case 'claude.accounts':
         return { accounts: (rpc.params.dirs ?? []).map((raw: string | null) => this.describeAccount(raw, rpc.params.prepare === true)) };
       case 'fs.inspect':
@@ -1313,6 +1322,66 @@ export class HostAgent {
     if (this.lastLimits.get(tracked.sessionId) === key) return;
     this.lastLimits.set(tracked.sessionId, key);
     this.send(msg);
+  }
+
+  /** Where the files attached to tasks stand on this machine: a folder of the agent's own, outside every repository. */
+  private filesRoot(): string {
+    return path.join(path.dirname(this.p.sessions), 'files');
+  }
+
+  /** The browser employees here can drive, if one is installed (beside the office program, or in this agent's home). */
+  private browserMcp(): ReturnType<typeof findBrowserMcp> {
+    const entry = process.argv[1] ? path.dirname(fs.realpathSync(process.argv[1])) : process.cwd();
+    // The agent's bundle is at <install>/app/apps/host-agent/dist: the browser is installed beside `app`, where an update does not touch it.
+    return findBrowserMcp([path.resolve(entry, '..', '..', '..', '..'), path.resolve(entry, '..', '..', '..'), path.dirname(this.p.sessions), path.join(os.homedir(), '.orchestrator')]);
+  }
+
+  /** A piece of a task's attachment arrives. One folder per task; the name was made safe by the office and is checked again here. */
+  private putFile(p: { folder: string; name: string; offset: number; dataBase64: string; last: boolean }): { path: string; size: number } {
+    const clean = (x: string) => String(x ?? '').replace(/[^A-Za-z0-9._ ()@+-]/g, '_').replace(/^\.+/, '').slice(0, 120) || 'file';
+    const dir = path.join(this.filesRoot(), clean(p.folder));
+    const file = path.join(dir, clean(p.name));
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const data = Buffer.from(String(p.dataBase64 ?? ''), 'base64');
+    if (p.offset === 0) fs.writeFileSync(file, data, { mode: 0o600 });
+    else {
+      if (!fs.existsSync(file) || fs.statSync(file).size !== p.offset) throw new Error(`the next piece of ${p.name} does not follow what is here`);
+      fs.appendFileSync(file, data);
+    }
+    return { path: file, size: fs.statSync(file).size };
+  }
+
+  /**
+   * A piece of a file an employee names as evidence. Only a regular file, and only from where this agent may look:
+   * its allowed roots, its own folders (a session's browser shots, attachments) and the machine's temp folder.
+   */
+  private getFile(p: { path: string; cwd?: string | null; sessionId?: string | null; offset: number; length: number }): { dataBase64: string; size: number; name: string } {
+    const raw = String(p.path ?? '').trim();
+    if (!raw) throw new Error('no file was named');
+    const expanded = raw.startsWith('~/') ? path.join(os.homedir(), raw.slice(2)) : raw;
+    const abs = path.resolve(p.cwd && !path.isAbsolute(expanded) ? p.cwd : os.homedir(), expanded);
+    if (!fs.existsSync(abs)) throw new Error(`there is no file at ${abs}`);
+    const real = fs.realpathSync(abs);
+    const inside = (root: string) => {
+      const r = realpathOfDeepestExisting(path.resolve(root));
+      return real === r || real.startsWith(r + path.sep);
+    };
+    if (![...this.cfg.allowedRoots, path.dirname(this.p.sessions), os.tmpdir(), '/tmp'].some(inside)) throw new Error(`${abs} is outside the folders this machine lets the office read`);
+    // Never the office's own secrets on this machine, wherever the roots reach.
+    if (/(^|\/)(config\.json|mcp\.json|settings\.json|state\.json|outbox\.json|vault(\.mjs)?|\.claude\.json|\.credentials\.json)$/.test(real) && (inside(path.dirname(this.p.sessions)) || /\/\.claude[^/]*\//.test(real))) throw new Error('that file is not one to attach');
+    const st = fs.statSync(real);
+    if (!st.isFile()) throw new Error(`${abs} is not a file`);
+    const length = Math.max(0, Math.min(Number(p.length) || 0, 2 * 1024 * 1024, st.size - (Number(p.offset) || 0)));
+    const buf = Buffer.alloc(length);
+    if (length) {
+      const fd = fs.openSync(real, 'r');
+      try {
+        fs.readSync(fd, buf, 0, length, Number(p.offset) || 0);
+      } finally {
+        fs.closeSync(fd);
+      }
+    }
+    return { dataBase64: buf.toString('base64'), size: st.size, name: path.basename(real) };
   }
 
   /** A Claude config folder as the owner wrote it (`~/.claude-2`) → where it is on this machine. Only inside this user's home. */

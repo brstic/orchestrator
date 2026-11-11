@@ -7,6 +7,7 @@ import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
 import { act, ask } from '../core.tsx';
 import { registerPanel } from './index.tsx';
+import { PendingFiles, TaskFiles, uploadFile } from './task-files.tsx';
 import './panels-work.css';
 
 type PanelProps = { arg: string | null; onClose: () => void };
@@ -307,6 +308,8 @@ function TaskCreate({ employeeId, onClose }: { employeeId: string | null; onClos
     released ? '' : 'kept in the backlog',
   ].filter(Boolean);
 
+  const [files, setFiles] = useState<File[]>([]);
+
   const submit = async (ev: FormEvent) => {
     ev.preventDefault();
     if (!projectId || !title.trim() || busy) return;
@@ -321,10 +324,15 @@ function TaskCreate({ employeeId, onClose }: { employeeId: string | null; onClos
         assigneeId: assigneeId || null,
         roleHint: assigneeId ? null : roleHint || null,
         dependsOn,
-        released,
+        // With files, the task is held until they are in the office: the employee gets them with the task, not after.
+        released: released && files.length === 0,
         ...(requiresReview === null ? {} : { requiresReview }),
       }),
     );
+    if (created && files.length) {
+      for (const f of files) await run(() => uploadFile(created.id, f));
+      if (released) await run(() => api('POST', '/tasks/release', { ids: [created.id] }));
+    }
     if (created) {
       s.toast(`${created.key} created`, 'success');
       s.openPanel('task', created.id);
@@ -386,6 +394,9 @@ function TaskCreate({ employeeId, onClose }: { employeeId: string | null; onClos
           <Field label="Description" wide>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Context, constraints, where to look. This goes into the prompt as written." />
           </Field>
+          <div className="field-wide">
+            <PendingFiles files={files} onChange={setFiles} />
+          </div>
           {/* What most tasks leave as it is stays folded away; the line says what it holds. */}
           <details className="pc-more field-wide" open={more} onToggle={(ev) => setMore((ev.currentTarget as HTMLDetailsElement).open)}>
             <summary>
@@ -535,6 +546,8 @@ function TaskOverview({ task, onClose, onShowChanges }: { task: Task; onClose: (
             </Button>
           </div>
         )}
+
+        <TaskFiles task={task} />
 
         {task.status === 'BLOCKED' && (
           <div className="card col">
@@ -758,6 +771,7 @@ function TaskEvidence({ task }: { task: Task }) {
   const f = task.friction;
   return (
     <div className="col" style={{ gap: 4 }}>
+      <TaskFiles task={task} only="evidence" />
       <Section title="Verification" provenance={v?.provenance}>
         {v ? (
           <div className="col">

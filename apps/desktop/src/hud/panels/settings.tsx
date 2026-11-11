@@ -647,6 +647,10 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                     Off: the whip is only for show. On: cracking it at an employee who is waiting for a permission approves that request — for whoever may decide it anyway, and on the record as theirs, like an approval from the Inbox.
                     It approves whatever they asked: look at the request first.
                   </Toggle>
+                  <Toggle checked={settings.employeesBrowser !== false} onChange={(employeesBrowser) => void save({ employeesBrowser })} title="Employees have a browser">
+                    On: on machines where a browser for employees is installed (Machines shows which), every session gets one of its own — headless, empty at each start — to look at what it builds, read documentation and take the screenshots it
+                    leaves as evidence. A page an employee opens can say anything, and what a page says can steer a model: leave this off for work that must not touch the web. Takes effect for a session the next time it starts.
+                  </Toggle>
                   <Toggle checked={settings.accountFailover !== false} onChange={(accountFailover) => void save({ accountFailover })} title="Move employees to another Claude account when theirs runs out">
                     On: when the Claude account an employee runs on has used up its allowance and the same machine has another account with room, the employee is put on that one and their session starts again there, so nobody waits for a reset.
                     Off: they wait. Accounts are added in Company → Claude.

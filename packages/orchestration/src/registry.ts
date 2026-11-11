@@ -1253,8 +1253,9 @@ export class SessionRegistry {
       permissions: { allow: perms.allow, deny: perms.deny, ask: perms.ask },
       allowedTools: [],
       disallowedTools: [],
-      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available()),
+      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available(), this.eng.attachments.available(), this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser),
       mcp: { url: `${this.core.publicUrl}/mcp`, token: mcpToken },
+      browser: this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser,
       strictMcp: !this.core.settings.workersInheritMcp,
       // On `auto` the owner can choose to leave even these to Claude Code's auto mode.
       highRiskPatterns: employee.autonomy === 'auto' && !this.core.settings.autoAsksHighRisk ? [] : [...DEFAULT_HIGH_RISK_PATTERNS, ...(project?.policy.highRiskPatterns ?? [])],
