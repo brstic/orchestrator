@@ -999,7 +999,7 @@ export class SessionRegistry {
       permissions: { allow: perms.allow, deny: perms.deny, ask: perms.ask },
       allowedTools: [],
       disallowedTools: [],
-      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false),
+      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available()),
       mcp: { url: `${this.core.publicUrl}/mcp`, token: mcpToken },
       strictMcp: !this.core.settings.workersInheritMcp,
       // On `auto` the owner can choose to leave even these to Claude Code's auto mode.

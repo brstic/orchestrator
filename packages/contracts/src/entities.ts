@@ -1416,6 +1416,12 @@ export interface OwnerSettings {
    */
   employeesManageBoard?: boolean;
   /**
+   * true (default): where MemPalace is installed on the office's own machine, the office keeps a long memory in it —
+   * finished tasks, answers, resolved blockers, lessons, meeting decisions, employees' notes — and employees can ask it.
+   * false: nothing is filed and nothing is recalled (what is already filed stays where it is).
+   */
+  longMemory?: boolean;
+  /**
    * true (default): an employee on `auto` still needs the owner's approval for commands that match
    * the high-risk list (pushes, sudo, deploys, broad deletions, …). false: those go to Claude Code's
    * auto mode like everything else.

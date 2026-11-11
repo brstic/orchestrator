@@ -432,6 +432,22 @@ export const VAULT_TOOLS: McpToolSpec[] = [
 ];
 
 /**
+ * The office's long memory, for employees (shown only where the office has one: MemPalace on its own machine).
+ */
+export const MEMORY_TOOLS: McpToolSpec[] = [
+  {
+    name: 'recall',
+    description: 'Ask the office\'s long memory a question in plain words: earlier tasks and how they went, answers the boss gave, blockers and what resolved them, lessons, meeting decisions, colleagues\' notes. It finds by meaning, in any language. Use it before starting something that may have been done, decided or tried here before. What comes back may be out of date: check before relying on it.',
+    inputSchema: { type: 'object', properties: { query: str('What you want to know, as a question or a few words') }, required: ['query'] },
+  },
+  {
+    name: 'remember',
+    description: 'Write down, for whoever works here later, something that should outlive this session: a decision and its reason, how something in this project really works, what was tried and dropped and why. Not a log of what you did (finished tasks are remembered by themselves), and never a credential (those go to the vault).',
+    inputSchema: { type: 'object', properties: { about: str('A few words: the subject'), note: str('The note itself, complete enough to be understood without this conversation') }, required: ['note'] },
+  },
+];
+
+/**
  * Tools only an employee with the `foreman` role may use (the handlers refuse anyone else, and
  * nobody else is shown them). With these a foreman's session supervises the office; none of them
  * can approve a permission request or touch anybody's terminal.

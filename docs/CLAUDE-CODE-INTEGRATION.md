@@ -132,6 +132,18 @@ The Orchestrator MCP server is an HTTP endpoint on the server (`POST /mcp`, JSON
 
 `ask_boss` holds the tool call open for up to four minutes (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` and `MCP_TOOL_TIMEOUT` are raised in the worker's environment). If you answer later, the answer is delivered into the session as a message, and `wait_for_answer` lets the agent keep waiting.
 
+### The long memory (MemPalace)
+Where MemPalace is installed beside the office program (`<install folder>/mempalace-venv`, or `ORCH_MEMPALACE_BIN`), the office keeps a long memory in it (`packages/orchestration/src/memory.ts`) and every employee is shown two more tools (`MEMORY_TOOLS`):
+
+- `recall { query }` — a question in plain words; the closest records come back (earlier tasks and how they went, the owner's answers, resolved blockers, lessons, meeting decisions, colleagues' notes), each with how close it is. Found by meaning, across languages.
+- `remember { about?, note }` — a note for whoever works here later. A credential in it goes to the vault first.
+
+The office files by itself: a task when it is DONE (what was asked, what was reported, files, verification, review, friction), an answered question (never a permission request), a blocker when it is resolved, a lesson when it is in use, a meeting's decision. Nothing from a member's own computer is filed. A task is handed over with up to three records close to its subject ("From the office's memory — …"), if the memory answers within twelve seconds; otherwise without.
+
+How it is run: the office writes each record as a Markdown file under `<data folder>/palace/records/<room>/` and calls MemPalace's command line — `mine` (twenty seconds after the last record, one run for all of them) and `search`. **One MemPalace process at a time**, each with a time limit; the multilingual model (`embeddinggemma`), four threads, batches of four. Measured on the office's server with MemPalace 3.11.0: a search about 4.5 s, filing two records about 40 s the first time (the model is loaded for every call — nothing stays in memory between calls). A failure or a timeout is skipped and shown in Settings → Growth; the office never waits for its memory.
+
+Run end to end with a stand-in for the MemPalace program (`tests/e2e/23-long-memory.test.ts`, `tests/fixtures/fake-mempalace.mjs`) and by hand with the real one on the server (STATUS). **Not verified with real Claude Code:** whether employees ask before starting and what they choose to write down.
+
 ### The vault
 Three tools and a helper (`VAULT_TOOLS` in `packages/integrations/src/mcp.ts`; `vaultHelper` in `packages/execution/src/claude.ts`):
 

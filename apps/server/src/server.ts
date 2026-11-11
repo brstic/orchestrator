@@ -34,6 +34,24 @@ export interface ServerOptions {
   allowInsecureRemote?: boolean;
   timings?: Partial<Timings>;
   quiet?: boolean;
+  /** The `mempalace` program for the office's long memory. Absent: looked for (see `findMemPalace`); null: none. */
+  memoryBin?: string | null;
+}
+
+/**
+ * Where MemPalace is, if it is on this machine: `ORCH_MEMPALACE_BIN`, else the environment the office's own
+ * installer makes beside the program (`<install folder>/mempalace-venv`). It is not looked for on PATH: a
+ * MemPalace somebody installed for themselves is theirs, with a palace of their own.
+ */
+function findMemPalace(): string | null {
+  const fromEnv = process.env.ORCH_MEMPALACE_BIN;
+  if (fromEnv) return fromEnv === 'none' ? null : fromEnv;
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  for (const root of [path.resolve(here, '../../../..'), path.resolve(here, '../../..'), path.resolve(here, '../..')]) {
+    const bin = path.join(root, 'mempalace-venv', 'bin', 'mempalace');
+    if (fs.existsSync(bin)) return bin;
+  }
+  return null;
 }
 
 export interface RunningServer {
@@ -111,7 +129,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const agents = new AgentHub(log);
   const clients = new ClientHub(log);
   const publicUrl = (opts.publicUrl ?? `${scheme}://${isLoopbackHost(opts.host) ? '127.0.0.1' : opts.host}:${opts.port}`).replace(/\/+$/, '');
-  const engine = new Engine({ store, agents, publicUrl, timings: opts.timings, log, vaultKeyFile: path.join(opts.dataDir, 'vault.key') }, { send: (clientId, msg) => clients.send(clientId, msg) });
+  const engine = new Engine({ store, agents, publicUrl, timings: opts.timings, log, vaultKeyFile: path.join(opts.dataDir, 'vault.key'), memory: { bin: opts.memoryBin === undefined ? findMemPalace() : opts.memoryBin, dir: path.join(opts.dataDir, 'palace') } }, { send: (clientId, msg) => clients.send(clientId, msg) });
   agents.attach(engine);
   clients.attach(engine);
   // The office's hi-fi: what is on is told to every window, and follows the list of stations when an owner edits it.
@@ -446,6 +464,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       const { entry, value } = engine.vault.use(param(req, 'id'), vaultActor(req), 'revealed');
       return { name: entry.name, value };
     });
+    // ── the long memory: whether there is one, and asking it (as an employee would) ──
+    api.get('/memory', async () => engine.memory.status());
+    api.post('/memory/recall', async (req) => ({ hits: await engine.memory.recall(String(body(req).query ?? ''), { results: 8, timeoutMs: 45_000 }) }));
     api.get('/roles', async () => ROLE_CATALOGUE);
     api.get('/audit', async (req) => store.recentAudit(Number(query(req).limit) || 200));
     api.get('/events', async (req) => {

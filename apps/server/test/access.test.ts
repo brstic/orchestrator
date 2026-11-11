@@ -207,6 +207,12 @@ test('the vault: whoever works here sees what it holds and may add; a value, a c
   assert.match(mayCall(engine, ana, 'POST', '/vault/v1/reveal', null).reason!, /owner/i);
 });
 
+test('the long memory: everyone may see whether there is one; asking it is for those who work here', () => {
+  for (const who of [mila, ana, jovan, vera, root]) assert.equal(call(who, 'GET', '/memory'), true);
+  assert.equal(call(mila, 'POST', '/memory/recall'), false, 'a visitor does not search what was said and done');
+  for (const who of [ana, jovan, vera, root]) assert.equal(call(who, 'POST', '/memory/recall'), true);
+});
+
 test('routines: set by whoever may work with the employee, read by whoever may read them', () => {
   // A visitor reads the shared ones and changes none.
   assert.ok(call(mila, 'GET', '/routines'));

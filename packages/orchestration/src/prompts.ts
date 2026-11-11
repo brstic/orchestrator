@@ -129,7 +129,7 @@ const AUTONOMY_GUIDE: Record<AutonomyLevel, string> = {
   auto: 'You work on your own. The boss does not want to be asked for permission: do the work end to end — implement, test, fix, commit — inside your folder and your task\'s scope, and decide routine things yourself. Go to the boss (ask_boss) only when you genuinely need direction: a product decision, a missing requirement, or a choice between approaches that is theirs to make.',
 };
 
-export function systemPromptFor(employee: Employee, project: Project | undefined, companyName: string, hasMcp: boolean, playbook = '', manageBoard = false): string {
+export function systemPromptFor(employee: Employee, project: Project | undefined, companyName: string, hasMcp: boolean, playbook = '', manageBoard = false, longMemory = false): string {
   const role = roleByKey(employee.roleKey);
   const lines: string[] = [];
   lines.push(`# Orchestrator workplace context`);
@@ -193,6 +193,11 @@ export function systemPromptFor(employee: Employee, project: Project | undefined
             ]
           : []),
         `  • Credentials — passwords, tokens, keys — live in the office's vault, not in the conversation. vault_list shows what is there (names, never values). To USE one, do not ask for its value: put $("$ORCH_VAULT" get NAME) where a command needs it, e.g. curl -H "Authorization: Bearer $("$ORCH_VAULT" get github-deploy-token)" …  — the value goes into the command and never onto your screen. A message that says {{vault:NAME}} means that credential. When you are given, find or create a credential that is not in the vault yet, put it there (vault_store, or straight from a command: … | "$ORCH_VAULT" put NAME) under a name that says what it opens (service-account-kind), and from then on refer to it by that name. Never print a credential and never write one into a message, a report, a task or a commit.`,
+        ...(longMemory
+          ? [
+              `  • The office has a long memory of what was done, decided and learned here before you. recall — ask it in plain words before you start something that may have been done, decided or tried before ("how do we deploy the shop", "why was the cache removed"). remember — write down what should outlive this session: a decision and its reason, how something really works, what was tried and dropped. Finished tasks, the boss's answers and resolved blockers are remembered by themselves.`,
+            ]
+          : []),
         `  • record_lesson / get_playbook — you keep a playbook of lessons from your own work here. When something goes wrong and you learn how to avoid it, record it; it is given back to you on future tasks.`,
       ].join('\n'),
     );

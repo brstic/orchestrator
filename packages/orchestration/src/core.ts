@@ -66,6 +66,10 @@ export interface Timings {
   foremanIdleMs: number | null;
   /** Someone has waited this long for a colleague who has been doing nothing for as long: the foreman is called. */
   foremanWaitingMs: number;
+  /** How long records wait before the long memory files them (one run for everything that came in meanwhile). */
+  memoryMineDelayMs?: number;
+  /** How long a task's hand-over waits for the long memory before going without it. */
+  memoryRecallMs?: number;
   /** The shortest gap between two foreman rounds, whatever the owner's setting says. */
   foremanMinGapMs: number;
   /** A round that was neither finished nor ended with its turn is given up on after this long. */
@@ -132,6 +136,8 @@ export interface EngineOptions {
   log?: (level: 'info' | 'warn' | 'error', msg: string) => void;
   /** Where the vault's key is kept (a file made on first use). Without it, what the vault holds lasts until the process ends. */
   vaultKeyFile?: string | null;
+  /** The long memory: the `mempalace` program and the folder its records live in. Absent: none. */
+  memory?: { bin: string | null; dir: string | null };
 }
 
 export interface BusEvents {
@@ -210,6 +216,7 @@ const DEFAULT_SETTINGS: OwnerSettings = {
   nlFallback: false,
   workersInheritMcp: false,
   employeesManageBoard: true,
+  longMemory: true,
   autoAsksHighRisk: true,
   projectZones: false,
   approachZoom: false,

@@ -146,6 +146,24 @@ Owners can do the member part from the app as well: Menu → Access.
 
 **Sessions that sleep.** Shared sessions with no work for 30 minutes are stopped by the office to free memory (Settings → Employees → *Put idle sessions to sleep after*; 0 = never). So `tmux ls` on the server shows only the employees who are awake: a missing `orch-<name>-<id>` session of someone shown as *Sleeping* in the office is expected, not a crash. It comes back under the same name when they are next needed. The log line is `session.asleep` in the audit (actor `office`); a wake is `session.resumed` by `office`. To see what the setting gives back, compare `free -m` (or the Machines panel) before and after an idle half hour — this has not been measured yet.
 
+### The long memory (MemPalace)
+The office's long memory is MemPalace (`github.com/MemPalace/mempalace`), a Python program, installed on the server in an environment of its own beside the office program — a deploy does not touch it:
+
+```sh
+python3 -m venv ~/orchestrator-office/mempalace-venv
+~/orchestrator-office/mempalace-venv/bin/pip install mempalace      # 3.11.0 on 2026-11-11; about 520 MB with its libraries
+systemctl --user restart orchestrator-office                        # the office finds it at start
+```
+
+At its first start the office sets up `~/.orchestrator-office/server/palace/` (`records/` — what the office wrote, one Markdown file each; `palace/` — MemPalace's own store; `config/` — its settings), so it is inside the office's backup. The embedding model is downloaded once to `~/.cache/huggingface` (about 315 MB). Settings → Growth → *Long memory* shows the version, how many records were written and the last problem. To upgrade: `pip install -U mempalace` in that environment and restart. To remove: stop the office, delete `mempalace-venv` (and `palace/` if the memory should go too), start it. By hand, the way the office calls it:
+
+```sh
+D=~/.orchestrator-office/server/palace; M=~/orchestrator-office/mempalace-venv/bin/mempalace
+MEMPALACE_CONFIG_DIR=$D/config MEMPALACE_EMBEDDING_MODEL=embeddinggemma MEMPALACE_DISABLE_UPDATE_CHECK=1 $M --palace $D/palace search "how do we deploy the shop" --wing office < /dev/null
+```
+
+(`< /dev/null` matters for `init`: it asks a question when it has someone to ask.) It is not the MemPalace that Ahoy runs in Docker on the same machine; they share nothing.
+
 ### Backup and restore
 The whole office is `~/.orchestrator-office/server/` (database, certificate, credentials, and `vault.key` — the key to everything in the vault; a backup without it cannot open the vault). The certificate matters: with a new one every invitation has to be made again.
 

@@ -130,6 +130,8 @@ const RULES: Rule[] = [
   rule('POST', '/meetings/:id/cancel', 'work'),
   rule('POST', '/lessons', 'work'),
   // ── the vault: whoever works in the office sees what it holds (names) and may add; values and removing are an owner's ──
+  rule('GET', '/memory', 'read'),
+  rule('POST', '/memory/recall', 'work'),
   rule('GET', '/vault', 'work'),
   rule('POST', '/vault', 'work'),
   rule('PATCH', '/lessons/:id', 'work'),

@@ -6,7 +6,8 @@ A 3D office in which real Claude Code CLI sessions (in tmux) are employees. pnpm
 1. `docs/STATUS.md` — what is shipped, what is in progress, known problems. **Start here.**
 2. The active plan under `docs/plans/` (currently `UPDATE-central-office.md`).
 3. `docs/HANDOVER.md` — the whole loop for someone new to this repository: what you need, test, commit, push, deploy. `docs/OPERATIONS.md` — where the server and clients run and how each is updated (`pnpm deploy:server`). `docs/DEVELOPMENT.md` — how to build and test, and the rules that protect the live office.
-4. `docs/DECISIONS.md` — why things are the way they are. Add an entry when you decide something a later reader would otherwise have to guess.
+4. The page of the feature you are about to touch, where there is one (`docs/MEMORY.md`, `docs/VAULT.md`; `docs/README.md` is the map). A feature of that size gets such a page in the same piece of work.
+5. `docs/DECISIONS.md` — why things are the way they are. Add an entry when you decide something a later reader would otherwise have to guess.
 
 ## Keep the docs true (standing rule)
 Every change that alters behaviour, finishes or starts a plan item, or changes how to build/test/ship **updates the Markdown in the same piece of work**: tick the plan item, update `docs/STATUS.md`, add a line to `docs/CHANGELOG.md`, and touch `ARCHITECTURE.md` / `SECURITY.md` / `INSTALL.md` when their subject changed. Docs describe what the code does now, not what was intended. If something was not verified, say so there.

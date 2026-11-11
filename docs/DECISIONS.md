@@ -218,3 +218,14 @@ The owner asked for one place on the server where all credentials are kept: empl
 - **The key is a file beside the database.** Encryption protects a copied database and a leaked backup of it without the key; it does not protect against someone who can read the server's data folder. A passphrase typed at every start was rejected: the office has to come back by itself after a reboot.
 - **Deleting is real**, and says so: the value is gone from here; whatever it opened still opens until it is changed there.
 
+## The long memory is MemPalace, behind two tools of the office's own (2026-11-11)
+The owner chose way A of `plans/IDEAS-memory-from-mempalace.md`: install MemPalace on the server and give it to the employees.
+
+- **MemPalace itself, not a copy of its ideas** — the owner's decision. It finds by meaning and across languages (the owner writes Serbian, the records are mostly English), which a word search of our own would not.
+- **Behind `recall` and `remember`, not as a second MCP server in every session.** MemPalace has an MCP server of its own with some 47 tools. Giving that to every employee would put 47 tool descriptions into every session, start a Python process with the embedding model per session on a shared server, and leave members' own computers without it. Instead the office's server talks to MemPalace and employees talk to the office: two tools, one palace, every machine, the office's own rules about what is whose, and the vault in front.
+- **Through its command line, one call at a time.** Each call loads the model and lets it go: about 4.5 s for a search, nothing resident. The owner's server is shared and has frozen under memory pressure before (Ahoy's notes); a daemon holding the model was left for when the wait is felt.
+- **The office files; the employee asks.** What is worth remembering is filed without anybody deciding to: finished tasks, answers, resolved blockers, lessons, decisions. `remember` is for what none of those captures. A task is handed over with what is close to its subject, because an employee who does not know there is something to ask does not ask.
+- **Fail open.** A slow or broken memory costs a task nothing: the hand-over waits twelve seconds and goes on without.
+- **Not filed:** anything from a member's own computer; permission requests; terminal output. Records go through the redactor, and notes through the vault's capture.
+- **The multilingual model**, 300 MB against 30: tried both on the server — the small one scored a Serbian question at 0.03 against the English record it should find; the multilingual one at 0.60.
+

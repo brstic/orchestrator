@@ -621,6 +621,11 @@ export class TaskManager {
         if (task.evidence.review?.verdict === 'changes_requested') fb.push(`Review (${task.evidence.review.by === 'owner' ? 'the boss' : (this.core.employees.get(task.evidence.review.reviewerId)?.name ?? 'reviewer')}): ${task.evidence.review.comments}`);
         if (task.evidence.merge && !task.evidence.merge.ok) fb.push(`Merge into ${task.evidence.merge.into} conflicted: ${task.evidence.merge.detail}\nIn your worktree run "git merge ${project.integrationBranch}", resolve the conflicts, commit, re-run the tests and call complete_task again.`);
         text = taskPrompt(task, project, deps, fb.length ? fb.join('\n\n') : null, [this.eng.improver.capture.onboardingBlock(employee, project), this.eng.improver.playbookBlock(employee, project.id, true, task)].filter(Boolean).join('\n\n'));
+        // What the office already knows about this subject, if its memory has something close — and only if it answers in time.
+        if (this.eng.memory.available() && !this.core.hosts.get(project.hostId ?? '')?.memberId) {
+          const remembered = await this.eng.memory.recallText(`${task.title}. ${truncate(task.description, 300)}`, { results: 3, timeoutMs: this.core.timings.memoryRecallMs ?? 12_000, chars: 500 }).catch(() => '');
+          if (remembered) text += `\n\nFrom the office's memory — earlier work, answers and decisions that look related. They may be out of date: check before you rely on one, and use recall to ask for more.\n${remembered}`;
+        }
       }
       this.eng.comms.deliver(employee.id, 'TASK', task.id, { kind: 'task', id: task.id }, text);
     } catch (e) {
@@ -754,6 +759,7 @@ export class TaskManager {
       this.history(task, `Unblocked and requeued: ${note}`, actor);
       this.core.put('task', task);
     }
+    this.eng.memory.unblocked(task, previous, note, by ? by.name : 'the boss');
     this.core.event({ type: 'task.unblocked', source: by ? 'mcp' : 'owner', summary: by ? `${by.name} unblocked ${task.key}` : `${task.key} was unblocked`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, note } });
     this.schedule();
     return task;

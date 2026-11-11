@@ -11,6 +11,8 @@
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Build, test, ship; tools for measuring; rules | The workflow changes |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Processes, packages, protocols, data | Structure changes |
 | [ACCESS.md](ACCESS.md) | Members, roles, shared vs personal: who may do what | A permission changes |
+| [MEMORY.md](MEMORY.md) | The long memory (MemPalace): what is remembered, how employees ask it, how the program is run, installed, tested and extended | Anything about the memory changes |
+| [VAULT.md](VAULT.md) | The vault: how credentials get in and out, what is recognised, where the code is, its limits | Anything about the vault changes |
 | [SECURITY.md](SECURITY.md) | Threat model and what protects what | Anything security-relevant changes |
 | [SECURITY-REVIEW.md](SECURITY-REVIEW.md) | Review against the original brief's security section | A review is repeated |
 | [INSTALL.md](INSTALL.md) | Installing and running: local office, central server, clients | Setup steps change |

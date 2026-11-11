@@ -9,6 +9,7 @@ import { Foreman } from './foreman.ts';
 import { HookReceiver } from './hook-receiver.ts';
 import { Improver } from './improve.ts';
 import { Vault } from './vault.ts';
+import { Memory } from './memory.ts';
 import { MeetingManager } from './meetings.ts';
 import { buildMcpServer, type McpContext } from './mcp-tools.ts';
 import { EmployeeRegistry, HostRegistry, SessionRegistry, type EmployeeInput } from './registry.ts';
@@ -45,6 +46,7 @@ export class Engine {
   readonly sleeper: Sleeper;
   readonly waits: Waits;
   readonly vault: Vault;
+  readonly memory: Memory;
   readonly mcp: McpServerOptions<McpContext>;
   private housekeeping: NodeJS.Timeout | null = null;
 
@@ -64,6 +66,20 @@ export class Engine {
     this.sleeper = new Sleeper(this);
     this.waits = new Waits(this);
     this.vault = new Vault(this.core, opts.vaultKeyFile ?? null);
+    this.memory = new Memory(this, opts.memory ?? { bin: null, dir: null });
+    // What is worth remembering is filed as it happens: a task that is done, an answer that was given, a lesson in use, a meeting's decision.
+    this.core.bus.on('entity', (kind, op, data) => {
+      if (op !== 'upsert' || !this.memory.available()) return;
+      if (kind === 'settings') return void this.memory.caughtUp();
+      try {
+        if (kind === 'task') this.memory.task(data);
+        else if (kind === 'question') this.memory.answer(data);
+        else if (kind === 'lesson') this.memory.lesson(data);
+        else if (kind === 'meeting') this.memory.meeting(data);
+      } catch (e) {
+        this.core.log('warn', `long memory: ${(e as Error).message}`);
+      }
+    });
     this.core.gateway = new TerminalGateway({
       rpc: (hostId, rpc, timeoutMs) => this.core.agents.rpc(hostId, rpc, timeoutMs),
       locate: (sessionId) => {
@@ -100,6 +116,7 @@ export class Engine {
 
   /** Reconstruct runtime state from the database after a (re)start. */
   start(): void {
+    void this.memory.start();
     this.sessions.restore();
     this.waits.restore();
     this.comms.restore();

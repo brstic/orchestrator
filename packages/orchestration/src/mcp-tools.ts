@@ -1,10 +1,11 @@
 import type { AgentSession, Employee, Task } from '@orchestrator/contracts';
 import { ACTIVITY_LABEL, truncate } from '@orchestrator/contracts';
 import type { McpServerOptions, McpToolHandler } from '@orchestrator/integrations';
-import { BOARD_TOOLS, FOREMAN_TOOLS, ORCHESTRATOR_TOOLS, VAULT_TOOLS } from '@orchestrator/integrations';
+import { BOARD_TOOLS, FOREMAN_TOOLS, MEMORY_TOOLS, ORCHESTRATOR_TOOLS, VAULT_TOOLS } from '@orchestrator/integrations';
 import type { Engine } from './engine.ts';
 import { FOREMAN_ROLE } from './foreman.ts';
 import { answerLine } from './prompts.ts';
+import { RELEVANT } from './memory.ts';
 
 /** Who is calling: resolved from the session's bearer token, never from tool arguments. */
 export interface McpContext {
@@ -396,21 +397,43 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     // The helper's call: the value goes to the command that asked, and the use is on the record.
     vault_read: async (a, { employee }) => eng.vault.use(String(a.name ?? ''), { kind: 'employee', id: employee.id, name: employee.name }).value,
 
+    // ── The long memory ──
+
+    recall: async (a) => {
+      if (!eng.memory.available()) return err('This office has no long memory (MemPalace is not installed on its machine, or the owner switched it off).');
+      const query = String(a.query ?? '').trim();
+      if (query.length < 3) return err('Ask a question, or give a few words to look for.');
+      const hits = await eng.memory.recall(query, { results: 6, timeoutMs: 45_000 });
+      const close = hits.filter((h) => h.score >= RELEVANT);
+      if (!close.length) return hits.length ? `Nothing in the office's memory is close to that. The nearest thing is about something else: "${truncate(hits[0]!.text.split('\n')[0] ?? '', 120)}".` : "The office's memory has nothing on that (or it did not answer in time).";
+      return [`From the office's memory, closest first. These are records of what happened and was said; they may be out of date.`, ...close.map((h, i) => `${i + 1}. (${h.room}, match ${h.score.toFixed(2)})\n${truncate(h.text, 1400)}`)].join('\n\n');
+    },
+
+    remember: async (a, { employee }) => {
+      if (!eng.memory.available()) return err('This office has no long memory (MemPalace is not installed on its machine, or the owner switched it off).');
+      const note = String(a.note ?? '').trim();
+      if (note.length < 20) return err('Write the note so that it can be understood without this conversation: what, and why.');
+      // A credential in a note goes where credentials go.
+      const kept = eng.vault.capture(note, { kind: 'employee', id: employee.id, name: employee.name }, [employee.name]);
+      return eng.memory.note(employee, String(a.about ?? ''), kept.text) ? 'Written down. It can be found with recall from now on (give it a moment to be filed).' : err("What is said on a member's own computer stays there: it is not written into the office's memory.");
+    },
+
     // Foreman-only tools (each refuses a caller who is not a foreman).
     ...eng.foreman.handlers(),
   };
 
   const foremanTools = new Set(FOREMAN_TOOLS.map((t) => t.name));
   const boardTools = new Set(BOARD_TOOLS.map((t) => t.name));
+  const memoryTools = new Set(MEMORY_TOOLS.map((t) => t.name));
   return {
     name: 'orchestrator',
     version: '0.1.0',
     instructions:
       'Orchestrator connects you to the virtual office you work in. Use these tools to learn your task, report real progress, ask the boss for decisions, collaborate with teammates and declare work complete. Completion is verified independently, so report honestly.',
-    tools: [...ORCHESTRATOR_TOOLS, ...BOARD_TOOLS, ...VAULT_TOOLS, ...FOREMAN_TOOLS],
+    tools: [...ORCHESTRATOR_TOOLS, ...BOARD_TOOLS, ...VAULT_TOOLS, ...MEMORY_TOOLS, ...FOREMAN_TOOLS],
     handlers,
     // Only a foreman is shown the foreman's tools; everyone else's tool list (and prompt) stays as small as before.
     // The board tools are shown while the owner leaves the board to the employees (a foreman assigns with its own tool).
-    listed: (tool, { employee }) => tool.name !== 'vault_read' && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
+    listed: (tool, { employee }) => tool.name !== 'vault_read' && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
   };
 }

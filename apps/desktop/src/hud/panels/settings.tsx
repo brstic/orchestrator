@@ -251,6 +251,25 @@ function ControlsSection({ capturing, setCapturing }: { capturing: string | null
   );
 }
 
+/** The office's long memory: whether there is one, how much it holds, and the switch. */
+function LongMemory({ settings }: { settings: OwnerSettings }) {
+  const [st, setSt] = useState<{ available: boolean; version: string | null; filed: number; lastFiledAt: string | null; lastError: string | null } | null>(null);
+  useEffect(() => {
+    const load = () => api<typeof st>('GET', '/memory').then(setSt, () => undefined);
+    void load();
+    const t = window.setInterval(load, 10_000);
+    return () => window.clearInterval(t);
+  }, []);
+  const installed = !!st?.version;
+  return (
+    <Toggle checked={settings.longMemory !== false} onChange={(longMemory) => void save({ longMemory })} title="Long memory (MemPalace)">
+      {installed
+        ? `The office writes down what is done, decided and learned — finished tasks, your answers, resolved blockers, lessons, meeting decisions, employees' notes — and employees can ask it in plain words (recall). MemPalace ${st!.version} on the office's machine · ${st!.filed} record${st!.filed === 1 ? '' : 's'} so far${st!.lastError ? ` · last problem: ${st!.lastError}` : ''}.`
+        : 'Not installed on the office\'s machine, so there is no long memory: this switch does nothing yet. (MemPalace beside the office program — see docs/OPERATIONS.md.)'}
+    </Toggle>
+  );
+}
+
 function ImproveSection({ settings }: { settings: OwnerSettings }) {
   const si = settings.selfImprovement;
   const set = (patch: Partial<SelfImprovementSettings>) => void save({ selfImprovement: patch });
@@ -260,6 +279,7 @@ function ImproveSection({ settings }: { settings: OwnerSettings }) {
       <Toggle checked={si.enabled} onChange={(enabled) => set({ enabled })} title="Learn from real work">
         The office keeps what it learns from finished work, gives it to employees with their next tasks, and looks for better ways of working. Off: nothing is learned, used or suggested.
       </Toggle>
+      <LongMemory settings={settings} />
       {!off && (
         <div>
           <div className="section-title">What the office does with what it learns</div>
