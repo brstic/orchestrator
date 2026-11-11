@@ -20,7 +20,7 @@ test('an office without connected members is the stored layout itself', () => {
 });
 
 test('one room per connected member, in the order the hosts are given', () => {
-  for (const counts of [[3], [3, 0], [1, 7, 0], [2, 2, 2, 2, 2]]) {
+  for (const counts of [[3], [3, 0], [1, 7, 0], [2, 2, 2, 2]]) {
     const office = withMemberRooms(layout, hosts(counts));
     assert.deepEqual(office.rooms.map((r) => r.hostId), counts.map((_c, n) => `host-${n}`));
     assert.equal(office.unplaced.length, 0);
@@ -66,7 +66,7 @@ test('the stored office does not move: rooms, desks, decorations, walls of the b
 
 test('rooms stand outside the building, against it, and never overlap each other', () => {
   const office = withMemberRooms(layout, hosts([0, 1, 2, 3, 4, 5, 8, 12, 20]));
-  assert.ok(office.rooms.length >= 8, `only ${office.rooms.length} rooms could be attached`);
+  assert.ok(office.rooms.length >= 4, `only ${office.rooms.length} rooms could be attached`);
   for (const [i, r] of office.rooms.entries()) {
     const b = boxOf(r);
     assert.ok(!overlap(b, building), `${r.roomId} overlaps the building`);
@@ -107,7 +107,8 @@ test('the door is on the wall shared with the building, inside the room\'s width
 
 test('desks: at least two, growing by pairs to the cap, all inside their room and clear of each other', () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5, 8, 11, 12, 13, 40].map((n) => memberDeskCount(n)), [2, 2, 2, 4, 4, 6, 8, 12, 12, 14, 20]);
-  const counts = [0, 1, 3, 5, 12, 25];
+  // In two groups: the default office has four places on its shared floor.
+  for (const counts of [[0, 1, 3, 5], [12, 25]]) {
   const office = withMemberRooms(layout, hosts(counts));
   const eff = office.layout as EffectiveLayout;
   const desks = new Map(eff.desks.map((d) => [d.id, d]));
@@ -135,6 +136,7 @@ test('desks: at least two, growing by pairs to the cap, all inside their room an
   for (const [n, c] of counts.entries()) {
     for (let i = 0; i < c; i++) assert.equal(office.deskOf.get(`emp-${n}-${i}`), i < MEMBER_DESK_CAP ? `m:host-${n}:${i + 1}` : undefined);
   }
+  }
 });
 
 test('a room keeps its place and its width when its member hires: it grows away from the building', () => {
@@ -148,6 +150,22 @@ test('a room keeps its place and its width when its member hires: it grows away 
   const a = withMemberRooms(layout, hosts([1, 2, 1])).layout.desks.filter((d) => d.id.startsWith('m:host-1:'));
   const b = withMemberRooms(layout, hosts([1, 11, 1])).layout.desks.filter((d) => d.id.startsWith('m:host-1:'));
   assert.deepEqual(b.slice(0, a.length), a);
+});
+
+test('the boundary: a room hangs off the shared part of the office only — never behind a closed room', () => {
+  const office = withMemberRooms(layout, hosts(Array.from({ length: 30 }, () => 1)));
+  assert.ok(office.rooms.length >= 4, `only ${office.rooms.length} rooms could be attached`);
+  for (const r of office.rooms) {
+    // A step into the building from the door: that floor belongs to no closed room (meeting, server, break, CEO…).
+    const x = r.door.x + (r.side === 'e' ? -0.9 : r.side === 'w' ? 0.9 : 0);
+    const z = r.door.z + (r.side === 'n' ? 0.9 : 0);
+    const closed = layout.rooms.find((o) => !o.open && x > o.x && x < o.x + o.w && z > o.z && z < o.z + o.d);
+    assert.equal(closed, undefined, `the door of ${r.roomId} opens into ${closed?.name ?? closed?.id}`);
+  }
+  // In the default office the whole north wall is closed rooms, so nothing is attached there.
+  assert.ok(!office.rooms.some((r) => r.side === 'n'));
+  // Those who do not fit are reported; nobody is put behind a closed room to make them fit.
+  assert.equal(office.rooms.length + office.unplaced.length, 30);
 });
 
 test('the same input gives the same rooms, whatever was asked before', () => {

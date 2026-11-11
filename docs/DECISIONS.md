@@ -151,6 +151,26 @@ The reasons behind each part are on its page under `docs/learning/`. What was de
 - No ORM: a small document store with SQLite and PostgreSQL back ends.
 - Visual extras and camera behaviour are opt-in (owner preference).
 
+## A member's own computer on Windows: WSL2, started by the app (2026-11-11)
+A collaborator on Windows could use everything shared and had no room: sessions need tmux.
+
+- **The app stays on Windows; the host runs in WSL2.** Running the whole app inside WSL was tried first and is not usable: Electron there gets no graphics card (the GPU process fails and the office is drawn on the CPU). So the window is a Windows program and only what needs tmux is in WSL: the relay, the enrolment and the host agent — the very code that runs on macOS and Linux (`personal-host.cjs`), as a process of its own (`personal-host-cli.cjs`).
+- **The relay runs in WSL too, not in the app.** WSL2 has its own network: a program inside does not reach `127.0.0.1` of Windows, where the app's relay would listen. Inside WSL the agent, Claude Code's MCP client and the relay are on one loopback, as on a Mac.
+- **Nothing to install in WSL for the office.** The three files the host consists of are written into `~/.orchestrator/desktop-host/` on every start, from the app's own copy. That also works for a packaged app, whose files WSL cannot read, and the host can never be older than the app.
+- **One `wsl.exe`, a script on its standard input, no command line.** Quoting through `wsl.exe` differs between versions; a script on stdin needs none. The script finds a Node.js that is new enough (the one on PATH is often the distribution's old one: `~/.local/node22`, nvm, volta and `ORCH_NODE` are tried) and replaces itself with the host, which reads the rest of the same input: the office and **the member's token, which is therefore never on a command line**. Closing that pipe is how the host is told to stop — it also closes when the app dies.
+- **Folders: the WSL home, the Windows profile, and what the person names.** On a Mac the allowed root is the home folder, which is where a person's code is. On Windows the code is usually on a Windows drive, so the profile folder (`/mnt/c/Users/<name>`) is allowed as the home's counterpart; other drives are **not** opened by default — owners can reach into a member's computer, and "every drive" is more than a home folder. `ORCH_PERSONAL_ROOTS` names more (`D:\Work`). Rejected: all of `/mnt`.
+- **Sessions run in WSL, so they see Linux**: Linux tools, the WSL Claude login, Windows files through `/mnt` (slower than WSL's own disk). A project that must run with Windows tools is not served by this.
+
+## Members' rooms: only off the shared floor (2026-11-11)
+With three member computers the third room was attached behind the meeting room: the walls were used in the order west, north, east, and a door into a closed room was accepted when nothing better was on that wall.
+
+- **The boundary is what the door opens into**: a hall, the open floor or reception. A closed room (meeting, operations, server, break, CEO, team) is never walked through to reach someone's room. This follows the stored layout, so it holds for an office arranged differently.
+- **Places are found as before and then filtered**, rather than packed anew for shared doors only: the two ways give the same four places in the default office, and filtering leaves the good rooms exactly where they were.
+- **Fewer places, on purpose: four in the default office instead of ten.** A member computer beyond that gets no room; its employees work and are in every list, and My room says why. Not done, and for the owner to decide: more places within the boundary — the south wall of the open floor would give about three (the entrance wall is not used today, and the drawing code knows three sides), or rooms in a second row.
+
+## Deleting a project on one's own computer (2026-11-11)
+The collaborator asked that whoever a project belongs to can delete it. The decision of the same day ("owners only, wherever the project lives") was made because a delete takes other people's tasks with it. On a member's own computer there are none: work does not cross between the shared office and a member's computer, and other members cannot work there. So `DELETE /projects/:id` is a **work** rule that holds only on the asker's own computer (`onOwn` in `access.ts`); for a shared project, and for one with no machine, it stays an owner's act. Owners delete anything, as before.
+
 ## Deleting a project (2026-11-11)
 The owner asked to be able to delete projects, as an owner. Until then a project could only be paused; `archived` exists as a status but nothing in the app sets it.
 

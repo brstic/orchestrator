@@ -250,6 +250,11 @@ export function App() {
   const unlocked = useMemo(() => unlockedUpgrades(s.milestones), [s.milestones]);
   // The office as it is drawn: the stored layout plus a room for each member whose own computer is connected.
   const office = useMemo(() => officeWithRooms(s, unlocked), [s.layout, s.hosts, s.employees, unlocked]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The My room panel tells a member when the shared floor had no place left for their room.
+  const roomless = (office?.unplaced ?? []).join(',');
+  useEffect(() => {
+    useOffice.setState({ roomless: roomless ? roomless.split(',') : [] });
+  }, [roomless]);
   const people = useMemo(() => personViews(s, office), [s.employees, s.sessions, s.tasks, s.questions, s.meetings, s.projects, s.filter, s.control, office]); // eslint-disable-line react-hooks/exhaustive-deps
   const walks = useMemo(() => walkRequests(s, Date.now()), [s.events, tick]); // eslint-disable-line react-hooks/exhaustive-deps
   // The foreman has no desk: who it is with, and what it is doing, comes from its rounds.

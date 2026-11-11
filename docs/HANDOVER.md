@@ -34,7 +34,7 @@ pnpm desktop               # the desktop app from source: Connect to an office �
 
 `pnpm desktop` is enough to use the office. A packaged app (`node scripts/package.mjs`, macOS on Apple Silicon) is only a convenience; the Windows and Linux bundles are stale and untested.
 
-Your computer gets a room in the office when the app can run sessions on it: it needs macOS or Linux (or WSL2), tmux and Node.js 22.18+. If the room does not appear, **Menu → My room** says why in one line.
+Your computer gets a room in the office when the app can run sessions on it: it needs macOS or Linux, tmux and Node.js 22.18+ — or, on Windows, WSL2 with those inside it (the app itself runs on Windows; see INSTALL.md, "Linux and Windows"). If the room does not appear, **Menu → My room** says why in one line.
 
 ## 4. From a change to the running office
 
@@ -91,7 +91,7 @@ curl -s https://office.sparkcan.com/healthz                                     
 
 There is one `app.old`: a rollback goes back one deploy, not two. The office's state (`~/.orchestrator-office`) is not part of a deploy and is not rolled back; back it up before a change that rewrites stored records (`OPERATIONS.md`, "Backup and restore").
 
-Deploying has only ever been done from the owner's Mac. The script is plain `sh`, `ssh`, `scp` and `tar`, so another Mac or a Linux machine should do — that has not been tried.
+Deploying was done from the owner's Mac, and once (2026-11-11, build `a3aa698`) from a Windows computer: the package built in WSL2 and the script's server-side steps run by hand over `ssh` from Windows, because the SSH key was on the Windows side. The script as it is has not been run anywhere but the Mac; it is plain `sh`, `ssh`, `scp` and `tar`, so another Mac or a Linux machine (or WSL2 with the key in it) should do.
 
 ### The desktop app (rarely)
 

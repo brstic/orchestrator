@@ -169,7 +169,7 @@ Install there (`INSTALL.md` section 0), stop both services, copy `~/.orchestrato
 | App: "the certificate is different" | The server's certificate changed (state folder replaced). Make new invitations |
 | "This invitation is no longer valid" | It was revoked or re-issued: `office-admin status`, then `reinvite` |
 | "This invitation link has been used already, or it is more than a week old" | A link works once. Make another: **Access → New link**, or `reinvite` |
-| "My room" says this computer is not in the office | The reason is written there. Needs tmux, Node.js 22.18+ and Claude Code on that computer; a browser tab or Windows cannot host sessions |
+| "My room" says this computer is not in the office | The reason is written there. Needs tmux, Node.js 22.18+ and Claude Code on that computer — on Windows, inside WSL2 (an app built from `a3aa698` or later; an older one cannot host sessions on Windows). A browser tab cannot host sessions |
 | A shared employee will not start | On the server: is `claude` logged in for `sparkcan` (`claude --version`, then start it once by hand)? `journalctl --user -u orchestrator-office -n 100` |
 | New UI did not appear after a deploy | Reload the window (Cmd/Ctrl+R). `app/BUILD` on the server shows what is deployed |
 | The update made things worse | `sh scripts/deploy-server.sh --rollback` |

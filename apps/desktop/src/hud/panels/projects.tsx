@@ -118,7 +118,7 @@ function ProjectOverview({ project }: { project: Project }) {
             Resume project
           </Button>
         )}
-        {can.admin && (
+        {can.deleteProject(project.hostId) && (
           <Button small variant="ghost" disabled={busy} onClick={remove} title="Remove the project and its tasks from the office. Its people stay; nothing on disk is touched">
             Delete project…
           </Button>

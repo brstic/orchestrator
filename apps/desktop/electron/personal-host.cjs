@@ -184,7 +184,10 @@ const homeFor = (fingerprint) => path.join(process.env.ORCH_OFFICES_HOME || path
  *   unavailable                this computer cannot host sessions (says why); the office still works
  *   stopped
  */
-function startPersonalHost({ address, token, fingerprint, node, agentEntry, PATH, onState }) {
+function startPersonalHost(opts) {
+  // Windows has no tmux: there the same host runs inside WSL2, started and watched from here (wsl-host.cjs).
+  if (process.platform === 'win32') return require('./wsl-host.cjs').startPersonalHostInWsl(opts);
+  const { address, token, fingerprint, node, agentEntry, PATH, onState, allowedRoots } = opts;
   let stopped = false;
   let relay = null;
   let child = null;
@@ -233,8 +236,23 @@ function startPersonalHost({ address, token, fingerprint, node, agentEntry, PATH
     fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(cfg, null, 2), { mode: 0o600 });
   };
 
+  /**
+   * The folders sessions on this computer may work in, when the caller names them (under WSL: the Linux home and
+   * the person's Windows folders). Written on every start, so a change takes effect the next time the office opens.
+   */
+  const applyRoots = () => {
+    if (!Array.isArray(allowedRoots) || !allowedRoots.length) return;
+    const cfg = config();
+    if (!cfg) return;
+    const roots = allowedRoots.filter((r) => typeof r === 'string' && path.isAbsolute(r) && fs.existsSync(r));
+    if (!roots.length || JSON.stringify(cfg.allowedRoots) === JSON.stringify(roots)) return;
+    cfg.allowedRoots = roots;
+    fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(cfg, null, 2), { mode: 0o600 });
+  };
+
   const run = (server, retried) => {
     if (stopped) return;
+    applyRoots();
     applyTestKnobs();
     const started = Date.now();
     let err = '';
@@ -262,7 +280,6 @@ function startPersonalHost({ address, token, fingerprint, node, agentEntry, PATH
 
   (async () => {
     try {
-      if (process.platform === 'win32') throw new Error('Claude Code workers run in tmux, which Windows does not have. You can use everything shared in this office; sessions on this computer need macOS, Linux or WSL2.');
       if (!node) throw new Error('Sessions on this computer need Node.js 22.18 or newer.');
       if (spawnSync('tmux', ['-V'], { env, stdio: 'ignore' }).status !== 0) throw new Error('Sessions on this computer need tmux (macOS: brew install tmux; Linux: your package manager).');
       relay = await startRelay(address, fingerprint);
