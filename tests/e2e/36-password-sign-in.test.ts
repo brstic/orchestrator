@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHarness, type Harness } from './harness.ts';
+import { createHarness, waitFor, sleep, type Harness } from './harness.ts';
 
 // The door's certificate is made on this machine (a real office is behind a name with a trusted certificate).
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -154,6 +154,35 @@ test('one\'s own password: changed by knowing the current one; signing out ends 
   assert.deepEqual([(await signIn('Mila', 'mila sets her own')).body.role], ['visitor']);
   // The office's own computer has no password to set.
   assert.equal((await h.apiRaw('POST', '/me/password', { password: GOOD })).status, 400);
+});
+
+test('a window that is open with a sign-in is closed when that sign-in ends; the app\'s own window is not', async () => {
+  const live = (token: string) => {
+    const ws = new WebSocket(`${doorUrl.replace('https', 'wss')}/ws/client`, ['orch.v1', `orch.token.${token}`]);
+    const seen = { ready: false, closed: null as number | null };
+    ws.onmessage = (ev) => void (JSON.parse(String(ev.data)).t === 'ready' && (seen.ready = true));
+    ws.onclose = (ev) => (seen.closed = ev.code);
+    ws.onerror = () => undefined;
+    return { ws, seen, up: () => waitFor(() => seen.ready, { label: 'the window is in' }), gone: () => waitFor(() => seen.closed, { label: 'the window was closed' }) };
+  };
+  const a = (await signIn('Branko', GOOD)).body.token as string;
+  const b = (await signIn('Branko', GOOD)).body.token as string;
+  const windows = { a: live(a), b: live(b), app: live(invited.Branko!) };
+  await Promise.all(Object.values(windows).map((w) => w.up()));
+  // Signing out ends that one session — and its window.
+  assert.equal((await door('POST', '/api/logout', { token: a })).body.ok, true);
+  assert.equal(await windows.a.gone(), 4003);
+  await sleep(300);
+  assert.deepEqual([windows.b.seen.closed, windows.app.seen.closed], [null, null]);
+  // A new password ends every session made with the old one; the app, which came in with its own credential, stays.
+  await h.api('POST', `/guests/${ids.Branko}/password`, { password: GOOD });
+  assert.equal(await windows.b.gone(), 4003);
+  await sleep(300);
+  assert.equal(windows.app.seen.closed, null);
+  windows.app.ws.close();
+  // A window opened with a session that has ended is not let in at all.
+  const late = live(b);
+  assert.equal(await late.gone(), 4003);
 });
 
 test('five wrong passwords close the name for a while — for the right one too — and the office says so', async () => {

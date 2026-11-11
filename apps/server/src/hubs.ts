@@ -311,6 +311,8 @@ interface ClientConn {
   id: string;
   ws: WebSocket;
   who: Who;
+  /** Set when this window came in with a password sign-in session: which one (see `Logins.keyOf`). */
+  loginKey?: string;
   /** Where their character is, once they have said so. */
   presence: { x: number; z: number; rot: number; moving: boolean; at?: number } | null;
   /** When this window last cracked the whip. */
@@ -413,6 +415,15 @@ export class ClientHub {
     return [...this.clients.values()].filter((c) => c.presence).map((c) => ({ id: c.id, name: c.who.name, role: c.who.role, memberId: c.who.id, hue: hueOf(c.who.id), ...c.presence! }));
   }
 
+  /**
+   * Close the windows a member has open through a password sign-in that has ended — all of them (`key` absent: the
+   * password was changed or taken away) or the one of that session (signed out). Windows that came in with the
+   * member's own credential (the desktop app) are not touched. The page then shows the sign-in again.
+   */
+  dropLogins(guestId: string, key?: string): void {
+    for (const c of this.clients.values()) if (c.who.id === guestId && c.loginKey && (!key || c.loginKey === key)) c.ws.close(4003, 'signed out');
+  }
+
   /** Close every window of a guest whose access was revoked. */
   dropGuest(guestId: string): void {
     for (const c of this.clients.values()) if (c.who.id === guestId) c.ws.close(4003, 'access revoked');
@@ -469,10 +480,10 @@ export class ClientHub {
     this.peopleTimer.unref();
   }
 
-  handle(ws: WebSocket, who: Who = { kind: 'owner', id: 'owner', name: 'Owner', role: 'owner' }): void {
+  handle(ws: WebSocket, who: Who = { kind: 'owner', id: 'owner', name: 'Owner', role: 'owner' }, loginKey: string | null = null): void {
     if (this.closing) return void ws.terminate();
     const id = crypto.randomUUID();
-    const conn: ClientConn = { id, ws, who, presence: null, said: [] };
+    const conn: ClientConn = { id, ws, who, presence: null, said: [], ...(loginKey ? { loginKey } : {}) };
     this.clients.set(id, conn);
     const gateway = this.engine.core.gateway;
     this.send(id, { t: 'ready', clientId: id, state: stateFor(this.engine, who, this.engine.state()), me: { kind: who.kind, role: who.role, name: who.name, id: who.id } });

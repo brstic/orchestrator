@@ -60,6 +60,14 @@ export class Logins {
 
   private now: () => number;
 
+  /** Told when sign-in sessions of a member have ended: all of them, or the one this token was. */
+  onEnded: (guestId: string, token?: string) => void = () => undefined;
+
+  /** A name for a session that can be kept with an open connection without keeping the token itself. */
+  static keyOf(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex').slice(0, 24);
+  }
+
   constructor(engine: Engine, guests: Guests, now: () => number = Date.now) {
     this.engine = engine;
     this.guests = guests;
@@ -102,6 +110,7 @@ export class Logins {
   /** Sessions made by signing in (not the member's own app's credential) end. */
   private endSessions(guestId: string): void {
     this.engine.core.store.revokeCredentialsWhere('guest', guestId, SESSION);
+    this.onEnded(guestId);
   }
 
   /**
@@ -175,7 +184,9 @@ export class Logins {
   /** End the session this token is — only one made by signing in; a member's app keeps its own credential. */
   signOut(token: string | null): boolean {
     if (!token || !this.isSession(token)) return false;
+    const guestId = this.engine.core.store.checkCredential('guest', token)?.refId;
     this.engine.core.store.revokeCredential(token);
+    if (guestId) this.onEnded(guestId, token);
     return true;
   }
 }

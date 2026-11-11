@@ -162,6 +162,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   };
   const guests = new Guests(engine);
   const logins = new Logins(engine, guests);
+  // A sign-in that has ended (signed out, the password changed) is over for the windows that are open with it, too.
+  logins.onEnded = (guestId, token) => clients.dropLogins(guestId, token ? Logins.keyOf(token) : undefined);
   const invites = new Invites(store);
   let door: Door | null = null;
   /** Did this request come in through the guest door (from the network), rather than from this computer? */
@@ -305,7 +307,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       (socket as any).close(4003, 'unauthorized');
       return;
     }
-    clients.handle(socket as any, who);
+    const token = tokenOf(req);
+    clients.handle(socket as any, who, token && logins.isSession(token) ? Logins.keyOf(token) : null);
   });
 
   // ───────────── MCP (authenticated per worker session) ─────────────
