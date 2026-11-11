@@ -113,13 +113,16 @@ function usePresence(): void {
       const st = useOffice.getState();
       if (st.conn !== 'online') return;
       const { x, z, rot } = ownerPosition;
-      const moved = Math.abs(x - last.x) > 0.01 || Math.abs(z - last.z) > 0.01 || Math.abs(rot - last.rot) > 0.01;
-      still = moved ? 0 : still + 1;
+      // Under way means going somewhere: looking around on the spot is reported (the others see the turn), but it is not walking.
+      const went = Math.abs(x - last.x) > 0.01 || Math.abs(z - last.z) > 0.01;
+      const turned = Math.abs(rot - last.rot) > 0.01;
+      still = went ? 0 : still + 1;
       const moving = still < 3 && !Number.isNaN(last.x);
       // Also say so once when coming to a stop, and every few seconds so newcomers see everyone.
-      if (!moved && moving === last.moving && still % 30 !== 3) return;
+      if (!went && !turned && moving === last.moving && still % 30 !== 3) return;
       last = { x, z, rot, moving };
-      connection.send({ t: 'presence', x, z, rot, moving });
+      // With this window's own clock: the others move the character evenly by it, however unevenly the reports reach them.
+      connection.send({ t: 'presence', x, z, rot, moving, at: Date.now() });
     }, 100);
     return () => window.clearInterval(timer);
   }, []);

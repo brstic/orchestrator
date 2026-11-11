@@ -311,7 +311,7 @@ interface ClientConn {
   ws: WebSocket;
   who: Who;
   /** Where their character is, once they have said so. */
-  presence: { x: number; z: number; rot: number; moving: boolean } | null;
+  presence: { x: number; z: number; rot: number; moving: boolean; at?: number } | null;
   /** When this window last cracked the whip. */
   whippedAt?: number;
   /** When this window's character last made a gesture. */
@@ -505,7 +505,7 @@ export class ClientHub {
           case 'presence': {
             const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-500, Math.min(500, v)) : 0);
             const first = !conn.presence;
-            conn.presence = { x: n(msg.x), z: n(msg.z), rot: n(msg.rot), moving: msg.moving === true };
+            conn.presence = { x: n(msg.x), z: n(msg.z), rot: n(msg.rot), moving: msg.moving === true, ...(typeof msg.at === 'number' && Number.isFinite(msg.at) ? { at: msg.at } : {}) };
             // The first report is news for everyone (the list each client keeps includes itself); after that, only for the others.
             this.schedulePeople(first ? '*' : id);
             break;

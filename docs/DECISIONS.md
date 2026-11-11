@@ -2,6 +2,14 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-11 — How other people's characters are moved
+- **Drawn in the past, between two reports — not chasing the newest.** `RemoteTrack` (`packages/office-3d/src/remote-motion.ts`) keeps the last reports of a person and the character is drawn 300 ms behind, interpolated between the two reports around that moment. Chasing the newest report with an easing made the speed surge and sag ten times a second, and the gait — which walks by how the body really moves — stumbled with it. 300 ms because a window reports every 100 ms and the office relays every 100 ms: two reports that follow each other can arrive nearly 300 ms apart.
+- **By the sender's clock.** Each report carries the window's own time (`presence.at`); only the *difference* between its clock and ours is estimated (the quickest trip seen), and it is followed gently (a tenth of real time at most) so a correction never shows as a jump. Without it — an older window — arrival times are used and the walk is visibly less even. No clock synchronisation and no server timestamps are needed.
+- **Never ahead of what was reported.** When the reports stop, the character waits where it last was. Guessing ahead looked smoother until the guess was wrong and the character stepped back.
+- **"Moving" means going somewhere.** A window used to say "moving" while its person only looked around; the others then saw walking on the spot. Turning is still reported, as a turn. A report that says "not moving" also marks where somebody stood — the walk that follows starts from there, one report's time before the next one, instead of a slow drift across the pause.
+- **The position is set in the frame loop only, and before the character animates** (`useFrame(…, -1)`, as employees' characters do). A position in the JSX was re-applied at every report — the jump described above — and a mover that ran after the character made the legs a frame late.
+- **A report redraws nobody.** The places go into a map the frame loop reads; React redraws a person only when something about how they look changes (what they say, a gesture, the whip).
+
 ## 2026-11-11 — Stepping into a task in progress
 The owner: "I need to be able to stop somebody's task, or correct it".
 - **Two acts, both of which reach the session.** *Correct* (`TaskManager.correctTask`): the task's text and/or a note; the task stays theirs and in progress. *Stop* (`stopTask`): the task leaves their hands — on hold (BACKLOG, unreleased, assignee and branch kept) or deleted. Moving a card on the board (`PATCH status`) stays what it was, a change to the record; it never told anybody anything, which is why it was not enough.

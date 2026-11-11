@@ -265,7 +265,7 @@ export type ClientToServer =
   | { t: 'control.release'; sessionId: ID }
   | { t: 'screens.focus'; sessionId: ID | null }
   /** Where this person's character is, so the others in the office can see them. */
-  | { t: 'presence'; x: number; z: number; rot: number; moving: boolean }
+  | { t: 'presence'; x: number; z: number; rot: number; moving: boolean; at?: number }
   /** Something said out loud to the other people in the office (not to employees). */
   | { t: 'say'; text: string }
   /**
@@ -311,6 +311,8 @@ export interface PersonPresence {
   z: number;
   rot: number;
   moving: boolean;
+  /** The sender's own clock at that report (ms): the others draw the walk evenly by it. */
+  at?: number;
   hue: number;
 }
 
