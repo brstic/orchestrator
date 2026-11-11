@@ -69,8 +69,14 @@ function requestPinned(office, fingerprint, options, send, onResponse, onError) 
 
 const head = (first, headers) => `${[first, ...Object.entries(headers).flatMap(([k, v]) => (Array.isArray(v) ? v.map((x) => `${k}: ${x}`) : v === undefined ? [] : [`${k}: ${v}`]))].join('\r\n')}\r\n\r\n`;
 
-/** The relay: plain HTTP on this computer only, pinned TLS to the office. Resolves to { port, close }. */
-function startRelay(address, fingerprint) {
+/**
+ * The relay: plain HTTP on this computer only, pinned TLS to the office. Resolves to { port, close }.
+ *
+ * `preferredPort`: the port it had the last time. A session that is still running was started with that address for
+ * the office's tools, and Claude Code keeps it for as long as the session lives — so the relay comes back on the same
+ * port whenever it can, and those sessions reach the office again. Taken by something else: any free port.
+ */
+function startRelay(address, fingerprint, preferredPort = 0) {
   const office = new URL(address);
   const sockets = new Set();
   const pipeTo = async (client, firstLine, headers, body) => {
@@ -131,16 +137,21 @@ function startRelay(address, fingerprint) {
     s.on('close', () => sockets.delete(s));
   });
   return new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () =>
-      resolve({
-        port: server.address().port,
-        close: () => {
-          for (const s of sockets) s.destroy();
-          server.close();
-        },
-      }),
-    );
+    const listen = (port) => {
+      const failed = (e) => (port && (e.code === 'EADDRINUSE' || e.code === 'EACCES') ? listen(0) : reject(e));
+      server.once('error', failed);
+      server.listen(port, '127.0.0.1', () => {
+        server.removeListener('error', failed);
+        resolve({
+          port: server.address().port,
+          close: () => {
+            for (const s of sockets) s.destroy();
+            server.close();
+          },
+        });
+      });
+    };
+    listen(Number.isInteger(preferredPort) && preferredPort > 1023 && preferredPort < 65536 ? preferredPort : 0);
   });
 }
 
@@ -207,6 +218,19 @@ function startPersonalHost(opts) {
       return JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
     } catch {
       return null;
+    }
+  };
+
+  /** The port the relay had last time on this computer for this office (see startRelay): remembered, else the one the agent last connected through. */
+  const lastRelayPort = () => {
+    try {
+      return Number(fs.readFileSync(path.join(home, 'relay-port'), 'utf8').trim()) || 0;
+    } catch {
+      try {
+        return Number(new URL((config() || {}).serverUrl).port) || 0;
+      } catch {
+        return 0;
+      }
     }
   };
 
@@ -282,8 +306,14 @@ function startPersonalHost(opts) {
     try {
       if (!node) throw new Error('Sessions on this computer need Node.js 22.18 or newer.');
       if (spawnSync('tmux', ['-V'], { env, stdio: 'ignore' }).status !== 0) throw new Error('Sessions on this computer need tmux (macOS: brew install tmux; Linux: your package manager).');
-      relay = await startRelay(address, fingerprint);
+      relay = await startRelay(address, fingerprint, lastRelayPort());
       if (stopped) return relay.close();
+      try {
+        fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+        fs.writeFileSync(path.join(home, 'relay-port'), String(relay.port), { mode: 0o600 });
+      } catch {
+        /* not remembered: the next start takes any free port */
+      }
       const server = `http://127.0.0.1:${relay.port}`;
       if (!(config() || {}).credential) await enroll(server);
       if (stopped) return;

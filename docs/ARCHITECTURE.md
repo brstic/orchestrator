@@ -115,7 +115,7 @@ BACKLOG ─(released, dependencies done)→ READY ─(employee free)→ IN_PROGR
 
 Projects have one of two workspace modes:
 
-- **`in_place`** — the "cubicle": an employee is hired into a folder, the folder becomes their project, and they work directly in it on whatever branch is checked out. Orchestrator creates no worktree, switches no branch and merges nothing; completion is still verified (clean tree, commits since the task started, the verification command). Two employees are never allowed to change the same folder at the same time.
+- **`in_place`** — the "cubicle": an employee is hired into a folder, the folder becomes their project, and they work directly in it on whatever branch is checked out. Orchestrator creates no worktree, switches no branch and merges nothing; completion is still verified (clean tree, commits since the task started, the verification command). Several employees can live in the same folder and work in it **at the same time**: each is told who else is there (and to stage only their own files, by path), and from the moment a folder is shared a task counts as its uncommitted work only the files its own session wrote (`Task.touched`, from the Write/Edit hooks) — a colleague's work in progress never stops a completion. An employee whose own folder lies *inside* the project's folder (one of several repositories under one root, a package of a monorepo) works in that subfolder, not at the root. A project can ask for the old rule instead — one at a time, the next task waits its turn (`policy.oneAtATime`, Projects → Policy).
 - **`worktrees`** — for projects several employees share, described next.
 
 In a `worktrees` project each employee works in `<repo-parent>/.orchestrator-worktrees/<repo>/<employee>` on `orch/<employee>/<task>`. Finished work is merged with `--no-ff` into `orchestrator/integration` inside a dedicated `_integration` worktree; your own checkout and `main` are never touched. Dependent tasks branch from integration, so they start with their dependencies' work.
@@ -237,7 +237,7 @@ While a member's own computer (a personal host, `Host.memberId`) is online, a ro
  ┌─────────────────────────────┐                   ┌──────────────────────────────────┐
  │ desktop app (Electron)      │── https (pinned) ─▶ door :4610 (TLS, self-signed)    │
  │  office window              │   /, /api, /ws/client                │               │
- │  relay 127.0.0.1:random ────┼── tls (pinned) ───▶  /ws/agent, /mcp ─▶ server :4600  │
+ │  relay 127.0.0.1:(kept) ────┼── tls (pinned) ───▶  /ws/agent, /mcp ─▶ server :4600  │
  │      ▲            ▲         │                   │                    (loopback)     │
  │  host agent    claude (MCP) │                   │ host agent (shared machine)       │
  │  tmux sessions (personal)   │                   │ tmux sessions (shared)            │

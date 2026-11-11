@@ -240,10 +240,10 @@ test('a meeting is a real workflow: every contribution comes from a participant 
   assert.ok(rounds.filter((t) => t === 'meeting.contribution').length >= 6);
 });
 
-test('two employees never edit the same plain directory at once: the second task waits its turn, and starts when the folder is free', async () => {
+test('a project that asks for one at a time: the second task for the folder waits its turn, and starts when the folder is free', async () => {
   const plain = path.join(fs.realpathSync(h.tmp), 'plain-dir');
   fs.mkdirSync(plain);
-  const p2 = await h.project('Scratch', plain, { verifyCommand: null });
+  const p2 = await h.project('Scratch', plain, { verifyCommand: null, policy: { oneAtATime: true } });
   const e1 = await h.employee('Uma', 'fullstack', { projectId: p2.id, autonomy: 'standard' });
   const e2 = await h.employee('Vic', 'fullstack', { projectId: p2.id, autonomy: 'standard' });
   const t1 = await h.task({ projectId: p2.id, title: 'First writer', assigneeId: e1.id, description: '@@fake: write a.txt one; sleep 2500; say still here@@' });

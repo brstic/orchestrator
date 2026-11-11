@@ -218,7 +218,7 @@ export function systemPromptFor(employee: Employee, project: Project | undefined
   return lines.filter(Boolean).join('\n\n');
 }
 
-export function taskPrompt(task: Task, project: Project, deps: Task[], feedback: string | null, playbook = ''): string {
+export function taskPrompt(task: Task, project: Project, deps: Task[], feedback: string | null, playbook = '', sharing: string[] = []): string {
   const lines: string[] = [];
   lines.push(`${correlationMarker('TASK', task.id)} New task from the boss — ${task.key}: ${task.title}`);
   lines.push('');
@@ -227,6 +227,7 @@ export function taskPrompt(task: Task, project: Project, deps: Task[], feedback:
   lines.push('', `Project: ${project.name}.`);
   if (project.workspace === 'in_place') lines.push(`You work directly in this folder${task.branch ? ` on its current branch "${task.branch}"` : ''}. Commit your work here; do not push or switch branches.${task.baseDirty?.length ? ` ${task.baseDirty.length} file${task.baseDirty.length === 1 ? ' was' : 's were'} already uncommitted here before this task (${task.baseDirty.slice(0, 6).join(', ')}${task.baseDirty.length > 6 ? ', …' : ''}): they are the owner's — do not commit, change or delete them; stage only your own files.` : ''}`);
   else if (task.branch) lines.push(`Your task branch "${task.branch}" is checked out in your worktree. Commit there; do not push or switch branches.`);
+  if (sharing.length) lines.push(`${sharing.join(', ')} ${sharing.length === 1 ? 'is' : 'are'} working in this same folder right now, on other tasks. Stage only the files you changed yourself, by path (never \`git add -A\`, \`git add .\` or \`git commit -a\`); do not change, revert, stash or delete files you did not touch; if git says another git process is running (index.lock), wait a few seconds and try again. If your work needs a file they are changing, talk to them (send_message).`);
   if (deps.length) lines.push(`Already completed and merged dependencies: ${deps.map((d) => `${d.key} (${d.title})`).join('; ')}.`);
   const verify = task.verifyCommand ?? project.verifyCommand;
   if (verify) lines.push(`Completion is verified by running: ${verify}`);

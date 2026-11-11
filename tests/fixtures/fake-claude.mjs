@@ -327,6 +327,11 @@ async function runDirectives(text) {
         case 'block':
           await orchestrator('report_blocker', { reason: rest });
           break;
+        case 'cutoff':
+          // Claude Code has given up the connection to the office: its tools fail without ever reaching it.
+          say('\x1b[31m⎿ MCP server "orchestrator" is not connected\x1b[0m');
+          await fireHook('PostToolUseFailure', { tool_name: `mcp__orchestrator__${rest || 'get_current_task'}`, tool_input: {}, tool_use_id: `toolu_fake_${Date.now()}`, error: 'MCP server "orchestrator" is not connected' });
+          break;
         case 'limit':
           // Claude refuses the turn for the account's limit: the turn ends with StopFailure, not Stop.
           turnFailed = true;

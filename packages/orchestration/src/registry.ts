@@ -14,7 +14,7 @@ import type {
   TerminalScreen,
   ActivityState,
 } from '@orchestrator/contracts';
-import { EFFORT_CHOICES, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify, type EffortLevel } from '@orchestrator/contracts';
+import { EFFORT_CHOICES, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify, truncate, type EffortLevel } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
 import { trustPromptKeys } from './comms.ts';
 import { EngineError } from './core.ts';
@@ -993,6 +993,55 @@ export class SessionRegistry {
       if (login?.email && !row.email) row.email = login.email;
     }
     return [...out.values()].sort((a, b) => (b.sevenDay?.usedPercent ?? -1) - (a.sevenDay?.usedPercent ?? -1));
+  }
+
+  /** Sessions that could not reach the office's own tools (their Claude Code reports the connection gone). */
+  private unreachable = new Set<string>();
+  /** When each employee's session was last started again for that, most recent last. */
+  private reconnects = new Map<string, number[]>();
+
+  /** A tool of the office failed in this session because the office could not be reached from it. */
+  onOfficeUnreachable(session: AgentSession): void {
+    if (session.status !== 'running' || this.unreachable.has(session.id)) return;
+    this.unreachable.add(session.id);
+    this.core.log('warn', `${this.core.employees.get(session.employeeId)?.name ?? 'A session'} cannot reach the office's tools from its session; it is started again when the turn ends`);
+  }
+
+  cutOff(sessionId: string): boolean {
+    return this.unreachable.has(sessionId);
+  }
+
+  /**
+   * Start again the session of an employee who was cut off from the office's tools: the same conversation, with the
+   * connection made anew (the address and token a session uses are given to it at start). At most twice an hour per
+   * employee; after that the owner is told, because something on that machine needs a person.
+   */
+  async reconnect(employeeId: string): Promise<void> {
+    const e = this.core.employees.get(employeeId);
+    const s = this.core.runningSessionOf(employeeId);
+    if (!e || !s || !this.unreachable.has(s.id)) return;
+    this.unreachable.delete(s.id);
+    const host = this.core.hosts.get(s.hostId);
+    const recent = (this.reconnects.get(employeeId) ?? []).filter((t) => Date.now() - t < 60 * 60_000);
+    if (recent.length >= 2) {
+      if (recent.length === 2) {
+        this.reconnects.set(employeeId, [...recent, Date.now()]);
+        this.core.event({ type: 'session.cut_off', source: 'server', summary: `${e.name}'s session still cannot reach the office's tools after being started again twice`, employeeId, sessionId: s.id, hostId: s.hostId, data: { gaveUp: true } });
+        this.eng.comms.notify({ kind: 'blocked', severity: 'warning', employeeId, hostId: s.hostId, title: `${e.name} cannot reach the office from ${host?.name ?? 'their machine'}`, body: `Their session was started again twice and its Claude Code still reports the office's tools as not connected, so they cannot finish, ask or report anything. Look at ${host?.name ?? 'that machine'}: is the office reachable from it, and (a member's computer) is the desktop app open and up to date?` });
+      }
+      return;
+    }
+    this.reconnects.set(employeeId, [...recent, Date.now()]);
+    this.core.audit('office', 'session.reconnected', s.id, { employee: e.name });
+    this.core.event({ type: 'session.cut_off', source: 'server', summary: `${e.name}'s session lost its connection to the office's tools; it is being started again with the same conversation`, employeeId, sessionId: s.id, hostId: s.hostId, data: { gaveUp: false } });
+    try {
+      await this.stop(employeeId, { actor: 'office', reason: 'cut off from the office; starting again' });
+      await this.wake(employeeId, 'a new connection to the office');
+      const task = this.eng.tasks.currentTask(employeeId);
+      this.eng.comms.sendMessage({ from: { kind: 'system', id: null, name: 'the office' }, toEmployeeId: employeeId, kind: 'system', taskId: task?.id ?? null, body: `Your session had lost its connection to the office (its tools and the vault did not answer), so it was started again. They work now.${task ? ` Go on with ${task.key} "${truncate(task.title, 80)}" from where you were: finish what was waiting for the office, then complete_task.` : ''}` });
+    } catch (err) {
+      this.core.log('warn', `reconnecting ${e.name}: ${(err as Error).message}`);
+    }
   }
 
   /** What each machine last said about who is logged in to which account folder. */

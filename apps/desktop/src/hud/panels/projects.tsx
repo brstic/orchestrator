@@ -279,6 +279,7 @@ function ProjectPolicyTab({ project }: { project: Project }) {
     requireReview: p.requireReview,
     autoMerge: p.autoMerge,
     integrationTests: p.integrationTests !== false,
+    oneAtATime: p.oneAtATime === true,
     allow: p.allow.join('\n'),
     deny: p.deny.join('\n'),
     highRisk: p.highRiskPatterns.join('\n'),
@@ -306,12 +307,12 @@ function ProjectPolicyTab({ project }: { project: Project }) {
         api('PATCH', `/projects/${project.id}`, {
           verifyCommand: draft.verifyCommand.trim() || null,
           verifyTimeoutSec: timeout,
-          policy: { allow, deny, highRiskPatterns: highRisk, autoAssign: draft.autoAssign, requireReview: draft.requireReview, autoMerge: draft.autoMerge, integrationTests: draft.integrationTests },
+          policy: { allow, deny, highRiskPatterns: highRisk, autoAssign: draft.autoAssign, requireReview: draft.requireReview, autoMerge: draft.autoMerge, integrationTests: draft.integrationTests, oneAtATime: draft.oneAtATime },
         }),
       'Policy saved',
     );
   };
-  const check = (key: 'autoAssign' | 'requireReview' | 'autoMerge' | 'integrationTests', label: string, explain: string) => (
+  const check = (key: 'autoAssign' | 'requireReview' | 'autoMerge' | 'integrationTests' | 'oneAtATime', label: string, explain: string) => (
     <label className="check field-wide">
       <input type="checkbox" checked={draft[key]} onChange={(e) => set({ [key]: e.target.checked })} />
       <span>
@@ -340,6 +341,8 @@ function ProjectPolicyTab({ project }: { project: Project }) {
       {check('requireReview', 'Require review', 'Code tasks created from now on need an approved review before they count as DONE.')}
       {check('autoMerge', 'Auto-merge', 'Verified work is merged into the integration branch automatically.')}
       {check('integrationTests', 'Integration tests', 'After every merge the verification command also runs on the integration branch itself, so work that passes alone but breaks together is caught.')}
+
+      {check('oneAtATime', 'One at a time in a shared folder', 'Off (the default): employees who work in the same folder work side by side; each is told who else is there, and a task counts only the files its own session wrote. On: the next task for a folder somebody is changing waits its turn.')}
 
       {rules('allow', 'Allow rules', 'One Claude Code permission rule per line. Matching tools run without asking you.', 'Bash(npm test:*)')}
       {rules('deny', 'Deny rules', 'One rule per line. Matching tools are refused outright.', 'Bash(git push:*)')}

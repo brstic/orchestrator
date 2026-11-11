@@ -166,6 +166,8 @@ export class HookReceiver {
     const task = this.eng.tasks.currentTask(employee.id);
     if (!task || task.delivery.status !== 'confirmed') return null;
     if (this.core.gateway.isHumanControlled(session.id) || this.core.gateway.isPaused(session.id)) return null;
+    // Cut off from the office's tools: it could not complete, ask or report whatever it is told. It is started again instead.
+    if (this.eng.sessions.cutOff(session.id)) return null;
     // Stopped because a colleague has not answered or finished yet: there is nothing to be nudged on with.
     if (session.waitingOn) return null;
     if (this.core.questions.find((q) => q.employeeId === employee.id && (q.status === 'open' || q.status === 'answered') && q.channel !== 'system')) return null;
@@ -181,6 +183,7 @@ export class HookReceiver {
   private afterTurn(session: AgentSession, employee: Employee | null, payload: HookPayload): void {
     session.inTurn = false;
     this.core.put('session', session);
+    if (employee && this.eng.sessions.cutOff(session.id)) void this.eng.sessions.reconnect(employee.id);
     if (!employee) {
       this.eng.sessions.setActivity(session, 'idle', null);
       return;
@@ -375,6 +378,14 @@ export class HookReceiver {
       this.eng.comms.schedulePump(employee.id);
       this.eng.tasks.schedule();
     }
+    // A file this session wrote: remembered on its task, so that in a shared folder its uncommitted work is told from a colleague's.
+    if (payload.hook_event_name === 'PostToolUse' && task && /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(String(payload.tool_name ?? ''))) {
+      const file = payload.tool_input?.file_path ?? payload.tool_input?.notebook_path;
+      if (typeof file === 'string' && file) this.eng.tasks.noteTouched(task, file);
+    }
+    // One of the office's own tools could not be reached from this session (Claude Code gave the connection up, or
+    // the address the session was started with is gone): the session is started again when this turn ends.
+    if (payload.hook_event_name === 'PostToolUseFailure' && /^mcp__orchestrator__/.test(String(payload.tool_name ?? '')) && /not connected|connection (closed|refused|failed|error)|fetch failed|ECONNREFUSED|ECONNRESET/i.test(String(payload.error ?? ''))) this.eng.sessions.onOfficeUnreachable(session);
     // Claude refused the turn for the account's limit: its people go to another account, if the machine has one.
     if (payload.hook_event_name === 'StopFailure' && /rate.?limit|usage.?limit|billing/i.test(String(payload.error ?? payload.error_details ?? payload.message ?? ''))) this.eng.sessions.onLimitHit(session, String(payload.error ?? payload.message ?? 'rate_limit'));
     // A Stop that arrived through the non-blocking path (host had no server link at the time).

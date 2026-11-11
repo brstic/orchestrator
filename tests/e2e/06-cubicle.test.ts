@@ -102,19 +102,46 @@ test("the owner's own uncommitted files in the folder never block a task and are
   fs.rmSync(path.join(folder, 'owner-notes.txt'));
 });
 
-test('a second employee in the same folder shares the project but never edits it at the same time', async () => {
+test('a second employee in the same folder works beside the first: neither waits, and each task counts only its own files', async () => {
   const omar = await h.api('POST', '/employees', { name: 'Omar', roleKey: 'backend', hostId: h.hostId, workingDir: folder, autonomy: 'standard' });
   assert.equal(omar.projectId, lena.projectId, 'same folder → same project');
   assert.equal((await h.state()).projects.find((p) => p.id === lena.projectId)!.ownerEmployeeId, lena.id, 'the folder still belongs to Lena');
   await waitFor(async () => (await h.session(lena.id))!.inTurn === false, { label: 'Lena idle' });
-  const t1 = await h.task({ projectId: lena.projectId, title: 'Long change', assigneeId: lena.id, description: '@@fake: write long.txt a; sleep 3000; say still going@@' });
+  const t1 = await h.task({ projectId: lena.projectId, title: 'Long change', assigneeId: lena.id, description: '@@fake: say thinking about it@@' });
   await waitFor(async () => (await h.getTask(t1.id)).delivery.status === 'confirmed', { label: 'Lena working' });
-  const t2 = await h.task({ projectId: lena.projectId, title: 'Colliding change', assigneeId: omar.id, description: '@@fake: write long.txt b@@' });
-  // It waits its turn — ready, not blocked — and says for whom.
-  const waiting = await waitFor(async () => {
+  // Omar starts at once, in the same folder, while Lena's task is in progress — and is told she is there.
+  const t2 = await h.task({ projectId: lena.projectId, title: 'Second change', assigneeId: omar.id, description: '@@fake: saw is working in this same folder right now; write omar.txt b; bash git add omar.txt && git commit -q -m "omar"; say committed@@' });
+  const started = await waitFor(async () => {
     const t = await h.getTask(t2.id);
-    return t.progress.note ? t : null;
-  }, { label: 'the second change waits' });
-  assert.equal(waiting.status, 'READY');
-  assert.match(waiting.progress.note!, /^Waiting for Lena to finish T-\d+: they work in the same folder/);
+    return t.delivery.status === 'confirmed' ? t : null;
+  }, { label: 'Omar working too', timeout: 20000 });
+  assert.equal(started.status, 'IN_PROGRESS');
+  assert.equal((await h.getTask(t1.id)).status, 'IN_PROGRESS', 'both at once');
+  assert.equal(started.progress.note ?? null, null, 'nobody waits');
+  assert.deepEqual(started.sharedWith, ['Lena']);
+  assert.deepEqual((await h.getTask(t1.id)).sharedWith, ['Omar']);
+  const omarSession = (await h.session(omar.id))!;
+  await waitFor(() => /saw\[is working in this same folder right now\]=yes/.test(h.tmux('capture-pane', '-p', '-J', '-S', '-200', '-t', omarSession.tmuxPane!)), { label: 'Omar was told who else is there' });
+  // Lena is told too, in her own session.
+  await waitFor(async () => (await h.state()).messages.find((m) => m.toEmployeeId === lena.id && /Omar is starting T-\d+ .* in the same folder you work in/.test(m.body) && /stage only the files you changed yourself/.test(m.body)), { label: 'Lena was told' });
+  await waitFor(() => fs.existsSync(path.join(folder, 'omar.txt')), { label: 'Omar wrote his file' });
+  // Lena leaves something uncommitted after Omar began: it is hers, and it is not in the way of his task.
+  await waitFor(async () => (await h.session(lena.id))!.inTurn === false, { label: 'Lena between turns', timeout: 20000 });
+  await h.api('POST', `/employees/${lena.id}/message`, { body: 'Keep going. @@fake: write lena-wip.txt half done@@' });
+  await waitFor(() => fs.existsSync(path.join(folder, 'lena-wip.txt')), { label: 'Lena has work in progress' });
+  await waitFor(async () => (await h.session(omar.id))!.inTurn === false, { label: 'Omar between turns', timeout: 20000 });
+  await h.api('POST', `/employees/${omar.id}/message`, { body: 'Finish. @@fake: write omar-left.txt c; complete first try; bash git add omar-left.txt && git commit -q -m "left"; complete second change done@@' });
+  const done = await waitFor(async () => {
+    const t = await h.getTask(t2.id);
+    return t.status === 'DONE' ? t : null;
+  }, { label: 'Omar done while Lena still works', timeout: 30000 });
+  const screen = h.tmux('capture-pane', '-p', '-J', '-S', '-300', '-t', omarSession.tmuxPane!);
+  // His own leftover stopped the first attempt; her file was never named as his.
+  const refusal = screen.slice(screen.lastIndexOf('these files changed during this task'));
+  assert.match(refusal, /omar-left\.txt/);
+  assert.doesNotMatch(refusal.split('Commit what belongs')[0]!, /lena-wip\.txt/);
+  assert.ok(done.history.some((x) => /Left as they are — uncommitted files not known to be this task's \(the folder is shared with Lena\): .*lena-wip\.txt/.test(x.note)));
+  assert.equal(fs.readFileSync(path.join(folder, 'lena-wip.txt'), 'utf8').trim(), 'half done', 'her work in progress is as she left it');
+  assert.equal((await h.getTask(t1.id)).status, 'IN_PROGRESS');
+  assert.equal(done.evidence.verification!.passed, true);
 });

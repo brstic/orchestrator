@@ -381,6 +381,11 @@ export interface ProjectPolicy {
   requireReview: boolean;
   /** Merge verified work into the integration branch automatically. */
   autoMerge: boolean;
+  /**
+   * true: one employee at a time changes a folder that several work in (the next task for it waits its turn).
+   * Default (absent/false): they work in it at the same time; each task counts only its own uncommitted files.
+   */
+  oneAtATime?: boolean;
   /** After each merge, run the verification command on the integration branch itself (default: on). */
   integrationTests?: boolean;
 }
@@ -498,6 +503,15 @@ export interface Task {
    * employee is told to leave them alone.
    */
   baseDirty?: string[] | null;
+  /** The root of the git repository the task's folder is in (the folder itself may be a subfolder of it). Absent: not a repository, or a task from before this was recorded. */
+  repoRoot?: string | null;
+  /**
+   * Colleagues worked in the same folder (or the same repository) while this task was in progress: their names. From then
+   * on only the files this task's own session wrote count as its uncommitted work.
+   */
+  sharedWith?: string[];
+  /** Files this task's session wrote or edited (relative to `repoRoot`), as its hooks reported them. Kept only while the folder is shared. */
+  touched?: string[];
   requiresReview: boolean;
   reviewerId: ID | null;
   /** For kind=review: the task under review. */

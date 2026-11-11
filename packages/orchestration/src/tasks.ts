@@ -11,6 +11,9 @@ const PRIORITY_ORDER: Record<TaskPriority, number> = { urgent: 0, high: 1, norma
 const PROJECT_COLORS = ['#4f8cff', '#ff8c5a', '#5ad67d', '#c58cff', '#f5c542', '#ff5d73', '#3fd0c9', '#ff9ecb'];
 /** Task kinds that produce documents or verdicts rather than commits. */
 const NON_CODE_KINDS = new Set<TaskKind>(['review', 'research', 'planning']);
+
+/** What everyone in a shared folder is told. */
+export const SHARED_FOLDER_RULES = 'You share this folder: stage only the files you changed yourself, by path (never `git add -A`, `git add .` or `git commit -a`); do not change, revert, stash or delete files you did not touch; if git says another git process is running (index.lock), wait a few seconds and try again.';
 /** How long a task was actually being worked on: the time it spent IN_PROGRESS, from its own history. */
 export function timeInProgress(task: Task): number {
   let total = 0;
@@ -515,7 +518,13 @@ export class TaskManager {
 
   private repoFor(project: Project, employee: Employee): string | null {
     if (!project.repoPath) return null;
-    if (!project.hostId || project.hostId === employee.hostId) return project.repoPath;
+    if (!project.hostId || project.hostId === employee.hostId) {
+      // Someone whose own folder lies inside the project's folder (one of several repositories under one root, a
+      // package of a monorepo) works there, not at the root — so colleagues in other subfolders are not in their way.
+      const own = employee.workingDir ? path.resolve(employee.workingDir) : null;
+      if (own && own !== path.resolve(project.repoPath) && own.startsWith(path.resolve(project.repoPath) + path.sep)) return own;
+      return project.repoPath;
+    }
     // The project's repository lives on another machine: this employee needs their own clone.
     return employee.workingDir;
   }
@@ -533,6 +542,26 @@ export class TaskManager {
     const emp = this.core.employees.get(task.assigneeId);
     this.core.event({ type: 'task.blocked', source: 'server', summary: `${task.key} is blocked: ${truncate(reason, 140)}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, reason } });
     this.eng.comms.notify({ kind: 'blocked', severity: 'critical', title: `${task.key} is blocked`, body: reason, taskId: task.id, projectId: task.projectId, employeeId: emp?.id ?? null });
+  }
+
+  /** Other employees' code tasks in progress in the same folder, or in the same git repository, on the same machine. */
+  private sharing(task: Task, employee: Employee, cwd: string): Task[] {
+    const here = path.resolve(cwd);
+    return this.core.tasks.filter((t) => {
+      if (t.id === task.id || t.status !== 'IN_PROGRESS' || t.assigneeId === employee.id || !t.worktree || NON_CODE_KINDS.has(t.kind)) return false;
+      if (this.core.employees.get(t.assigneeId)?.hostId !== employee.hostId) return false;
+      return path.resolve(t.worktree) === here || (!!task.repoRoot && !!t.repoRoot && path.resolve(t.repoRoot) === path.resolve(task.repoRoot));
+    });
+  }
+
+  /** A file this task's session wrote (from its hooks). Remembered so that, in a shared folder, its uncommitted work can be told from a colleague's. */
+  noteTouched(task: Task, file: string): void {
+    const root = task.repoRoot ?? task.worktree;
+    if (!root || task.status !== 'IN_PROGRESS') return;
+    const rel = path.relative(path.resolve(root), path.resolve(task.worktree ?? root, file));
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || task.touched?.includes(rel)) return;
+    task.touched = [...(task.touched ?? []), rel].slice(-2000);
+    this.core.put('task', task);
   }
 
   /** A task whose folder somebody else is working in: say so once, on the task itself, and leave it ready. */
@@ -587,7 +616,9 @@ export class TaskManager {
         // The employee lives in this folder: work happens right here, on the branch that is
         // checked out. Nothing is created, switched or merged by Orchestrator.
         const insp = await this.core.agents.rpc(hostId, { method: 'fs.inspect', params: { path: repo } });
-        cwd = insp.repoRoot ?? insp.path;
+        // In their own subfolder they stay in it; at the project's folder, at the root of its repository as before.
+        cwd = path.resolve(repo) !== path.resolve(project.repoPath!) ? insp.path : (insp.repoRoot ?? insp.path);
+        task.repoRoot = insp.isGitRepo ? (insp.repoRoot ?? null) : null;
         if (insp.isGitRepo && insp.hasCommits && codeTask) {
           branch = insp.branch;
           baseSha = task.baseSha ?? insp.head;
@@ -617,13 +648,24 @@ export class TaskManager {
         if (!fallback) throw new Error(`${employee.name} has no working directory for project ${project.name}`);
         cwd = fallback;
       }
-      if (codeTask) {
-        const clash = this.core.tasks.find((t) => t.id !== task.id && t.status === 'IN_PROGRESS' && t.assigneeId !== employee.id && !!t.worktree && path.resolve(t.worktree) === path.resolve(cwd) && !NON_CODE_KINDS.has(t.kind));
-        if (clash) {
-          // Two employees must not change the same folder at once. That is not a problem to report: this task waits its
-          // turn. It stays ready, no session is started for it, and the scheduler hands it over when the folder is free.
-          this.waitForFolder(task, clash, cwd);
-          return;
+      // Colleagues who are changing the same folder (or the same repository) right now.
+      const sharing = codeTask ? this.sharing(task, employee, cwd) : [];
+      if (sharing.length && project.policy.oneAtATime) {
+        // This project asked for one at a time: the task waits its turn. It stays ready, no session is started for it,
+        // and the scheduler hands it over when the folder is free.
+        this.waitForFolder(task, sharing[0]!, cwd);
+        return;
+      }
+      if (sharing.length) {
+        // The default: they work side by side. Each is told about the other, and from now on a task counts only the
+        // files its own session wrote as its uncommitted work.
+        task.sharedWith = [...new Set([...(task.sharedWith ?? []), ...sharing.map((t) => this.core.employees.get(t.assigneeId)?.name ?? 'a colleague')])];
+        for (const other of sharing) {
+          const them = this.core.employees.get(other.assigneeId);
+          if (other.sharedWith?.includes(employee.name)) continue;
+          other.sharedWith = [...(other.sharedWith ?? []), employee.name];
+          this.core.put('task', other);
+          if (them) this.eng.comms.sendMessage({ from: { kind: 'system', id: null, name: 'the office' }, toEmployeeId: them.id, kind: 'system', taskId: other.id, body: `${employee.name} is starting ${task.key} "${truncate(task.title, 80)}" in the same folder you work in (${cwd}). Go on with ${other.key}. ${SHARED_FOLDER_RULES}` });
         }
       }
       await this.eng.sessions.start(employee.id, { cwd, actor: 'scheduler' });
@@ -652,7 +694,7 @@ export class TaskManager {
         const fb: string[] = [];
         if (task.evidence.review?.verdict === 'changes_requested') fb.push(`Review (${task.evidence.review.by === 'owner' ? 'the boss' : (this.core.employees.get(task.evidence.review.reviewerId)?.name ?? 'reviewer')}): ${task.evidence.review.comments}`);
         if (task.evidence.merge && !task.evidence.merge.ok) fb.push(`Merge into ${task.evidence.merge.into} conflicted: ${task.evidence.merge.detail}\nIn your worktree run "git merge ${project.integrationBranch}", resolve the conflicts, commit, re-run the tests and call complete_task again.`);
-        text = taskPrompt(task, project, deps, fb.length ? fb.join('\n\n') : null, [this.eng.improver.capture.onboardingBlock(employee, project), this.eng.improver.playbookBlock(employee, project.id, true, task)].filter(Boolean).join('\n\n'));
+        text = taskPrompt(task, project, deps, fb.length ? fb.join('\n\n') : null, [this.eng.improver.capture.onboardingBlock(employee, project), this.eng.improver.playbookBlock(employee, project.id, true, task)].filter(Boolean).join('\n\n'), sharing.map((t) => `${this.core.employees.get(t.assigneeId)?.name ?? 'a colleague'} (${t.key})`));
         // What the office already knows about this subject, if its memory has something close — and only if it answers in time.
         if (this.eng.memory.available() && !this.core.hosts.get(project.hostId ?? '')?.memberId) {
           const remembered = await this.eng.memory.recallText(`${task.title}. ${truncate(task.description, 300)}`, { results: 3, timeoutMs: this.core.timings.memoryRecallMs ?? 20_000, chars: 500 }).catch(() => '');
@@ -833,7 +875,16 @@ export class TaskManager {
           // The owner's folder: only what became uncommitted during this task counts. Files that
           // were already uncommitted before it started are the owner's and are never the employee's to tidy.
           const theirs = new Set(task.baseDirty ?? []);
-          const mine = st.files.filter((f: any) => !theirs.has(f.path));
+          let mine = st.files.filter((f: any) => !theirs.has(f.path));
+          // Colleagues work (or worked) in this folder during the task: what they left uncommitted is not this task's
+          // to tidy. Its own are the files its session wrote.
+          const shared = !!task.sharedWith?.length || this.sharing(task, employee, cwd).length > 0;
+          if (shared) {
+            const touched = new Set(task.touched ?? []);
+            const others = mine.filter((f: any) => !touched.has(f.path));
+            mine = mine.filter((f: any) => touched.has(f.path));
+            if (others.length && !mine.length) this.history(task, `Left as they are — uncommitted files not known to be this task's (the folder is shared${task.sharedWith?.length ? ` with ${task.sharedWith.join(', ')}` : ''}): ${others.slice(0, 8).map((f: any) => f.path).join(', ')}${others.length > 8 ? ', …' : ''}`, 'orchestrator');
+          }
           if (mine.length) {
             const files = mine.slice(0, 12).map((f: any) => `${f.status} ${f.path}`).join('\n');
             return {
