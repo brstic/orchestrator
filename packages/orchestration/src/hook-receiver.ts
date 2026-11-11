@@ -375,6 +375,8 @@ export class HookReceiver {
       this.eng.comms.schedulePump(employee.id);
       this.eng.tasks.schedule();
     }
+    // Claude refused the turn for the account's limit: its people go to another account, if the machine has one.
+    if (payload.hook_event_name === 'StopFailure' && /rate.?limit|usage.?limit|billing/i.test(String(payload.error ?? payload.error_details ?? payload.message ?? ''))) this.eng.sessions.onLimitHit(session, String(payload.error ?? payload.message ?? 'rate_limit'));
     // A Stop that arrived through the non-blocking path (host had no server link at the time).
     if (interp.turnFinished && payload.hook_event_name === 'Stop' && !this.isRequest(raw)) this.afterTurn(session, employee, payload);
     return { session, employee, payload };

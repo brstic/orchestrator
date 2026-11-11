@@ -926,8 +926,30 @@ export class SessionRegistry {
     if (!s || s.hostId !== hostId) return;
     this.loadAccounts();
     const key = `${hostId}|${msg.configDir ?? 'default'}`;
-    this.accounts.set(key, { key, hostId, configDir: msg.configDir, email: msg.email, organization: msg.organization, fiveHour: msg.fiveHour, sevenDay: msg.sevenDay, reportedAt: nowIso(), reportedBy: s.employeeId ?? null, employeeIds: [] });
+    this.accounts.set(key, { key, hostId, configDir: msg.configDir, email: msg.email, organization: msg.organization, fiveHour: msg.fiveHour, sevenDay: msg.sevenDay, reportedAt: nowIso(), reportedBy: s.employeeId ?? null, employeeIds: [], spentUntil: this.accounts.get(key)?.spentUntil ?? null });
     this.core.store.kvSet('accounts', [...this.accounts.values()]);
+    // An account that has just run out: its people go to another one, if the machine has one with room.
+    if (exhausted({ fiveHour: msg.fiveHour, sevenDay: msg.sevenDay })) void this.failover();
+  }
+
+  /**
+   * A turn ended because Claude refused it for the account's limit (Claude Code's StopFailure, error "rate_limit" or
+   * a billing error). The figures of the status line do not show every limit there is (a model's own weekly one,
+   * for instance), so this counts by itself: the account is taken as used up until its nearest known reset, or for
+   * an hour when none is known.
+   */
+  onLimitHit(session: AgentSession, error: string): void {
+    const e = this.core.employees.get(session.employeeId ?? '');
+    if (!e || !e.hostId) return;
+    this.loadAccounts();
+    const key = `${e.hostId}|${e.claudeConfigDir ?? 'default'}`;
+    const a = this.accounts.get(key) ?? { key, hostId: e.hostId, configDir: e.claudeConfigDir ?? null, email: null, organization: null, fiveHour: null, sevenDay: null, reportedAt: null, reportedBy: null, employeeIds: [] };
+    const resets = [a.fiveHour, a.sevenDay].filter((w) => !!w && w.usedPercent >= 90 && !!w.resetsAt && Date.parse(w.resetsAt) > Date.now()).map((w) => w!.resetsAt!).sort();
+    a.spentUntil = resets[0] ?? new Date(Date.now() + 60 * 60_000).toISOString();
+    this.accounts.set(key, a);
+    this.core.store.kvSet('accounts', [...this.accounts.values()]);
+    this.core.log('info', `${e.name}'s turn was refused for the account's limit (${error}); ${a.email ?? a.configDir ?? 'the default account'} counts as used up until ${a.spentUntil}`);
+    void this.failover();
   }
 
   /**
@@ -952,12 +974,131 @@ export class SessionRegistry {
       const known = this.accounts.get(key);
       out.set(key, { ...(known ?? { key, hostId: h.id, configDir: null, email: null, organization: null, fiveHour: null, sevenDay: null, reportedAt: null, reportedBy: null }), employeeIds: [] });
     }
+    // The accounts the owner added to a machine, whether or not anybody is on them yet.
+    for (const h of this.core.hosts.filter((x) => x.status !== 'revoked')) {
+      for (const dir of h.claudeAccounts ?? []) {
+        const key = `${h.id}|${dir}`;
+        if (out.has(key)) continue;
+        const known = this.accounts.get(key);
+        out.set(key, { ...(known ?? { key, hostId: h.id, configDir: dir, email: null, organization: null, fiveHour: null, sevenDay: null, reportedAt: null, reportedBy: null }), employeeIds: [] });
+      }
+    }
     // A window whose reset time has passed is no longer what the figure says.
     const now = Date.now();
     for (const row of out.values()) {
       for (const k of ['fiveHour', 'sevenDay'] as const) if (row[k]?.resetsAt && Date.parse(row[k]!.resetsAt!) < now) row[k] = { usedPercent: 0, resetsAt: null };
+      row.exhausted = exhausted(row);
+      const login = this.logins.get(row.key);
+      row.loggedIn = login ? login.loggedIn : row.email ? true : null;
+      if (login?.email && !row.email) row.email = login.email;
     }
     return [...out.values()].sort((a, b) => (b.sevenDay?.usedPercent ?? -1) - (a.sevenDay?.usedPercent ?? -1));
+  }
+
+  /** What each machine last said about who is logged in to which account folder. */
+  private logins = new Map<string, { loggedIn: boolean; email: string | null; login: string; at: number }>();
+  /** When an employee was last moved to another account (not again for a while: figures need time to follow). */
+  private movedAt = new Map<string, number>();
+  private failingOver = false;
+
+  /** Ask a machine about its account folders (`prepare`: make the ones that are missing). Remembered for the list and for choosing. */
+  async checkAccounts(hostId: string, dirs: Array<string | null>, prepare = false): Promise<Array<{ dir: string | null; path: string; exists: boolean; loggedIn: boolean; email: string | null; organization: string | null; login: string; error?: string }>> {
+    const res = await this.core.agents.rpc<{ accounts: Array<{ dir: string | null; path: string; exists: boolean; loggedIn: boolean; email: string | null; organization: string | null; login: string; error?: string }> }>(hostId, { method: 'claude.accounts', params: { dirs, prepare } }, 15000);
+    for (const a of res.accounts) this.logins.set(`${hostId}|${a.dir ?? 'default'}`, { loggedIn: a.loggedIn, email: a.email, login: a.login, at: Date.now() });
+    return res.accounts;
+  }
+
+  /**
+   * Add a Claude account to a machine: a config folder of its own (`~/.claude-2`). The folder is made there, sharing
+   * the conversations of the default account; somebody then logs in to it once on that machine (the answer says with
+   * which command). From then on employees can be put on it, and are moved to it when theirs runs out.
+   */
+  async addAccount(hostId: string, rawDir: string, actor = 'owner'): Promise<{ dir: string; loggedIn: boolean; email: string | null; login: string }> {
+    const host = this.core.hosts.require(hostId);
+    const dir = String(rawDir ?? '').trim().replace(/\/+$/, '');
+    if (!/^~\/[A-Za-z0-9._@+-]+$/.test(dir)) throw new EngineError('an account folder is a folder in the home of the machine\'s user, like ~/.claude-2');
+    if (dir === '~/.claude') throw new EngineError('~/.claude is the machine\'s default account; it is there already');
+    if (!this.core.agents.isOnline(hostId)) throw new EngineError(`${host.name} is offline`);
+    const [a] = await this.checkAccounts(hostId, [dir], true);
+    if (!a || a.error) throw new EngineError(a?.error ?? `${host.name} did not answer`);
+    if (!(host.claudeAccounts ?? []).includes(dir)) {
+      host.claudeAccounts = [...(host.claudeAccounts ?? []), dir];
+      this.core.put('host', host);
+      this.core.audit(actor, 'account.added', hostId, { dir });
+    }
+    return { dir, loggedIn: a.loggedIn, email: a.email, login: a.login };
+  }
+
+  /** Take an account off a machine's list. Nobody may be on it. Nothing on the machine is deleted. */
+  removeAccount(hostId: string, dir: string, actor = 'owner'): void {
+    const host = this.core.hosts.require(hostId);
+    const on = this.core.employees.filter((e) => !e.archived && e.hostId === hostId && (e.claudeConfigDir ?? null) === dir);
+    if (on.length) throw new EngineError(`${on.map((e) => e.name).join(', ')} ${on.length === 1 ? 'is' : 'are'} on that account; put them on another first`);
+    host.claudeAccounts = (host.claudeAccounts ?? []).filter((d) => d !== dir);
+    this.core.put('host', host);
+    this.core.audit(actor, 'account.removed', hostId, { dir });
+  }
+
+  /**
+   * Employees whose Claude account has used up its allowance are put on another account of the same machine that
+   * has room and somebody logged in, and their session is started again there — continuing the conversation where
+   * the two accounts share their conversations (accounts added through the office do). Nobody is moved twice within
+   * ten minutes, and nobody is moved back by this when the first account resets.
+   */
+  async failover(force?: { key: string; actor: string }): Promise<number> {
+    if (this.failingOver) return 0;
+    if (!force && this.core.settings.accountFailover === false) return 0;
+    this.failingOver = true;
+    let moved = 0;
+    try {
+      const accounts = this.accountUsage();
+      // Asked for by an owner ("move them now"): that one account, whatever its figures say.
+      const spent = accounts.filter((a) => (force ? a.key === force.key : a.exhausted) && a.employeeIds.length > 0);
+      for (const from of spent) {
+        if (!this.core.agents.isOnline(from.hostId)) continue;
+        const others = accounts.filter((a) => a.hostId === from.hostId && a.key !== from.key && !a.exhausted);
+        if (!others.length) continue;
+        // Who is really logged in, asked now (a folder that was added and never logged in to cannot take anybody).
+        const fresh = await this.checkAccounts(from.hostId, others.map((a) => a.configDir)).catch(() => []);
+        const ready = others.filter((a) => fresh.find((f) => (f.dir ?? null) === a.configDir)?.loggedIn);
+        if (!ready.length) continue;
+        const load = new Map(ready.map((a) => [a.key, a.employeeIds.length]));
+        const used = (a: AccountUsage) => Math.max(a.fiveHour?.usedPercent ?? 0, a.sevenDay?.usedPercent ?? 0);
+        for (const id of from.employeeIds) {
+          const e = this.core.employees.get(id);
+          if (!e || e.archived || (!force && Date.now() - (this.movedAt.get(id) ?? 0) < 10 * 60_000)) continue;
+          // The account with the most room, counting whom this round already put there.
+          const to = [...ready].sort((a, b) => used(a) + (load.get(a.key) ?? 0) * 3 - (used(b) + (load.get(b.key) ?? 0) * 3))[0]!;
+          load.set(to.key, (load.get(to.key) ?? 0) + 1);
+          this.movedAt.set(id, Date.now());
+          e.claudeConfigDir = to.configDir;
+          this.core.put('employee', e);
+          const name = (a: AccountUsage) => a.email ?? a.configDir ?? 'the default account';
+          const until = [from.fiveHour, from.sevenDay].filter((w) => w && w.usedPercent >= 99 && w.resetsAt).map((w) => w!.resetsAt!).sort().pop() ?? (from.spentUntil && Date.parse(from.spentUntil) > Date.now() ? from.spentUntil : undefined);
+          this.core.audit(force?.actor ?? 'office', 'account.switched', id, { from: from.configDir, to: to.configDir });
+          this.core.event({ type: 'account.switched', source: force ? 'owner' : 'server', summary: force ? `${e.name} was put on another Claude account (${name(to)}) by ${force.actor === 'owner' ? 'the boss' : force.actor}` : `${e.name} was put on another Claude account (${name(to)}): ${name(from)} has used up its allowance${until ? ` until ${until.slice(11, 16)} UTC` : ''}`, employeeId: id, hostId: from.hostId, data: { from: from.configDir, to: to.configDir, resetsAt: until ?? null } });
+          moved++;
+          const running = this.core.runningSessionOf(id);
+          if (running) {
+            // The same conversation, on the other account.
+            await this.stop(id, { actor: 'office', reason: 'moved to another Claude account' }).catch(() => undefined);
+            const started = await this.wake(id, 'another Claude account, because theirs ran out').catch((err) => {
+              this.core.log('warn', `account failover: ${e.name} could not be started on the other account: ${(err as Error).message}`);
+              return null;
+            });
+            // What they were in the middle of was cut off; they are told to go on with it.
+            const task = started ? this.eng.tasks.currentTask(id) : null;
+            if (task) this.eng.comms.sendMessage({ from: { kind: 'system', id: null, name: 'the office' }, toEmployeeId: id, body: `Your session was started again on another Claude account, because the one you were on ran out. Go on with ${task.key} "${task.title}" from where you were.`, kind: 'system', taskId: task.id });
+          }
+        }
+      }
+    } catch (e) {
+      this.core.log('warn', `account failover: ${(e as Error).message}`);
+    } finally {
+      this.failingOver = false;
+    }
+    if (moved) this.eng.tasks.schedule();
+    return moved;
   }
 
   onUsage(hostId: string, sessionId: string, usage: SessionUsage): void {
@@ -1359,3 +1500,10 @@ export class SessionRegistry {
     return cred?.refId ? this.core.sessions.get(cred.refId) : undefined;
   }
 }
+
+/** Used up for now: one of the two windows is at its limit and has not reset yet. */
+export function exhausted(a: Pick<AccountUsage, 'fiveHour' | 'sevenDay'> & { spentUntil?: string | null }): boolean {
+  const full = (w: AccountUsage['fiveHour']) => !!w && w.usedPercent >= 99 && (!w.resetsAt || Date.parse(w.resetsAt) > Date.now());
+  return full(a.fiveHour) || full(a.sevenDay) || (!!a.spentUntil && Date.parse(a.spentUntil) > Date.now());
+}
+

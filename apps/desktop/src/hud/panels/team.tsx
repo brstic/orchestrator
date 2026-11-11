@@ -7,6 +7,7 @@ import { Avatar, Badge, Button, Empty, Field, Progress, Provenance, Stat, Tabs, 
 import { api, connection } from '../../lib/api.ts';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { act } from '../core.tsx';
+import { useAccess } from '../../lib/access.ts';
 import { FolderField } from './folder-picker.tsx';
 import { registerPanel } from './index.tsx';
 import {
@@ -645,7 +646,7 @@ function TeamPanel({ arg, onClose }: PanelProps) {
           <summary>Archived employees ({archived.length})</summary>
           <div className="list">
             {archived.map((e) => (
-              <div key={e.id} className="row" style={{ padding: '4px 0' }}>
+              <div key={e.id} className="row" style={{ padding: '4px 0', flexWrap: 'wrap' }}>
                 <Avatar appearance={e.appearance} size={26} offline />
                 <div className="grow">
                   <span className="strong">{e.name}</span> <span className="muted small">{e.title}</span>
@@ -656,6 +657,7 @@ function TeamPanel({ arg, onClose }: PanelProps) {
                 <Button small variant="success" onClick={() => act(() => api('PATCH', `/employees/${e.id}`, { archived: false }), `${e.name} is back on the team`)}>
                   Restore
                 </Button>
+                <DeleteEmployee e={e} inline />
               </div>
             ))}
           </div>
@@ -807,6 +809,52 @@ function XpLedger({ e }: { e: Employee }) {
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+/**
+ * Delete an employee for good, with what is theirs. Archiving keeps everything and can be undone; this cannot.
+ * Shown to those who may: an owner, or a colleague for their own employee on their own computer.
+ */
+function DeleteEmployee({ e, onDone, inline }: { e: Employee; onDone?: () => void; inline?: boolean }) {
+  const can = useAccess();
+  const tasks = useOffice((s) => s.tasks);
+  const sessions = useOffice((s) => s.sessions);
+  const [asking, setAsking] = useState(false);
+  const [withTasks, setWithTasks] = useState(true);
+  const [busy, setBusy] = useState(false);
+  if (!can.deleteEmployee(e.hostId)) return null;
+  const theirs = Object.values(tasks).filter((t) => t.assigneeId === e.id);
+  const open = theirs.filter((t) => t.status !== 'DONE').length;
+  const live = isLive(sessionOfEmployee(sessions, e.id));
+  const remove = async () => {
+    setBusy(true);
+    const res = await act(() => api<{ name: string }>('DELETE', `/employees/${e.id}${withTasks ? '?tasks=delete' : ''}`), `${e.name} was deleted`);
+    setBusy(false);
+    setAsking(false);
+    if (res) onDone?.();
+  };
+  if (!asking)
+    return (
+      <Button variant={inline ? 'ghost' : 'danger'} small style={inline ? undefined : { marginTop: 6 }} onClick={() => setAsking(true)} title="Remove this employee and what is theirs from the office for good. Nothing on disk is touched">
+        {inline ? 'Delete…' : 'Delete employee…'}
+      </Button>
+    );
+  return (
+    <div style={inline ? { flexBasis: '100%' } : { marginTop: 6 }}>
+      <ConfirmBox title={`Delete ${e.name} for good?`} confirmLabel={withTasks && theirs.length ? `Delete ${e.name} and ${theirs.length} task${theirs.length === 1 ? '' : 's'}` : `Delete ${e.name}`} busy={busy} onConfirm={remove} onCancel={() => setAsking(false)}>
+        This cannot be undone. Gone with them: their sessions and the record of them, the messages to and from them, their questions, routines, own lessons and XP.
+        {live && ` ${e.name}'s running session is stopped first.`} The folders, branches and conversations on the machine are left as they are, and so is the record of what happened (the feed and the audit log).
+        {theirs.length > 0 && (
+          <label className="row" style={{ gap: 6, marginTop: 6, cursor: 'pointer' }}>
+            <input type="checkbox" checked={withTasks} onChange={(ev) => setWithTasks(ev.target.checked)} />
+            <span>
+              Also delete the {theirs.length} task{theirs.length === 1 ? '' : 's'} assigned to them{open ? ` (${open} not finished)` : ''}. Unticked: {open ? 'the unfinished ones go back on the board for someone else, and ' : ''}finished ones stay as a record.
+            </span>
+          </label>
+        )}
+      </ConfirmBox>
     </div>
   );
 }
@@ -986,8 +1034,13 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
           </select>
         </Field>
         <RuntimeField value={d.executionMode} onChange={(v) => set('executionMode', v)} host={d.hostId ? hostsById[d.hostId] : undefined} />
-        <Field label="Claude account folder" hint="Leave empty to use the machine's own Claude login. To put this employee on another account, log in once on their machine with CLAUDE_CONFIG_DIR=~/.claude-second claude, then write that folder here. Takes effect the next time their session starts.">
-          <input value={d.claudeConfigDir} onChange={(ev) => set('claudeConfigDir', ev.target.value)} className="mono" placeholder="default login" spellCheck={false} aria-label="Claude account folder" />
+        <Field label="Claude account folder" hint="Leave empty to use the machine's own Claude login. More accounts are added to a machine in Company → Claude usage; pick one here, or write the folder of a login made by hand. Takes effect the next time their session starts. When an account runs out, the office moves its employees to another one by itself (Settings → Employees).">
+          <input value={d.claudeConfigDir} onChange={(ev) => set('claudeConfigDir', ev.target.value)} className="mono" placeholder="default login" spellCheck={false} aria-label="Claude account folder" list="claude-accounts-of-machine" />
+          <datalist id="claude-accounts-of-machine">
+            {(hostsById[d.hostId ?? '']?.claudeAccounts ?? []).map((a) => (
+              <option key={a} value={a} />
+            ))}
+          </datalist>
         </Field>
           </div>
       {role && (
@@ -1055,10 +1108,13 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
             )}
           </ConfirmBox>
         ) : (
-          <Button variant="danger" small onClick={() => setArchiving(true)}>
-            Archive employee…
-          </Button>
+          <div className="row" style={{ gap: 6 }}>
+            <Button variant="danger" small onClick={() => setArchiving(true)}>
+              Archive employee…
+            </Button>
+          </div>
         )}
+        {!archiving && <DeleteEmployee e={e} onDone={onClose} />}
       </div>
     </div>
   );

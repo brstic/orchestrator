@@ -77,6 +77,8 @@ export type EventType =
   | 'project.created'
   | 'project.updated'
   | 'project.deleted'
+  | 'account.switched'
+  | 'employee.deleted'
   | 'vault.stored'
   | 'vault.used'
   | 'vault.removed'

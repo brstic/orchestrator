@@ -1,9 +1,11 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { OrchestratorEvent } from '@orchestrator/contracts';
-import { Badge, Empty, Progress, Provenance, clock, timeAgo } from '@orchestrator/ui';
+import { Badge, Button, Empty, Progress, Provenance, clock, timeAgo } from '@orchestrator/ui';
+import { api } from '../../lib/api.ts';
 import { loadAccounts, useOffice } from '../../lib/store.ts';
 import { accountName, limitText } from '../../lib/views.ts';
-import { NOT_AVAILABLE, eventTone, fmtInt, isLoudEvent } from './company-shared.tsx';
+import { NOT_AVAILABLE, copyText, eventTone, fmtInt, isLoudEvent } from './company-shared.tsx';
+import { useAction } from './tasks.tsx';
 
 /** The parts of the Company window that came from the CEO's desk: projects, usage, what happened. */
 
@@ -166,14 +168,21 @@ function LimitRow({ label, w }: { label: string; w: { usedPercent: number; reset
   );
 }
 
-/** How much Claude is left: one card per account the employees run on. */
+/** How much Claude is left: one card per account the employees run on; an owner adds accounts to a machine here. */
 export function ClaudeAccounts() {
   const accounts = useOffice((s) => s.accounts);
   const employees = useOffice((s) => s.employees);
   const hosts = useOffice((s) => s.hosts);
+  const settings = useOffice((s) => s.settings);
+  const [busy, run] = useAction();
   useEffect(() => {
     void loadAccounts();
   }, []);
+  const then = async <T,>(fn: () => Promise<T>, ok?: string) => {
+    const r = await run(fn, ok);
+    await loadAccounts();
+    return r;
+  };
   return (
     <div>
       <div className="row" style={{ margin: '14px 0 6px' }}>
@@ -185,10 +194,15 @@ export function ClaudeAccounts() {
       <div className="col" style={{ gap: 8 }}>
         {accounts.map((a) => {
           const who = a.employeeIds.map((id) => employees[id]?.name).filter(Boolean);
+          const host = hosts[a.hostId];
+          const added = !!a.configDir && !!host?.claudeAccounts?.includes(a.configDir);
+          const others = accounts.filter((x) => x.hostId === a.hostId && x.key !== a.key && !x.exhausted && x.loggedIn !== false);
           return (
             <div key={a.key} className="card col claude-account" style={{ gap: 6 }}>
               <div className="row">
-                <span className="strong grow truncate">{accountName(a, hosts[a.hostId]?.name)}</span>
+                <span className="strong grow truncate">{accountName(a, host?.name)}</span>
+                {a.exhausted && <Badge tone="bad">used up</Badge>}
+                {a.loggedIn === false && <Badge tone="warn">nobody logged in</Badge>}
                 {a.organization && <span className="small faint truncate">{a.organization}</span>}
               </div>
               {a.reportedAt ? (
@@ -197,18 +211,144 @@ export function ClaudeAccounts() {
                   <LimitRow label="This week" w={a.sevenDay} />
                 </>
               ) : (
-                <div className="small muted">Not reported yet. It appears the next time an employee on this account starts a session.</div>
+                <div className="small muted">{a.loggedIn === false ? 'Nobody is logged in to Claude Code in this folder yet.' : 'Not reported yet. It appears the next time an employee on this account starts a session.'}</div>
               )}
+              {a.spentUntil && Date.parse(a.spentUntil) > Date.now() && <div className="small warn">Claude refused a turn on this account for its limit; it counts as used up until {new Date(a.spentUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.</div>}
               <div className="small faint">
-                {hosts[a.hostId]?.name ?? 'unknown machine'} · {a.configDir ?? 'default login'} · used by {who.length ? who.join(', ') : 'nobody'}
+                {host?.name ?? 'unknown machine'} · {a.configDir ?? 'default login'} · used by {who.length ? who.join(', ') : 'nobody'}
                 {a.reportedAt ? ` · reported ${timeAgo(a.reportedAt)}${a.reportedBy && employees[a.reportedBy] ? ` by ${employees[a.reportedBy]!.name}'s session` : ''}` : ''}
               </div>
+              {(who.length > 0 && others.length > 0) || (added && who.length === 0) ? (
+                <div className="row" style={{ gap: 6 }}>
+                  {who.length > 0 && others.length > 0 && (
+                    <Button small disabled={busy} title="Puts everybody on this account on another account of the same machine and starts their sessions again there" onClick={() => void then(() => api<{ moved: number }>('POST', `/hosts/${a.hostId}/accounts/move`, { from: a.configDir }), 'Moved to another account')}>
+                      Move {who.length === 1 ? who[0] : `these ${who.length}`} to another account
+                    </Button>
+                  )}
+                  {added && who.length === 0 && (
+                    <Button small variant="ghost" disabled={busy} title="Takes the account off the office's list. Nothing on the machine is deleted." onClick={() => void then(() => api('DELETE', `/hosts/${a.hostId}/accounts?dir=${encodeURIComponent(a.configDir!)}`), 'Account removed from the list')}>
+                      Remove from the list
+                    </Button>
+                  )}
+                </div>
+              ) : null}
             </div>
           );
         })}
       </div>
+      <AddAccount />
       <div className="small faint" style={{ marginTop: 4 }}>
-        The percentages are Claude Code's own for a subscription account; an account billed by API key reports none. An employee's account is set in their profile.</div>
+        The percentages are Claude Code's own for a subscription account; an account billed by API key reports none.{' '}
+        {settings?.accountFailover === false
+          ? 'An employee whose account runs out waits for it to reset (Settings → Employees).'
+          : 'When an account runs out, its employees are put on another account of the same machine that has room, and go on there.'}{' '}
+        An employee's account can also be set in their profile.
+      </div>
+    </div>
+  );
+}
+
+type AccountAnswer = { dir: string | null; loggedIn: boolean; email: string | null; login: string };
+
+/** Another Claude account for a machine: the office makes its folder there; somebody logs in to it once, on that machine. */
+function AddAccount() {
+  const hosts = useOffice((s) => s.hosts);
+  const accounts = useOffice((s) => s.accounts);
+  // The office's own machines; a member's computer is theirs to arrange.
+  const machines = useMemo(() => Object.values(hosts).filter((h) => h.status !== 'revoked' && !h.memberId), [hosts]);
+  const [open, setOpen] = useState(false);
+  const [hostId, setHostId] = useState('');
+  const [dir, setDir] = useState('');
+  const [answer, setAnswer] = useState<(AccountAnswer & { hostId: string }) | null>(null);
+  const [busy, run] = useAction();
+  const host = hosts[hostId] ?? machines[0];
+  const suggested = useMemo(() => {
+    const taken = new Set(accounts.filter((a) => a.hostId === host?.id).map((a) => a.configDir));
+    for (let i = 2; ; i++) if (!taken.has(`~/.claude-${i}`)) return `~/.claude-${i}`;
+  }, [accounts, host?.id]);
+  if (machines.length === 0) return null;
+  const add = async () => {
+    const res = await run(() => api<AccountAnswer>('POST', `/hosts/${host!.id}/accounts`, { dir: dir.trim() || suggested }));
+    if (res) setAnswer({ ...res, hostId: host!.id });
+    await loadAccounts();
+  };
+  const check = async () => {
+    const res = await run(() => api<{ accounts: AccountAnswer[] }>('POST', `/hosts/${answer!.hostId}/accounts/check`, {}));
+    const mine = res?.accounts.find((x) => x.dir === answer!.dir);
+    if (mine) setAnswer({ ...mine, hostId: answer!.hostId });
+    await loadAccounts();
+  };
+  if (!open)
+    return (
+      <div className="row" style={{ marginTop: 8 }}>
+        <Button small onClick={() => setOpen(true)}>
+          Add a Claude account…
+        </Button>
+      </div>
+    );
+  return (
+    <div className="card col" style={{ gap: 8, marginTop: 8 }}>
+      <div className="strong">Add a Claude account</div>
+      {!answer ? (
+        <>
+          <div className="small muted">
+            Each account is a folder of its own on the machine, with its own login and its own allowance. The office makes the folder; you then log in to it once on that machine. Employees are spread over a machine's accounts when one runs out.
+          </div>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            {machines.length > 1 && (
+              <select value={host?.id ?? ''} onChange={(ev) => setHostId(ev.target.value)} aria-label="Machine">
+                {machines.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <input className="mono grow" value={dir} onChange={(ev) => setDir(ev.target.value)} placeholder={suggested} spellCheck={false} aria-label="Account folder" style={{ minWidth: 160 }} />
+            <Button small variant="primary" disabled={busy || !host || host.status !== 'online'} onClick={() => void add()}>
+              Add to {host?.name ?? 'the machine'}
+            </Button>
+            <Button small variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+          {host && host.status !== 'online' && <div className="small warn">{host.name} is offline.</div>}
+        </>
+      ) : answer.loggedIn ? (
+        <>
+          <div className="small good">
+            {answer.email ?? 'Somebody'} is logged in to {answer.dir}. The account is ready: employees are put on it when theirs runs out, and you can put anybody on it in their profile.
+          </div>
+          <div className="row">
+            <Button small onClick={() => (setAnswer(null), setDir(''), setOpen(false))}>
+              Done
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="small">
+            The folder <span className="mono">{answer.dir}</span> is there on {hosts[answer.hostId]?.name ?? 'the machine'}. Nobody is logged in to it yet. On that machine, as the user the office runs as, run this and log in with the other account:
+          </div>
+          <div className="row" style={{ gap: 6 }}>
+            <code className="mono small grow" style={{ userSelect: 'all', overflowWrap: 'anywhere' }}>
+              {answer.login.replace(/\s+\(then \/login\)$/, '')}
+            </code>
+            <Button small onClick={() => void copyText(answer.login.replace(/\s+\(then \/login\)$/, ''), 'Command copied')}>
+              Copy
+            </Button>
+          </div>
+          <div className="small muted">Then type /login there, finish in the browser, and leave Claude Code with /exit. Nobody is moved to this account before somebody is logged in.</div>
+          <div className="row" style={{ gap: 6 }}>
+            <Button small variant="primary" disabled={busy} onClick={() => void check()}>
+              Check
+            </Button>
+            <Button small variant="ghost" onClick={() => (setAnswer(null), setDir(''), setOpen(false))}>
+              Later
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

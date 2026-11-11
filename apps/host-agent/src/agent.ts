@@ -1010,6 +1010,8 @@ export class HostAgent {
         const panes = await this.discover();
         return { panes: policy === 'any' ? panes : policy === 'none' ? panes.filter((p) => p.connectedAs) : panes.filter((p) => p.looksLikeClaude || p.connectedAs), policy };
       }
+      case 'claude.accounts':
+        return { accounts: (rpc.params.dirs ?? []).map((raw: string | null) => this.describeAccount(raw, rpc.params.prepare === true)) };
       case 'fs.inspect':
         return inspectPath(this.assertAllowed(rpc.params.path));
       case 'fs.browse': {
@@ -1311,6 +1313,48 @@ export class HostAgent {
     if (this.lastLimits.get(tracked.sessionId) === key) return;
     this.lastLimits.set(tracked.sessionId, key);
     this.send(msg);
+  }
+
+  /** A Claude config folder as the owner wrote it (`~/.claude-2`) → where it is on this machine. Only inside this user's home. */
+  private accountDir(raw: string): string {
+    const dir = path.resolve(raw.startsWith('~/') ? path.join(os.homedir(), raw.slice(2)) : raw);
+    if (dir === os.homedir() || !dir.startsWith(os.homedir() + path.sep)) throw new Error(`the Claude account folder must be inside your home folder on this machine (${dir})`);
+    return dir;
+  }
+
+  /**
+   * One Claude account of this machine: is its folder there, is anybody logged in, who. With `prepare`, a folder
+   * that does not exist yet is made, and its conversations are the default account's (a link to the same `projects`
+   * folder) — so an employee moved from one account to another goes on with the conversation they had.
+   */
+  private describeAccount(raw: string | null, prepare: boolean): { dir: string | null; path: string; exists: boolean; loggedIn: boolean; email: string | null; organization: string | null; login: string; error?: string } {
+    const base = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude');
+    if (!raw) {
+      const who = this.claudeAccount(null);
+      return { dir: null, path: base, exists: true, loggedIn: !!who.email || fs.existsSync(path.join(os.homedir(), '.claude.json')), ...who, login: `${this.cfg.claudeBin}   (then /login)` };
+    }
+    let dir: string;
+    try {
+      dir = this.accountDir(raw);
+    } catch (e) {
+      return { dir: raw, path: raw, exists: false, loggedIn: false, email: null, organization: null, login: '', error: (e as Error).message };
+    }
+    const login = `CLAUDE_CONFIG_DIR=${dir} ${this.cfg.claudeBin}   (then /login)`;
+    try {
+      if (prepare) {
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        const projects = path.join(dir, 'projects');
+        const shared = path.join(base, 'projects');
+        if (!fs.existsSync(projects) && dir !== base) {
+          fs.mkdirSync(shared, { recursive: true, mode: 0o700 });
+          fs.symlinkSync(shared, projects, 'dir');
+        }
+      }
+    } catch (e) {
+      return { dir: raw, path: dir, exists: fs.existsSync(dir), loggedIn: false, email: null, organization: null, login, error: (e as Error).message };
+    }
+    const who = this.claudeAccount(dir);
+    return { dir: raw, path: dir, exists: fs.existsSync(dir), loggedIn: fs.existsSync(path.join(dir, '.claude.json')) && !!who.email, ...who, login };
   }
 
   /** Who is logged in to Claude Code in this config folder (or the default one), from its own config file. */

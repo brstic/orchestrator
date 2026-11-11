@@ -170,6 +170,8 @@ The office page may play audio from any `http(s)` address (`media-src` in its co
 
 To show how much of each Claude account is used, the host agent reads two fields (`emailAddress`, `organizationName`) from Claude Code's own `.claude.json` on that machine, and the rate-limit percentages Claude Code gives the session's status line. It reads no credentials and never calls Anthropic itself. The account e-mail and the percentages go to your office server only; they are shown to the owner (`GET /api/usage` is not on any guest's list) and are not written into events. An employee's own account folder must be inside the home folder of the user the agent runs as.
 
+**Several accounts on a machine** (`ACCOUNTS.md`). Adding an account makes a folder (mode 700) in that user's home and a link inside it to the default account's conversations; it is an owner's act and the folder's name is limited to `~/<one name>`. The office never logs in to an account and holds no Claude credential: a person runs `claude` in that folder on the machine and logs in there. Moving employees between accounts changes which folder their session starts in, nothing else. Because the accounts of one machine share one conversations folder, a session on one account can read the conversations of the others — they are the same office's employees under the same OS user, who could read those files anyway.
+
 ## Filesystem
 
 The agent operates only inside `allowedRoots` (symlinks resolved, so a link cannot escape a root). The default is the user's home directory — narrow it with `--allow-root`.

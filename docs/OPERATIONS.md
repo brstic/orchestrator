@@ -146,6 +146,19 @@ Owners can do the member part from the app as well: Menu → Access.
 
 **Sessions that sleep.** Shared sessions with no work for 30 minutes are stopped by the office to free memory (Settings → Employees → *Put idle sessions to sleep after*; 0 = never). So `tmux ls` on the server shows only the employees who are awake: a missing `orch-<name>-<id>` session of someone shown as *Sleeping* in the office is expected, not a crash. It comes back under the same name when they are next needed. The log line is `session.asleep` in the audit (actor `office`); a wake is `session.resumed` by `office`. To see what the setting gives back, compare `free -m` (or the Machines panel) before and after an idle half hour — this has not been measured yet.
 
+### Adding a Claude account
+So that employees do not wait when the server's one account reaches its limit (`ACCOUNTS.md` explains all of it):
+
+1. In the office: **Company → Claude usage → Add a Claude account…** → *Add to* the server. It makes `~/.claude-2` there (or the folder you name) and shows a command.
+2. On the server, as `sparkcan` — the login needs a terminal and a browser, so do it over `ssh`:
+   ```sh
+   ssh -p <ssh-port> <user>@<server>
+   CLAUDE_CONFIG_DIR=$HOME/.claude-2 claude      # then /login (open the address it prints in any browser), then /exit
+   ```
+3. Back in the office: **Check**. The account's card shows who is logged in.
+
+From then on employees on an account that runs out are moved to one that has room, by themselves (Settings → Employees switches that off). `journalctl --user -u orchestrator-office | grep -i account` shows the moves; the feed shows them too ("… was put on another Claude account"). Nothing about accounts is in the deploy package: the folders live in the server user's home and stay across updates. They are logins — treat them like `~/.claude`, and keep them out of anything you share.
+
 ### The long memory (MemPalace)
 The office's long memory is MemPalace (`github.com/MemPalace/mempalace`), a Python program, installed on the server in an environment of its own beside the office program — a deploy does not touch it:
 

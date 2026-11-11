@@ -70,6 +70,8 @@ export interface Timings {
   memoryMineDelayMs?: number;
   /** How long a task's hand-over waits for the long memory before going without it. */
   memoryRecallMs?: number;
+  /** How often the office looks for employees on a Claude account that has run out. */
+  accountFailoverMs?: number;
   /** The shortest gap between two foreman rounds, whatever the owner's setting says. */
   foremanMinGapMs: number;
   /** A round that was neither finished nor ended with its turn is given up on after this long. */
@@ -217,6 +219,7 @@ const DEFAULT_SETTINGS: OwnerSettings = {
   workersInheritMcp: false,
   employeesManageBoard: true,
   longMemory: true,
+  accountFailover: true,
   autoAsksHighRisk: true,
   projectZones: false,
   approachZoom: false,
@@ -373,7 +376,7 @@ export class Core {
   }
 
   /**
-   * Projects and tasks that were deleted while this process runs. Work that was already under way when one was
+   * Projects, tasks and employees that were deleted while this process runs. Work that was already under way when one was
    * deleted (a test run, a merge) still holds the record and writes it back when it finishes; that write is
    * dropped here, so what was deleted stays deleted. (Ids are never used twice.)
    */
@@ -388,7 +391,7 @@ export class Core {
   }
 
   remove(kind: EntityKind, id: string): void {
-    if (kind === 'project' || kind === 'task') this.deleted.add(`${kind}:${id}`);
+    if (kind === 'project' || kind === 'task' || kind === 'employee') this.deleted.add(`${kind}:${id}`);
     if (this.col(kind).delete(id)) this.bus.emit('entity', kind, 'remove', { id });
   }
 

@@ -6,7 +6,7 @@ For a collaborator who continues where someone else stopped. It says what you ne
 
 - **One office, on one server.** The office everybody uses runs on the owner's server ("Sparkcan") as a systemd service. People open it with the desktop app; the page the app shows is served by the server. So **most changes go live by updating the server only**.
 - **The code** is `https://github.com/brstic/orchestrator` (private), branch `main`. There are no other long-lived branches; work is committed to `main` and pushed.
-- **A page per larger feature** explains it end to end — [`MEMORY.md`](MEMORY.md) (the long memory, MemPalace), [`VAULT.md`](VAULT.md) (credentials). Write one when you build something of that size: what it is for, how it works, where the code is, how it is run, tested and extended, and its limits.
+- **A page per larger feature** explains it end to end — [`MEMORY.md`](MEMORY.md) (the long memory, MemPalace), [`VAULT.md`](VAULT.md) (credentials), [`ACCOUNTS.md`](ACCOUNTS.md) (several Claude accounts on a machine). Write one when you build something of that size: what it is for, how it works, where the code is, how it is run, tested and extended, and its limits.
 - **The documents** in `docs/` describe what the code does now. Start with [`STATUS.md`](STATUS.md) (what is live, what is built but not live, what was never checked), then [`OPERATIONS.md`](OPERATIONS.md) (the server, the domain, every command) and [`DEVELOPMENT.md`](DEVELOPMENT.md) (build, test, rules).
 
 ## 2. What you need

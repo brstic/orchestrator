@@ -137,6 +137,8 @@ export type AgentRpc =
   | { method: 'tmux.discover'; params: Record<string, never> }
   | { method: 'proc.claude'; params: Record<string, never> }
   | { method: 'fs.inspect'; params: { path: string } }
+  /** Claude accounts of this machine's user: for each config folder, is anybody logged in there, and who. `prepare`: make the folder (and let it share the conversations of the default one) so that it only needs a login. */
+  | { method: 'claude.accounts'; params: { dirs: Array<string | null>; prepare?: boolean } }
   | { method: 'fs.browse'; params: { path?: string | null } }
   | { method: 'fs.docs.list'; params: { cwd: string } }
   | { method: 'fs.docs.read'; params: { cwd: string; path: string } }

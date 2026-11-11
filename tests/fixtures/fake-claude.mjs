@@ -229,8 +229,12 @@ async function orchestrator(tool, args) {
   return result;
 }
 
+/** The turn in hand ended with an API error (the `limit` step): no Stop hook follows it. */
+let turnFailed = false;
+
 /** Execute the scripted steps found in a prompt. */
 async function runDirectives(text) {
+  turnFailed = false;
   // A re-delivered task (review feedback, merge conflict) can script a different second attempt.
   const retry = /Feedback to address from the previous attempt/.test(text) ? [...text.matchAll(/@@fake-retry:([\s\S]*?)@@/g)].map((m) => m[1]) : [];
   const blocks = retry.length ? retry : [...text.matchAll(/@@fake:([\s\S]*?)@@/g)].map((m) => m[1]);
@@ -323,6 +327,12 @@ async function runDirectives(text) {
         case 'block':
           await orchestrator('report_blocker', { reason: rest });
           break;
+        case 'limit':
+          // Claude refuses the turn for the account's limit: the turn ends with StopFailure, not Stop.
+          turnFailed = true;
+          say("\x1b[31mYou've hit your limit\x1b[0m");
+          await fireHook('StopFailure', { error: rest || 'rate_limit', error_details: '429 usage limit reached' });
+          return "You've hit your limit";
         case 'complete': {
           const res = await orchestrator('complete_task', { summary: rest || 'scripted completion', tests_run: 'npm test (scripted)' });
           lastMessage = res.text;
@@ -441,7 +451,7 @@ async function handlePrompt(text, viaStopHook = false) {
   transcript({ type: 'assistant', message: { id: `msg_fake_${Date.now()}`, role: 'assistant', content: [{ type: 'text', text: last }], usage: { input_tokens: 120, output_tokens: 45, cache_read_input_tokens: 1000, cache_creation_input_tokens: 10 } } });
   say(`\x1b[2m${String(last).split('\n')[0].slice(0, 160)}\x1b[0m`);
   // Stop hook: a "block" decision means "keep going with this reason", possibly repeatedly.
-  for (let depth = 0; depth < 6; depth++) {
+  for (let depth = 0; depth < 6 && !turnFailed; depth++) {
     const stop = await fireHook('Stop', { stop_hook_active: depth > 0 || viaStopHook, last_assistant_message: last });
     if (stop?.decision !== 'block' || !stop.reason) break;
     say(`\x1b[35m⎿ Stop hook feedback:\x1b[0m ${String(stop.reason).split('\n')[0].slice(0, 140)}`);

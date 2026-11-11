@@ -565,6 +565,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     // employees
     api.post('/employees', async (req) => engine.hire(body(req) as any));
     api.patch('/employees/:id', async (req) => engine.employees.update(param(req, 'id'), body(req)));
+    // For good, with what is theirs (see Engine.deleteEmployee). `?tasks=delete` takes their tasks too; otherwise they go back on the board.
+    api.delete('/employees/:id', async (req) => engine.deleteEmployee(param(req, 'id'), { tasks: query(req).tasks === 'delete' ? 'delete' : 'keep' }, actorOf(req)));
     api.post('/employees/:id/start', async (req) => engine.sessions.start(param(req, 'id'), { resume: body(req).resume !== false, cwd: body(req).cwd ?? null, continueLast: body(req).continueLast === true }));
     api.post('/employees/:id/stop', async (req) => {
       await engine.sessions.stop(param(req, 'id'), { reason: 'stopped by the owner' });
@@ -632,6 +634,14 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       return { ok: true };
     });
     api.patch('/hosts/:id', async (req) => engine.hosts.rename(param(req, 'id'), String(body(req).name ?? '')));
+    // More Claude accounts on a machine (owners: no rule in access.ts). Adding makes the folder there and says how to log in.
+    api.post('/hosts/:id/accounts', async (req) => engine.sessions.addAccount(param(req, 'id'), String(body(req).dir ?? ''), actorOf(req)));
+    api.post('/hosts/:id/accounts/check', async (req) => ({ accounts: await engine.sessions.checkAccounts(param(req, 'id'), [null, ...(engine.core.hosts.require(param(req, 'id')).claudeAccounts ?? [])]) }));
+    api.post('/hosts/:id/accounts/move', async (req) => ({ moved: await engine.sessions.failover({ key: `${param(req, 'id')}|${String(body(req).from ?? '') || 'default'}`, actor: actorOf(req) }) }));
+    api.delete('/hosts/:id/accounts', async (req) => {
+      engine.sessions.removeAccount(param(req, 'id'), String(query(req).dir ?? ''), actorOf(req));
+      return { ok: true };
+    });
     api.delete('/hosts/:id', async (req) => {
       engine.hosts.remove(param(req, 'id'));
       return { ok: true };

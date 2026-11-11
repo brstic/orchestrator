@@ -615,6 +615,10 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                     On: any employee can release a waiting task, unblock one (saying how), give a task to a colleague, review a colleague's finished work, and start a colleague who is needed — so work goes on without you. Off: those are yours.
                     Either way no employee approves a permission request, marks work done without verification, or deletes anything.
                   </Toggle>
+                  <Toggle checked={settings.accountFailover !== false} onChange={(accountFailover) => void save({ accountFailover })} title="Move employees to another Claude account when theirs runs out">
+                    On: when the Claude account an employee runs on has used up its allowance and the same machine has another account with room, the employee is put on that one and their session starts again there, so nobody waits for a reset.
+                    Off: they wait. Accounts are added in Company → Claude usage.
+                  </Toggle>
                   <SleepSetting settings={settings} />
                 </div>
               )}

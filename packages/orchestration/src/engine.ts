@@ -49,6 +49,7 @@ export class Engine {
   readonly memory: Memory;
   readonly mcp: McpServerOptions<McpContext>;
   private housekeeping: NodeJS.Timeout | null = null;
+  private accountsTimer: NodeJS.Timeout | null = null;
 
   constructor(opts: EngineOptions, gatewayDeps: Pick<GatewayDeps, 'send'>) {
     this.core = new Core(opts);
@@ -160,6 +161,9 @@ export class Engine {
       this.comms.prune();
     }, 3600_000);
     this.housekeeping.unref?.();
+    // An account's figures arrive only while a session on it reports; a look every minute catches the rest.
+    this.accountsTimer = setInterval(() => void this.sessions.failover(), this.core.timings.accountFailoverMs ?? 60_000);
+    this.accountsTimer.unref?.();
     this.employees.unseatForemen();
     this.foreman.start();
     this.routines.start();
@@ -169,6 +173,7 @@ export class Engine {
 
   stop(): void {
     if (this.housekeeping) clearInterval(this.housekeeping);
+    if (this.accountsTimer) clearInterval(this.accountsTimer);
     this.foreman.stop();
     this.routines.stop();
     this.sleeper.stop();
@@ -308,6 +313,91 @@ export class Engine {
    * suggestions about it are dismissed. Nothing on disk is touched: the folder, its branches and its worktrees
    * are the owner's, and stay exactly as they are.
    */
+  /**
+   * Delete an employee for good, with what is theirs: their session (stopped first), the record of their sessions,
+   * the messages to and from them, their questions, requests to colleagues, notifications, routines, own lessons and
+   * XP. Their tasks go with them (`tasks: 'delete'`) or go back on the board for someone else (`'keep'`: unfinished
+   * ones become ready and unassigned, finished ones stay as a record). Archiving is the way to take somebody off the
+   * floor and keep all of this.
+   *
+   * Left as they are: the event log and the audit log (what happened, happened), meetings they sat in, what the long
+   * memory filed, and every folder, branch and conversation on the machine.
+   */
+  async deleteEmployee(employeeId: string, opts: { tasks?: 'delete' | 'keep' } = {}, actor = 'owner'): Promise<{ name: string; tasks: number; released: number; sessions: number; messages: number }> {
+    const e = this.core.employees.require(employeeId);
+    const withTasks = opts.tasks === 'delete';
+    const theirs = this.core.tasks.filter((t) => t.assigneeId === e.id);
+    const verifying = theirs.find((t) => this.tasks.isVerifying(t.id));
+    if (verifying) throw new EngineError(`${verifying.key} is being verified right now. Delete ${e.name} when that has finished.`, 409);
+    if (this.core.sessions.find((s) => s.employeeId === e.id && s.status === 'host_offline')) throw new EngineError(`${e.name}'s session is still running on a machine that is away. Delete them when it is back, so the session can be stopped.`, 409);
+    if (this.core.runningSessionOf(e.id)) await this.sessions.stop(e.id, { actor, reason: 'the employee was deleted' });
+
+    const gone = new Set<string>();
+    let released = 0;
+    for (const t of theirs) {
+      this.comms.cancelFor({ kind: 'task', id: t.id });
+      if (withTasks) {
+        gone.add(t.id);
+        this.core.remove('task', t.id);
+        continue;
+      }
+      const open = t.status === 'IN_PROGRESS' || t.status === 'BLOCKED' || t.status === 'REVIEW' || t.status === 'READY' || t.status === 'BACKLOG';
+      t.assigneeId = null;
+      if (t.status === 'IN_PROGRESS' || t.status === 'BLOCKED' || t.status === 'REVIEW') {
+        t.status = 'READY';
+        t.blockedReason = null;
+      }
+      t.history.push({ ts: nowIso(), status: t.status, note: open ? `${e.name} was deleted; back on the board for someone else` : `${e.name}, who did this, was deleted`, by: actor });
+      t.updatedAt = nowIso();
+      if (open) released++;
+      this.core.put('task', t);
+    }
+    // Reviews of their work that colleagues were asked for are about tasks that no longer exist.
+    for (const t of this.core.tasks.filter((x) => !!x.reviewOf && gone.has(x.reviewOf))) {
+      this.comms.cancelFor({ kind: 'task', id: t.id });
+      gone.add(t.id);
+      this.core.remove('task', t.id);
+    }
+    for (const t of this.core.tasks.filter((x) => x.dependsOn.some((d) => gone.has(d)) || x.reviewerId === e.id)) {
+      t.dependsOn = t.dependsOn.filter((d) => !gone.has(d));
+      if (t.reviewerId === e.id) t.reviewerId = null;
+      this.core.put('task', t);
+    }
+    for (const q of this.core.questions.filter((x) => x.employeeId === e.id || (!!x.taskId && gone.has(x.taskId)))) {
+      if (q.status === 'open') this.comms.supersede(q.id, `${e.name} was deleted.`);
+      if (q.employeeId === e.id) this.core.remove('question', q.id);
+    }
+    const messages = this.core.messages.filter((m) => m.toEmployeeId === e.id || m.from.id === e.id);
+    for (const m of messages) {
+      if (m.delivery.status === 'queued') this.comms.cancelFor({ kind: 'message', id: m.id });
+      this.core.remove('message', m.id);
+    }
+    for (const c of this.core.collabs.filter((x) => x.fromEmployeeId === e.id || x.toEmployeeId === e.id)) this.core.remove('collab', c.id);
+    for (const n of this.core.notifications.filter((x) => x.employeeId === e.id || (!!x.taskId && gone.has(x.taskId)))) this.core.remove('notification', n.id);
+    for (const r of this.core.routines.filter((x) => x.employeeId === e.id)) this.core.remove('routine', r.id);
+    for (const x of this.core.xp.filter((y) => y.employeeId === e.id)) this.core.xp.delete(x.id);
+    for (const l of this.core.lessons.filter((x) => x.scope === 'employee' && x.employeeId === e.id)) this.core.remove('lesson', l.id);
+    for (const imp of this.core.improvements.filter((x) => x.employeeId === e.id && x.status === 'proposed')) {
+      imp.status = 'dismissed';
+      imp.decidedAt = nowIso();
+      this.core.put('improvement', imp);
+    }
+    for (const a of this.core.artifacts.filter((x) => x.employeeId === e.id)) {
+      a.employeeId = null;
+      this.core.put('artifact', a);
+    }
+    const sessions = this.core.sessions.filter((s) => s.employeeId === e.id);
+    for (const s of sessions) {
+      this.core.store.revokeCredentialsFor('mcp', s.id);
+      this.core.remove('session', s.id);
+    }
+    this.core.remove('employee', e.id);
+    this.core.audit(actor, 'employee.deleted', e.id, { name: e.name, role: e.roleKey, tasks: withTasks ? gone.size : 0, released, sessions: sessions.length, messages: messages.length });
+    this.core.event({ type: 'employee.deleted', source: 'owner', summary: `${e.name} was deleted${withTasks && gone.size ? ` with ${gone.size} task${gone.size === 1 ? '' : 's'}` : released ? `; ${released} task${released === 1 ? ' is' : 's are'} back on the board` : ''}`, data: { name: e.name, tasks: withTasks ? gone.size : 0, released, sessions: sessions.length } });
+    this.tasks.schedule();
+    return { name: e.name, tasks: withTasks ? gone.size : 0, released, sessions: sessions.length, messages: messages.length };
+  }
+
   async deleteProject(projectId: string, actor = 'owner'): Promise<{ name: string; tasks: number; interrupted: number; employees: string[] }> {
     const project = this.core.projects.require(projectId);
     const mine = (t: { projectId: string | null }) => t.projectId === project.id;

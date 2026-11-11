@@ -124,6 +124,8 @@ const RULES: Rule[] = [
   // A delete takes the project's tasks with it and cannot be undone: on what is shared it is an owner's act. A project
   // on a member's own computer has nobody else's work in it (work does not cross), so that member may delete it too.
   onOwn(rule('DELETE', '/projects/:id', 'work', path('project'))),
+  // Deleting an employee for good: an owner anywhere, a colleague only their own employee on their own computer.
+  onOwn(rule('DELETE', '/employees/:id', 'work', path('employee'))),
   rule('POST', '/tasks', 'work', inBody('project', 'projectId'), inBody('employee', 'assigneeId')),
   rule('POST', '/tasks/release', 'work', inBody('project', 'projectId')),
   rule('PATCH', '/tasks/:id', 'work', path('task'), inBody('employee', 'assigneeId')),

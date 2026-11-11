@@ -53,6 +53,12 @@ export interface Host {
   /** True for the machine the server itself runs on (local-only mode). */
   local: boolean;
   /**
+   * More Claude accounts on this machine, besides its default login: the Claude config folders the owner added
+   * (`~/.claude-2`, …). Each is a separate login with an allowance of its own; employees are spread over them and
+   * moved off one that has run out.
+   */
+  claudeAccounts?: string[];
+  /**
    * A personal host: the computer of a member of the office, connected while they are in it. Everything on it
    * (employees, sessions, folders) is that member's, not shared. Null or absent: a shared machine.
    */
@@ -1395,6 +1401,12 @@ export interface AccountUsage {
   reportedBy: ID | null;
   /** Employees currently set up to use this account. */
   employeeIds: ID[];
+  /** Is somebody logged in to Claude Code in that folder? Null: not asked yet (or the machine is away). */
+  loggedIn?: boolean | null;
+  /** Used up for now: a window is at its limit and has not reset. */
+  exhausted?: boolean;
+  /** A turn on this account was refused for its limit; it counts as used up until then (the figures above do not show every limit). */
+  spentUntil?: ISODate | null;
 }
 
 /** The office TV: a web browser in the owner's own window. */
@@ -1436,6 +1448,12 @@ export interface OwnerSettings {
    * false: nothing is filed and nothing is recalled (what is already filed stays where it is).
    */
   longMemory?: boolean;
+  /**
+   * true (default): when the Claude account an employee runs on has used up its allowance and another account on the
+   * same machine has room, the office puts the employee on that one and restarts their session there. false: they
+   * wait for the account to reset.
+   */
+  accountFailover?: boolean;
   /**
    * true (default): an employee on `auto` still needs the owner's approval for commands that match
    * the high-risk list (pushes, sudo, deploys, broad deletions, …). false: those go to Claude Code's
