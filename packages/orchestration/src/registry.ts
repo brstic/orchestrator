@@ -16,7 +16,7 @@ import type {
 } from '@orchestrator/contracts';
 import { EFFORT_CHOICES, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify, truncate, type EffortLevel } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
-import { trustPromptKeys } from './comms.ts';
+import { permissionPrompt, trustPromptKeys } from './comms.ts';
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
 import { DEFAULT_HIGH_RISK_PATTERNS, permissionsFor, systemPromptFor } from './prompts.ts';
@@ -627,6 +627,63 @@ const TRUST_PROMPT = /(do you trust the files in this folder|trust this folder|i
 export class SessionRegistry {
   private eng: Engine;
   private trustAsked = new Set<string>();
+  /** Sessions whose screen shows a permission prompt nobody is asking about yet, and the timer that asks once it has stood a moment. */
+  private promptTimers = new Map<string, NodeJS.Timeout>();
+
+  /**
+   * A permission prompt that stands in a session's terminal with nobody in the office asked about it — because the
+   * wait for an answer ran out, or the office was restarted while it waited. The employee sits there until someone
+   * answers, so the office asks again: an ordinary approval request, answered from the office with the keys the
+   * prompt itself shows. `now`: ask at once (the office knows the hook has just given up); otherwise only after the
+   * prompt has stood for a moment, so that a request still on its way through the hook is not asked twice.
+   * Returns whether a request is (now) open for it.
+   */
+  promptOnScreen(sessionId: string, now = false, screen: TerminalScreen | undefined = this.core.gateway.screens.get(sessionId)): boolean {
+    const s = this.core.sessions.get(sessionId);
+    if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli') return false;
+    const open = this.core.questions.find((q) => q.sessionId === s.id && q.status === 'open' && q.kind === 'permission');
+    const prompt = screen ? permissionPrompt(screen.lines) : null;
+    const clear = () => {
+      const t = this.promptTimers.get(s.id);
+      if (t) clearTimeout(t);
+      this.promptTimers.delete(s.id);
+    };
+    if (!prompt) {
+      clear();
+      // Gone from the screen while the office was still asking: somebody answered it at the terminal.
+      if (open?.channel === 'terminal') this.eng.comms.supersede(open.id, 'The prompt was answered in the terminal.');
+      return false;
+    }
+    if (open) return true;
+    if (!now) {
+      if (!this.promptTimers.has(s.id)) {
+        const t = setTimeout(() => {
+          this.promptTimers.delete(s.id);
+          this.promptOnScreen(s.id, true);
+        }, this.core.timings.terminalPromptMs ?? 5000);
+        t.unref?.();
+        this.promptTimers.set(s.id, t);
+      }
+      return false;
+    }
+    clear();
+    const employee = this.core.employees.get(s.employeeId) ?? null;
+    this.setActivity(s, 'needs_approval', 'Waiting at a permission prompt in the terminal');
+    this.eng.comms.createQuestion({
+      kind: 'permission',
+      channel: 'terminal',
+      employee,
+      session: s,
+      text: `${employee?.name ?? 'This session'} is waiting at a permission prompt in the terminal: ${truncate(prompt.what.replace(/\s+/g, ' '), 300) || 'see the terminal'}`,
+      context: prompt.what,
+      why: 'Claude Code is showing its own prompt in the terminal and the session does nothing until it is answered. Your answer is given there for you (the plain "Yes" or "No" of the prompt).',
+      options: [
+        { label: 'Allow', description: 'Choose "Yes" on the prompt: this one action runs' },
+        { label: 'Deny', description: 'Choose "No" on the prompt: the agent is told and continues without it' },
+      ],
+    });
+    return true;
+  }
   private starting = new Map<string, Promise<AgentSession>>();
 
   constructor(eng: Engine) {
@@ -869,12 +926,23 @@ export class SessionRegistry {
    * the start. One that ends without any new sign never got going: Claude Code could not continue that conversation.
    */
   private resumeProbes = new Map<string, string | null>();
+  /** Sessions that have had a turn since their last start (a prompt reached them, or a tool ran). */
+  private turnSince = new Set<string>();
+
+  /** A prompt or a tool call was seen in this session: its conversation is real. */
+  noteTurn(sessionId: string): void {
+    this.turnSince.add(sessionId);
+  }
 
   private sessionDied(s: AgentSession, employee: Employee | undefined, reason: string): void {
     if (this.resumeProbes.has(s.id)) {
       const before = this.resumeProbes.get(s.id) ?? null;
       this.resumeProbes.delete(s.id);
-      if (s.lastEventAt === before) {
+      // Never got going: no sign of life since the start — or Claude Code said outright that it has no such
+      // conversation. (It still reports the end of that attempt through a hook: a sign of life, but not of a
+      // conversation — which is why the first test alone let the same failing start be repeated for ever.)
+      const refused = /no conversation found/i.test(reason) && !this.turnSince.has(s.id);
+      if (s.lastEventAt === before || refused) {
         // Not tried again with the same conversation: the next start begins a new one, and says so.
         s.lastEventAt = null;
         this.core.put('session', s);
@@ -1162,6 +1230,7 @@ export class SessionRegistry {
    * prompt, which appears before any hook can fire.
    */
   onScreen(sessionId: string, screen: TerminalScreen): void {
+    this.promptOnScreen(sessionId, false, screen);
     if (this.trustAsked.has(sessionId)) return;
     const s = this.core.sessions.get(sessionId);
     // Only the interactive CLI shows a trust prompt; an SDK-managed worker's pane is a transcript.
@@ -1335,6 +1404,7 @@ export class SessionRegistry {
     session.lastEventAt = resume ? session.lastEventAt : null;
     session.asleepSince = null;
     session.resumed = resume;
+    this.turnSince.delete(session.id);
     if (resume) this.resumeProbes.set(session.id, session.lastEventAt);
     else this.resumeProbes.delete(session.id);
     this.trustAsked.delete(session.id);

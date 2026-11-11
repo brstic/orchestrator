@@ -185,10 +185,29 @@ async function useTool(tool, input, run) {
     if (behavior !== 'allow') {
       // No structured decision: fall back to a prompt in the terminal, like the real CLI.
       void fireHook('Notification', { notification_type: 'permission_prompt', message: `Claude needs your permission to use ${tool}` });
-      say(`\x1b[33mDo you want to proceed?\x1b[0m`);
-      say(`❯ 1. Yes   2. No`);
-      const key = await nextKey();
-      if (key !== '1' && key !== 'y' && key !== '\r') {
+      // Laid out like the real dialog: what it is about in a box, the question, the options one under another.
+      const about = String(input.command ?? input.file_path ?? tool).split('\n')[0].slice(0, 160);
+      say(` ${tool === 'Bash' ? 'Bash command' : tool}`);
+      say(` │ ${about}`);
+      say(` \x1b[33mDo you want to proceed?\x1b[0m`);
+      say(` ❯ 1. Yes`);
+      say(`   2. No`);
+      say(` Esc to cancel · Tab to amend`);
+      let key = await nextKey();
+      let moved = false;
+      if (key === '\x1b') {
+        // Keys come one byte at a time. An arrow (ESC [ B) moves the choice to "No" and the Enter after it confirms
+        // that; an Escape on its own cancels.
+        moved = true;
+        const next = await Promise.race([nextKey(), sleep(150).then(() => null)]);
+        if (next === '[' || next === 'O') {
+          await nextKey();
+          key = await nextKey();
+        } else keyWaiter = null;
+      }
+      // The dialog goes away once it is answered, as the real one does.
+      out('\x1b[6A\x1b[J');
+      if (moved || (key !== '1' && key !== 'y' && key !== '\r')) {
         say('  ⎿ rejected in terminal');
         await fireHook('PermissionDenied', { tool_name: tool, tool_input: input });
         return { denied: true };
@@ -553,6 +572,14 @@ async function shutdown(reason) {
 out('\x1b[?2004h');
 say('\x1b[1m✻ FAKE CLAUDE\x1b[0m — test fixture, not Claude Code');
 say(`  cwd: ${cwd}`);
+// A conversation that was never written down (the session was stopped before its first prompt) cannot be continued:
+// the real CLI says so and exits — after reporting the end of that attempt through its hook. A test asks for this
+// with a file named `.fake-no-conversation` in the working folder.
+if (resumeId && fs.existsSync(path.join(cwd, '.fake-no-conversation'))) {
+  console.error(`No conversation found with session ID: ${resumeId}`);
+  await fireHook('SessionEnd', { reason: 'other' });
+  process.exit(1);
+}
 say(`  session: ${sessionId}${resumeId ? ' (resumed)' : ''} · mode: ${permissionMode}`);
 if (flag('--model') || flag('--effort')) say(`  model: ${flag('--model') ?? 'default'} · effort: ${flag('--effort') ?? 'default'}`);
 if (process.stdin.isTTY) process.stdin.setRawMode(true);

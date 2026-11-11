@@ -213,7 +213,11 @@ export class Store implements Storage {
     this.file = file;
     if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(file);
-    this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+    // The wait for a lock comes first: everything after it — switching to WAL included — then waits its turn instead
+    // of failing at once with "database is locked" when a process that is just ending still holds the file (an
+    // office restarted right after a deploy starts while the old one is closing).
+    this.db.exec('PRAGMA busy_timeout = 15000;');
+    this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;');
     if (file !== ':memory:') {
       try {
         fs.chmodSync(file, 0o600);

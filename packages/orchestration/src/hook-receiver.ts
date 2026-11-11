@@ -233,6 +233,7 @@ export class HookReceiver {
       case 'PermissionRequest':
       case 'SubagentStart':
         session.inTurn = true;
+        this.eng.sessions.noteTurn(session.id);
         break;
       case 'SessionStart':
       case 'SessionEnd':
@@ -344,6 +345,8 @@ export class HookReceiver {
     if (payload.hook_event_name === 'PostToolUse' || payload.hook_event_name === 'PostToolUseFailure' || payload.hook_event_name === 'PermissionDenied') {
       this.eng.comms.confirmBySignal(session.id, { tool: payload.tool_name ?? null, orchestratorTool: interp.orchestratorTool });
       this.eng.comms.resolveNotifications((n) => n.kind === 'permission' && n.sessionId === session.id && !n.questionId);
+      // A prompt the office was asking about through the terminal: the session has moved past it.
+      for (const q of this.core.questions.filter((x) => x.sessionId === session.id && x.status === 'open' && x.kind === 'permission' && x.channel === 'terminal')) this.eng.comms.supersede(q.id, 'The prompt was answered in the terminal.');
     }
     if (interp.sessionStarted) {
       this.eng.comms.confirmBySignal(session.id, { sessionStarted: true });
@@ -383,9 +386,10 @@ export class HookReceiver {
       const file = payload.tool_input?.file_path ?? payload.tool_input?.notebook_path;
       if (typeof file === 'string' && file) this.eng.tasks.noteTouched(task, file);
     }
-    // One of the office's own tools could not be reached from this session (Claude Code gave the connection up, or
-    // the address the session was started with is gone): the session is started again when this turn ends.
-    if (payload.hook_event_name === 'PostToolUseFailure' && /^mcp__orchestrator__/.test(String(payload.tool_name ?? '')) && /not connected|connection (closed|refused|failed|error)|fetch failed|ECONNREFUSED|ECONNRESET/i.test(String(payload.error ?? ''))) this.eng.sessions.onOfficeUnreachable(session);
+    // One of the office's own tools could not be reached from this session and Claude Code has given the connection
+    // up ("not connected"): the session is started again when this turn ends. A single refused connection is not
+    // that — the office is away for some seconds at every update, and a call made just then fails on its own.
+    if (payload.hook_event_name === 'PostToolUseFailure' && /^mcp__orchestrator__/.test(String(payload.tool_name ?? '')) && /not connected/i.test(String(payload.error ?? ''))) this.eng.sessions.onOfficeUnreachable(session);
     // Claude refused the turn for the account's limit: its people go to another account, if the machine has one.
     if (payload.hook_event_name === 'StopFailure' && /rate.?limit|usage.?limit|billing/i.test(String(payload.error ?? payload.error_details ?? payload.message ?? ''))) this.eng.sessions.onLimitHit(session, String(payload.error ?? payload.message ?? 'rate_limit'));
     // A Stop that arrived through the non-blocking path (host had no server link at the time).

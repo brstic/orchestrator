@@ -12,20 +12,63 @@ import { answerPrompt, messagePrompt } from './prompts.ts';
  * not look like the prompt — we never press keys blind.
  */
 export function trustPromptKeys(lines: string[]): string[] | null {
+  return optionKeys(lines, (label) => /^Yes\b/.test(label));
+}
+
+/** The keys that move from the highlighted option of a Yes/No list on screen to the one `wanted` picks, and confirm it. */
+function optionKeys(lines: string[], wanted: (label: string) => boolean): string[] | null {
   const plain = lines.map((l) => l.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ''));
-  const options: Array<{ selected: boolean; yes: boolean }> = [];
+  const options: Array<{ selected: boolean; label: string }> = [];
   for (const line of plain) {
     const m = /^\s*(❯|>|›)?\s*(?:\d+\.\s*)?((?:Yes|No)\b.*)$/.exec(line);
     if (!m) continue;
-    options.push({ selected: !!m[1], yes: /^Yes\b/.test(m[2]!) });
+    options.push({ selected: !!m[1], label: m[2]!.trim() });
   }
   const from = options.findIndex((o) => o.selected);
-  const to = options.findIndex((o) => o.yes);
+  const to = options.findIndex((o) => wanted(o.label));
   if (options.length < 2 || from < 0 || to < 0) return null;
   const keys: string[] = [];
   for (let i = 0; i < Math.abs(to - from); i++) keys.push(to > from ? 'Down' : 'Up');
   keys.push('Enter');
   return keys;
+}
+
+/**
+ * Claude Code's own permission dialog, as it stands in a terminal: what it asks about, and the keys for each answer.
+ * Null when the screen shows none. It is there when the office could not hold the request — the wait for an answer
+ * ran out, or the office was restarted meanwhile — and then the employee waits at it until somebody answers.
+ *
+ * "Allow" is the plain *Yes* — never "Yes, and don't ask again", which would widen what the session may do.
+ */
+export function permissionPrompt(lines: string[]): { what: string; allow: string[] | null; deny: string[] | null } | null {
+  const plain = lines.map((l) => l.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\s+$/, ''));
+  // The question is the last "Do you want to …?" on screen, with its numbered options right under it.
+  let at = -1;
+  for (let i = plain.length - 1; i >= 0; i--) {
+    if (/^\s*│?\s*Do you want to\b.*\?\s*│?$/.test(plain[i]!)) {
+      at = i;
+      break;
+    }
+  }
+  if (at < 0) return null;
+  const below = plain.slice(at + 1, at + 8);
+  const isOption = (l: string) => /^\s*│?\s*(❯|>|›)?\s*\d+\.\s*(Yes|No)\b/.test(l);
+  if (!below.some((l) => /^\s*│?\s*(❯|>|›)\s*\d+\.\s*(Yes|No)\b/.test(l))) return null;
+  // A dialog that is being shown is the bottom of the screen: after its options come only its own last lines
+  // (the key hints, a border). Anything more means the session is past it and this is old text further up.
+  const lastOption = at + 1 + below.map(isOption).lastIndexOf(true);
+  if (plain.slice(lastOption + 1).filter((l) => l.trim()).length > 3) return null;
+  const options = below.map((l) => l.replace(/^\s*│\s?/, '').replace(/\s*│$/, ''));
+  const allow = optionKeys(options, (label) => /^Yes$/.test(label)) ?? optionKeys(options, (label) => /^Yes\b/.test(label) && !/don.t ask|always|all /i.test(label));
+  const deny = optionKeys(options, (label) => /^No\b/.test(label));
+  // What it is about: the boxed lines of the dialog above the question (the command or file, and why it is asked),
+  // up to the rule that opens the dialog.
+  let top = at;
+  while (top > 0 && at - top < 40 && !/^\s*[─━]{20,}/.test(plain[top - 1]!)) top--;
+  const above = plain.slice(top, at);
+  const boxed = above.filter((l) => /^\s*│/.test(l)).map((l) => l.replace(/^\s*│\s?/, '').replace(/\s*│$/, '').trim());
+  const what = (boxed.length ? boxed : above.filter((l) => l.trim()).slice(-3).map((l) => l.trim())).filter((l) => l && !/^\[settings\]$/.test(l)).join('\n');
+  return { what: what.slice(0, 1500), allow, deny };
 }
 
 /** How a message is marked that reached its reader as the result of the tool call that was waiting for it. */
@@ -91,6 +134,7 @@ export class Comms {
     // Hook-held questions cannot survive a restart: the hook connection is gone.
     for (const q of this.core.questions.filter((x) => x.status === 'open' && (x.channel === 'permission_hook' || x.channel === 'ask_user_question_hook'))) {
       this.supersede(q.id, 'Orchestrator restarted while this request was pending; Claude Code falls back to its own prompt in the terminal.');
+      // (That prompt is noticed on the session's screen as soon as its machine reports it again, and asked anew: see SessionRegistry.onScreen.)
     }
   }
 
@@ -419,6 +463,22 @@ export class Comms {
           this.setStatus(q, 'failed', 'The session is not reachable.');
           break;
         }
+        if (q.kind === 'permission') {
+          // Answered with keys, worked out from what the prompt shows right now — and only if it still shows.
+          const prompt = permissionPrompt(this.core.gateway.screens.get(session.id)?.lines ?? []);
+          const keys = prompt ? (q.decision === 'allow' ? prompt.allow : prompt.deny) : null;
+          if (!keys) {
+            this.setStatus(q, 'failed', prompt ? 'Could not find that answer among the options on screen; open the workstation and answer it in the terminal.' : 'The prompt is no longer on the screen: it was answered in the terminal, or the session moved on.');
+            break;
+          }
+          try {
+            await this.core.agents.rpc(session.hostId, { method: 'session.keys', params: { sessionId: session.id, keys } });
+            this.setStatus(q, 'delivered', `Chose "${q.decision === 'allow' ? 'Yes' : 'No'}" on the prompt in the terminal (${keys.join(' ')})`);
+          } catch (e) {
+            this.setStatus(q, 'failed', (e as Error).message);
+          }
+          break;
+        }
         if (q.kind === 'trust_prompt' && /^(trust|yes)/i.test(q.answer ?? '')) {
           try {
             // Work out the keystrokes from what the prompt actually shows right now: the
@@ -468,6 +528,8 @@ export class Comms {
     } else if (q.status === 'open' || q.status === 'answered') {
       this.setStatus(q, 'superseded', detail ?? 'Claude Code stopped waiting; the prompt is now in the terminal.');
       const emp = this.core.employees.get(q.employeeId);
+      // The prompt is in the terminal now. When the office can see it there, it asks again — answerable from here.
+      if (q.kind === 'permission' && q.sessionId && this.eng.sessions.promptOnScreen(q.sessionId, true)) return;
       if (q.kind === 'permission') {
         this.notify({
           kind: 'permission',
@@ -487,6 +549,7 @@ export class Comms {
       if (q.channel === 'permission_hook' && signal.tool && q.tool?.name === signal.tool) this.setStatus(q, 'confirmed', q.decision === 'deny' ? 'Claude Code reported the denial to the agent' : 'The approved tool ran');
       else if (q.channel === 'ask_user_question_hook' && signal.tool === 'AskUserQuestion') this.setStatus(q, 'confirmed', 'AskUserQuestion completed with the supplied answer');
       else if (q.channel === 'mcp_tool' && (signal.orchestratorTool === 'ask_boss' || signal.orchestratorTool === 'wait_for_answer')) this.setStatus(q, 'confirmed', 'The tool result reached the agent');
+      else if (q.channel === 'terminal' && q.kind === 'permission' && signal.tool) this.setStatus(q, 'confirmed', q.decision === 'deny' ? 'Claude Code went on without it' : 'The approved tool ran');
       else if (q.channel === 'terminal' && signal.sessionStarted) this.setStatus(q, 'confirmed', 'The session started after the prompt was accepted');
     }
     // A colleague's answer that was returned by the tool call that waited for it: that call has now come back.

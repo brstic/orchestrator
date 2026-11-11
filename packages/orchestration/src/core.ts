@@ -53,6 +53,8 @@ export interface Timings {
   deliverySettleMs: number;
   /** A pasted prompt that no hook confirmed is considered unconfirmed after this long. */
   deliveryConfirmMs: number;
+  /** How long a permission prompt must stand in a terminal, unasked, before the office asks about it itself. */
+  terminalPromptMs?: number;
   /** Default verification command timeout. */
   verifyTimeoutMs: number;
   scheduleDebounceMs: number;

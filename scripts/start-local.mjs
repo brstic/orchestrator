@@ -111,7 +111,16 @@ function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
   for (const c of children) c.kill('SIGTERM');
-  setTimeout(() => process.exit(code), 800);
+  // Leave only when the server and the agent have really ended (the server closes its database last), so that
+  // whoever starts the office again — systemd, right after a deploy — does not find the old one still holding it.
+  // Not for ever: after ten seconds this process goes regardless.
+  const alive = () => children.filter((c) => c.exitCode === null && c.signalCode === null);
+  const began = Date.now();
+  const wait = setInterval(() => {
+    if (alive().length && Date.now() - began < 10_000) return;
+    clearInterval(wait);
+    process.exit(code);
+  }, 100);
 }
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
