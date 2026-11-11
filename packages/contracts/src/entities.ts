@@ -335,6 +335,12 @@ export interface AgentSession {
   controllerId: string | null;
   capabilities: SessionCapabilities;
   permissionMode: string | null;
+  /**
+   * What the session was doing when the office lost sight of it (its machine went away, or the office was started
+   * again), and when. If sight comes back within a few minutes and the session was between turns, that is still
+   * what it is doing — instead of "unknown" on every desk after every restart.
+   */
+  activityBefore?: { state: ActivityState; detail: string | null; at: ISODate } | null;
   /** The Claude account folder this session's process was started with (null: the machine's default login). Absent on older records. */
   claudeConfigDir?: string | null;
   /** Which version of the hook commands the session runs with, as its machine's agent reports it (see `HOOKS_VERSION`). */

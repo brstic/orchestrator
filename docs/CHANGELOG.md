@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-11
+- **After a restart of the office, people who were between turns are shown as they were** — idle, waiting for input — instead of every desk saying "unknown · waiting for the next signal" until each session happened to do something. What a session was doing is kept for three minutes when the office loses sight of it (its own restart, a blip of the link to a machine); one that was in the middle of a turn still says so itself a moment later.
 - **A fifth review, of what employees can do with their own tools, and of what the office can ask a machine's agent to do** (nine findings; an employee's session can be steered by what it reads, so its tools were judged as an attacker's):
   - **An employee of the shared office could take a task that lives on a member's own computer** (`claim_task`): the task's text and files came to the shared machine and the employee was moved into the member's project — closed room or not. Work no longer crosses that line however it is assigned: not by claiming, not by an owner assigning, not as a review or a "separate task" for a request, and it is checked once more where a task is handed over.
   - **An author could approve their own work** by giving the task to a colleague while it waited for its review, then reviewing it as "not the assignee". A task in review cannot be given away by an employee, and whoever handed the work in is remembered as its author and never reviews it.

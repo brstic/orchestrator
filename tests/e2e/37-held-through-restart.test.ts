@@ -171,3 +171,28 @@ test('answered while its machine is away, then the office restarts and the machi
   await h.api('POST', `/questions/${asked.id}/answer`, { decision: 'allow' });
   await waitFor(async () => /tara-done/.test(await pane('Tara')), { label: 'Tara went on', timeout: 20000 });
 });
+
+test('after a restart of the office, somebody who was between turns is still shown as that — not as "unknown"', async () => {
+  ids.Rade = (await h.employee('Rade', 'devops', { projectId: project })).id;
+  await h.api('POST', `/employees/${ids.Rade}/start`, {});
+  const before = await waitFor(async () => {
+    const s = await h.session(ids.Rade!);
+    return s?.inTurn === false && ['idle', 'waiting_input'].includes(s.activity) ? s : null;
+  }, { label: 'Rade is between turns', timeout: 30000 });
+  await h.restartServer();
+  const after = await waitFor(async () => {
+    const s = await h.session(ids.Rade!);
+    return s?.status === 'running' ? s : null;
+  }, { label: 'his machine reported him again', timeout: 20000 });
+  assert.deepEqual([after.activity, after.activityDetail ?? null], [before.activity, before.activityDetail ?? null], 'what was known a moment ago is still known');
+  assert.equal(after.activityBefore ?? null, null);
+  // The same after the link to his machine dropped for a moment.
+  (h.agent as unknown as { ws: { close(): void } }).ws.close();
+  await waitFor(() => !h.agent.isConnected, { label: 'the link is down', timeout: 5000, interval: 5 });
+  await waitFor(() => h.agent.isConnected, { label: 'and back', timeout: 15000 });
+  const again = await waitFor(async () => {
+    const s = await h.session(ids.Rade!);
+    return s?.status === 'running' ? s : null;
+  }, { label: 'reported again', timeout: 20000 });
+  assert.equal(again.activity, before.activity);
+});

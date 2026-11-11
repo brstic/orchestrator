@@ -668,6 +668,11 @@ function heardFromSinceStart(s: AgentSession): boolean {
   return !s.startedAt || Date.parse(s.lastEventAt) >= Date.parse(s.startedAt);
 }
 
+/** How long after losing sight of a session what it was doing is still taken as what it is doing. */
+const RESUME_KNOWN_MS = 3 * 60_000;
+/** States in which a session waits for something from outside and does nothing by itself. */
+const BETWEEN_TURNS = new Set<string>(['idle', 'waiting_input', 'waiting_answer', 'blocked', 'task_complete', 'paused']);
+
 /** Claude Code's warning at the first start in bypass mode (its wording, as in the installed program). */
 const BYPASS_WARNING = /Bypass Permissions mode/i;
 const TRUST_PROMPT = /(do you trust the files in this folder|trust this folder|is this a project you (created|trust))/i;
@@ -780,6 +785,7 @@ export class SessionRegistry {
     for (const s of this.core.sessions.all()) {
       if (s.status === 'running' || s.status === 'starting') {
         s.status = 'host_offline';
+        this.rememberActivity(s);
         s.activity = 'unknown';
         s.activityDetail = 'Waiting for the host to reconnect';
         s.control = 'DISCONNECTED';
@@ -810,8 +816,14 @@ export class SessionRegistry {
     }
   }
 
+  /** Kept for the moment sight of the session comes back (see `AgentSession.activityBefore`). */
+  private rememberActivity(s: AgentSession): void {
+    if (s.activity !== 'unknown' && s.activity !== 'offline') s.activityBefore = { state: s.activity, detail: s.activityDetail ?? null, at: nowIso() };
+  }
+
   hostWentOffline(s: AgentSession): void {
     s.status = 'host_offline';
+    this.rememberActivity(s);
     s.activity = 'unknown';
     s.activityDetail = 'Host is offline — the tmux session keeps running';
     s.activitySince = nowIso();
@@ -892,11 +904,22 @@ export class SessionRegistry {
       s.endedAt = null;
       s.exitReason = null;
       if (wasDead || wasOffline || s.activity === 'offline') {
-        // We just (re)gained sight of this session; do not guess what it is doing.
-        s.activity = 'unknown';
-        s.activityDetail = s.capabilities.hooks ? 'Waiting for the next signal from Claude Code' : 'No hooks on this session — activity cannot be observed, only the terminal';
-        s.activitySince = nowIso();
+        // We just (re)gained sight of this session; do not guess what it is doing — except after a short absence
+        // (a restart of the office, a blip of the link) of a session that was between turns: nothing types into a
+        // session but the office, so it is still where it was. (One that was in a turn says so itself in a moment:
+        // its hooks waited for the office, or come from the agent's outbox.)
+        const before = s.activityBefore;
+        const still = !!before && wasOffline && !wasDead && s.capabilities.hooks && s.inTurn === false && Date.now() - Date.parse(before.at) < RESUME_KNOWN_MS && BETWEEN_TURNS.has(before.state);
+        if (still) {
+          s.activity = before!.state;
+          s.activityDetail = before!.detail;
+        } else {
+          s.activity = 'unknown';
+          s.activityDetail = s.capabilities.hooks ? 'Waiting for the next signal from Claude Code' : 'No hooks on this session — activity cannot be observed, only the terminal';
+          s.activitySince = nowIso();
+        }
       }
+      s.activityBefore = null;
       if (!existing && r.origin === 'attached') {
         this.core.event({ type: 'session.attached', source: 'host', summary: `Existing tmux session "${r.tmuxSession}" was connected`, hostId, sessionId: s.id, employeeId: s.employeeId, data: { tmuxSession: r.tmuxSession, cwd: r.cwd } });
       }
