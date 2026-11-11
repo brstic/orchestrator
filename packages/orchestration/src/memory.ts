@@ -280,7 +280,8 @@ export class Memory {
       timer = setTimeout(() => resolve([]), limit);
       timer.unref?.();
     });
-    const found = this.run(['search', q, '--wing', WING, '--results', String(opts.results ?? 5), ...(opts.room ? ['--room', opts.room] : [])], limit).then(
+    // (A question that begins with a dash would be read by the program as one of its own options.)
+    const found = this.run(['search', q.replace(/^[-\s]+/, '') || '?', '--wing', WING, '--results', String(opts.results ?? 5), ...(opts.room ? ['--room', opts.room] : [])], limit).then(
       (out) => {
         this.lastError = null;
         return parseSearch(out).filter((h) => h.source !== 'README.md');

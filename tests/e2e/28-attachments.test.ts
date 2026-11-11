@@ -176,7 +176,9 @@ test('what may not be attached is refused, in words the employee can act on', as
   fs.rmSync(path.join(sarah.cwd, '.env'));
   fs.rmSync(path.join(sarah.cwd, 'Deploy.PEM'));
   // The office's own token on this machine (in a test it lies in a temporary folder, which is otherwise allowed).
-  assert.match(await attempt(path.join(path.dirname(h.agentHome), 'server', 'owner-token')), /^ERROR .*looks like a key or a credential/);
+  // (Refused before the tool is even called: the office's own files on the machine are fenced off from its sessions.)
+  assert.match(await attempt(path.join(path.dirname(h.agentHome), 'server', 'owner-token')), /^ERROR .*(looks like a key or a credential|did not come back)/);
+  assert.match(h.tmux('capture-pane', '-p', '-J', '-S', '-60', '-t', sarah.tmuxPane!).replace(/\s+/g, ' '), /denied by hook: Orchestrator policy: that is one of the office's own files on this machine/);
   assert.equal((await h.getTask(task.id)).attachments?.length ?? 0, 0, 'nothing of that reached the task');
   // Somebody else's task is not hers to leave evidence on.
   await waitFor(async () => (await h.session(ids.Sarah!))!.inTurn === false, { label: 'Sarah between turns', timeout: 20000 });

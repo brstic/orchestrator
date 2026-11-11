@@ -80,6 +80,18 @@ export class TmuxError extends Error {
 }
 
 /** Thin, shell-free wrapper around the tmux CLI. */
+/**
+ * Text as it may be pasted into somebody's terminal: line breaks and tabs stay, every other control character goes
+ * (C0 with ESC among them, DEL, and the C1 range, where an 8-bit CSI lives). A lone carriage return becomes a line
+ * break — inside a paste it must not be the key that sends the line.
+ */
+export function pasteable(text: string): string {
+  return String(text ?? '')
+    .replace(/\r\n?/g, '\n')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
+}
+
 export class Tmux {
   readonly bin: string;
   readonly socketArgs: string[];
@@ -211,10 +223,15 @@ export class Tmux {
     await this.exec(args);
   }
 
-  /** Paste text as one bracketed paste, exactly as if the user pasted it. */
+  /**
+   * Paste text as one bracketed paste, exactly as if the user pasted it. Text only: a paste is closed by an escape
+   * sequence (ESC [ 201 ~), and whatever followed one inside the text would arrive as keys pressed — an Escape, a
+   * Shift+Tab that changes Claude Code's permission mode, an Enter at a dialog. Messages are written by employees
+   * and by people other than the one whose terminal this is; control characters are taken out (see `pasteable`).
+   */
   async paste(paneId: string, text: string): Promise<void> {
     const buf = `orch-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    await this.exec(['load-buffer', '-b', buf, '-'], { input: text });
+    await this.exec(['load-buffer', '-b', buf, '-'], { input: pasteable(text) });
     await this.exec(['paste-buffer', '-p', '-d', '-b', buf, '-t', paneId]);
   }
 

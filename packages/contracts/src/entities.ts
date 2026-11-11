@@ -549,6 +549,8 @@ export interface Task {
   attachments?: TaskAttachment[];
   requiresReview: boolean;
   reviewerId: ID | null;
+  /** Who did the work that is in review (the assignee when it was handed in): never its reviewer, whoever the task is given to afterwards. */
+  authorId?: ID | null;
   /** For kind=review: the task under review. */
   reviewOf: ID | null;
   verifyCommand: string | null;

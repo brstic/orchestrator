@@ -272,6 +272,17 @@ export class TaskManager {
     return !(personal(e.hostId) || personal(projectHost)) || e.hostId === projectHost;
   }
 
+  /**
+   * May this employee be given this task at all? Not across the line between the shared office and a member's own
+   * computer (whoever asks: the task's text, its files and its project would go with it), and never the foreman,
+   * who supervises and does not take tasks — a review is the one kind of task that is not "work" in that sense,
+   * and it is not given to the foreman either.
+   */
+  mayTake(e: Employee, task: Pick<Task, 'projectId' | 'key'> & { kind?: string }): void {
+    if (e.roleKey === 'foreman') throw new EngineError(`${e.name} is the foreman and does not take tasks.`);
+    if (!this.canSee(e, task as Task)) throw new EngineError(`${e.name} cannot take ${task.key}: work does not cross between the shared office and a member's own computer.`);
+  }
+
   /** Unfinished tasks this one waits for. */
   openDependencies(task: Task): Task[] {
     return task.dependsOn.map((id) => this.core.tasks.get(id)).filter((t): t is Task => !!t && t.status !== 'DONE');
@@ -291,7 +302,7 @@ export class TaskManager {
     const project = this.core.projects.require(input.projectId);
     const title = input.title?.trim();
     if (!title) throw new EngineError('a task needs a title');
-    if (input.assigneeId) this.core.employees.require(input.assigneeId);
+    if (input.assigneeId) this.mayTake(this.core.employees.require(input.assigneeId), { projectId: project.id, key: 'this task', kind: input.kind ?? 'feature' });
     for (const dep of input.dependsOn ?? []) if (!this.core.tasks.get(dep)) throw new EngineError(`unknown dependency ${dep}`);
     const kind = input.kind && TASK_KINDS.includes(input.kind) ? input.kind : 'feature';
     const now = nowIso();
@@ -361,7 +372,7 @@ export class TaskManager {
     const task = this.core.tasks.require(id);
     if (patch.assigneeId !== undefined && patch.assigneeId !== task.assigneeId) {
       if (task.status === 'IN_PROGRESS') throw new EngineError(`${task.key} is in progress; block or finish it before reassigning`);
-      if (patch.assigneeId) this.core.employees.require(patch.assigneeId);
+      if (patch.assigneeId) this.mayTake(this.core.employees.require(patch.assigneeId), task);
       task.assigneeId = patch.assigneeId;
       this.history(task, patch.assigneeId ? `Assigned to ${this.core.employees.get(patch.assigneeId)?.name}` : 'Unassigned', actor);
       if (patch.assigneeId) this.emitAssigned(task, actor);
@@ -803,6 +814,8 @@ export class TaskManager {
   async startTask(task: Task): Promise<void> {
     const employee = this.core.employees.require(task.assigneeId!);
     const project = this.core.projects.require(task.projectId);
+    // (Asked once more where the work really begins: nothing is handed over across the line, however it got assigned.)
+    if (!this.canSee(employee, task)) return void this.fail(task, `${employee.name} cannot take ${task.key}: work does not cross between the shared office and a member's own computer.`);
     this.takenBack.delete(task.id);
     /** Was the task stopped, removed or given to somebody else while this hand-over waited? */
     const takenBack = () => this.takenBack.has(task.id) || !this.core.tasks.get(task.id) || this.core.tasks.get(task.id)!.assigneeId !== employee.id || !this.core.employees.get(employee.id);
@@ -990,6 +1003,7 @@ export class TaskManager {
     const to = this.eng.comms.resolveTeammate(from, toRef);
     if (!to || to.archived) return { text: `No teammate matches "${toRef}". Use get_team.`, isError: true };
     if (!to.hostId) return { text: `${to.name} has no machine to work on; choose someone else or tell the boss.`, isError: true };
+    if (to.roleKey === 'foreman') return { text: `${to.name} is the foreman and does not take tasks. Hand it to someone who does the work.`, isError: true };
     // Someone from another project (the specialist for this, in an office of small projects) is lent to this one.
     const cannot = this.lend(to, task.projectId);
     if (cannot) return { text: cannot, isError: true };
@@ -1181,6 +1195,8 @@ export class TaskManager {
       task.progress = { percent: 100, note: 'Completion reported', ts: nowIso() };
       if (task.requiresReview && task.kind !== 'review' && task.evidence.review?.verdict !== 'approved') {
         task.status = 'REVIEW';
+        // Whoever handed it in is its author for this review, also if the task is given to somebody else meanwhile.
+        task.authorId = task.assigneeId;
         task.evidence.review = null;
         this.history(task, 'Verified; waiting for review', 'orchestrator');
         this.core.put('task', task);
@@ -1446,7 +1462,9 @@ export class TaskManager {
 
   private pickReviewer(task: Task): Employee | undefined {
     const preferred = task.kind === 'security' ? ['security', 'reviewer', 'architect'] : ['reviewer', 'architect', 'security', 'qa'];
-    const pool = this.core.employees.filter((e) => !e.archived && e.id !== task.assigneeId && preferred.includes(e.roleKey) && !!e.hostId && e.schedule.available && (e.projectId === task.projectId || e.projectId === null));
+    // (Never across the line to a member's own computer, here either: the review would carry the task's text there,
+    // and its reviewer could not hand the review in.)
+    const pool = this.core.employees.filter((e) => !e.archived && e.id !== task.assigneeId && preferred.includes(e.roleKey) && !!e.hostId && e.schedule.available && this.canSee(e, task) && (e.projectId === task.projectId || e.projectId === null));
     pool.sort((a, b) => preferred.indexOf(a.roleKey) - preferred.indexOf(b.roleKey));
     if (pool[0] || this.core.settings.employeesManageBoard === false) return pool[0];
     // No reviewer by trade on the team. Where employees keep the board themselves, a colleague who does this kind of
@@ -1488,6 +1506,8 @@ export class TaskManager {
     let reviewer: Employee | undefined;
     if (reviewerRef && author) reviewer = this.eng.comms.resolveTeammate(author, reviewerRef);
     reviewer = reviewer ?? this.core.employees.get(task.reviewerId) ?? this.pickReviewer(task);
+    // Whoever was named: not the author, not the foreman, not somebody on the other side of the line.
+    if (reviewer && (reviewer.id === task.assigneeId || reviewer.roleKey === 'foreman' || reviewer.archived || !this.canSee(reviewer, task))) reviewer = this.pickReviewer(task);
     if (reviewer && reviewer.id === task.assigneeId) reviewer = undefined;
     this.core.company.reviewsRequested++;
     this.core.saveCompany();
@@ -1531,7 +1551,7 @@ export class TaskManager {
     if (!task) throw new EngineError(`no task "${taskRef}"`);
     if (task.status !== 'REVIEW') throw new EngineError(`${task.key} is not waiting for review (status ${task.status})`);
     if (by !== 'owner') {
-      if (by.id === task.assigneeId) throw new EngineError('you cannot review your own task');
+      if (by.id === task.assigneeId || by.id === task.authorId) throw new EngineError('you cannot review your own task');
       const assigned = task.reviewerId === by.id || !!this.core.tasks.find((t) => t.reviewOf === task.id && t.assigneeId === by.id);
       // With the board in the employees' hands, any colleague may review finished work — never its own author.
       if (!assigned && this.core.settings.employeesManageBoard === false) throw new EngineError(`you were not asked to review ${task.key}`);

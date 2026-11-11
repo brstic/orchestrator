@@ -55,6 +55,27 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
   const personal = (hostId: string | null | undefined) => !!core.hosts.get(hostId ?? '')?.memberId;
   const sameSide = (a: Employee, b: Employee) => !(personal(a.hostId) || personal(b.hostId)) || a.hostId === b.hostId;
   /** A task this employee may know about (their own project's first when two share a key). One answer for "no such task" and "not yours to see". */
+  /** Is `to` on a member's own computer whose room is closed to `from`? The words to refuse with, or null. */
+  const closedTo = (from: Employee, to: Employee): string | null => {
+    const member = eng.hosts.memberOfHost(to.hostId);
+    if (!member || eng.hosts.memberOfHost(from.hostId) === member || !eng.hosts.isClosed(member)) return null;
+    return `${to.name} works on a member's own computer, and that member has closed their room: nothing reaches them from outside until it is open again. Nothing was sent.`;
+  };
+  /**
+   * How much one employee may put into the office in an hour, by kind. An employee whose session was steered (a page
+   * it read, a file) is otherwise a way to fill the board, the Inbox and every colleague's queue without end.
+   */
+  const made = new Map<string, number[]>();
+  const tooMany = (e: Employee, kind: string, perHour: number, add = 1): string | null => {
+    const key = `${e.id}|${kind}`;
+    const now = Date.now();
+    const recent = (made.get(key) ?? []).filter((t) => now - t < 3600_000);
+    if (recent.length + add > perHour) return `That is more than ${perHour} in an hour (${kind}). Stop and work with what is there; if more is really needed, say so to the boss (ask_boss).`;
+    for (let i = 0; i < add; i++) recent.push(now);
+    made.set(key, recent);
+    if (made.size > 5000) made.clear();
+    return null;
+  };
   const seen = (e: Employee, ref: unknown): Task | null => {
     const t = eng.tasks.taskByKey(String(ref ?? ''), e.projectId);
     return t && eng.tasks.canSee(e, t) ? t : null;
@@ -111,6 +132,11 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     ask_boss: async (a, { employee, session, signal }) => {
+      // (The same question asked again is not a new one, and is not counted: see `sameQuestion` below.)
+      if (!eng.comms.sameQuestion(employee.id, String(a.question), eng.tasks.currentTask(employee.id)?.id ?? null)) {
+        const many = tooMany(employee, 'question to the boss', 30);
+        if (many) return err(many);
+      }
       const options = Array.isArray(a.options) ? a.options.filter((o: any) => o && typeof o.label === 'string').map((o: any) => ({ label: String(o.label), description: o.description ? String(o.description) : undefined, consequence: o.consequence ? String(o.consequence) : undefined })) : [];
       // The same question once more — the call that was waiting for the answer was cut off (the office restarted, a
       // connection dropped) and the employee asks again: it is the question the boss already has, not a second one.
@@ -167,13 +193,16 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       task.requiresReview = true;
       if (a.reviewer) {
         const r = eng.comms.resolveTeammate(employee, String(a.reviewer));
-        if (r) task.reviewerId = r.id;
+        if (r && r.roleKey === FOREMAN_ROLE) return err(`${r.name} is the foreman and does not review work. Name a colleague, or leave the reviewer out and one is chosen.`);
+        if (r && !eng.tasks.canSee(r, task)) return err(`${r.name} cannot review ${task.key}: work does not cross between the shared office and a member's own computer.`);
+        if (r && r.id !== employee.id) task.reviewerId = r.id;
       }
       core.put('task', task);
       return `${task.key} will go to review${task.reviewerId ? ` by ${core.employees.get(task.reviewerId)?.name}` : ''} once you call complete_task and it passes verification.${a.notes ? ' Put your notes for the reviewer in the complete_task summary.' : ''}`;
     },
 
     submit_review: async (a, { employee }) => {
+      if (employee.roleKey === FOREMAN_ROLE) return err('A foreman does not review work: a colleague who did not do it does, or the boss.');
       const task = await eng.tasks.submitReview(employee, String(a.task), a.verdict, String(a.comments));
       return a.verdict === 'approve' ? `Approved. ${task.key} is now ${task.status}.` : `Changes requested. ${task.key} goes back to ${core.employees.get(task.assigneeId)?.name ?? 'its author'} with your comments.`;
     },
@@ -181,6 +210,10 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     send_message: async (a, { employee }) => {
       const to = eng.comms.resolveTeammate(employee, String(a.to));
       if (!to) return { text: `No teammate matches "${a.to}". Use get_team.`, isError: true };
+      const shut = closedTo(employee, to);
+      if (shut) return err(shut);
+      const many = tooMany(employee, 'message', 120);
+      if (many) return err(many);
       eng.comms.sendMessage({ from: { kind: 'employee', id: employee.id, name: `${employee.name} (${employee.title})` }, toEmployeeId: to.id, body: String(a.message), taskId: eng.tasks.currentTask(employee.id)?.id ?? null });
       eng.foreman.noteMessage(employee);
       return `Message queued for ${to.name}. It is delivered to their session when they can read it.`;
@@ -194,6 +227,10 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       // Refused before anything is sent: a request that says "I am waiting" must be one that can be waited for.
       const no = wait && target ? eng.waits.cannotWaitFor(employee, session, target, 'answer') : null;
       if (no) return { text: `${no} Nothing was sent. If they only need to know, send it without wait.`, isError: true };
+      const shut = target ? closedTo(employee, target) : null;
+      if (shut) return err(shut);
+      const many = tooMany(employee, 'request', 60);
+      if (many) return err(many);
       const collab = eng.comms.requestCollaboration(employee, target ?? String(a.to), String(a.summary), a.detail ? String(a.detail) : '', { waited: wait });
       if (wait) return eng.waits.forRequest(employee, session, collab, signal);
       const to = core.employees.get(collab.toEmployeeId);
@@ -214,7 +251,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       const task = eng.tasks.currentTask(employee.id);
       const roleOrder = ['architect', 'fullstack', 'backend', 'frontend', 'qa', 'security', 'devops'];
       const helper = core.employees
-        .filter((e) => !e.archived && e.id !== employee.id && !!core.runningSessionOf(e.id) && (e.projectId === employee.projectId || !e.projectId))
+        .filter((e) => !e.archived && e.id !== employee.id && e.roleKey !== FOREMAN_ROLE && !!core.runningSessionOf(e.id) && (e.projectId === employee.projectId || !e.projectId) && sameSide(employee, e) && !closedTo(employee, e))
         .sort((x, y) => roleOrder.indexOf(x.roleKey) - roleOrder.indexOf(y.roleKey))
         .find((e) => roleOrder.includes(e.roleKey));
       if (helper) {
@@ -274,7 +311,9 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     claim_task: async (a, { employee }) => {
-      const task = eng.tasks.taskByKey(String(a.task), employee.projectId);
+      // (Only a task they may see: one on a member's own computer is not there for somebody of the shared office —
+      // not to take, and not to learn from the answer that it exists.)
+      const task = seen(employee, a.task);
       if (!task) return { text: `No task ${a.task}.`, isError: true };
       const project = core.projects.get(task.projectId);
       if (!project?.policy.autoAssign) return { text: 'This project does not allow self-assignment; ask the boss.', isError: true };
@@ -287,6 +326,11 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     propose_tasks: async (a, { employee }) => {
       const projectId = eng.tasks.currentTask(employee.id)?.projectId ?? employee.projectId;
       if (!projectId) return { text: 'You are not assigned to a project.', isError: true };
+      const count = Array.isArray(a.tasks) ? a.tasks.length : 0;
+      const many = tooMany(employee, 'proposed task', 60, Math.max(1, count));
+      if (many) return err(many);
+      // Where the owner keeps the board, a proposal names nobody: who does what is the owner's to say.
+      if (core.settings.employeesManageBoard === false && Array.isArray(a.tasks)) a = { ...a, tasks: a.tasks.map((t: any) => (t && typeof t === 'object' ? { ...t, assignee: undefined } : t)) };
       const { created, existing } = eng.tasks.propose(employee, projectId, a.tasks, a.rationale ? String(a.rationale) : undefined, 'planning');
       // Items a repeating check has already reported: nothing is added, and the employee is told so.
       const already = existing.length ? `Already on the board, so not added again: ${existing.map((t) => `${t.key} [${t.status}]`).join(', ')}.` : '';
@@ -343,6 +387,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     release_task: async (a, { employee }) => {
+      if (employee.roleKey === FOREMAN_ROLE) return err('Releasing work is not a foreman\'s to do: tell the boss it is ready (escalate_to_owner).');
       if (!managing()) return OFF;
       const task = seen(employee, a.task);
       if (!task) return noTask(a.task);
@@ -357,6 +402,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     unblock_task: async (a, { employee }) => {
+      if (employee.roleKey === FOREMAN_ROLE) return err('Unblocking a task is not a foreman\'s to do: tell whoever has it what is wanted (tell_employee), or the boss.');
       if (!managing()) return OFF;
       const task = seen(employee, a.task);
       if (!task) return noTask(a.task);
@@ -381,6 +427,9 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       if (!to || to.archived) return err(`No teammate matches "${name}". Use get_team.`);
       if (to.roleKey === FOREMAN_ROLE) return err(`${to.name} is the foreman and does not take tasks. Give it to someone who does the work.`);
       if (!eng.tasks.canSee(to, task)) return err(`${to.name} cannot take ${task.key}: work does not cross between the shared office and a member's own computer.`);
+      // Work that is in review is decided by its review: given to somebody else now, its author would no longer be
+      // "the assignee" and could approve it themselves.
+      if (task.status === 'REVIEW') return err(`${task.key} is in review. Its review decides what happens next (submit_review, by somebody who did not do the work).`);
       if (task.assigneeId === to.id) return `${task.key} is already ${to.id === employee.id ? 'yours' : `assigned to ${to.name}`}.`;
       // Someone from another project is lent to this one, and keeps their own.
       const cannot = eng.tasks.lend(to, task.projectId);

@@ -946,7 +946,9 @@ export class Comms {
     // "A separate task" becomes one on the board before the answer is recorded: the answer names it.
     if (action === 'new_task' && collab.projectId) {
       const project = this.core.projects.get(collab.projectId);
-      if (project) {
+      // (Only where the responder may take work at all: not in a project on the other side of the line between the
+      // shared office and a member's own computer.)
+      if (project && this.eng.tasks.canSee(responder, { projectId: project.id } as Parameters<typeof this.eng.tasks.canSee>[1])) {
         collab.createdTaskId = this.eng.tasks.createTask(
           {
             projectId: project.id,

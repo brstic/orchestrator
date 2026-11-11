@@ -859,6 +859,9 @@ export class Foreman {
         const project = this.findProject(String(a.project));
         if (!project) return err(`No project matches "${a.project}". Projects: ${core.projects.filter((p) => p.status !== 'archived').map((p) => p.name).join(', ') || 'none'}.`);
         if (project.status !== 'active') return err(`${project.name} is ${project.status}; the owner decides when work on it continues.`);
+        // A project on a member's own computer whose room is closed is closed to the foreman as to everybody.
+        const itsMember = this.eng.hosts.memberOfHost(project.hostId);
+        if (itsMember && this.eng.hosts.isClosed(itsMember)) return err(`${project.name} is on a member's own computer, and that member has closed their room. Nothing is put there until it is open again.`);
         let assigneeId: string | null = null;
         if (a.assignee) {
           const to = this.findEmployee(String(a.assignee));

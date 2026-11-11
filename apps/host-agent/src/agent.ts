@@ -1367,8 +1367,20 @@ export class HostAgent {
         return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Allowed once by the owner of the office, for exactly this call.' }, orchGranted: true };
       }
     }
+    // The office's own files on this machine — other sessions' folders (each holds that session's token for the
+    // office's tools: the foreman's among them), this agent's records, and the office's data where it runs here (its
+    // owner token, the vault's key). Every session runs as the same user and could open them; none has a reason to.
+    const reach = this.officeFiles(t);
+    const named = ['file_path', 'path', 'notebook_path'].map((k) => payload.tool_input?.[k]).find((v): v is string => typeof v === 'string' && !!v);
+    if (payload.tool_name !== 'Bash' && named && reach.holds(named, payload.cwd ?? t.cwd)) {
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: "Orchestrator policy: that is one of the office's own files on this machine (another session's folder, the agent's records, or the office's data). It is not part of anybody's work; leave it alone." } };
+    }
     if (payload.tool_name !== 'Bash') return null;
     const command = String(payload.tool_input?.command ?? '');
+    if (reach.mentioned(command)) {
+      if (t.spec?.permissionMode === 'bypassPermissions') return { orchHold: true, pattern: "the office's own files on this machine" };
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: "Orchestrator policy: this command names the office's own files on this machine (another session's folder, the agent's records, or the office's data) and needs the owner's approval." } };
+    }
     for (const pattern of t.spec?.highRiskPatterns ?? []) {
       try {
         if (new RegExp(pattern, 'i').test(command)) {
@@ -1388,6 +1400,38 @@ export class HostAgent {
       }
     }
     return null;
+  }
+
+  /**
+   * Which paths on this machine are the office's own, for one session: this agent's home except the files the office
+   * put there for employees and the session's own folder, and the office's data folder when the office runs here.
+   * `holds`: is this path one of them (symlinks resolved)? `mentioned`: does a command name one?
+   */
+  private officeFiles(t: Tracked): { holds: (file: string, cwd: string) => boolean; mentioned: (command: string) => boolean } {
+    const home = path.dirname(this.p.sessions);
+    const real = (p: string) => realpathOfDeepestExisting(path.resolve(p));
+    const mine = [real(this.filesRoot()), real(path.join(this.p.sessions, t.sessionId))];
+    const servers = [process.env.ORCH_SERVER_HOME, path.join(os.homedir(), '.orchestrator', 'server'), path.join(path.dirname(home), 'server')].filter((d): d is string => !!d && fs.existsSync(path.join(d, 'owner-token')));
+    const closed = [real(home), ...servers.map(real)];
+    const inside = (p: string, root: string) => p === root || p.startsWith(root + path.sep);
+    const holds = (file: string, cwd: string): boolean => {
+      let p: string;
+      try {
+        const expanded = file.startsWith('~/') ? path.join(os.homedir(), file.slice(2)) : file;
+        p = real(path.isAbsolute(expanded) ? expanded : path.join(cwd || os.homedir(), expanded));
+      } catch {
+        return false;
+      }
+      return closed.some((root) => inside(p, root)) && !mine.some((root) => inside(p, root));
+    };
+    // In a command: any word that is such a path, written out in full or from the home folder (`~/…`, `$HOME/…`).
+    // A path put together by the command itself is not seen — this is a fence at the obvious way in, not a wall.
+    const mentioned = (command: string): boolean => {
+      const homeDir = os.homedir();
+      const words = command.replace(/\$\{?HOME\}?/g, homeDir).split(/[\s"'`;|&<>()=]+/).filter((w) => w.includes('/'));
+      return words.some((w) => holds(w.startsWith('~/') ? w : w, t.cwd));
+    };
+    return { holds, mentioned };
   }
 
   private lastLimits = new Map<string, string>();
@@ -1461,22 +1505,35 @@ export class HostAgent {
     const abs = path.resolve(p.cwd && !path.isAbsolute(expanded) ? p.cwd : os.homedir(), expanded);
     if (!fs.existsSync(abs)) throw new Error(`there is no file at ${abs}`);
     const real = fs.realpathSync(abs);
+    if (fs.statSync(real).isDirectory()) throw new Error(`${abs} is not a file`);
     // Where an employee's evidence comes from: the folder it works in, the folder its browser saves to, the files
     // the office itself put on this machine for it, and temporary folders. Not "anywhere this machine lets the office
     // work": that is usually the whole home folder, with keys and the office's own data in it — and what is attached
     // here can be opened by everyone who sees the task. The agent reads the file itself, so none of Claude Code's
     // own checks stand in front of this.
     const tracked = p.sessionId ? this.tracked.get(p.sessionId) : undefined;
-    const bases = [p.cwd, tracked?.cwd, tracked?.repoRoot, tracked ? path.join(this.p.sessions, tracked.sessionId, 'browser') : null, this.filesRoot(), os.tmpdir(), '/tmp']
-      .filter((x): x is string => typeof x === 'string' && !!x)
-      .map((root) => realpathOfDeepestExisting(path.resolve(root)));
-    const base = bases.filter((r) => real === r || real.startsWith(r + path.sep)).sort((x, y) => y.length - x.length)[0];
+    // A working folder the office names counts only if it is a folder, and one this machine lets the office work in
+    // (the office is somebody else's machine on a member's computer: "the folder is this very file" must not be a
+    // way around what follows).
+    const folder = (dir: string | null | undefined, mustBeAllowed: boolean): string | null => {
+      if (typeof dir !== 'string' || !dir) return null;
+      try {
+        const r = realpathOfDeepestExisting(path.resolve(mustBeAllowed ? this.assertAllowed(dir) : dir));
+        return fs.existsSync(r) && fs.statSync(r).isDirectory() ? r : null;
+      } catch {
+        return null;
+      }
+    };
+    const bases = [folder(p.cwd, true), folder(tracked?.cwd, false), folder(tracked?.repoRoot, false), tracked ? folder(path.join(this.p.sessions, tracked.sessionId, 'browser'), false) : null, folder(this.filesRoot(), false), folder(os.tmpdir(), false), folder('/tmp', false)].filter((x): x is string => !!x);
+    const base = bases.filter((r) => real.startsWith(r + path.sep)).sort((x, y) => y.length - x.length)[0];
     const where = [p.cwd ?? tracked?.cwd, 'the folder your browser saves to', 'a temporary folder'].filter(Boolean).join(', ');
-    if (!base) throw new Error(`${abs} cannot be attached from there. A file is taken from your working folder (${where}); if this is something to show, save or copy it there first.`);
-    // Nothing hidden (a `.git`, a `.env`, a `.ssh`), and nothing that is a key or a credential by its name.
-    const below = real === base ? [] : real.slice(base.length + 1).split(path.sep);
+    if (!base) {
+      throw new Error(`${abs} cannot be attached from there. A file is taken from your working folder (${where}); if this is something to show, save or copy it there first.`);
+    }
+    // Nothing hidden (a `.git`, a `.env`, a `.ssh`, a `.netrc`), and nothing that is a key or a credential by its name.
+    const below = real.slice(base.length + 1).split(path.sep);
     if (below.some((part) => part.startsWith('.'))) throw new Error(`${abs} is a hidden file or in a hidden folder; those are not attached to tasks`);
-    if (/(^|\/)(id_(rsa|dsa|ecdsa|ed25519)|[^/]*\.(pem|key|p12|pfx|kdbx|keystore)|owner-token|vault\.key|credentials(\.json)?|config\.json|mcp\.json|settings\.json|managed\.json|state\.json|outbox\.json|vault(\.mjs)?)$/i.test(real)) throw new Error(`${path.basename(real)} looks like a key or a credential; those are not attached to tasks`);
+    if (/(^|\/)(id_(rsa|dsa|ecdsa|ed25519)[^/]*|[^/]*\.(pem|key|p12|pfx|kdbx|keystore)|owner-token|vault\.key|[^/]*credentials[^/]*|netrc|config\.json|mcp\.json|settings\.json|managed\.json|state\.json|outbox\.json|vault(\.mjs)?)$/i.test(real)) throw new Error(`${path.basename(real)} looks like a key or a credential; those are not attached to tasks`);
     const st = fs.statSync(real);
     if (!st.isFile()) throw new Error(`${abs} is not a file`);
     const length = Math.max(0, Math.min(Number(p.length) || 0, 2 * 1024 * 1024, st.size - (Number(p.offset) || 0)));
