@@ -1,6 +1,7 @@
 import { Door, inviteCode } from './door.ts';
 import { Guests, whoIs, type Who } from './guests.ts';
 import { Invites, inviteLink, invitePage } from './invites.ts';
+import { PHONE_MESSAGE, isPhone, phonePage } from './phone.ts';
 import { Knocks, type Admission } from './knocks.ts';
 import { allowed, closedTo, eventFor, mayCall, mayReadRoutine, outcomesScopeFor, stateFor } from './access.ts';
 import { HiFi, nowPlaying } from './radio.ts';
@@ -265,9 +266,27 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     return { office: engine.core.settings.companyName, name: guest.name, role: guest.role, invite: connectionOf(guest, token) };
   });
 
+  // ───────────── a phone is told that the office is for a computer ─────────────
+  // Before anything else is looked at: the page, an invitation link (which is then not used up), the door, the API.
+  // Machines are not people: host agents, employees' sessions (`/mcp`) and health checks are let through.
+  app.addHook('onRequest', async (req, reply) => {
+    if (!isPhone(req.headers['user-agent'])) return;
+    const route = (req.raw.url ?? '/').split('?')[0]!;
+    if (route === '/healthz' || route === '/mcp' || route === '/ws/agent') return;
+    const wantsPage = req.method === 'GET' && !route.startsWith('/api/') && !route.startsWith('/ws/') && !/\.[a-z0-9]{2,5}$/i.test(route);
+    void reply.header('cache-control', 'no-store');
+    if (wantsPage) return reply.code(403).type('text/html; charset=utf-8').send(phonePage(engine.core.settings.companyName));
+    return reply.code(403).send({ error: PHONE_MESSAGE, phone: true });
+  });
+
   // ───────────── WebSockets ─────────────
   app.get('/ws/agent', { websocket: true }, (socket, req) => agents.handle(socket as any, isLoopbackAddress(req.socket.remoteAddress), viaDoor(req)));
   app.get('/ws/client', { websocket: true }, (socket, req) => {
+    // (The hook above answers a phone before the connection is made; this is for a socket that got here anyway.)
+    if (isPhone(req.headers['user-agent'])) {
+      (socket as any).close(4008, 'desktop only');
+      return;
+    }
     const who = identify(req);
     if (!who) {
       (socket as any).close(4003, 'unauthorized');

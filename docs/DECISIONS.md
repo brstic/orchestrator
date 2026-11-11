@@ -2,6 +2,12 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-11 — A phone is turned away at the door
+- **Refused by the server, before anything is looked at** (`apps/server/src/phone.ts`, one `onRequest` hook): a phone asking for a page gets a page that says the office is for a computer; asking for anything else it gets a 403 that says the same. Before the routes, so an invitation code opened on a phone is not exchanged — it still works on a computer. The page itself checks too (`main.tsx`), for a phone whose browser says it is a desktop one.
+- **Told by the User-Agent ("Mobi", iPhone, …), which is a courtesy and not a lock.** Who may enter is decided by invitations and tokens; this only keeps people out of something that cannot work on their device. Anyone can make a browser claim otherwise, and that is fine.
+- **Phones only.** A tablet has the screen for it and is let in (an iPad says it is a Mac anyway). Machines are never judged by this: host agents (`/ws/agent`), employees' sessions (`/mcp`) and health checks pass.
+- No switch for it: the owner asked for phones to be refused, and nothing in the office is built for one.
+
 ## 2026-11-11 — How other people's characters are moved
 - **Drawn in the past, between two reports — not chasing the newest.** `RemoteTrack` (`packages/office-3d/src/remote-motion.ts`) keeps the last reports of a person and the character is drawn 300 ms behind, interpolated between the two reports around that moment. Chasing the newest report with an easing made the speed surge and sag ten times a second, and the gait — which walks by how the body really moves — stumbled with it. 300 ms because a window reports every 100 ms and the office relays every 100 ms: two reports that follow each other can arrive nearly 300 ms apart.
 - **By the sender's clock.** Each report carries the window's own time (`presence.at`); only the *difference* between its clock and ours is estimated (the quickest trip seen), and it is followed gently (a tenth of real time at most) so a correction never shows as a jump. Without it — an older window — arrival times are used and the walk is visibly less even. No clock synchronisation and no server timestamps are needed.
