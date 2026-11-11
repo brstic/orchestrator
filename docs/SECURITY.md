@@ -250,6 +250,9 @@ State directories are created `0700`; the database, tokens, session settings and
 - The audit log records actor, action and target for approvals, control changes, session lifecycle, project/employee/policy changes and applied suggestions; details are redacted the same way.
 - Credentials are stored as SHA-256 hashes; plaintext is shown once.
 
+### The owner token and the log
+The office's own token opens everything on the machine it runs on (it is refused from the network). When the server starts it tells a person at a terminal the link that opens the office, token included; when its output is not a terminal (a service's journal, a file) it prints only the address and the path of the token file (`startupLines` in `apps/server/src/main.ts`). Until 2026-11-11 the link went into the journal at every start. There is no command that replaces the token; to replace it by hand, stop the office, delete `owner-token` in its data folder and the `owner` credential with it — not done, and not needed unless the journal was read by somebody who should not have.
+
 ## What this does not protect against
 
 - **A compromised host.** The agent runs as your user; anyone with that account has the same access.

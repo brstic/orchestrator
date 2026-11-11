@@ -24,6 +24,15 @@ OPTIONS
   --quiet                  Only log errors
 `;
 
+/**
+ * What the office says when it has started. To a person at a terminal: the link that opens it, token and all. To
+ * anything else — a service's log, a file, a pipe — only where the token is kept: a log is read by more people and
+ * kept for longer than the token file, and the token is the key to the whole office on this machine.
+ */
+export function startupLines(url: string, ownerToken: string, tokenFile: string, toTerminal: boolean): string[] {
+  return [toTerminal ? `  Office UI:   ${url}/?token=${ownerToken}` : `  Office UI:   ${url}  (open it with the owner token; it is not written to a log)`, `  Owner token: stored in ${tokenFile}`];
+}
+
 export async function main(argv: string[]): Promise<void> {
   const { values } = parseArgs({
     args: argv,
@@ -70,10 +79,7 @@ export async function main(argv: string[]): Promise<void> {
     console.error(`error: ${(e as Error).message}`);
     process.exit(1);
   }
-  if (!values.quiet) {
-    console.error(`  Office UI:   ${server.url}/?token=${server.ownerToken}`);
-    console.error(`  Owner token: stored in ${path.join(values.data ? path.resolve(values.data) : defaultDataDir(), 'owner-token')}`);
-  }
+  if (!values.quiet) for (const line of startupLines(server.url, server.ownerToken, path.join(values.data ? path.resolve(values.data) : defaultDataDir(), 'owner-token'), !!process.stderr.isTTY)) console.error(line);
   if (values['print-enroll-token']) console.log(server.localEnrollToken());
   const shutdown = () => {
     void server.close().then(() => process.exit(0));
