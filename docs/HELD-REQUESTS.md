@@ -76,6 +76,10 @@ In tests the times are short: `approvalWaitSeconds`, `agentCfg.linkGraceSeconds`
 - A hook that is retried against an agent that never went away (the connection alone broke) loses its question: the first attempt is reported as abandoned before the second arrives. Not seen; the socket is local.
 - When a machine's last tmux session ends, nothing here depends on pane numbers any more (they start again from `%0`); the start's name does that work.
 
+## Seen with real Claude Code
+
+- 2026-11-11, on the office's server: a high-risk command of an Unrestricted employee, held since 17:24, was still held — the same request, open in the office — after the deploy of 17:32 had restarted the office and the agent together. So the hook command's loop runs under Claude Code, finds the agent that comes back, and the office takes the request up again.
+
 ## Not verified with real Claude Code
 
 - That a `deny` printed by the hook in bypass mode is treated as a refusal (the agent has answered in that shape since the level exists — also only run with the scripted worker).
