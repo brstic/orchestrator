@@ -310,16 +310,23 @@ function openConnect(reason, url) {
   return connectWin;
 }
 
+/**
+ * A folder picked in the system's dialog, as the machine that will work in it names it. On Windows the sessions of
+ * this computer run in WSL, which knows `D:\Work` as `/mnt/d/Work`; a folder WSL cannot see is passed on as it is
+ * and refused there, in words.
+ */
+const asHostPath = (p) => (process.platform === 'win32' ? require('./wsl-host.cjs').toWslPath(p) || p : p);
+
 ipcMain.handle('orch:pick-folder', async (event) => {
   const parent = BrowserWindow.fromWebContents(event.sender);
   const res = await dialog.showOpenDialog(parent, { title: 'Choose the folder this employee works in', buttonLabel: 'Choose folder', properties: ['openDirectory', 'createDirectory'] });
-  return res.canceled || !res.filePaths.length ? null : res.filePaths[0];
+  return res.canceled || !res.filePaths.length ? null : asHostPath(res.filePaths[0]);
 });
 // Several folders at once: one employee is hired for each.
 ipcMain.handle('orch:pick-folders', async (event) => {
   const parent = BrowserWindow.fromWebContents(event.sender);
   const res = await dialog.showOpenDialog(parent, { title: 'Choose the project folders — one employee is hired for each', buttonLabel: 'Choose folders', properties: ['openDirectory', 'multiSelections'] });
-  return res.canceled ? [] : res.filePaths;
+  return res.canceled ? [] : res.filePaths.map(asHostPath);
 });
 // This computer's preferences (graphics, keys, extras, how loud the hi-fi is here), the same in every office opened
 // from here. The page that asks may be another office's, so only these fields are kept, and only in their expected shapes.

@@ -27,10 +27,16 @@ const wslArgs = () => (process.env.ORCH_WSL_DISTRO ? ['-d', process.env.ORCH_WSL
 /** wsl.exe's own messages come in UTF-16; what a Linux program prints comes as it is. Make either readable. */
 const plain = (buf) => String(buf || '').replace(/\0/g, '').trim();
 
-/** A Windows path as WSL sees it (`D:\Work` → `/mnt/d/Work`); a path that is already a Linux one is kept; anything else is dropped. */
+/**
+ * A Windows path as WSL sees it (`D:\Work` → `/mnt/d/Work`). A folder of the distribution itself, reached from Windows
+ * (`\\wsl.localhost\Ubuntu\home\mila`, `\\wsl$\…`), is that folder; a path that is already a Linux one is kept;
+ * anything else — another computer's share — is dropped.
+ */
 function toWslPath(p) {
   const s = String(p || '').trim();
   if (s.startsWith('/')) return s;
+  const own = /^[\\/]{2}(?:wsl\.localhost|wsl\$)[\\/][^\\/]+(.*)$/i.exec(s);
+  if (own) return own[1].replace(/\\/g, '/').replace(/\/+$/, '') || '/';
   const m = /^([A-Za-z]):[\\/]*(.*)$/.exec(s);
   if (!m) return null;
   const rest = m[2].replace(/\\/g, '/').replace(/\/+$/, '');

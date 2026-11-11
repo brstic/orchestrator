@@ -20,6 +20,11 @@ test('Windows folders as WSL sees them', () => {
   assert.equal(toWslPath('c:/code/my app'), '/mnt/c/code/my app');
   assert.equal(toWslPath('E:\\'), '/mnt/e');
   assert.equal(toWslPath('/home/mila/code'), '/home/mila/code', 'a WSL path is kept');
+  // The distribution's own folders, as the Windows folder dialog names them.
+  assert.equal(toWslPath('\\\\wsl.localhost\\Ubuntu\\home\\mila\\code'), '/home/mila/code');
+  assert.equal(toWslPath('\\\\wsl$\\Ubuntu-24.04\\home\\mila\\'), '/home/mila');
+  assert.equal(toWslPath('\\\\wsl.localhost\\Ubuntu'), '/');
+  assert.equal(toWslPath('D:\\Work\\Claude Code Projects\\office'), '/mnt/d/Work/Claude Code Projects/office');
   assert.equal(toWslPath('\\\\server\\share'), null, 'a network share has no place under /mnt');
   assert.equal(toWslPath('relative\\folder'), null);
   assert.equal(toWslPath(''), null);
@@ -38,7 +43,8 @@ test('folders named in ORCH_PERSONAL_ROOTS are added to the profile folder, once
   }
 });
 
-const hasBash = spawnSync('bash', ['-c', 'true']).status === 0;
+// Not on Windows itself: `bash` there is Git's or WSL's launcher, with paths and links of its own. The script is for the Linux inside WSL.
+const hasBash = process.platform !== 'win32' && spawnSync('bash', ['-c', 'true']).status === 0;
 /** bash by its full path: one test runs it with a PATH that has almost nothing on it. */
 const bashPath = hasBash ? spawnSync('bash', ['-c', 'command -v bash'], { encoding: 'utf8' }).stdout.trim() : 'bash';
 
