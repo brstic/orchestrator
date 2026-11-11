@@ -75,6 +75,8 @@ const KV = 'vault';
 const KINDS: SecretKind[] = ['password', 'api_key', 'token', 'ssh_key', 'other'];
 const MAX_VALUE = 16_384;
 const MAX_ENTRIES = 2000;
+/** The most credentials taken out of one text. */
+const CAPTURE_AT_ONCE = 60;
 
 export class Vault {
   private core: Core;
@@ -144,7 +146,13 @@ export class Vault {
 
   // ─────────────────────────── reading ───────────────────────────
 
+  /** While a text with several credentials is taken in, the vault is written once at the end, not once for each. */
+  private saveLater = false;
+  private unsaved = false;
+
   private save(): void {
+    if (this.saveLater) return void (this.unsaved = true);
+    this.unsaved = false;
     this.core.store.kvSet(KV, [...this.entries.values()]);
     // Windows that show the vault ask for the list again; nothing about its contents is broadcast.
     this.core.bus.emit('vault');
@@ -290,7 +298,15 @@ export class Vault {
     let out = '';
     let at = 0;
     const names: string[] = [];
-    for (const f of found) {
+    // One text is not a way to fill the vault: beyond this many, the rest stay where they were written and the
+    // owner is told (below).
+    if (found.length > CAPTURE_AT_ONCE) {
+      this.core.log('warn', `vault: a text held ${found.length} credentials; the first ${CAPTURE_AT_ONCE} were taken`);
+      this.onCaptureFailed(`one text held ${found.length} credentials; only the first ${CAPTURE_AT_ONCE} were put in the vault`);
+    }
+    this.saveLater = true;
+    try {
+    for (const f of found.slice(0, CAPTURE_AT_ONCE)) {
       let name: string;
       try {
         name = this.put({ name: nameFor(f, hints), value: f.value, kind: f.kind, service: f.service, username: f.username, description: describe(f) }, by, 'captured').entry.name;
@@ -304,6 +320,10 @@ export class Vault {
       out += text.slice(at, f.start) + placeholder(name);
       at = f.end;
       names.push(name);
+    }
+    } finally {
+      this.saveLater = false;
+      if (this.unsaved) this.save();
     }
     return { text: out + text.slice(at), names: [...new Set(names)] };
   }

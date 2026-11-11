@@ -117,7 +117,7 @@ export function classify(imp: Pick<Improvement, 'kind' | 'action'>, now: Autopil
  * shapes stop matching and nothing is applied: it fails closed.
  */
 export function commandShape(command: string): string | null {
-  const first = command.trim().split(/\s*(?:&&|\|\||;|\|)\s*/)[0] ?? '';
+  const first = (command.split(/&&|\|\||;|\|/)[0] ?? '').trim();
   const words = first.split(/\s+/).filter(Boolean);
   if (!words.length || /[`$(){}<>]/.test(words.slice(0, 2).join(' '))) return null;
   // A program named by its path (`/bin/bash`, `./run.sh`, `~/bin/x`) is no shape to write a rule for: the block
@@ -135,7 +135,8 @@ const PLAIN_SHAPE = /^[A-Za-z0-9._\/@+-]+( [A-Za-z0-9._\/@:+-]+)?$/;
 const touchesShape = (command: string, shape: string): boolean =>
   command
     .trim()
-    .split(/\s*(?:&&|\|\||;|\|)\s*/)
+    .split(/&&|\|\||;|\|/)
+    .map((part) => part.trim())
     .some((part) => part === shape || part.startsWith(`${shape} `));
 
 /**

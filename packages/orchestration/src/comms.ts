@@ -15,9 +15,18 @@ export function trustPromptKeys(lines: string[]): string[] | null {
   return optionKeys(lines, (label) => /^Yes\b/.test(label));
 }
 
+/**
+ * A screen's lines as plain text, for the patterns below: colour codes out, and no more of a line than a wide
+ * terminal shows. (A machine's agent sends what it captured; a member's own computer could send lines of any length,
+ * and three of these patterns take time with the square or the cube of a line of spaces.)
+ */
+export function plainScreen(lines: string[]): string[] {
+  return (Array.isArray(lines) ? lines : []).slice(-500).map((l) => String(l ?? '').slice(0, 8000).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').slice(0, 600));
+}
+
 /** The keys that move from the highlighted option of a Yes/No list on screen to the one `wanted` picks, and confirm it. */
 function optionKeys(lines: string[], wanted: (label: string) => boolean): string[] | null {
-  const plain = lines.map((l) => l.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, ''));
+  const plain = plainScreen(lines);
   const options: Array<{ selected: boolean; label: string }> = [];
   for (const line of plain) {
     const m = /^\s*(❯|>|›)?\s*(?:\d+\.\s*)?((?:Yes|No)\b.*)$/.exec(line);
@@ -41,7 +50,7 @@ function optionKeys(lines: string[], wanted: (label: string) => boolean): string
  * "Allow" is the plain *Yes* — never "Yes, and don't ask again", which would widen what the session may do.
  */
 export function permissionPrompt(lines: string[]): { what: string; allow: string[] | null; deny: string[] | null } | null {
-  const plain = lines.map((l) => l.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/\s+$/, ''));
+  const plain = plainScreen(lines).map((l) => l.trimEnd());
   // The question is the last "Do you want to …?" on screen, with its numbered options right under it.
   let at = -1;
   for (let i = plain.length - 1; i >= 0; i--) {
@@ -263,10 +272,12 @@ export class Comms {
       sessionId: q.session?.id ?? null,
       taskId: q.taskId ?? task?.id ?? null,
       projectId: q.projectId ?? task?.projectId ?? q.employee?.projectId ?? null,
-      text: q.text,
-      context: q.context ?? '',
-      why: q.why ?? '',
-      options: q.options ?? [],
+      // However it was asked (a tool, a hook, the office itself), a question has a length: it is read by people, and
+      // by the office's own comparisons of questions with one another.
+      text: truncate(q.text, 4000),
+      context: truncate(q.context ?? '', 16_000),
+      why: truncate(q.why ?? '', 2000),
+      options: (q.options ?? []).slice(0, 24),
       tool: q.tool ?? null,
       parts: q.parts ?? [],
       answers: null,
@@ -572,6 +583,9 @@ export class Comms {
     const employee = this.core.employees.get(q.employeeId);
     if (q.kind === 'permission') {
       if (input.decision !== 'allow' && input.decision !== 'deny') throw new EngineError('a permission request needs decision "allow" or "deny"');
+      // What is allowed is everything the tool was given. A request the office cannot show in full is not allowed
+      // from here on the strength of its beginning.
+      if (input.decision === 'allow' && q.tool?.notShown) throw new EngineError(`This request is too long to show in full (${q.tool.notShown} characters are not shown), so it cannot be allowed from the office. Deny it, or decide it at the employee's terminal.`);
     } else if (q.parts.length) {
       for (const part of q.parts) if (!input.answers?.[part.question]) throw new EngineError(`missing answer for: ${part.question}`);
     } else if (!input.answer?.trim()) throw new EngineError('an answer is required');

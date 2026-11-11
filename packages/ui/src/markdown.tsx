@@ -12,7 +12,11 @@ export function Markdown({ text, className }: { text: string; className?: string
 
 const SAFE_URL = /^(https?:\/\/|mailto:)/i;
 
+/** A line longer than this is shown as it was written: text of that length is data, not prose, and the pattern below takes time that grows with the square of it on some inputs (a line of nothing but `[`). */
+const INLINE_MAX = 4000;
+
 function inline(src: string, keyBase = 'i'): ReactNode[] {
+  if (src.length > INLINE_MAX) return [src];
   const out: ReactNode[] = [];
   // Order matters: code first (its contents are literal), then links, then emphasis.
   const re = /(`+)([\s\S]+?)\1|\[([^\]\n]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|<(https?:\/\/[^>\s]+)>|\*\*([\s\S]+?)\*\*|__([\s\S]+?)__|~~([\s\S]+?)~~|\*([^*\n]+?)\*|(?<![A-Za-z0-9])_([^_\n]+?)_(?![A-Za-z0-9])|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g;

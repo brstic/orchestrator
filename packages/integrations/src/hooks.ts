@@ -38,32 +38,72 @@ export interface HookContext {
 const TEST_COMMAND =
   /(^|[\s;&|(])(npm\s+(run\s+)?test|pnpm\s+(run\s+)?test|yarn\s+(run\s+)?test|bun\s+test|npx\s+(jest|vitest|mocha|playwright|cypress)|jest|vitest|mocha|pytest|python3?\s+-m\s+(pytest|unittest)|phpunit|artisan\s+test|go\s+test|cargo\s+test|rspec|node\s+--test|deno\s+test|gradle\w*\s+test|mvn\s+test|ctest|make\s+test|tox|dotnet\s+test|playwright\s+test)\b/;
 
+/**
+ * A command with what stands in quotes taken out: quoted text is data (a commit message mentioning "npm test" is
+ * not a test run). Double quotes know `\"`; single quotes do not. Written as a walk and not as
+ * `replace(/"(?:[^"\\]|\\.)*"/g, …)`: on a quote that is never closed that pattern starts again at every later
+ * quote and reads to the end each time (a command of 200,000 characters: eight seconds, on every hook of the
+ * session). Once one double quote has no partner, none after it has, so the walk stops looking.
+ */
+export function unquoted(command: string): string {
+  let out = '';
+  let i = 0;
+  let open = true; // may a double quote still find its partner?
+  while (i < command.length) {
+    const ch = command[i]!;
+    if (ch === '"' && open) {
+      let j = i + 1;
+      while (j < command.length && command[j] !== '"') j += command[j] === '\\' ? 2 : 1;
+      if (j < command.length) {
+        out += '""';
+        i = j + 1;
+        continue;
+      }
+      open = false;
+    }
+    out += ch;
+    i++;
+  }
+  return out.replace(/'[^']*'/g, "''");
+}
+
+/**
+ * In one part of a pipeline (between `;`, `&`, `|`): `first`, and somewhere after it in the same part, `then`.
+ * (If any `first` of a part is followed by `then`, the first one is — so only that one is tried, and a part with a
+ * thousand of them is read once, not a thousand times.)
+ */
+function inOnePart(bare: string, first: RegExp, then: RegExp): boolean {
+  for (const part of bare.split(/[;&|]/)) {
+    const m = first.exec(part);
+    if (m && then.test(part.slice(m.index + m[0].length))) return true;
+  }
+  return false;
+}
+
 export function isTestCommand(command: string): boolean {
-  // Quoted text is data (a commit message mentioning "npm test" is not a test run).
-  const bare = command.replace(/"(?:[^"\\]|\\.)*"/g, '""').replace(/'[^']*'/g, "''");
-  return TEST_COMMAND.test(bare);
+  return TEST_COMMAND.test(unquoted(command));
 }
 
 /** Commands that put something somewhere others will use it. `release` ones publish a version; the rest deploy. */
-const DEPLOY_COMMANDS: Array<{ kind: 'release' | 'deploy'; what: string; re: RegExp }> = [
+const DEPLOY_COMMANDS: Array<{ kind: 'release' | 'deploy'; what: string; re: RegExp | ((bare: string) => boolean) }> = [
   { kind: 'release', what: 'package publish', re: /(^|[\s;&|(])(npm|pnpm|yarn|bun)\s+publish\b|(^|[\s;&|(])(cargo\s+publish|twine\s+upload|gem\s+push|poetry\s+publish)\b/ },
   { kind: 'release', what: 'GitHub release', re: /(^|[\s;&|(])gh\s+release\s+create\b/ },
-  { kind: 'release', what: 'version tag', re: /(^|[\s;&|(])git\s+push\b[^;&|]*(--tags\b|\bv?\d+\.\d+\.\d+)|(^|[\s;&|(])git\s+tag\s+(-a\s+|-s\s+)?v?\d+\.\d+/ },
+  { kind: 'release', what: 'version tag', re: (bare) => inOnePart(bare, /(^|[\s(])git\s+push\b/, /--tags\b|\bv?\d+\.\d+\.\d+/) || /(^|[\s;&|(])git\s+tag\s+(-a\s+|-s\s+)?v?\d+\.\d+/.test(bare) },
   { kind: 'release', what: 'image push', re: /(^|[\s;&|(])(docker|podman)\s+(image\s+)?push\b/ },
   { kind: 'deploy', what: 'git push', re: /(^|[\s;&|(])git\s+push\b/ },
   { kind: 'deploy', what: 'Kubernetes', re: /(^|[\s;&|(])(kubectl\s+(apply|rollout|set\s+image)|helm\s+(upgrade|install))\b/ },
   { kind: 'deploy', what: 'Terraform', re: /(^|[\s;&|(])(terraform|tofu|pulumi)\s+(apply|up)\b/ },
   { kind: 'deploy', what: 'platform deploy', re: /(^|[\s;&|(])(vercel(\s+deploy|\s+--prod)|netlify\s+deploy|fly(ctl)?\s+deploy|firebase\s+deploy|wrangler\s+(deploy|publish)|serverless\s+deploy|sls\s+deploy|railway\s+up|heroku\s+container:release|cap\s+\S+\s+deploy|ansible-playbook)\b/ },
-  { kind: 'deploy', what: 'cloud deploy', re: /(^|[\s;&|(])(gcloud\s+[^;&|]*\bdeploy|aws\s+[^;&|]*\b(deploy|s3\s+sync|update-service|update-function-code)|az\s+[^;&|]*\bdeploy)\b/ },
-  { kind: 'deploy', what: 'compose up', re: /(^|[\s;&|(])docker(\s+|-)compose\s+[^;&|]*\bup\b/ },
+  { kind: 'deploy', what: 'cloud deploy', re: (bare) => inOnePart(bare, /(^|[\s(])gcloud\s+/, /\bdeploy\b/) || inOnePart(bare, /(^|[\s(])aws\s+/, /\b(deploy|s3\s+sync|update-service|update-function-code)\b/) || inOnePart(bare, /(^|[\s(])az\s+/, /\bdeploy\b/) },
+  { kind: 'deploy', what: 'compose up', re: (bare) => inOnePart(bare, /(^|[\s(])docker(\s+|-)compose\s+/, /\bup\b/) },
   { kind: 'deploy', what: 'deploy script', re: /(^|[\s;&|(])((npm|pnpm|yarn|bun)\s+(run\s+)?(deploy|release)|make\s+(deploy|release))\b/ },
 ];
 
 /** Whether a shell command deploys or releases something (quoted text is data, as with test commands). */
 export function deployCommand(command: string): { kind: 'release' | 'deploy'; what: string } | null {
-  const bare = command.replace(/"(?:[^"\\]|\\.)*"/g, '""').replace(/'[^']*'/g, "''");
+  const bare = unquoted(command);
   if (/--dry-run\b|--help\b/.test(bare)) return null;
-  const hit = DEPLOY_COMMANDS.find((d) => d.re.test(bare));
+  const hit = DEPLOY_COMMANDS.find((d) => (typeof d.re === 'function' ? d.re(bare) : d.re.test(bare)));
   return hit ? { kind: hit.kind, what: hit.what } : null;
 }
 

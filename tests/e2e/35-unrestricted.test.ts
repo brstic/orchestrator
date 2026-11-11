@@ -5,6 +5,8 @@
  *  - the session is started in bypass mode, and Claude Code's own warning is the owner's to accept, once per account;
  *  - nothing asks for permission any more — except the office's high-risk list, which is held for the owner's
  *    answer before the command runs, and refused when no answer comes;
+ *  - the owner can switch that hold off for Unrestricted: then nothing is held and nobody is asked — at once for a
+ *    session that is already running, and back on with a new start; the office's own files stay the owner's to decide;
  *  - a project's deny rules still hold; it is an owner's level to give; employees who were on Auto on the office's
  *    own machines are moved to it once, and one put back on Auto stays there.
  */
@@ -266,4 +268,96 @@ test('a session that continues a conversation in a folder Claude Code does not t
   const q = await waitFor(async () => (await h.state()).questions.find((x) => x.employeeId === ids.Stan && x.kind === 'trust_prompt' && x.status === 'open'), { label: 'the owner is asked about the folder', timeout: 30000 });
   await h.api('POST', `/questions/${q.id}/answer`, { answer: 'Trust this folder' });
   await idle('Stan');
+});
+
+test('the owner switches the hold off for Unrestricted: nothing is held, at once and after a new start; the office\'s own files still are; switched back on, the session is started again', async () => {
+  const permissionAsks = async () => (await h.state()).questions.filter((x) => x.employeeId === ids.Una && x.kind === 'permission').length;
+  const notHeld = async () => (await h.api<any[]>('GET', '/audit')).filter((a) => a.action === 'highrisk.not_held' && a.detail?.employee === 'Una').length;
+  await idle('Una');
+  let cwd = (await h.session(ids.Una!))!.cwd;
+  const origin = path.join(h.tmp, 'origin-2.git');
+  h.git(h.tmp, 'init', '-q', '--bare', origin);
+  h.git(cwd, 'remote', 'add', 'origin2', origin);
+  assert.equal((await h.session(ids.Una!))!.highRiskHeld, true, 'started with the list in front of it');
+  // Still on: held, as before.
+  await say('Una', 'write s.txt 1; commit s; bash git push -q origin2 HEAD:refs/heads/held; say tried-held');
+  const q = await waitFor(() => h.openQuestion(ids.Una!, 'permission'), { label: 'the push is held', timeout: 30000 });
+  await h.api('POST', `/questions/${q.id}/answer`, { decision: 'deny', answer: 'Not yet.' });
+  await waitFor(async () => /tried-held/.test(await paneOf('Una')), { label: 'went on', timeout: 20000 });
+  const asksBefore = await permissionAsks();
+
+  // Off. The session that is already running: its machine still holds the command, and the office answers at once.
+  const after = await h.api('PATCH', '/settings', { unrestrictedAsksHighRisk: false });
+  assert.equal(after.unrestrictedAsksHighRisk, false);
+  assert.equal(after.autoAsksHighRisk, true, 'Auto has its own switch');
+  await say('Una', 'bash git push -q origin2 HEAD:refs/heads/free; bash sudo -n true 2>/dev/null || true; say ran-free');
+  await waitFor(async () => /ran-free/.test(await paneOf('Una')), { label: 'ran through without anybody', timeout: 20000 });
+  assert.match(h.git(origin, 'branch', '--list', 'free'), /free/, 'the push ran');
+  assert.equal(await permissionAsks(), asksBefore, 'nobody was asked');
+  assert.equal(await notHeld(), 2, 'and it is on the record that the office let them through');
+  assert.ok((await h.api<any[]>('GET', '/audit')).some((a) => a.action === 'settings.changed' && a.detail?.unrestrictedAsksHighRisk === false));
+  // The office's own files on the machine are still the owner's to decide.
+  await say('Una', `bash cat ${path.join(h.agentHome, 'config.json')} > leaked.txt; say after-the-fence`);
+  const fence = await waitFor(() => h.openQuestion(ids.Una!, 'permission'), { label: 'the fence still asks', timeout: 30000 });
+  await h.api('POST', `/questions/${fence.id}/answer`, { decision: 'deny', answer: 'That is the office\'s.' });
+  await waitFor(async () => /after-the-fence/.test(await paneOf('Una')), { label: 'went on after the fence', timeout: 20000 });
+  assert.ok(!fs.existsSync(path.join(cwd, 'leaked.txt')) || fs.readFileSync(path.join(cwd, 'leaked.txt'), 'utf8') === '');
+
+  // A session started now has no list at all: its machine holds nothing, and the office is not even asked.
+  await idle('Una');
+  await h.api('POST', `/employees/${ids.Una}/stop`, {});
+  await waitFor(async () => (await h.session(ids.Una!))?.status !== 'running', { label: 'Una stopped', timeout: 15000 });
+  await h.api('POST', `/employees/${ids.Una}/start`, {});
+  await idle('Una');
+  const fresh = (await h.session(ids.Una!))!;
+  assert.equal(fresh.highRiskHeld, false);
+  cwd = fresh.cwd;
+  await say('Una', 'bash git push -q origin2 HEAD:refs/heads/fresh; say ran-fresh');
+  await waitFor(async () => /ran-fresh/.test(await paneOf('Una')), { label: 'ran through', timeout: 20000 });
+  assert.match(h.git(origin, 'branch', '--list', 'fresh'), /fresh/);
+  assert.equal(await notHeld(), 2, 'nothing was held this time, so nothing was let through');
+  assert.equal(await permissionAsks(), asksBefore + 1, 'only the fence asked');
+
+  // Back on: a session with nothing in front of it is started again (between turns), and is held from then on.
+  await idle('Una');
+  const since = (await h.session(ids.Una!))!.startedAt;
+  await h.api('PATCH', '/settings', { unrestrictedAsksHighRisk: true });
+  const again = await waitFor(async () => { const x = await h.session(ids.Una!); return x && x.startedAt !== since && x.status === 'running' && x.inTurn === false ? x : undefined; }, { label: 'started again for the switch', timeout: 40000 });
+  assert.equal(again.resumed, true, 'the same conversation');
+  assert.equal(again.highRiskHeld, true);
+  assert.ok((await h.api<any[]>('GET', '/audit')).some((a) => a.action === 'session.restarted_for_change' && /asked before high-risk commands again/.test(a.detail?.why ?? '')));
+  await say('Una', 'bash git push -q origin2 HEAD:refs/heads/held-again; say tried-again');
+  const q2 = await waitFor(() => h.openQuestion(ids.Una!, 'permission'), { label: 'held again', timeout: 30000 });
+  assert.equal(h.git(origin, 'branch', '--list', 'held-again').trim(), '');
+  await h.api('POST', `/questions/${q2.id}/answer`, { decision: 'allow' });
+  await waitFor(async () => /tried-again/.test(await paneOf('Una')), { label: 'went on', timeout: 20000 });
+});
+
+test('on a machine whose agent is older than the switch, switching the hold off starts the session again without the list', async () => {
+  // (Such an agent does not say what it holds a command for — and one from before Unrestricted answers "ask", which
+  // Claude Code shows as its own prompt in the terminal. Either way the session would go on asking.)
+  await idle('Una');
+  const host = h.server.engine.core.hosts.get(h.hostId)!;
+  const info = host.info!;
+  host.info = { ...info, saysHeldFor: undefined };
+  try {
+    const before = (await h.session(ids.Una!))!;
+    assert.equal(before.highRiskHeld, true);
+    await h.api('PATCH', '/settings', { unrestrictedAsksHighRisk: false });
+    const again = await waitFor(async () => { const x = await h.session(ids.Una!); return x && x.startedAt !== before.startedAt && x.status === 'running' && x.inTurn === false ? x : undefined; }, { label: 'started again without the list', timeout: 40000 });
+    assert.equal(again.highRiskHeld, false);
+    assert.equal(again.resumed, true);
+    assert.ok((await h.api<any[]>('GET', '/audit')).some((a) => a.action === 'session.restarted_for_change' && /no longer wants to be asked/.test(a.detail?.why ?? '')));
+    const asks = (await h.state()).questions.filter((x) => x.employeeId === ids.Una && x.kind === 'permission').length;
+    await say('Una', 'bash git push -q origin2 HEAD:refs/heads/old-agent; say ran-on-old-agent');
+    await waitFor(async () => /ran-on-old-agent/.test(await paneOf('Una')), { label: 'ran through', timeout: 20000 });
+    assert.equal((await h.state()).questions.filter((x) => x.employeeId === ids.Una && x.kind === 'permission').length, asks, 'nobody was asked');
+    // …and it is not started again and again: it has no list now.
+    await idle('Una');
+    await sleep(1500);
+    assert.equal((await h.session(ids.Una!))!.startedAt, again.startedAt);
+  } finally {
+    host.info = info;
+    await h.api('PATCH', '/settings', { unrestrictedAsksHighRisk: true });
+  }
 });

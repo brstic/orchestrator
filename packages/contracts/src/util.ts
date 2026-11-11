@@ -27,10 +27,24 @@ export function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
+/**
+ * The text without the characters of `chars` at its end. Use this instead of `text.replace(/[…]+$/, '')` on text
+ * somebody else can shape: that pattern is tried from every character of every run and takes time with the square of
+ * the run's length (200,000 full stops in the middle of a text: a quarter of a minute); this walks back from the end.
+ */
+export function stripEnd(text: string, chars: string): string {
+  let end = text.length;
+  while (end > 0 && chars.includes(text[end - 1]!)) end--;
+  return end === text.length ? text : text.slice(0, end);
+}
+
 export function truncate(s: string, n: number): string {
   return s.length <= n ? s : s.slice(0, Math.max(0, n - 1)) + '…';
 }
 
+// These run over every event the office keeps — text a session can shape — on the office's one thread: each takes
+// time in step with the text's length (parts have a longest length; a name begins where a word begins). Timed on text
+// built to be slow in `test/util.test.ts`; see DECISIONS.md, "Patterns that read other people's text…".
 const SECRET_PATTERNS: RegExp[] = [
   /\bsk-ant-[A-Za-z0-9_-]{16,}\b/g,
   /\bsk-[A-Za-z0-9]{20,}\b/g,
@@ -38,11 +52,11 @@ const SECRET_PATTERNS: RegExp[] = [
   /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
   /\bAKIA[0-9A-Z]{16}\b/g,
   /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g,
-  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\b/g,
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+  /\beyJ[A-Za-z0-9_-]{10,8000}\.[A-Za-z0-9_-]{10,8000}\.[A-Za-z0-9_-]{5,8000}\b/g,
+  /-----BEGIN [A-Z ]{0,40}PRIVATE KEY-----[\s\S]{0,20000}?-----END [A-Z ]{0,40}PRIVATE KEY-----/g,
 ];
 
-const SECRET_ASSIGNMENT = /\b([A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|CREDENTIALS?)[A-Za-z0-9_]*)\s*([=:])\s*("[^"\n]{4,}"|'[^'\n]{4,}'|[^\s"',;]{6,})/gi;
+const SECRET_ASSIGNMENT = /(?<![A-Za-z0-9_])([A-Za-z0-9_]{0,64}(?:SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|CREDENTIALS?)[A-Za-z0-9_]{0,64})\s*([=:])\s*("[^"\n]{4,}"|'[^'\n]{4,}'|[^\s"',;]{6,})/gi;
 
 /**
  * Redacts likely secrets before text is persisted in the event store, audit

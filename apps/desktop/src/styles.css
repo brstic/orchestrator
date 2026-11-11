@@ -637,6 +637,11 @@ table.tbl {
   white-space: pre;
   max-height: 340px;
 }
+/* What somebody is asked to allow: nothing of it may sit out of sight to the right. */
+.code-wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .diff-add {
   color: #7ff0b0;
 }

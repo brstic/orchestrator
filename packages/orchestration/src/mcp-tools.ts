@@ -146,7 +146,8 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
         eng.comms.answerReturnedByTool(asked.id);
         return answerLine(asked);
       }
-      const q = asked ?? eng.comms.createQuestion({ kind: a.kind ?? 'question', channel: 'mcp_tool', employee, session, text: String(a.question), context: a.context ? String(a.context) : '', why: a.why ? String(a.why) : '', options });
+      // (A question is read by a person, in a window: it has a person's size.)
+      const q = asked ?? eng.comms.createQuestion({ kind: a.kind ?? 'question', channel: 'mcp_tool', employee, session, text: truncate(String(a.question), 4000), context: a.context ? truncate(String(a.context), 8000) : '', why: a.why ? truncate(String(a.why), 2000) : '', options: options.slice(0, 12) });
       eng.sessions.setActivity(session, 'waiting_answer', truncate(q.text, 120));
       const answered = await eng.comms.waitForAnswer(q.id, core.timings.askBossWaitMs, signal);
       // ('delivered': another call of the same question — one that was cut off and is no longer listened to — was
@@ -348,8 +349,11 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       return `Created ${created.length} tasks: ${created.map((t) => t.key).join(', ')}. ${fate}${already ? ` ${already}` : ''}`;
     },
 
-    record_lesson: async (a, { employee }) =>
-      eng.improver.recordFromAgent(employee, { lesson: a.lesson ? String(a.lesson) : undefined, applies_when: a.applies_when ? String(a.applies_when) : undefined, why: a.why ? String(a.why) : undefined, scope: a.scope, none: a.none === true, reason: a.reason ? String(a.reason) : undefined, replaces: a.replaces ? String(a.replaces) : undefined }),
+    record_lesson: async (a, { employee }) => {
+      const over = tooMany(employee, 'lessons', 40);
+      if (over) return err(over);
+      return eng.improver.recordFromAgent(employee, { lesson: a.lesson ? String(a.lesson) : undefined, applies_when: a.applies_when ? String(a.applies_when) : undefined, why: a.why ? String(a.why) : undefined, scope: a.scope, none: a.none === true, reason: a.reason ? String(a.reason) : undefined, replaces: a.replaces ? String(a.replaces) : undefined });
+    },
 
     get_playbook: async (_a, { employee }) => {
       const projectId = eng.tasks.currentTask(employee.id)?.projectId ?? employee.projectId;

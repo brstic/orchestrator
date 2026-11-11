@@ -57,6 +57,11 @@ export interface PersonPresence {
 
 const KV = 'guests';
 
+/** A name as it is compared: without what cannot be seen (direction marks, zero-width characters), in one case. */
+export const plainName = (name: string): string => name.normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/\s+/g, ' ').trim().toLowerCase();
+/** A name as it is kept: the same, with its capitals. */
+export const cleanName = (name: string): string => String(name ?? '').normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/[\u0000-\u001f\u007f<>]/g, ' ').replace(/\s+/g, ' ').trim();
+
 export class Guests {
   private engine: Engine;
   private guests = new Map<string, Guest>();
@@ -79,7 +84,7 @@ export class Guests {
    * token is made yet: the member gets one when their invitation link is used (`issue`).
    */
   invite(input: { name: string; role?: string; via?: Guest['via']; expiresAt?: string | null; credential?: boolean }, actor = 'owner'): { guest: Guest; token: string } {
-    const name = String(input.name ?? '').trim().replace(/\s+/g, ' ').slice(0, 40);
+    const name = cleanName(input.name).slice(0, 40);
     if (!name) throw new EngineError('a guest needs a name');
     const role: GuestRole = roleOf(input.role) ?? 'visitor';
     if (this.taken(name)) throw new EngineError(`there is already a guest called "${name}"`);
@@ -104,14 +109,26 @@ export class Guests {
   }
 
   private taken(name: string): boolean {
-    return [...this.guests.values()].some((g) => !g.revokedAt && g.name.toLowerCase() === name.toLowerCase());
+    const n = plainName(name);
+    return [...this.guests.values()].some((g) => !g.revokedAt && plainName(g.name) === n);
+  }
+
+  /**
+   * Names somebody who knocks cannot have, besides other members': the ones people in the office already answer to —
+   * the owner's, "Owner", every employee's. (A visitor called like the boss would speak in the chat under the boss's
+   * name.) An owner's own invitation may name anybody: that is the owner's word, not the visitor's.
+   */
+  private answeredTo(name: string): boolean {
+    const n = plainName(name);
+    return [this.engine.core.settings.ownerName, 'Owner', 'The boss', 'Boss', 'Orchestrator', ...this.engine.core.employees.filter((e) => !e.archived).map((e) => e.name)].filter(Boolean).some((x) => plainName(String(x)) === n);
   }
 
   /** A name nobody in the office has: the one asked for, or that with a number after it. */
   freeName(wanted: string): string {
-    const base = wanted.trim().replace(/\s+/g, ' ').slice(0, 36) || 'Guest';
-    if (!this.taken(base)) return base;
-    for (let n = 2; n < 100; n++) if (!this.taken(`${base} ${n}`)) return `${base} ${n}`;
+    const base = cleanName(wanted).slice(0, 36) || 'Guest';
+    const free = (x: string) => !this.taken(x) && !this.answeredTo(x);
+    if (free(base)) return base;
+    for (let n = 2; n < 100; n++) if (free(`${base} ${n}`)) return `${base} ${n}`;
     return `${base} ${newId().slice(0, 4)}`;
   }
 

@@ -14,12 +14,12 @@ import type {
   TerminalScreen,
   ActivityState,
 } from '@orchestrator/contracts';
-import { EFFORT_CHOICES, HOOKS_VERSION, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify, truncate, type EffortLevel } from '@orchestrator/contracts';
+import { EFFORT_CHOICES, HOOKS_VERSION, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
 import { permissionPrompt, trustPromptKeys } from './comms.ts';
-import { EngineError } from './core.ts';
+import { EngineError, within } from './core.ts';
 import type { Engine } from './engine.ts';
-import { DEFAULT_HIGH_RISK_PATTERNS, permissionsFor, systemPromptFor } from './prompts.ts';
+import { DEFAULT_HIGH_RISK_PATTERNS, asksHighRisk, permissionsFor, systemPromptFor } from './prompts.ts';
 
 const SKINS = ['#f1c9a5', '#e0ac69', '#c68642', '#8d5524', '#ffdbac', '#a9745a'];
 const HAIRS = ['#2b1d0e', '#4a2f1b', '#0f0f0f', '#b5651d', '#d9b380', '#6b6b6b', '#7a3b1d'];
@@ -373,6 +373,9 @@ function cleanEffort(effort: string | null | undefined): EffortLevel | null {
   return v as EffortLevel;
 }
 
+/** The most characters (for lists: entries) an employee's fields may have. */
+const EMPLOYEE_SIZES: Record<string, number> = { name: 80, title: 160, department: 80, roleKey: 80, specialization: 4000, instructions: 50_000, model: 120, effort: 40, workingDir: 1024, claudeConfigDir: 1024, skills: 100, allowedTools: 200, disallowedTools: 200, alsoProjectIds: 100 };
+
 export interface EmployeeInput {
   name: string;
   claudeConfigDir?: string | null;
@@ -485,6 +488,7 @@ export class EmployeeRegistry {
   }
 
   create(input: EmployeeInput, actor = 'owner'): Employee {
+    within(input as unknown as Record<string, unknown>, EMPLOYEE_SIZES);
     const name = input.name?.trim();
     if (!name) throw new EngineError('an employee needs a name');
     if (this.core.employees.find((e) => !e.archived && e.name.toLowerCase() === name.toLowerCase())) throw new EngineError(`an employee named "${name}" already exists`);
@@ -544,6 +548,7 @@ export class EmployeeRegistry {
   }
 
   update(id: string, patch: Partial<EmployeeInput> & { archived?: boolean }, actor = 'owner'): Employee {
+    within(patch as unknown as Record<string, unknown>, EMPLOYEE_SIZES);
     // Worked out on a copy and stored at the end: a change that is refused half-way leaves the employee as they were.
     const e = structuredClone(this.core.employees.require(id));
     if (patch.name !== undefined) {
@@ -597,7 +602,7 @@ export class EmployeeRegistry {
       if (patch[key] !== undefined) (e as any)[key] = patch[key];
     }
     if (patch.claudeConfigDir !== undefined) {
-      const dir = String(patch.claudeConfigDir ?? '').trim().replace(/\/+$/, '');
+      const dir = stripEnd(String(patch.claudeConfigDir ?? '').trim(), '/');
       if (dir && (!/^(~\/|\/)[A-Za-z0-9._ \/@+-]+$/.test(dir) || dir.includes('..'))) throw new EngineError('the Claude account folder must be a path like ~/.claude-work');
       e.claudeConfigDir = dir || null;
     }
@@ -1240,6 +1245,22 @@ export class SessionRegistry {
     void this.restartNow(employeeId);
   }
 
+  /**
+   * The owner switched the hold on high-risk commands for a level (Settings → Employees). Switching it **off** needs
+   * nothing here: the office answers what a running session's machine still holds (`HookReceiver`), and the next
+   * start has no list. Switching it **on** does: a session that was started without the list has nothing in front
+   * of it until it is started again — so it is, between turns, like for any other change of what it runs with.
+   */
+  highRiskSwitched(): void {
+    for (const s of this.core.sessions.filter((x) => x.status === 'running' && x.origin === 'managed')) {
+      const e = s.employeeId ? this.core.employees.get(s.employeeId) : undefined;
+      if (!e) continue;
+      if (s.highRiskHeld === false && asksHighRisk(this.core.settings, e.autonomy)) this.restartForChange(e.id, 'the boss wants to be asked before high-risk commands again');
+      // Switched off, and nothing else takes the list away from this session (see `restartDue`): now if it is between turns.
+      else if (this.restartDue(s.id) && s.inTurn !== true) void this.restartNow(e.id);
+    }
+  }
+
   /** Is this session waiting to be started again for a change (so it is not told to go on meanwhile)? */
   restartDue(sessionId: string): boolean {
     const s = this.core.sessions.get(sessionId);
@@ -1253,6 +1274,15 @@ export class SessionRegistry {
     const hasBypass = s.permissionMode === 'bypassPermissions';
     if (wantsBypass !== hasBypass) {
       this.restartWhy.set(s.employeeId, `your level is now ${wantsBypass ? 'Unrestricted' : e.autonomy === 'auto' ? 'Auto' : e.autonomy}`);
+      return true;
+    }
+    // A session that was started with the high-risk list in front of it, whose employee the owner no longer wants to
+    // be asked about (the switches in Settings → Employees). Where nothing else takes the list away — the office
+    // answering for it at once, which needs a session in bypass mode on a machine whose agent says what it holds a
+    // command for — the session keeps asking until it is started again. So it is: once, between turns.
+    // (A session from before the office recorded this is taken as started with the list.)
+    if (s.highRiskHeld !== false && !asksHighRisk(this.core.settings, e.autonomy) && !(hasBypass && this.core.hosts.get(s.hostId)?.info?.saysHeldFor === true)) {
+      this.restartWhy.set(s.employeeId, 'the boss no longer wants to be asked before high-risk commands');
       return true;
     }
     // A session in bypass mode whose hooks are older than what this office relies on: a command of it that waits for
@@ -1373,7 +1403,7 @@ export class SessionRegistry {
    */
   async addAccount(hostId: string, rawDir: string, actor = 'owner'): Promise<{ dir: string; loggedIn: boolean; email: string | null; login: string }> {
     const host = this.core.hosts.require(hostId);
-    const dir = String(rawDir ?? '').trim().replace(/\/+$/, '');
+    const dir = stripEnd(String(rawDir ?? '').trim(), '/');
     if (!/^~\/[A-Za-z0-9._@+-]+$/.test(dir)) throw new EngineError('an account folder is a folder in the home of the machine\'s user, like ~/.claude-2');
     if (dir === '~/.claude') throw new EngineError('~/.claude is the machine\'s default account; it is there already');
     if (!this.core.agents.isOnline(hostId)) throw new EngineError(`${host.name} is offline`);
@@ -1571,12 +1601,13 @@ export class SessionRegistry {
       permissions: { allow: perms.allow, deny: perms.deny, ask: perms.ask },
       allowedTools: [],
       disallowedTools: [],
-      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available(), this.eng.attachments.available(), this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser),
+      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available(), this.eng.attachments.available(), this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser, asksHighRisk(this.core.settings, employee.autonomy)),
       mcp: { url: `${this.core.publicUrl}/mcp`, token: mcpToken },
       browser: this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser,
       strictMcp: !this.core.settings.workersInheritMcp,
-      // On `auto` the owner can choose to leave even these to Claude Code's auto mode.
-      highRiskPatterns: (employee.autonomy === 'auto' || employee.autonomy === 'unrestricted') && !this.core.settings.autoAsksHighRisk ? [] : [...DEFAULT_HIGH_RISK_PATTERNS, ...(project?.policy.highRiskPatterns ?? [])],
+      // On `auto` the owner can choose to leave even these to Claude Code's auto mode, and on `unrestricted` to
+      // have nothing held at all (`asksHighRisk`).
+      highRiskPatterns: (session.highRiskHeld = asksHighRisk(this.core.settings, employee.autonomy)) ? [...DEFAULT_HIGH_RISK_PATTERNS, ...(project?.policy.highRiskPatterns ?? [])] : [],
       claudeSessionId: session.claudeSessionId!,
       resume,
       // A project's other repositories, when they are on the machine this employee works on.

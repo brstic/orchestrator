@@ -2,7 +2,7 @@ import type { AgentSession, Employee, HookPayload, Question, QuestionOption, Raw
 import { containsKnownSecret, redactSecrets, truncate } from '@orchestrator/contracts';
 import { describeTool, interpretHook } from '@orchestrator/integrations';
 import type { Engine } from './engine.ts';
-import { nudgePrompt } from './prompts.ts';
+import { asksHighRisk, nudgePrompt } from './prompts.ts';
 
 interface SessionRuntime {
   /** A test run failed and none has passed since. */
@@ -24,6 +24,9 @@ const NUDGE_LIMIT: Record<string, number> = { restricted: 0, supervised: 0, stan
  * Processing is idempotent: hosts deliver at least once, each raw hook has a
  * unique id, and a redelivered hook is acknowledged without being re-applied.
  */
+/** How much of one field of a tool's input is kept for showing (characters). */
+const SHOWN_MAX = 200_000;
+
 export class HookReceiver {
   private eng: Engine;
   private rt = new Map<string, SessionRuntime>();
@@ -88,7 +91,7 @@ export class HookReceiver {
             { label: 'Allow', description: 'Let this one action run' },
             { label: 'Deny', description: 'Refuse it; the agent is told and continues without it' },
           ],
-          tool: { name: tool, input: this.trimInput(payload.tool_input) },
+          tool: this.toolShown(tool, payload.tool_input),
           quietEvent: true,
         });
         this.eng.comms.holdHook(q, { hostId, requestId, kind: 'permission', toolInput: payload.tool_input, eventId: raw.id });
@@ -99,6 +102,15 @@ export class HookReceiver {
           // An employee in bypass mode ran into the high-risk list: Claude Code would ask nobody, so the machine
           // holds the call and the owner decides here.
           const tool = payload.tool_name ?? 'tool';
+          // …unless the owner has since said that Unrestricted employees are not to be held (Settings → Employees):
+          // the session was started when they still were, and its machine goes on holding until it is started again.
+          // That is the owner's standing answer, given at once and written down — nobody is asked. Only for the
+          // high-risk list, and only when the machine says so: a command that names the office's own files is the
+          // owner's to decide whatever the switch says (and a machine that does not say which it is, is asked about).
+          if (payload.orch_held_for === 'pattern' && employee?.autonomy === 'unrestricted' && !asksHighRisk(this.core.settings, 'unrestricted')) {
+            this.core.audit('office', 'highrisk.not_held', employee.id, { employee: employee.name, tool, what: truncate(redactSecrets(describeTool(tool, payload.tool_input, payload.cwd)), 300) });
+            return void respond({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Unrestricted: the owner of the office does not want to be asked before high-risk commands.' } });
+          }
           const q = this.eng.comms.createQuestion({
             kind: 'permission',
             channel: 'permission_hook',
@@ -111,7 +123,7 @@ export class HookReceiver {
               { label: 'Allow', description: 'Let this one action run' },
               { label: 'Deny', description: 'Refuse it; the agent is told and continues without it' },
             ],
-            tool: { name: tool, input: this.trimInput(payload.tool_input) },
+            tool: this.toolShown(tool, payload.tool_input),
             quietEvent: true,
           });
           if (session.activity !== 'paused') this.eng.sessions.setActivity(session, 'needs_approval', describeTool(tool, payload.tool_input, payload.cwd));
@@ -146,11 +158,26 @@ export class HookReceiver {
     }
   }
 
+  /**
+   * A tool's input as the office keeps it for showing to whoever decides. Whoever allows a request allows the whole
+   * input, so the whole input is kept — up to a size no command and hardly any file reaches. Beyond it the rest is
+   * counted, and the request cannot be allowed from the office (`toolShown`, `CommunicationHub.answer`).
+   */
   private trimInput(input: any): unknown {
-    if (!input || typeof input !== 'object') return input ?? null;
+    return this.toolShown('', input).input;
+  }
+
+  private toolShown(name: string, input: any): { name: string; input: unknown; notShown?: number } {
+    if (!input || typeof input !== 'object') return { name, input: input ?? null };
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(input)) out[k] = typeof v === 'string' ? truncate(v, 4000) : v;
-    return out;
+    let notShown = 0;
+    for (const [k, v] of Object.entries(input)) {
+      if (typeof v === 'string' && v.length > SHOWN_MAX) {
+        out[k] = v.slice(0, SHOWN_MAX);
+        notShown += v.length - SHOWN_MAX;
+      } else out[k] = v;
+    }
+    return notShown ? { name, input: out, notShown } : { name, input: out };
   }
 
   private permissionContext(payload: HookPayload): string {
@@ -469,7 +496,7 @@ export class HookReceiver {
         { label: 'Allow', description: 'Let exactly this call run, once', consequence: 'The employee is told to run it again; an identical call is let through once in the next ten minutes.' },
         { label: 'Deny', description: 'Leave it refused', consequence: 'The employee is told to find another way or to report a blocker.' },
       ],
-      tool: { name: tool, input: this.trimInput(payload.tool_input) },
+      tool: this.toolShown(tool, payload.tool_input),
       quietEvent: true,
     });
   }

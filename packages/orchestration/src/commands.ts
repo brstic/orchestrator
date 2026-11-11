@@ -1,5 +1,5 @@
 import type { CommandPlan, CommandResult, Employee, Operation, Project, Task } from '@orchestrator/contracts';
-import { ACTIVITY_LABEL, matchRole, newId, nowIso, truncate } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, matchRole, newId, nowIso, truncate, stripEnd } from '@orchestrator/contracts';
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
 import { reportPrompt } from './prompts.ts';
@@ -31,7 +31,7 @@ function inferPriority(text: string): Task['priority'] {
 }
 
 function capitalise(s: string): string {
-  const t = s.trim().replace(/[.!]+$/, '');
+  const t = stripEnd(s.trim(), '.!');
   return t ? t[0]!.toUpperCase() + t.slice(1) : t;
 }
 
@@ -122,8 +122,9 @@ export class CommandCenter {
 
   /** Rule-based interpretation. Deterministic, offline, and free. */
   plan(raw: string): CommandPlan {
-    const input = raw.trim().replace(/\s+/g, ' ');
-    const text = input.replace(/[.!?]+$/, '');
+    // An instruction typed at the command bar is a sentence; what is read below is read by a dozen patterns.
+    const input = String(raw ?? '').slice(0, 4000).trim().replace(/\s+/g, ' ');
+    const text = stripEnd(input, '.!?');
     const lower = text.toLowerCase();
     const ops: Planned[] = [];
     const problems: string[] = [];

@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { ROLE_CATALOGUE, type Host } from '@orchestrator/contracts';
+import { ROLE_CATALOGUE, type Host, stripEnd } from '@orchestrator/contracts';
 import { NotFoundError, PgStore, Store, generateToken, type Storage } from '@orchestrator/database';
 import { handleMcpPost } from '@orchestrator/integrations';
 import { Engine, EngineError, type Timings } from '@orchestrator/orchestration';
@@ -69,11 +69,20 @@ export interface RunningServer {
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 /** `curl -fsSL <server>/install-agent.sh | sh` — installs the host agent for the current user. */
+/**
+ * The office's address as it may stand in a shell script: a plain web address and nothing else. (Where the office was
+ * not told its public address, this comes from the request's own Host header.)
+ */
+export function safeServerUrl(serverUrl: string): string {
+  if (!/^https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?(\/[A-Za-z0-9._~\/-]*)?$/.test(serverUrl) && !/^https?:\/\/\[[0-9A-Fa-f:]+\](:\d{1,5})?$/.test(serverUrl)) throw new EngineError('this office cannot say its own address; start it with --public-url', 400);
+  return serverUrl.replace(/\/+$/, '');
+}
+
 function installScript(serverUrl: string): string {
   return `#!/bin/sh
 # Installs the Orchestrator host agent for the current user (no root needed).
 set -eu
-SERVER="${serverUrl}"
+SERVER='${safeServerUrl(serverUrl)}'
 DEST="\${ORCH_INSTALL_DIR:-$HOME/.orchestrator/bin}"
 need() { command -v "$1" >/dev/null 2>&1 || { echo "error: $1 is required: $2" >&2; exit 1; }; }
 need node "install Node.js 22.18 or newer"
@@ -483,7 +492,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new EngineError('choose a port between 1024 and 65535');
       let address = current.address;
       if (b.address !== undefined) {
-        address = String(b.address ?? '').trim().replace(/\/+$/, '') || null;
+        address = stripEnd(String(b.address ?? '').trim(), '/') || null;
         if (address && !/^https:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/.test(address)) throw new EngineError('the extra address must look like https://name-or-ip:port');
       }
       const open = b.open !== undefined ? b.open === true : current.open;
@@ -611,7 +620,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/projects/:id/promote', async (req) => engine.tasks.promote(param(req, 'id'), { force: body(req).force === true }));
     api.get('/radio/now', async (req) => {
       const station = engine.core.settings.radio.stations.find((s) => s.id === String(query(req).station ?? ''));
-      return { text: station?.nowPlayingUrl ? await nowPlaying(station.nowPlayingUrl) : null };
+      // With the door open the office is reached from outside, and then it asks outside addresses only (`radio.ts`).
+      return { text: station?.nowPlayingUrl ? await nowPlaying(station.nowPlayingUrl, { insideToo: door?.status().open !== true }) : null };
     });
     // The hi-fi plays for the whole office. Owners and colleagues switch it (`access.ts`); the station is one of the saved ones.
     api.get('/radio', async () => ({ radio: hifi.current }));
@@ -639,8 +649,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           ...(changed.includes('workersInheritMcp') ? { workersInheritMcp: after.workersInheritMcp } : {}),
           ...(changed.includes('selfImprovement') ? { selfImprovement: after.selfImprovement } : {}),
           ...(changed.includes('foreman') ? { foreman: after.foreman } : {}),
+          ...(changed.includes('autoAsksHighRisk') ? { autoAsksHighRisk: after.autoAsksHighRisk } : {}),
+          ...(changed.includes('unrestrictedAsksHighRisk') ? { unrestrictedAsksHighRisk: after.unrestrictedAsksHighRisk } : {}),
         });
       }
+      if (changed.includes('autoAsksHighRisk') || changed.includes('unrestrictedAsksHighRisk')) engine.sessions.highRiskSwitched();
       return after;
     });
     api.put('/layout', async (req) => engine.updateLayout(body(req) as any));

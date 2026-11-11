@@ -25,9 +25,11 @@ Three things are held this way (`HookPending.kind` in `comms.ts`):
 | --- | --- | --- |
 | A permission request | `PermissionRequest` | Claude Code shows its own prompt in the terminal; the office reads it from the screen and asks again (`permissionPrompt`, `promptOnScreen`) |
 | A question Claude Code asks (`AskUserQuestion`) | `PreToolUse` | Claude Code asks in the terminal; the office **tells the owner** who waits there and what was asked — it does not press keys at that dialog |
-| A high-risk command of an Unrestricted employee | `PreToolUse`, held by the agent (`orchHold`) | **refused** — in bypass mode there is no prompt to fall back to |
+| A high-risk command of an Unrestricted employee (while the owner wants to be asked: *Settings → Employees*), or one that names the office's own files | `PreToolUse`, held by the agent (`orchHold`; `orch_held_for` says which of the two) | **refused** — in bypass mode there is no prompt to fall back to |
 
 "In time" is the agent's `approvalWaitSeconds` (30 minutes by default). The hook command's own limit is that plus 30 seconds, and Claude Code's limit for the hook 5 more.
+
+Where the owner switched the hold off for Unrestricted while a session was already running, its machine still holds a high-risk command — and the office answers it *allow* at once, without a question (`HookReceiver.onHookRequest`, the `high_risk_held` case; recorded as `highrisk.not_held`). Only for the list (`orch_held_for: 'pattern'`), never for the office's own files.
 
 Besides these, an employee asks the boss through the office's own tool (`ask_boss`, channel `mcp_tool`). That is a tool call that waits, not a hook; see "The same question twice" below.
 
@@ -81,6 +83,8 @@ In tests the times are short: `approvalWaitSeconds`, `agentCfg.linkGraceSeconds`
 - 2026-11-11, on the office's server: a high-risk command of an Unrestricted employee, held since 17:24, was still held — the same request, open in the office — after the deploy of 17:32 had restarted the office and the agent together. So the hook command's loop runs under Claude Code, finds the agent that comes back, and the office takes the request up again.
 
 - The same request, half an hour after it was asked and with no answer from the owner: refused by the agent through the hook ("no decision in time; the command was refused"), and the session went on.
+
+- 2026-11-11, 20:25:58 UTC, a minute after the owner's switch for Unrestricted was set to off: a command of an Unrestricted employee whose session had been started with the high-risk list was held by the server's agent, answered *allow* by the office at once (`highrisk.not_held` in the audit log, no question), **and ran** — tool started, tool finished five seconds later, the session went on in bypass mode. So an `allow` printed by the hook is what lets a held command run there.
 
 ## Not verified with real Claude Code
 

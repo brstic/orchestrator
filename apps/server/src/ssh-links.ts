@@ -12,7 +12,7 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { newId, nowIso } from '@orchestrator/contracts';
+import { newId, nowIso, stripEnd } from '@orchestrator/contracts';
 import { EngineError, type Engine } from '@orchestrator/orchestration';
 
 export interface SshProbe {
@@ -78,7 +78,7 @@ const TARGET = /^(?:([A-Za-z0-9._][A-Za-z0-9._-]{0,63})@)?([A-Za-z0-9][A-Za-z0-9
 
 /** `user@host[:port]`, `host`, `ssh://user@host:port` → what to hand to ssh. Nothing here can be read as an option. */
 export function parseTarget(input: string): { dest: string; port: number | null; host: string } {
-  const text = input.trim().replace(/^ssh:\/\//i, '').replace(/\/+$/, '');
+  const text = stripEnd(input.trim().replace(/^ssh:\/\//i, ''), '/');
   const m = TARGET.exec(text);
   if (!m) throw new EngineError('enter the server as user@host (or a name from your ~/.ssh/config), optionally with :port');
   const port = m[3] ? Number(m[3]) : null;
@@ -112,7 +112,7 @@ echo "claudeProcesses=$(ps -u "$(id -u)" -o args= 2>/dev/null | grep -Ec '(^|/)c
 /** What ssh said, in words the owner can act on. */
 function explain(stderr: string, target: string): string {
   const text = stderr.trim();
-  if (/Host key verification failed|No .* host key is known/i.test(text)) return `This computer has never connected to ${target} before, so the server's identity is not known. Connect once in a terminal (ssh ${target}) and accept its key — or confirm here that you trust it — then try again.`;
+  if (/Host key verification failed|No [^\n]{0,200} host key is known/i.test(text)) return `This computer has never connected to ${target} before, so the server's identity is not known. Connect once in a terminal (ssh ${target}) and accept its key — or confirm here that you trust it — then try again.`;
   if (/REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(text)) return `The identity of ${target} is different from the one this computer remembers. That can mean the server was reinstalled, or that something is intercepting the connection. Nothing was sent. Check it in a terminal (ssh ${target}) before trying again.`;
   if (/Permission denied/i.test(text)) return `${target} did not accept any of your SSH keys. Set up key login (ssh-copy-id ${target}) or load your key (ssh-add), check that "ssh ${target}" works in a terminal without asking for a password, then try again. The office never asks for or stores passwords.`;
   if (/Could not resolve hostname/i.test(text)) return `The name "${target}" could not be found. Check the spelling, or use the server's address.`;

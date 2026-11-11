@@ -874,6 +874,15 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                     Employees on <b>Auto</b> do not ask for permission; Claude Code's own auto mode decides what is safe. With this on, high-risk commands — pushing, sudo, deploying, publishing, broad deletions, reading credential files — still
                     come to you first.
                   </Toggle>
+                  <Toggle
+                    checked={(settings.unrestrictedAsksHighRisk ?? settings.autoAsksHighRisk) !== false}
+                    onChange={(unrestrictedAsksHighRisk) => void save({ unrestrictedAsksHighRisk })}
+                    title="On Unrestricted, still ask me before high-risk commands"
+                  >
+                    Employees on <b>Unrestricted</b> run without any permission checks. With this on, the same high-risk commands are still held until you answer. <b>Off: an Unrestricted employee is never stopped for approval</b> — pushing, sudo,
+                    deploying, deleting, reading credential files all run at once, and nothing asks you. Switching it off takes effect at once, also for sessions that are already running (on a computer with an older desktop app, the session is started again between turns, once); switching it back on starts each such session again between turns.
+                    Either way the office's own files on a machine stay fenced off, and a project's deny rules still refuse what they refuse.
+                  </Toggle>
                   <Toggle checked={settings.employeesManageBoard !== false} onChange={(employeesManageBoard) => void save({ employeesManageBoard })} title="Employees manage the task board themselves">
                     On: any employee can release a waiting task, unblock one (saying how), give a task to a colleague, review a colleague's finished work, and start a colleague who is needed — so work goes on without you. Off: those are yours.
                     Either way no employee approves a permission request, marks work done without verification, or deletes anything.

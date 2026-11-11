@@ -487,7 +487,9 @@ export class Engine {
     if (q.kind === 'merge_conflict' && q.taskId) {
       const task = this.core.tasks.get(q.taskId);
       if (!task || task.status !== 'BLOCKED') return;
-      if (/resolve it$|resolve it\b.*(have|author)|^have /.test(answer) && !/myself/.test(answer)) {
+      // ("resolve it", alone at the end or followed by "have"/"author"; or "have …" — said without `resolve it\b.*(have|author)`, which reads to the end from every "resolve it".)
+      const afterResolve = answer.indexOf('resolve it');
+      if ((answer.endsWith('resolve it') || (afterResolve >= 0 && /^\b/.test(answer.slice(afterResolve + 10) || ' ') && /have|author/.test(answer.slice(afterResolve + 10))) || answer.startsWith('have ')) && !answer.includes('myself')) {
         // Back to the author: the conflict details travel with the task prompt.
         task.status = 'READY';
         task.released = true;

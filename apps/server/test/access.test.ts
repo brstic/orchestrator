@@ -309,3 +309,18 @@ test('a closed room: what is on the member\'s own computers is theirs alone — 
   assert.equal(stateFor(engine, vera, state), state);
   assert.equal(outcomesScopeFor(engine, vera), null);
 });
+
+test('what a shared project lets its employees run unasked is the owners\' to change; a member\'s own project is theirs', () => {
+  const same = { autoAssign: false, allow: [], deny: [], highRiskPatterns: [] };
+  // The project window sends the whole policy with every save: a colleague who changes something else is not refused.
+  assert.equal(call(ana, 'PATCH', '/projects/p-shared', { name: 'Shop', policy: same }), true);
+  for (const policy of [{ allow: ['Bash(*)'] }, { deny: ['WebFetch'] }, { highRiskPatterns: ['(a+)+$'] }, { ...same, allow: ['Bash(rm:*)'] }]) {
+    assert.equal(call(ana, 'PATCH', '/projects/p-shared', { policy }), false, JSON.stringify(policy));
+    assert.equal(call(jovan, 'PATCH', '/projects/p-shared', { policy }), false, 'not his either');
+    assert.equal(call(vera, 'PATCH', '/projects/p-shared', { policy }), true, 'an owner');
+    assert.equal(call(jovan, 'PATCH', '/projects/p-jovan', { policy }), true, 'on his own computer');
+  }
+  assert.equal(call(ana, 'POST', '/projects', { name: 'New', hostId: 'h-shared', policy: { allow: ['Bash(*)'] } }), false);
+  assert.equal(call(ana, 'POST', '/projects', { name: 'New', hostId: 'h-shared', policy: { autoAssign: true, allow: [] } }), true);
+  assert.equal(call(jovan, 'POST', '/projects', { name: 'Mine', hostId: 'h-jovan', policy: { allow: ['Bash(ls:*)'] } }), true);
+});
