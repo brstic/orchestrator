@@ -19,7 +19,9 @@ _Last updated: 2026-11-11. Update this file with every piece of work (see `CLAUD
 - Its state was moved, not deleted: `~/.orchestrator-local-office-backup-2026-11-10/` on the Mac (server database + agent), and `~/.orchestrator-mac-link-backup-2026-11-10/` on Sparkcan (the SSH-link agent of that office, stopped). Nothing was migrated to the server office — the owner chose to start from zero. Delete the backups when they are no longer wanted.
 - The desktop app (`release/Orchestrator.app`, latest build) now opens the server office by itself at start ("open at start" on the saved office; Office → Switch office… shows the start screen). The owner comes in as *Branko · owner*, and the Mac joins as "Branko's computer" with its room; local Claude sessions are added from Menu → My room.
 
-**The owner token is no longer written to the log (2026-11-11)** (CHANGELOG; SECURITY "The owner token and the log"). `startupLines` in `main.ts`; `apps/server/test/startup-lines.test.ts`. Found while reading the server's journal for how long a deploy takes (about 3 s from stop to listening, 4.6 s until the machine's agent is back).
+**The server runs build `5ea0d89` since 2026-11-11, 16:56 UTC** (fetched, pushed, deployed from the owner's Mac); it adds the entry below. Read in the journal after the restart: the start-up lines name the address and the token file, no token.
+
+**The owner token is no longer written to the log (2026-11-11, on the server since `5ea0d89`)** (CHANGELOG; SECURITY "The owner token and the log"). `startupLines` in `main.ts`; `apps/server/test/startup-lines.test.ts`. Found while reading the server's journal for how long a deploy takes (about 3 s from stop to listening, 4.6 s until the machine's agent is back).
 
 **A desktop app with today's agent is built and waiting: `release-next/Orchestrator.app`** (from `8b7e488`, 2026-11-11; 15/15 package checks). It is not installed: the running app must be closed first, which is the owner's call. Until then the agents on members' computers (the owner's Mac included) hold no request through a restart, drop no stale hooks, and their sessions' hooks do not try again.
 
