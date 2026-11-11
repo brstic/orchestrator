@@ -2857,10 +2857,6 @@ button.ops-row:hover {
   outline: none;
   box-shadow: none;
 }
-.people-cols {
-  display: grid;
-  grid-template-columns: minmax(0, 4fr) minmax(0, 5fr);
-}
 .people-chip {
   display: inline-flex;
   align-items: center;
@@ -2870,16 +2866,11 @@ button.ops-row:hover {
   border-radius: 999px;
   font-size: 13px;
 }
-.people-log {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  height: 220px;
-  overflow-y: auto;
-  padding: 10px;
+.access-made {
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.16);
+  background: rgba(110, 168, 255, 0.07);
 }
 
 /* ───────────── who sits where ───────────── */

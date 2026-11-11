@@ -44,9 +44,9 @@
 
       <section>
         <h2>Connect to an office</h2>
-        <p>An office runs on a server and stays open; you walk in from here. Type its address and ask to be let in — or paste an invitation you were sent. While you are in, your own computer has a room there for the sessions you run on it.</p>
+        <p>An office runs on a server and stays open; you walk in from here. Paste the invitation link you were sent — or type the office's address and ask to be let in. While you are in, your own computer has a room there for the sessions you run on it.</p>
         <div id="joined"></div>
-        <textarea id="invite" placeholder="office.example.com      or an invitation: orch-invite-v1.…" spellcheck="false" autocomplete="off"></textarea>
+        <textarea id="invite" placeholder="office.example.com/join/ABCD-EFGH-JKLM      or just the address: office.example.com" spellcheck="false" autocomplete="off"></textarea>
         <div id="knock-who" hidden style="margin-top:8px">
           <input id="knock-name" placeholder="Your name — the people inside see it when you knock" maxlength="40" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box" />
         </div>
@@ -61,7 +61,7 @@
         <div id="join-error" role="alert" style="display:none;margin-top:10px;padding:9px 11px;border-radius:8px;background:rgba(255,93,115,0.14);border:1px solid rgba(255,93,115,0.5);color:#ffb3bf"></div>
         <div class="row" style="margin-top:10px">
           <button class="primary big" id="join" type="button">Connect</button>
-          <small id="join-note">An invitation names the exact computer to trust. An address is asked only if its certificate is one this computer trusts.</small>
+          <small id="join-note">An invitation link works once; after that this computer remembers the office. An address is asked only if its certificate is one this computer trusts.</small>
         </div>
       </section>
 

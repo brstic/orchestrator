@@ -8,8 +8,10 @@
  * (`/mcp`, per-session tokens). No downloads, no installer. Requests that came through the door
  * are marked, and the office never accepts its own owner token from there.
  *
- * Guests do not trust the certificate through a certificate authority; the invitation carries
- * its fingerprint, and the joining app accepts exactly that certificate.
+ * Guests do not trust the certificate through a certificate authority; an invitation link to this
+ * computer's own address carries the start of its fingerprint, and the joining app accepts exactly
+ * that certificate. (Behind a reverse proxy with a certificate for the office's name, the app checks
+ * that one the way a browser does.)
  */
 import { execFile } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -32,7 +34,7 @@ export interface DoorStatus {
 
 /** What may pass. Everything else is answered 404 at the door. */
 // `/mcp` is how a worker on a member's own computer talks to the office; it answers only to a session's own token.
-const ALLOWED = [/^\/$/, /^\/index\.html$/, /^\/assets\/[A-Za-z0-9._-]+$/, /^\/favicon\.[a-z]+$/, /^\/healthz$/, /^\/api\/[^?#]*$/, /^\/mcp$/, /^\/knock(\/[A-Za-z0-9-]{1,64})?$/];
+const ALLOWED = [/^\/$/, /^\/index\.html$/, /^\/assets\/[A-Za-z0-9._-]+$/, /^\/favicon\.[a-z]+$/, /^\/healthz$/, /^\/api\/[^?#]*$/, /^\/mcp$/, /^\/knock(\/[A-Za-z0-9-]{1,64})?$/, /^\/join(\/[A-Za-z0-9.-]{1,80})?$/];
 // `/ws/agent`: the office accepts only a member's own computer there when the connection comes through the door.
 const ALLOWED_UPGRADE = /^\/ws\/(client|agent)$/;
 
@@ -172,7 +174,11 @@ export class Door {
   }
 }
 
-/** An invitation: everything the joining app needs, in one string to paste. */
+/**
+ * Everything a member's app keeps about an office, in one string: its addresses, the certificate to trust and
+ * the member's credential. The app is handed this when an invitation link is used or a knock is answered; an
+ * office that has no address set still gives it out directly, as an invitation to paste.
+ */
 export function inviteCode(input: { office: string; guest: string; role: string; token: string; addresses: string[]; fingerprint: string }): string {
   const json = JSON.stringify({ n: input.office, g: input.guest, r: input.role, t: input.token, a: input.addresses, f: input.fingerprint });
   return `orch-invite-v1.${Buffer.from(json, 'utf8').toString('base64url')}`;

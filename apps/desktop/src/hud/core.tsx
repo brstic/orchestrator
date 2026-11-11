@@ -112,7 +112,7 @@ export function TopBar() {
       title: 'People',
       items: [
         { id: 'team', label: 'Team' },
-        { id: 'people', label: 'Who is here', count: Math.max(0, s.people.length - 1) || undefined },
+        { id: 'people', label: 'Access', count: Math.max(0, s.people.length - 1) || undefined },
         ...(hasRoom ? [{ id: 'myroom' as PanelId, label: 'My room', count: Object.values(s.employees).filter((e) => !e.archived && !!e.hostId && s.hosts[e.hostId]?.memberId === s.me!.id).length || undefined }] : []),
       ],
     },
@@ -213,7 +213,7 @@ export function TopBar() {
       )}
       {(s.me?.kind === 'guest' || s.people.length > 1) && (
         <div className="glass pillbar">
-          <button className="pill" onClick={() => s.openPanel('people')} title={s.me?.kind === 'guest' ? `You are a guest here (${s.me.role}). Click to see who is here and talk to them.` : 'Other people are in your office. Click to see who, and to talk to them.'}>
+          <button className="pill" onClick={() => s.openPanel('people')} title={s.me?.kind === 'guest' ? `You are here as a ${s.me.role}. Click to see what that lets you do, and who else is here.` : 'Other people are in your office. Click to see who.'}>
             {s.me?.kind === 'guest' ? `Here as a ${s.me.role}` : 'People'} · {Math.max(1, s.people.length)} here
           </button>
         </div>

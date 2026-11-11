@@ -125,7 +125,8 @@ try {
   const plain = await fetch(`https://127.0.0.1:${doorPort}/healthz`).then(() => 'trusted without pinning', (e) => String(e.cause?.code ?? e.message));
   check('it answers on the network with TLS and a certificate of its own, reachable only by pinning it', /SELF_SIGNED|DEPTH_ZERO|CERT/i.test(plain), plain);
   // The first owner and a colleague are invited from the server's terminal.
-  const inviteOf = (out) => /orch-invite-v1\.\S+/.exec(out)?.[0];
+  // The office was started with its address, so what is printed is a link (https://…/join/CODE.fingerprint).
+  const inviteOf = (out) => /https:\/\/\S+\/join\/\S+/.exec(out)?.[0];
   const ownerInvite = inviteOf(onServer('cd orchestrator && node scripts/office-admin.mjs invite Branko --role owner'));
   const colleagueInvite = inviteOf(onServer('cd orchestrator && node scripts/office-admin.mjs invite Fenix --role colleague'));
   check('the first owner and a colleague are invited from the server’s own terminal', !!ownerInvite && !!colleagueInvite, onServer('cd orchestrator && node scripts/office-admin.mjs status').split('\n').slice(-2).join(' | '));

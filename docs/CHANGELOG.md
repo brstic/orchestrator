@@ -3,6 +3,15 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-11
+- **Access: inviting someone is a short link.** The window *Who is here* is now **Access** (Menu → People → Access), and is about one thing: who can come into the office, and as what.
+  - **An invitation is a link**, `https://office.example.com/join/K7QF-M2XP-9TRD`, instead of one long text. The person pastes it into the app under *Connect to an office*; the app exchanges the code at the door for its own credential. A link works **once** and for **a week**; the member is listed as "invited · the link works until …" until it is used. In a browser the link is a page that says what to do with it.
+  - **New link** replaces *New invitation*; for someone who has already come in it asks first, because it disconnects them.
+  - **One address.** The window shows and edits only *Address people come to* — the one the owner set. The list "Reachable at …" of this computer's network addresses is gone; with no address saved yet they are offered once, to pick from. Inviting waits until an address is saved.
+  - **No chat in this window.** Talking to the people in the office is the chat in the office itself (Enter).
+  - Everyone else sees in Access what their own role lets them do, and who is here.
+  - `pnpm office invite` / `reinvite` print the link. The app still accepts the long text (an office with no address set, and invitations made before today).
+  - Server: `apps/server/src/invites.ts`, `POST /join` and `GET /join/:code` at the door only; `guest.joined` in the audit log. Tests: `apps/server/test/invites.test.ts`, `tests/e2e/12-members.test.ts`, the desktop join (`tests/ui/guest-app.mjs`) and a step of the UI suite.
+- **UI suite: waiting for a colleague is now looked at on screen** — a step makes one employee wait for another and checks the line on both cards and in the Talk window, and that it goes when the answer comes.
 - **Pushed and deployed.** Everything since `7675985` is on GitHub and on the server office as build `781644c` (a collaborator's docs-only commit was merged first); the owner's Mac app was repackaged from the same commit. See `docs/STATUS.md` for what changes in the live office.
 - **An employee can wait for a colleague.** Asking a teammate with `wait: true` (`request_collaboration`, `request_help`) keeps the tool call open until they answer with `respond_to_request`, and returns their answer. The new `wait_for_colleague` waits until a task somebody else has is finished — and says what happened: done, blocked and why, or removed — or picks a wait up again. A call waits four minutes at most; then it says "not yet" and how to keep waiting, and whatever comes later is delivered as a message.
   - The colleague is told who is waiting ("Alex is waiting for your answer before going on"), is started for it if they have no session, and `respond_to_request` says whom it let go on.

@@ -11,7 +11,13 @@ Everything here is enforced in one place, `apps/server/src/access.ts` (HTTP rout
 | **Member: colleague** | An invitation | Works on what is shared; has a computer of their own in the office |
 | **Member: visitor** | An invitation | Reads what is shared |
 
-An invitation (`orch-invite-v1.…`) carries the office's addresses, the fingerprint of the door's certificate and a token. Only the token's hash is stored. Revoking, re-inviting and changing a role take effect at once (open windows are disconnected and come back with the new role).
+An invitation is a **short link**: the address the owner set for the office and a code — `https://office.example.com/join/K7QF-M2XP-9TRD`. The person pastes it into the desktop app (**Connect to an office**); the app exchanges the code at the office's door, **once**, for what it keeps from then on: the office's addresses, the fingerprint of the door's certificate and a credential of the member's own. A link is good for a week and for one use; a new link (**Access → New link**, `pnpm office reinvite`) ends what the member had before. In a browser the link is a page that says what to do with it; opening it uses nothing up. Only hashes are stored — of the code and of the credential.
+
+- A link to the door itself (an address with a port, e.g. `https://192.168.0.5:4610/join/K7QF-M2XP-9TRD.3fa9c01b22d4e6a17c05`) ends in the start of the fingerprint of the door's certificate, and the app accepts only that certificate. A link to an address without a port is answered by something with a certificate for that name (a reverse proxy), which the app checks the way a browser does.
+- `POST /join` and `GET /join/:code` exist only at the door (404 on the office's own port) and need no credential. Ten wrong codes from one address in ten minutes and that address waits.
+- An office with **no address set** cannot make a link (there is nothing to put in it): `POST /api/guests` then answers with the whole connection as one long text (`orch-invite-v1.…`) that the app also accepts. The Access window asks for the address first instead.
+
+Revoking, re-inviting and changing a role take effect at once (open windows are disconnected and come back with the new role).
 
 ## Shared and personal
 
@@ -64,7 +70,7 @@ A person with no invitation can knock at the office's door — the office's page
 
 - `GET /knock`, `POST /knock`, `GET /knock/:id`, `DELETE /knock/:id` — no credential; only through the door (404 on the office's own port). The knocker's poll is authorised by a secret only they hold (`x-knock-secret`); the credential they are given is handed over once.
 - `GET /api/knocks`, `POST /api/knocks/:id/admit`, `POST /api/knocks/:id/refuse` — **work**, so owners and colleagues; visitors are neither told about knocks nor able to answer.
-- Who may let whom in: an **owner** as visitor, colleague or owner; a **colleague** only as a visitor; **a knock from a browser only ever becomes a visitor**, whoever answers, and that member expires after 12 hours. A knock from the app becomes an ordinary member (shown in People as "let in at the door"), revocable like any other.
+- Who may let whom in: an **owner** as visitor, colleague or owner; a **colleague** only as a visitor; **a knock from a browser only ever becomes a visitor**, whoever answers, and that member expires after 12 hours. A knock from the app becomes an ordinary member (shown in Access as "let in at the door"), revocable like any other.
 - Limits: 2 waiting and 6 knocks per ten minutes per address, 10 waiting in all; a knocker who stops asking is gone after 25 s; nobody waits longer than 10 minutes; an admission nobody collects within a minute is revoked.
 
 ### The hi-fi

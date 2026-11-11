@@ -30,7 +30,7 @@ There is one office and it lives on the server. Desktop apps are clients; the pa
 | Service | systemd user unit `orchestrator-office` (`~/.config/systemd/user/orchestrator-office.service`), lingering enabled so it survives logout and reboot |
 | Node.js | `~/.nvm/versions/node/v22.23.4/bin/node` (the system's `node` is too old) |
 | Ports | 4600 on loopback (the office itself), **4610/tcp open in ufw** (the door, TLS) |
-| Members reach it at | **`https://office.sparkcan.com`** (through Cloudflare and the server's nginx — see "The domain" below) · `https://<server-vpn-ip>:4610` (Tailscale) · `https://<server-lan-ip>:4610` (LAN). New invitations list them in that order; the app uses the first that answers |
+| Members reach it at | **`https://office.sparkcan.com`** (through Cloudflare and the server's nginx — see "The domain" below) · `https://<server-vpn-ip>:4610` (Tailscale) · `https://<server-lan-ip>:4610` (LAN). Invitation links start with the first (it is the address saved in **Access**); once someone is in, their app keeps all three and uses the first that answers |
 | Claude Code | `/usr/local/bin/claude`, logged in as `sparkcan`: this is the account shared employees use |
 | Shared sessions | the default tmux server of `sparkcan`, sessions named `orch-<employee>-<id>` |
 | Not ours | `~/.orchestrator-mac-link-backup-2026-11-10` — the agent of the old Mac office, stopped and set aside. Safe to delete |
@@ -44,7 +44,7 @@ There is one office and it lives on the server. Desktop apps are clients; the pa
 - Verified 2026-11-10 from the owner's Mac: the desktop app joins over the domain (API, WebSocket, and the relay for the Mac's own room all go to `<server-public-ip>:443`).
 - **People without an invitation** open `https://office.sparkcan.com` in a browser (they can ask to look around) or type `office.sparkcan.com` into the desktop app's start screen (they can be let in as visitor, colleague or owner). Whoever is inside answers from the card at the top right of the office window.
 - The office limits knocks per caller address, which it takes from the last entry of `X-Forwarded-For` as set by this nginx (`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` in CloudPanel's template). If that line is ever removed, every caller looks like `127.0.0.1` and shares one limit.
-- Old invitations keep working through the Tailscale/LAN addresses; `reinvite` gives one that tries the domain first.
+- Invitations made before 2026-11-11 (one long text) keep working until they are replaced; `reinvite` or **Access → New link** gives a short link instead.
 
 ### A person's computer (client)
 | | |
@@ -129,8 +129,8 @@ N=~/.nvm/versions/node/v22.23.4/bin/node
 A="env ORCH_SERVER_HOME=$HOME/.orchestrator-office/server $N $HOME/orchestrator-office/app/scripts/office-admin.mjs"
 
 $A status                                   # open? addresses, certificate fingerprint, members and when they were last in
-$A invite "Name" --role colleague           # owner | colleague | visitor — prints the invitation once
-$A reinvite "Name"                          # new invitation; the old one stops working
+$A invite "Name" --role colleague           # owner | colleague | visitor — prints the invitation link once (works once, for a week)
+$A reinvite "Name"                          # new link; what they had stops working at once
 $A role "Name" visitor                      # change what they may do (their window reconnects)
 $A revoke "Name"                            # take their access and their computer's place away
 
@@ -166,6 +166,7 @@ Install there (`INSTALL.md` section 0), stop both services, copy `~/.orchestrato
 | App: "could not be opened" / cannot reach the office | Is the service active (`deploy-server.sh --status`)? Are you on Tailscale or the LAN? Is 4610 open (`sudo ufw status`)? |
 | App: "the certificate is different" | The server's certificate changed (state folder replaced). Make new invitations |
 | "This invitation is no longer valid" | It was revoked or re-issued: `office-admin status`, then `reinvite` |
+| "This invitation link has been used already, or it is more than a week old" | A link works once. Make another: **Access → New link**, or `reinvite` |
 | "My room" says this computer is not in the office | The reason is written there. Needs tmux, Node.js 22.18+ and Claude Code on that computer; a browser tab or Windows cannot host sessions |
 | A shared employee will not start | On the server: is `claude` logged in for `sparkcan` (`claude --version`, then start it once by hand)? `journalctl --user -u orchestrator-office -n 100` |
 | New UI did not appear after a deploy | Reload the window (Cmd/Ctrl+R). `app/BUILD` on the server shows what is deployed |

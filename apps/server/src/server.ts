@@ -1,5 +1,6 @@
 import { Door, inviteCode } from './door.ts';
 import { Guests, whoIs, type Who } from './guests.ts';
+import { Invites, inviteLink, invitePage } from './invites.ts';
 import { Knocks, type Admission } from './knocks.ts';
 import { allowed, eventFor, mayCall, mayReadRoutine, outcomesScopeFor, stateFor } from './access.ts';
 import { HiFi, nowPlaying } from './radio.ts';
@@ -140,6 +141,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     return typeof q === 'string' ? q : null;
   };
   const guests = new Guests(engine);
+  const invites = new Invites(store);
   let door: Door | null = null;
   /** Did this request come in through the guest door (from the network), rather than from this computer? */
   const viaDoor = (req: FastifyRequest): boolean => !!door && req.headers['x-orch-door'] === door.secret;
@@ -196,6 +198,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     for (const g of guests.expired()) showOut(g.id);
   }, 30_000);
   visits.unref();
+  /** What a member's app keeps: where the office is, which certificate is its own, and the member's credential. */
+  const connectionOf = (guest: { name: string; role: string }, token: string): string => {
+    const st = door!.status();
+    const extra = store.kvGet<{ address: string | null }>('sharing', { address: null }).address;
+    return inviteCode({ office: engine.core.settings.companyName, guest: guest.name, role: guest.role, token, addresses: [...new Set([...(extra ? [extra] : []), ...st.addresses])], fingerprint: st.fingerprint ?? '' });
+  };
   /** Knocking exists only where the office is open to people from outside: through its door. */
   const atDoor = (req: FastifyRequest, reply: FastifyReply): boolean => {
     if (viaDoor(req)) return true;
@@ -223,6 +231,20 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     if (!atDoor(req, reply)) return reply;
     knocks.leave(String((req.params as any).id), knockSecret(req));
     return { ok: true };
+  });
+
+  // An invitation link. In a browser it is a page that says what to do with it; the app exchanges its code, once,
+  // for what it keeps: the office's addresses, the certificate to trust and the member's own credential.
+  app.get('/join/:code', async (req, reply) => {
+    if (!atDoor(req, reply)) return reply;
+    return reply.header('cache-control', 'no-store').type('text/html; charset=utf-8').send(invitePage(engine.core.settings.companyName));
+  });
+  app.post('/join', { bodyLimit: 2048 }, async (req, reply) => {
+    if (!atDoor(req, reply)) return reply;
+    void reply.header('cache-control', 'no-store');
+    const code = String(((req.body ?? {}) as Record<string, unknown>).code ?? '').split('.')[0];
+    const { guest, token } = guests.issue(invites.redeem(code, String(req.headers['x-forwarded-for'] ?? req.ip)));
+    return { office: engine.core.settings.companyName, name: guest.name, role: guest.role, invite: connectionOf(guest, token) };
   });
 
   // ───────────── WebSockets ─────────────
@@ -319,11 +341,20 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     };
 
     // ── guests and the door they come in through (owner only: not in any guest's allowed routes) ──
-    const sharing = () => ({ door: door?.status() ?? { open: false, port: null, addresses: [], fingerprint: null, error: 'the server is still starting' }, wanted: store.kvGet<{ open: boolean; port: number; address: string | null }>('sharing', { open: false, port: 4610, address: null }), guests: guests.list(), present: clients.people() });
-    const invitation = (guest: { name: string; role: string }, token: string) => {
-      const st = door!.status();
-      const extra = store.kvGet<{ address: string | null }>('sharing', { address: null }).address;
-      return inviteCode({ office: engine.core.settings.companyName, guest: guest.name, role: guest.role, token, addresses: [...new Set([...(extra ? [extra] : []), ...st.addresses])], fingerprint: st.fingerprint ?? '' });
+    // `inviteExpiresAt`: until when the member's invitation link can still be used (null: it was used, or there is none).
+    const sharing = () => ({ door: door?.status() ?? { open: false, port: null, addresses: [], fingerprint: null, error: 'the server is still starting' }, wanted: store.kvGet<{ open: boolean; port: number; address: string | null }>('sharing', { open: false, port: 4610, address: null }), guests: guests.list().map((g) => ({ ...g, inviteExpiresAt: g.revokedAt ? null : invites.expiresAtOf(g.id) })), present: clients.people() });
+    const invitation = connectionOf;
+    /** The address people come to, as the owner set it; with it an invitation is a short link. */
+    const officeAddress = () => store.kvGet<{ address: string | null }>('sharing', { address: null }).address;
+    /**
+     * What the owner sends someone: a link that works once (`link: true`) — or, in an office that has no address
+     * set, the whole connection as text to paste.
+     */
+    const invite = (guest: { id: string; name: string; role: string }, token: string) => {
+      const address = officeAddress();
+      if (!address) return { invite: invitation(guest, token), link: false, expiresAt: null };
+      const { code, expiresAt } = invites.create(guest.id);
+      return { invite: inviteLink(address, code, door!.status().fingerprint), link: true, expiresAt };
     };
     const needDoor = () => {
       if (!door?.status().open) throw new EngineError('open the office to guests first (the guest door is closed)');
@@ -374,14 +405,16 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
     api.post('/guests', async (req) => {
       needDoor();
-      const { guest, token } = guests.invite({ name: String(body(req).name ?? ''), role: body(req).role });
-      return { guest, invite: invitation(guest, token) };
+      // With a link, the credential is made when the link is used; without, it is in the text itself.
+      const { guest, token } = guests.invite({ name: String(body(req).name ?? ''), role: body(req).role, credential: !officeAddress() });
+      return { guest, ...invite(guest, token) };
     });
     api.post('/guests/:id/reissue', async (req) => {
       needDoor();
-      const { guest, token } = guests.reissue(param(req, 'id'));
+      const { guest, token } = guests.reissue(param(req, 'id'), 'owner', { credential: !officeAddress() });
+      invites.drop(guest.id);
       clients.dropGuest(guest.id);
-      return { guest, invite: invitation(guest, token) };
+      return { guest, ...invite(guest, token) };
     });
     api.patch('/guests/:id', async (req) => {
       const guest = guests.update(param(req, 'id'), { role: body(req).role });
@@ -391,6 +424,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
     api.delete('/guests/:id', async (req) => {
       const guest = guests.revoke(param(req, 'id'));
+      invites.drop(guest.id);
       clients.dropGuest(guest.id);
       dropHostsOf(guest.id);
       return guest;

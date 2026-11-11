@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Badge, Button, Field, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
@@ -18,6 +18,8 @@ interface Guest {
   revokedAt: string | null;
   via?: 'knock-browser' | 'knock-app';
   expiresAt?: string | null;
+  /** Until when their invitation link can still be used; null once it was used (or there is none). */
+  inviteExpiresAt?: string | null;
 }
 
 interface Sharing {
@@ -26,88 +28,69 @@ interface Sharing {
   guests: Guest[];
 }
 
+/** What pressing Invite gives back: a link that works once — or, in an office with no address set, text to paste. */
+interface Made {
+  guest: Guest;
+  invite: string;
+  link: boolean;
+  expiresAt: string | null;
+}
+
 const ROLE_TONE: Record<string, Tone> = { owner: 'info', colleague: 'good', visitor: 'muted' };
 const ROLE_TEXT: Record<string, string> = {
   visitor: 'Looks: the office, the people, tasks, and the terminals and documents of what is shared. Changes nothing.',
   colleague: 'Works on everything shared — talks and types to employees, hires, hands out tasks, answers and approves — and has a room for the sessions on their own computer. Does not run the office.',
   owner: "Everything: members, settings and policies, machines, the layout — and other members' own computers.",
 };
+const day = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
 
-/** Who is here, what people say to each other, and — for the owner — who is invited and how they get in. */
-function PeoplePanel({ onClose }: { arg: string | null; onClose: () => void }) {
+/**
+ * Access: who can come into the office, and as what. For an owner: the address people come to, inviting
+ * someone with a link, and the members. For everyone else: what their own role lets them do, and who is here.
+ */
+function AccessPanel({ onClose }: { arg: string | null; onClose: () => void }) {
   const me = useOffice((s) => s.me);
   const people = useOffice((s) => s.people);
   const clientId = useOffice((s) => s.clientId);
-  const chat = useOffice((s) => s.chat);
   const office = useOffice((s) => s.settings?.companyName ?? 'the office');
-  const [text, setText] = useState('');
-  const log = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (log.current) log.current.scrollTop = log.current.scrollHeight;
-  }, [chat.length]);
-  const owner = me?.kind === 'owner';
   const others = people.filter((p) => p.id !== clientId);
-
+  if (me?.kind === 'owner') {
+    return (
+      <Window title="Access" subtitle={`Who can come into ${office}, and as what`} onClose={onClose} width={700}>
+        <OwnerAccess here={new Set(others.map((p) => p.memberId).filter((id): id is string => !!id))} />
+      </Window>
+    );
+  }
+  const role = me?.role ?? 'visitor';
   return (
-    <Window title="Who is here" subtitle={owner ? `${others.length ? `${others.length} other${others.length === 1 ? '' : 's'} here now` : 'Nobody else is here'} · other people can walk around ${office} with you` : `You are in ${office} as a ${me?.role ?? 'guest'}`} onClose={onClose} width={owner ? 980 : 620}>
-      <div className={owner ? 'people-cols' : 'col'} style={{ gap: 16 }}>
-        <div className="col" style={{ gap: 12, minWidth: 0 }}>
-          <div>
-            <div className="section-title">Here now</div>
-            <div className="row row-wrap" style={{ gap: 8 }}>
-              <span className="people-chip">
-                <span className="strong">{me?.name ?? 'You'}</span> <Badge tone={ROLE_TONE[me?.role ?? 'owner']}>{me?.role ?? 'owner'}</Badge> <span className="faint">you</span>
+    <Window title="Access" subtitle={`You are in ${office} as ${role === 'owner' ? 'an owner' : `a ${role}`}`} onClose={onClose} width={560}>
+      <div className="col" style={{ gap: 14 }}>
+        <div className="small">{ROLE_TEXT[role]}</div>
+        <div>
+          <div className="section-title">Here now</div>
+          <div className="row row-wrap" style={{ gap: 8 }}>
+            <span className="people-chip">
+              <span className="strong">{me?.name ?? 'You'}</span> <Badge tone={ROLE_TONE[role]}>{role}</Badge> <span className="faint">you</span>
+            </span>
+            {others.map((p) => (
+              <span key={p.id} className="people-chip" style={{ borderColor: `hsl(${p.hue} 70% 60%)` }}>
+                <span className="strong">{p.name}</span> <Badge tone={ROLE_TONE[p.role]}>{p.role}</Badge>
               </span>
-              {others.map((p) => (
-                <span key={p.id} className="people-chip" style={{ borderColor: `hsl(${p.hue} 70% 60%)` }}>
-                  <span className="strong">{p.name}</span> <Badge tone={ROLE_TONE[p.role]}>{p.role}</Badge>
-                </span>
-              ))}
-            </div>
-          </div>
-          <div>
-            <div className="section-title">Talk to the people here</div>
-            <div ref={log} className="people-log">
-              {chat.length === 0 && <div className="small faint">Nothing said yet. What you write here is heard by the people in the office — not by the employees.</div>}
-              {chat.map((c) => (
-                <div key={c.id} className="small">
-                  <span className="strong">{c.name}</span> <span className="faint">{new Date(c.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  <div className={c.emote ? 'chat-emote' : undefined}>{c.emote ? `${c.name} ${c.text}.` : c.text}</div>
-                </div>
-              ))}
-            </div>
-            <form
-              className="row"
-              style={{ marginTop: 8 }}
-              onSubmit={(ev) => {
-                ev.preventDefault();
-                useOffice.getState().say(text);
-                setText('');
-              }}
-            >
-              <input value={text} onChange={(ev) => setText(ev.target.value)} placeholder="Say something…" maxLength={300} aria-label="Say something to the people here" autoFocus />
-              <Button variant="primary" type="submit" disabled={!text.trim()}>
-                Say
-              </Button>
-            </form>
-            <div className="small faint" style={{ marginTop: 4 }}>
-              In the office, press <span className="kbd">Enter</span> to say something without opening this window.
-            </div>
+            ))}
           </div>
         </div>
-        {owner && <GuestsAdmin />}
       </div>
     </Window>
   );
 }
 
-/** The owner's side: open the office to guests, invite people, change what they may do, take access away. */
-function GuestsAdmin() {
+/** The owner's side: where people come in, inviting them, what each may do, taking access away. */
+function OwnerAccess({ here }: { here: Set<string> }) {
   const [sharing, setSharing] = useState<Sharing | null>(null);
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('colleague');
   const [address, setAddress] = useState('');
-  const [invite, setInvite] = useState<{ name: string; code: string } | null>(null);
+  const [made, setMade] = useState<Made | null>(null);
   const [busy, setBusy] = useState(false);
   const load = () =>
     api<Sharing>('GET', '/sharing').then((s) => {
@@ -121,6 +104,7 @@ function GuestsAdmin() {
   }, []);
   if (!sharing) return <div className="small muted">Loading…</div>;
   const open = sharing.door.open;
+  const saved = sharing.wanted.address ?? '';
   const run = async <T,>(fn: () => Promise<T>, ok?: string) => {
     setBusy(true);
     const res = await act(fn, ok);
@@ -129,42 +113,53 @@ function GuestsAdmin() {
     return res;
   };
   const active = sharing.guests.filter((g) => !g.revokedAt);
+  const cannotInvite = !open ? 'Open the office first' : !saved ? 'Save the address people come to first' : undefined;
+  // (Closed, there is nothing to invite into: the form is not shown. A new link for a member still says why it cannot be made.)
+  const statusOf = (g: Guest) =>
+    [
+      g.inviteExpiresAt ? `invited · the link works until ${day(g.inviteExpiresAt)}` : g.lastSeenAt ? `here ${timeAgo(g.lastSeenAt)}` : 'has not come in yet',
+      g.via ? `let in at the door (${g.via === 'knock-browser' ? 'browser' : 'app'})` : '',
+      g.expiresAt ? `until ${new Date(g.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
 
   return (
-    <div className="col" style={{ gap: 12, minWidth: 0 }}>
-      <div className="card col" style={{ gap: 8 }}>
-        <div className="row">
-          <div className="section-title" style={{ margin: 0 }}>
-            Open the office to its members
+    <div className="col" style={{ gap: 14, minWidth: 0 }}>
+      <div className="card col" style={{ gap: 10 }}>
+        <div className="row" style={{ gap: 12 }}>
+          <div className="grow" style={{ minWidth: 0 }}>
+            <div className="strong">{open ? 'The office is open to the people you invite' : 'The office is closed'}</div>
+            <div className="small muted">{open ? 'They come in over the network, encrypted, each with access of their own.' : 'It answers only on its own computer. Nobody can come in until you open it; nobody is removed.'}</div>
           </div>
-          <span className="grow" />
-          <Badge tone={open ? 'good' : 'muted'}>{open ? 'open' : 'closed'}</Badge>
-          <Button small variant={open ? 'default' : 'primary'} disabled={busy} onClick={() => void run(() => api('POST', '/sharing', { open: !open }), open ? 'The office is closed to the network' : 'The office is open to its members')}>
+          <Button variant={open ? 'default' : 'primary'} disabled={busy} onClick={() => void run(() => api('POST', '/sharing', { open: !open }), open ? 'The office is closed to the network' : 'The office is open to its members')}>
             {open ? 'Close' : 'Open'}
           </Button>
         </div>
-        <div className="small muted">
-          Closed, the office answers only on its own computer. Open, people you invited (or let in at the door) can come in over the network, encrypted. Nobody is given the server's own key.
-        </div>
         {sharing.door.error && !open && <div className="small bad">{sharing.door.error}</div>}
         {open && (
-          <>
-            <div className="small">
-              <span className="muted">Reachable at </span>
-              {sharing.door.addresses.length ? sharing.door.addresses.map((a) => <span key={a} className="mono" style={{ marginRight: 10 }}>{a}</span>) : <span className="faint">no network address found on this computer</span>}
+          <Field label="Address people come to" hint="Where this office is reached from outside: a domain that points here, a VPN name, or this computer's address on your network. Invitation links start with it.">
+            <div className="row">
+              <input className="mono" value={address} onChange={(ev) => setAddress(ev.target.value)} placeholder="https://office.example.com" spellCheck={false} />
+              <Button small disabled={busy || address.trim().replace(/\/+$/, '') === saved} onClick={() => void run(() => api('POST', '/sharing', { address: address.trim() }), 'Saved')}>
+                Save
+              </Button>
             </div>
-            <Field label="Another address people can reach you at (optional)" hint="For guests outside your network: a VPN name (e.g. Tailscale) or a forwarded port on your router, as https://name-or-ip:port. It is added to new invitations.">
-              <div className="row">
-                <input className="mono" value={address} onChange={(ev) => setAddress(ev.target.value)} placeholder={`https://my-computer.tailnet.ts.net:${sharing.door.port ?? 4610}`} spellCheck={false} />
-                <Button small disabled={busy || address.trim() === (sharing.wanted.address ?? '')} onClick={() => void run(() => api('POST', '/sharing', { address: address.trim() }), 'Saved')}>
-                  Save
-                </Button>
-              </div>
-            </Field>
-          </>
+          </Field>
+        )}
+        {open && !saved && sharing.door.addresses.length > 0 && (
+          <div className="small muted">
+            No address of your own? This computer answers at{' '}
+            {sharing.door.addresses.map((a) => (
+              <button key={a} type="button" className="fp-link mono" style={{ marginRight: 10 }} onClick={() => setAddress(a)}>
+                {a}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
+      {open && (
       <div className="card col" style={{ gap: 8 }}>
         <div className="section-title" style={{ margin: 0 }}>
           Invite someone
@@ -173,13 +168,13 @@ function GuestsAdmin() {
           className="row"
           onSubmit={async (ev) => {
             ev.preventDefault();
-            const made = await run(() => api<{ guest: Guest; invite: string }>('POST', '/guests', { name: name.trim(), role }));
-            if (!made) return;
-            setInvite({ name: made.guest.name, code: made.invite });
+            const res = await run(() => api<Made>('POST', '/guests', { name: name.trim(), role }));
+            if (!res) return;
+            setMade(res);
             setName('');
           }}
         >
-          <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="Their name" maxLength={40} aria-label="Guest name" />
+          <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="Their name" maxLength={40} aria-label="Their name" />
           <select value={role} onChange={(ev) => setRole(ev.target.value as Role)} aria-label="Role" style={{ width: 'auto' }}>
             {ROLES.map((r) => (
               <option key={r} value={r}>
@@ -187,34 +182,35 @@ function GuestsAdmin() {
               </option>
             ))}
           </select>
-          <Button variant="primary" type="submit" disabled={!name.trim() || busy || !open} title={open ? undefined : 'Open the office to its members first'}>
+          <Button variant="primary" type="submit" disabled={!name.trim() || busy || !!cannotInvite} title={cannotInvite}>
             Invite
           </Button>
         </form>
-        <div className="small faint">{ROLE_TEXT[role]}</div>
-        {invite && (
-          <div className="col" style={{ gap: 6 }}>
+        <div className="small faint">{saved ? ROLE_TEXT[role] : 'Save the address people come to first: the invitation link starts with it.'}</div>
+        {made && (
+          <div className="col access-made" style={{ gap: 6 }} data-invite-for={made.guest.name}>
             <div className="small">
-              Send this to <span className="strong">{invite.name}</span>. They start Orchestrator, choose <span className="strong">Connect to an office</span> and paste it. It is shown only now; anyone who has it can come in as {invite.name}.
+              Send this {made.link ? 'link' : 'text'} to <span className="strong">{made.guest.name}</span>. They paste it into the Orchestrator app, under <span className="strong">Connect to an office</span>.{' '}
+              {made.link && made.expiresAt ? `It works once, until ${day(made.expiresAt)}.` : `Anyone who has it can come in as ${made.guest.name}.`}
             </div>
-            <textarea className="mono" readOnly value={invite.code} aria-label="Invitation" style={{ minHeight: 76, fontSize: 11 }} onFocus={(ev) => ev.currentTarget.select()} />
             <div className="row">
-              <Button small variant="primary" onClick={() => void copyText(invite.code, 'Invitation copied')}>
-                Copy invitation
-              </Button>
-              <Button small variant="ghost" onClick={() => setInvite(null)}>
-                Done
+              <input className="mono" readOnly value={made.invite} aria-label="Invitation" onFocus={(ev) => ev.currentTarget.select()} />
+              <Button small variant="primary" onClick={() => void copyText(made.invite, made.link ? 'Link copied' : 'Invitation copied')}>
+                {made.link ? 'Copy link' : 'Copy'}
               </Button>
             </div>
+            <div className="small faint">It is shown only now. If it gets lost, make another with New link.</div>
           </div>
         )}
+        {!made && saved && <div className="small faint">Or give them only the address: they type it into the app, and you let them in at the door.</div>}
       </div>
+      )}
 
       <div>
         <div className="section-title">Members ({active.length})</div>
         {active.length === 0 && <div className="small faint">Nobody is invited.</div>}
         {active.map((g) => (
-          <div key={g.id} className="row" style={{ padding: '5px 0', gap: 8 }}>
+          <div key={g.id} className="row" style={{ padding: '5px 0', gap: 8 }} data-member={g.name}>
             <span className="strong truncate" style={{ minWidth: 90 }}>
               {g.name}
             </span>
@@ -225,22 +221,23 @@ function GuestsAdmin() {
                 </option>
               ))}
             </select>
-            <span className="small faint grow truncate">{g.lastSeenAt ? `seen ${timeAgo(g.lastSeenAt)}` : 'has not come in yet'}
-              {g.via ? ` · let in at the door (${g.via === 'knock-browser' ? 'browser' : 'app'})` : ''}
-              {g.expiresAt ? ` · until ${new Date(g.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
+            {here.has(g.id) ? <Badge tone="good">here now</Badge> : null}
+            <span className="small faint grow truncate">{here.has(g.id) ? '' : statusOf(g)}</span>
             <Button
               small
-              disabled={busy || !open}
-              title="Make a new invitation for them; the old one stops working"
+              disabled={busy || !!cannotInvite}
+              title={cannotInvite ?? 'A new invitation link for them; what they have now stops working'}
               onClick={async () => {
-                const made = await run(() => api<{ guest: Guest; invite: string }>('POST', `/guests/${g.id}/reissue`, {}));
-                if (made) setInvite({ name: made.guest.name, code: made.invite });
+                // Someone who is already in loses that access until they use the new link: say so first.
+                if (g.lastSeenAt && !(await ask({ title: `Give ${g.name} a new link?`, body: `${g.name} is disconnected at once and comes back in only with the new link.`, ok: 'Make a new link' }))) return;
+                const res = await run(() => api<Made>('POST', `/guests/${g.id}/reissue`, {}));
+                if (res) setMade(res);
               }}
             >
-              New invitation
+              New link
             </Button>
-            <Button small variant="danger" disabled={busy} onClick={() => void ask({ title: `Take away ${g.name}'s access?`, body: 'They are disconnected at once and their invitation stops working.', ok: 'Take away access', danger: true }).then((yes) => { if (yes) void run(() => api('DELETE', `/guests/${g.id}`), `${g.name} can no longer come in`); })}>
-              Revoke
+            <Button small variant="ghost" disabled={busy} onClick={() => void ask({ title: `Take away ${g.name}'s access?`, body: 'They are disconnected at once and their invitation stops working.', ok: 'Take away access', danger: true }).then((yes) => { if (yes) void run(() => api('DELETE', `/guests/${g.id}`), `${g.name} can no longer come in`); })}>
+              Revoke…
             </Button>
           </div>
         ))}
@@ -249,4 +246,4 @@ function GuestsAdmin() {
   );
 }
 
-registerPanel('people', PeoplePanel);
+registerPanel('people', AccessPanel);

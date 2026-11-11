@@ -5,7 +5,7 @@
  *   status                               is it open, at which addresses, who is a member
  *   open [--port 4610] [--address <url>] open the door to members (TLS) and remember it
  *   close                                close it
- *   invite <name> [--role owner|colleague|visitor]   make an invitation (printed once)
+ *   invite <name> [--role owner|colleague|visitor]   make an invitation link (printed once)
  *   reinvite <name>                      a new invitation for a member; the old one stops working
  *   role <name> <role>                   change what a member may do
  *   revoke <name>                        take a member's access away
@@ -67,8 +67,14 @@ const member = async (name) => {
 
 function printInvite(made) {
   console.log(`\n${made.guest.name} is invited as ${made.guest.role} (${WHAT[made.guest.role]}).`);
-  console.log('Send them this. In the Orchestrator app they choose "Connect to an office" and paste it.');
-  console.log('Whoever has it can come in as them, so send it privately. It is shown only now.\n');
+  if (made.link) {
+    console.log('Send them this link. In the Orchestrator app they choose "Connect to an office" and paste it.');
+    console.log(`It works once, until ${String(made.expiresAt).slice(0, 10)}. It is shown only now.\n`);
+  } else {
+    console.log('Send them this. In the Orchestrator app they choose "Connect to an office" and paste it.');
+    console.log('Whoever has it can come in as them, so send it privately. It is shown only now.');
+    console.log('(With the office\'s address set — pnpm office open --address https://… — an invitation is a short link instead.)\n');
+  }
   console.log(made.invite);
   console.log('');
 }

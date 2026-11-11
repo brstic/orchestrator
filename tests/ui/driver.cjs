@@ -1632,6 +1632,105 @@ async function scenario() {
     return said.slice(0, 110);
   });
 
+  await step('waiting for a colleague: the one who waits says for whom, and the awaited one\'s card and Talk window say who is waiting', async () => {
+    await close();
+    await camera('CEO');
+    // Two people of the shared office who are at their prompt and have nothing of their own scheduled.
+    const pair = await js(`(() => {
+      const st = window.__t.store();
+      const busy = new Set(Object.values(st.routines || {}).map((r) => r.employeeId));
+      const free = Object.values(st.employees).filter((e) => !e.archived && !e.paused && e.roleKey !== 'foreman' && !busy.has(e.id) && !(st.hosts[e.hostId || ''] || {}).memberId
+        && Object.values(st.sessions).some((x) => x.employeeId === e.id && x.status === 'running' && x.inTurn === false && !x.waitingOn)
+        && !Object.values(st.tasks).some((t) => t.assigneeId === e.id && ['IN_PROGRESS', 'ASSIGNED', 'REVIEW', 'BLOCKED'].includes(t.status))
+        && !Object.values(st.questions).some((q) => q.employeeId === e.id && q.status === 'open'));
+      for (const a of free) { const b = free.find((x) => x.id !== a.id && x.hostId === a.hostId); if (b) return { a: { id: a.id, name: a.name }, b: { id: b.id, name: b.name } }; }
+      return null;
+    })()`);
+    if (!pair) throw new Error('no two free employees to try waiting with');
+    const { a, b } = pair;
+    const tell = (id, body) => js(`(async () => (await fetch('/api/employees/${id}/message', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + ((window.orchestrator && window.orchestrator.token) || localStorage.getItem('orch.token') || '') }, body: JSON.stringify({ body: ${JSON.stringify(body)} }) })).status)()`);
+    const sess = (id) => `Object.values(window.__t.store().sessions).find((x) => x.employeeId === ${JSON.stringify(id)} && x.status === 'running')`;
+    // The colleague is in the middle of something, so the request cannot reach them for a while.
+    await tell(b.id, 'A long job first. @@fake: sleep 12000; say colleague-free-4410@@');
+    await waitFor(`(${sess(b.id)}).inTurn === true`, 15000);
+    await tell(a.id, `Ask them. @@fake: mcp request_collaboration {"to":${JSON.stringify(b.name)},"summary":"Which port does the API use","wait":true}; say waiter-has-it-4410@@`);
+    await waitFor(`(() => { const x = ${sess(a.id)}; return !!x && !!x.waitingOn && x.waitingOn.employeeId === ${JSON.stringify(b.id)}; })()`, 20000);
+    const card = `(document.querySelector('.near-card') || { textContent: '' }).textContent`;
+    // The one who waits: the card says WAITING and for whom.
+    await js(`window.__t.store().selectEmployee(${JSON.stringify(a.id)})`);
+    const theirs = `Waiting for ${b.name}'s answer`;
+    await waitFor(`(${card}).includes(${JSON.stringify(theirs)})`, 8000);
+    const badge = await js(`(document.querySelector('.near-card .badge') || { textContent: '' }).textContent.trim()`);
+    if (!/waiting/i.test(badge)) throw new Error(`the card of the one who waits is labelled "${badge}"`);
+    await sleep(250);
+    await shot('waiting-card-waiter');
+    // The awaited one: their card names who cannot go on.
+    const line = `${a.name} is waiting for an answer from them`;
+    await js(`window.__t.store().selectEmployee(${JSON.stringify(b.id)})`);
+    await waitFor(`(${card}).includes(${JSON.stringify(line)})`, 8000);
+    const clipped = await js(`(() => { const el = [...document.querySelectorAll('.near-card div')].find((d) => d.textContent === ${JSON.stringify(line)}); return !el || el.scrollWidth > el.clientWidth + 1; })()`);
+    if (clipped) throw new Error('the line on the card is cut off');
+    await sleep(250);
+    await shot('waiting-card-awaited');
+    // And so does the window in which the owner talks to them.
+    await js(`window.__t.store().openPanel('talk', ${JSON.stringify(b.id)})`);
+    await waitFor(`[...window.__t.scope().querySelectorAll('.talk-note')].some((n) => n.textContent.trim() === ${JSON.stringify(line)})`, 8000);
+    await sleep(250);
+    await shot('waiting-talk');
+    // The colleague's turn ends, the request reaches them, they answer: nobody waits any more, and the lines go.
+    await waitFor(`(() => { const x = ${sess(a.id)}; return !!x && !x.waitingOn; })()`, 45000);
+    await waitFor(`![...window.__t.scope().querySelectorAll('.talk-note')].some((n) => n.textContent.trim() === ${JSON.stringify(line)})`, 8000);
+    await close();
+    await waitFor(`!(${card}).includes(${JSON.stringify(line)})`, 8000);
+    await js(`window.__t.store().selectEmployee(null)`);
+    return `${a.name} waited for ${b.name}; shown on both cards and in Talk, gone after the answer`;
+  });
+
+  await step('Access: the address people come to, an invitation as a short link, the member listed as invited, and access taken away', async () => {
+    await close();
+    const port = await new Promise((resolve) => { const srv = require('node:net').createServer(); srv.listen(0, () => { const p = srv.address().port; srv.close(() => resolve(p)); }); });
+    const post = (p, body) => js(`(async () => { const r = await fetch('/api${p}', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + ((window.orchestrator && window.orchestrator.token) || localStorage.getItem('orch.token') || '') }, body: JSON.stringify(${JSON.stringify(body)}) }); return { status: r.status, body: await r.json() }; })()`);
+    // The door's port is the server's business (a free one here); everything else is done in the window.
+    const closed = await post('/sharing', { open: false, port, address: '' });
+    if (closed.status !== 200) throw new Error(`setting the door's port: ${JSON.stringify(closed).slice(0, 200)}`);
+    await js(`window.__t.store().openPanel('people')`);
+    await waitFor(`!!window.__t.scope().querySelector('.win-titles') && /^Access/.test(window.__t.scope().querySelector('.win-titles').textContent.trim())`, 8000);
+    await waitFor(`/The office is closed/.test(window.__t.scope().textContent)`, 8000);
+    const text0 = await js(`window.__t.scope().textContent`);
+    if (/Say something|Talk to the people here|Reachable at/.test(text0) || (await js(`!!window.__t.scope().querySelector('input[placeholder^="Say"]')`))) throw new Error('the chat or the list of addresses is still in the window');
+    if (await js(`!!window.__t.scope().querySelector('input[aria-label="Their name"]')`)) throw new Error('inviting is offered while the office is closed');
+    await sleep(250);
+    await shot('access-closed');
+    await clickText('Open');
+    await waitFor(`/The office is open to the people you invite/.test(window.__t.scope().textContent)`, 20000);
+    // No address yet: this computer's own are offered, and inviting waits for one.
+    await waitFor(`/No address of your own\?/.test(window.__t.scope().textContent)`, 8000);
+    const why = await js(`(() => { const b = [...window.__t.scope().querySelectorAll('button[type=submit]')].find((x) => x.textContent.trim() === 'Invite'); return b.disabled && /Save the address people come to first/.test(window.__t.scope().textContent); })()`);
+    if (!why) throw new Error('without an address, Invite is not held back with a reason in view');
+    await type(`window.__t.field('Address people come to')`, 'https://office.example.test');
+    await clickText('Save');
+    await waitFor(`!/No address of your own\?/.test(window.__t.scope().textContent)`, 8000);
+    await type(`window.__t.scope().querySelector('input[aria-label="Their name"]')`, 'Lena');
+    await click(`window.__t.submit('Invite')`, 'Invite');
+    await waitFor(`!!window.__t.scope().querySelector('.access-made input')`, 8000);
+    const link = await js(`window.__t.scope().querySelector('.access-made input').value`);
+    if (!/^https:\/\/office\.example\.test\/join\/[2-9A-Z]{4}-[2-9A-Z]{4}-[2-9A-Z]{4}$/.test(link)) throw new Error(`the invitation is not a short link: ${link.slice(0, 120)}`);
+    const said = await js(`window.__t.scope().querySelector('.access-made').textContent`);
+    if (!/Send this link to Lena\..*Connect to an office.*It works once, until /.test(said)) throw new Error(`what is said about the link: ${said.slice(0, 200)}`);
+    const row = `window.__t.scope().querySelector('[data-member="Lena"]')`;
+    await waitFor(`!!(${row}) && /invited · the link works until/.test((${row}).textContent)`, 8000);
+    await sleep(250);
+    await shot('access');
+    await click(`[...(${row}).querySelectorAll('button')].find((b) => b.textContent.trim() === 'Revoke…')`, 'Revoke… in the row of Lena');
+    await waitFor(`!(${row})`, 8000);
+    const asked = await js(`(window.__confirms || []).slice(-1)[0] || ''`);
+    if (!/Take away Lena's access\?/.test(asked)) throw new Error(`revoking asked: "${asked.slice(0, 120)}"`);
+    await clickText('Close');
+    await waitFor(`/The office is closed/.test(window.__t.scope().textContent)`, 10000);
+    await close();
+    return link;
+  });
+
   await step('the command bar opens with its shortcut and previews before doing anything', async () => {
     await key('G', 'g');
     await waitFor(`!!document.querySelector('.cmd input')`, 5000);

@@ -24,12 +24,12 @@ pnpm install && pnpm build          # server, agent and the office UI
 pnpm serve -- --address https://office.example.com:4610
 ```
 
-`pnpm serve` starts the server, a host agent for this machine (the shared one) and opens the door to members on port 4610 with TLS. `--address` is how people reach the server from outside (a DNS name or public IP, a VPN name, or leave it out on a LAN); it is written into invitations. Open that TCP port in the firewall. The office's own port (4600) stays on loopback.
+`pnpm serve` starts the server, a host agent for this machine (the shared one) and opens the door to members on port 4610 with TLS. `--address` is how people reach the server from outside (a DNS name or public IP, a VPN name, or leave it out on a LAN); invitation links start with it. Open that TCP port in the firewall. The office's own port (4600) stays on loopback.
 
 Invite the first owner — yourself — from the same machine:
 
 ```sh
-pnpm office invite Branko --role owner     # prints the invitation once
+pnpm office invite Branko --role owner     # prints the invitation link once
 pnpm office status                         # addresses, certificate fingerprint, members
 ```
 
@@ -47,14 +47,14 @@ If the machine already runs an Orchestrator agent for another office (for exampl
 
 A restart of the service does not stop anyone's work: employees' tmux sessions keep running and are picked up again. The door keeps its certificate, so invitations stay valid.
 
-**On each person's computer:** install the desktop app, choose **Connect to an office**, paste the invitation. The office is remembered on the start screen; tick **open at start** there and the app walks into it by itself from then on (Office → Switch office… brings the start screen back). A colleague or owner whose computer has tmux, Node.js and Claude Code also gets **Menu → My room**: folders on their own computer become employees that run there, under their own Claude account, visible in their room while they are connected (see [ACCESS.md](ACCESS.md)).
+**On each person's computer:** install the desktop app, choose **Connect to an office**, paste the invitation link. The office is remembered on the start screen; tick **open at start** there and the app walks into it by itself from then on (Office → Switch office… brings the start screen back). A colleague or owner whose computer has tmux, Node.js and Claude Code also gets **Menu → My room**: folders on their own computer become employees that run there, under their own Claude account, visible in their room while they are connected (see [ACCESS.md](ACCESS.md)).
 
 **Without an installer (from the repository):** on macOS or Linux with Node.js 22.18+ and pnpm:
 
 ```sh
 git clone https://github.com/brstic/orchestrator && cd orchestrator
 pnpm install && pnpm build
-pnpm desktop            # opens the start screen: Connect to an office → paste the invitation
+pnpm desktop            # opens the start screen: Connect to an office → paste the invitation link
 ```
 
 For a room of your own (sessions on your computer) you also need tmux and the Claude Code CLI logged in. `node scripts/package.mjs` makes an installable app from the same checkout.
@@ -212,7 +212,7 @@ If the office has an address with a trusted certificate (a domain behind a rever
 
 ### Inviting people into an office that runs on your own computer
 
-The same members and roles work for a local office: **Menu → People → Open the office to its members**, invite with a role (*visitor*, *colleague*, *owner*), send the invitation. People on the same network can come in as they are; for someone elsewhere give the office an address they can reach (a VPN name such as a Tailscale address, or a forwarded port) under *Another address people can reach you at*. The office is only there while your app is open — for something that stays up, use a server (section 0).
+The same members and roles work for a local office: **Menu → Access → Open**, save the address people come to, invite with a role (*visitor*, *colleague*, *owner*), send the link. For people on the same network the address is this computer's own (the window offers it); for someone elsewhere save an address they can reach (a VPN name such as a Tailscale address, or a forwarded port). The office is only there while your app is open — for something that stays up, use a server (section 0).
 
 ## 3. Linux and Windows
 

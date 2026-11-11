@@ -142,7 +142,7 @@ const tokenOfJoined = (j) => (j.encrypted ? (process.env.ORCH_NO_KEYCHAIN ? null
 function parseInvite(code) {
   const text = String(code || '').trim();
   const m = /^orch-invite-v1\.([A-Za-z0-9_-]+)$/.exec(text);
-  if (!m) throw new Error('That does not look like an invitation. Paste the whole text you were sent; it starts with "orch-invite-v1."');
+  if (!m) throw new Error('That does not look like an invitation. Paste the whole link you were sent, for example office.example.com/join/ABCD-EFGH-JKLM.');
   let j;
   try {
     j = JSON.parse(Buffer.from(m[1], 'base64url').toString('utf8'));
@@ -364,6 +364,16 @@ ipcMain.handle('orch:connect-context', () => ({
 // The app asks at the door; someone inside lets the person in and says as what. What comes back is an
 // invitation like any other, kept on this computer, so the next time there is nothing to ask.
 
+/**
+ * An invitation link ("https://office.example.com/join/K7QF-M2XP-9TRD", with or without the https://) → where to
+ * ask and with what, or null if it is not one. A link to an office's own address ends in the start of the
+ * fingerprint of its certificate ("….3fa9c01b22d4e6a17c05"): the only certificate to accept there.
+ */
+function linkOf(text) {
+  const m = /^(?:https:\/\/)?([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)(:\d{1,5})?\/join\/([A-Za-z0-9-]{4,40})(?:\.([0-9a-fA-F]{20}))?\/?$/.exec(String(text || '').trim());
+  return m ? { origin: `https://${m[1].toLowerCase()}${m[2] || ''}`, code: m[3], pin: m[4] ? m[4].toLowerCase() : null } : null;
+}
+
 /** An https origin from what was typed ("office.example.com", "https://office.example.com/"), or null if it is not an address. */
 function addressOf(text) {
   const t = String(text || '').trim().replace(/\/+$/, '');
@@ -374,10 +384,11 @@ function addressOf(text) {
 
 /**
  * One request to an office's door, made only after its certificate has been checked: it must be one this computer
- * trusts for that name. (ORCH_KNOCK_PIN names one exact certificate to accept as well — for an office that has only
- * its own certificate, in tests.) Nothing — not even the name — is sent to anything else.
+ * trusts for that name, or the one an invitation link names (`pin`: the start of its fingerprint). (ORCH_KNOCK_PIN
+ * names one exact certificate to accept as well — for an office that has only its own certificate, in tests.)
+ * Nothing — not even the name — is sent to anything else.
  */
-function askDoor(origin, method, pathname, headers, body) {
+function askDoor(origin, method, pathname, headers, body, pin) {
   return new Promise((resolve) => {
     const u = new URL(origin);
     const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
@@ -385,8 +396,9 @@ function askDoor(origin, method, pathname, headers, body) {
     let checked = false;
     req.on('socket', (socket) => {
       socket.on('secureConnect', () => {
-        const pin = process.env.ORCH_KNOCK_PIN;
-        if (!socket.authorized && !(pin && socket.getPeerCertificate().fingerprint256 === pin)) return req.destroy(new Error('TRUST'));
+        const seen = String(socket.getPeerCertificate().fingerprint256 || '');
+        const named = !!pin && seen.replace(/:/g, '').toLowerCase().startsWith(pin);
+        if (!socket.authorized && !named && !(process.env.ORCH_KNOCK_PIN && seen === process.env.ORCH_KNOCK_PIN)) return req.destroy(new Error(pin ? 'PIN' : 'TRUST'));
         checked = true;
         for (const [k, v] of Object.entries(headers || {})) req.setHeader(k, v);
         if (payload) {
@@ -414,9 +426,11 @@ function askDoor(origin, method, pathname, headers, body) {
     req.on('error', (e) =>
       resolve({
         error:
-          e.message === 'TRUST'
-            ? `The office at ${u.host} has no certificate this computer trusts, so it cannot be asked by its address alone. Ask someone inside for an invitation: it names the exact computer to trust.`
-            : `Could not reach ${u.host}.`,
+          e.message === 'PIN'
+            ? `The computer at ${u.host} is not the one this invitation was made for (its certificate is different). Nothing was sent to it.`
+            : e.message === 'TRUST'
+              ? `The office at ${u.host} has no certificate this computer trusts, so it cannot be asked by its address alone. Ask someone inside for an invitation link: it names the exact computer to trust.`
+              : `Could not reach ${u.host}.`,
       }),
     );
   });
@@ -426,7 +440,7 @@ let knocking = null;
 ipcMain.handle('orch:knock', async (_event, input) => {
   const origin = addressOf(input && input.address);
   const name = String((input && input.name) || '').trim().slice(0, 40);
-  if (!origin) return { error: 'Type the address of the office, for example office.example.com — or paste an invitation.' };
+  if (!origin) return { error: 'Type the address of the office, for example office.example.com — or paste an invitation link.' };
   if (name.length < 2) return { error: 'Say who you are: the people inside see this name when you knock.' };
   const res = await askDoor(origin, 'POST', '/knock', {}, { name, via: 'app' });
   if (res.error) return { error: res.error };
@@ -462,7 +476,29 @@ ipcMain.handle('orch:knock-cancel', async () => {
   return true;
 });
 
+/**
+ * An invitation link: its code is exchanged at the office's door, once, for what this computer keeps (where the
+ * office is, which certificate is its own, and this person's credential). From then on it is a saved office.
+ */
+async function joinByLink(link) {
+  const res = await askDoor(link.origin, 'POST', '/join', {}, { code: link.code }, link.pin);
+  if (res.error) return { error: res.error };
+  const said = res.json && typeof res.json.error === 'string' ? res.json.error : null;
+  if (res.status === 410 || res.status === 429) return { error: said || 'This invitation link no longer works. Ask for a new one.' };
+  if (res.status !== 200 || !res.json || !res.json.invite) return { error: `There is no Orchestrator office at ${new URL(link.origin).host}, or it is not open to people from outside.` };
+  let invite;
+  try {
+    invite = parseInvite(res.json.invite);
+  } catch (e) {
+    return { error: e.message };
+  }
+  // The address the link names is known to work from here: try it first.
+  return joinOffice({ ...invite, addresses: [link.origin, ...invite.addresses.filter((x) => x !== link.origin)] }, true);
+}
+
 ipcMain.handle('orch:join', async (_event, input) => {
+  const link = linkOf(input && input.invite);
+  if (link) return joinByLink(link);
   let invite;
   try {
     invite = parseInvite(input && input.invite);

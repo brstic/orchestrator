@@ -38,6 +38,11 @@ const door = async (token: string | null, method: string, p: string, body?: unkn
   const r = await fetch(`${doorUrl}${p}`, { method, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
   return { status: r.status, body: (await r.json().catch(() => null)) as any };
 };
+/** What a member's app does with an invitation link: exchange its code at the door, once, for what it keeps. */
+const redeem = async (link: string) => {
+  const r = await door(null, 'POST', '/join', { code: /\/join\/([^/]+)$/.exec(link)![1] });
+  return { status: r.status, error: r.body?.error as string | undefined, invite: r.body?.invite ? decode(r.body.invite) : null };
+};
 /** A guest's office window: the client WebSocket through the door. */
 function join(token: string) {
   // As the office window does it: the token is a subprotocol, so it is in no address a proxy would log.
@@ -94,7 +99,7 @@ test('the office is closed to the network until an owner opens the door', async 
   assert.equal(seen, fingerprint);
 });
 
-test('an invitation is one string: the addresses, the certificate to trust, a role, and a credential that is not the server’s own', async () => {
+test('with no address set, an invitation is one string: the addresses, the certificate to trust, a role, and a credential that is not the server’s own', async () => {
   for (const [name, role] of [['Mila', 'visitor'], ['Jovan', 'colleague'], ['Ana', 'colleague'], ['Vera', 'owner']] as const) {
     const made = await h.api<any>('POST', '/guests', { name, role });
     invites[name] = decode(made.invite);
@@ -488,21 +493,81 @@ test('the office is run from a terminal on its own machine: open, invite the fir
   assert.match(await admin('open', '--port', String(port), '--address', 'https://office.example.test:4610'), new RegExp(`Open on port ${port}: https://office\\.example\\.test:4610`));
   const out = await admin('invite', 'Petra', 'Petrovic', '--role', 'owner');
   assert.match(out, /Petra Petrovic is invited as owner \(runs the office: everything\)/);
-  const invite = decode(/orch-invite-v1\.\S+/.exec(out)![0]);
-  assert.deepEqual([invite.g, invite.r, invite.a[0]], ['Petra Petrovic', 'owner', 'https://office.example.test:4610']);
-  // The invitation works from outside, as an owner.
+  // The office has an address, so what is printed is a link. The address has a port — it is the door itself — so
+  // the link also names the door's certificate.
+  const link = /https:\/\/office\.example\.test:4610\/join\/\S+/.exec(out)![0];
+  assert.match(link, new RegExp(`/join/[2-9A-Z]{4}-[2-9A-Z]{4}-[2-9A-Z]{4}\\.${fingerprint.replace(/:/g, '').toLowerCase().slice(0, 20)}$`));
+  assert.match(out, /It works once, until \d{4}-\d\d-\d\d\./);
+  assert.ok(!/orch_guest_|orch-invite-v1/.test(out), 'no credential is printed');
+  // The link works from outside, as an owner.
   doorUrl = `https://127.0.0.1:${port}`;
+  const invite = (await redeem(link)).invite;
+  assert.deepEqual([invite.g, invite.r, invite.a[0]], ['Petra Petrovic', 'owner', 'https://office.example.test:4610']);
   assert.equal((await door(invite.t, 'GET', '/api/audit')).status, 200);
   assert.match(await admin('invite', 'X', '--role', 'boss'), /FAILED[\s\S]*A role is one of/);
   assert.match(await admin('role', 'petra', 'petrovic', 'visitor'), /Petra Petrovic is now visitor/);
   assert.equal((await door(invite.t, 'GET', '/api/audit')).status, 403);
   assert.match(await admin('status'), /Petra Petrovic\s+visitor/);
-  const again = decode(/orch-invite-v1\.\S+/.exec(await admin('reinvite', 'Petra', 'Petrovic'))![0]);
-  assert.equal((await door(invite.t, 'GET', '/api/me')).status, 401);
+  const second = /https:\/\/office\.example\.test:4610\/join\/\S+/.exec(await admin('reinvite', 'Petra', 'Petrovic'))![0];
+  assert.equal((await door(invite.t, 'GET', '/api/me')).status, 401, 'what they had stops working as soon as a new link is made');
+  const again = (await redeem(second)).invite;
   assert.equal((await door(again.t, 'GET', '/api/me')).status, 200);
   assert.match(await admin('revoke', 'Petra', 'Petrovic'), /can no longer come in/);
   assert.equal((await door(again.t, 'GET', '/api/me')).status, 401);
   assert.match(await admin('revoke', 'Nobody'), /FAILED[\s\S]*no member called "Nobody"/);
   assert.match(await admin('service', '--address', 'https://office.example.test:4610'), /ExecStart=.*start-local\.mjs --door 4610 --address https:\/\/office\.example\.test:4610/);
   assert.match(await admin('close'), /Closed to the network/);
+});
+
+test('with the office’s address set, an invitation is a short link: its code is exchanged once at the door for the member’s credential', async () => {
+  const port = await freePort();
+  await h.api('POST', '/sharing', { open: true, port, address: 'https://office.example.test' });
+  doorUrl = `https://127.0.0.1:${port}`;
+  const made = await h.api<any>('POST', '/guests', { name: 'Lena', role: 'colleague' });
+  // An address without a port is answered by something with a certificate for that name: the link is the address and a code.
+  assert.equal(made.link, true);
+  assert.match(made.invite, /^https:\/\/office\.example\.test\/join\/[2-9A-Z]{4}-[2-9A-Z]{4}-[2-9A-Z]{4}$/);
+  assert.ok(Date.parse(made.expiresAt) - Date.now() > 6 * 24 * 60 * 60_000, 'good for a week');
+  const listed = async (name: string) => (await h.api<any>('GET', '/sharing')).guests.find((g: any) => g.name === name);
+  assert.equal((await listed('Lena')).inviteExpiresAt, made.expiresAt, 'shown to the owner as invited, with the day the link stops working');
+  assert.ok(!JSON.stringify(await h.api('GET', '/sharing')).includes(made.invite.split('/join/')[1]), 'the code is not kept where it can be read back');
+
+  // Only at the door; and in a browser the link is a page that says what to do — opening it uses nothing up.
+  assert.equal((await fetch(`${h.url}/join`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: 'x' }) })).status, 404);
+  const page = await fetch(`${doorUrl}/join/${made.invite.split('/join/')[1]}`);
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('content-type') ?? '', /text\/html/);
+  assert.match(await page.text(), /You are invited to [\s\S]*Connect to an office/);
+
+  const wrong = await door(null, 'POST', '/join', { code: 'AAAA-BBBB-CCCC' });
+  assert.equal(wrong.status, 410);
+  assert.match(wrong.body.error, /used already, or it is more than a week old/);
+
+  const got = await redeem(made.invite);
+  assert.equal(got.status, 200);
+  assert.deepEqual([got.invite.g, got.invite.r, got.invite.a[0], got.invite.f], ['Lena', 'colleague', 'https://office.example.test', fingerprint]);
+  assert.match(got.invite.t, /^orch_guest_/);
+  assert.equal((await door(got.invite.t, 'GET', '/api/me')).body.role, 'colleague');
+  assert.equal((await redeem(made.invite)).status, 410, 'a link works once');
+  assert.equal((await listed('Lena')).inviteExpiresAt, null);
+  assert.ok((await h.api<any[]>('GET', '/audit?limit=50')).some((a) => a.action === 'guest.joined' && a.detail.name === 'Lena'));
+
+  // A new link: what she had stops working at once, and only the new link brings her back.
+  const again = await h.api<any>('POST', `/guests/${made.guest.id}/reissue`, {});
+  assert.equal((await door(got.invite.t, 'GET', '/api/me')).status, 401);
+  const back = await redeem(again.invite);
+  assert.equal((await door(back.invite.t, 'GET', '/api/me')).body.name, 'Lena');
+
+  // Someone removed before they used their link: the link is worth nothing.
+  const gone = await h.api<any>('POST', '/guests', { name: 'Gone', role: 'visitor' });
+  await h.api('DELETE', `/guests/${gone.guest.id}`);
+  assert.equal((await redeem(gone.invite)).status, 410);
+
+  // Wrong codes are counted: after ten from one address, that address waits — even with a right one.
+  const spare = await h.api<any>('POST', '/guests', { name: 'Spare', role: 'visitor' });
+  let blocked = 0;
+  for (let i = 0; i < 12 && !blocked; i++) if ((await door(null, 'POST', '/join', { code: 'ZZZZ-ZZZZ-ZZZZ' })).status === 429) blocked = i + 1;
+  assert.ok(blocked > 0 && blocked <= 9, `refused after ${blocked} more wrong codes`);
+  assert.equal((await redeem(spare.invite)).status, 429);
+  await h.api('POST', '/sharing', { open: false });
 });

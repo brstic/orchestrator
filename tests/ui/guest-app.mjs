@@ -131,9 +131,13 @@ try {
   const { invite } = await api('POST', '/guests', { name: 'Mila', role: 'visitor' });
   // What the office has for graphics is only where a new computer starts from.
   await api('PATCH', '/settings', { quality: 'medium' });
-  const decoded = JSON.parse(Buffer.from(invite.split('.')[1], 'base64url').toString());
-  // The same invitation pointing at a certificate that is not this office's.
-  const tampered = `orch-invite-v1.${Buffer.from(JSON.stringify({ ...decoded, f: decoded.f.replace(/^../, decoded.f.startsWith('00') ? '11' : '00') })).toString('base64url')}`;
+  // The office has an address, so the invitation is a short link; the address is the door itself (it has a port),
+  // so the link ends in the start of the fingerprint of the door's certificate.
+  const linkShape = /^https:\/\/127\.0\.0\.1:\d+\/join\/[2-9A-Z]{4}-[2-9A-Z]{4}-[2-9A-Z]{4}\.[0-9a-f]{20}$/;
+  check('an invitation is a short link: the office’s address and a code', linkShape.test(invite) && invite.length < 80, `${invite.length} characters`);
+  // The same link naming a certificate that is not this office's, and one with a code the office never gave out.
+  const tampered = invite.replace(/\.([0-9a-f])([0-9a-f]{19})$/, (_m, c, rest) => `.${c === '0' ? '1' : '0'}${rest}`);
+  const neverGiven = invite.replace(/\/join\/[^.]+/, '/join/AAAA-BBBB-CCCC');
 
   // ── the guest's app: a start screen first ──
   const guest = await launch('guest', { ORCH_PORT: String(await freePort()) });
@@ -149,7 +153,9 @@ try {
   };
   check('something that is not an invitation is refused with an explanation', /does not look like an invitation/.test(await tryInvite('hello')));
   const wrongCert = await tryInvite(tampered);
-  check('an invitation that names a different certificate is refused before anything is sent', /is not the one this invitation was made for/.test(wrongCert), wrongCert.slice(0, 90));
+  check('a link that names a different certificate is refused before anything is sent', /is not the one this invitation was made for/.test(wrongCert), wrongCert.slice(0, 90));
+  const wrongCode = await tryInvite(neverGiven);
+  check('a link with a code the office did not give out is refused in words', /used already, or it is more than a week old/.test(wrongCode), wrongCode.slice(0, 90));
   // With only an address: the app knocks — but never at a door whose certificate this computer has no reason to trust.
   await start.js(`(() => { const i = document.getElementById('invite'); i.value = '127.0.0.1:${doorPort}'; i.dispatchEvent(new Event('input')); })()`);
   const asksName = await start.js(`!document.getElementById('knock-who').hidden && document.getElementById('join').textContent`);
@@ -162,7 +168,9 @@ try {
   const guestPage = await guest.page(new RegExp(`^https://[\\d.]+:${doorPort}/`));
   await guestPage.until('the office as a guest', `window.__office && window.__office.getState().me && window.__office.getState().settings`, 40000);
   const me = await guestPage.js(`JSON.parse(JSON.stringify(window.__office.getState().me))`);
-  check('the invitation opens the host’s office, as the invited person with their role', me.kind === 'guest' && me.role === 'visitor' && me.name === 'Mila', JSON.stringify(me));
+  check('the link opens the host’s office, as the invited person with their role', me.kind === 'guest' && me.role === 'visitor' && me.name === 'Mila', JSON.stringify(me));
+  const milaNow = (await api('GET', '/sharing')).guests.find((g) => g.name === 'Mila' && !g.revokedAt);
+  check('the link is used up by that: the office no longer lists it as waiting', !!milaNow && milaNow.inviteExpiresAt === null && !!milaNow.lastSeenAt, JSON.stringify(milaNow));
   check('the guest sees the host’s employees', (await guestPage.js(`Object.keys(window.__office.getState().employees).length`)) >= 8);
   const refused = await guestPage.js(`fetch('/api/employees', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + window.orchestrator.token }, body: JSON.stringify({ name: 'Intruder' }) }).then(async (r) => r.status + ' ' + (await r.json()).error)`);
   check('what a visitor may not do is refused by the office itself', /^403 You are visiting this office/.test(refused), refused);
@@ -242,7 +250,7 @@ try {
   }
   // ── knocking: someone with only the office's address ──
   // From the desktop app (here the office's own certificate is named to the app, as a real office's name would be trusted).
-  const knocker = await launch('knocker', { ORCH_PORT: String(await freePort()), ORCH_KNOCK_PIN: decoded.f, ORCH_NO_PERSONAL_HOST: '1' });
+  const knocker = await launch('knocker', { ORCH_PORT: String(await freePort()), ORCH_KNOCK_PIN: (await api('GET', '/sharing')).door.fingerprint, ORCH_NO_PERSONAL_HOST: '1' });
   const kStart = await knocker.page(/connect\.html/);
   await kStart.until('the start screen', `document.getElementById('join')`);
   await kStart.js(`(() => { const i = document.getElementById('invite'); i.value = 'https://127.0.0.1:${doorPort}/'; i.dispatchEvent(new Event('input')); document.getElementById('knock-name').value = 'Petar'; document.getElementById('join').click(); })()`);

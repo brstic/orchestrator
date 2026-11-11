@@ -244,7 +244,7 @@ While a member's own computer (a personal host, `Host.memberId`) is online, a ro
  └─────────────────────────────┘                   └──────────────────────────────────┘
 ```
 
-- `apps/server/src/guests.ts` — members (name, role, hashed invitation token). `access.ts` — the one place that decides requests and terminal messages. `door.ts` — the TLS listener and what it forwards.
+- `apps/server/src/guests.ts` — members (name, role, hashed credential). `invites.ts` — invitation links: a code (stored hashed, one use, a week) that the member's app exchanges at the door (`POST /join`) for that credential; the page a browser gets at the link. `access.ts` — the one place that decides requests and terminal messages. `door.ts` — the TLS listener and what it forwards.
 - A host with `memberId` is a member's own computer. It is enrolled with a token from `POST /api/me/host` and may connect through the door; shared hosts may not. Its employees have no desk in the stored layout; the client derives a room for each online personal host (see "Member rooms").
 - `apps/desktop/electron/personal-host.cjs` — started by the desktop app after joining as a colleague or owner: a loopback relay that pins the door's certificate, and a host agent (state under `~/.orchestrator/offices/<hash of the fingerprint>/agent`) pointed at the relay. Both stop when the office window closes.
 - `scripts/start-local.mjs --door` (`pnpm serve`) is the server entry point; `scripts/office-admin.mjs` (`pnpm office`) manages members from the server's own terminal with the root owner token.

@@ -74,18 +74,32 @@ export class Guests {
     return [...this.guests.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
-  /** Invite someone. The token is returned once, here; only its hash is stored. */
-  invite(input: { name: string; role?: string; via?: Guest['via']; expiresAt?: string | null }, actor = 'owner'): { guest: Guest; token: string } {
+  /**
+   * Invite someone. The token is returned once, here; only its hash is stored. With `credential: false` no
+   * token is made yet: the member gets one when their invitation link is used (`issue`).
+   */
+  invite(input: { name: string; role?: string; via?: Guest['via']; expiresAt?: string | null; credential?: boolean }, actor = 'owner'): { guest: Guest; token: string } {
     const name = String(input.name ?? '').trim().replace(/\s+/g, ' ').slice(0, 40);
     if (!name) throw new EngineError('a guest needs a name');
     const role: GuestRole = roleOf(input.role) ?? 'visitor';
     if (this.taken(name)) throw new EngineError(`there is already a guest called "${name}"`);
     const guest: Guest = { id: newId(), name, role, createdAt: nowIso(), lastSeenAt: null, revokedAt: null, ...(input.via ? { via: input.via } : {}), ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}) };
-    const token = generateToken('orch_guest');
-    this.engine.core.store.addCredential('guest', token, { refId: guest.id, label: name });
+    const token = input.credential === false ? '' : generateToken('orch_guest');
+    if (token) this.engine.core.store.addCredential('guest', token, { refId: guest.id, label: name });
     this.guests.set(guest.id, guest);
     this.save();
     this.engine.core.audit(actor, 'guest.invited', guest.id, { name, role });
+    return { guest, token };
+  }
+
+  /** The member's invitation link was used: their app is given a credential to keep. Any earlier one stops working. */
+  issue(id: string): { guest: Guest; token: string } {
+    const guest = this.require(id);
+    if (guest.revokedAt) throw new EngineError(`${guest.name}'s access was revoked; invite them again`);
+    this.engine.core.store.revokeCredentialsFor('guest', id);
+    const token = generateToken('orch_guest');
+    this.engine.core.store.addCredential('guest', token, { refId: id, label: guest.name });
+    this.engine.core.audit(`member:${guest.name}`, 'guest.joined', id, { name: guest.name, role: guest.role });
     return { guest, token };
   }
 
@@ -106,13 +120,13 @@ export class Guests {
     return [...this.guests.values()].filter((g) => !g.revokedAt && !!g.expiresAt && Date.parse(g.expiresAt) <= now);
   }
 
-  /** A new invitation for an existing guest; the old one stops working. */
-  reissue(id: string, actor = 'owner'): { guest: Guest; token: string } {
+  /** A new invitation for an existing guest; the old one stops working. (`credential: false`: as in `invite`.) */
+  reissue(id: string, actor = 'owner', opts: { credential?: boolean } = {}): { guest: Guest; token: string } {
     const guest = this.require(id);
     if (guest.revokedAt) throw new EngineError(`${guest.name}'s access was revoked; invite them again`);
     this.engine.core.store.revokeCredentialsFor('guest', id);
-    const token = generateToken('orch_guest');
-    this.engine.core.store.addCredential('guest', token, { refId: id, label: guest.name });
+    const token = opts.credential === false ? '' : generateToken('orch_guest');
+    if (token) this.engine.core.store.addCredential('guest', token, { refId: id, label: guest.name });
     this.engine.core.audit(actor, 'guest.reissued', id, { name: guest.name });
     return { guest, token };
   }
