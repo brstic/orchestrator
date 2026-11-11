@@ -116,6 +116,18 @@ The foreman is the office's supervisor: one Claude Code session, on one of the o
 
 When the desktop app connects to an office on another machine, it only accepts an `https://` address (plain `http://` is allowed for this computer alone), checks the owner token against the server before saving anything, and stores the token in its own data folder encrypted with the operating system's keychain facility when one is available (otherwise in a file readable only by you). On macOS this creates a login-keychain item named "Orchestrator Safe Storage"; because the app is not Developer-ID signed, macOS asks for your keychain password again after each rebuild. Set `ORCH_NO_KEYCHAIN=1` to keep the token in the owner-only file instead. The connect page is a local file with a content-security policy that allows no remote content, and it can ask the main process for exactly one thing: to try a connection.
 
+### The line between the office's page and the person's computer
+The page in the app's window is the office's: it is served by a machine that is somebody else's. The rules at that line are in `apps/desktop/electron/guards.cjs` (tested in `apps/desktop/test/guards.test.ts`) and wired in `main.cjs`:
+- **Navigation** only within the office's origin, redirects included (`staysInOffice`); **outside links** only `http`, `https`, `mailto` (`externalUrl`).
+- **Permissions**: the office's own page, and only microphone, clipboard, pointer lock, full screen and the choice of loudspeaker (`pageMay`); the camera, screen capture, location, notifications and the rest are refused.
+- **The TV** (an embedded browser the page controls) has a storage per office (`tvPartition`); another office's page cannot attach to it.
+- **The credential** reaches the page through `orch:boot`, answered only for the window's top frame while it shows the office; it is not on any command line. The token that enrols the computer is passed in the environment.
+- **Bringing a server in over SSH**: the app's dialog shows the destination, port and folders it will really use and asks about trusting an unknown host key itself.
+
+**Not closed, and the owner's to decide (2026-11-11):**
+- **A member's computer joins an office by itself.** When somebody is let in as a colleague or an owner, the app enrols this computer as their own machine in that office without asking, with the whole home folder as where the office may work and with verification commands allowed — which is a shell on that computer for whoever runs the office. That is how the office is meant to work between people who trust each other (and how the owner's own Mac is in it); a stranger's office is another matter. A question on first joining an office, with the folders chosen there, would close it, at the price of one more step for every member.
+- **The relay's port while the app is closed.** A member's sessions go on in tmux and keep calling `127.0.0.1:<port>`; with the app closed nothing listens there, and another user of the same computer could. Not relevant on a computer with one user.
+
 ## Members, the door and personal hosts
 
 Who may do what is specified in [ACCESS.md](ACCESS.md) and enforced in `apps/server/src/access.ts`; a route that is not listed there needs an owner.

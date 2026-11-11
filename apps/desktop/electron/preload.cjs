@@ -1,16 +1,21 @@
 // Hands the page the server address and owner token, and one thing it may ask for: the system's folder dialog.
 const { contextBridge, ipcRenderer } = require('electron');
 
-const arg = (name) => {
-  const found = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return found ? found.slice(name.length + 3) : '';
-};
+// The office's address, the person's credential for it and the TV's storage: asked of the app, which answers only
+// the office's own page (they used to be on this process's command line, where other users of the computer could read them).
+const boot = (() => {
+  try {
+    return ipcRenderer.sendSync('orch:boot') || {};
+  } catch {
+    return {};
+  }
+})();
 
 contextBridge.exposeInMainWorld(
   'orchestrator',
   Object.freeze({
-    serverUrl: arg('orch-server'),
-    token: arg('orch-token'),
+    serverUrl: String(boot.serverUrl || ''),
+    token: String(boot.token || ''),
     platform: process.platform,
     /** The system's folder dialog; resolves to the chosen path, or null when cancelled. */
     pickFolder: () => ipcRenderer.invoke('orch:pick-folder'),
@@ -48,7 +53,7 @@ contextBridge.exposeInMainWorld(
     }),
     /** The office TV (an embedded browser): its page state and picture, and forgetting what it stored. */
     tv: Object.freeze({
-      partition: 'persist:orch-tv',
+      partition: String(boot.tvPartition || 'persist:orch-tv'),
       onState: (cb) => {
         const fn = (_e, state) => cb(state);
         ipcRenderer.on('orch:tv-state', fn);

@@ -19,6 +19,12 @@ _Last updated: 2026-11-11. Update this file with every piece of work (see `CLAUD
 - Its state was moved, not deleted: `~/.orchestrator-local-office-backup-2026-11-10/` on the Mac (server database + agent), and `~/.orchestrator-mac-link-backup-2026-11-10/` on Sparkcan (the SSH-link agent of that office, stopped). Nothing was migrated to the server office — the owner chose to start from zero. Delete the backups when they are no longer wanted.
 - The desktop app (`release/Orchestrator.app`, latest build) now opens the server office by itself at start ("open at start" on the saved office; Office → Switch office… shows the start screen). The owner comes in as *Branko · owner*, and the Mac joins as "Branko's computer" with its room; local Claude sessions are added from Menu → My room.
 
+**The desktop app's line between the office's page and the computer (2026-11-11)** (CHANGELOG "A fourth review…"; SECURITY "The line between the office's page and the person's computer"; DECISIONS). `apps/desktop/electron/guards.cjs`, `main.cjs`, `preload.cjs`, `personal-host.cjs`.
+- Checked: `apps/desktop/test/guards.test.ts` (4), the app itself driven as a member — `node tests/ui/tv-app.mjs` (15/15, three new: this office's own TV storage, the credential reaching the page, the old shared storage refused) and `node tests/ui/guest-app.mjs` (47/47: joining, the computer enrolled with its token in the environment), unit (329), both typechecks.
+- **It reaches nobody until the app is built and installed again.** Not looked at by a person: the confirmation for bringing a server in (its new text and tick), the microphone after the change (the tests have none), a redirect that leaves the office.
+- **For the owner to decide** (SECURITY.md, same section): whether joining an office should ask before this computer is enrolled in it, and with which folders; and whether the TV logins lost by the per-office storage matter.
+- Surfaces: **desktop vs browser** — the app only; a browser tab has the browser's own rules. **Roles** — the same for every member. **Shared vs personal** — it is about the member's own computer.
+
 **The server runs build `efbda83` since 2026-11-11, 18:06 UTC** (fetched, pushed, deployed from the owner's Mac): the same behaviour as `b01aaa1`, with the net for stray exceptions as a tested function. Ten sessions running, every machine back, no error in the log.
 
 **Before it, build `b01aaa1`, since 2026-11-11, 17:55 UTC** (fetched, pushed, deployed from the owner's Mac); it adds the entry below.

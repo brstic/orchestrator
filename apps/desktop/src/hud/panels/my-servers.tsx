@@ -326,7 +326,7 @@ export function MyServers({ memberId }: { memberId: string }) {
             <input value={roots} placeholder="~/code, /srv/app" onChange={(ev) => setRoots(ev.target.value)} aria-label="Folders" spellCheck={false} />
           </Field>
           <label className="check small" style={{ alignItems: 'center' }}>
-            <input type="checkbox" checked={trust} onChange={(ev) => setTrust(ev.target.checked)} style={{ marginTop: 0 }} />I trust this server: accept its identity if this computer has never connected to it before
+            <input type="checkbox" checked={trust} onChange={(ev) => setTrust(ev.target.checked)} style={{ marginTop: 0 }} />I trust this server: accept its identity if this computer has never connected to it before (the app asks you once more, in a window of its own, before it connects)
           </label>
           {error && <div className="small bad">{error}</div>}
           <div className="row" style={{ gap: 8 }}>

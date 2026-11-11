@@ -233,26 +233,52 @@ function bringThisComputer(target) {
 }
 ipcMain.handle('orch:my-host', () => myHostState);
 
+// ───────────── what the office's page is handed when it starts ─────────────
+const { staysInOffice, externalUrl, pageMay, tvPartition } = require('./guards.cjs');
+/** Per office window: the office's address, the person's credential for it, its TV's storage. */
+const boots = new Map();
+// Asked by the preload, once, before the page runs. Answered only for the window's own top frame while it shows
+// the office itself: a page the window was led to somewhere else gets nothing.
+ipcMain.on('orch:boot', (event) => {
+  const boot = boots.get(event.sender.id);
+  const frame = event.senderFrame;
+  const url = frame ? frame.url : '';
+  const top = !!frame && frame === event.sender.mainFrame;
+  event.returnValue = boot && top && staysInOffice(url, boot.inOffice) ? { serverUrl: boot.serverUrl, token: boot.token, tvPartition: boot.tvPartition } : {};
+});
+
 // ───────────── this person's own servers in someone else's office ─────────────
 // The page asks; the app does the reaching, over SSH, as the person. A page is the office's, not the person's, so
 // before the app connects anywhere it asks in a dialog of its own — one a page cannot draw or answer.
-const { memberServers, parseTarget } = require('./member-servers.cjs');
+const { memberServers, parseTarget, cleanRoots } = require('./member-servers.cjs');
 let myServers = null;
 const serversChanged = () => myServers && myServers.forWindow && !myServers.forWindow.isDestroyed() && myServers.forWindow.webContents.send('orch:servers-changed');
-const confirmServer = async (message, detail, button) => {
-  if (process.env.ORCH_NO_SERVER_CONFIRM) return true; // the automated tests answer for themselves
-  const res = await dialog.showMessageBox(myServers.forWindow, { type: 'question', buttons: [button, 'Cancel'], defaultId: 1, cancelId: 1, message, detail });
-  return res.response === 0;
+/** Asks the person in a dialog of the app's own. With `checkbox`, also something to tick: `{ ok, trust }` then. */
+const confirmServer = async (message, detail, button, checkbox) => {
+  // (The automated tests answer for themselves; ORCH_TRUST_NEW_SERVER is their tick.)
+  if (process.env.ORCH_NO_SERVER_CONFIRM) return checkbox ? { ok: true, trust: process.env.ORCH_TRUST_NEW_SERVER === '1' } : true;
+  const res = await dialog.showMessageBox(myServers.forWindow, { type: 'question', buttons: [button, 'Cancel'], defaultId: 1, cancelId: 1, message, detail, ...(checkbox ? { checkboxLabel: checkbox, checkboxChecked: false } : {}) });
+  return checkbox ? { ok: res.response === 0, trust: res.response === 0 && res.checkboxChecked === true } : res.response === 0;
 };
 ipcMain.handle('orch:servers', () => (myServers ? myServers.servers.list() : null));
 ipcMain.handle('orch:servers-add', async (_e, input) => {
   if (!myServers) return { error: 'This computer is not in an office as a member.' };
   const mine = myServers;
   try {
-    const { dest } = parseTarget(input && input.target);
-    const ok = await confirmServer(`Bring ${dest} into the office at ${mine.office}?`, `Orchestrator will connect to ${dest} over SSH with the keys on this computer, install the office's agent there (in ~/.orchestrator) and start it. The agent then stays connected to ${mine.office} by itself: people you allow can start Claude Code sessions on that server, in the folders you named.\n\nOnly do this for an office you trust with that server.`, 'Connect and bring it in');
+    const { dest, port } = parseTarget(input && input.target);
+    // Everything the page passed along is said here, in the app's own words: the page is the office's, and "the
+    // folders you named" must be the folders that are really sent. Whether a server this computer has not met
+    // before is trusted is asked here too — not taken from the page.
+    const roots = cleanRoots(input && input.roots);
+    const folders = roots.length ? roots.join('\n  ') : '~/ (the whole home folder)';
+    const { ok, trust } = await confirmServer(
+      `Bring ${dest}${port ? ` (port ${port})` : ''} into the office at ${mine.office}?`,
+      `Orchestrator will connect to ${dest}${port ? ` on port ${port}` : ''} over SSH with the keys on this computer, install the office's agent there (in ~/.orchestrator) and start it. The agent then stays connected to ${mine.office} by itself: people you allow can start Claude Code sessions on that server, in these folders:\n\n  ${folders}\n\nOnly do this for an office you trust with that server.`,
+      'Connect and bring it in',
+      'This computer has not connected to that server before: trust the key it shows',
+    );
     if (!ok) return { cancelled: true };
-    const server = await mine.servers.add({ target: input.target, name: input.name, roots: input.roots, trustNewHost: input.trustNewHost === true }, serversChanged);
+    const server = await mine.servers.add({ target: input.target, name: input.name, roots, trustNewHost: trust }, serversChanged);
     serversChanged();
     return { ok: true, warnings: server.warnings };
   } catch (e) {
@@ -686,7 +712,8 @@ async function openOffice(target) {
       // The office hi-fi starts in every window when someone in the office switches it on: no click happens here first.
       // (This is Electron's default; said here because the hi-fi depends on it.)
       autoplayPolicy: 'no-user-gesture-required',
-      additionalArguments: [`--orch-server=${target.url}`, `--orch-token=${target.token}`],
+      // (The office's address and the credential are asked for by the preload, over a channel that answers only
+      // the office's own page: on a command line every other user of this computer could read them.)
       // The office TV is a real embedded browser (see setupTv): the only <webview> this window may create.
       webviewTag: true,
     },
@@ -726,15 +753,29 @@ async function openOffice(target) {
       next.close();
     }
   });
-  // The office never navigates away; anything else opens in the real browser.
+  // The office never navigates away; a web address opens in the real browser, and nothing else is opened at all
+  // (a page must not be able to make the system open a file, a share or another program).
+  const inOffice = [target.url, process.env.ORCH_UI_DEV_URL].filter(Boolean);
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    const web = externalUrl(url);
+    if (web) void shell.openExternal(web);
     return { action: 'deny' };
   });
-  win.webContents.on('will-navigate', (e, url) => {
-    const allowed = [target.url, process.env.ORCH_UI_DEV_URL].filter(Boolean);
-    if (!allowed.some((a) => url.startsWith(a))) e.preventDefault();
-  });
+  for (const ev of ['will-navigate', 'will-redirect']) {
+    win.webContents.on(ev, (e, url) => {
+      if (!staysInOffice(url, inOffice)) e.preventDefault();
+    });
+  }
+  // What the page is given when it asks the system for something: the microphone (talking), the clipboard
+  // (terminals), the mouse, full screen, a choice of loudspeaker — and only the office's own page. Electron's
+  // answer to everything is yes unless it is told otherwise.
+  const ses = next.webContents.session;
+  ses.setPermissionRequestHandler((wc, permission, done, details) => done(pageMay(permission, (details && details.requestingUrl) || (wc && !wc.isDestroyed() ? wc.getURL() : ''), details, inOffice)));
+  ses.setPermissionCheckHandler((wc, permission, requestingOrigin, details) => pageMay(permission, requestingOrigin || (wc && !wc.isDestroyed() ? wc.getURL() : ''), details, inOffice));
+  // What the preload hands the page (see `orch:boot`).
+  const wcId = next.webContents.id;
+  boots.set(wcId, { serverUrl: target.url, token: target.token, tvPartition: tvPartition(target.url, target.pin), inOffice });
+  next.webContents.once('destroyed', () => boots.delete(wcId));
   setupTv(next, target);
   await win.loadURL(process.env.ORCH_UI_DEV_URL || `${target.url}/`);
 
@@ -750,7 +791,8 @@ async function openOffice(target) {
 
 // ───────────── the office TV: an embedded browser ─────────────
 
-const TV_PARTITION = 'persist:orch-tv';
+/** The TV's storage of the office that is open now (each office has its own: see `tvPartition`). */
+let tvPartitionNow = null;
 
 /**
  * The TV in the office is a web browser inside the window (a <webview>). It is a guest: its own
@@ -759,7 +801,9 @@ const TV_PARTITION = 'persist:orch-tv';
  * What it shows is sent to the page about once a second, so the TV in the 3D office shows the real picture.
  */
 function setupTv(officeWin, target) {
-  const tv = session.fromPartition(TV_PARTITION);
+  const partition = tvPartition(target.url, target.pin);
+  tvPartitionNow = partition;
+  const tv = session.fromPartition(partition);
   const web = (url) => /^https?:\/\//i.test(String(url || ''));
   let office = null;
   try {
@@ -792,7 +836,10 @@ function setupTv(officeWin, target) {
     webPreferences.webSecurity = true;
     // Links that ask for a new window are let through to the handler below, which opens them in the TV itself.
     params.allowpopups = true;
-    if (params.partition !== TV_PARTITION || !web(params.src)) event.preventDefault();
+    // Only this office's own TV storage: the page that embeds the TV controls it, and must not get at what a person
+    // signed in to on the TV of another office.
+    if (params.partition !== partition || !web(params.src)) event.preventDefault();
+    webPreferences.partition = partition;
   });
 
   officeWin.webContents.on('did-attach-webview', (_event, guest) => {
@@ -833,7 +880,8 @@ function setupTv(officeWin, target) {
 }
 
 ipcMain.handle('orch:tv-forget', async () => {
-  const tv = session.fromPartition(TV_PARTITION);
+  if (!tvPartitionNow) return false;
+  const tv = session.fromPartition(tvPartitionNow);
   await tv.clearStorageData();
   await tv.clearCache();
   return true;

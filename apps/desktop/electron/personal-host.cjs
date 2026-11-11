@@ -241,7 +241,8 @@ function startPersonalHost(opts) {
     // Not spawnSync: the relay the login goes through lives in this very process and must keep answering.
     await new Promise((resolve, reject) => {
       let out = '';
-      const login = spawn(node, ['--disable-warning=ExperimentalWarning', agentEntry, 'login', '--server', server, '--token', res.body.token], { env: { ...env, ORCH_AGENT_HOME: home }, cwd: os.homedir(), stdio: ['ignore', 'pipe', 'pipe'] });
+      // (The enrollment token goes in the environment, not on the command line, where other users of this computer could read it.)
+      const login = spawn(node, ['--disable-warning=ExperimentalWarning', agentEntry, 'login', '--server', server], { env: { ...env, ORCH_AGENT_HOME: home, ORCH_ENROLLMENT_TOKEN: res.body.token }, cwd: os.homedir(), stdio: ['ignore', 'pipe', 'pipe'] });
       login.stdout.on('data', (d) => (out += d));
       login.stderr.on('data', (d) => (out += d));
       login.on('error', reject);

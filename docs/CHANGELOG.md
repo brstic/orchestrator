@@ -3,6 +3,13 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-11
+- **A fourth review, of the desktop app: what the office's page may make the app do on the person's own computer** (eight findings; six fixed in the app, which reach a computer with the next build of the app — two are left for the owner to decide, see STATUS):
+  - **A link the page opens outside the app is handed to the system only when it is a web (or mail) address.** Any address was passed on: a file, a network share, another program's own scheme.
+  - **The page is given only what the office uses when it asks the system for something** — the microphone (not the camera), the clipboard, the mouse, full screen, a choice of loudspeaker — and only the office's own page. Electron's answer to every such request was yes.
+  - **The window stays in the office by its origin** (scheme, host, port), also across redirects. It was compared as text, which a look-alike address also fits.
+  - **The TV keeps its cookies and logins apart for each office.** All offices shared one storage, and the page that embeds the TV controls it. *What was signed in to on the TV has to be signed in to once more.*
+  - **The person's credential is no longer on a command line**, where other users of the computer could read it: the page gets it from the app over a channel that answers only the office's own page; the token that enrols the computer goes in the environment.
+  - **Bringing a server in:** the app's own confirmation now names the port and the folders that are really sent, and asks itself whether a server this computer has not met may be trusted (both used to be taken from the page unseen).
 - **A third review, of the vault, the members and the door** (ten findings and three more beside them; none seen to have happened):
   - **One message could take the office down, sent by anybody on the network.** A websocket frame that was valid JSON but not a message (`null`) made the office's own code stumble where nothing caught it, and the office stopped (and was started again five seconds later, for the next such frame). Such frames are now ignored, and a stumble anywhere is written down instead of ending the office (ten in a minute still end it, to be started clean).
   - **A member's own computer could take an employee of the shared office — the foreman too — to itself** by naming them when asking for a session: their messages and the office's tools would have followed to that machine. It may now name only employees that already live on it, or new ones; not the foreman, and not the Unrestricted level.

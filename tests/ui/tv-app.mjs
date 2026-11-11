@@ -91,7 +91,9 @@ try {
   };
   const tv = (expr) => page.js(`(() => { const tv = window.__office.getState().tv; return ${expr}; })()`);
   await until('the office', `window.__office && window.__office.getState().settings`);
-  check('the desktop app gives the page a TV bridge', await page.js(`!!(window.orchestrator && window.orchestrator.tv && window.orchestrator.tv.partition === 'persist:orch-tv')`));
+  // (Each office has a TV storage of its own; the address and the credential come to the page over the app's own channel.)
+  check('the desktop app gives the page a TV bridge, with this office\'s own TV storage', await page.js(`!!(window.orchestrator && window.orchestrator.tv && /^persist:orch-tv-[0-9a-f]{16}$/.test(window.orchestrator.tv.partition))`));
+  check('the page was handed the office\'s address and a credential, and neither is on the window\'s command line', await page.js(`!!window.orchestrator.serverUrl && window.orchestrator.token.length > 20`));
 
   await page.js(`window.__frames = 0; window.orchestrator.tv.onFrame(() => window.__frames++); window.__office.getState().tvOpen(${JSON.stringify(siteUrl + '/')})`);
   await until('the page on the TV', `window.__office.getState().tv.page && window.__office.getState().tv.page.title === 'Test Channel'`);
@@ -129,6 +131,12 @@ try {
   // Only the TV's own partition may be used for an embedded browser.
   const rogue = await page.js(`new Promise((resolve) => { const wv = document.createElement('webview'); wv.setAttribute('src', ${JSON.stringify(siteUrl + '/')}); wv.setAttribute('partition', 'persist:other'); wv.style.cssText = 'position:fixed;left:0;top:0;width:300px;height:200px'; document.body.appendChild(wv); let ok = false; wv.addEventListener('dom-ready', () => (ok = true)); setTimeout(() => { wv.remove(); resolve(ok); }, 2500); })`);
   check('an embedded browser outside the TV partition is refused', rogue === false);
+  // Not even the TV storage as every office used to share it: what was signed in to there is not this page's.
+  const shared = await page.js(`new Promise((resolve) => { const wv = document.createElement('webview'); wv.setAttribute('src', ${JSON.stringify(siteUrl + '/')}); wv.setAttribute('partition', 'persist:orch-tv'); wv.style.cssText = 'position:fixed;left:0;top:0;width:10px;height:10px'; let done = false; wv.addEventListener('did-attach', () => { done = true; resolve(true); }); document.body.appendChild(wv); setTimeout(() => { if (!done) resolve(false); wv.remove(); }, 1500); })`);
+  check('the TV storage of another office (the one all offices used to share) is refused too', shared === false);
+  // What the page may ask the system for: a link is opened outside only when it is a web address.
+  const opened = await page.js(`(() => { try { const w = window.open('file:///etc/hosts'); return w === null ? 'denied' : 'window'; } catch (e) { return 'threw'; } })()`);
+  check('a file address is not opened by window.open', opened === 'denied' || opened === 'threw', opened);
   page.close();
   exit = checks.every(Boolean) ? 0 : 1;
 } catch (e) {
