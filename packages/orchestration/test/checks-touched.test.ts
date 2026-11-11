@@ -15,6 +15,10 @@ test('ordinary work is not: source files, documents, a file that merely has "tes
   assert.deepEqual(checksTouched(['src/cart.ts', 'docs/testing.md', 'src/latest.ts', 'src/contest/entry.ts', 'attestation.txt'], 'npm test'), []);
   assert.deepEqual(checksTouched([], 'npm test'), []);
   assert.deepEqual(checksTouched(['package.json'], 'make check'), []);
+  // A file the command only looks at is what is being checked, not the check.
+  assert.deepEqual(checksTouched(['totals.txt'], 'test -f totals.txt'), []);
+  assert.deepEqual(checksTouched(['a.txt', 'b.txt'], `sh -c '! (grep -qs ON a.txt && grep -qs ON b.txt)'`), []);
+  assert.deepEqual(checksTouched(['verify.sh', 'out.txt'], './verify.sh out.txt'), ['verify.sh']);
   assert.deepEqual(checksTouched(['check.js', 'scripts/verify.sh', 'src/checkout.js'], 'npm test'), ['check.js', 'scripts/verify.sh'], 'a script named for what it does, behind `npm test`');
   assert.deepEqual(checksTouched(['M src/cart.test.ts', 'A  src/new.ts'], null), ['src/cart.test.ts'], 'status letters in front of a path are read past');
 });

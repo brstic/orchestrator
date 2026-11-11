@@ -6,6 +6,7 @@ import type { Desk, OfficeLayout } from '@orchestrator/contracts';
 import type { EffectiveLayout } from './member-rooms.ts';
 import { Documents as DocumentsPart, type DocsView } from './Documents.tsx';
 import { HiFi as HiFiPart } from './HiFi.tsx';
+import { Vault as VaultPart } from './Vault.tsx';
 import { hifiPosition } from './hifi-sound.ts';
 import { Humans as HumansPart, type HumanView } from './Humans.tsx';
 import { SelfBubble } from './SelfBubble.tsx';
@@ -26,6 +27,7 @@ import { usePacedLoop } from './pace.ts';
 // walked the whole scene, and the frame it landed in took two or three times as long — felt as a stutter when moving.
 const Documents = memo(DocumentsPart);
 const HiFi = memo(HiFiPart);
+const Vault = memo(VaultPart);
 const Humans = memo(HumansPart);
 const PodLabels = memo(PodLabelsPart);
 const TV = memo(TVPart);
@@ -67,6 +69,8 @@ export interface OfficeSceneProps {
   /** The hi-fi's real state, and what a click on it does. */
   radio: RadioView;
   onOpenRadio: () => void;
+  /** What a click on the vault in the server room does (walking up to it and pressing the interact key goes through `onNearby`). */
+  onOpenVault?: () => void;
   /** The owner's whip, a visual gag with no effect on anyone's work: who was last whipped and when (ms), and when the owner last swung. */
   whips: Record<string, number>;
   whipAt: number;
@@ -185,6 +189,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       <Zones world={world} zones={props.zones} onOpen={props.onOpenProject} />
       <Documents world={world} docs={props.docs} onOpen={props.onOpenDocs} />
       <TV world={world} tv={props.tv} frames={props.tvFrames} onOpen={props.onOpenTv} />
+      <Vault world={world} onOpen={props.onOpenVault} />
       <Humans humans={props.humans} />
       <SelfBubble player={player} text={props.cameraMode === 'first' || props.cameraMode === 'workstation' ? null : (props.selfSaying ?? null)} />
       <PodLabels world={world} />

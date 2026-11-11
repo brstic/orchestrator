@@ -1391,6 +1391,33 @@ async function scenario() {
     return `stood at ${spot.x.toFixed(1)}, ${spot.z.toFixed(1)}; Space opened the radio`;
   });
 
+  await step('3D office: standing in front of the vault offers it, and Space opens the vault', async () => {
+    await close();
+    await camera('CEO');
+    const spot = await js(`(window.__orchPlayer.spots || []).find((s) => s.kind === 'vault') || null`);
+    if (!spot) throw new Error('the office has no vault to walk up to');
+    await js(`window.__orchPlayer.goto = { x: ${spot.x}, z: ${spot.z}, rot: ${-Math.PI / 2} }; true`); // facing the server room's west wall, where it stands
+    await waitFor(`(() => { const n = window.__t.store().nearby; return !!n && n.kind === 'vault' && n.label === 'VAULT — PASSWORDS AND KEYS'; })()`, 8000);
+    await waitFor(`[...document.querySelectorAll('.prompt')].some((e) => e.textContent.replace(/ +/g, ' ').trim() === 'SpaceVAULT — PASSWORDS AND KEYS')`, 4000);
+    // The picture: from inside the room (in front of the racks), the safe's door and one side. The owner takes half
+    // a step to the hinge side and turns to the wheel, so as not to stand between the camera and the door; that is
+    // still in front of the vault, and the prompt stays.
+    await js(`window.__orchPlayer.goto = { x: ${spot.x - 0.2}, z: ${spot.z + 0.55}, rot: ${Math.atan2(-0.8, -0.6)} }; true`);
+    await js(`window.__orchScene.cam = { pos: [${spot.x + 2.2}, 2.0, ${spot.z - 1.7}], look: [${spot.x - 0.9}, 0.9, ${spot.z + 0.05}], fov: 42 }; true`);
+    await sleep(1800);
+    if ((await js(`(window.__t.store().nearby || {}).kind`)) !== 'vault') throw new Error('half a step aside, the vault is no longer offered');
+    await shot('vault-3d');
+    await js(`delete window.__orchScene.cam; true`);
+    await key('Space', ' ');
+    await waitFor(`window.__t.store().panel === 'vault'`, 6000);
+    // The vault's window is somebody else's: whatever is shown for it, the office is still there and it closes.
+    await sleep(400);
+    if (!(await js(`!!document.querySelector('canvas') && !!document.querySelector('.hud')`))) throw new Error('opening the vault took the office down');
+    await close();
+    await waitFor(`window.__t.store().panel === null && !document.querySelector('.win')`, 5000);
+    return `stood at ${spot.x.toFixed(1)}, ${spot.z.toFixed(1)}; Space opened the vault`;
+  });
+
   await step('3D office: an empty desk offers a seat; someone is seated there, moved with the menu, and swapped with a colleague', async () => {
     await close();
     await camera('CEO');

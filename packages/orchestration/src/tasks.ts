@@ -1383,9 +1383,33 @@ const CHECK_PATHS = [
  * counts when the command goes through it (`npm test`, `pnpm run …`, `yarn …`).
  */
 export function checksTouched(filesChanged: string[], command: string | null): string[] {
-  const words = (command ?? '').split(/[\s;&|()]+/).map((w) => w.replace(/^['"]|['"]$/g, '').replace(/^\.\//, '')).filter((w) => /[./]/.test(w));
+  const scripts = scriptsRun(command ?? '');
   const viaPackage = /\b(npm|pnpm|yarn|bun)\b/.test(command ?? '');
   const clean = (f: string) => f.replace(/^[A-Z?]{1,2}\s+/, '').replace(/^.* -> /, '').trim();
-  return [...new Set(filesChanged.map(clean).filter((f) => !!f && (CHECK_PATHS.some((re) => re.test(f)) || words.includes(f) || (viaPackage && /(^|\/)package\.json$/.test(f)))))];
+  return [...new Set(filesChanged.map(clean).filter((f) => !!f && (CHECK_PATHS.some((re) => re.test(f)) || scripts.includes(f) || (viaPackage && /(^|\/)package\.json$/.test(f)))))];
+}
+
+const INTERPRETERS = new Set(['node', 'sh', 'bash', 'zsh', 'python', 'python3', 'ruby', 'perl', 'php', 'deno', 'bun', 'tsx', 'ts-node', 'npx']);
+
+/**
+ * The files a command line runs as programs: `node check.js`, `sh scripts/verify.sh`, `./verify.sh`. A file the
+ * command only looks at (`test -f totals.txt`, `grep -q ON a.txt`) is what is being checked, not the check.
+ */
+function scriptsRun(command: string): string[] {
+  const out: string[] = [];
+  const path = (w: string) => w.replace(/^['"]|['"]$/g, '').replace(/^\.\//, '');
+  for (const segment of command.split(/&&|\|\||[;|()]/)) {
+    const words = segment.trim().split(/\s+/).filter(Boolean);
+    if (!words.length) continue;
+    const first = words[0]!;
+    if (INTERPRETERS.has(first)) {
+      // The first argument that is not an option; `-c` / `-e` mean the program is written inline, so there is no file.
+      const rest = words.slice(1);
+      if (rest.some((w) => /^-(c|e|-eval|-command)$/.test(w))) continue;
+      const file = rest.find((w) => !w.startsWith('-'));
+      if (file) out.push(path(file));
+    } else if (/^\.{0,2}\//.test(first) || /\.(sh|c?js|mjs|ts|py|rb)$/.test(first)) out.push(path(first));
+  }
+  return out;
 }
 

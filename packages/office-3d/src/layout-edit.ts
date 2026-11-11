@@ -67,7 +67,7 @@ export function layoutProblems(layout: OfficeLayout, unlocked: Set<string>): str
     const s = deskSeat(d);
     if (!reachable(s.x, s.z)) out.push(`nobody can walk to desk ${d.id}`);
   }
-  for (const it of world.interactables) if (!reachable(it.x, it.z)) out.push(`nobody can walk to the ${it.kind === 'hifi' ? 'hi-fi' : it.kind === 'board' ? 'project board' : `${it.kind} room`}`);
+  for (const it of world.interactables) if (!reachable(it.x, it.z)) out.push(`nobody can walk to the ${it.kind === 'hifi' ? 'hi-fi' : it.kind === 'vault' ? 'vault' : it.kind === 'board' ? 'project board' : `${it.kind} room`}`);
   for (const s of world.meeting?.seats ?? []) if (!reachable(s.x, s.z)) out.push('a seat at the meeting table cannot be reached');
   return [...new Set(out)];
 }

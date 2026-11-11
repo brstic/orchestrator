@@ -354,7 +354,7 @@ export function Toasts() {
   );
 }
 
-const ROOM_PANEL: Record<string, PanelId> = { tv: 'tv', hifi: 'radio', board: 'tasks', meeting: 'meetings', server: 'hosts', ops: 'wall', ceo: 'ceo', break: 'overview', reception: 'overview' };
+const ROOM_PANEL: Record<string, PanelId> = { tv: 'tv', hifi: 'radio', vault: 'vault', board: 'tasks', meeting: 'meetings', server: 'hosts', ops: 'wall', ceo: 'ceo', break: 'overview', reception: 'overview' };
 
 /** What pressing the interact key does for whatever the owner is standing next to. */
 export function interact(): void {

@@ -261,6 +261,116 @@ const rackFace = once(() => {
 });
 
 /**
+ * The vault, 1.2 m wide, 0.9 m deep and 1.7 m high (a lifting eye on top of that), its door toward +Z: a steel
+ * body on a plinth and a thick stepped door hung on two barrel hinges (at −X), with a five-spoke wheel, a keypad,
+ * a maker's plate and a ring of bolts. Nothing on it moves; the keypad's light is steady.
+ */
+export const vault = once((): Model => {
+  const b = new Build();
+  const body = M.steel('#3d4655', 0.46);
+  const dark = M.steel('#1b1f27', 0.5);
+  const leaf = M.metal('#787f8a', 0.46);
+  const face = M.metal('#9ba2ad', 0.4);
+  const chrome = M.metal('#d8dde4', 0.2);
+  const fitting = M.metal('#aab0ba', 0.3);
+  const black = M.plastic('#14161b', 0.5);
+  const turned = Math.PI / 2; // a lathed shape's axis laid toward the front
+
+  // The body: a recessed plinth, a base band, the box itself and a cap, the bands a little wider than the box.
+  b.add(dark, at(softBox(1.1, 0.08, 0.68, 0.004, { round: 1 }), 0, 0.04, -0.07), { cast: false });
+  b.add(body, at(softBox(1.2, 0.07, 0.77, 0.012, { round: 1 }), 0, 0.105, -0.065));
+  b.add(body, at(softBox(1.16, 1.53, 0.74, 0.02, { round: 2 }), 0, 0.9, -0.07));
+  b.add(body, at(softBox(1.2, 0.05, 0.77, 0.012, { round: 1 }), 0, 1.675, -0.065));
+  // A raised panel on each side, for the light to catch; on top a cover plate, and the eye it was lifted in by.
+  for (const s of [-1, 1]) b.add(body, at(softBox(0.012, 1.3, 0.54, 0.005, { round: 1 }), s * 0.581, 0.9, -0.07));
+  b.add(dark, at(slab(1.02, 0.008, 0.6, 0.03, 0.003), 0, 1.704, -0.065), { cast: false });
+  b.add(fitting, at(lathe([[0.05, 0], [0.05, 0.006], [0.03, 0.012], [0.016, 0.016], [0.016, 0.03]], 14), 0, 1.708, -0.065), { cast: false });
+  b.add(fitting, at(torus(0.03, 0.009, 6, 18), 0, 1.708 + 0.052, -0.065), { cast: false });
+
+  // The door, 0.98 × 1.38 m: a slab standing out of its opening (the dark behind it is the gap all round), and
+  // a raised face on it that leaves a border for the bolts.
+  const DY = 0.9;
+  const F = 0.375; // the door's face
+  b.add(dark, at(new THREE.BoxGeometry(1.02, 1.42, 0.006), 0, DY, 0.301), { cast: false });
+  b.add(leaf, at(softBox(0.98, 1.38, 0.06, 0.014, { round: 2 }), 0, DY, 0.32));
+  b.add(face, at(softBox(0.84, 1.24, 0.03, 0.012, { round: 2 }), 0, DY, 0.36), { cast: false });
+
+  // Bolts round the border: a washer and a six-sided head each, its flats left flat. None where the hinges sit.
+  const washer = lathe([[0.023, 0], [0.023, 0.003], [0.012, 0.003]], 10);
+  const hex = lathe([[0.017, 0.003], [0.017, 0.01], [0.0145, 0.013], [0, 0.013]], 6).toNonIndexed();
+  hex.computeVertexNormals();
+  const HINGES = [DY - 0.437, DY + 0.437];
+  const bolts: Array<[number, number]> = [];
+  for (let i = 0; i < 5; i++) for (const s of [-1, 1]) bolts.push([-0.455 + i * 0.2275, DY + s * 0.655]);
+  for (let i = 1; i < 6; i++) for (const s of [-1, 1]) bolts.push([s * 0.455, DY - 0.655 + i * 0.2183]);
+  for (const [x, y] of bolts) {
+    if (x < 0 && HINGES.some((h) => Math.abs(h - y) < 0.1)) continue;
+    b.add(fitting, at(washer, x, y, 0.35, turned), { cast: false });
+    b.add(fitting, at(hex, x, y, 0.35, turned), { cast: false });
+  }
+
+  // Hinges: a barrel with two grooves at the door's edge, a strap on the door and a block on the body.
+  const barrel = lathe([[0, -0.105], [0.02, -0.105], [0.03, -0.095], [0.03, -0.036], [0.025, -0.034], [0.025, -0.03], [0.03, -0.028], [0.03, 0.028], [0.025, 0.03], [0.025, 0.034], [0.03, 0.036], [0.03, 0.095], [0.02, 0.105], [0, 0.105]], 12);
+  for (const y of HINGES) {
+    b.add(fitting, at(barrel, -0.515, y, 0.345), { cast: false });
+    b.add(fitting, at(softBox(0.08, 0.15, 0.012, 0.005, { round: 1 }), -0.458, y, 0.356), { cast: false });
+    b.add(body, at(softBox(0.05, 0.16, 0.06, 0.008, { round: 1 }), -0.553, y, 0.33));
+  }
+
+  // The wheel, on a dished plate: a flange and a spindle out of the door, the hub, five spokes to the rim and a
+  // ball where each meets it.
+  const WY = 0.82;
+  const WZ = F + 0.075;
+  b.add(leaf, at(lathe([[0.268, 0], [0.262, 0.005], [0.236, 0.005], [0.228, 0.002], [0, 0.002]], 32), 0, WY, F, turned), { cast: false });
+  b.add(chrome, at(lathe([[0.09, 0.002], [0.09, 0.008], [0.074, 0.013], [0.04, 0.02], [0.032, 0.03], [0.032, 0.056], [0.056, 0.06], [0.06, 0.066], [0.06, 0.084], [0.054, 0.092], [0.03, 0.102], [0, 0.105]], 20), 0, WY, F, turned), { cast: false });
+  b.add(chrome, at(torus(0.2, 0.017, 8, 40), 0, WY, WZ), { cast: false });
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    b.add(chrome, at(cyl(0.011, 0.013, 0.15, 8), -Math.sin(a) * 0.122, WY + Math.cos(a) * 0.122, WZ, 0, 0, a), { cast: false });
+    b.add(chrome, at(sphere(0.025, 8, 6), -Math.sin(a) * 0.2, WY + Math.cos(a) * 0.2, WZ), { cast: false });
+  }
+
+  // The keypad: a black pad in a bright bezel, a dark display, twelve keys and the light.
+  const KY = 1.3;
+  b.add(fitting, at(softBox(0.18, 0.25, 0.008, 0.014, { round: 1 }), 0, KY, F + 0.004), { cast: false });
+  b.add(black, at(softBox(0.16, 0.23, 0.014, 0.01, { round: 1 }), 0, KY, F + 0.007), { cast: false });
+  b.add(M.gloss('#0b0d11'), at(softBox(0.094, 0.04, 0.003, 0.002, { round: 1 }), -0.018, KY + 0.075, F + 0.0145), { cast: false });
+  b.add(M.glow('#3ddc84', 1.4), at(cyl(0.008, 0.008, 0.004, 12), 0.052, KY + 0.075, F + 0.0145, turned), { cast: false });
+  const keys = M.plastic('#4b525e', 0.45);
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) b.add(keys, at(new THREE.BoxGeometry(0.03, 0.024, 0.005), (c - 1) * 0.04, KY + 0.035 - r * 0.034, F + 0.0155), { cast: false });
+
+  // The maker's plate, on two screws; what it says is a picture on it.
+  b.add(M.metal('#b89a5e', 0.3), at(softBox(0.3, 0.075, 0.006, 0.004, { round: 1 }), 0, 0.42, F + 0.002), { cast: false });
+  b.add(vaultPlate(), at(new THREE.PlaneGeometry(0.24, 0.06), 0, 0.42, F + 0.0056), { cast: false, keepUV: true });
+  for (const s of [-1, 1]) b.add(dark, at(cyl(0.006, 0.006, 0.003, 8), s * 0.134, 0.42, F + 0.0055, turned), { cast: false });
+  return b.done();
+});
+
+/** What the vault's brass plate says, engraved: a picture laid on the plate (plain brass where there is nothing to paint on). */
+const vaultPlate = once(() => {
+  if (typeof document === 'undefined') return M.metal('#b89a5e', 0.3);
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#b89a5e';
+  ctx.fillRect(0, 0, 512, 128);
+  ctx.strokeStyle = '#5f4c26';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(10, 10, 492, 108);
+  ctx.fillStyle = '#4a3a1c';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '800 62px "Inter", "SF Pro Display", "Segoe UI", system-ui, sans-serif';
+  // Spaced out by hand: letter spacing on a canvas is not everywhere.
+  [...'VAULT'].forEach((ch, i) => ctx.fillText(ch, 256 + (i - 2) * 72, 68));
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = 8;
+  return new THREE.MeshStandardMaterial({ map, roughness: 0.3, metalness: 0.92, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -24 });
+});
+
+/**
  * The operators' console, 5.2 m wide: a long dark desk with a raised, sloped instrument deck toward the
  * screen wall (−Z). Operators stand or sit at +Z.
  */

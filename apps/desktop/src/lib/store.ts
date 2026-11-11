@@ -55,17 +55,17 @@ export type PanelId =
   | 'docs'
   | 'radio'
   | 'tv'
+  | 'vault'
   | 'seat'
   | 'people'
   | 'myroom'
   | 'reports'
-  | 'vault'
   | 'help';
 
 export type CameraMode = 'ceo' | 'first' | 'management' | 'free' | 'workstation' | 'command';
 
 export interface Nearby {
-  kind: 'employee' | 'desk' | 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv';
+  kind: 'employee' | 'desk' | 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv' | 'vault';
   id: string;
   label: string;
 }
