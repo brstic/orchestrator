@@ -99,6 +99,8 @@ interface HookPending {
   /** `pretool`: a high-risk call held before it runs (bypass mode), answered in the shape of a PreToolUse hook. */
   kind: 'permission' | 'ask_user' | 'pretool';
   toolInput: any;
+  /** The hook event's own id: the same when the machine sends the held request again. */
+  eventId?: string;
 }
 
 /**
@@ -114,6 +116,11 @@ export class Comms {
   private inflight = new Map<string, Delivery>();
   private pumpTimers = new Map<string, { timer: NodeJS.Timeout; due: number }>();
   private hookPending = new Map<string, HookPending>();
+  /** Questions whose hook a machine may still be holding although the link to it is gone (see `rejoinHook`). */
+  private awaitingRejoin = new Set<string>();
+  /** Of those, the ones answered meanwhile: the answer goes out when the machine is back. */
+  private unsentAnswers = new Set<string>();
+  private rejoinTimers = new Map<string, NodeJS.Timeout>();
   private requestToQuestion = new Map<string, string>();
   private waiters = new Map<string, Set<(q: Question) => void>>();
   private stopBatches = new Map<string, Delivery[]>();
@@ -132,11 +139,15 @@ export class Comms {
   restore(): void {
     for (const m of this.core.messages.filter((x) => x.delivery.status === 'queued')) this.enqueueMessage(m, false);
     for (const q of this.core.questions.filter((x) => x.status === 'answered' && x.channel === 'mcp_tool' && !!x.employeeId)) this.enqueueAnswer(q, false);
-    // Hook-held questions cannot survive a restart: the hook connection is gone.
+    // A question held on a hook: the machine keeps holding it through a restart of the office (for a minute and a
+    // half) and sends it again when it is back — see `rejoinHook`. Until then it stays as it is. One that does not
+    // come back is given up (`giveUpHeld`): Claude Code then shows its own prompt in the terminal, which is noticed
+    // on the session's screen and asked anew (SessionRegistry.onScreen).
     for (const q of this.core.questions.filter((x) => x.status === 'open' && (x.channel === 'permission_hook' || x.channel === 'ask_user_question_hook'))) {
-      this.supersede(q.id, 'Orchestrator restarted while this request was pending; Claude Code falls back to its own prompt in the terminal.');
-      // (That prompt is noticed on the session's screen as soon as its machine reports it again, and asked anew: see SessionRegistry.onScreen.)
+      if (q.hookEventId) this.awaitingRejoin.add(q.id);
+      else this.supersede(q.id, 'Orchestrator restarted while this request was pending; Claude Code falls back to its own prompt in the terminal.');
     }
+    if (this.awaitingRejoin.size) this.rejoinTimer('*', this.core.timings.hookRejoinMs ?? 120_000);
   }
 
   // ───────────────────────── notifications ─────────────────────────
@@ -293,6 +304,134 @@ export class Comms {
   holdHook(question: Question, pending: HookPending): void {
     this.hookPending.set(question.id, pending);
     this.requestToQuestion.set(pending.requestId, question.id);
+    if (pending.eventId && question.hookEventId !== pending.eventId) {
+      question.hookEventId = pending.eventId;
+      this.core.put('question', question);
+    }
+  }
+
+  /**
+   * A machine sends a held request again — it kept holding it while the office was restarted or the connection was
+   * lost. If the question it belongs to is still waiting here, it is taken up again as it stands (and an answer given
+   * meanwhile is delivered now). False: this is not such a request.
+   */
+  rejoinHook(hostId: string, requestId: string, raw: { id: string; payload?: { hook_event_name?: string; tool_input?: unknown } }): boolean {
+    const q = this.core.questions.find((x) => !!x.hookEventId && x.hookEventId === raw.id && (x.status === 'open' || x.status === 'answered') && (x.channel === 'permission_hook' || x.channel === 'ask_user_question_hook'));
+    if (!q || this.core.sessions.get(q.sessionId)?.hostId !== hostId) return false;
+    // Held under another name before (the machine's agent was restarted and the hook came to it anew): that one is over.
+    const before = this.hookPending.get(q.id);
+    if (before) this.requestToQuestion.delete(before.requestId);
+    this.awaitingRejoin.delete(q.id);
+    const kind: HookPending['kind'] = q.channel === 'ask_user_question_hook' ? 'ask_user' : raw.payload?.hook_event_name === 'PreToolUse' ? 'pretool' : 'permission';
+    this.holdHook(q, { hostId, requestId, kind, toolInput: raw.payload?.tool_input, eventId: raw.id });
+    // What the session is doing is not kept across a restart of the office: it is waiting for this.
+    const session = this.core.sessions.get(q.sessionId);
+    if (session && q.status === 'open' && q.kind === 'permission' && session.activity !== 'paused' && session.activity !== 'needs_approval') this.eng.sessions.setActivity(session, 'needs_approval', truncate(q.text.replace(/^.*? wants to run: /, ''), 200));
+    if (q.status === 'answered') {
+      this.unsentAnswers.delete(q.id);
+      this.answerHook(q);
+    }
+    return true;
+  }
+
+  /** A machine's connection is gone. What it was holding for us it may still hold: those questions wait for it. */
+  hostGone(hostId: string): void {
+    let any = false;
+    for (const [qid, pending] of [...this.hookPending]) {
+      if (pending.hostId !== hostId) continue;
+      this.hookPending.delete(qid);
+      this.requestToQuestion.delete(pending.requestId);
+      const q = this.core.questions.get(qid);
+      if (!q || (q.status !== 'open' && q.status !== 'answered')) continue;
+      this.awaitingRejoin.add(qid);
+      any = true;
+    }
+    if (any) this.rejoinTimer(hostId, this.core.timings.hookRejoinMs ?? 120_000);
+  }
+
+  /** A machine has reported in again. What it still holds follows at once; what does not come is no longer held. */
+  private heldBack(hostId: string): void {
+    if (![...this.awaitingRejoin].some((qid) => this.core.sessions.get(this.core.questions.get(qid)?.sessionId)?.hostId === hostId)) return;
+    this.rejoinTimer(hostId, this.core.timings.hookRejoinGraceMs ?? 10_000);
+  }
+
+  private rejoinTimer(key: string, ms: number): void {
+    const old = this.rejoinTimers.get(key);
+    if (old) clearTimeout(old);
+    const t = setTimeout(() => {
+      this.rejoinTimers.delete(key);
+      this.giveUpHeld(key === '*' ? null : key);
+    }, ms);
+    t.unref?.();
+    this.rejoinTimers.set(key, t);
+  }
+
+  /** Nothing came back for these: Claude Code is no longer waiting on the hook, its own prompt stands in the terminal. */
+  private giveUpHeld(hostId: string | null): void {
+    for (const qid of [...this.awaitingRejoin]) {
+      const q = this.core.questions.get(qid);
+      if (hostId && q && this.core.sessions.get(q.sessionId)?.hostId !== hostId) continue;
+      this.awaitingRejoin.delete(qid);
+      if (!q || this.hookPending.has(qid)) continue;
+      if (q.status === 'open') this.fellToTerminal(q, 'The office was restarted, or the connection to the machine was lost, while this was pending; Claude Code falls back to its own prompt in the terminal.');
+      else if (q.status === 'answered' && this.unsentAnswers.delete(qid)) {
+        this.setStatus(q, 'failed', 'Claude Code was no longer waiting when its machine came back; answer the prompt in the terminal instead.');
+        if (q.kind === 'permission' && q.sessionId) this.eng.sessions.promptOnScreen(q.sessionId, true);
+      }
+    }
+  }
+
+  /**
+   * A held question was let go without an answer: Claude Code now asks in the terminal itself. A permission prompt
+   * the office can see there is asked again from here; otherwise the owner is told where the employee waits.
+   */
+  private fellToTerminal(q: Question, detail: string): void {
+    this.supersede(q.id, detail);
+    const emp = this.core.employees.get(q.employeeId);
+    if (q.kind === 'permission' && q.sessionId && this.eng.sessions.promptOnScreen(q.sessionId, true)) return;
+    if (q.kind !== 'permission' && this.core.sessions.get(q.sessionId)?.status !== 'running') return;
+    this.notify({
+      kind: q.kind === 'permission' ? 'permission' : 'question',
+      severity: 'warning',
+      title: `${emp?.name ?? 'Employee'} is waiting at a ${q.kind === 'permission' ? 'terminal prompt' : 'question in the terminal'}`,
+      body:
+        q.kind === 'permission'
+          ? 'The request was not answered in time, so Claude Code is showing its own permission prompt. Open the workstation to answer it.'
+          : `${truncate(q.text, 300)}\n\nIt was not answered from the office in time, so Claude Code is asking in the terminal itself, and ${emp?.name ?? 'the employee'} waits there. Open the workstation to answer it.`,
+      employeeId: q.employeeId,
+      sessionId: q.sessionId,
+    });
+  }
+
+  /** Write the answer of a question held on a hook to that hook. */
+  private answerHook(q: Question): void {
+    const pending = this.hookPending.get(q.id);
+    if (!pending) {
+      // Its machine may come back still holding it (the office was restarted, or the connection was lost): the
+      // answer is kept and delivered then.
+      if (this.awaitingRejoin.has(q.id)) {
+        this.unsentAnswers.add(q.id);
+        q.deliveryDetail = 'Kept until the employee\'s machine is connected again';
+        this.core.put('question', q);
+        return;
+      }
+      return this.setStatus(q, 'failed', q.channel === 'permission_hook' ? 'The permission hook is no longer waiting; answer the prompt in the terminal instead.' : 'Claude Code is no longer waiting on this question; answer it in the terminal instead.');
+    }
+    if (q.channel === 'permission_hook') {
+      const decision = q.decision === 'allow' ? { behavior: 'allow' } : { behavior: 'deny', message: q.answer || 'Denied by the boss in Orchestrator.' };
+      const output =
+        pending.kind === 'pretool'
+          ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: q.decision === 'allow' ? 'allow' : 'deny', permissionDecisionReason: q.decision === 'allow' ? 'Allowed by the boss in Orchestrator.' : q.answer || 'Denied by the boss in Orchestrator.' } }
+          : { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision } };
+      if (!this.core.agents.respondHook(pending.hostId, pending.requestId, output)) this.setStatus(q, 'failed', 'The host is offline; the decision could not be delivered.');
+      return;
+    }
+    const by = q.answeredBy?.kind === 'foreman' ? q.answeredBy : null;
+    const answers = q.answers ?? (q.parts[0] ? { [q.parts[0].question]: q.answer ?? '' } : {});
+    const ok = this.core.agents.respondHook(pending.hostId, pending.requestId, {
+      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: by ? `Answered by ${by.name} (the foreman) on the boss's behalf` : 'Answered by the boss in Orchestrator', updatedInput: { ...(pending.toolInput ?? {}), answers } },
+    });
+    if (!ok) this.setStatus(q, 'failed', 'The host is offline; the answer could not be delivered.');
   }
 
   private setStatus(q: Question, status: Question['status'], detail?: string): void {
@@ -330,6 +469,8 @@ export class Comms {
       this.requestToQuestion.delete(pending.requestId);
       this.hookPending.delete(questionId);
     }
+    this.awaitingRejoin.delete(questionId);
+    this.unsentAnswers.delete(questionId);
     this.setStatus(q, 'superseded', detail);
     this.wake(q);
   }
@@ -428,34 +569,10 @@ export class Comms {
     });
 
     switch (q.channel) {
-      case 'permission_hook': {
-        const pending = this.hookPending.get(q.id);
-        if (!pending) {
-          this.setStatus(q, 'failed', 'The permission hook is no longer waiting; answer the prompt in the terminal instead.');
-          break;
-        }
-        const decision = q.decision === 'allow' ? { behavior: 'allow' } : { behavior: 'deny', message: q.answer || 'Denied by the boss in Orchestrator.' };
-        const output =
-          pending.kind === 'pretool'
-            ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: q.decision === 'allow' ? 'allow' : 'deny', permissionDecisionReason: q.decision === 'allow' ? 'Allowed by the boss in Orchestrator.' : q.answer || 'Denied by the boss in Orchestrator.' } }
-            : { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision } };
-        const ok = this.core.agents.respondHook(pending.hostId, pending.requestId, output);
-        if (!ok) this.setStatus(q, 'failed', 'The host is offline; the decision could not be delivered.');
+      case 'permission_hook':
+      case 'ask_user_question_hook':
+        this.answerHook(q);
         break;
-      }
-      case 'ask_user_question_hook': {
-        const pending = this.hookPending.get(q.id);
-        if (!pending) {
-          this.setStatus(q, 'failed', 'Claude Code is no longer waiting on this question; answer it in the terminal instead.');
-          break;
-        }
-        const answers = q.answers ?? (q.parts[0] ? { [q.parts[0].question]: q.answer ?? '' } : {});
-        const ok = this.core.agents.respondHook(pending.hostId, pending.requestId, {
-          hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: by ? `Answered by ${by.name} (the foreman) on the boss's behalf` : 'Answered by the boss in Orchestrator', updatedInput: { ...(pending.toolInput ?? {}), answers } },
-        });
-        if (!ok) this.setStatus(q, 'failed', 'The host is offline; the answer could not be delivered.');
-        break;
-      }
       case 'mcp_tool':
         if (this.hasWaiter(q.id)) this.wake(q);
         else if (q.employeeId) this.enqueueAnswer(q, true);
@@ -577,18 +694,9 @@ export class Comms {
         this.notify({ kind: 'permission', severity: 'warning', title: `${emp?.name ?? 'Employee'} was refused a high-risk command: nobody answered`, body: `${truncate(q.text, 300)}\n\nIt was not run. If you want it done, tell ${emp?.name ?? 'them'} to try again and answer the request when it comes.`, employeeId: q.employeeId, sessionId: q.sessionId });
         return;
       }
-      // The prompt is in the terminal now. When the office can see it there, it asks again — answerable from here.
-      if (q.kind === 'permission' && q.sessionId && this.eng.sessions.promptOnScreen(q.sessionId, true)) return;
-      if (q.kind === 'permission') {
-        this.notify({
-          kind: 'permission',
-          severity: 'warning',
-          title: `${emp?.name ?? 'Employee'} is waiting at a terminal prompt`,
-          body: 'The request was not answered in time, so Claude Code is showing its own permission prompt. Open the workstation to answer it.',
-          employeeId: q.employeeId,
-          sessionId: q.sessionId,
-        });
-      }
+      // The prompt is in the terminal now — unless Claude Code itself let go of the hook (the turn was interrupted,
+      // the session ended): then nothing is asked anywhere any more.
+      if (q.kind === 'permission' || /no decision in time/.test(detail ?? '')) this.fellToTerminal(q, q.deliveryDetail ?? '');
     }
   }
 
@@ -967,6 +1075,7 @@ export class Comms {
 
   /** A machine is back: whoever on it has something waiting gets another look. */
   hostBack(hostId: string): void {
+    this.heldBack(hostId);
     for (const [employeeId, list] of this.queue) {
       if (!list.length || this.core.employees.get(employeeId)?.hostId !== hostId) continue;
       this.wakes.delete(employeeId);

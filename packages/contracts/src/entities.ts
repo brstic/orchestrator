@@ -631,6 +631,13 @@ export interface Question {
   confirmedAt: ISODate | null;
   deliveryDetail: string | null;
   /**
+   * For a question held on a Claude Code hook: the id of the hook event it came with. With it the office takes the
+   * same question up again when the machine sends that event again because it is still holding the hook (after a
+   * restart of the office, a lost connection, a restart of the machine's agent) instead of letting it fall to
+   * Claude Code's own prompt in the terminal.
+   */
+  hookEventId?: string;
+  /**
    * capture: an already answered question of the same project that reads like this one (a word-overlap match,
    * not an understanding of the question). Shown to whoever answers; nothing is answered automatically.
    */

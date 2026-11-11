@@ -55,6 +55,10 @@ export interface Timings {
   deliveryConfirmMs: number;
   /** How long a permission prompt must stand in a terminal, unasked, before the office asks about it itself. */
   terminalPromptMs?: number;
+  /** How long a held question waits for its machine to come back still holding it: after the office starts or the machine is lost… */
+  hookRejoinMs?: number;
+  /** …and after the machine has reported in again (what it still holds arrives right behind its report). */
+  hookRejoinGraceMs?: number;
   /** Default verification command timeout. */
   verifyTimeoutMs: number;
   scheduleDebounceMs: number;

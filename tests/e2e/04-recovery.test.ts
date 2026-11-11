@@ -15,7 +15,7 @@ let alexId = '';
 let danaId = '';
 
 before(async () => {
-  h = await createHarness({ approvalWaitSeconds: 30 });
+  h = await createHarness({ approvalWaitSeconds: 30, timings: { hookRejoinGraceMs: 1000 } });
   repo = h.makeRepo('ledger');
   projectId = (await h.project('Ledger', repo, { verifyCommand: 'npm test --silent' })).id;
   alexId = (await h.employee('Alex', 'backend', { projectId, autonomy: 'standard' })).id;
@@ -80,16 +80,22 @@ test('work done while the server is down is reported afterwards, exactly once', 
   fs.rmSync(path.join(session.cwd, 'offline.txt'));
 });
 
-test('an approval pending during a server restart falls back to the real terminal prompt', async () => {
+test('an approval pending during a server restart is still pending afterwards; when the machine\'s agent loses the hook, it falls back to the real terminal prompt', async () => {
   const task = await h.task({ projectId, title: 'Rotate logs', assigneeId: danaId, kind: 'ops', verifyCommand: 'true', description: '@@fake: write rotate.txt weekly; say rotation-configured@@' });
   const q = await waitFor(() => h.openQuestion(danaId, 'permission'), { label: 'permission pending' });
   const wt = (await h.getTask(task.id)).worktree!;
 
+  // The machine's agent keeps holding the hook while the office is away and hands the request back when it returns
+  // (tests/e2e/37-held-through-restart.test.ts): the same request is still open, and nothing was approved by the restart.
   await h.restartServer();
+  await sleep(2000);
+  assert.equal((await h.state()).questions.find((x) => x.id === q.id)!.status, 'open');
+  assert.ok(!fs.existsSync(path.join(wt, 'rotate.txt')), 'nothing was approved implicitly');
 
-  // The held hook is gone, so Orchestrator says so instead of pretending the request is still answerable.
-  const stale = (await h.state()).questions.find((x) => x.id === q.id)!;
-  assert.equal(stale.status, 'superseded');
+  // The agent itself is restarted: now the held hook is gone, and Orchestrator says so instead of pretending the
+  // request is still answerable.
+  await h.restartAgent();
+  await waitFor(async () => (await h.state()).questions.find((x) => x.id === q.id)!.status === 'superseded', { label: 'the request through the hook is over', timeout: 20000 });
   const late = await h.apiRaw('POST', `/questions/${q.id}/answer`, { decision: 'allow' });
   assert.equal(late.status, 409);
   assert.ok(!fs.existsSync(path.join(wt, 'rotate.txt')), 'nothing was approved implicitly');

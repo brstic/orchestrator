@@ -22,6 +22,8 @@ export interface AgentConfig {
   claudeBin: string;
   /** How long a permission/question hook may wait for the owner before falling back to the terminal dialog. */
   approvalWaitSeconds: number;
+  /** How long a request for a decision goes on waiting after the office is lost (its restart), before Claude Code's own prompt is let through. Default 90; 0: not at all. */
+  linkGraceSeconds?: number;
   /** Allow the server to run project verification commands (tests) on this host. */
   allowVerify: boolean;
   /** Allow headless `claude -p` runs for command interpretation. */

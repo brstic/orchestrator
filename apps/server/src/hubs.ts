@@ -189,6 +189,7 @@ export class AgentHub implements AgentLink {
       if (this.conns.get(conn.hostId) === conn) {
         this.conns.delete(conn.hostId);
         this.engine.hosts.disconnected(conn.hostId);
+        this.engine.comms.hostGone(conn.hostId);
       }
     });
     ws.on('error', () => undefined);

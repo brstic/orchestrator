@@ -56,6 +56,9 @@ export class HookReceiver {
   /** Blocking hook: the host is holding Claude Code's hook open for our answer. */
   onHookRequest(hostId: string, requestId: string, raw: RawHookEvent): void {
     const respond = (output: Record<string, unknown> | null) => this.core.agents.respondHook(hostId, requestId, output);
+    // Sent again by a machine that kept holding it through a restart of the office or a lost connection: the
+    // question it belongs to is still here, and goes on waiting as if nothing had happened.
+    if (this.eng.comms.rejoinHook(hostId, requestId, raw)) return;
     if (!this.core.store.markProcessed(`hook:${raw.id}`)) return void respond(null);
     let ctx: ReturnType<HookReceiver['process']>;
     try {
@@ -88,7 +91,7 @@ export class HookReceiver {
           tool: { name: tool, input: this.trimInput(payload.tool_input) },
           quietEvent: true,
         });
-        this.eng.comms.holdHook(q, { hostId, requestId, kind: 'permission', toolInput: payload.tool_input });
+        this.eng.comms.holdHook(q, { hostId, requestId, kind: 'permission', toolInput: payload.tool_input, eventId: raw.id });
         return;
       }
       case 'PreToolUse': {
@@ -112,7 +115,7 @@ export class HookReceiver {
             quietEvent: true,
           });
           if (session.activity !== 'paused') this.eng.sessions.setActivity(session, 'needs_approval', describeTool(tool, payload.tool_input, payload.cwd));
-          this.eng.comms.holdHook(q, { hostId, requestId, kind: 'pretool', toolInput: payload.tool_input });
+          this.eng.comms.holdHook(q, { hostId, requestId, kind: 'pretool', toolInput: payload.tool_input, eventId: raw.id });
           return;
         }
         if (payload.tool_name !== 'AskUserQuestion') return void respond(null);
@@ -129,7 +132,7 @@ export class HookReceiver {
           options: parts.length === 1 ? parts[0]!.options : [],
           parts,
         });
-        this.eng.comms.holdHook(q, { hostId, requestId, kind: 'ask_user', toolInput: payload.tool_input });
+        this.eng.comms.holdHook(q, { hostId, requestId, kind: 'ask_user', toolInput: payload.tool_input, eventId: raw.id });
         return;
       }
       case 'Stop': {

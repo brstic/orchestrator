@@ -112,6 +112,12 @@ interface PendingHook {
   timer: NodeJS.Timeout;
   /** What was sent, so it can be sent again if the connection drops before the server answers. */
   event?: RawHookEvent;
+  /**
+   * A request somebody may be deciding (a permission, a question, a held high-risk call): kept through a short loss
+   * of the office — its restart, a blip — and sent again when the office is back, so that the employee does not
+   * fall to Claude Code's own prompt in the terminal because of a deploy.
+   */
+  keep?: boolean;
 }
 
 type Logger = (level: 'info' | 'warn' | 'error', msg: string) => void;
@@ -147,6 +153,8 @@ export class HostAgent {
   private outboxDirty = false;
   private hostSeq = Date.now() * 1000;
   private pendingHooks = new Map<string, PendingHook>();
+  /** Runs while the office is gone but may be back in a moment (see `dropLink`); null when connected or given up. */
+  private linkGrace: NodeJS.Timeout | null = null;
   private pendingRequests = new Map<string, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   private hookServer: http.Server | null = null;
   private timers: NodeJS.Timeout[] = [];
@@ -347,8 +355,16 @@ export class HostAgent {
       /* already closed, or still connecting */
     }
     for (const rt of this.runtime.values()) rt.subscribed = false;
-    // Blocking hooks cannot be answered any more; let Claude Code fall back to its own dialog.
+    // The office was there a moment ago: for a while (its restart takes seconds) what waits for a decision goes on
+    // waiting. If it is not back by then, those are let go as well (`releaseHeld`).
+    const graceMs = (this.cfg.linkGraceSeconds ?? 90) * 1000;
+    if (was && graceMs > 0 && !this.linkGrace) {
+      this.linkGrace = setTimeout(() => this.releaseHeld(), graceMs);
+      this.linkGrace.unref();
+    }
+    // Other blocking hooks cannot be answered any more; let Claude Code fall back to its own dialog.
     for (const [id, pending] of this.pendingHooks) {
+      if (pending.keep && this.linkGrace) continue;
       clearTimeout(pending.timer);
       // The server may never have seen this event (it was on the wire, or the server was just going down): it is
       // kept and sent again after reconnecting, like any event that could not be delivered. A turn that ended during
@@ -386,6 +402,18 @@ export class HostAgent {
     }
   }
 
+  /** The office did not come back in time: what was kept waiting for it is let go, as at any lost connection. */
+  private releaseHeld(): void {
+    this.linkGrace = null;
+    if (this.connected) return;
+    for (const [id, pending] of this.pendingHooks) {
+      clearTimeout(pending.timer);
+      if (pending.event) this.enqueue(pending.event);
+      pending.resolve(null);
+      this.pendingHooks.delete(id);
+    }
+  }
+
   private send(msg: AgentToServer): boolean {
     return this.connected ? this.rawSend(msg) : false;
   }
@@ -411,6 +439,10 @@ export class HostAgent {
         this.log('info', `connected to ${this.cfg.serverUrl} as host "${msg.name}" (${msg.hostId})`);
         this.send({ t: 'sessions', sessions: [...this.tracked.values()].filter((t) => !t.gone || t.origin === 'managed').map((t) => this.report(t)) });
         for (const ev of this.outbox) this.send({ t: 'hook', event: ev });
+        // What was kept waiting through the loss of the office: asked again, under the same name.
+        if (this.linkGrace) clearTimeout(this.linkGrace);
+        this.linkGrace = null;
+        for (const [requestId, pending] of this.pendingHooks) if (pending.keep && pending.event) this.send({ t: 'hook.request', requestId, event: pending.event });
         for (const rt of this.runtime.values()) rt.stream?.requestScreen();
         void this.reportResources();
         this.onWelcome?.();
@@ -1552,13 +1584,15 @@ export class HostAgent {
 
     if (held !== null) event.payload = payload;
     const refuse = (why: string) => JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Orchestrator policy: this command matches a high-risk pattern (${held}) and needs the owner's approval. ${why} Do not try it another way: wait, or ask the boss (ask_boss).` } });
-    if (held !== null && !this.connected) {
+    // The office went away a moment ago and may be back in a moment (a restart): a request for a decision waits for it.
+    const waitsForOffice = !this.connected && !!this.linkGrace && payload.hook_event_name !== 'Stop';
+    if (held !== null && !this.connected && !waitsForOffice) {
       this.enqueue(event);
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(refuse('The office cannot be reached right now, so nobody could be asked.'));
       return;
     }
-    if (held === null && (!this.isBlocking(payload) || !this.connected)) {
+    if (held === null && (!this.isBlocking(payload) || (!this.connected && !waitsForOffice))) {
       this.enqueue(event);
       res.writeHead(200);
       res.end();
@@ -1574,7 +1608,7 @@ export class HostAgent {
         this.pendingHooks.delete(requestId);
         resolve(null);
       }, waitMs);
-      this.pendingHooks.set(requestId, { resolve, timer, event });
+      this.pendingHooks.set(requestId, { resolve, timer, event, keep: payload.hook_event_name !== 'Stop' });
       res.on('close', () => {
         if (finished) return;
         // Claude Code gave up on the hook (timeout, interrupt, session ended).
@@ -1586,7 +1620,8 @@ export class HostAgent {
           pending.resolve(null);
         }
       });
-      if (!this.send({ t: 'hook.request', requestId, event })) {
+      // (While the office is away for a moment it is not sent now: it goes out when the office is back.)
+      if (!waitsForOffice && !this.send({ t: 'hook.request', requestId, event })) {
         clearTimeout(timer);
         this.pendingHooks.delete(requestId);
         this.enqueue(event);

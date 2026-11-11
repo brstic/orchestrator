@@ -2,6 +2,13 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-11 — A held request outlives a restart of the office
+A request held on a Claude Code hook (a permission, an AskUserQuestion, a high-risk call of an Unrestricted employee) lived in two memories — the agent's and the office's — and both let go of it the moment the link between them broke.
+- **The agent keeps holding; the office keeps the question.** For `linkGraceSeconds` (90) after the office is lost the agent neither answers the hook nor forgets it, and on reconnecting it sends the request again. The office recognises it by the hook event's own id (kept on the question, `hookEventId`) and takes the same question up again. Rejected: making a new question after the restart (a second notification for the same thing, and an answer given meanwhile lost).
+- **Bounded on both sides.** The agent lets go after the grace (a member working at their own terminal with the office unreachable must get Claude Code's own prompt, not a half-hour wait); the office gives a question up when its machine has reported in and did not send it again within `hookRejoinGraceMs` (10 s), or after `hookRejoinMs` (2 min) with no machine at all. Then it is what it was before: Claude Code asks in the terminal.
+- **A question in the terminal is announced, not answered.** The office presses keys only at a permission prompt it can read (`permissionPrompt`); the layout of Claude Code's question dialog is not something it has been shown, so it says who waits and what was asked, and a person answers at the workstation.
+- **Not solved here:** the server's agent is started by the same service as the office, so a deploy restarts both and the hook is lost with the agent. That needs the hook itself to outlive the agent (next entry, when it exists) or the agent to be a service of its own.
+
 ## 2026-11-11 — Signing in with a name and a password
 The owner asked to get into the office at its public address "as owner, say with a username and a password", starting with an account for themselves.
 - **A password belongs to a member; there are no separate accounts.** The name is the member's name (already unique among those who are in), the role is the member's role. Signing in gives a credential of that member — what an invitation gives, only made another way and for 30 days. Nothing about rights had to be written twice, and taking a member out of the office takes their sign-in with them. Rejected: a users table beside the members (two lists of who is who to keep in step).

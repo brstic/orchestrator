@@ -19,9 +19,9 @@ const status = async (id: string) => (await h.state()).questions.find((q) => q.i
 
 before(async () => {
   // The hook gives up after two seconds; the office asks about a prompt that has stood for one.
-  h = await createHarness({ approvalWaitSeconds: 2, timings: { terminalPromptMs: 1000 } });
+  h = await createHarness({ approvalWaitSeconds: 2, timings: { terminalPromptMs: 1000, hookRejoinGraceMs: 1000 } });
   project = (await h.project('Shop', h.makeRepo('shop'), { verifyCommand: null })).id;
-  for (const name of ['Dana', 'Omar', 'Lena']) ids[name] = (await h.employee(name, 'devops', { projectId: project })).id;
+  for (const name of ['Dana', 'Omar', 'Lena', 'Vuk']) ids[name] = (await h.employee(name, 'devops', { projectId: project })).id;
 });
 after(async () => {
   await h?.cleanup();
@@ -54,11 +54,13 @@ test('the wait for an answer runs out: the prompt is in the terminal, the office
   assert.equal(await question('Dana', 'terminal'), undefined);
 });
 
-test('the office is restarted while a request waits: the prompt is found on the screen again, and "Deny" is given there', async () => {
+test('the office is restarted and the hook\'s wait runs out meanwhile: the prompt is found on the screen again, and "Deny" is given there', async () => {
   const task = await h.task({ projectId: project, title: 'Write the other pipeline', assigneeId: ids.Omar, kind: 'ops', description: '@@fake: write deploy.txt go; say after-the-denial@@' });
   const first = await waitFor(() => question('Omar', 'permission_hook'), { label: 'asked through the hook', timeout: 30000 });
   await h.restartServer();
-  assert.equal((await status(first.id)).status, 'superseded');
+  // (A hook that is still waiting when the office is back goes on as if nothing happened: 37-held-through-restart.
+  // Here its two seconds are over by then, so Claude Code asks in the terminal.)
+  await waitFor(async () => (await status(first.id)).status === 'superseded', { label: 'the request through the hook is over', timeout: 15000 });
   const asked = await waitFor(() => question('Omar', 'terminal'), { label: 'found on the screen after the restart', timeout: 30000 });
   assert.match(asked.text, /Omar is waiting at a permission prompt in the terminal: .*deploy\.txt/);
   assert.equal((await h.session(ids.Omar!))!.activity, 'needs_approval');
@@ -84,4 +86,12 @@ test('answered at the terminal by a person: the office stops asking; and it neve
   const late = await h.apiRaw('POST', `/questions/${asked.id}/answer`, { decision: 'allow' });
   assert.equal(late.status, 409);
   await waitFor(() => /lena-done/.test(h.tmux('capture-pane', '-p', '-J', '-S', '-80', '-t', session.tmuxPane!)), { label: 'the session went on', timeout: 15000 });
+});
+
+test('a question Claude Code asks that nobody answers in time: it is in the terminal now, and the owner is told so', async () => {
+  await h.task({ projectId: project, title: 'Choose the region', assigneeId: ids.Vuk, kind: 'ops', description: '@@fake: askuser Which region?|Frankfurt|Dublin; say vuk-went-on@@' });
+  const q = await waitFor(async () => (await h.state()).questions.find((x) => x.employeeId === ids.Vuk && x.channel === 'ask_user_question_hook'), { label: 'the question came through the hook', timeout: 30000 });
+  await waitFor(async () => (await status(q.id)).status === 'superseded', { label: 'the hook gave up', timeout: 15000 });
+  const told = await waitFor(async () => (await h.state()).notifications.find((n) => n.employeeId === ids.Vuk && /Vuk is waiting at a question in the terminal/.test(n.title)), { label: 'the owner is told', timeout: 10000 });
+  assert.match(told.body, /Which region\?[\s\S]*Open the workstation to answer it/);
 });
