@@ -169,3 +169,35 @@ test('a bypass session started with older hooks is started again by the office, 
   const dana = (await h.session(ids.Dana!))!;
   assert.deepEqual([dana.startedAt, dana.hooksVersion], [before.Dana.startedAt, 1], 'a session that is asked about what it does is not restarted for this');
 });
+
+test('a session is not started again for hooks its machine\'s agent could not better (no endless restarting behind an older agent)', async () => {
+  await idle('Una');
+  const before = (await h.session(ids.Una!))!;
+  assert.equal(before.hooksVersion, 2);
+  // Una's session as one with older hooks…
+  await h.stopAgent();
+  const stateFile = path.join(h.agentHome, 'state.json');
+  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  JSON.stringify(state, (_k, v) => {
+    if (v && typeof v === 'object' && v.hooksVersion === 2) delete v.hooksVersion;
+    return v;
+  });
+  fs.writeFileSync(stateFile, JSON.stringify(state));
+  await h.startAgent();
+  // …on a machine whose agent says it writes no newer ones than those.
+  const host = h.server.engine.core.hosts.get(h.hostId)!;
+  host.info = { ...host.info!, hooksVersion: 1 };
+  await sleep(5000);
+  const still = (await h.session(ids.Una!))!;
+  assert.deepEqual([still.startedAt, still.hooksVersion, still.status], [before.startedAt, 1, 'running'], 'left alone: starting it again would change nothing');
+  assert.equal(h.server.engine.sessions.restartDue(still.id), false);
+  // The agent is updated (it now says it writes the current ones): the session is started again, once.
+  host.info = { ...host.info!, hooksVersion: 2 };
+  assert.equal(h.server.engine.sessions.restartDue(still.id), true);
+  await h.server.engine.sessions.restartNow(ids.Una!);
+  const again = await waitFor(async () => {
+    const x = await h.session(ids.Una!);
+    return x?.status === 'running' && x.startedAt !== before.startedAt && x.inTurn === false ? x : null;
+  }, { label: 'started again with the newer hooks', timeout: 30000 });
+  assert.equal(again.hooksVersion, 2);
+});

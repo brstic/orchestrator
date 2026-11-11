@@ -162,3 +162,37 @@ test('the accounts of a machine and who is on which survive a restart of the off
   assert.equal((await employee('Sarah')).claudeConfigDir, '~/.claude-3');
   assert.equal((await account(null)).exhausted, true);
 });
+
+test('a refused turn is charged to the account its process ran on; a session somebody started themselves is not taken over', async () => {
+  const engine = h.server.engine;
+  // Alex runs on the third account. As it stands the moment he is moved on: his record already says another
+  // account, while the process that is refused is still the one on the third.
+  const session = (await h.session(ids.Alex!))!;
+  assert.equal(session.claudeConfigDir, '~/.claude-3', 'a session knows which account it was started on');
+  await h.api('POST', `/hosts/${h.hostId}/accounts`, { dir: '~/.claude-4' });
+  logIn(path.join(home, '.claude-4'), 'fourth@example.test', 5);
+  await h.api('PATCH', '/settings', { accountFailover: false });
+  const alexRecord = engine.core.employees.get(ids.Alex!)!;
+  alexRecord.claudeConfigDir = '~/.claude-4';
+  engine.sessions.onLimitHit(engine.core.sessions.get(session.id)!, 'rate_limit');
+  alexRecord.claudeConfigDir = '~/.claude-3';
+  assert.ok((await account('~/.claude-3'))?.spentUntil, 'the third account, where the refused process ran, counts as used up');
+  assert.ok(!(await account('~/.claude-4'))?.spentUntil, 'not the one his record pointed at for that moment');
+
+  // Noor's session, as one a person started in their own terminal and the office only looks at: when her account
+  // is emptied by the owner, she is left where she is — her terminal is not detached and no second Claude is started.
+  const noor = engine.core.runningSessionOf(ids.Noor!) ?? (await (async () => {
+    await h.api('POST', `/employees/${ids.Noor}/start`, {});
+    await waitFor(async () => (await h.session(ids.Noor!))?.status === 'running', { label: 'Noor is up', timeout: 30000 });
+    return engine.core.runningSessionOf(ids.Noor!)!;
+  })());
+  const startedAt = noor.startedAt;
+  noor.origin = 'attached';
+  const res = await h.api('POST', `/hosts/${h.hostId}/accounts/move`, { from: '~/.claude-3' });
+  noor.origin = 'managed';
+  assert.equal((await employee('Noor')).claudeConfigDir, '~/.claude-3', 'she stays on her account');
+  assert.equal((await h.session(ids.Noor!))!.startedAt, startedAt, 'and her session was not touched');
+  assert.equal(res.moved, 2, 'Alex and Sarah, whose sessions are the office\'s own, are moved');
+  assert.deepEqual([(await employee('Alex')).claudeConfigDir, (await employee('Sarah')).claudeConfigDir], ['~/.claude-4', '~/.claude-4']);
+  await h.api('PATCH', '/settings', { accountFailover: true });
+});

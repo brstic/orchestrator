@@ -108,6 +108,20 @@ test('an archived employee can be deleted too, and the state survives a restart'
   assert.ok(s.employees.some((e) => e.id === ids.Sarah));
 });
 
+test('an employee is not deleted in the instant a task is being handed to them', async () => {
+  const pat = await h.employee('Pat', 'backend', { projectId: (await h.state()).projects[0]!.id });
+  // (The hand-over holds this mark for the second or two it takes; set by hand here so that the instant lasts.)
+  const starting = (h.server.engine.tasks as unknown as { startingEmployees: Set<string> }).startingEmployees;
+  starting.add(pat.id);
+  const refused = await h.apiRaw('DELETE', `/employees/${pat.id}`);
+  assert.equal(refused.status, 409);
+  assert.match(refused.body.error, /A task is being handed to Pat right now/);
+  assert.ok((await h.state()).employees.some((e) => e.id === pat.id));
+  starting.delete(pat.id);
+  assert.equal((await h.apiRaw('DELETE', `/employees/${pat.id}`)).status, 200);
+  assert.ok(!(await h.state()).employees.some((e) => e.id === pat.id));
+});
+
 test('who may delete: an owner anywhere; a colleague only their own employee on their own computer; a visitor nobody', async () => {
   const engine = h.server.engine;
   const colleague = { kind: 'guest' as const, id: 'm1', name: 'M', role: 'colleague' as const };

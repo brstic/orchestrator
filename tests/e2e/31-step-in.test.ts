@@ -168,3 +168,23 @@ test('a task stopped while it is still being handed over is not started after al
   await waitFor(async () => (await h.getTask(next.id)).status === 'DONE' || /eve-got-the-notice-task/.test(h.tmux('capture-pane', '-p', '-J', '-S', '-80', '-t', (await h.session(eve))!.tmuxPane!)), { label: 'she takes other work', timeout: 40000 });
   assert.equal((await h.state()).tasks.filter((t) => t.assigneeId === eve && t.status === 'IN_PROGRESS' && t.id === task.id).length, 0);
 });
+
+test('stopped while their machine is away for a moment: they are told when it is back', async () => {
+  const ivo = (await h.employee('Ivo', 'backend', { projectId: project })).id;
+  const task = await h.task({ projectId: project, title: 'Write the legal page', assigneeId: ivo, description: `@@fake: say ivo-started; ${Array.from({ length: 60 }, () => 'sleep 200').join('; ')}; say ivo-finished-the-legal-page@@` });
+  await waitFor(async () => (await h.getTask(task.id)).delivery.status === 'confirmed', { label: 'Ivo has it', timeout: 30000 });
+  const pane = (await h.session(ivo))!.tmuxPane!;
+  // The link to his machine drops (its agent is stopped; his session goes on by itself).
+  await h.stopAgent();
+  await waitFor(async () => (await h.session(ivo))?.status === 'host_offline', { label: 'his machine is away', timeout: 15000 });
+  const stopped = await h.api<any>('POST', `/tasks/${task.id}/stop`, { then: 'hold', note: 'The lawyers are not done.' });
+  assert.equal(stopped.interrupted, false, 'nobody could be interrupted');
+  const waiting = (await h.state()).messages.find((m) => m.toEmployeeId === ivo && new RegExp(`stopped ${task.key}`).test(m.body));
+  assert.ok(waiting, 'the message waits for him');
+  assert.match(waiting!.body, /The lawyers are not done\./);
+  assert.equal(waiting!.delivery.status, 'queued');
+  await h.startAgent();
+  await waitFor(async () => (await h.state()).messages.find((m) => m.id === waiting!.id)?.delivery.status !== 'queued', { label: 'he is told when the machine is back', timeout: 40000 });
+  assert.equal((await h.getTask(task.id)).status, 'BACKLOG');
+  void pane;
+});
