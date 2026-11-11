@@ -3,6 +3,9 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-11
+- **Work that passes its checks after changing them is reviewed.** When a task's own changes touch its tests, the test runner's settings or the script it is verified by, the task is flagged ("This task changed what it is checked by — …"), sent to review even where the project asks for none, and the reviewer is told to look at that first. A task of the kind *test* is noted, not held up. (From Ahoy; `checksTouched` in `tasks.ts`; `tests/e2e/22-checks-touched.test.ts`.)
+- **Going in circles is noticed.** The same failure — the same tool, the same command, the same error with its numbers taken out — coming back during one task: at the third time the employee is told to stop and change approach, at the sixth you get "Alex is going in circles" with what keeps failing. Nobody is stopped. (From Ahoy; `failureKey` in `hook-receiver.ts`.)
+- `docs/plans/IDEAS-from-ahoy.md`: what else is worth bringing over from Ahoy, in order.
 - **The vault.** One place on the server for the office's passwords, tokens and keys (Menu → Office → **Vault**).
   - **Kept encrypted, used by name.** The list shows what each is called and what it is for; the value is shown only to an owner who asks (for half a minute, and it is recorded). Employees use a credential inside a command — `$("$ORCH_VAULT" get github-deploy-token)` — so the value goes into the command and not into the conversation.
   - **It fills itself.** A password or key written into a message to an employee, a task or an answer is moved to the vault before it is delivered: the text goes on with `{{vault:name}}`. Employees put in what they are given or create (`vault_store`, or straight from a pipe: `… | "$ORCH_VAULT" put name`). A key in a well-known format that goes through a session is kept too, and you are told where.

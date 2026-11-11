@@ -10,6 +10,8 @@ interface SessionRuntime {
   activeSubagents: number;
   /** A PreToolUse the host's policy gate escalated; the PermissionRequest that follows refers to it. */
   highRisk: { tool: string; input: string } | null;
+  /** Going in circles: how often each failure (the same tool, the same error) has come back during the task in hand. */
+  failures?: { taskId: string | null; counts: Map<string, number> };
 }
 
 const NUDGE_LIMIT: Record<string, number> = { restricted: 0, supervised: 0, standard: 1, autonomous: 3, auto: 3 };
@@ -261,6 +263,21 @@ export class HookReceiver {
     if (payload.hook_event_name === 'SubagentStop') rt.activeSubagents = Math.max(0, rt.activeSubagents - 1);
     if (interp.sessionStarted || interp.sessionEnded) rt.activeSubagents = 0;
 
+    // The same failure again and again is not work: the employee is told at the third, the owner at the sixth.
+    const failure = employee ? failureKey(payload) : null;
+    if (employee && failure) {
+      if (!rt.failures || rt.failures.taskId !== (task?.id ?? null)) rt.failures = { taskId: task?.id ?? null, counts: new Map() };
+      const n = (rt.failures.counts.get(failure.key) ?? 0) + 1;
+      rt.failures.counts.set(failure.key, n);
+      if (rt.failures.counts.size > 60) rt.failures.counts.delete(rt.failures.counts.keys().next().value!);
+      if (n === LOOP_NOTE_AT) {
+        this.eng.comms.sendMessage({ from: { kind: 'system', id: null, name: 'Orchestrator' }, kind: 'system', toEmployeeId: employee.id, taskId: task?.id ?? null, body: `The same thing has now failed ${n} times: ${failure.what}. Trying it again will fail again. Stop, read the error in full, and change the approach — or, if you cannot get past it, say so with report_blocker.` });
+      } else if (n === LOOP_ALERT_AT) {
+        this.core.event({ type: 'agent.tool_failed', source: 'server', summary: `${employee.name} keeps hitting the same failure (${n} times): ${failure.what}`, employeeId: employee.id, sessionId: session.id, taskId: task?.id ?? null, projectId: task?.projectId ?? employee.projectId ?? null, data: { looping: true, times: n, what: failure.what } });
+        this.eng.comms.notify({ kind: 'blocked', severity: 'warning', title: `${employee.name} is going in circles`, body: `The same failure has come back ${n} times${task ? ` on ${task.key}` : ''}: ${failure.what}. They were told to change approach at the third. Look at their terminal, or tell them what to do.`, employeeId: employee.id, sessionId: session.id, taskId: task?.id ?? null, projectId: task?.projectId ?? employee.projectId ?? null });
+      }
+    }
+
     if (interp.testOutcome === 'failed') {
       rt.debugging = true;
       if (employee && !this.core.notifications.find((n) => !n.resolvedAt && n.kind === 'test_failure' && n.employeeId === employee.id && n.sessionId === session.id)) {
@@ -386,3 +403,31 @@ function textOf(value: unknown, depth = 0): string {
   if (!value || typeof value !== 'object' || depth > 5) return '';
   return (Array.isArray(value) ? value : Object.values(value as Record<string, unknown>)).map((v) => textOf(v, depth + 1)).filter(Boolean).join('\n');
 }
+
+/** After this many returns of one failure the employee is told; after this many, the owner. */
+const LOOP_NOTE_AT = 3;
+const LOOP_ALERT_AT = 6;
+
+/**
+ * What identifies a failure that keeps coming back: the tool, the command and the first line of the error, with
+ * numbers taken out (a line number, a port, a duration differ from one try to the next; the failure is the same).
+ * Null when the hook is not a failed tool call.
+ */
+export function failureKey(payload: { hook_event_name?: string; tool_name?: string; tool_input?: any; tool_response?: any; error?: unknown; is_interrupt?: unknown }): { key: string; what: string } | null {
+  const ev = payload.hook_event_name;
+  const r = payload.tool_response;
+  const failed =
+    (ev === 'PostToolUseFailure' && payload.is_interrupt !== true) ||
+    (ev === 'PostToolUse' && !!r && typeof r === 'object' && ((typeof r.exitCode === 'number' && r.exitCode !== 0) || (typeof r.exit_code === 'number' && r.exit_code !== 0) || r.is_error === true || r.isError === true));
+  if (!failed) return null;
+  const tool = String(payload.tool_name ?? 'tool');
+  // Calls into the office itself are answered in words ("Not complete: …"); repeating those is a conversation, not a loop.
+  if (tool.startsWith('mcp__orchestrator')) return null;
+  const firstLine = (text: string) => text.split('\n').map((l) => l.trim()).find((l) => l.length > 0) ?? '';
+  const error = firstLine(typeof payload.error === 'string' ? payload.error : textOf(r && typeof r === 'object' ? (r.stderr ?? r.error ?? r) : r));
+  const command = typeof payload.tool_input?.command === 'string' ? payload.tool_input.command : String(payload.tool_input?.file_path ?? '');
+  const norm = (s: string) => s.toLowerCase().replace(/0x[0-9a-f]+|\d+/g, '#').replace(/\s+/g, ' ').trim().slice(0, 140);
+  const what = redactSecrets(`${tool === 'Bash' ? `\`${truncate(command.replace(/\s+/g, ' '), 80)}\`` : tool}${error ? ` — ${truncate(error, 140)}` : ''}`);
+  return { key: `${tool}|${norm(command)}|${norm(error)}`, what };
+}
+

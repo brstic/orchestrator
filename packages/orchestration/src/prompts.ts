@@ -244,6 +244,9 @@ export function reviewPrompt(review: Task, target: Task, project: Project, autho
     target.acceptance.trim() ? `Acceptance criteria: ${target.acceptance.trim()}` : '',
     target.evidence.summary ? `Author's summary: ${target.evidence.summary}` : '',
     target.evidence.verification ? `Orchestrator verification: ${target.evidence.verification.command} → ${target.evidence.verification.passed ? 'passed' : 'failed'}` : '',
+    target.evidence.verification?.touchedChecks?.length
+      ? `Look at this first: the task changed what it is checked by (${target.evidence.verification.touchedChecks.slice(0, 8).join(', ')}). The checks passed with those changes in place. Were the tests changed because the behaviour was meant to change, or weakened so that they pass? Request changes if you cannot tell.`
+      : '',
     '',
     `Review for correctness, tests, security and maintainability. Then call submit_review with task "${target.key}", your verdict (approve or request_changes) and specific comments, and finally complete_task with no_code_changes=true.`,
   ]
