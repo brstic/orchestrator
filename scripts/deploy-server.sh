@@ -21,6 +21,8 @@ DIR="${ORCH_DEPLOY_DIR:-orchestrator-office}"
 UNIT="${ORCH_DEPLOY_UNIT:-orchestrator-office}"
 remote() { ssh -o BatchMode=yes -p "$PORT" "$HOST" "$@"; }
 # What the service reports, and the office's own view of itself (run on the server, with its own token).
+# After a restart: wait until the office answers (it takes a few seconds, more when the machine is busy), a minute at most.
+UP='n=0; until curl -s -o /dev/null -m 2 http://127.0.0.1:4600/; do n=$((n+1)); [ $n -ge 30 ] && break; sleep 2; done'
 STATUS='systemctl --user is-active '"$UNIT"'; cat ~/'"$DIR"'/app/VERSION ~/'"$DIR"'/app/BUILD 2>/dev/null | tr "\n" " "; echo; N=$(ls -d ~/.nvm/versions/node/v22*/bin/node 2>/dev/null | tail -1); ORCH_SERVER_HOME=~/.orchestrator-office/server ${N:-node} ~/'"$DIR"'/app/scripts/office-admin.mjs status'
 
 case "${1:-}" in
@@ -29,7 +31,7 @@ case "${1:-}" in
     exit 0
     ;;
   --rollback)
-    remote "set -e; cd ~/$DIR; [ -d app.old ] || { echo 'no previous version to go back to'; exit 1; }; mv app app.bad && mv app.old app && rm -rf app.bad && systemctl --user restart $UNIT && sleep 6; $STATUS"
+    remote "set -e; cd ~/$DIR; [ -d app.old ] || { echo 'no previous version to go back to'; exit 1; }; mv app app.bad && mv app.old app && rm -rf app.bad && systemctl --user restart $UNIT && { $UP; }; $STATUS"
     exit 0
     ;;
 esac
@@ -41,4 +43,4 @@ TARBALL="release/orchestrator-$VERSION.tar.gz"
 BUILD="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)$(git diff --quiet 2>/dev/null || echo '+uncommitted') $(date -u +%Y-%m-%dT%H:%MZ)"
 echo "Deploying $TARBALL ($BUILD) to $HOST:~/$DIR"
 scp -q -o BatchMode=yes -P "$PORT" "$TARBALL" "$HOST:/tmp/orchestrator-office.tar.gz"
-remote "set -e; cd ~/$DIR; rm -rf app.new; mkdir app.new; tar xzf /tmp/orchestrator-office.tar.gz -C app.new --strip-components=1; echo '$BUILD' > app.new/BUILD; rm -rf app.old; mv app app.old; mv app.new app; rm -f /tmp/orchestrator-office.tar.gz; systemctl --user restart $UNIT; sleep 7; $STATUS"
+remote "set -e; cd ~/$DIR; rm -rf app.new; mkdir app.new; tar xzf /tmp/orchestrator-office.tar.gz -C app.new --strip-components=1; echo '$BUILD' > app.new/BUILD; rm -rf app.old; mv app app.old; mv app.new app; rm -f /tmp/orchestrator-office.tar.gz; systemctl --user restart $UNIT; $UP; $STATUS"
