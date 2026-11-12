@@ -1,5 +1,5 @@
 import { Nostalgist } from 'nostalgist';
-import type { FromConsole, PadButton, Player, SoundState, ToConsole } from './protocol.ts';
+import { CAST_HEIGHT, CAST_WIDTH, type FromConsole, type PadButton, type Player, type SoundState, type ToConsole } from './protocol.ts';
 
 /**
  * The console: the page inside the arcade window's frame. It is given a core and a cartridge, shows the game on its
@@ -29,7 +29,6 @@ const within = <T>(p: Promise<T>, ms: number): Promise<T | undefined> => Promise
 
 const canvas = document.getElementById('screen') as HTMLCanvasElement;
 let machine: Nostalgist | null = null;
-let muted = false;
 /** One thing at a time: keeping a state while another is being loaded would hand back half of each. */
 let busy: Promise<unknown> = Promise.resolve();
 const inTurn = <T>(work: () => Promise<T>): Promise<T> => {
@@ -46,6 +45,14 @@ const dots = () => {
 // RetroArch takes the keyboard for its canvas when it starts. This page has no keyboard to take: the keys stay with
 // the window that owns the frame.
 canvas.focus = () => undefined;
+// What was drawn stays on the canvas until the next frame is: a picture of it can then be taken at any moment (to
+// show the game to somebody else), not only in the instant between drawing and showing.
+{
+  const real = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string, attrs?: Record<string, unknown>) {
+    return real.call(this, kind, /^webgl/.test(kind) ? { ...attrs, preserveDrawingBuffer: true } : attrs);
+  } as typeof real;
+}
 
 /**
  * Every sound output the emulator opens, noted as it is made: whichever way this build of RetroArch plays sound, it
@@ -76,14 +83,79 @@ function sound(): void {
   tellSound();
 }
 
+/**
+ * Where the emulator's sound goes on its way out. Whatever it connects to an output is connected to a point of ours
+ * instead, and from there twice: to the loudspeaker through this window's own volume (sound off here is that volume
+ * at nothing — the game itself is never muted), and to a listener that hands the sound over while the game is shown
+ * to somebody else, who then hears it whether or not it is heard here.
+ */
+let muted = false;
+let casting = false;
+const volumes: GainNode[] = [];
+const buses = new WeakMap<BaseAudioContext, AudioNode>();
+{
+  const connect = AudioNode.prototype.connect as (this: AudioNode, to: AudioNode | AudioParam, output?: number, input?: number) => AudioNode | void;
+  const busOf = (ctx: BaseAudioContext): AudioNode => {
+    let bus = buses.get(ctx);
+    if (bus) return bus;
+    bus = ctx.createGain();
+    buses.set(ctx, bus);
+    const volume = ctx.createGain();
+    volume.gain.value = muted ? 0 : 1;
+    volumes.push(volume);
+    connect.call(bus, volume);
+    connect.call(volume, ctx.destination);
+    // The listener. It is connected on to the output, silenced: a node that leads nowhere is not run.
+    const listen = ctx.createScriptProcessor(2048, 2, 2);
+    const silent = ctx.createGain();
+    silent.gain.value = 0;
+    listen.onaudioprocess = (e) => {
+      if (!casting) return;
+      const left = e.inputBuffer.getChannelData(0).slice();
+      const right = (e.inputBuffer.numberOfChannels > 1 ? e.inputBuffer.getChannelData(1) : left).slice();
+      say({ t: 'pcm', rate: ctx.sampleRate, left: left.buffer, right: right.buffer }, [left.buffer, right.buffer]);
+    };
+    connect.call(bus, listen);
+    connect.call(listen, silent);
+    connect.call(silent, ctx.destination);
+    return bus;
+  };
+  AudioNode.prototype.connect = function (this: AudioNode, to: AudioNode | AudioParam, output?: number, input?: number) {
+    if (to instanceof AudioDestinationNode) return connect.call(this, busOf(to.context), output);
+    return connect.call(this, to, output, input);
+  } as typeof AudioNode.prototype.connect;
+}
+function setMuted(now: boolean): void {
+  muted = now;
+  for (const v of volumes) v.gain.value = now ? 0 : 1;
+}
+
+/**
+ * The picture for others: the screen as it is, at a size of its own, about sixty times a second and never faster
+ * than they are taken.
+ */
+let taking = false;
+let lastTaken = 0;
+function cast(): void {
+  if (!casting) return;
+  requestAnimationFrame(cast);
+  const now = performance.now();
+  if (taking || now - lastTaken < 15) return;
+  taking = true;
+  lastTaken = now;
+  createImageBitmap(canvas, { resizeWidth: CAST_WIDTH, resizeHeight: CAST_HEIGHT, resizeQuality: 'pixelated' })
+    .then((bitmap) => (casting ? say({ t: 'frame', bitmap, ts: Math.round(now * 1000) }, [bitmap]) : bitmap.close()))
+    .catch(() => undefined)
+    .finally(() => (taking = false));
+}
+
 async function boot(m: Extract<ToConsole, { t: 'boot' }>): Promise<void> {
-  muted = !m.sound;
+  setMuted(!m.sound);
   const config: Record<string, string | number | boolean> = {
     ...pads(),
     // No key of RetroArch's own does anything: its shortcuts ask for a key held that is never sent.
     input_enable_hotkey: 'scroll_lock',
     input_menu_toggle: 'nul',
-    audio_mute_enable: muted,
     // Nothing of RetroArch's own is written over the picture: the moment is kept every half minute, and "state
     // saved" each time would be in the way. The window says what was kept.
     video_font_enable: false,
@@ -148,11 +220,12 @@ window.addEventListener('message', (ev: MessageEvent<ToConsole>) => {
   else if (m.t === 'resume') on.resume();
   else if (m.t === 'reset') on.restart();
   else if (m.t === 'sound') {
-    if (m.on === muted) {
-      on.sendCommand('MUTE');
-      muted = !m.on;
-    }
+    setMuted(!m.on);
     if (m.on) sound();
+  } else if (m.t === 'cast') {
+    const was = casting;
+    casting = m.on;
+    if (m.on && !was) cast();
   } else if (m.t === 'keep') void inTurn(() => keep(m.id, m.state));
   else if (m.t === 'restore') void inTurn(() => on.loadState(new Blob([m.state])));
 });

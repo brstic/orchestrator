@@ -73,6 +73,12 @@ const RULES: Rule[] = [
   rule('GET', '/radio/now', 'read'),
   // The hi-fi plays for the whole office: everyone hears what is on; switching a station on or off is for those who work here.
   rule('GET', '/radio', 'read'),
+  // The arcade: everyone who is in may play what is on the shelf; bringing a game and taking one off is for those who work here.
+  rule('GET', '/arcade/games', 'read'),
+  rule('GET', '/arcade/games/:id/rom', 'read'),
+  rule('POST', '/arcade/games', 'work'),
+  rule('POST', '/arcade/games/:id/data', 'work'),
+  rule('DELETE', '/arcade/games/:id', 'work'),
   rule('POST', '/radio/play', 'work'),
   rule('POST', '/radio/stop', 'work'),
   // How much of each Claude account is used (the clocks): for those who work here. Whose account it is, is told only to those who may work on that machine.

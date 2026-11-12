@@ -4,3 +4,4 @@ export * from './protocol.ts';
 export * from './roles.ts';
 export * from './util.ts';
 export * from './layout.ts';
+export * from './arcade.ts';

@@ -1,3 +1,4 @@
+import { ArcadeTables, type ArcadeShelf } from './arcade.ts';
 import crypto from 'node:crypto';
 import type { WebSocket } from 'ws';
 import { eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, mayReadRoutine, maySee, shownTo, stateFor } from './access.ts';
@@ -483,6 +484,31 @@ export class ClientHub {
   }
 
   /** What the office's hi-fi is playing: told to everyone, now and when they walk in (see `HiFi` in `radio.ts`). */
+  /** The arcade: the shelf of games (given by the server once it has its data folder) and the tables. */
+  private shelf: ArcadeShelf | null = null;
+  readonly tables = new ArcadeTables({
+    send: (clientId, msg) => this.send(clientId, msg),
+    behind: (clientId) => this.clients.get(clientId)?.ws.bufferedAmount ?? 0,
+    changed: () => this.arcadeChanged(),
+  });
+  private arcadeTimer: NodeJS.Timeout | null = null;
+  setShelf(shelf: ArcadeShelf): void {
+    this.shelf = shelf;
+  }
+  private arcadeNow(): ServerToClient {
+    return { t: 'arcade', games: this.shelf?.list() ?? [], tables: this.tables.list() };
+  }
+  /** The shelf or a table changed: everyone is told, once for a burst of changes. */
+  arcadeChanged(): void {
+    if (this.arcadeTimer) return;
+    this.arcadeTimer = setTimeout(() => {
+      this.arcadeTimer = null;
+      const msg = this.arcadeNow();
+      for (const id of this.clients.keys()) this.send(id, msg);
+    }, 40);
+    this.arcadeTimer.unref();
+  }
+
   private onAir: RadioNow | null = null;
   radio(now: RadioNow | null): void {
     this.onAir = now;
@@ -550,6 +576,7 @@ export class ClientHub {
     if (this.atDoor.length && this.answers(conn)) this.send(id, { t: 'knocks', knocks: this.atDoor });
     // Always said, also when it is off: a window that comes back after the office restarted must not go on playing.
     this.send(id, { t: 'radio', radio: this.onAir });
+    this.send(id, this.arcadeNow());
 
     ws.on('message', (data) => {
       let msg: ClientToServer;
@@ -646,6 +673,28 @@ export class ClientHub {
             }
             break;
           }
+          // The arcade's tables (`arcade.ts`): who plays with whom, and the host's picture and sound passed on.
+          case 'arcade.open':
+            this.tables.open({ id, name: who.name }, msg.title, msg.gameId);
+            break;
+          case 'arcade.close':
+            this.tables.close(id);
+            break;
+          case 'arcade.join':
+            this.tables.join({ id, name: who.name }, msg.table, msg.as);
+            break;
+          case 'arcade.leave':
+            this.tables.leave(id);
+            break;
+          case 'arcade.media':
+            this.tables.media(id, msg.kind, msg.key, msg.ts, msg.data);
+            break;
+          case 'arcade.pad':
+            this.tables.pad(id, msg.button, msg.down);
+            break;
+          case 'arcade.key':
+            this.tables.key(id);
+            break;
           case 'voice.end': {
             if (!conn.voice?.on) break;
             conn.voice.on = false;
@@ -697,6 +746,8 @@ export class ClientHub {
       // Control is released automatically when its holder disappears.
       gateway.clientGone(id);
       this.clients.delete(id);
+      // Their table is over, and their seat at somebody else's is free.
+      this.tables.gone(id);
       // Someone who went away in the middle of a sentence has stopped talking.
       if (conn.voice?.on) this.broadcast({ t: 'voice.end', from: id });
       if (conn.presence) this.schedulePeople();

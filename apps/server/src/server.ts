@@ -6,6 +6,7 @@ import { Logins, SESSION_DAYS } from './logins.ts';
 import { Knocks, type Admission } from './knocks.ts';
 import { allowed, closedTo, eventFor, mayCall, mayReadRoutine, outcomesScopeFor, stateFor } from './access.ts';
 import { HiFi, nowPlaying } from './radio.ts';
+import { ArcadeShelf } from './arcade.ts';
 import { SshLinks } from './ssh-links.ts';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -144,6 +145,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   agents.attach(engine);
   clients.attach(engine);
   // The office's hi-fi: what is on is told to every window, and follows the list of stations when an owner edits it.
+  // The arcade's shelf: the games the members brought, kept with the office (docs/ARCADE.md).
+  const shelf = new ArcadeShelf(path.join(opts.dataDir, 'arcade'), () => clients.arcadeChanged());
+  clients.setShelf(shelf);
   const hifi = new HiFi(() => engine.core.settings.radio.stations, (now) => clients.radio(now));
   engine.core.bus.on('entity', (kind: string) => {
     if (kind === 'settings') hifi.stationsChanged();
@@ -840,6 +844,32 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         .header('content-security-policy', "default-src 'none'; sandbox")
         .header('cache-control', 'private, max-age=3600');
       return reply.send(fs.createReadStream(file));
+    });
+    // ── the arcade's shelf: cartridge files the members bring, kept with the office so every computer has them ──
+    // (A cartridge comes in pieces, as a file on a task does. Who is at which table goes over the websocket: `hubs.ts`.)
+    api.get('/arcade/games', async () => ({ games: shelf.list() }));
+    api.post('/arcade/games', async (req) => shelf.begin(body(req), whoOf(req).name));
+    api.post('/arcade/games/:id/data', async (req) => {
+      const b = body(req);
+      const r = shelf.append(param(req, 'id'), Number(b.offset) || 0, Buffer.from(String(b.dataBase64 ?? ''), 'base64'));
+      if (r.done && r.game && !r.already) engine.core.audit(actorOf(req), 'arcade.game_added', r.game.id, { title: r.game.title, file: r.game.file, size: r.game.size });
+      return r;
+    });
+    api.get('/arcade/games/:id/rom', async (req, reply) => {
+      const { game, file } = shelf.open(param(req, 'id'));
+      reply
+        .header('content-type', 'application/octet-stream')
+        .header('content-length', String(game.size))
+        .header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(game.file)}`)
+        .header('x-content-type-options', 'nosniff')
+        // The same bytes for ever under this id: a window keeps them.
+        .header('cache-control', 'private, max-age=31536000, immutable');
+      return reply.send(fs.createReadStream(file));
+    });
+    api.delete('/arcade/games/:id', async (req) => {
+      const game = shelf.remove(param(req, 'id'));
+      engine.core.audit(actorOf(req), 'arcade.game_removed', game.id, { title: game.title });
+      return { ok: true };
     });
     api.delete('/tasks/:id/attachments/:aid', async (req) => {
       engine.attachments.remove(param(req, 'id'), param(req, 'aid'), actorOf(req));

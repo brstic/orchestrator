@@ -38,7 +38,14 @@ export interface KeptNow {
 
 export class ArcadeConsole {
   private frame: HTMLIFrameElement;
-  private on: { running: () => void; failed: (message: string) => void; sound: (state: SoundState) => void };
+  private on: {
+    running: () => void;
+    failed: (message: string) => void;
+    sound: (state: SoundState) => void;
+    /** While the game is shown to others: a picture of the screen (the receiver closes it) and a piece of its sound. */
+    frame?: (bitmap: ImageBitmap, ts: number) => void;
+    pcm?: (rate: number, left: ArrayBuffer, right: ArrayBuffer) => void;
+  };
   private hello: Promise<void>;
   private greeted!: () => void;
   private asked = new Map<number, (kept: KeptNow) => void>();
@@ -60,6 +67,10 @@ export class ArcadeConsole {
     else if (m.t === 'running') this.on.running();
     else if (m.t === 'failed') this.on.failed(m.message);
     else if (m.t === 'sound') this.on.sound(m.state);
+    else if (m.t === 'frame') {
+      if (this.on.frame) this.on.frame(m.bitmap, m.ts);
+      else m.bitmap.close();
+    } else if (m.t === 'pcm') this.on.pcm?.(m.rate, m.left, m.right);
     else if (m.t === 'kept') {
       this.asked.get(m.id)?.({ sram: m.sram, state: m.state, shot: m.shot });
       this.asked.delete(m.id);
@@ -93,6 +104,10 @@ export class ArcadeConsole {
   }
   restore(state: ArrayBuffer): void {
     this.tell({ t: 'restore', state });
+  }
+  /** Have the console hand over its picture and sound (a table is open), or stop. */
+  cast(on: boolean): void {
+    this.tell({ t: 'cast', on });
   }
 
   /** What the console holds that is worth keeping. A console that does not answer keeps nothing, and says so by an empty answer. */

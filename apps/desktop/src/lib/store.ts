@@ -1,6 +1,9 @@
 import { create } from 'zustand';
+import { hearTableNews } from '../arcade/net.ts';
 import { mayOpenPanel } from './visitor-panels.ts';
 import type {
+  ArcadeGame,
+  ArcadeTable,
   EmoteName,
   AccountUsage,
   AgentSession,
@@ -114,6 +117,8 @@ export interface OfficeState {
   docs: ById<DocListing>;
   /** The office's hi-fi, as the office says it is: what is on for everyone, since when and who switched it. Null: it is off. */
   hifi: RadioNow | null;
+  /** The arcade as the office has it: the games on its shelf, and the games being played that others may join. */
+  arcade: { games: ArcadeGame[]; tables: ArcadeTable[] };
   /**
    * This window's own copy of it (see `lib/radio.ts`): the station the office has on, and whether it is heard here —
    * `idle` (the hi-fi is off, or this computer has muted its copy), `loading`, `playing`, `blocked` (the browser
@@ -402,6 +407,7 @@ export const useOffice = create<OfficeState>((set, get) => ({
   control: {},
   docs: {},
   hifi: null,
+  arcade: { games: [], tables: [] },
   radio: { stationId: null, name: null, status: 'idle', error: null, nowPlaying: null },
   tv: { on: false, goto: null, page: null },
   me: null,
@@ -618,6 +624,20 @@ function handle(msg: ServerToClient): void {
       useOffice.setState({ knocks: msg.knocks });
       break;
     }
+    case 'arcade': {
+      // The shelf or a table changed. Somebody opening a table is said out loud: that is an invitation.
+      const st = useOffice.getState();
+      const known = new Set(st.arcade.tables.map((t) => t.id));
+      for (const t of msg.tables) if (!known.has(t.id) && t.host.id !== st.clientId && st.ready) st.toast(`${t.host.name} is playing ${t.title} at the arcade — walk up to it to join`);
+      useOffice.setState({ arcade: { games: msg.games, tables: msg.tables } });
+      break;
+    }
+    case 'arcade.media':
+    case 'arcade.pad':
+    case 'arcade.key':
+    case 'arcade.closed':
+      hearTableNews(msg);
+      break;
     case 'radio':
       // The office's hi-fi was switched (or this window has just come in): `lib/radio.ts` plays what it says.
       useOffice.setState({ hifi: msg.radio });

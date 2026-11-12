@@ -110,7 +110,10 @@ async function shot(name) {
   const img = await win.webContents.capturePage();
   fs.writeFileSync(path.join(outDir, `${name}.png`), img.toPNG());
 }
+/** `UI_ONLY=<regex>`: run only the steps whose name matches (for working on one; the checks at the end then mostly fail, by design). */
+const ONLY = process.env.UI_ONLY ? new RegExp(process.env.UI_ONLY, 'i') : null;
 async function step(name, fn) {
+  if (ONLY && !ONLY.test(name)) return;
   const started = Date.now();
   currentStep = name;
   try {
@@ -553,6 +556,79 @@ async function scenario() {
       await js(`delete navigator.getGamepads; window.__t.setSelect(document.querySelector('[data-arcade-seat="2"]'), 'none'); true`).catch(() => undefined);
     }
 
+    // ── With somebody in the office, each at their own computer: a second window of the office sits down at this game. ──
+    const shelf = await js(`window.__t.store().arcade.games.map((g) => g.title)`);
+    if (!shelf.includes('Orchestrator Pad Test')) throw new Error(`the game is not on the office's shelf: ${JSON.stringify(shelf)}`);
+    await click(`document.querySelector('[data-arcade-invite]')`, 'Play together');
+    await waitFor(`document.querySelector('[data-arcade-play-view]').dataset.arcadeOpen === 'true' && window.__t.store().arcade.tables.length === 1`, 8000);
+    const guest = new BrowserWindow({ width: 1300, height: 900, show: false, webPreferences: { backgroundThrottling: false } });
+    const gjs = (code) => guest.webContents.executeJavaScript(code, true);
+    const gwait = async (code, timeout = 15000, what = code) => {
+      for (const end = Date.now() + timeout; Date.now() < end; await sleep(120)) {
+        const v = await gjs(`(() => { try { return (${code}); } catch (e) { return null; } })()`).catch(() => null);
+        if (v) return v;
+      }
+      throw new Error(`the second window: timed out waiting for ${String(what).slice(0, 140)}`);
+    };
+    const gclick = async (finder) => {
+      const at = await gjs(`(() => { const b = (${finder}).getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; })()`);
+      for (const type of ['mouseMove', 'mouseDown', 'mouseUp']) guest.webContents.sendInputEvent({ type, x: at.x, y: at.y, button: 'left', clickCount: 1 });
+    };
+    const gkeys = (type, ...codes) => codes.forEach((keyCode) => guest.webContents.sendInputEvent({ type, keyCode }));
+    let together = '';
+    try {
+      guest.webContents.setAudioMuted(true);
+      await guest.loadURL(win.webContents.getURL());
+      guest.webContents.setZoomFactor(1);
+      guest.webContents.focus();
+      await gwait(`window.__office && window.__office.getState().ready`, 30000, 'the office in the second window');
+      // The game somebody else brought is on this window's shelf too, and the game being played is offered.
+      await gjs(`window.__office.getState().openPanel('arcade')`);
+      await gwait(`!!document.querySelector('[data-arcade-game="Orchestrator Pad Test"]') && !!document.querySelector('[data-arcade-table] [data-arcade-join]')`, 15000, 'the shelf and the table');
+      await gclick(`document.querySelector('[data-arcade-table] [data-arcade-join]')`);
+      await gwait(`document.querySelector('[data-arcade-remote]')?.dataset.arcadeRemoteAs === 'player' && Number(document.querySelector('[data-arcade-remote]').dataset.shownV) > 10`, 20000, 'the picture, with the second pad in hand');
+      // What the second window is shown: the middle of its picture, read as the test cartridge's colours.
+      const far = async () => {
+        const [r, g, b] = await gjs(`[...document.querySelector('[data-arcade-far]').getContext('2d').getImageData(320, 240, 1, 1).data]`);
+        const h = padsOf(r, g, b);
+        return h.running ? ['p1', 'p2'].map((p) => `${p}:${['a', 'b', 'c', 'start'].filter((k) => h[p][k]).join('+')}`).join(' ') : `not running (${r}, ${g}, ${b})`;
+      };
+      const farShows = async (want, what) => {
+        let got = '';
+        for (const end = Date.now() + 8000; Date.now() < end; await sleep(120)) if ((got = await far()) === want) return;
+        throw new Error(`${what}: the second window is shown "${got}", expected "${want}"`);
+      };
+      await farShows('p1: p2:', 'the game as it stands');
+      await waitFor(`!!document.querySelector('[data-arcade-second]') && /plays with you/.test(document.querySelector('[data-arcade-open-line]').textContent)`, 8000);
+      // Their keys are the second pad at my console, and they see what that does; mine are still the first.
+      gkeys('keyDown', 'K', 'Enter');
+      await shows('p1: p2:b+start', 'at my console: K and Enter in the second window are player 2\'s B and Start');
+      await farShows('p1: p2:b+start', 'and the second window sees it');
+      keys('keyDown', 'J');
+      await farShows('p1:a p2:b+start', 'my J is player 1\'s A, seen from the second window');
+      await shot('arcade-together-host');
+      fs.writeFileSync(path.join(outDir, 'arcade-together-guest.png'), (await guest.webContents.capturePage()).toPNG());
+      keys('keyUp', 'J');
+      gkeys('keyUp', 'K', 'Enter');
+      await farShows('p1: p2:', 'let go, both');
+      // Sound goes with the picture (this cartridge is silent: the pieces are counted, not listened to).
+      const sound = await gwait(`Number(document.querySelector('[data-arcade-remote]').dataset.shownA) > 5 && document.querySelector('[data-arcade-remote]').dataset.shownA`, 10000, 'pieces of sound');
+      const pictures = await gjs(`Number(document.querySelector('[data-arcade-remote]').dataset.shownV)`);
+      // They get up holding a button: the pad lets go, and the game is mine alone again.
+      gkeys('keyDown', 'L');
+      await shows('p1: p2:c', 'the second window holds C');
+      guest.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+      guest.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+      await shows('p1: p2:', 'they got up: nothing is held');
+      await waitFor(`!document.querySelector('[data-arcade-second]') && window.__t.store().arcade.tables[0].player2 === null`, 8000);
+      await gwait(`!!document.querySelector('[data-arcade-shelf]') && !document.querySelector('[data-arcade-remote]')`, 8000, 'the second window back at the shelf');
+      together = `; a second window found the game on the office's shelf, sat down at mine with the second pad, was shown ${pictures} pictures and ${sound} pieces of sound, and its keys were player 2's`;
+    } finally {
+      guest.destroy();
+    }
+    await click(`document.querySelector('[data-arcade-invite]')`, 'close the game to the office');
+    await waitFor(`window.__t.store().arcade.tables.length === 0`, 8000);
+
     // Leaving keeps where I was: the shelf then offers to continue, with a picture of the moment.
     await click(`document.querySelector('[data-arcade-back]')`, '← Games');
     await waitFor(`!!${card}?.querySelector('[data-arcade-continue]') && ${card}.querySelector('img')?.naturalWidth > 0`, 15000);
@@ -565,11 +641,12 @@ async function scenario() {
     await waitFor(`!!document.querySelector('[data-arcade-shelf]') && !document.querySelector('[data-arcade-play-view]')`, 15000);
     // The game taken off the shelf is gone from this computer.
     await click(`${card}.querySelector('[data-arcade-remove]')`, 'Remove');
-    await click(`${card}.querySelector('[data-arcade-remove-sure]')`, 'Remove for good');
+    await click(`${card}.querySelector('[data-arcade-remove-sure]')`, 'Remove for everyone');
+    await waitFor(`window.__t.store().arcade.games.length === 0`, 8000);
     await waitFor(`!${card} && /No games yet/.test(document.querySelector('[data-arcade-shelf]').textContent)`, 8000);
     await key('Escape');
     await waitFor(`!document.querySelector('[data-arcade]')`, 5000);
-    return 'my cartridge ran in a frame that is no origin, its sound output open; one player on the whole keyboard, two on its halves, and a gamepad beside the keyboard each held their own buttons; the owner did not move in the office; Continue was offered with a picture, and Escape left the game and then the window';
+    return 'my cartridge ran in a frame that is no origin, its sound output open; one player on the whole keyboard, two on its halves, and a gamepad beside the keyboard each held their own buttons; the owner did not move in the office; Continue was offered with a picture, and Escape left the game and then the window' + together;
   });
 
   await step('a routine: "Repeat every … minutes" turns what I type into a standing instruction, listed above the conversation', async () => {

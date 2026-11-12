@@ -31,6 +31,7 @@ import type {
   XpEntry,
 } from './entities.ts';
 import type { OrchestratorEvent, RawHookEvent } from './events.ts';
+import type { ArcadeButton, ArcadeGame, ArcadeMediaKind, ArcadeTable } from './arcade.ts';
 
 export const PROTOCOL_VERSION = 1;
 
@@ -297,6 +298,18 @@ export type ClientToServer =
   | { t: 'voice'; seq: number; data: string }
   /** They let go of the talk key. */
   | { t: 'voice.end' }
+  /** The arcade: let the office in on the game this window is playing (a table), or end that. */
+  | { t: 'arcade.open'; title: string; gameId: string | null }
+  | { t: 'arcade.close' }
+  /** Sit down at somebody's table: with the second pad, or to look on. And get up again. */
+  | { t: 'arcade.join'; table: string; as: 'player' | 'watch' }
+  | { t: 'arcade.leave' }
+  /** From a table's host: a piece of its picture or sound, passed on to those at the table and kept nowhere. */
+  | { t: 'arcade.media'; kind: ArcadeMediaKind; key?: boolean; ts: number; data: string }
+  /** From whoever holds the second pad at a table: a button pressed or let go. */
+  | { t: 'arcade.pad'; button: ArcadeButton; down: boolean }
+  /** From somebody at a table: the picture broke up, send one that stands by itself. */
+  | { t: 'arcade.key' }
   | { t: 'ping' };
 
 /** What a person's character can do on request (the gesture wheel), in the order the wheel shows them. */
@@ -370,6 +383,16 @@ export type ServerToClient =
   | { t: 'voice'; from: string; seq: number; data: string }
   /** They stopped talking. */
   | { t: 'voice.end'; from: string }
+  /** The arcade as it stands: the games on the shelf and the tables that are open. Sent at the start and whenever either changes. */
+  | { t: 'arcade'; games: ArcadeGame[]; tables: ArcadeTable[] }
+  /** To those at a table: a piece of the host's picture or sound. */
+  | { t: 'arcade.media'; table: string; kind: ArcadeMediaKind; key?: boolean; ts: number; data: string }
+  /** To a table's host: the second pad's button, from whoever holds it. */
+  | { t: 'arcade.pad'; button: ArcadeButton; down: boolean }
+  /** To a table's host: somebody sat down (send them how to read the picture, and one that stands by itself) or asked for such a picture. */
+  | { t: 'arcade.key'; to: string }
+  /** To somebody at a table: it is over (the host stopped, or left the office). */
+  | { t: 'arcade.closed'; table: string }
   | { t: 'entity'; kind: EntityKind; op: 'upsert' | 'remove'; data: any }
   | { t: 'event'; event: OrchestratorEvent }
   | { t: 'term.snapshot'; snapshot: TerminalSnapshot }
