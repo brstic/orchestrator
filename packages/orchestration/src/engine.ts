@@ -17,6 +17,7 @@ import { EmployeeRegistry, HostRegistry, SessionRegistry, type EmployeeInput } f
 import { Routines } from './routines.ts';
 import { Sleeper } from './sleep.ts';
 import { TaskManager } from './tasks.ts';
+import { TaskTalk } from './task-talk.ts';
 import { Waits } from './waits.ts';
 
 /**
@@ -39,6 +40,8 @@ export class Engine {
   readonly hooks: HookReceiver;
   readonly comms: Comms;
   readonly tasks: TaskManager;
+  /** The conversation on a task: comments, questions the work waits for, sending back, parts (`docs/TASKS.md`). */
+  readonly talk: TaskTalk;
   readonly meetings: MeetingManager;
   readonly commands: CommandCenter;
   readonly improver: Improver;
@@ -61,6 +64,7 @@ export class Engine {
     this.hooks = new HookReceiver(this);
     this.comms = new Comms(this);
     this.tasks = new TaskManager(this);
+    this.talk = new TaskTalk(this);
     this.meetings = new MeetingManager(this);
     this.commands = new CommandCenter(this);
     this.improver = new Improver(this);
@@ -144,6 +148,8 @@ export class Engine {
     const requeued = this.tasks.requeueFolderWaits();
     if (requeued) this.core.log('info', `${requeued} task${requeued === 1 ? '' : 's'} that waited for a shared folder ${requeued === 1 ? 'is' : 'are'} back in the queue`);
     this.sessions.adoptUnrestrictedDefault();
+    const toReview = this.tasks.adoptReviewDefault();
+    if (toReview) this.core.log('info', `${toReview} open task${toReview === 1 ? '' : 's'} will be reviewed when finished (every task is, from now on, unless chosen otherwise)`);
     const rerouted = this.tasks.rerouteReviews();
     if (rerouted) this.core.log('info', `${rerouted} finished task${rerouted === 1 ? '' : 's'} that waited for a review nobody was asked for ${rerouted === 1 ? 'was' : 'were'} given to a colleague to review`);
     this.waits.restore();

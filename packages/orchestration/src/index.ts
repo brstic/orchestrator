@@ -2,6 +2,7 @@ export * from './core.ts';
 export * from './engine.ts';
 export * from './registry.ts';
 export * from './tasks.ts';
+export * from './task-talk.ts';
 export * from './comms.ts';
 export * from './meetings.ts';
 export * from './commands.ts';

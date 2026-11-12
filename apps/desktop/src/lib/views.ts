@@ -97,7 +97,7 @@ export function personViews(s: OfficeState, office?: OfficeWithRooms | null): Pe
     const activity = activityOf(session);
     const task = currentTaskOf(s.tasks, e.id);
     const questions = Object.values(s.questions).filter((q) => q.employeeId === e.id && q.status === 'open');
-    const blockedTask = Object.values(s.tasks).some((t) => t.assigneeId === e.id && t.status === 'BLOCKED');
+    const blockedTask = Object.values(s.tasks).some((t) => t.assigneeId === e.id && t.status === 'BLOCKED' && !t.waitingFor);
     let attention: PersonView['attention'] = null;
     if (questions.some((q) => q.kind === 'permission' || q.kind === 'trust_prompt') || activity === 'needs_approval') attention = 'approval';
     else if (questions.length || activity === 'waiting_answer') attention = 'question';

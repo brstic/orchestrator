@@ -332,3 +332,699 @@
   width: min(900px, 100%);
   cursor: default;
 }
+
+/* ───────────────────────────── Tickets ─────────────────────────────
+   One window: the list on the left, grouped by what a ticket needs next; the open ticket on the right, with its
+   conversation and the one box that does what can be done now. */
+.tk-frame {
+  flex-direction: row;
+  height: min(880px, calc(100vh - 120px));
+}
+.tk-side {
+  width: 388px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.015);
+}
+.tk-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.tk-filters-row {
+  display: flex;
+  align-items: center;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+}
+.tk-filters-row select {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.tk-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 8px 16px;
+}
+.tk-group > header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 6px 6px;
+  background: var(--panel-solid);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tk-group-you > header {
+  color: var(--warn);
+}
+.tk-group-n {
+  color: var(--faint);
+  font-weight: 700;
+}
+.tk-group-empty {
+  padding: 2px 8px 6px;
+}
+.tk-link {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+.tk-link:hover {
+  text-decoration: underline;
+}
+.tk-more-done {
+  display: block;
+  margin: 6px 0 0 14px;
+}
+.tk-attach {
+  margin: 0;
+  align-self: flex-start;
+}
+.tk-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px 9px 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.tk-row:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+.tk-row.on {
+  background: rgba(110, 168, 255, 0.13);
+  border-color: rgba(110, 168, 255, 0.45);
+}
+.tk-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.tk-row-bar {
+  flex: none;
+  width: 3px;
+  align-self: stretch;
+  border-radius: 3px;
+}
+.tk-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tk-row-top {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+.tk-row-top .mono {
+  flex: none;
+  font-size: 11.5px;
+}
+.tk-row-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tk-row-done .tk-row-title {
+  font-weight: 500;
+  color: var(--muted);
+}
+.tk-row-line {
+  font-size: 12px;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tk-row-foot {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  min-height: 16px;
+}
+.tk-tag {
+  padding: 0 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.tk-pri-urgent {
+  background: rgba(255, 93, 115, 0.2);
+  color: #ff9aa9;
+}
+.tk-pri-high {
+  background: rgba(255, 176, 32, 0.18);
+  color: #ffcf7a;
+}
+.tk-count {
+  background: none;
+  padding: 0;
+}
+.tk-row-who {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding-top: 1px;
+}
+.tk-row-plus {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.tk-nobody {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--line-strong);
+}
+
+.tk-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tk-pane-pad {
+  align-items: center;
+  justify-content: center;
+}
+.tk-head {
+  flex: none;
+  padding: 14px 20px 12px;
+}
+.tk-head-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 28px;
+}
+.tk-status {
+  padding: 2px 10px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.tk-title {
+  margin: 9px 0 3px;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.tk-line {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.tk-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  margin-top: 12px;
+}
+.tk-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.tk-meta-label,
+.tk-eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.tk-select {
+  width: auto;
+  min-height: 26px;
+  padding: 2px 8px;
+  max-width: 220px;
+}
+.tk-person,
+.tk-person-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px 0 4px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+button.tk-person,
+button.tk-person-chip {
+  cursor: pointer;
+}
+button.tk-person:hover,
+button.tk-person-chip:hover {
+  border-color: rgba(110, 168, 255, 0.6);
+}
+.tk-person-chip.on {
+  background: rgba(110, 168, 255, 0.16);
+  border-color: rgba(110, 168, 255, 0.55);
+}
+.tk-person-chip > button {
+  background: none;
+  border: 0;
+  padding: 0 0 0 2px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.tk-person-chip > button:hover {
+  color: #fff;
+}
+.tk-people-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tk-pop {
+  position: relative;
+}
+.tk-pop > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.tk-pop > summary::-webkit-details-marker {
+  display: none;
+}
+.tk-add {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px dashed var(--line-strong);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.tk-add:hover {
+  color: var(--text);
+  border-color: rgba(110, 168, 255, 0.6);
+}
+.tk-pop-body {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  z-index: 6;
+  min-width: 260px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+.tk-pop-right {
+  left: auto;
+  right: 0;
+  min-width: 220px;
+}
+.tk-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tk-pop-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+}
+.tk-pop-select {
+  justify-content: space-between;
+  cursor: default;
+}
+.tk-pop-select select {
+  width: auto;
+  min-height: 24px;
+  padding: 1px 6px;
+}
+.tk-danger {
+  color: #ff9aa9;
+}
+.tk-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 20px 14px;
+}
+.tk-scroll-pad {
+  gap: 14px;
+}
+.tk-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow-wrap: anywhere;
+}
+.tk-editing textarea,
+.tk-editing input {
+  width: 100%;
+}
+.tk-accept .pre {
+  margin-top: 4px;
+}
+.tk-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tk-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tk-part {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+  cursor: pointer;
+}
+.tk-part:hover {
+  border-color: rgba(110, 168, 255, 0.6);
+}
+.tk-details {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.tk-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tk-comment {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.tk-reply {
+  margin-left: 26px;
+}
+.tk-face {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--panel-3);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+.tk-face-boss {
+  background: linear-gradient(135deg, #6ea8ff, #3f82f0);
+  color: #061226;
+}
+.tk-face-office {
+  background: none;
+  border: 1px solid var(--line-strong);
+  font-size: 10px;
+}
+.tk-comment-main {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px 12px 12px 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.tk-comment[data-from='owner'] .tk-comment-main,
+.tk-comment[data-from='member'] .tk-comment-main {
+  background: rgba(110, 168, 255, 0.1);
+  border-color: rgba(110, 168, 255, 0.3);
+}
+.tk-comment.tk-open .tk-comment-main {
+  background: rgba(255, 176, 32, 0.09);
+  border-color: rgba(255, 176, 32, 0.6);
+}
+.tk-comment.tk-k-ok .tk-comment-main {
+  border-color: rgba(61, 220, 132, 0.45);
+  background: rgba(61, 220, 132, 0.07);
+}
+.tk-comment.tk-k-back .tk-comment-main {
+  border-color: rgba(255, 93, 115, 0.5);
+  background: rgba(255, 93, 115, 0.07);
+}
+.tk-comment-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 7px;
+  font-size: 12.5px;
+}
+.tk-kind {
+  color: var(--muted);
+}
+.tk-k-ok .tk-kind {
+  color: var(--good);
+  font-weight: 700;
+}
+.tk-k-back .tk-kind {
+  color: var(--bad);
+  font-weight: 700;
+}
+.tk-k-ask .tk-kind {
+  color: var(--warn);
+  font-weight: 700;
+}
+.tk-waiting {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(255, 176, 32, 0.2);
+  color: #ffcf7a;
+  font-size: 11px;
+  font-weight: 700;
+}
+.tk-comment-head .faint {
+  margin-left: auto;
+  font-size: 11.5px;
+}
+.tk-comment-body {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+.tk-comment-body .md > :first-child {
+  margin-top: 0;
+}
+.tk-comment-body .md > :last-child {
+  margin-bottom: 0;
+}
+.tk-to {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+.tk-story {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-left: 11px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tk-story-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--faint);
+  transform: translateY(-1px);
+}
+
+.tk-compose {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 20px 14px;
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+}
+.tk-compose-off {
+  padding: 12px 20px;
+}
+.tk-compose[data-compose='answer'] {
+  border-top-color: rgba(255, 176, 32, 0.6);
+}
+.tk-compose[data-compose='review'] {
+  border-top-color: rgba(255, 176, 32, 0.6);
+}
+.tk-box {
+  position: relative;
+}
+.tk-box textarea {
+  width: 100%;
+  min-height: 66px;
+  max-height: 220px;
+  resize: vertical;
+}
+.tk-mentions {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+.tk-mentions button {
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.tk-mentions button.on,
+.tk-mentions button:hover {
+  background: rgba(110, 168, 255, 0.2);
+}
+.tk-compose-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tk-compose-hint {
+  margin-left: auto;
+  text-align: right;
+}
+
+.tk-new {
+  min-height: 0;
+}
+.tk-new-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 22px;
+}
+.tk-new-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tk-title-input {
+  width: 100%;
+  font-size: 18px;
+  font-weight: 700;
+  padding: 9px 12px;
+}
+.tk-new-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.tk-new-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 22px;
+  border-top: 1px solid var(--line);
+}
+.tk-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  overflow: hidden;
+  align-self: flex-start;
+}
+.tk-seg button {
+  padding: 6px 13px;
+  border: 0;
+  border-right: 1px solid var(--line-strong);
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+}
+.tk-seg button:last-child {
+  border-right: 0;
+}
+.tk-seg button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.tk-seg button.on {
+  background: rgba(110, 168, 255, 0.22);
+  color: #fff;
+  font-weight: 600;
+}

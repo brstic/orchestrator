@@ -84,7 +84,7 @@ export function TopBar() {
   const s = useOffice();
   const employees = Object.values(s.employees).filter((e) => !e.archived);
   const need = needsYou(s.questions, s.notifications).count;
-  const blocked = Object.values(s.tasks).filter((t) => t.status === 'BLOCKED').length;
+  const blocked = Object.values(s.tasks).filter((t) => t.status === 'BLOCKED' && !t.waitingFor).length;
   const working = employees.filter((e) => {
     const a = activityOf(sessionOfEmployee(s.sessions, e.id));
     return !['offline', 'unknown', 'idle', 'waiting_input', 'paused'].includes(a);

@@ -89,7 +89,7 @@ export function attentionOf(employeeId: string, activity: string, questions: Rec
   if (activity === 'waiting_answer' || activity === 'needs_approval') return 'needs';
   for (const q of Object.values(questions)) if (q.employeeId === employeeId && q.status === 'open') return 'needs';
   if (activity === 'blocked') return 'blocked';
-  for (const t of Object.values(tasks)) if (t.assigneeId === employeeId && t.status === 'BLOCKED') return 'blocked';
+  for (const t of Object.values(tasks)) if (t.assigneeId === employeeId && t.status === 'BLOCKED' && !t.waitingFor) return 'blocked';
   return null;
 }
 

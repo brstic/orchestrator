@@ -27,7 +27,7 @@ import type {
   XpEntry,
   EventSourceKind,
 } from '@orchestrator/contracts';
-import { SURROUNDINGS, defaultLayout, newId, nowIso } from '@orchestrator/contracts';
+import { REVIEW_BY, SURROUNDINGS, defaultLayout, newId, nowIso } from '@orchestrator/contracts';
 import type { Collection, Storage } from '@orchestrator/database';
 import { deriveCompanyStats, emptyCompanyStats, initialMilestones } from '@orchestrator/game-systems';
 import type { TerminalGateway } from '@orchestrator/terminal';
@@ -488,6 +488,8 @@ export class Core {
       ...(patch.unrestrictedAsksHighRisk === undefined ? {} : { unrestrictedAsksHighRisk: patch.unrestrictedAsksHighRisk !== false }),
       // A place the office knows, or the one it had.
       ...(patch.surroundings === undefined ? {} : { surroundings: (SURROUNDINGS as readonly unknown[]).includes(patch.surroundings) ? patch.surroundings : this._settings.surroundings }),
+      // Who reviews a finished task when nobody chose: one of the four, or what it was.
+      ...(patch.reviewDefault === undefined ? {} : { reviewDefault: (REVIEW_BY as readonly unknown[]).includes(patch.reviewDefault) ? patch.reviewDefault : this._settings.reviewDefault }),
     };
     this._settings.selfImprovement = sanitizeAutopilot(this._settings.selfImprovement, autopilotBefore);
     this.store.kvSet('settings', this._settings);

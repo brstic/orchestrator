@@ -175,8 +175,48 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
     inputSchema: { type: 'object', properties: { question_id: str('The question id returned by ask_boss') }, required: ['question_id'] },
   },
   {
+    name: 'comment_on_task',
+    description:
+      'Write on a ticket\'s conversation: what the boss or a colleague should know about it, an answer when you were tagged on it, or a question. Tag who should read it in the text (@boss, @Name) or in "to"; nobody is told about a comment that tags nobody. With ask: true you are saying "I am not sure, or I cannot go on, without this answer": the call waits for it (a few minutes at most); if none comes the ticket waits for it by itself — you stop working on it, are free for other work, and get it back with the answer. Use that instead of guessing and instead of report_blocker.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: str('What you have to say, or your question: specific, with the exact thing (file, command, option A or B) — whoever reads it is in the middle of their own work'),
+        task: str('Key of the ticket, e.g. "T-12". Leave out for the ticket you are working on'),
+        to: { type: 'array', items: { type: 'string' }, description: 'Who it is for: "boss", or colleagues by name. The same as tagging them in the text' },
+        ask: { type: 'boolean', description: 'true = a question you cannot go on without. Only on the ticket you are working on. Without "to" it goes to the boss' },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'split_task',
+    description:
+      'Divide the ticket you are working on into parts for colleagues, when it is too much for one or the boss put colleagues on it with you. Each part becomes a ticket of its own, handed to its colleague; keep a part for yourself (it stays in this ticket). You are told as parts are finished; call complete_task when your own part is done — the ticket then waits for the rest and comes back to you to bring the whole together. A part cannot be split again.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        parts: {
+          type: 'array',
+          description: 'One to six parts, each independent enough to be done without waiting for the others',
+          items: {
+            type: 'object',
+            properties: {
+              title: str('Short imperative title'),
+              description: str('What to do, where, and what it must fit with — whoever gets it has only this and the ticket\'s conversation'),
+              acceptance: str('How to tell it is done'),
+              assignee: str('The colleague it is for, by name (see get_team). Leave out to let it go to a colleague already on the ticket, or to whoever fits and is free'),
+            },
+            required: ['title', 'description'],
+          },
+        },
+      },
+      required: ['parts'],
+    },
+  },
+  {
     name: 'report_blocker',
-    description: 'Report that you cannot continue your current task. Marks the task BLOCKED and alerts the boss. Use ask_boss instead if a simple answer would unblock you.',
+    description: 'Report that you cannot continue your current task because of something no answer can solve (a machine that is down, access that does not exist). Marks the task BLOCKED and alerts the boss; it is written on the ticket, and the boss\'s reply there brings it back to you. If an answer would let you go on, ask on the ticket instead (comment_on_task with ask: true).',
     inputSchema: { type: 'object', properties: { reason: str('What is blocking you'), needs: str('What you need in order to continue') }, required: ['reason'] },
   },
   {

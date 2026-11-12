@@ -479,7 +479,9 @@ async function handlePrompt(text, viaStopHook = false) {
   transcript({ type: 'assistant', message: { id: `msg_fake_${Date.now()}`, role: 'assistant', content: [{ type: 'text', text: last }], usage: { input_tokens: 120, output_tokens: 45, cache_read_input_tokens: 1000, cache_creation_input_tokens: 10 } } });
   say(`\x1b[2m${String(last).split('\n')[0].slice(0, 160)}\x1b[0m`);
   // Stop hook: a "block" decision means "keep going with this reason", possibly repeatedly.
-  for (let depth = 0; depth < 6 && !turnFailed; depth++) {
+  // (Bounded, so that a mistake cannot loop for ever — but well above what a turn really gets: a task, the office's
+  // nudges, and every comment and message that arrived meanwhile each come back through here.)
+  for (let depth = 0; depth < 24 && !turnFailed; depth++) {
     const stop = await fireHook('Stop', { stop_hook_active: depth > 0 || viaStopHook, last_assistant_message: last });
     if (stop?.decision !== 'block' || !stop.reason) break;
     say(`\x1b[35m⎿ Stop hook feedback:\x1b[0m ${String(stop.reason).split('\n')[0].slice(0, 140)}`);

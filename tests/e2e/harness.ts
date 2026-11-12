@@ -179,7 +179,12 @@ export interface Harness {
 
 let counter = 0;
 
-export async function createHarness(opts: { timings?: Record<string, number>; approvalWaitSeconds?: number; database?: string; memoryBin?: string | null } = {}): Promise<Harness> {
+/**
+ * `reviewDefault`: who reviews a finished task in this office when nobody chose. The tests' offices are set to
+ * 'none' (a task is done when it passes, as it was before 2026-11-12) unless a test is about review itself — the
+ * real default, 'both', would put every scripted task of every test in front of a colleague and the boss.
+ */
+export async function createHarness(opts: { timings?: Record<string, number>; approvalWaitSeconds?: number; database?: string; memoryBin?: string | null; reviewDefault?: 'both' | 'boss' | 'peer' | 'none' } = {}): Promise<Harness> {
   let base = os.tmpdir();
   // Unix socket paths are limited to ~104 bytes on macOS; keep the root short.
   if (base.length > 40) base = '/tmp';
@@ -193,6 +198,7 @@ export async function createHarness(opts: { timings?: Record<string, number>; ap
   const url = server.url;
   const port = Number(new URL(url).port);
   const token = server.ownerToken;
+  await fetch(`${url}/api/settings`, { method: 'PATCH', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ reviewDefault: opts.reviewDefault ?? 'none' }) });
 
   const agentHome = path.join(tmp, 'agent');
   const cfg: AgentConfig = { ...defaultConfig(), serverUrl: url, name: 'test-host', allowedRoots: [fs.realpathSync(tmp)], tmuxSocketName: tmuxSocket, claudeBin: wrapper, approvalWaitSeconds: opts.approvalWaitSeconds ?? 20, remoteAttach: 'any' };

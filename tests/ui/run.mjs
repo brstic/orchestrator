@@ -40,7 +40,8 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? '✔' : '✖'} ${name}${detail ? ` — ${detail}` : ''}`);
 };
 
-const office = spawn(process.execPath, [path.join(root, 'scripts/dev-office.ts'), '--port', String(port)], { stdio: ['ignore', 'pipe', 'pipe'], cwd: root });
+// (`--review none`: the office of this suite is one whose tasks are done when they pass; the steps about review choose it per ticket.)
+const office = spawn(process.execPath, [path.join(root, 'scripts/dev-office.ts'), '--port', String(port), '--review', 'none'], { stdio: ['ignore', 'pipe', 'pipe'], cwd: root });
 let officeErr = '';
 office.stderr.on('data', (d) => (officeErr += d));
 const info = await new Promise((resolve) => {
@@ -290,9 +291,9 @@ try {
   check('the lesson retired and reactivated from its card is active, with both changes on record', s.lessons.find((l) => l.text === ctx.lesson)?.status === 'active' && events.filter((e) => e.type === 'improvement.lesson_updated').length >= 2, `${events.filter((e) => e.type === 'improvement.lesson_updated').length} lesson updates`);
   const hair = res.results.find((x) => /appearance/.test(x.step))?.detail ?? '';
   check('the appearance change is stored', hair.endsWith(by('Ava').appearance.hairStyle) && by('Ava').appearance.hairStyle !== before.employees.find((e) => e.name === 'Ava').appearance.hairStyle, `Ava: ${before.employees.find((e) => e.name === 'Ava').appearance.hairStyle} → ${by('Ava').appearance.hairStyle}`);
-  const dragged = /^(\S+): (\w+) → (\w+)$/.exec(res.results.find((x) => /dragging a card/.test(x.step))?.detail ?? '');
+  const dragged = /^(\S+): (\w+) → (\w+)$/.exec(res.results.find((x) => /moved by hand from its menu/.test(x.step))?.detail ?? '');
   const draggedTask = dragged ? s.tasks.find((t) => t.key === dragged[1]) : null;
-  check('the task dragged on the board has its new status on the server', !!draggedTask && draggedTask.status !== dragged[2] && draggedTask.history.some((x) => x.status === dragged[3]), dragged ? `${dragged[1]} was moved to ${dragged[3]} (now ${draggedTask?.status}: the scheduler took it from there)` : 'no drag result');
+  check('the ticket moved by hand has its new status on the server', !!draggedTask && draggedTask.status !== dragged[2] && draggedTask.history.some((x) => x.status === dragged[3]), dragged ? `${dragged[1]} was moved to ${dragged[3]} (now ${draggedTask?.status}: the scheduler took it from there)` : 'the step that moves it gave no result');
   check('the machine renamed and removed in Machines is gone from the office', before.hosts.some((h) => h.name === ctx.spareHost) && !s.hosts.some((h) => h.name === ctx.spareHost || h.name === ctx.spareRenamed), `${before.hosts.length} → ${s.hosts.length - 1} machines (plus the one enrolled with the UI token)`);
   // Graphics, keys and the office extras are each person's own: kept on their computer, never sent to the office.
   const mine = (() => {

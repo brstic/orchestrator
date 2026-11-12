@@ -211,8 +211,9 @@ export function systemPromptFor(employee: Employee, project: Project | undefined
         `- Use the "orchestrator" MCP tools to talk to the office:`,
         `  • get_current_task / get_project_context — what you are supposed to do and why.`,
         `  • report_progress — at real milestones, not every step.`,
-        `  • ask_boss — when you need a decision or missing requirement. Do not guess, and do not ask what you can find out yourself.`,
-        `  • report_blocker — when you cannot continue.`,
+        `  • comment_on_task — every ticket has a conversation, and it is where the work is talked about. Write there what the boss or a colleague should know about the ticket (a finding, a decision you took, where you left something), and tag who should read it: @boss, or a colleague by name (@Ava). Nobody is told about a comment that tags nobody. When you are NOT SURE what is wanted, or CANNOT GO ON, do not guess and do not stop silently: ask there with ask: true (tag who should answer; without a tag it is the boss). The call waits for the answer; if none comes for a while the ticket waits for it by itself and you are free for other work — it comes back to you with the answer. When you are tagged on a ticket, answer on that ticket (comment_on_task with its key). Do not ask what you can find out yourself.`,
+        `  • ask_boss — a decision that is not about one ticket. report_blocker — only for something no answer can solve (a machine that is down, access that does not exist); for everything else ask on the ticket.`,
+        `  • split_task — when the ticket you are working on is too much for one, or the boss put colleagues on it with you: divide it into clear, independent parts, each for a colleague (get_team shows who does what), and keep a part for yourself. Each part becomes a ticket of its own; you are told as they are finished, and the ticket comes back to you to bring the whole together and hand it in. A part cannot be split again.`,
         `  • request_collaboration / send_message / get_team — to work with teammates. Answer requests you receive with respond_to_request.`,
         `  • Write to a colleague the way you would want to be written to: what you need or what happened, the exact thing (command, commit, path, task key), and what you expect back — in a few lines. Every message is read by a colleague in the middle of their own work and costs them a turn: no greetings, no recap of what they already know, one message instead of three. Long material (a report, a log, a list) goes into a file or onto the task (attach_file), and the message names it. Do not send a message that only says thanks or "received".`,
         `  • Give work to the person it belongs to: propose_tasks takes an "assignee" per task and give_task assigns an existing one — also to a colleague on another project of this office (get_team shows everyone). A task with nobody named goes to whoever is free.`,
@@ -261,7 +262,8 @@ export function systemPromptFor(employee: Employee, project: Project | undefined
   return lines.filter(Boolean).join('\n\n');
 }
 
-export function taskPrompt(task: Task, project: Project, deps: Task[], feedback: string | null, playbook = '', sharing: string[] = []): string {
+/** `more`: paragraphs the office adds about this task — who is on it with you, what it is a part of, what was said on it. */
+export function taskPrompt(task: Task, project: Project, deps: Task[], feedback: string | null, playbook = '', sharing: string[] = [], more: string[] = []): string {
   const lines: string[] = [];
   lines.push(`${correlationMarker('TASK', task.id)} New task from the boss — ${task.key}: ${task.title}`);
   lines.push('');
@@ -274,10 +276,11 @@ export function taskPrompt(task: Task, project: Project, deps: Task[], feedback:
   if (deps.length) lines.push(`Already completed and merged dependencies: ${deps.map((d) => `${d.key} (${d.title})`).join('; ')}.`);
   const verify = task.verifyCommand ?? project.verifyCommand;
   if (verify) lines.push(`Completion is verified by running: ${verify}`);
+  for (const paragraph of more) lines.push('', paragraph);
   if (feedback) lines.push('', 'Feedback to address from the previous attempt:', feedback);
   if (playbook) lines.push('', playbook);
   if (task.kind === 'review' || task.kind === 'research' || task.kind === 'planning') lines.push('', 'This task does not require code changes; when calling complete_task set no_code_changes to true.');
-  lines.push('', 'Start now. Report progress at milestones, ask the boss if you need a decision, and call complete_task when the work is done and committed.');
+  lines.push('', 'Start now. Report progress at milestones. When you are not sure, or cannot go on, ask on the ticket (comment_on_task with ask: true) instead of guessing. Call complete_task when the work is done and committed.');
   return lines.join('\n');
 }
 
@@ -322,6 +325,8 @@ export function messagePrompt(msg: Message, collab: CollabRequest | undefined): 
     ].join('');
   }
   if (msg.routineId) return `${correlationMarker('MSG', msg.id)} ${msg.body}\n\n${ROUTINE_GUIDE}`;
+  // Something said on a task: the text says by whom, on which task, and how to answer.
+  if (msg.kind === 'comment') return `${correlationMarker('MSG', msg.id)} ${msg.body}`;
   const tail = msg.from.kind === 'employee' ? '\n(Use send_message if a reply is needed, then carry on with your work.)' : '';
   return `${correlationMarker('MSG', msg.id)} Message from ${from}: ${msg.body}${tail}`;
 }

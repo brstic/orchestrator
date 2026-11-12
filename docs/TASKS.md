@@ -1,0 +1,143 @@
+# Tickets: review, the conversation on a ticket, sending back, working together
+
+What the owner asked for on 2026-11-12: every task goes to review unless they chose otherwise; a Tasks window that
+is simple; comments on a ticket, written by the employees too — they ask there when they are not sure, and instead
+of "blocking" they ask in a comment and the ticket waits; tickets can be sent back; several employees can work on one
+ticket, split it and help each other; in comments employees tag the owner and each other.
+
+A "ticket" is a `Task` (`packages/contracts/src/entities.ts`). The engine is `packages/orchestration/src/tasks.ts`
+(the life of a task) and `task-talk.ts` (`Engine.talk`: the conversation and what follows from it). The window is
+`apps/desktop/src/hud/panels/tasks.tsx` with `task-view.tsx`, `task-new.tsx`, `task-work.tsx`, `task-shared.tsx`.
+Tests: `tests/e2e/45-tickets.test.ts`; the "Tickets" steps of `tests/ui/driver.cjs`.
+
+## 1. Review
+
+- **`Task.reviewBy`**: `'both'` — a colleague, then the boss (the owner's choice of 2026-11-12: "Agent pa ja");
+  `'boss'`; `'peer'` — a colleague, the boss only when there is nobody to review; `'none'`.
+  `Task.requiresReview` stays and always equals `reviewBy !== 'none'`. Tasks from before have no `reviewBy`:
+  `reviewByOf(task)` reads them as `'peer'`, which is how review worked then.
+- **The default** for every new task, whoever makes it (a person, an employee's `propose_tasks`, a routine, the
+  foreman): `OwnerSettings.reviewDefault`, read with `reviewDefaultOf` — `'both'` when the owner set nothing.
+  *Settings → Employees → "Finished work is reviewed by"*. It applies to every kind of task, research and planning
+  included. Chosen for one task: `reviewBy` (the New ticket form; "Reviewed by" on the ticket until it is done), or
+  the older `requiresReview: false`. Not reviewed, by the office's own decision: a review task itself, the planning
+  task of "Plan project" (its proposals are released by hand), and a **part** of a divided ticket (the whole is
+  reviewed, section 4).
+- Only in an office whose owner set the default to "No review" does a project's `policy.requireReview` still decide,
+  as it did before (for work that makes commits, by a colleague). The test suites run such offices
+  (`createHarness({ reviewDefault })`, `dev-office.ts --review`), so that their scripted tasks finish when they pass.
+- **Once**, at the first start with this code (`tasks.reviewByDefault` in the office's key-value store,
+  `TaskManager.adoptReviewDefault`): every task that is not done, not already in review, and neither a review nor a
+  part gets the default. Finished tasks are left as they are.
+- **`Task.reviewStage`** while a task is in REVIEW: `'peer'` — a colleague was asked (a review task exists for
+  them) — or `'boss'`. `both` and `peer` start with a colleague when `pickReviewer` finds one, otherwise with the
+  boss; `boss` never asks a colleague. A colleague's approval of a `both` task does not finish it: it is kept in
+  `evidence.peerReview`, the stage becomes `'boss'`, the boss is notified, and no colleague can approve it again.
+  The boss's approval finishes it (merge included) at either stage. "Request changes" by anybody returns it to its
+  author; the next hand-in starts with a colleague again.
+
+## 2. The conversation
+
+`Task.comments: TaskComment[]` (the last 300), each `{ id, ts, from, body, kind, mentions, questionId?, answeredBy?,
+answerTo? }`.
+
+| `kind` | written when |
+| --- | --- |
+| `note` | somebody says something |
+| `question` | an employee asks and cannot go on without the answer (`answeredBy`: the comment that answered it) |
+| `answer` | the answer to a question (`answerTo`) |
+| `handed_in` | the employee handed the work in (their summary) |
+| `approved`, `sent_back` | a review verdict; `sent_back` also when a finished ticket is opened again |
+| `handoff`, `split`, `part_done` | passed to a colleague · divided into parts · a part was finished |
+
+- **People**: `POST /api/tasks/:id/comments { body }` (`TaskTalk.byPerson`). **Employees**: the tool
+  `comment_on_task { text, task?, to?, ask? }` (`TaskTalk.byEmployee`); without `task` it is the ticket they are
+  working on.
+- **Tags** (`TaskTalk.mentionsIn`): `@Name` in the text — an employee's name may have spaces, the longest name that
+  matches wins, a first name is enough when it is nobody else's — and `@boss` / `@owner` / the owner's name for the
+  people of the office. The tool also takes `to: [...]`. `something@somewhere` is an address, not a tag. A tagged
+  employee gets the comment as a message (`MessageKind: 'comment'`) that says by whom, on which ticket, and how to
+  answer; a tagged boss gets a notification (`NotificationKind: 'mention'`, in the Inbox). **Nobody is told about a
+  comment that tags nobody** — except whoever is working on the ticket, who reads everything written on it (a
+  person's comment, or a colleague's) when their turn ends.
+- The rules a message between employees has hold for a tag: not the foreman, not into a closed room, not across the
+  line to a member's own computer, and no more than 120 comments an hour per employee.
+- **Asking instead of blocking.** `ask: true` means "I am not sure, or I cannot go on, without this" and is allowed
+  only on the ticket the employee is working on. Without a tag it goes to the boss.
+  - *To the boss* it is one of the office's questions (`Question`, the Inbox, the icon over the employee, the phone)
+    **and** a `question` comment linked to it (`questionId`). It is answered in either place — a person's comment on a
+    ticket with an open question *is* the answer (`byPerson` → `Comms.answer`), and an answer given in the Inbox is
+    written on the ticket (`TaskTalk.questionAnswered`).
+  - *To a colleague*: they get the question as a message that says the one who asks is waiting (and are started if
+    they are not at their desk); their next comment on that ticket is the answer.
+  - The call waits (`timings.askBossWaitMs`, four minutes). Answered in time, the answer is the call's result and the
+    ticket never stopped. Not answered: the ticket is **parked** — `BLOCKED` with
+    `waitingFor: { kind: 'answer', commentId }`, shown as "Asks you" or "Waiting" — the employee is free for other
+    work, no alarm is raised (a question is not a blocker), and the answer brings the ticket back to them
+    (`TaskManager.unblock(..., { threaded: true })`): in the same session if they are still there, otherwise as the
+    task handed to them again, with the conversation in its prompt.
+  - `ask_boss` asked while on a ticket is written into its conversation too. `report_blocker` — now for what no
+    answer can solve — is written there as a `question`; what the boss replies on the ticket unblocks it, as the
+    Unblock button and a colleague's `unblock_task` still do (each closes that question with what was said).
+- A task's prompt carries the last twelve entries of its conversation (`TaskTalk.promptLines`), so whoever gets a
+  ticket — again, or after somebody else — reads what was said on it. `get_task` shows them as well.
+
+## 3. Sending back
+
+`POST /api/tasks/:id/send-back { note }` (`TaskTalk.sendBack`); the note is required and becomes a `sent_back`
+comment.
+
+| the ticket is | what happens |
+| --- | --- |
+| in review | changes are requested (the same as a review that rejects) |
+| done | **opened again** (`TaskManager.reopen`): READY for whoever did it (for whoever fits, if they are gone), the note as the feedback of the next attempt, `reopened` counted. What was done stays merged and committed; the new work is measured from where the folder stands when it starts, on a fresh branch (`…-r1-…`) where the project uses branches, and is checked and reviewed like any other |
+| waiting for an answer, or blocked | the note is the answer |
+| in progress | a correction, delivered now (the employee's turn is interrupted) |
+| not started | a comment |
+
+## 4. Several employees on one ticket
+
+- **`Task.helperIds`**: colleagues a person puts on a ticket with its assignee, who leads it (the New ticket form;
+  "With → + Add" on the ticket). The lead's prompt names them and says to divide the work; added while the lead is
+  already at work, the lead is told at once.
+- **`split_task { parts: [{ title, description, acceptance?, assignee? }] }`** (`TaskTalk.split`): the assignee of a
+  ticket in progress divides it — because the boss put colleagues on it, or because it is too much for one. Each
+  part is a ticket of its own (`parentId`) for a colleague: the one named, else the colleague on the ticket with the
+  fewest parts, else whoever fits and is free. One to six parts at once, eight open at a time, a real description
+  each; a part is not reviewed on its own and **cannot be split again**; a split that is refused creates nothing.
+- The lead keeps a part for themselves in the ticket. `complete_task` while parts are open does not finish it: the
+  ticket waits (`waitingFor: { kind: 'parts' }`) and the lead is free. Every finished part is said on the ticket
+  (`part_done`, and as a message to a lead who is still working); the last one brings the ticket back to the lead
+  (`TaskTalk.partSettled`) to bring the whole together and hand it in — and the whole goes to review. Where the
+  project uses branches the lead is told to merge the integration branch first: the parts were merged there.
+- Deleting a ticket leaves its parts as tickets of their own; deleting a part counts as that part being settled.
+
+## 5. The window
+
+`Tickets` (the panels `tasks` and `task`; `openPanel('task', '<id>' | '<id>:diff' | 'new' | 'new:<employeeId>')`).
+
+- **Left: every ticket, grouped by what it needs next** (`needOf` in `task-shared.tsx`), not by a column somebody
+  moved it to: **Needs you** (your review, a question to you, something blocked, a proposal to release) · **In
+  progress** · **Waiting** (for a colleague's review or answer, or for its parts) · **Up next** · **Done**. Search,
+  project, employee, "Only what needs me". Each row: the key and title, one line saying what is going on, who is on
+  it. Opened without a ticket in mind, the window shows the first one that needs the person.
+- **Right: the ticket.** What it needs, in a pill and a sentence; who leads it, who is on it with them ("+ Add"),
+  who reviews it, its priority — each changed right there; the text, the files and the parts; then the
+  **conversation**, with the office's own lines of the story between the comments; and **one box at the bottom**
+  whose first button is what the ticket is waiting for: *Answer* (a question, or a ticket parked on one),
+  *Approve* / *Send back* (in review), *Unblock*, otherwise *Comment* — with *Send back* on a finished ticket and
+  *Tell them now* on one in progress. `@` offers the office's people. ⌘/Ctrl+Enter presses the first button.
+- Folded away: **Work** (the measured evidence — verification, commits, files, merge, friction — and the technical
+  details), **Changes** (the diff, read live from the machine), **History** (every recorded event); and in the
+  ticket's **⋯** menu: change its text, stop it and put it on hold, move it by hand, delete it.
+- A new ticket is written in the same place (`TicketNew`): title, description, files, project, assignee, who works
+  on it with them, who reviews it; the rest under "More options".
+- Roles: a visitor reads; whoever may work on the ticket's machine (an owner, a colleague on the shared office or on
+  their own computer) writes — the rule every task route has (`apps/server/src/access.ts`).
+
+## What is not there
+
+- Reviewing a part on its own is possible only by choosing "Reviewed by" on that part after it is made.
+- A comment cannot be edited or deleted.
+- A person cannot split a ticket from the window; they put colleagues on it and its lead does.
+- "Tagged you" is a notification in the Inbox; the list of tickets has no unread mark of its own.

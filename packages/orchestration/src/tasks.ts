@@ -1,10 +1,11 @@
 import path from 'node:path';
-import type { DeliveryState, Employee, Project, ProjectPolicy, Task, TaskKind, TaskPriority, TaskStatus, XpEntry } from '@orchestrator/contracts';
-import { matchRole, newId, nowIso, redactSecrets, roleByKey, slugify, truncate, stripEnd } from '@orchestrator/contracts';
+import type { DeliveryState, Employee, Message, Project, ProjectPolicy, ReviewBy, Task, TaskKind, TaskPriority, TaskStatus, XpEntry } from '@orchestrator/contracts';
+import { REVIEW_BY, matchRole, newId, nowIso, redactSecrets, reviewByOf, reviewDefaultOf, roleByKey, slugify, truncate, stripEnd } from '@orchestrator/contracts';
 import { applyXp, evaluateMilestones, xpForCompletedTask, xpForReview } from '@orchestrator/game-systems';
 import { EngineError, within } from './core.ts';
 import type { Engine } from './engine.ts';
 import { reviewPrompt, taskPrompt } from './prompts.ts';
+import type { Person } from './task-talk.ts';
 import { routingPreference } from './learning/detect.ts';
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
@@ -79,11 +80,17 @@ export interface TaskInput {
   roleHint?: string | null;
   dependsOn?: string[];
   requiresReview?: boolean;
+  /** Who reviews it (`docs/TASKS.md`). Without one — and without `requiresReview: false` — the office's default. */
+  reviewBy?: ReviewBy;
   reviewerId?: string | null;
   reviewOf?: string | null;
   verifyCommand?: string | null;
   released?: boolean;
   dedupeKey?: string | null;
+  /** The task this one is a part of. */
+  parentId?: string | null;
+  /** Colleagues put on the task with its assignee. */
+  helperIds?: string[];
 }
 
 /** A key as it is compared: trimmed, case-insensitive, bounded. */
@@ -358,6 +365,9 @@ export class TaskManager {
     if (input.assigneeId) this.mayTake(this.core.employees.require(input.assigneeId), { projectId: project.id, key: 'this task', kind: input.kind ?? 'feature' });
     for (const dep of input.dependsOn ?? []) if (!this.core.tasks.get(dep)) throw new EngineError(`unknown dependency ${dep}`);
     const kind = input.kind && TASK_KINDS.includes(input.kind) ? input.kind : 'feature';
+    const parent = input.parentId ? this.core.tasks.get(input.parentId) : undefined;
+    if (input.parentId && (!parent || parent.projectId !== project.id || parent.parentId)) throw new EngineError('a part belongs to a task of the same project that is not itself a part');
+    const reviewBy = this.reviewFor(input, kind, project, !!parent);
     const now = nowIso();
     // Credentials written into a task are kept in the vault; the task carries their names.
     const author = by === 'owner' ? { kind: 'owner' as const, id: null, name: 'The boss' } : { kind: by.startsWith('employee:') ? ('employee' as const) : ('member' as const), id: null, name: by.replace(/^[a-z]+:/, '') };
@@ -378,7 +388,8 @@ export class TaskManager {
       branch: null,
       worktree: null,
       baseSha: null,
-      requiresReview: input.requiresReview ?? (project.policy.requireReview && !NON_CODE_KINDS.has(kind)),
+      requiresReview: reviewBy !== 'none',
+      reviewBy,
       reviewerId: input.reviewerId ?? null,
       reviewOf: input.reviewOf ?? null,
       verifyCommand: input.verifyCommand ?? null,
@@ -397,7 +408,9 @@ export class TaskManager {
       completedAt: null,
       delivery: { status: 'none', via: null, ts: null, detail: null },
       ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
+      ...(parent ? { parentId: parent.id } : {}),
     };
+    if (input.helperIds?.length) this.eng.talk.setHelpers(task, input.helperIds, by);
     if (task.released && this.depsDone(task)) task.status = 'READY';
     this.history(task, 'Created', by);
     this.core.put('task', task);
@@ -415,6 +428,34 @@ export class TaskManager {
     return task;
   }
 
+  /** What the office reviews by when it reviews at all: its default, or — where that is "nobody" — a colleague. */
+  private usualReview(): ReviewBy {
+    const usual = reviewDefaultOf(this.core.settings);
+    return usual === 'none' ? 'peer' : usual;
+  }
+
+  /**
+   * Who reviews a new task. Chosen for it: that. Otherwise every task is reviewed the way the office reviews (a
+   * colleague, then the boss, unless the owner set it differently) — a review itself and a part of a task are not.
+   * Only in an office whose owner set "nobody" is it as it was before: a project's own "require review", for work
+   * that makes commits.
+   */
+  private reviewFor(input: Pick<TaskInput, 'reviewBy' | 'requiresReview' | 'reviewOf'>, kind: TaskKind, project: Project, part: boolean): ReviewBy {
+    if (kind === 'review' || input.reviewOf) return 'none';
+    if (input.reviewBy && REVIEW_BY.includes(input.reviewBy)) return input.reviewBy;
+    if (input.requiresReview === false) return 'none';
+    if (input.requiresReview === true) return this.usualReview();
+    if (part) return 'none';
+    const usual = reviewDefaultOf(this.core.settings);
+    if (usual !== 'none') return usual;
+    return project.policy.requireReview && !NON_CODE_KINDS.has(kind) ? 'peer' : 'none';
+  }
+
+  /** A line in a task's record. */
+  note(task: Task, note: string, by: string): void {
+    this.history(task, note, by);
+  }
+
   private emitAssigned(task: Task, by: string): void {
     const emp = this.core.employees.get(task.assigneeId);
     if (!emp) return;
@@ -424,7 +465,8 @@ export class TaskManager {
   updateTask(id: string, patch: Partial<TaskInput> & { status?: TaskStatus }, actor = 'owner'): Task {
     const task = this.core.tasks.require(id);
     // Before anything is changed: a change that is refused changes nothing.
-    shaped(patch as Record<string, unknown>, { title: 'text', description: 'string', acceptance: 'string', kind: 'text', priority: 'text', roleHint: 'string?', dependsOn: 'list', requiresReview: 'boolean', reviewerId: 'string?', verifyCommand: 'string?', released: 'boolean', assigneeId: 'string?', status: 'text' });
+    shaped(patch as Record<string, unknown>, { title: 'text', description: 'string', acceptance: 'string', kind: 'text', priority: 'text', roleHint: 'string?', dependsOn: 'list', requiresReview: 'boolean', reviewBy: 'text', reviewerId: 'string?', verifyCommand: 'string?', released: 'boolean', assigneeId: 'string?', status: 'text', helperIds: 'list' });
+    if (patch.reviewBy !== undefined && !REVIEW_BY.includes(patch.reviewBy)) throw new EngineError(`reviewBy is one of ${REVIEW_BY.join(', ')}`);
     if (patch.assigneeId !== undefined && patch.assigneeId !== task.assigneeId) {
       if (task.status === 'IN_PROGRESS') throw new EngineError(`${task.key} is in progress; block or finish it before reassigning`);
       if (patch.assigneeId) this.mayTake(this.core.employees.require(patch.assigneeId), task);
@@ -436,9 +478,13 @@ export class TaskManager {
     const editor = actor === 'owner' ? { kind: 'owner' as const, id: null, name: 'The boss' } : { kind: actor.startsWith('employee:') ? ('employee' as const) : ('member' as const), id: null, name: actor.replace(/^[a-z]+:/, '') };
     const hints = [this.core.projects.get(task.projectId)?.name ?? ''];
     for (const key of ['description', 'acceptance'] as const) if (typeof patch[key] === 'string' && patch[key] !== task[key]) patch = { ...patch, [key]: this.eng.vault.capture(patch[key] as string, editor, hints).text };
-    for (const key of ['title', 'description', 'acceptance', 'kind', 'priority', 'roleHint', 'dependsOn', 'requiresReview', 'reviewerId', 'verifyCommand', 'released'] as const) {
+    for (const key of ['title', 'description', 'acceptance', 'kind', 'priority', 'roleHint', 'dependsOn', 'requiresReview', 'reviewBy', 'reviewerId', 'verifyCommand', 'released'] as const) {
       if (patch[key] !== undefined) (task as any)[key] = patch[key];
     }
+    // Who reviews it, said either way: the two fields say the same thing.
+    if (patch.reviewBy !== undefined) task.requiresReview = patch.reviewBy !== 'none';
+    else if (patch.requiresReview !== undefined) task.reviewBy = patch.requiresReview ? (task.reviewBy && task.reviewBy !== 'none' ? task.reviewBy : this.usualReview()) : 'none';
+    if (patch.helperIds !== undefined) this.eng.talk.setHelpers(task, patch.helperIds, actor);
     if (patch.status && patch.status !== task.status) this.moveByOwner(task, patch.status, actor);
     task.updatedAt = nowIso();
     this.core.put('task', task);
@@ -461,7 +507,11 @@ export class TaskManager {
     }
     if (status === 'BACKLOG') task.released = false;
     if (status === 'BLOCKED') task.blockedReason = task.blockedReason ?? 'Blocked by the owner';
-    else task.blockedReason = null;
+    else {
+      task.blockedReason = null;
+      task.waitingFor = null;
+    }
+    if (status !== 'REVIEW') task.reviewStage = null;
     task.status = status;
     if (status === 'DONE') {
       task.completedAt = nowIso();
@@ -649,7 +699,13 @@ export class TaskManager {
       t.dependsOn = t.dependsOn.filter((d) => d !== id);
       this.core.put('task', t);
     }
+    // Its parts stand on their own from now on; and if it was a part, the task it belonged to no longer waits for it.
+    for (const t of this.core.tasks.filter((x) => x.parentId === id)) {
+      t.parentId = null;
+      this.core.put('task', t);
+    }
     this.core.remove('task', id);
+    if (task.parentId) this.eng.talk.partSettled(task, 'removed');
     this.core.audit(actor, 'task.deleted', id, { key: task.key });
     this.schedule();
   }
@@ -835,7 +891,7 @@ export class TaskManager {
   rerouteReviews(): number {
     if (this.core.settings.employeesManageBoard === false) return 0;
     let n = 0;
-    for (const t of this.core.tasks.filter((x) => x.status === 'REVIEW' && !x.reviewerId && !x.evidence.review && !this.core.tasks.find((r) => r.reviewOf === x.id && r.status !== 'DONE'))) {
+    for (const t of this.core.tasks.filter((x) => x.status === 'REVIEW' && !x.reviewerId && !x.evidence.review && !x.evidence.peerReview && reviewByOf(x) !== 'boss' && !this.core.tasks.find((r) => r.reviewOf === x.id && r.status !== 'DONE'))) {
       if (!this.pickReviewer(t)) continue;
       this.history(t, 'No reviewer had been asked: a colleague is asked now', 'orchestrator');
       this.requestReview(t, null);
@@ -913,7 +969,8 @@ export class TaskManager {
           const wt = await this.core.agents.rpc(hostId, { method: 'git.worktree.ensure', params: { repo: insp.repoRoot, path: paths.employee, branch: `orch/${slugify(employee.name)}/home`, base: project.integrationBranch } });
           cwd = wt.path;
           if (codeTask) {
-            const name = task.branch ?? `orch/${slugify(employee.name)}/${task.key.toLowerCase()}-${slugify(task.title, 28)}`;
+            // (Opened again after it was done: its new work starts on a fresh branch, from where the project stands now.)
+            const name = task.branch ?? `orch/${slugify(employee.name)}/${task.key.toLowerCase()}${task.reopened ? `-r${task.reopened}` : ''}-${slugify(task.title, 28)}`;
             const res = await this.core.agents.rpc(hostId, { method: 'git.branch.start', params: { cwd, branch: name, base: project.integrationBranch } });
             branch = res.branch;
             baseSha = task.baseSha ?? res.baseSha;
@@ -955,6 +1012,8 @@ export class TaskManager {
       if (task.evidence.review?.verdict === 'approved') task.evidence.review = null;
       task.status = 'IN_PROGRESS';
       task.blockedReason = null;
+      task.waitingFor = null;
+      task.reviewStage = null;
       task.startedAt = task.startedAt ?? nowIso();
       task.nudges = 0;
       task.progress = { percent: null, note: null, ts: null };
@@ -974,7 +1033,7 @@ export class TaskManager {
         const fb: string[] = [];
         if (task.evidence.review?.verdict === 'changes_requested') fb.push(`Review (${task.evidence.review.by === 'owner' ? 'the boss' : (this.core.employees.get(task.evidence.review.reviewerId)?.name ?? 'reviewer')}): ${task.evidence.review.comments}`);
         if (task.evidence.merge && !task.evidence.merge.ok) fb.push(`Merge into ${task.evidence.merge.into} conflicted: ${task.evidence.merge.detail}\nIn your worktree run "git merge ${project.integrationBranch}", resolve the conflicts, commit, re-run the tests and call complete_task again.`);
-        text = taskPrompt(task, project, deps, fb.length ? fb.join('\n\n') : null, [this.eng.improver.capture.onboardingBlock(employee, project), this.eng.improver.playbookBlock(employee, project.id, true, task)].filter(Boolean).join('\n\n'), sharing.map((t) => `${this.core.employees.get(t.assigneeId)?.name ?? 'a colleague'} (${t.key})`));
+        text = taskPrompt(task, project, deps, fb.length ? fb.join('\n\n') : null, [this.eng.improver.capture.onboardingBlock(employee, project), this.eng.improver.playbookBlock(employee, project.id, true, task)].filter(Boolean).join('\n\n'), sharing.map((t) => `${this.core.employees.get(t.assigneeId)?.name ?? 'a colleague'} (${t.key})`), this.eng.talk.promptLines(task, employee));
         // What people attached to the task, copied to this machine: where each file is, for the Read tool.
         const files = await this.eng.attachments.deliver(task, employee).catch(() => []);
         const missing = (task.attachments ?? []).filter((a) => a.kind === 'input').length - files.length;
@@ -1042,6 +1101,8 @@ export class TaskManager {
     task.friction.blockers++;
     task.blockedReason = needs ? `${reason} — needs: ${needs}` : reason;
     this.history(task, `Blocked by ${employee.name}: ${reason}`, `employee:${employee.name}`);
+    // Said on the task: what the boss writes there next is the answer, and brings the task back.
+    this.eng.talk.blocked(task, employee, needs ? `I cannot go on: ${reason}\nWhat I need: ${needs}` : `I cannot go on: ${reason}`);
     this.core.put('task', task);
     this.core.event({ type: 'task.blocked', source: 'mcp', summary: `${employee.name} is blocked on ${task.key}: ${truncate(reason, 140)}`, taskId: task.id, projectId: task.projectId, employeeId: employee.id, data: { key: task.key, reason, needs: needs ?? null } });
     this.eng.comms.notify({ kind: 'blocked', severity: 'critical', title: `${employee.name} is blocked on ${task.key}`, body: task.blockedReason, employeeId: employee.id, taskId: task.id, projectId: task.projectId });
@@ -1090,6 +1151,7 @@ export class TaskManager {
     task.description = `${task.description}\n\nHandoff from ${from.name} (${nowIso().slice(0, 16).replace('T', ' ')} UTC)${task.branch ? `, work so far is on branch ${task.branch}` : ''}:\n${note}`.trim();
     this.history(task, `Handed off by ${from.name} to ${to.name}`, `employee:${from.name}`);
     task.updatedAt = nowIso();
+    this.eng.talk.add(task, { from: { kind: 'employee', id: from.id, name: from.name }, body: `Handed over to ${to.name}:\n${note}`, kind: 'handoff', mentions: [{ kind: 'employee', id: to.id, name: to.name }] }, { store: false, quiet: true });
     this.core.put('task', task);
     this.core.event({ type: 'task.handoff', source: 'mcp', summary: `${from.name} handed ${task.key} off to ${to.name}`, taskId: task.id, projectId: task.projectId, employeeId: from.id, data: { key: task.key, from: from.id, to: to.id, notes: redactSecrets(truncate(note, 600)), branch: task.branch } });
     this.emitAssigned(task, `employee:${from.name}`);
@@ -1102,11 +1164,20 @@ export class TaskManager {
 
   /** The owner cleared a blocker: the task goes back to the employee with the owner's note. */
   /** `by`: the employee who resolved the blocker, when it was not the owner (it is then their message the assignee reads). */
-  unblock(taskId: string, note: string, actor = 'owner', by?: Employee): Task {
+  /**
+   * `threaded`: what unblocks it was said in the task's conversation (an answer, the parts being done) — it reaches
+   * the employee from there, and is not written into the task's description as well. `from`: who the message that
+   * brings it back is from, when it is neither the boss nor `by`.
+   */
+  unblock(taskId: string, note: string, actor = 'owner', by?: Employee, opts: { threaded?: boolean; from?: Message['from'] } = {}): Task {
     const task = this.core.tasks.require(taskId);
     if (task.status !== 'BLOCKED') throw new EngineError(`${task.key} is not blocked`);
     const employee = this.core.employees.get(task.assigneeId);
     const previous = task.blockedReason;
+    // Unblocked by a button or a colleague's tool rather than by an answer on the task: its open question is closed with this.
+    if (!opts.threaded) this.eng.talk.unblocked(task, note, by ? { kind: 'employee', id: by.id, name: by.name } : actor === 'owner' ? { kind: 'owner', id: null, name: 'The boss' } : actor === 'office' ? { kind: 'office', id: null, name: 'The office' } : { kind: 'member', id: null, name: actor.replace(/^[a-z]+:/, '') });
+    const waited = task.waitingFor ?? null;
+    task.waitingFor = null;
     task.blockedReason = null;
     this.eng.comms.resolveNotifications((n) => n.taskId === task.id && (n.kind === 'blocked' || n.kind === 'merge_conflict'));
     const session = employee ? this.core.runningSessionOf(employee.id) : undefined;
@@ -1117,12 +1188,22 @@ export class TaskManager {
       this.history(task, `Unblocked: ${note}`, actor);
       this.core.put('task', task);
       // (Somebody who unblocks their own task knows it: no message to themselves, which would only cost them a turn.)
-      if (by?.id !== employee!.id) this.eng.comms.sendMessage({ from: by ? { kind: 'employee', id: by.id, name: `${by.name} (${by.title})` } : { kind: 'owner', id: null, name: 'the boss' }, toEmployeeId: employee!.id, body: `${task.key} is unblocked (was: ${previous ?? 'blocked'}). ${note}\nContinue the task.`, kind: 'system', taskId: task.id });
+      if (by?.id !== employee!.id) {
+        const from: Message['from'] = opts.from ?? (by ? { kind: 'employee', id: by.id, name: `${by.name} (${by.title})` } : { kind: 'owner', id: null, name: 'the boss' });
+        const body =
+          waited?.kind === 'answer'
+            ? `${by ? by.name : 'The boss'} answered on ${task.key}: ${note}\nGo on with the task with this.`
+            : waited?.kind === 'parts'
+              ? note
+              : `${task.key} is unblocked (was: ${previous ?? 'blocked'}). ${note}\nContinue the task.`;
+        this.eng.comms.sendMessage({ from, toEmployeeId: employee!.id, body, kind: 'system', taskId: task.id });
+      }
       if (session!.activity === 'blocked') this.eng.sessions.setActivity(session!, 'idle', null);
     } else {
       task.status = 'READY';
       task.released = true;
-      if (note) task.description = `${task.description}\n\nNote from ${by ? by.name : 'the boss'} after a blocker (${previous ?? 'blocked'}): ${note}`.trim();
+      // (Said in the conversation: the task's prompt carries the conversation, so the description is left as it is.)
+      if (note && !opts.threaded) task.description = `${task.description}\n\nNote from ${by ? by.name : 'the boss'} after a blocker (${previous ?? 'blocked'}): ${note}`.trim();
       this.history(task, `Unblocked and requeued: ${note}`, actor);
       this.core.put('task', task);
     }
@@ -1142,6 +1223,12 @@ export class TaskManager {
     const task = this.currentTask(employee.id);
     if (!task) return { text: 'You have no task in progress. Use get_current_task or get_available_tasks.', isError: true };
     if (this.verifying.has(task.id)) return { text: `Verification of ${task.key} is already running; wait for its result.`, isError: true };
+    // Divided into parts that are not all done: it is not finished, it waits for them.
+    if (this.eng.talk.partsOf(task).some((p) => p.status !== 'DONE')) {
+      const text = this.eng.talk.waitForParts(task, employee, String(args.summary ?? ''));
+      this.afterEmployeeFreed(employee);
+      return { text };
+    }
     const project = this.core.projects.require(task.projectId);
     const hostId = this.core.runningSessionOf(employee.id)?.hostId ?? employee.hostId;
     if (!hostId || !this.core.agents.isOnline(hostId)) return { text: 'Your host is not reachable by Orchestrator right now; try complete_task again shortly.', isError: true };
@@ -1154,7 +1241,8 @@ export class TaskManager {
 
       if (task.kind === 'review' && task.reviewOf) {
         const target = this.core.tasks.get(task.reviewOf);
-        if (target && target.status === 'REVIEW' && !target.evidence.review) {
+        // (A verdict that sent the work on to the boss is a verdict: the reviewer's own task is finished by it.)
+        if (target && target.status === 'REVIEW' && !target.evidence.review && target.evidence.peerReview?.reviewerId !== employee.id) {
           return { text: `You have not submitted your verdict yet. Call submit_review for ${target.key} first, then complete_task.`, isError: true };
         }
       }
@@ -1247,6 +1335,7 @@ export class TaskManager {
           const aboutTests = task.kind === 'test' && !/^employee:/.test(task.createdBy ?? '');
           if (!aboutTests && !task.requiresReview) {
             task.requiresReview = true;
+            task.reviewBy = this.usualReview();
             this.core.event({ type: 'task.updated', source: 'server', summary: `${task.key} passed its checks after changing them (${touched[0]}${touched.length > 1 ? ` and ${touched.length - 1} more` : ''}): it goes to review`, taskId: task.id, projectId: project.id, employeeId: employee.id, data: { key: task.key, touchedChecks: touched } });
           }
         }
@@ -1260,12 +1349,16 @@ export class TaskManager {
         // Whoever handed it in is its author for this review, also if the task is given to somebody else meanwhile.
         task.authorId = task.assigneeId;
         task.evidence.review = null;
+        task.evidence.peerReview = null;
         this.history(task, 'Verified; waiting for review', 'orchestrator');
+        this.eng.talk.add(task, { from: { kind: 'employee', id: employee.id, name: employee.name }, body: args.summary, kind: 'handed_in', mentions: [] }, { store: false, quiet: true });
         this.core.put('task', task);
         const reviewer = this.requestReview(task, null);
         this.afterEmployeeFreed(employee);
-        return { text: `${task.key} passed Orchestrator's checks and is now waiting for review by ${reviewer ? reviewer.name : 'the boss'}. You are free; wait for the next task or for review feedback.` };
+        const then = reviewer && reviewByOf(task) === 'both' ? ', and then by the boss' : '';
+        return { text: `${task.key} passed Orchestrator's checks and is now waiting for review by ${reviewer ? reviewer.name : 'the boss'}${then}. You are free; wait for the next task or for review feedback.` };
       }
+      this.eng.talk.add(task, { from: { kind: 'employee', id: employee.id, name: employee.name }, body: args.summary, kind: 'handed_in', mentions: [] }, { store: false, quiet: true });
       await this.finalize(task);
       this.afterEmployeeFreed(employee);
       if (task.status === 'DONE') return { text: `${task.key} is verified and DONE${task.evidence.merge?.ok ? ` (merged into ${task.evidence.merge.into})` : ''}. Good work. Wait for the next task.` };
@@ -1481,6 +1574,8 @@ export class TaskManager {
     }
     task.status = 'DONE';
     task.blockedReason = null;
+    task.waitingFor = null;
+    task.reviewStage = null;
     task.completedAt = nowIso();
     this.history(task, 'Verified and completed', 'orchestrator');
     this.core.put('task', task);
@@ -1517,6 +1612,8 @@ export class TaskManager {
     this.eng.improver.afterTask(task);
     this.checkProjectDelivered(project);
     this.checkMilestones();
+    // A part of a larger task: said there, and the last one brings that task back to whoever leads it.
+    if (task.parentId) this.eng.talk.partSettled(task, 'done');
     this.schedule();
   }
 
@@ -1601,11 +1698,16 @@ export class TaskManager {
   requestReview(task: Task, reviewerRef: string | null, notes?: string): Employee | null {
     const author = this.core.employees.get(task.assigneeId);
     let reviewer: Employee | undefined;
-    if (reviewerRef && author) reviewer = this.eng.comms.resolveTeammate(author, reviewerRef);
-    reviewer = reviewer ?? this.core.employees.get(task.reviewerId) ?? this.pickReviewer(task);
-    // Whoever was named: not the author, not the foreman, not somebody on the other side of the line.
-    if (reviewer && (reviewer.id === task.assigneeId || reviewer.roleKey === 'foreman' || reviewer.archived || !this.canSee(reviewer, task))) reviewer = this.pickReviewer(task);
-    if (reviewer && reviewer.id === task.assigneeId) reviewer = undefined;
+    // Reviewed by the boss alone: no colleague is asked.
+    const bossOnly = reviewByOf(task) === 'boss';
+    if (!bossOnly) {
+      if (reviewerRef && author) reviewer = this.eng.comms.resolveTeammate(author, reviewerRef);
+      reviewer = reviewer ?? this.core.employees.get(task.reviewerId) ?? this.pickReviewer(task);
+      // Whoever was named: not the author, not the foreman, not somebody on the other side of the line.
+      if (reviewer && (reviewer.id === task.assigneeId || reviewer.roleKey === 'foreman' || reviewer.archived || !this.canSee(reviewer, task))) reviewer = this.pickReviewer(task);
+      if (reviewer && reviewer.id === task.assigneeId) reviewer = undefined;
+    }
+    task.reviewStage = reviewer ? 'peer' : 'boss';
     this.core.company.reviewsRequested++;
     this.core.saveCompany();
     this.core.event({
@@ -1618,7 +1720,8 @@ export class TaskManager {
       data: { key: task.key, reviewerId: reviewer?.id ?? null, fromEmployeeId: task.assigneeId, toEmployeeId: reviewer?.id ?? null },
     });
     if (!reviewer) {
-      this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your review`, body: `${author?.name ?? 'An employee'} finished "${task.title}". No reviewer is on the team, so it is waiting for you.`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
+      this.core.put('task', task);
+      this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your review`, body: `${author?.name ?? 'An employee'} finished "${task.title}". ${bossOnly ? 'It' : 'No colleague can review it, so it'} is waiting for you.`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
       return null;
     }
     task.reviewerId = reviewer.id;
@@ -1643,7 +1746,8 @@ export class TaskManager {
     return reviewer;
   }
 
-  async submitReview(by: Employee | 'owner', taskRef: string, verdict: 'approve' | 'request_changes', comments: string): Promise<Task> {
+  /** `who`: the person, when it is one (their name stands on the verdict; `by` is then 'owner'). */
+  async submitReview(by: Employee | 'owner', taskRef: string, verdict: 'approve' | 'request_changes', comments: string, who?: Person): Promise<Task> {
     const task = this.taskByKey(taskRef, by === 'owner' ? null : by.projectId);
     if (!task) throw new EngineError(`no task "${taskRef}"`);
     if (task.status !== 'REVIEW') throw new EngineError(`${task.key} is not waiting for review (status ${task.status})`);
@@ -1653,12 +1757,16 @@ export class TaskManager {
       // With the board in the employees' hands, any colleague may review finished work — never its own author.
       if (!assigned && this.core.settings.employeesManageBoard === false) throw new EngineError(`you were not asked to review ${task.key}`);
       if (!this.canSee(by, task)) throw new EngineError(`no task "${taskRef}"`);
+      // A colleague has approved it already: what it waits for now is the boss.
+      if (task.reviewStage === 'boss' && task.evidence.peerReview) throw new EngineError(`${task.key} was approved by ${this.core.employees.get(task.evidence.peerReview.reviewerId)?.name ?? 'a colleague'} and now waits for the boss`);
     }
     const approved = verdict === 'approve';
+    if (!approved && !comments.trim()) throw new EngineError('say what should change: it is what the author reads');
     task.evidence.review = { reviewerId: by === 'owner' ? null : by.id, verdict: approved ? 'approved' : 'changes_requested', comments, ts: nowIso(), by: by === 'owner' ? 'owner' : 'employee' };
     this.core.company.reviewsCompleted++;
     this.core.saveCompany();
-    const reviewerName = by === 'owner' ? 'The boss' : by.name;
+    const reviewerName = by === 'owner' ? (who && who.kind !== 'owner' ? who.name : 'The boss') : by.name;
+    const from = by === 'owner' ? { kind: who?.kind ?? ('owner' as const), id: who?.id ?? null, name: reviewerName } : { kind: 'employee' as const, id: by.id, name: by.name };
     this.core.event({
       type: 'task.review_completed',
       source: by === 'owner' ? 'owner' : 'mcp',
@@ -1674,10 +1782,25 @@ export class TaskManager {
       // The owner reviewed it: an employee review still queued for it is no longer needed.
       for (const r of this.core.tasks.filter((t) => t.reviewOf === task.id && (t.status === 'READY' || t.status === 'BACKLOG'))) this.core.remove('task', r.id);
     }
+    if (approved && by !== 'owner' && reviewByOf(task) === 'both') {
+      // A colleague's approval is the first of two: the work goes on to the boss.
+      task.evidence.peerReview = { reviewerId: by.id, comments, ts: nowIso() };
+      task.evidence.review = null;
+      task.reviewStage = 'boss';
+      this.history(task, `Approved by ${reviewerName}; waiting for the boss`, reviewerName);
+      this.eng.talk.add(task, { from, body: comments.trim() || 'Approved.', kind: 'approved', mentions: [] }, { store: false, quiet: true });
+      this.core.put('task', task);
+      this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your review`, body: `${this.core.employees.get(task.authorId ?? task.assigneeId)?.name ?? 'An employee'} finished "${task.title}" and ${reviewerName} approved it${comments.trim() ? `: ${truncate(comments, 200)}` : '.'}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
+      return task;
+    }
     if (approved) {
       this.history(task, `Review approved by ${reviewerName}`, reviewerName);
+      this.eng.talk.add(task, { from, body: comments.trim() || 'Approved.', kind: 'approved', mentions: [] }, { store: false, quiet: true });
       await this.finalize(task);
     } else {
+      this.eng.talk.add(task, { from, body: comments, kind: 'sent_back', mentions: [] }, { store: false, quiet: true });
+      task.reviewStage = null;
+      task.evidence.peerReview = null;
       task.status = 'READY';
       task.released = true;
       task.attempts++;
@@ -1690,6 +1813,75 @@ export class TaskManager {
       this.schedule();
     }
     return task;
+  }
+
+  /**
+   * A finished task is sent back: opened again for whoever did it, with what should change as the feedback of the
+   * next attempt. What was done stays where it is (merged, committed); the new work is measured from where the
+   * folder stands now, on a fresh branch where the project uses branches, and is checked and reviewed like any other.
+   */
+  reopen(taskId: string, note: string, who: Person): Task {
+    const task = this.core.tasks.require(taskId);
+    if (task.status !== 'DONE') throw new EngineError(`${task.key} is not done`);
+    if (task.kind === 'review') throw new EngineError('a review is not opened again; send back the task it reviewed');
+    const name = who.kind === 'owner' ? 'The boss' : who.name;
+    const actor = who.kind === 'owner' ? 'owner' : `member:${who.name}`;
+    const text = this.eng.vault.capture(truncate(note.trim(), 4000), { kind: 'owner', id: null, name }, [this.core.projects.get(task.projectId)?.name ?? '']).text;
+    const author = this.core.employees.get(task.assigneeId);
+    if (!author || author.archived) task.assigneeId = null;
+    task.status = 'READY';
+    task.released = true;
+    task.completedAt = null;
+    task.attempts++;
+    task.friction.reviewRejections++;
+    task.reopened = (task.reopened ?? 0) + 1;
+    task.evidence.review = { reviewerId: null, verdict: 'changes_requested', comments: text, ts: nowIso(), by: 'owner' };
+    task.evidence.peerReview = null;
+    task.evidence.merge = null;
+    task.reviewStage = null;
+    // The next attempt is new work: it is measured from where things stand when it starts.
+    task.branch = null;
+    task.worktree = null;
+    task.baseSha = null;
+    task.baseDirty = null;
+    task.touched = [];
+    task.sharedWith = [];
+    task.nudges = 0;
+    task.progress = { percent: null, note: null, ts: null };
+    task.delivery = { status: 'none', via: null, ts: null, detail: null };
+    if (PRIORITY_ORDER[task.priority] > PRIORITY_ORDER.high) task.priority = 'high';
+    this.history(task, `Opened again by ${name}: ${truncate(text, 200)}`, actor);
+    this.eng.talk.add(task, { from: { kind: who.kind, id: who.id, name }, body: text, kind: 'sent_back', mentions: [] }, { store: false, quiet: true });
+    this.core.put('task', task);
+    this.eng.comms.resolveNotifications((n) => n.taskId === task.id && n.kind === 'task_completed');
+    this.core.audit(actor, 'task.reopened', task.id, { key: task.key });
+    this.core.event({ type: 'task.reopened', source: 'owner', summary: `${task.key} was sent back by ${name}: ${truncate(text, 120)}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, note: truncate(text, 600) } });
+    // What the owner says about finished work is a lesson candidate for its author, as in a review.
+    if (who.kind === 'owner') this.eng.improver.capture.onReviewRejected(task, text);
+    this.schedule();
+    return task;
+  }
+
+  /**
+   * Once, when the office first runs with "every task is reviewed unless chosen otherwise" (2026-11-12): every task
+   * that is not finished — and is neither a review nor a part — is to be reviewed the way the office reviews.
+   * Finished tasks, tasks already in review, and whatever is chosen afterwards are left alone.
+   */
+  adoptReviewDefault(): number {
+    if (this.core.store.kvGet<number>('tasks.reviewByDefault', 0) >= 1) return 0;
+    let n = 0;
+    const usual = reviewDefaultOf(this.core.settings);
+    if (usual !== 'none') {
+      for (const t of this.core.tasks.filter((x) => x.status !== 'DONE' && x.status !== 'REVIEW' && x.kind !== 'review' && !x.parentId && !x.requiresReview)) {
+        t.requiresReview = true;
+        t.reviewBy = usual;
+        this.core.put('task', t);
+        n++;
+      }
+    }
+    this.core.store.kvSet('tasks.reviewByDefault', 1);
+    if (n) this.core.audit('office', 'tasks.review_default', 'tasks', { count: n });
+    return n;
   }
 
   // ─────────────────────────── planning ────────────────────────────

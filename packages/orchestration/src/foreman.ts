@@ -267,7 +267,9 @@ export class Foreman {
       }
     }
 
-    for (const t of core.tasks.filter((x) => x.status === 'BLOCKED' && active(x.projectId))) {
+    // (A task that only waits — for an answer asked on it, or for its parts — is not a problem to solve: a question
+    // to the boss is in this digest as a question already.)
+    for (const t of core.tasks.filter((x) => x.status === 'BLOCKED' && !x.waitingFor && active(x.projectId))) {
       const since = [...t.history].reverse().find((h) => h.status === 'BLOCKED')?.ts ?? t.updatedAt;
       if (now - Date.parse(since) < settle) continue;
       const who = core.employees.get(t.assigneeId);

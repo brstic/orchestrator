@@ -1,6 +1,6 @@
 import { useTick } from './company-shared.tsx';
 import { useEffect, useState, type ReactNode } from 'react';
-import { ACTIVITY_LABEL, SURROUNDINGS, surroundingsOf, type AuditEntry, type ForemanSettings, type ForemanStatus, type OwnerSettings, type SelfImprovementSettings, type Surroundings } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, SURROUNDINGS, reviewDefaultOf, surroundingsOf, type AuditEntry, type ForemanSettings, type ForemanStatus, type OwnerSettings, type ReviewBy, type SelfImprovementSettings, type Surroundings } from '@orchestrator/contracts';
 import { Badge, Button, Field, Window } from '@orchestrator/ui';
 import { api, forgetToken } from '../../lib/api.ts';
 import { DEFAULT_KEYS, setPrefs, usePrefs, type ClientPrefs, type PrefsPatch } from '../../lib/prefs.ts';
@@ -12,6 +12,7 @@ import { act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { LoadState, fmtDateTime, keyLabel, useLoad, type PanelProps } from './company-shared.tsx';
 import { AutopilotDial } from './growth.tsx';
+import { REVIEW_CHOICES } from './task-shared.tsx';
 
 type SectionId = 'company' | 'surroundings' | 'graphics' | 'controls' | 'sound' | 'account' | 'improve' | 'workers' | 'foreman' | 'audit';
 
@@ -943,6 +944,20 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                     deploying, deleting, reading credential files all run at once, and nothing asks you. Switching it off takes effect at once, also for sessions that are already running (on a computer with an older desktop app, the session is started again between turns, once); switching it back on starts each such session again between turns.
                     Either way the office's own files on a machine stay fenced off, and a project's deny rules still refuse what they refuse.
                   </Toggle>
+                  <div className="field" data-review-default>
+                    <span className="field-label">Finished work is reviewed by</span>
+                    <select aria-label="Finished work is reviewed by" value={reviewDefaultOf(settings)} onChange={(e) => void save({ reviewDefault: e.target.value as ReviewBy })} style={{ width: 'auto', alignSelf: 'flex-start' }}>
+                      {REVIEW_CHOICES.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="field-hint">
+                      {REVIEW_CHOICES.find((c) => c.id === reviewDefaultOf(settings))!.hint} This is what every new ticket starts with, whoever makes it — you, an employee, a routine; each ticket can be set differently when it is made or
+                      afterwards. A part of a divided ticket is not reviewed on its own: the whole is.
+                    </span>
+                  </div>
                   <Toggle checked={settings.employeesManageBoard !== false} onChange={(employeesManageBoard) => void save({ employeesManageBoard })} title="Employees manage the task board themselves">
                     On: any employee can release a waiting task, unblock one (saying how), give a task to a colleague, review a colleague's finished work, and start a colleague who is needed — so work goes on without you. Off: those are yours.
                     Either way no employee approves a permission request, marks work done without verification, or deletes anything.

@@ -141,6 +141,8 @@ const RULES: Rule[] = [
   rule('POST', '/tasks/:id/attachments/:id/data', 'work', path('task')),
   rule('DELETE', '/tasks/:id/attachments/:id', 'work', path('task')),
   rule('POST', '/tasks/:id/review', 'work', path('task')),
+  rule('POST', '/tasks/:id/comments', 'work', path('task')),
+  rule('POST', '/tasks/:id/send-back', 'work', path('task')),
   rule('POST', '/tasks/:id/unblock', 'work', path('task')),
   rule('POST', '/tasks/:id/retry-merge', 'work', path('task')),
   rule('POST', '/questions/:id/answer', 'work', path('question')),

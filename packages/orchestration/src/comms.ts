@@ -262,6 +262,8 @@ export class Comms {
     taskId?: string | null;
     projectId?: string | null;
     quietEvent?: boolean;
+    /** Asked in a task's conversation: the comment is written by whoever asks, not mirrored from here. */
+    onTask?: boolean;
   }): Question {
     const task = q.employee ? this.eng.tasks.currentTask(q.employee.id) : undefined;
     const question: Question = {
@@ -313,6 +315,8 @@ export class Comms {
       projectId: question.projectId,
       questionId: question.id,
     });
+    // A question about a task is part of that task's conversation.
+    if (!q.onTask) this.eng.talk.questionAsked(question);
     if (!q.quietEvent) {
       this.core.event({
         type: 'agent.question',
@@ -635,11 +639,17 @@ export class Comms {
       case 'ask_user_question_hook':
         this.answerHook(q);
         break;
-      case 'mcp_tool':
+      case 'mcp_tool': {
+        // Written on the task it was asked on; a task that was parked on it goes back to its employee with it.
+        const onTask = this.eng.talk.hasWaiterFor(q);
+        const returned = this.eng.talk.questionAnswered(q, actor);
         if (this.hasWaiter(q.id)) this.wake(q);
+        else if (returned) this.setStatus(q, 'delivered', 'Given back with the task that waited for it');
+        else if (onTask) this.setStatus(q, 'delivered', 'Returned as the result of the comment_on_task call');
         else if (q.employeeId) this.enqueueAnswer(q, true);
         else this.setStatus(q, 'failed', 'No session to deliver the answer to.');
         break;
+      }
       case 'terminal': {
         // e.g. the workspace trust prompt: the answer is a keypress in the real terminal.
         const session = this.core.sessions.get(q.sessionId);

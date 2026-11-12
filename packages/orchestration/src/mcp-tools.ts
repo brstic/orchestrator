@@ -1,5 +1,5 @@
 import type { AgentSession, Employee, Task } from '@orchestrator/contracts';
-import { ACTIVITY_LABEL, truncate } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, reviewByOf, truncate } from '@orchestrator/contracts';
 import type { McpServerOptions, McpToolHandler } from '@orchestrator/integrations';
 import { BOARD_TOOLS, FILE_TOOLS, FOREMAN_TOOLS, MEMORY_TOOLS, ORCHESTRATOR_TOOLS, VAULT_TOOLS } from '@orchestrator/integrations';
 import type { Engine } from './engine.ts';
@@ -19,11 +19,17 @@ function describeTask(eng: Engine, t: Task): string {
   const core = eng.core;
   const project = core.projects.get(t.projectId);
   const deps = t.dependsOn.map((id) => core.tasks.get(id)).filter((x): x is Task => !!x);
+  const parts = eng.talk.partsOf(t);
+  const thread = eng.talk.threadText(t, 15);
   const lines = [
     `${t.key}: ${t.title}`,
     `Status: ${t.status}${t.status === 'BACKLOG' && !t.released ? ' (not released)' : ''} · Kind: ${t.kind} · Priority: ${t.priority}`,
     `Assigned to: ${core.employees.get(t.assigneeId)?.name ?? 'nobody'}`,
-    t.status === 'BLOCKED' ? `Blocked on: ${t.blockedReason ?? 'not said'}` : '',
+    t.status === 'BLOCKED' ? (t.waitingFor ? (t.blockedReason ?? 'Waiting') : `Blocked on: ${t.blockedReason ?? 'not said'}`) : '',
+    t.parentId ? `A part of: ${core.tasks.get(t.parentId)?.key ?? 'a task that is gone'}` : '',
+    parts.length ? `Parts: ${parts.map((p) => `${p.key} [${p.status}] ${truncate(p.title, 60)}${p.assigneeId ? ` — ${core.employees.get(p.assigneeId)?.name}` : ''}`).join('; ')}` : '',
+    t.helperIds?.length ? `On it with the assignee: ${t.helperIds.map((id) => core.employees.get(id)?.name).filter(Boolean).join(', ')}` : '',
+    t.requiresReview ? `Reviewed by: ${{ both: 'a colleague, then the boss', boss: 'the boss', peer: 'a colleague', none: 'nobody' }[reviewByOf(t)]}${t.status === 'REVIEW' ? ` (now: ${t.reviewStage === 'boss' ? 'the boss' : 'a colleague'})` : ''}` : '',
     `Project: ${project?.name ?? 'unknown'}`,
     t.branch ? `Branch: ${t.branch}` : '',
     t.worktree ? `Worktree: ${t.worktree}` : '',
@@ -34,6 +40,7 @@ function describeTask(eng: Engine, t: Task): string {
     (t.verifyCommand ?? project?.verifyCommand) ? `\nVerified by: ${t.verifyCommand ?? project?.verifyCommand}` : '',
     t.evidence.review?.verdict === 'changes_requested' ? `\nReview feedback to address: ${t.evidence.review.comments}` : '',
     t.evidence.verification && t.evidence.verification.passed === false ? `\nLast verification failed:\n${truncate(t.evidence.verification.outputTail, 1500)}` : '',
+    thread ? `\nThe conversation on it (newest last):\n${thread}` : '',
     t.attachments?.length
       ? `\nFiles on the task:\n${t.attachments.map((x) => `- ${x.name} (${x.kind === 'evidence' ? `evidence from ${x.addedBy.name}` : `attached by ${x.addedBy.name}`}${x.caption ? `: ${x.caption}` : ''})${x.kind === 'input' && Object.values(x.paths ?? {}).length ? ` — on the machine it was sent to: ${Object.values(x.paths!).join(', ')}` : ''}`).join('\n')}`
       : '',
@@ -181,6 +188,19 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       return task ? `${task.key} is marked BLOCKED and the boss has been alerted. Stop working on it and wait for instructions.` : 'The boss has been alerted that you are blocked.';
     },
 
+    comment_on_task: async (a, { employee, session, signal }) => {
+      const many = tooMany(employee, 'comment on a ticket', 120);
+      if (many) return err(many);
+      return eng.talk.byEmployee(employee, session, { task: a.task ? String(a.task) : undefined, text: String(a.text ?? ''), to: Array.isArray(a.to) ? a.to.map(String) : typeof a.to === 'string' ? [a.to] : undefined, ask: a.ask === true }, signal);
+    },
+
+    split_task: async (a, { employee }) => {
+      if (employee.roleKey === FOREMAN_ROLE) return err('A foreman does not hold tasks, so it has none to split.');
+      const many = tooMany(employee, 'part of a ticket', 24, Array.isArray(a.parts) ? Math.max(1, a.parts.length) : 1);
+      if (many) return err(many);
+      return eng.talk.split(employee, a.parts);
+    },
+
     complete_task: async (a, { employee }) => eng.tasks.completeFromAgent(employee, { summary: String(a.summary), tests_run: a.tests_run ? String(a.tests_run) : undefined, no_code_changes: a.no_code_changes === true }),
 
     submit_result: async (a, { employee, session }) => {
@@ -194,6 +214,8 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       const task = eng.tasks.currentTask(employee.id);
       if (!task) return { text: 'You have no task in progress to review.', isError: true };
       task.requiresReview = true;
+      // (A task that was not to be reviewed: by a colleague, as asked for here.)
+      if (!task.reviewBy || task.reviewBy === 'none') task.reviewBy = 'peer';
       if (a.reviewer) {
         const r = eng.comms.resolveTeammate(employee, String(a.reviewer));
         if (r && r.roleKey === FOREMAN_ROLE) return err(`${r.name} is the foreman and does not review work. Name a colleague, or leave the reviewer out and one is chosen.`);
@@ -421,6 +443,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       const held = heldProject(task);
       if (held) return held;
       if (task.status !== 'BLOCKED') return err(`${task.key} is not blocked (${task.status}).`);
+      if (task.waitingFor?.kind === 'parts') return err(`${task.key} is not blocked: it waits for its parts and goes on by itself when they are done.`);
       if (task.blockedReason === 'Blocked by the owner') return err(`The boss blocked ${task.key}. It stays blocked until the boss says otherwise (ask_boss if it matters now).`);
       const note = String(a.note ?? '').trim();
       if (note.length < 12) return err('Say in "note" how the blocker is resolved — what was found, decided or fixed. Whoever picks the task up reads that.');

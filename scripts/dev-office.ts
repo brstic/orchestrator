@@ -8,7 +8,11 @@
  *
  * This is NOT how the product runs. Use `pnpm start` for a real office.
  *
- *   node scripts/dev-office.ts [--port 4611] [--ui <folder with a built UI>] [--member-room "Mila:3"]...
+ *   node scripts/dev-office.ts [--port 4611] [--ui <folder with a built UI>] [--review both|boss|peer|none] [--member-room "Mila:3"]...
+ *
+ * `--review`: who reviews a finished task here when nobody chose (`OwnerSettings.reviewDefault`). This office is
+ * set to `none` unless told otherwise — its scripted tasks are then done when they pass, which is what the UI tests
+ * that use it count on; `--review both` shows the office as a real one starts (a colleague, then the boss).
  *
  * `--member-room "<name>:<employees>"` (may be repeated) adds a member of the office who is connected from "their
  * own computer": a second host agent in this process, enrolled as that member's personal host, with that many
@@ -47,6 +51,10 @@ process.env.HOME = home;
 const wrapper = path.join(base, 'fake-claude');
 fs.writeFileSync(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${path.join(here, '..', 'tests', 'fixtures', 'fake-claude.mjs')}" "$@"\n`, { mode: 0o755 });
 const server = await startServer({ dataDir: path.join(base, 'server'), host: '127.0.0.1', port, quiet: true, uiDir, timings: { askBossWaitMs: 3600_000, meetingRoundMs: 600_000 } });
+{
+  const review = process.argv.includes('--review') ? process.argv[process.argv.indexOf('--review') + 1] : 'none';
+  server.engine.core.updateSettings({ reviewDefault: (['both', 'boss', 'peer', 'none'] as const).find((r) => r === review) ?? 'none' });
+}
 const cfg = { ...defaultConfig(), serverUrl: server.url, name: 'dev-mac', allowedRoots: [fs.realpathSync(base)], tmuxSocketName: sock, claudeBin: wrapper, approvalWaitSeconds: 3600 };
 const info = { hostname: 'dev-mac', platform: process.platform, arch: process.arch, agentVersion: 'dev', tmuxVersion: 'dev', claudeVersion: '2.1.321', cpus: 8, totalMemBytes: 16e9, user: 'dev' };
 const en = await enroll(server.url, server.localEnrollToken(), 'dev-mac', info);

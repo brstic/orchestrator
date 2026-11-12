@@ -497,6 +497,8 @@ export interface TaskEvidence {
   diffStat: string | null;
   verification: VerificationResult | null;
   review: { reviewerId: ID | null; verdict: 'approved' | 'changes_requested'; comments: string; ts: ISODate; by: 'employee' | 'owner' } | null;
+  /** `reviewBy: 'both'`: the colleague's approval that sent the work on to the boss. Cleared when the work is handed in again. */
+  peerReview?: { reviewerId: ID; comments: string; ts: ISODate } | null;
   merge: { ts: ISODate; ok: boolean; sha: string | null; into: string; detail: string } | null;
 }
 
@@ -516,6 +518,50 @@ export interface TaskAttachment {
   /** Where a copy stands on each machine it was sent to (host id → path there), for the employee to open. */
   paths?: Record<ID, string>;
 }
+
+/**
+ * Who has to approve a finished task before it is done: `both` — a colleague first, then the boss (the default);
+ * `boss`; `peer` — a colleague, the boss only when there is nobody to review; `none`. See `docs/TASKS.md`.
+ */
+export type ReviewBy = 'both' | 'boss' | 'peer' | 'none';
+export const REVIEW_BY: ReviewBy[] = ['both', 'boss', 'peer', 'none'];
+/** What a task is reviewed by when nobody chose: the office's setting, else a colleague and then the boss. */
+export function reviewDefaultOf(settings: { reviewDefault?: unknown } | null | undefined): ReviewBy {
+  return REVIEW_BY.includes(settings?.reviewDefault as ReviewBy) ? (settings!.reviewDefault as ReviewBy) : 'both';
+}
+/** Who reviews this task (tasks from before `reviewBy` existed: a colleague when there is one, as it was). */
+export function reviewByOf(task: { reviewBy?: ReviewBy; requiresReview: boolean }): ReviewBy {
+  if (!task.requiresReview) return 'none';
+  return task.reviewBy && task.reviewBy !== 'none' ? task.reviewBy : 'peer';
+}
+
+/** Somebody a comment is addressed to: the boss (the people of the office) or an employee. */
+export type TaskMention = { kind: 'boss' } | { kind: 'employee'; id: ID; name: string };
+
+/**
+ * One entry of the conversation on a task. People and employees write them; the office writes the ones that mark
+ * what happened (approved, sent back, split, a part finished).
+ * - `note`: said. `question`: asked, and the work waits for the answer (`answeredBy`: the comment that answered it).
+ * - `answer`: the answer to a question (`answerTo`). `approved` / `sent_back`: a review verdict, or a finished task opened again.
+ * - `handed_in`: the work was handed in (the employee's summary). `handoff`: passed to a colleague. `split`: divided into parts. `part_done`: a part was finished.
+ */
+export interface TaskComment {
+  id: ID;
+  ts: ISODate;
+  from: { kind: 'owner' | 'member' | 'employee' | 'office'; id: ID | null; name: string };
+  body: string;
+  kind: 'note' | 'question' | 'answer' | 'handed_in' | 'approved' | 'sent_back' | 'handoff' | 'split' | 'part_done';
+  mentions: TaskMention[];
+  /** `question` put to the boss: the office's question it is (the same one the Inbox shows). */
+  questionId?: ID | null;
+  /** `question`: the comment that answered it; null while it is open. */
+  answeredBy?: ID | null;
+  /** `answer`: the question it answers. */
+  answerTo?: ID | null;
+}
+
+/** How many comments a task keeps (the oldest go first). */
+export const TASK_COMMENTS_MAX = 300;
 
 export interface TaskHistoryEntry {
   ts: ISODate;
@@ -560,6 +606,23 @@ export interface Task {
   /** Files on the task (see `TaskAttachment`). Absent: none. */
   attachments?: TaskAttachment[];
   requiresReview: boolean;
+  /** Who reviews it (see `ReviewBy`); `requiresReview` is `reviewBy !== 'none'`. Absent on tasks from before it existed. */
+  reviewBy?: ReviewBy;
+  /** While in REVIEW: whose turn it is — a colleague's (`peer`) or the boss's. */
+  reviewStage?: 'peer' | 'boss' | null;
+  /** The conversation on the task. Absent: nothing was said yet. */
+  comments?: TaskComment[];
+  /**
+   * Why a BLOCKED task waits, when it waits for something that will come rather than for a problem to be solved:
+   * the answer to a question asked in its conversation, or the parts it was split into.
+   */
+  waitingFor?: { kind: 'answer'; commentId: ID } | { kind: 'parts' } | null;
+  /** The task this one is a part of (it was split off by that task's assignee). */
+  parentId?: ID | null;
+  /** Colleagues put on the task with its assignee, who leads it. */
+  helperIds?: ID[];
+  /** How many times it was opened again after it was done (each time its work starts on a fresh branch). */
+  reopened?: number;
   reviewerId: ID | null;
   /** Who did the work that is in review (the assignee when it was handed in): never its reviewer, whoever the task is given to afterwards. */
   authorId?: ID | null;
@@ -685,7 +748,8 @@ export interface DeliveryState {
   detail: string | null;
 }
 
-export type MessageKind = 'chat' | 'collab_request' | 'handoff' | 'review_request' | 'review_feedback' | 'task' | 'answer' | 'meeting' | 'system' | 'report_request';
+/** (`comment`: something said on a task's conversation, brought to an employee it concerns — the text says by whom and how to answer.) */
+export type MessageKind = 'chat' | 'collab_request' | 'handoff' | 'review_request' | 'review_feedback' | 'task' | 'answer' | 'meeting' | 'system' | 'report_request' | 'comment';
 
 export interface Message {
   id: ID;
@@ -773,6 +837,7 @@ export type NotificationKind =
   | 'session_lost'
   | 'merge_conflict'
   | 'review'
+  | 'mention'
   | 'milestone'
   | 'improvement'
   | 'info';
@@ -1528,6 +1593,8 @@ export interface OwnerSettings {
    * work done without verification, or deletes anything.
    */
   employeesManageBoard?: boolean;
+  /** Who reviews a finished task when nobody chose for it (`reviewDefaultOf`: a colleague, then the boss). */
+  reviewDefault?: ReviewBy;
   /**
    * true (default): on machines where a browser for employees is installed, every session gets it as tools of its own
    * (open a page, click, read it, take a screenshot). false: no session gets it.

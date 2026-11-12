@@ -690,6 +690,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
     // Routines: a standing instruction the office repeats for one employee (see `routines.ts`).
     const actorOf = (req: FastifyRequest) => (whoOf(req).id === 'owner' ? 'owner' : `member:${whoOf(req).name}`);
+    /** The person behind a request, as the task conversation names them. */
+    const personOf = (req: FastifyRequest): { kind: 'owner' | 'member'; id: string | null; name: string } => (whoOf(req).id === 'owner' ? { kind: 'owner', id: null, name: 'The boss' } : { kind: 'member', id: whoOf(req).id, name: whoOf(req).name });
     api.get('/routines', async (req) => engine.routines.list().filter((r) => mayReadRoutine(engine, whoOf(req), r)));
     api.post('/routines', async (req) => engine.routines.create(body(req), actorOf(req)));
     api.patch('/routines/:id', async (req) => engine.routines.update(param(req, 'id'), body(req), actorOf(req)));
@@ -800,8 +802,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/tasks/:id/review', async (req) => {
       const b = body(req);
       if (b.verdict !== 'approve' && b.verdict !== 'request_changes') throw new EngineError('verdict must be approve or request_changes');
-      return engine.tasks.submitReview('owner', param(req, 'id'), b.verdict, String(b.comments ?? ''));
+      return engine.tasks.submitReview('owner', param(req, 'id'), b.verdict, String(b.comments ?? ''), personOf(req));
     });
+    // The conversation on a task: a person's comment (the answer, when the task waits for one), and sending a task back.
+    api.post('/tasks/:id/comments', async (req) => engine.talk.byPerson(param(req, 'id'), String(body(req).body ?? ''), personOf(req)));
+    api.post('/tasks/:id/send-back', async (req) => engine.talk.sendBack(param(req, 'id'), String(body(req).note ?? ''), personOf(req)));
     api.post('/tasks/:id/unblock', async (req) => engine.tasks.unblock(param(req, 'id'), String(body(req).note ?? '')));
     api.post('/tasks/:id/retry-merge', async (req) => engine.tasks.retryMerge(param(req, 'id'), actorOf(req)));
     api.get('/tasks/:id/git', async (req) => engine.tasks.gitView({ taskId: param(req, 'id') }));
