@@ -10,16 +10,14 @@ _Built on 2026-11-12 on the owner's requests. First: "make it so I can play ROM 
 - **The shelf** is the office's: the games anybody brought, the one you played last first. **Add games…** or a drop takes `.md`, `.gen`, `.bin`, `.smd` (and `.sms`, `.gg`: the core also runs Master System and Game Gear cartridges), or a `.zip` with one inside. A game is named by what its cartridge says of itself, or by its file. The same cartridge twice is one game. **Remove** takes it off the shelf for everyone. A visitor plays what is there and neither brings nor removes.
 - **Playing**: the screen, and above it *← Games*, *Open to the office ✓*, *Pause*, *Reset*, *Save*, *Load*, *Sound on/off*, *Full screen*. **Escape** leaves the game for the shelf; the next Escape closes the window.
 - **Playing with somebody in the office.** A game is open to the office from the moment it runs — nothing to press (the button *Open to the office ✓* closes it for somebody who wants to play alone; that choice is remembered). Everyone is told ("Branko is playing … at the arcade — walk up to it to join"), and in the Arcade window of everybody else the game stands under *Being played now* with **Join** and **Watch**. **Two play**: whoever presses Join first sees and hears the game on their own computer and is player 2; **anybody after that looks on** (eight at most). **The keys are the same for everyone**: W A S D to move, J K L for A B C, U I O for X Y Z, Enter for Start — for the one who started the game and for the one who joined, each at their own keyboard. The host's line says who plays along. Getting up (Escape, *← Games*) frees the pad; the host closing the game, or leaving the office, ends it for everyone at it.
-- **Two players at one computer** still works: under the screen each player chooses **Keyboard** or a **gamepad** (the second can be *Nobody*). When somebody has joined from another computer, the second pad is theirs and is not chosen here.
+- **One person at a computer holds one pad, and nothing is chosen.** Whoever starts a game is player 1; player 2 is whoever pressed **Join**, at their own computer. Under the screen one line names the keys — there is no "Player 1 / Player 2" to set and no "Keyboard" to pick:
 
-  | Who is on the keyboard | Move | A B C | X Y Z | Start |
+  | | Move | A B C | X Y Z | Start |
   |---|---|---|---|---|
-  | **Everyone, unless they choose otherwise** — the one who started a game and the one who joined it, each at their own keyboard | W A S D (or the arrows) | J K L | U I O | Enter |
-  | Player 1 when both are at one computer (left half) | W A S D | F G H | R T Y | 1 |
-  | Player 2 when both are at one computer (right half) | the arrows | J K L | U I O | Enter |
-  | A gamepad | d-pad or left stick | X A B | LB Y RB | Start |
+  | **The keyboard, for everyone** | W A S D (or the arrows) | J K L | U I O | Enter |
+  | A gamepad, if one is plugged in | d-pad or left stick | X A B | LB Y RB | Start |
 
-  Keys are read by where they are on the keyboard, not by the letter the layout prints. What a player holds is the keyboard unless they choose a gamepad (a gamepad that is plugged in is not taken by itself: the keys are the same for everyone until somebody decides otherwise); the choice is remembered on this computer. A browser shows a gamepad only after a button on it has been pressed.
+  Keys are read by where they are on the keyboard, not by the letter the layout prints. A gamepad needs no choosing either: once the browser sees it (after a button on it has been pressed) it is the same pad as the keyboard — a button is held while a key or the gamepad holds it — and the line under the screen says so. Two players at one computer is **not built any more** (it was, for the arcade's first afternoon; the owner: "the multiplayer we develop is of the players who are in the office, not the local one on one computer" — and, seeing the chooser still there, "wasn't that changed?").
 - **What is kept, and where**: the *games* are the office's. *Where you stopped* is yours, on the computer you played on: leaving a game keeps the exact moment and the shelf offers **Continue** with a picture of it, beside **Start over**; the moment is also kept every half minute and by *Save*. What the cartridge itself saves (its battery memory) is kept apart and survives *Start over*. In a game played together all of that is the host's: the one who joined keeps nothing.
 - While a game is on, the keys of whoever plays are the game's: the office does not hear them (nobody walks off). Every other key is still the office's — push-to-talk (V) works while playing, which is how two people playing together talk — unless it was bound to a key a player holds, in which case that key is the game's. Typing in another window's text box still types.
 
@@ -103,7 +101,7 @@ Three things on the server make the frame possible, each as narrow as it could b
 | `apps/server/src/arcade.ts` | `ArcadeShelf` (the games) and `ArcadeTables` (who plays with whom; what is passed on) |
 | `apps/server/src/server.ts`, `hubs.ts`, `access.ts` | The shelf's routes; the tables' messages; who may do what |
 | `apps/desktop/src/arcade/protocol.ts` | The messages between window and console |
-| `apps/desktop/src/arcade/input.ts` | Seats (keyboard, gamepad, nobody), key layouts, gamepad → pad, who gets what by default. Pure |
+| `apps/desktop/src/arcade/input.ts` | The keys of the pad (one layout, the same for everybody), gamepad → pad, what changed between two readings. Pure |
 | `apps/desktop/src/arcade/roms.ts` | Is this file a cartridge; zip; the game's name. Pure |
 | `apps/desktop/src/arcade/library.ts` | The shelf from the office, uploads, this computer's copies and saves |
 | `apps/desktop/src/arcade/console.ts` | The window's hold on the frame: load the core, boot, pad, keep, cast |
@@ -112,15 +110,15 @@ Three things on the server make the frame possible, each as narrow as it could b
 | `apps/desktop/src/arcade/net.ts` | Table news from the office, handed to whoever plays |
 | `apps/desktop/src/arcade/stands.ts` | Whether a cabinet stands in this office (for the menu) |
 | `apps/desktop/src/lib/keys-taken.ts` | Which keys a game holds right now, for the office's shortcuts that listen before the window does (push-to-talk, `hud/people-acts.tsx`) |
-| `apps/desktop/src/hud/panels/arcade.tsx`, `arcade.css` | The window: `Shelf`, `Play` (host), `Remote` (guest) |
+| `apps/desktop/src/hud/panels/arcade.tsx`, `arcade.css` | The window: `Shelf`, `Play` (host, pad 1), `Remote` (guest, pad 2), `Keys` (the one line under the screen), `usePadInput` (keys and gamepads → one pad) |
 | `apps/desktop/vite.config.ts` (`arcadeFrame`) | Writes `assets/arcade.html` and builds the frame's script |
 | `packages/office-3d/src/world.ts` | The spot in front of a cabinet (`kind: 'arcade'`); `Environment.tsx`: the click |
 
 ## Tests
 
-- Unit: `apps/desktop/test/arcade-input.test.ts` (seats, layouts, gamepad, keys taken), `arcade-roms.test.ts` (files, zip, names, ids), `packages/office-3d/test/world.test.ts` (the spot in front of the cabinet).
+- Unit: `apps/desktop/test/arcade-input.test.ts` (the keys, that the old second half of the keyboard is nobody's, gamepads, keys taken), `arcade-roms.test.ts` (files, zip, names, ids), `packages/office-3d/test/world.test.ts` (the spot in front of the cabinet).
 - e2e: `49-arcade-frame` (the three server rules for the frame, also through the door); `50-arcade-shared` (the shelf: brought by one, there for all, byte for byte, a visitor's limits, refusals, a restart, removal — and the tables: who gets the picture, whose buttons count, a seat freed, a host gone), with four members coming in through the door.
-- UI suite, one step, two windows: a cartridge is brought (to the office's shelf), played, and both pads are read back from the screen — one player on the whole keyboard, two on its halves, a gamepad beside the keyboard — the owner does not move in the office, the frame is sandboxed, Continue is offered; then **a second window of the office finds the game on its shelf, joins the first one's game, is shown its picture (read back as the cartridge's colours) and pieces of sound, and its keys arrive as player 2 at the first window's console**; it gets up holding a button and the pad lets go.
+- UI suite, one step, two windows: a cartridge is brought (to the office's shelf), played, and the pads are read back from the screen — the window asks nobody who plays with what (no choice on it, no "Player 1", no "Keyboard"), the keys are the ones it names, a gamepad shown to the page is the same pad as the keyboard — the owner does not move in the office, the frame is sandboxed, Continue is offered; then **a second window of the office finds the game on its shelf, joins the first one's game, is shown its picture (read back as the cartridge's colours) and pieces of sound, and its keys arrive as player 2 at the first window's console**; it gets up holding a button and the pad lets go.
 - `tests/arcade/two-computers.mjs` (with `host-window.cjs` and `delay-proxy.mjs`): a game between two computers, driven from outside both browsers — the test cartridge for who-pressed-what and the delay, and a real game from the shelf for picture and sound; it says at its top how to set it up, and what to be careful with on a computer where employees work. Not part of any suite: it needs a second computer.
 - `UI_ONLY=<regex> node tests/ui/run.mjs …` runs only the steps whose names match (for working on one step; the checks at the end then mostly fail).
 - **The test cartridge** (`tests/fixtures/md-test-rom.mjs`) is our own: a few dozen 68000 instructions assembled in that file. It shows what both pads hold as the colour of the whole screen, so a test reads one pixel. No game of anybody's is in the repository, and none may be added.
@@ -145,6 +143,7 @@ Three things on the server make the frame possible, each as narrow as it could b
 ## Not built
 
 - **More than two players**, and choosing who gets the pad (it is the first who asks).
+- **Two players at one computer.** One person at a computer, one pad; the second is somebody who joined from theirs. (A choice of "who plays with what" stored by an earlier build is ignored.)
 - **Saves that follow a person** to another computer: where you stopped stays where you played.
 - Rebinding keys or gamepad buttons; more than one kept moment per game; cheats; other consoles.
 - Others in the office see nothing of a game in the 3D office itself (the cabinet's screen there is still its own little animation); they are told in words and in the Arcade window.

@@ -76,32 +76,20 @@
   flex-wrap: wrap;
 }
 
-/* Who plays with what */
-.arc-players {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 18px;
+/* The keys of a game: the same for everybody */
+.arc-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
-.arc-player {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 4px 10px;
-  min-width: 0;
-}
-.arc-player-who {
+.arc-keys-who {
   font-weight: 600;
 }
-.arc-player select {
-  min-width: 0;
-}
-.arc-player > .small {
-  grid-column: 1 / -1;
-}
-.arc-players-note {
-  grid-column: 1 / -1;
+.arc-keys-pad {
+  flex-basis: 100%;
 }
 
 /* A game being played */
@@ -207,10 +195,6 @@
 }
 .arc-open strong {
   color: var(--text);
-}
-.arc-player-far {
-  font-weight: 600;
-  min-width: 0;
 }
 /* A game played at somebody else's console: its picture, as large as the screen's place */
 .arc-far {

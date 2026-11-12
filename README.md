@@ -48,8 +48,8 @@ It is **not** a dashboard with mascots, and it is **not** a simulation: nothing 
 | 🤝 **Teamwork** | Employees ask each other, wait for each other, hand work over, review each other, release and unblock tasks, and wake a colleague who is needed. |
 | 🧢 **The foreman** | One supervisor walks the floor, answers the operational questions and keeps people moving, so you are asked only about direction. |
 | 🛋️ **Break room** | A hi-fi with internet radio for the whole office, a TV with a real browser in it, and sofas you can actually sit on. |
-| 🕹️ **Arcade** | A Mega Drive in the corner. Bring your own cartridge files; they go on the office's shelf for everybody. Play alone, two on one keyboard — or with a colleague: they walk up, press **Join**, and play from their own computer as player 2 (W A S D, J K L, U I O for both of you); everybody else can watch. |
-| 🦘 **Space** | Sits you down where there is a seat, opens whatever you stand at — and where there is nothing at all, you jump. Everybody sees it. |
+| 🕹️ **Arcade** | A Mega Drive in the corner. Bring your own cartridge files; they go on the office's shelf for everybody. Play alone — or with a colleague: they walk up, press **Join**, and play from their own computer as player 2. Nothing to set up: the keys are the same for both of you (W A S D, J K L, U I O, Enter), and a plugged-in gamepad just works; everybody else can watch. |
+| 🦘 **Space** | Sits you down where there is a seat, opens whatever you stand at — and where there is nothing at all, you jump: a crouch, arms up, knees tucked, a proper landing (a leap, if you are running). Everybody sees it. |
 | 🌆 **A view** | Put the office on the top floor of a tower over a city at dusk, in a park, on an island at sunset, under the northern lights or in orbit — for everybody in it, with one click. |
 | 🪢 **The whip** | `R`. A crack, a flinch, a "jao!". It sends nothing to anybody's session. It stays in. |
 | 👥 **Multiplayer** | Invite people with a link. Owners, colleagues, visitors; each colleague's own computer becomes a room, with a team lead of their own if they want one. Talk with your voice (`V`), wave, dance. |

@@ -77,6 +77,8 @@ interface CharacterProps {
    * `useFrame` that runs before this one — priority −1 — so the feet are placed for where the body is drawn.)
    */
   motion?: { current: Motion };
+  /** Seconds since this character's jump began, read every frame (below 0: not jumping). Only someone on their feet jumps. */
+  jump?: { current: number };
   /** Change this to restart a one-shot pose ('ouch', 'whip') while the pose name stays the same. */
   cue?: number;
   /** Carries a whip: coiled at the right hip, in the right hand during the 'whip' pose. */
@@ -140,9 +142,11 @@ interface Anim {
   rate: Float32Array;
   /** 0 awake … 1 asleep, eased: drives the breathing and the letters. */
   sleep: number;
+  /** The jump's clock as last seen: one that went back is a new jump begun before the last was over. */
+  air: number;
 }
 
-export function Character({ appearance, pose, offline = false, look, level = 1, phase = 0, frozen, motion, cue, whip = false, detail }: CharacterProps) {
+export function Character({ appearance, pose, offline = false, look, level = 1, phase = 0, frozen, motion, jump, cue, whip = false, detail }: CharacterProps) {
   const outer = useRef<THREE.Group>(null);
   const root = useRef<THREE.Group>(null);
   const hips = useRef<THREE.Group>(null);
@@ -258,7 +262,7 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
       if (zzz.current) zzz.current.visible = false;
       return;
     }
-    if (!A) A = anim.current = { cur: newPose(), off: new Float32Array(NKEYS), offV: new Float32Array(NKEYS), vel: new Float32Array(NKEYS), loco: newLoco(), applied: null, base: 'still', prevBase: null, cue: undefined, since: 0, rate: new Float32Array(NKEYS).fill(1.386 / BLEND_HALF), sleep: sleeping(name) ? 1 : 0 };
+    if (!A) A = anim.current = { cur: newPose(), off: new Float32Array(NKEYS), offV: new Float32Array(NKEYS), vel: new Float32Array(NKEYS), loco: newLoco(), applied: null, base: 'still', prevBase: null, cue: undefined, since: 0, rate: new Float32Array(NKEYS).fill(1.386 / BLEND_HALF), sleep: sleeping(name) ? 1 : 0, air: -1 };
     const dt = Math.min(rawDt, 0.05);
     const t = state.clock.elapsedTime;
     const first = A.applied === null;
@@ -271,6 +275,11 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
     const base = A.base;
     const L = A.loco;
     let pumping = 0;
+    // A jump begun while the last one was still landing starts from that landing, not from standing.
+    const air = jump ? jump.current : -1;
+    const again = air >= 0 && A.air > air + 1e-4;
+    A.air = air;
+    L.air = air;
 
     // ── the pose this frame ──
     if (base === 'walk' || base === 'stand' || base === 'doze') {
@@ -347,9 +356,9 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
         A.off[i] = A.offV[i] = A.vel[i] = 0;
       }
     } else {
-      if (changed) {
+      if (changed || again) {
         // A reaction starts from, and returns to, the pose under it: only a real change of pose carries momentum.
-        const carry = base !== A.prevBase;
+        const carry = base !== A.prevBase || again;
         // Falling asleep, the arms go down on the desk first and the head follows; waking, the back straightens first
         // and the arms come after. Either way it takes about a second, and nothing passes through the desk.
         const toSleep = sleeping(base) && !sleeping(A.prevBase);

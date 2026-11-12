@@ -3,10 +3,10 @@ import type { ArcadeTable } from '@orchestrator/contracts';
 import { Button, Empty, Window, timeAgo } from '@orchestrator/ui';
 import { Caster, Viewer, canCast } from '../../arcade/cast.ts';
 import { ArcadeConsole } from '../../arcade/console.ts';
-import { KEY_LEGEND, PAD_LEGEND, buttonOfKey, buttonsOfPad, changes, layoutOf, seatName, settleSeats, type Seat, type Seats } from '../../arcade/input.ts';
+import { KEY_LEGEND, PAD_LEGEND, buttonOfKey, buttonsOfPads, changes } from '../../arcade/input.ts';
 import { bring, bringOldGames, forgetState, keep, keptOf, locals, remove, romOf, shelfOf, type Game } from '../../arcade/library.ts';
 import { onTableNews } from '../../arcade/net.ts';
-import { FRAME_PAGE, type PadButton, type Player, type SoundState } from '../../arcade/protocol.ts';
+import { FRAME_PAGE, type PadButton, type SoundState } from '../../arcade/protocol.ts';
 import { ROM_ACCEPT } from '../../arcade/roms.ts';
 import { connection } from '../../lib/api.ts';
 import { takeKeys } from '../../lib/keys-taken.ts';
@@ -17,8 +17,9 @@ import './arcade.css';
 /**
  * The arcade cabinet's window (docs/ARCADE.md): the office's shelf of games, a Mega Drive to play them on, and the
  * tables — a game somebody is playing that others in the office sat down at. Whoever starts a game runs the console
- * (in a frame of its own); somebody who joins from another computer is sent its picture and sound and holds the
- * second pad. This window owns the keys, the gamepads and what is kept.
+ * (in a frame of its own) and holds the first pad; somebody who joins from another computer is sent its picture and
+ * sound and holds the second. One person at a computer, one pad, the same keys for everybody. This window owns the
+ * keys, the gamepads and what is kept.
  */
 
 // ───────────── what this computer remembers ─────────────
@@ -39,20 +40,11 @@ function store(key: string, value: unknown): void {
   }
 }
 
-interface PadSeen {
-  index: number;
-  name: string;
-}
-
-/** The gamepads this page can see. A browser shows one only after a button on it has been pressed. */
-function usePads(): PadSeen[] {
-  const [pads, setPads] = useState<PadSeen[]>([]);
+/** Whether this page can see a gamepad. A browser shows one only after a button on it has been pressed. */
+function usePadSeen(): boolean {
+  const [seen, setSeen] = useState(false);
   useEffect(() => {
-    const look = () => {
-      const seen: PadSeen[] = [];
-      for (const p of navigator.getGamepads?.() ?? []) if (p?.connected) seen.push({ index: p.index, name: p.id });
-      setPads((had) => (had.length === seen.length && had.every((h, i) => h.index === seen[i]!.index && h.name === seen[i]!.name) ? had : seen));
-    };
+    const look = () => setSeen([...(navigator.getGamepads?.() ?? [])].some((p) => p?.connected));
     look();
     const every = window.setInterval(look, 1000);
     window.addEventListener('gamepadconnected', look);
@@ -63,7 +55,7 @@ function usePads(): PadSeen[] {
       window.removeEventListener('gamepaddisconnected', look);
     };
   }, []);
-  return pads;
+  return seen;
 }
 
 function useObjectUrl(blob: Blob | undefined): string | null {
@@ -83,44 +75,42 @@ const typing = (t: EventTarget | null): boolean => t instanceof HTMLElement && (
 const letGoOfTheButton = () => (document.activeElement as HTMLElement | null)?.blur?.();
 
 /**
- * The keys and gamepads of whoever plays at this computer, as buttons of a pad. While `active`, a key that is a
- * player's button is the game's: the office does not hear it. Gamepads are read every frame, and only what changed
- * is passed on.
+ * The keys and gamepads of whoever plays at this computer, as the buttons of their one pad. While `active`, a key
+ * that is a button is the game's: the office does not hear it. Gamepads are read every frame, and only what changed
+ * is passed on. A button is held for as long as anything holds it (W and the up arrow, a key and a gamepad).
  */
-function usePadInput(active: boolean, seats: MutableRefObject<Seats>, press: (player: Player, button: PadButton, down: boolean) => void, frame?: MutableRefObject<HTMLIFrameElement | null>): void {
+function usePadInput(active: boolean, press: (button: PadButton, down: boolean) => void, frame?: MutableRefObject<HTMLIFrameElement | null>): void {
   const pressNow = useRef(press);
   pressNow.current = press;
   useEffect(() => {
     if (!active) return;
-    const keys = new Map<string, { player: Player; button: PadButton }>();
-    const count = new Map<string, number>();
-    const hold = (hit: { player: Player; button: PadButton }, down: boolean) => {
-      const k = `${hit.player}:${hit.button}`;
-      const n = (count.get(k) ?? 0) + (down ? 1 : -1);
-      count.set(k, Math.max(0, n));
-      // Two keys may mean one button (W and the up arrow): it is held while either is.
-      if (down ? n === 1 : n === 0) pressNow.current(hit.player, hit.button, down);
+    const keys = new Map<string, PadButton>();
+    const count = new Map<PadButton, number>();
+    const hold = (button: PadButton, down: boolean) => {
+      const n = (count.get(button) ?? 0) + (down ? 1 : -1);
+      count.set(button, Math.max(0, n));
+      if (down ? n === 1 : n === 0) pressNow.current(button, down);
     };
     const down = (e: KeyboardEvent) => {
       if (typing(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
-      const hit = buttonOfKey(seats.current, e.code);
-      if (!hit) return;
+      const button = buttonOfKey(e.code);
+      if (!button) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       if (e.repeat || keys.has(e.code)) return;
-      keys.set(e.code, hit);
-      hold(hit, true);
+      keys.set(e.code, button);
+      hold(button, true);
     };
     const up = (e: KeyboardEvent) => {
-      const hit = keys.get(e.code);
-      if (!hit) return;
+      const button = keys.get(e.code);
+      if (!button) return;
       keys.delete(e.code);
       e.preventDefault();
       e.stopImmediatePropagation();
-      hold(hit, false);
+      hold(button, false);
     };
     const letGo = () => {
-      for (const hit of keys.values()) hold(hit, false);
+      for (const button of keys.values()) hold(button, false);
       keys.clear();
       // The console never holds the keyboard: a click that landed in it gives the keys back to this window.
       if (frame?.current && document.activeElement === frame.current) window.focus();
@@ -128,21 +118,16 @@ function usePadInput(active: boolean, seats: MutableRefObject<Seats>, press: (pl
     window.addEventListener('keydown', down, true);
     window.addEventListener('keyup', up, true);
     window.addEventListener('blur', letGo);
-    // (For the office's shortcuts that listen before this one does: push-to-talk bound to a key a player holds.)
-    const giveBack = takeKeys((code) => !!buttonOfKey(seats.current, code));
+    // (For the office's shortcuts that listen before this one does: push-to-talk bound to a key of the game.)
+    const giveBack = takeKeys((code) => !!buttonOfKey(code));
 
-    const before: Record<Player, Set<PadButton>> = { 1: new Set(), 2: new Set() };
+    let before = new Set<PadButton>();
     let frameId = 0;
     const read = () => {
       frameId = requestAnimationFrame(read);
-      const all = navigator.getGamepads?.() ?? [];
-      for (const player of [1, 2] as const) {
-        const seat = player === 1 ? seats.current.p1 : seats.current.p2;
-        const pad = typeof seat === 'number' ? all[seat] : null;
-        const now = pad ? buttonsOfPad(pad) : new Set<PadButton>();
-        for (const ch of changes(before[player], now)) pressNow.current(player, ch.button, ch.down);
-        before[player] = now;
-      }
+      const now = buttonsOfPads(navigator.getGamepads?.() ?? []);
+      for (const ch of changes(before, now)) hold(ch.button, ch.down);
+      before = now;
     };
     read();
     return () => {
@@ -152,65 +137,26 @@ function usePadInput(active: boolean, seats: MutableRefObject<Seats>, press: (pl
       window.removeEventListener('keyup', up, true);
       window.removeEventListener('blur', letGo);
       cancelAnimationFrame(frameId);
-      for (const player of [1, 2] as const) for (const b of before[player]) pressNow.current(player, b, false);
+      for (const b of before) hold(b, false);
     };
-  }, [active, seats, frame]);
+  }, [active, frame]);
 }
 
-// ───────────── who plays with what ─────────────
+// ───────────── the keys ─────────────
 
-/**
- * `second`: who holds the second pad from another computer (then it is not chosen here). `alone`: only one player
- * is at this computer at all (somebody who sat down at another's table).
- */
-function Players({ seats, pads, onChange, second, alone }: { seats: Seats; pads: PadSeen[]; onChange: (wanted: Seats, by: Player) => void; second?: string | null; alone?: boolean }) {
-  const names = Object.fromEntries(pads.map((p) => [p.index, p.name]));
-  const read = (v: string): Seat => (v === 'keys' || v === 'none' ? v : Number(v));
-  const legend = (player: Player) => {
-    const seat = player === 1 ? seats.p1 : seats.p2;
-    if (seat === 'none') return 'Choose the keyboard or a gamepad here for a second player at this computer — or let somebody in the office join from theirs.';
-    const layout = layoutOf(alone ? { p1: seats.p1, p2: 'none' } : seats, player);
-    return layout ? KEY_LEGEND[layout] : PAD_LEGEND;
-  };
+/** The keys of a game: the same for everybody, so nothing is chosen. A gamepad, once this page sees one, is the same pad. */
+function Keys({ pad }: { pad: boolean }) {
   return (
-    <div className="arc-players" data-arcade-players>
-      {([1, 2] as const)
-        .filter((player) => player === 1 || !alone)
-        .map((player) =>
-          player === 2 && second ? (
-            <div key={player} className="arc-player" data-arcade-second={second}>
-              <span className="arc-player-who">Player 2</span>
-              <span className="arc-player-far">{second}, from their computer</span>
-              <span className="small muted">They hold the second pad for as long as they sit at this game.</span>
-            </div>
-          ) : (
-            <label key={player} className="arc-player">
-              <span className="arc-player-who">{alone ? 'You play with' : `Player ${player}`}</span>
-              <select
-                value={String(player === 1 ? seats.p1 : seats.p2)}
-                data-arcade-seat={player}
-                onChange={(e) => {
-                  const seat = read(e.target.value);
-                  // The keys are the game's again as soon as the choice is made.
-                  e.currentTarget.blur();
-                  onChange(player === 1 ? { ...seats, p1: seat as Seats['p1'] } : { ...seats, p2: seat }, player);
-                }}
-              >
-                {player === 2 && <option value="none">Nobody</option>}
-                <option value="keys">Keyboard</option>
-                {pads.map((p) => (
-                  <option key={p.index} value={p.index}>
-                    {seatName(p.index, names)}
-                  </option>
-                ))}
-              </select>
-              <span className="small muted" data-arcade-legend={player}>
-                {legend(player)}
-              </span>
-            </label>
-          ),
-        )}
-      {pads.length === 0 && <span className="small faint arc-players-note">A gamepad appears here once a button on it has been pressed.</span>}
+    <div className="arc-keys small" data-arcade-keys>
+      <span className="arc-keys-who">Keys</span>
+      <span className="muted" data-arcade-legend>
+        {KEY_LEGEND}
+      </span>
+      {pad && (
+        <span className="faint arc-keys-pad" data-arcade-pad-legend>
+          Your gamepad works too: {PAD_LEGEND}
+        </span>
+      )}
     </div>
   );
 }
@@ -390,24 +336,19 @@ function Shelf({ list, tables, mayChange, onPlay, onJoin, onChanged, note }: { l
 function Play({
   game,
   resume,
-  seats,
   sound,
   onSound,
   onLeft,
   leaver,
   note,
-  onSecond,
 }: {
   game: Game;
   resume: boolean;
-  seats: Seats;
   sound: boolean;
   onSound: (on: boolean) => void;
   onLeft: () => void;
   leaver: MutableRefObject<(() => Promise<void>) | null>;
   note: (text: string, kind?: 'success' | 'error') => void;
-  /** Who holds the second pad from another computer, as it changes. */
-  onSecond: (name: string | null) => void;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
@@ -423,15 +364,10 @@ function Play({
   const [wantOpen, setWantOpen] = useState(() => stored('arcade.open', true));
   const me = useOffice((s) => s.clientId);
   const table = useOffice((s) => s.arcade.tables.find((t) => t.id === s.clientId)) ?? null;
-  const second = open ? (table?.player2?.name ?? null) : null;
-  // Somebody at another computer holds the second pad: nobody here does.
-  const seatsNow = useRef(seats);
-  seatsNow.current = second ? { ...seats, p2: 'none' } : seats;
   const soundNow = useRef(sound);
   soundNow.current = sound;
   const phaseNow = useRef(phase);
   phaseNow.current = phase;
-  useEffect(() => onSecond(second), [second, onSecond]);
 
   useEffect(() => {
     const c = new ArcadeConsole(frame.current!, {
@@ -555,7 +491,8 @@ function Play({
     return () => window.removeEventListener('keydown', esc, true);
   }, [leave]);
 
-  usePadInput(phase === 'running', seatsNow, (player, button, down) => machine.current?.pad(player, button, down), frame);
+  // Whoever started the game holds the first pad; the second is held from another computer, by whoever pressed Join.
+  usePadInput(phase === 'running', (button, down) => machine.current?.pad(1, button, down), frame);
 
   useEffect(() => {
     if (phase === 'running') machine.current?.sound(sound);
@@ -667,7 +604,7 @@ function Play({
 
 // ───────────── a game played at somebody else's computer ─────────────
 
-function Remote({ tableId, wanted, seats, sound, onSound, onLeft, leaver, note }: { tableId: string; wanted: 'player' | 'watch'; seats: Seats; sound: boolean; onSound: (on: boolean) => void; onLeft: () => void; leaver: MutableRefObject<(() => Promise<void>) | null>; note: (text: string, kind?: 'success' | 'error') => void }) {
+function Remote({ tableId, wanted, sound, onSound, onLeft, leaver, note }: { tableId: string; wanted: 'player' | 'watch'; sound: boolean; onSound: (on: boolean) => void; onLeft: () => void; leaver: MutableRefObject<(() => Promise<void>) | null>; note: (text: string, kind?: 'success' | 'error') => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const viewer = useRef<Viewer | null>(null);
@@ -678,9 +615,6 @@ function Remote({ tableId, wanted, seats, sound, onSound, onLeft, leaver, note }
   const playing = table?.player2?.id === me;
   const playingNow = useRef(playing);
   playingNow.current = playing;
-  // One player at this computer, whatever was chosen for a second one.
-  const mine = useRef<Seats>({ p1: seats.p1, p2: 'none' });
-  mine.current = { p1: seats.p1, p2: 'none' };
   const sat = useRef(false);
 
   useEffect(() => {
@@ -733,7 +667,7 @@ function Remote({ tableId, wanted, seats, sound, onSound, onLeft, leaver, note }
   }, [leave]);
 
   // This computer's keys and gamepad are the second pad at the host's console.
-  usePadInput(playing, mine, (_player, button, down) => playingNow.current && connection.send({ t: 'arcade.pad', button, down }));
+  usePadInput(playing, (button, down) => playingNow.current && connection.send({ t: 'arcade.pad', button, down }));
 
   return (
     <div className="arc-play" data-arcade-remote data-arcade-remote-as={playing ? 'player' : 'watch'} data-shown-v={shown.v} data-shown-a={shown.a} data-shown-late={shown.late}>
@@ -789,11 +723,8 @@ function ArcadePanel({ onClose }: { arg: string | null; onClose: () => void }) {
   const mayChange = role !== 'visitor';
   const [local, setLocal] = useState<Awaited<ReturnType<typeof locals>> | null>(null);
   const [seated, setSeated] = useState<Seated | null>(null);
-  const [second, setSecond] = useState<string | null>(null);
   const [sound, setSound] = useState(() => stored('arcade.sound', true));
-  const [wanted, setWanted] = useState<Partial<Seats> | null>(() => stored<Partial<Seats> | null>('arcade.seats', null));
-  const pads = usePads();
-  const seats = useMemo(() => settleSeats(wanted, pads.map((p) => p.index)), [wanted, pads]);
+  const pad = usePadSeen();
   const leaver = useRef<(() => Promise<void>) | null>(null);
 
   const reload = useCallback(() => void locals().then(setLocal), []);
@@ -819,7 +750,6 @@ function ArcadePanel({ onClose }: { arg: string | null; onClose: () => void }) {
   };
   const left = useCallback(() => {
     setSeated(null);
-    setSecond(null);
     reload();
   }, [reload]);
   // Closing the window while a game is on keeps where the player is first.
@@ -833,28 +763,18 @@ function ArcadePanel({ onClose }: { arg: string | null; onClose: () => void }) {
   };
 
   return (
-    <Window title="Arcade" subtitle="A Mega Drive for the games the office brought — alone, two at one computer, or with somebody in the office from theirs" onClose={close} width={seated ? 1040 : 900}>
+    <Window title="Arcade" subtitle="A Mega Drive for the games the office brought — alone, or with somebody in the office, each at their own computer" onClose={close} width={seated ? 1040 : 900}>
       <div className="arc" data-arcade>
         {seated?.at === 'game' ? (
-          <Play key={`${seated.game.id}:${seated.resume}`} game={seated.game} resume={seated.resume} seats={seats} sound={sound} onSound={saySound} onLeft={left} leaver={leaver} note={note} onSecond={setSecond} />
+          <Play key={`${seated.game.id}:${seated.resume}`} game={seated.game} resume={seated.resume} sound={sound} onSound={saySound} onLeft={left} leaver={leaver} note={note} />
         ) : seated?.at === 'table' ? (
-          <Remote key={`${seated.table}:${seated.as}`} tableId={seated.table} wanted={seated.as} seats={seats} sound={sound} onSound={saySound} onLeft={left} leaver={leaver} note={note} />
+          <Remote key={`${seated.table}:${seated.as}`} tableId={seated.table} wanted={seated.as} sound={sound} onSound={saySound} onLeft={left} leaver={leaver} note={note} />
         ) : local === null ? (
           <div className="small muted">Looking at the shelf…</div>
         ) : (
           <Shelf list={list} tables={others} mayChange={mayChange} onPlay={(g, resume) => void play(g, resume)} onJoin={(t, as) => setSeated({ at: 'table', table: t.id, as })} onChanged={reload} note={note} />
         )}
-        <Players
-          seats={seats}
-          pads={pads}
-          second={seated?.at === 'game' ? second : null}
-          alone={seated?.at === 'table'}
-          onChange={(next, by) => {
-            const settled = settleSeats(next, pads.map((p) => p.index), by);
-            setWanted(settled);
-            store('arcade.seats', settled);
-          }}
-        />
+        <Keys pad={pad} />
       </div>
     </Window>
   );

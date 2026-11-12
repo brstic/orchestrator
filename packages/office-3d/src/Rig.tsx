@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { Appearance } from '@orchestrator/contracts';
 import { Character, type Motion } from './Character.tsx';
 import { useActs } from './character/acts.ts';
+import { JUMP_HEIGHT, JUMP_SECONDS, JUMP_TOUCH, jumpSink, jumpY } from './character/motion.ts';
 import { sceneProbe } from './Environment.tsx';
 import type { CameraMode, NearbyTarget, PersonView } from './types.ts';
 import { deskSeat, moveWithCollision, type Seat, type World } from './world.ts';
@@ -72,11 +73,10 @@ const ROOM_SPOTS = new Set(['board', 'meeting', 'server', 'ops', 'ceo', 'break',
 
 export const ownerPosition = { x: 0, z: 0, rot: 0, sit: false };
 
-/** A jump: how high the feet get, and how long it takes from the floor back to the floor. */
-export const JUMP_HEIGHT = 0.62;
-export const JUMP_SECONDS = 0.52;
-/** How high off the floor a jump is, `t` seconds after it began (0 once it is over). */
-export const jumpY = (t: number): number => (t <= 0 || t >= JUMP_SECONDS ? 0 : JUMP_HEIGHT * 4 * (t / JUMP_SECONDS) * (1 - t / JUMP_SECONDS));
+/** Once the feet are back on the floor for this long (s), the next jump may begin: it grows out of the landing. */
+const JUMP_AGAIN = 0.06;
+/** Through the owner's own eyes, this share of the crouch and of the landing is felt. */
+const EYE_SINK = 0.6;
 /** A seat is sat on from this close (m): right at it when a room's own spot is around it, a step away otherwise. */
 const SEAT_AT = 0.85;
 const SEAT_NEAR = 1.15;
@@ -193,7 +193,7 @@ export function Rig({
     cam: { on: false, x: 0, z: 0, yaw: 0, pitch: 0, dist: 0, px: 0, pz: 0, pyaw: 0 },
     /** Set when the owner is put somewhere at once (or the camera mode changes): the camera glides over instead of trailing. */
     jump: true,
-    /** The seat the owner is sitting on, and how long (s) the jump they are in has lasted (-1: on the floor). */
+    /** The seat the owner is sitting on, and how long (s) the jump they are in has lasted (-1: not jumping) — from the key, through the crouch, the air and the landing. */
     seat: null as Seat | null,
     air: -1,
     off: new THREE.Vector3(),
@@ -216,6 +216,10 @@ export function Rig({
   seatedRef.current = onSeated;
   const jumpedRef = useRef(onJumped);
   jumpedRef.current = onJumped;
+  // The jump's clock, for the character (read every frame, like `motion`), and the ring under it.
+  const air = useRef(-1);
+  const ring = useRef<THREE.Mesh>(null);
+  const ankle = useRef<THREE.Object3D | null>(null);
   /** Sit down there: the body is put on the seat, facing the way it faces. */
   const sitDown = (seat: Seat) => {
     const s = st.current;
@@ -255,7 +259,8 @@ export function Rig({
   useEffect(() => {
     if (firstJump.current) return void (firstJump.current = false);
     const s = st.current;
-    if (s.seat || s.air >= 0 || (modeRef.current !== 'ceo' && modeRef.current !== 'first')) return;
+    // (Not in the middle of one: only once the feet are down again.)
+    if (s.seat || (s.air >= 0 && s.air < JUMP_TOUCH + JUMP_AGAIN) || (modeRef.current !== 'ceo' && modeRef.current !== 'first')) return;
     s.air = 0;
     jumpedRef.current?.();
   }, [jumpAsk]);
@@ -409,7 +414,11 @@ export function Rig({
       s.air += dt;
       if (s.air >= JUMP_SECONDS) s.air = -1;
     }
+    // For looking at a jump in captures: `window.__orchPlayer.hold = seconds` keeps the body at that moment of one.
+    const hold = (window as any).__orchPlayer?.hold;
+    if (typeof hold === 'number') s.air = hold >= 0 && hold < JUMP_SECONDS ? hold : -1;
     const lift = s.air >= 0 ? jumpY(s.air) : 0;
+    air.current = s.air;
     // On foot, left/right turn the body (and the camera with it) and the strafe keys sidestep.
     // In the overview and free cameras there is no body to turn, so both pairs move sideways.
     const turn = walking ? turnKeys : 0;
@@ -520,6 +529,13 @@ export function Rig({
     probe.sit = s.seat?.id ?? null;
     ownerPosition.sit = !!s.seat;
     probe.y = lift;
+    // For the UI tests: the jump's clock, and where the body was really drawn a frame ago — the height of the hip joint and of the left ankle.
+    probe.air = s.air;
+    const foot = (ankle.current ??= avatar.current?.getObjectByName('foot-l') ?? null);
+    if (foot?.parent?.parent) {
+      probe.ankleY = foot.matrixWorld.elements[13];
+      probe.hipY = foot.parent.parent.matrixWorld.elements[13];
+    }
 
     // ── desired camera ──
     let fov = 50;
@@ -568,8 +584,8 @@ export function Rig({
       }
       probe.camDist = dist;
     } else if (mode === 'first') {
-      // Through their own eyes: lower when they sit, and up and down with a jump.
-      const eye = 1.62 - (s.seat ? SIT_DROP : 0) + lift;
+      // Through their own eyes: lower when they sit; a jump dips for the push, goes up, and gives on landing.
+      const eye = 1.62 - (s.seat ? SIT_DROP : 0) + lift + (s.air >= 0 ? EYE_SINK * jumpSink(s.air) : 0);
       camPos.set(player.x, eye, player.z);
       const cp = Math.cos(s.pitch);
       camLook.set(player.x + fx * cp, eye - Math.sin(s.pitch), player.z + fz * cp);
@@ -640,6 +656,11 @@ export function Rig({
       avatar.current.position.set(player.x, lift, player.z);
       avatar.current.rotation.y = s.playerRot;
       avatar.current.visible = mode !== 'first' && mode !== 'workstation';
+    }
+    // The ring stays on the floor under a jump, and draws in a little the higher the body is.
+    if (ring.current) {
+      ring.current.position.y = 0.02 - lift;
+      ring.current.scale.setScalar(1 - 0.22 * (lift / JUMP_HEIGHT));
     }
 
     // ── what is the owner standing next to? ──
@@ -713,21 +734,19 @@ export function Rig({
 
   return (
     <group ref={avatar}>
-      <PlayerBody motion={motion} whipAt={whipAt} ouchAt={ouchAt} emote={emote} seated={seated} />
+      <PlayerBody motion={motion} jump={air} whipAt={whipAt} ouchAt={ouchAt} emote={emote} seated={seated} />
+      <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <ringGeometry args={[0.34, 0.4, 32]} />
+        <meshBasicMaterial color="#ffd166" transparent opacity={0.85} toneMapped={false} />
+      </mesh>
     </group>
   );
 }
 
-function PlayerBody({ motion, whipAt, ouchAt, emote, seated }: { motion: { current: Motion }; whipAt?: number; ouchAt?: number; emote?: { name: string; at: number } | null; seated: boolean }) {
+function PlayerBody({ motion, jump, whipAt, ouchAt, emote, seated }: { motion: { current: Motion }; jump: { current: number }; whipAt?: number; ouchAt?: number; emote?: { name: string; at: number } | null; seated: boolean }) {
   // The gait reads `motion` every frame, so walking never re-renders; only a whip crack, a flinch or a gesture does (twice: start and end).
   const act = useActs({ whipAt, ouchAt, emote });
   return (
-    <>
-      <Character appearance={CEO_LOOK} detail={CEO_DETAIL} pose={seated ? (act.pose === 'ouch' ? 'ouch' : 'idle') : (act.pose ?? 'stand')} cue={act.cue ?? 0} level={10} motion={motion} whip />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <ringGeometry args={[0.34, 0.4, 32]} />
-        <meshBasicMaterial color="#ffd166" transparent opacity={0.85} toneMapped={false} />
-      </mesh>
-    </>
+    <Character appearance={CEO_LOOK} detail={CEO_DETAIL} pose={seated ? (act.pose === 'ouch' ? 'ouch' : 'idle') : (act.pose ?? 'stand')} cue={act.cue ?? 0} level={10} motion={motion} jump={jump} whip />
   );
 }

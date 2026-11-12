@@ -5,8 +5,8 @@ import type * as THREE from 'three';
 import type { Appearance } from '@orchestrator/contracts';
 import { Character, type Motion } from './Character.tsx';
 import { RemoteTrack } from './remote-motion.ts';
-import { jumpY } from './Rig.tsx';
 import { useActs } from './character/acts.ts';
+import { JUMP_HEIGHT, JUMP_SECONDS, jumpY } from './character/motion.ts';
 
 /** Another person in the office (the owner, or a guest), as the server reports them about ten times a second. */
 export interface HumanView {
@@ -92,6 +92,9 @@ const Human = memo(function Human({ h }: { h: HumanView }) {
   jumpAt.current = h.jumpAt;
   const sitNow = useRef(h.sit);
   sitNow.current = h.sit;
+  // How long their jump has lasted (s; −1: on the floor): the character reads it every frame, as it reads `motion`.
+  const air = useRef(-1);
+  const ring = useRef<THREE.Mesh>(null);
   // Before the character animates (see `motion` in Character.tsx): its feet are then placed for this frame's position.
   useFrame(() => {
     const g = group.current;
@@ -134,16 +137,23 @@ const Human = memo(function Human({ h }: { h: HumanView }) {
       if (speed < 0.02) m.vx = m.vz = 0;
     }
     at.current = p;
-    // A jump of theirs: up and down again, as this window saw it begin.
-    const lift = jumpAt.current ? jumpY((now - jumpAt.current) / 1000) : 0;
+    // A jump of theirs, as this window saw it begin: the body crouches, pushes off and lands by itself (the pose); here it is lifted.
+    const since = jumpAt.current ? (now - jumpAt.current) / 1000 : -1;
+    air.current = since >= 0 && since < JUMP_SECONDS ? since : -1;
+    const lift = air.current >= 0 ? jumpY(air.current) : 0;
     g.position.set(p.x, lift, p.z);
+    // Their ring stays on the floor under them, and draws in a little the higher they are.
+    if (ring.current) {
+      ring.current.position.y = 0.02 - lift;
+      ring.current.scale.setScalar(1 - 0.22 * (lift / JUMP_HEIGHT));
+    }
     g.rotation.y = p.rot;
     // For the UI tests (see `window.__orchScene`): where each other person is drawn right now and how they move.
     const probe = ((window as unknown as { __orchScene?: Record<string, any> }).__orchScene ??= { detail: {} });
     (probe.humans ??= {})[h.id] = { x: p.x, z: p.z, rot: p.rot, vx: m.vx, vz: m.vz, turn: m.turn, run: m.run, name: h.name, t: now, y: lift, sit: !!sitNow.current };
   }, -1);
   const body = useMemo(
-    () => <Character appearance={look} pose={h.sit ? (act.pose === 'ouch' ? 'ouch' : 'idle') : (act.pose ?? 'stand')} cue={act.cue ?? 0} whip={act.whipping} level={h.role === 'owner' ? 9 : 1} motion={motion} />,
+    () => <Character appearance={look} pose={h.sit ? (act.pose === 'ouch' ? 'ouch' : 'idle') : (act.pose ?? 'stand')} cue={act.cue ?? 0} whip={act.whipping} level={h.role === 'owner' ? 9 : 1} motion={motion} jump={air} />,
     [look, act.pose, act.cue, act.whipping, h.role, h.sit],
   );
   // (No position on the group itself: it is placed every frame above. A position given here would be put back on the
@@ -151,7 +161,7 @@ const Human = memo(function Human({ h }: { h: HumanView }) {
   return (
     <group ref={group}>
       {body}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+      <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <ringGeometry args={[0.36, 0.44, 32]} />
         <meshBasicMaterial color={`hsl(${h.hue} 80% 60%)`} transparent opacity={0.9} toneMapped={false} />
       </mesh>

@@ -461,7 +461,7 @@ async function scenario() {
     return 'a picture from her, with what it shows and a way to download it';
   });
 
-  await step('the arcade: a cartridge of my own runs on the office\'s Mega Drive, two players each hold their own buttons, the office does not hear the keys, and where I stopped is kept', async () => {
+  await step('the arcade: a cartridge of my own runs on the office\'s Mega Drive, the keys are the same for everybody and nothing is chosen, the office does not hear them, a second window joins with the second pad, and where I stopped is kept', async () => {
     // A cartridge written for this (tests/fixtures/md-test-rom.mjs): the colour of its screen says what both pads hold.
     const { buildTestRom, padsOf } = await import(require('node:url').pathToFileURL(path.join(__dirname, '..', 'fixtures', 'md-test-rom.mjs')).href);
     const rom = buildTestRom().toString('base64');
@@ -523,37 +523,34 @@ async function scenario() {
     if (Math.hypot(now.x - was.x, now.z - was.z) > 0.01 || Math.abs(now.rot - was.rot) > 0.001) throw new Error(`the keys of the game moved the owner in the office: ${JSON.stringify(was)} → ${JSON.stringify(now)}`);
     if (now.focus === 'IFRAME') throw new Error('the console took the keyboard from the window');
 
-    // Two players on one keyboard: the left half and the right half.
-    await js(`window.__t.setSelect(document.querySelector('[data-arcade-seat="2"]'), 'keys')`);
-    await waitFor(`/^W A S D to move/.test(document.querySelector('[data-arcade-legend="1"]').textContent) && /^Arrows to move/.test(document.querySelector('[data-arcade-legend="2"]').textContent)`, 5000);
-    keys('keyDown', 'G', 'L', 'Enter');
-    await shows('p1:b p2:c+start', 'G is player 1\'s B; L and Enter are player 2\'s C and Start');
-    // Seen on the page too: red from player 1 and green from player 2 are in the picture now.
-    const both = await seen();
-    if (!(both.r > 40 && both.g > 100)) throw new Error(`with both players holding buttons the window shows (${both.r}, ${both.g}, ${both.b})`);
-    await shot('arcade-two-players');
-    keys('keyUp', 'G', 'L', 'Enter');
-    keys('keyDown', 'F', 'H', '1', 'J', 'K');
-    await shows('p1:a+c+start p2:a+b', 'F H 1 are player 1\'s; J K are player 2\'s');
-    keys('keyUp', 'F', 'H', '1', 'J', 'K');
+    // Nothing is chosen: one person at a computer holds one pad, and the keys are the same for everybody.
+    const chooser = await js(`({ selects: document.querySelectorAll('[data-arcade] select').length, text: document.querySelector('[data-arcade]').textContent, legend: document.querySelector('[data-arcade-keys] [data-arcade-legend]')?.textContent.trim() || '', pad: !!document.querySelector('[data-arcade-pad-legend]') })`);
+    if (chooser.selects || /Player [12]|Keyboard|Nobody/.test(chooser.text)) throw new Error(`the arcade still asks who plays with what: ${chooser.selects} choices, "${chooser.text.slice(0, 200)}"`);
+    if (!/^W A S D to move .*J K L = A B C .*U I O = X Y Z .*Enter = Start$/.test(chooser.legend) || chooser.pad) throw new Error(`the keys as the arcade names them: ${JSON.stringify(chooser)}`);
+    // (That the old second half of the keyboard — F G H, R T Y, 1 — is no button any more is the unit test's: here those keys are the office's.)
+    keys('keyDown', 'J', 'L', 'Enter');
+    await shows('p1:a+c+start p2:', 'J L Enter are my A, C and Start');
+    // Seen on the page too: red from player 1's buttons is in the picture now.
+    const red = await seen();
+    if (!(red.r > 40)) throw new Error(`with buttons held the window shows (${red.r}, ${red.g}, ${red.b})`);
+    keys('keyUp', 'J', 'L', 'Enter');
     await shows('p1: p2:', 'let go');
 
-    // A gamepad for the second player (one this page is shown; there is none on the machine), the keyboard for the first.
+    // A gamepad (one this page is shown; there is none on the machine) is the same pad, with nothing to choose.
     await js(`(() => { window.__padHeld = []; navigator.getGamepads = () => [{ index: 0, id: 'Test Pad (STANDARD GAMEPAD Vendor: 0000 Product: 0000)', connected: true, mapping: 'standard', axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, (_x, i) => ({ pressed: window.__padHeld.includes(i), touched: false, value: 0 })) }, null, null, null]; return true; })()`);
     try {
-      await waitFor(`!!document.querySelector('[data-arcade-seat="2"] option[value="0"]')`, 5000);
-      await js(`window.__t.setSelect(document.querySelector('[data-arcade-seat="2"]'), '0')`);
-      await waitFor(`/or the arrows/.test(document.querySelector('[data-arcade-legend="1"]').textContent) && /^D-pad/.test(document.querySelector('[data-arcade-legend="2"]').textContent)`, 5000);
+      await waitFor(`/^Your gamepad works too: D-pad/.test(document.querySelector('[data-arcade-pad-legend]')?.textContent || '')`, 5000);
       await js(`window.__padHeld = [2, 9]; true`);
-      keys('keyDown', 'K');
-      await shows('p1:b p2:a+start', 'the gamepad\'s X and Start are player 2\'s A and Start, while K is player 1\'s B');
-      await js(`window.__padHeld = [0, 1]; true`);
-      keys('keyUp', 'K');
-      await shows('p1: p2:b+c', 'the gamepad\'s A and B are player 2\'s B and C');
+      await shows('p1:a+start p2:', 'the gamepad\'s X and Start are my A and Start');
+      // A button held by a key and by the gamepad is held until both let go.
+      keys('keyDown', 'J', 'K');
+      await shows('p1:a+b+start p2:', 'K beside the gamepad');
       await js(`window.__padHeld = []; true`);
+      await shows('p1:a+b p2:', 'the gamepad let go: J still holds A');
+      keys('keyUp', 'J', 'K');
       await shows('p1: p2:', 'let go');
     } finally {
-      await js(`delete navigator.getGamepads; window.__t.setSelect(document.querySelector('[data-arcade-seat="2"]'), 'none'); true`).catch(() => undefined);
+      await js(`delete navigator.getGamepads; true`).catch(() => undefined);
     }
 
     // ── With somebody in the office, each at their own computer: a second window of the office sits down at this game. ──
@@ -599,7 +596,10 @@ async function scenario() {
         throw new Error(`${what}: the second window is shown "${got}", expected "${want}"`);
       };
       await farShows('p1: p2:', 'the game as it stands');
-      await waitFor(`!!document.querySelector('[data-arcade-second]') && /plays with you/.test(document.querySelector('[data-arcade-open-line]').textContent)`, 8000);
+      await waitFor(`/plays with you/.test(document.querySelector('[data-arcade-open-line]').textContent)`, 8000);
+      // The second window is told the same keys, and is asked nothing either.
+      const theirs = await gjs(`({ selects: document.querySelectorAll('[data-arcade] select').length, legend: document.querySelector('[data-arcade-keys] [data-arcade-legend]')?.textContent.trim() || '' })`);
+      if (theirs.selects || !/^W A S D to move/.test(theirs.legend)) throw new Error(`the keys in the second window: ${JSON.stringify(theirs)}`);
       // Their keys are the second pad at my console, and they see what that does; mine are still the first.
       gkeys('keyDown', 'K', 'Enter');
       await shows('p1: p2:b+start', 'at my console: K and Enter in the second window are player 2\'s B and Start');
@@ -620,7 +620,7 @@ async function scenario() {
       guest.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
       guest.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
       await shows('p1: p2:', 'they got up: nothing is held');
-      await waitFor(`!document.querySelector('[data-arcade-second]') && window.__t.store().arcade.tables[0].player2 === null`, 8000);
+      await waitFor(`!/plays with you/.test(document.querySelector('[data-arcade-open-line]').textContent) && window.__t.store().arcade.tables[0].player2 === null`, 8000);
       await gwait(`!!document.querySelector('[data-arcade-shelf]') && !document.querySelector('[data-arcade-remote]')`, 8000, 'the second window back at the shelf');
       together = `; a second window found the game on the office's shelf, sat down at mine with the second pad, was shown ${pictures} pictures and ${sound} pieces of sound, and its keys were player 2's`;
     } finally {
@@ -645,7 +645,7 @@ async function scenario() {
     await waitFor(`!${card} && /No games yet/.test(document.querySelector('[data-arcade-shelf]').textContent)`, 8000);
     await key('Escape');
     await waitFor(`!document.querySelector('[data-arcade]')`, 5000);
-    return 'my cartridge ran in a frame that is no origin, its sound output open; one player on the whole keyboard, two on its halves, and a gamepad beside the keyboard each held their own buttons; the owner did not move in the office; Continue was offered with a picture, and Escape left the game and then the window' + together;
+    return 'my cartridge ran in a frame that is no origin, its sound output open; nothing to choose — the keys are W A S D, J K L, U I O and Enter, and a gamepad is the same pad; the owner did not move in the office; Continue was offered with a picture, and Escape left the game and then the window' + together;
   });
 
   await step('sitting and jumping: the interact key sits down where there is a seat, a step gets up, and with nothing to act on it is a jump — and the others in the office see both', async () => {
@@ -699,11 +699,29 @@ async function scenario() {
       await waitFor(`window.__t.store().nearby === null && Math.abs(window.__orchPlayer.x - 2) < 0.05`, 8000);
       await owait(`(() => { const h = ${seen}; return h && Math.hypot(h.x - 2, h.z - 6) < 0.3; })()`, 15000, 'me on the open floor');
       const theirs = ojs(`new Promise((done) => { let top = 0; const from = performance.now(); const look = () => { const h = ${seen}; if (h) top = Math.max(top, h.y || 0); if (performance.now() - from < 1800) setTimeout(look, 25); else done(top); }; look(); })`);
-      const mine = js(`new Promise((done) => { let top = 0; let end = null; const from = performance.now(); const look = () => { const y = window.__orchPlayer.y || 0; top = Math.max(top, y); if (top > 0.3 && y === 0 && end === null) end = performance.now() - from; if (performance.now() - from < 1500) setTimeout(look, 20); else done({ top, end }); }; look(); })`);
+      // (Every drawn frame of it: how high the body is lifted, and where its hips and its left ankle really are.)
+      const mine = js(`new Promise((done) => { const p = window.__orchPlayer; const stand = { hip: p.hipY, ankle: p.ankleY }; let top = 0; let end = null; let began = null; let over = null; const seen = []; const from = performance.now(); const look = () => { const now = performance.now() - from; const y = p.y || 0; top = Math.max(top, y); if (p.air >= 0 && began === null) began = now; if (began !== null && p.air < 0 && over === null) over = now; if (top > 0.3 && y === 0 && end === null) end = now; seen.push({ t: now, y, air: p.air, hip: p.hipY, ankle: p.ankleY }); if (now < 1800) requestAnimationFrame(look); else done({ top, end, began, over, stand, last: { hip: p.hipY, ankle: p.ankleY }, seen }); }; look(); })`);
       await sleep(150);
       await key('Space');
       const [jumped, seenTop] = [await mine, await theirs];
-      if (!(jumped.top > 0.5 && jumped.top < 0.7) || jumped.end === null) throw new Error(`the jump: ${JSON.stringify(jumped)}`);
+      const { seen: frames, stand, ...told } = jumped;
+      if (!(jumped.top > 0.5 && jumped.top < 0.7) || jumped.end === null || jumped.began === null || jumped.over === null) throw new Error(`the jump: ${JSON.stringify(told)}`);
+      // It is a body that jumps, not a figure that is lifted: it sinks before its feet leave the floor, draws its
+      // feet up under it in the air, gives at the knees as it lands, and stands again as it stood.
+      const during = frames.filter((f) => f.air >= 0);
+      const onFloorBefore = during.filter((f) => f.y === 0 && f.air < 0.4);
+      const inAir = during.filter((f) => f.y > 0.3);
+      const landed = during.filter((f) => f.y === 0 && f.air > 0.4);
+      const low = (fs) => Math.min(...fs.map((f) => f.hip - f.y)) - stand.hip;
+      const crouch = low(onFloorBefore);
+      const feetDown = Math.max(...onFloorBefore.filter((f) => f.air < 0.09).map((f) => Math.abs(f.ankle - stand.ankle)));
+      const tuck = Math.max(...inAir.map((f) => f.ankle - f.y)) - stand.ankle;
+      const give = low(landed);
+      // (Standing, the hips ride a centimetre or two up and down as the weight shifts from leg to leg.)
+      const back = Math.abs(jumped.last.hip - stand.hip);
+      const span = jumped.over - jumped.began;
+      const shape = `sank ${(-crouch * 100).toFixed(0)} cm before leaving the floor (feet within ${(feetDown * 100).toFixed(1)} cm of it), feet drawn up ${(tuck * 100).toFixed(0)} cm in the air, knees gave ${(-give * 100).toFixed(0)} cm on landing, ${Math.round(span)} ms in all`;
+      if (!(crouch < -0.05 && feetDown < 0.03 && tuck > 0.08 && give < -0.1 && back < 0.04 && span > 700 && span < 1300) || inAir.length < 5) throw new Error(`the jump is not a crouch, a push, a tuck and a landing: ${shape}; hips ${back.toFixed(3)} m from where they stood, ${inAir.length} frames in the air`);
       if (!(seenTop > 0.3)) throw new Error(`from the other window the jump was ${seenTop.toFixed(2)} m high`);
       const after = await me();
       if (after.panel || after.sit) throw new Error(`after a jump: ${JSON.stringify(after)}`);
@@ -717,7 +735,7 @@ async function scenario() {
       await waitFor(`window.__t.store().panel === 'tasks'`, 8000);
       if ((await js(`window.__t.store().jumpAsk`)) !== jumps) throw new Error('the key jumped although the project board was in front');
       await js(`window.__t.store().openPanel(null)`);
-      return `sat on the break room sofa (the prompt: "${asked.trim()}", then "STAND UP"), got up with a step; jumped ${jumped.top.toFixed(2)} m and landed after ${Math.round(jumped.end)} ms; another window saw me sit, get up and jump (${seenTop.toFixed(2)} m)`;
+      return `sat on the break room sofa (the prompt: "${asked.trim()}", then "STAND UP"), got up with a step; jumped ${jumped.top.toFixed(2)} m — ${shape}; another window saw me sit, get up and jump (${seenTop.toFixed(2)} m)`;
     } finally {
       other.destroy();
     }

@@ -567,11 +567,15 @@ export interface Loco {
   yaw: number;
   pdt: number;
   has: boolean;
+  /** Seconds since this body's jump began (below 0: it is not jumping). Written by whoever draws the body, every frame. */
+  air: number;
+  /** In a leap, the leg that leads: the one that was in front when the feet left the floor (+1 left, −1 right). */
+  lead: number;
 }
 
 export const newLoco = (): Loco => ({
   phase: 0.6, active: false, go: false, mvx: 0, mvz: 0, mturn: 0, dt: 0, vx: 0, vz: 0, sx: 0, sz: 0, turn: 0, speed: 0, amp: 0, run: 0, face: 0, dirx: 0, dirz: 1,
-  freq: 1, duty: 0.6, stride: 0, lift: 0, hurry: 0, raw: 0, coast: 9, about: false, arms: 0, homeX: STANCE_X, homeZ: 0, left: newStep(1), right: newStep(-1), fresh: true, px: 0, pz: 0, yaw: 0, pdt: 0, has: false,
+  freq: 1, duty: 0.6, stride: 0, lift: 0, hurry: 0, raw: 0, coast: 9, about: false, arms: 0, homeX: STANCE_X, homeZ: 0, left: newStep(1), right: newStep(-1), fresh: true, px: 0, pz: 0, yaw: 0, pdt: 0, has: false, air: -1, lead: 1,
 });
 
 /**
@@ -1031,6 +1035,9 @@ export function upright(o: Pose, t: number, ph: number, L: Loco): void {
       L.phase -= Math.floor(L.phase);
     }
   }
+  // A jump: the feet go up on their toes for the push, hang and tuck in the air, and reach for the floor again.
+  const jumping = L.air >= 0 && L.air < JUMP_SECONDS;
+  const fly = jumping ? jumpFeet(L, FOOT_L, FOOT_R) : 0;
   // The legs hang from the hips, which sway and turn over feet that stay where they are.
   const cy = Math.cos(o.pelYaw);
   const sy = Math.sin(o.pelYaw);
@@ -1052,8 +1059,180 @@ export function upright(o: Pose, t: number, ph: number, L: Loco): void {
   // In stride the handover from one leg to the other is rounded off; standing still, the legs are simply straight.
   const K = 0.011 * gait;
   o.hipY = K < 1e-4 ? lo : lo - K * Math.log(Math.exp(-(top - lo) / K) + Math.exp(-(hl - lo) / K) + Math.exp(-(hr - lo) / K));
+  if (jumping) {
+    // In the air the hips are carried by the jump, not by the legs; on the floor they sink for the push and give for the landing.
+    // (A body that is going somewhere lands lighter: it runs on out of the landing rather than stopping in it.)
+    const light = lerp(1, 1 - 0.5 * clamp01(L.speed / 3), smooth(JUMP_TOUCH - 0.1, JUMP_TOUCH, L.air));
+    o.hipY = lerp(o.hipY, STAND_Y, fly) + jumpSink(L.air) * light;
+    jumpBody(o, L.air, light);
+  }
   legIK(o, true, lx, FOOT_L.y - o.hipY, lz, FOOT_L.yaw - o.pelYaw, FOOT_L.pitch);
   legIK(o, false, rx, FOOT_R.y - o.hipY, rz, FOOT_R.yaw - o.pelYaw, FOOT_R.pitch);
+}
+
+// ───────────────────────────── the jump ─────────────────────────────
+
+/**
+ * A jump, from the key to standing again: the body sinks and pushes off (the feet still on the floor), is in the air,
+ * and gives at the knees as it lands. Whoever draws the body lifts it by `jumpY`; everything else — the crouch, the
+ * arms, the legs in the air, the landing — is the pose, worked out here from the time since the jump began.
+ */
+export const JUMP_HEIGHT = 0.62;
+/** Sinking, then pushing off: the feet leave the floor at their sum. */
+const JUMP_DOWN = 0.065;
+const JUMP_PUSH = 0.085;
+export const JUMP_OFF = JUMP_DOWN + JUMP_PUSH;
+export const JUMP_AIR = 0.5;
+/** The feet are on the floor again. */
+export const JUMP_TOUCH = JUMP_OFF + JUMP_AIR;
+const JUMP_LAND = 0.36;
+export const JUMP_SECONDS = JUMP_TOUCH + JUMP_LAND;
+/** How far the hips sink before the push, and how far above standing the stretched body carries them (it is on its toes). */
+const JUMP_DIP = 0.12;
+const JUMP_RISE = 0.06;
+/** …and coming down, less: the knees are a little bent before the floor comes, ready to give. */
+const JUMP_REACH = 0.03;
+/** How fast the body comes down onto its feet (m/s), and the share of that the knees take (the ankles take the rest). */
+const JUMP_FALL = (4 * JUMP_HEIGHT) / JUMP_AIR;
+const JUMP_GIVE = 0.8;
+/** The toes point down by this much (rad) as the feet leave the floor, and by this much as they come back to it. */
+const TOES_OFF = 0.75;
+const TOES_DOWN = 0.42;
+
+/** How high the soles are off the floor, `t` seconds after the jump began (0 before the feet leave it and once they are back). */
+export function jumpY(t: number): number {
+  if (t <= JUMP_OFF || t >= JUMP_TOUCH) return 0;
+  const v = (t - JUMP_OFF) / JUMP_AIR;
+  return JUMP_HEIGHT * 4 * v * (1 - v);
+}
+
+/**
+ * How far the hips are from where they stand (m; below 0 is lower), not counting the lift: down for the push, up on
+ * the toes as the feet leave, and down again as the knees take the landing — at first as fast as the body fell.
+ */
+export function jumpSink(t: number): number {
+  if (t <= 0 || t >= JUMP_SECONDS) return 0;
+  if (t < JUMP_DOWN) return -JUMP_DIP * smooth(0, JUMP_DOWN, t);
+  if (t < JUMP_OFF) {
+    const u = (t - JUMP_DOWN) / JUMP_PUSH;
+    return -JUMP_DIP + (JUMP_DIP + JUMP_RISE) * u * u;
+  }
+  if (t < JUMP_TOUCH) return lerp(JUMP_RISE, JUMP_REACH, smooth(JUMP_OFF, JUMP_OFF + 0.6 * JUMP_AIR, t));
+  const l = t - JUMP_TOUCH;
+  const u = 1 - l / JUMP_LAND;
+  return JUMP_REACH * (1 - smooth(0, 0.09, l)) - JUMP_GIVE * JUMP_FALL * l * u * u;
+}
+
+/** How far the toes point down (rad): up onto them for the push, loosely in the air, flat again a moment after landing. */
+function jumpToes(t: number): number {
+  if (t <= JUMP_DOWN) return 0;
+  if (t < JUMP_OFF) {
+    const u = (t - JUMP_DOWN) / JUMP_PUSH;
+    return TOES_OFF * u * u;
+  }
+  if (t < JUMP_TOUCH) return lerp(TOES_OFF, TOES_DOWN, smooth(JUMP_OFF, JUMP_OFF + 0.6 * JUMP_AIR, t));
+  return TOES_DOWN * (1 - smooth(0, 0.09, t - JUMP_TOUCH));
+}
+
+/** A smooth curve through the keys `[time, value, time, value, …]` (times rising); level before the first and after the last. */
+function through(keys: readonly number[], t: number): number {
+  const last = keys.length - 2;
+  if (t <= keys[0]!) return keys[1]!;
+  if (t >= keys[last]!) return keys[last + 1]!;
+  let i = 0;
+  while (keys[i + 2]! < t) i += 2;
+  const t0 = keys[i]!;
+  const v0 = keys[i + 1]!;
+  const t1 = keys[i + 2]!;
+  const v1 = keys[i + 3]!;
+  const h = t1 - t0;
+  // The slope at a key is that of the line between its neighbours; the ends are level.
+  const m0 = i > 0 ? ((v1 - keys[i - 1]!) / (t1 - keys[i - 2]!)) * h : 0;
+  const m1 = i + 2 < last ? ((keys[i + 5]! - v0) / (keys[i + 4]! - t0)) * h : 0;
+  const u = (t - t0) / h;
+  const u2 = u * u;
+  const u3 = u2 * u;
+  return (2 * u3 - 3 * u2 + 1) * v0 + (u3 - 2 * u2 + u) * m0 + (-2 * u3 + 3 * u2) * v1 + (u3 - u2) * m1;
+}
+
+const APEX = JUMP_OFF + JUMP_AIR / 2;
+const END = JUMP_SECONDS;
+/** The arms: swung back as the body sinks, thrown forward and up with the push, out to the sides coming down, forward as the knees give. */
+const ARM_SWING = [0, 0, 0.08, 0.6, JUMP_OFF, -0.45, JUMP_OFF + 0.16, -2.15, APEX + 0.05, -1.95, JUMP_TOUCH - 0.06, -0.62, JUMP_TOUCH + 0.1, -0.4, END, -0.03];
+const ARM_WIDE = [0, 0.085, 0.085, 0.16, JUMP_OFF + 0.14, 0.3, JUMP_TOUCH - 0.1, 0.85, JUMP_TOUCH + 0.1, 0.5, END, 0.085];
+const ARM_BEND = [0, -0.2, 0.085, -0.55, JUMP_OFF, -1.0, JUMP_OFF + 0.14, -0.35, APEX + 0.04, -0.5, JUMP_TOUCH - 0.04, -0.95, JUMP_TOUCH + 0.1, -1.1, END, -0.2];
+/** The trunk: folded over the knees for the push, stretched (a little past upright) leaving the floor, and folded again over the landing. */
+const TRUNK = [0, 0, 0.085, 0.36, JUMP_OFF, 0.1, JUMP_OFF + 0.09, -0.1, APEX + 0.05, 0.03, JUMP_TOUCH - 0.03, 0.17, JUMP_TOUCH + 0.11, 0.42, END, 0];
+const SHRUG = [0, 0, JUMP_OFF, 0.01, JUMP_OFF + 0.12, 0.03, JUMP_TOUCH, 0.012, JUMP_TOUCH + 0.1, -0.008, END, 0];
+
+/**
+ * The trunk, the head and the arms of a jump, over the body as the gait left it. It grows out of however the body
+ * stood (or ran) in the first moments and settles back into it over the last, so nothing is ever put anywhere at once.
+ * `light`: how much of the fold over the landing is left (1: all of it; a runner's is less).
+ */
+function jumpBody(o: Pose, tau: number, light = 1): void {
+  const w = smooth(0, 0.1, tau) * (1 - smooth(END - 0.2, END, tau));
+  if (w <= 0) return;
+  const fold = through(TRUNK, tau) * light;
+  o.lean += fold * w;
+  // The eyes stay on where the body is going: the head gives back most of what the trunk folds, and lifts with the push.
+  o.headPitch += (-0.6 * fold - 0.1 * smooth(JUMP_DOWN, JUMP_OFF, tau) * (1 - smooth(APEX, JUMP_TOUCH, tau))) * w;
+  o.shrug += through(SHRUG, tau) * w;
+  const swing = through(ARM_SWING, tau);
+  const wide = through(ARM_WIDE, tau);
+  const bend = through(ARM_BEND, tau);
+  o.sLx = lerp(o.sLx, swing, w);
+  o.sRx = lerp(o.sRx, swing, w);
+  o.sLz = lerp(o.sLz, wide, w);
+  o.sRz = lerp(o.sRz, -wide, w);
+  o.tL = lerp(o.tL, 0.1, w);
+  o.tR = lerp(o.tR, 0.1, w);
+  o.eL = lerp(o.eL, bend, w);
+  o.eR = lerp(o.eR, bend, w);
+}
+
+/**
+ * The feet of a jump, changed in place from where the gait has them; returns how far (0…1) they are the air's rather
+ * than the floor's. On the floor they only go up on their toes. In the air they hang under the hips with the knees
+ * drawn up — and, for a body that is going somewhere, stride out into a leap, the leg that was in front leading.
+ */
+function jumpFeet(L: Loco, l: Foot, r: Foot): number {
+  const tau = L.air;
+  const toes = jumpToes(tau);
+  // Until the feet leave the floor, the one in front is the one that will lead.
+  if (tau < JUMP_OFF) L.lead = l.z >= r.z ? 1 : -1;
+  const fly = smooth(JUMP_OFF, JUMP_OFF + 0.1, tau) * (1 - smooth(JUMP_TOUCH - 0.2, JUMP_TOUCH - 0.01, tau));
+  const v = clamp01((tau - JUMP_OFF) / JUMP_AIR);
+  const tuck = Math.pow(Math.sin(Math.PI * v), 1.5);
+  const leap = clamp01(L.speed / 3) * L.dirz;
+  pivot(toes);
+  const tipY = PIVOT_Y;
+  const tipZ = PIVOT_Z;
+  for (const side of [1, -1] as const) {
+    const f = side > 0 ? l : r;
+    if (toes > f.pitch) {
+      // Up on the toes, which stay where they are: the ankle goes up and a little forward over them.
+      pivot(Math.max(0, f.pitch));
+      f.x += Math.sin(f.yaw) * (tipZ - PIVOT_Z);
+      f.z += Math.cos(f.yaw) * (tipZ - PIVOT_Z);
+      f.y = Math.max(f.y, ANKLE + tipY);
+      f.pitch = toes;
+    }
+    if (fly <= 0) continue;
+    const leads = side === L.lead;
+    // Standing: both knees drawn up, the heels a little behind. Going somewhere: one leg reaches ahead, the other trails with its heel up.
+    const ax = side * STANCE_X * 0.95;
+    const az = tuck * (-0.05 * (1 - Math.abs(leap)) + leap * (leads ? 0.3 : -0.34));
+    const ay = ANKLE + tipY + tuck * (0.17 * (1 - Math.abs(leap)) + Math.abs(leap) * (leads ? 0.12 : 0.24));
+    const cf = Math.cos(L.face);
+    const sf = Math.sin(L.face);
+    f.x = lerp(f.x, ax * cf + az * sf, fly);
+    f.z = lerp(f.z, -ax * sf + az * cf, fly);
+    f.y = lerp(f.y, ay, fly);
+    f.yaw = lerp(f.yaw, L.face, fly);
+    f.pitch = lerp(f.pitch, toes + tuck * Math.abs(leap) * (leads ? -0.5 : 0.45), fly);
+  }
+  return fly;
 }
 
 /**
