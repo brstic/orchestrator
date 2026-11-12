@@ -171,3 +171,63 @@ export const EFFORT_CHOICES: Array<{ value: 'low' | 'medium' | 'high' | 'xhigh' 
   { value: 'xhigh', label: 'Extra high' },
   { value: 'max', label: 'Max' },
 ];
+
+/**
+ * The answers a question proposes in its own words — "A) … B) … C) …" — as choices to click. Employees are asked to
+ * give a question's choices separately, and a model does not always do it: it writes them into the question. Read out
+ * of the text, they can still be answered with one click instead of by typing "A".
+ *
+ * Only letters that follow each other from A, each written `A)` (or `(A)`) at the start of a line or after a space;
+ * a numbered list ("1. … 2. …") is an enumeration, not a set of answers, and is left alone. A choice's label is its
+ * letter and the head of its text; the rest of it is the description. The last choice ends with its sentence — what
+ * follows it is the question going on. Nothing is returned unless there are at least two.
+ */
+export function optionsIn(text: unknown): Array<{ label: string; description?: string }> {
+  if (typeof text !== 'string' || text.length > 20_000) return [];
+  const marks: Array<{ letter: string; at: number; from: number }> = [];
+  const re = /(^|\s)\(?([A-H])\)[ \t]+(?=\S)/g;
+  for (let m: RegExpExecArray | null; (m = re.exec(text)); ) {
+    const letter = m[2]!;
+    const want = String.fromCharCode(65 + marks.length);
+    if (letter === want) marks.push({ letter, at: m.index + m[1]!.length, from: m.index + m[0].length });
+    else if (letter === 'A' && marks.length < 2) {
+      // (An "A)" that led nowhere — a part of a sentence — and now the real list begins.)
+      marks.length = 0;
+      marks.push({ letter, at: m.index + m[1]!.length, from: m.index + m[0].length });
+    }
+  }
+  if (marks.length < 2) return [];
+  const out: Array<{ label: string; description?: string }> = [];
+  for (const [i, mark] of marks.entries()) {
+    let body = text.slice(mark.from, i + 1 < marks.length ? marks[i + 1]!.at : text.length);
+    if (i + 1 === marks.length) {
+      // Up to the end of its paragraph, and of its first sentence in it.
+      const para = body.search(/\n\s*\n/);
+      if (para !== -1) body = body.slice(0, para);
+      let depth = 0;
+      for (let k = 0; k < body.length; k++) {
+        const ch = body[k]!;
+        if (ch === '(') depth++;
+        else if (ch === ')') depth = Math.max(0, depth - 1);
+        else if ((ch === '.' || ch === '!' || ch === '?') && depth === 0 && k > 8 && /^\s+\p{Lu}/u.test(body.slice(k + 1, k + 6))) {
+          body = body.slice(0, k + 1);
+          break;
+        }
+      }
+    }
+    body = body.replace(/\s+/g, ' ').trim();
+    if (!body || body.length > 1500) return [];
+    // The head: up to a colon or a dash that comes early; otherwise up to the first comma or bracket; otherwise cut.
+    const cut = (() => {
+      const colon = body.search(/:\s| [—–-] /);
+      if (colon >= 2 && colon <= 110) return colon;
+      const stop = body.search(/[.;]\s/);
+      if (stop >= 2 && stop <= 110) return stop;
+      return body.length <= 110 ? body.length : -1;
+    })();
+    const head = (cut === -1 ? `${body.slice(0, 100).replace(/\s+\S*$/, '')}…` : body.slice(0, cut)).replace(/[\s.,;:]+$/, '');
+    const rest = cut === -1 ? body : body.slice(cut).replace(/^[\s:—–.;-]+/, '');
+    out.push({ label: `${mark.letter}) ${head}`, ...(rest && rest !== head ? { description: rest.length > 600 ? `${rest.slice(0, 597)}…` : rest } : {}) });
+  }
+  return out;
+}

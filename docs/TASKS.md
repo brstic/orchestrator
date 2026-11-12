@@ -85,7 +85,10 @@ answerTo? }`.
   employee's desk and in the Inbox (the question card, as for `ask_boss`), and in the task — the box at the bottom
   lists the choices above the text field. Clicking one is answering with its words. `context` and `why` go to the
   question card. The tool's description and the system prompt tell the employee to always give options when the
-  question is a choice.
+  question is a choice — **and when it does not**, and writes them into the question ("… A) keep it: … B) drop it —
+  … C) something else"), the office reads them out of the text (`optionsIn` in `contracts/util.ts`: letters from A
+  in order, written `A)` or `(A)`; a numbered list is not a set of answers) and offers them the same way. That
+  holds for `ask_boss` too, and questions that were already waiting get their choices when the office starts.
 - **A comment carries its pictures.** `comment_on_task` takes `files` — paths on the employee's machine; each is
   copied into the office (as `attach_file` does) and tied to the comment (`TaskComment.attachmentIds`). A picture's
   path that only stands in the text of a comment is fetched the same way: a path shows nobody anything. A file that

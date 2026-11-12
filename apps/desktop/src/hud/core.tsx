@@ -1222,6 +1222,15 @@ export function QuestionBody({ q, onDone }: { q: Question; onDone?: () => void }
           <Markdown className="small" text={q.context} />
         </div>
       )}
+      {/* Asked about a task: its pictures and what was said on it are one click away. */}
+      {q.kind !== 'permission' && q.taskId && s.tasks[q.taskId] && (
+        <div>
+          <Button small variant="ghost" onClick={() => s.openPanel('task', q.taskId!)} data-question-task>
+            Open {s.tasks[q.taskId]!.key}
+            {(s.tasks[q.taskId]!.attachments ?? []).length ? ` — ${(s.tasks[q.taskId]!.attachments ?? []).length} files, and the conversation` : ' — the conversation'}
+          </Button>
+        </div>
+      )}
       {q.why && (
         <div>
           <div className="section-title">Why it matters</div>

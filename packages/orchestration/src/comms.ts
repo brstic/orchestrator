@@ -1,5 +1,5 @@
 import type { AgentSession, CollabRequest, Employee, Message, MessageKind, Notification, NotificationKind, Question, QuestionOption } from '@orchestrator/contracts';
-import { correlationMarker, matchRole, newId, nowIso, truncate } from '@orchestrator/contracts';
+import { correlationMarker, matchRole, newId, nowIso, optionsIn, truncate } from '@orchestrator/contracts';
 import { xpForAssist } from '@orchestrator/game-systems';
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
@@ -167,6 +167,13 @@ export class Comms {
       this.unsentAnswers.add(q.id);
     }
     if (this.awaitingRejoin.size) this.rejoinTimer('*', this.core.timings.hookRejoinMs ?? 120_000);
+    // Questions that were asked with their choices written into the text, before the office read them out of it.
+    for (const q of this.core.questions.filter((x) => x.status === 'open' && x.channel === 'mcp_tool' && x.kind !== 'permission' && !x.options.length && !x.parts.length)) {
+      const found = optionsIn(q.text);
+      if (!found.length) continue;
+      q.options = found;
+      this.core.put('question', q);
+    }
     // (The same employee, the same task, the same words.)
     // The same question asked twice by the same employee (before the office knew to recognise it): one stays.
     const kept = new Set<string>();
@@ -279,7 +286,9 @@ export class Comms {
       text: truncate(q.text, 4000),
       context: truncate(q.context ?? '', 16_000),
       why: truncate(q.why ?? '', 2000),
-      options: (q.options ?? []).slice(0, 24),
+      // Choices the employee wrote into the question instead of giving them ("A) … B) …") are choices all the same:
+      // read out of the text, they are there to click at the desk, in the Inbox and on the task.
+      options: (q.options?.length ? q.options : q.channel === 'mcp_tool' && q.kind !== 'permission' ? optionsIn(q.text) : []).slice(0, 24),
       tool: q.tool ?? null,
       parts: q.parts ?? [],
       answers: null,

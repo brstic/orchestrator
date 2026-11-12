@@ -69,3 +69,28 @@ test('hiding secrets takes time in step with the text: text built to be slow is 
   }
   assert.equal(redactSecrets(`${'a'.repeat(5000)} --token=abcdef123456 ${'TOKEN'.repeat(500)} MY_DB_PASSWORD: "hunter2hunter2"`), `${'a'.repeat(5000)} --token=[REDACTED] ${'TOKEN'.repeat(500)} MY_DB_PASSWORD:[REDACTED]`);
 });
+
+test('choices written into a question ("A) … B) … C) …") are read out of it, to be answered with a click', async () => {
+  const { optionsIn } = await import('../src/util.ts');
+  // The question the owner was shown on 2026-11-12, as its employee wrote it.
+  const asked =
+    '@boss Radim još, ali da ne nagađam šta ti ne valja: pogledao sam ponovo dev i evo šta meni samom ne valja.\n\n1) Lista (/websites): svaki red ponavlja naslove, domeni se lome u 2-3 reda.\n2) Prostor sajta, Overview: skoro prazan.\n3) Navigacija u sajtu: 6 kartica gore pa još meni levo, kutija u kutiji. Šta od ovoga da uradim? A) Struktura ostaje (lista + klik na sajt sa 5 sekcija), ali ozbiljno doterujem izgled: Overview postaje pravi dashboard sajta (slika sajta, grafikoni), lista dobija jedno zaglavlje. B) Menjam strukturu: bez kartica i menija, sve o sajtu na jednoj dugoj strani (sekcije jedna ispod druge, sve vidljivo odmah). C) Nešto treće: napiši u par reči šta ti smeta (izgled, raspored, nešto fali, nešto ne radi). Pre gradnje ti pokazujem sliku. Prilozi na tasku su puni (30), pa sliku stavljam kao stranu na dev-u.';
+  assert.deepEqual(optionsIn(asked), [
+    { label: 'A) Struktura ostaje (lista + klik na sajt sa 5 sekcija), ali ozbiljno doterujem izgled', description: 'Overview postaje pravi dashboard sajta (slika sajta, grafikoni), lista dobija jedno zaglavlje.' },
+    { label: 'B) Menjam strukturu', description: 'bez kartica i menija, sve o sajtu na jednoj dugoj strani (sekcije jedna ispod druge, sve vidljivo odmah).' },
+    { label: 'C) Nešto treće', description: 'napiši u par reči šta ti smeta (izgled, raspored, nešto fali, nešto ne radi).' },
+  ]);
+  // On lines of their own, in brackets, short.
+  assert.deepEqual(optionsIn('Which database?\n(A) Postgres\n(B) SQLite\n\nI lean towards A.'), [{ label: 'A) Postgres' }, { label: 'B) SQLite' }]);
+  assert.deepEqual(optionsIn('Ship it? A) Yes, today. B) No — wait for the review.'), [{ label: 'A) Yes, today' }, { label: 'B) No', description: 'wait for the review.' }]);
+  // Not choices: a numbered list, one letter alone, letters out of order, a letter inside a word or a formula.
+  for (const not of ['Three things: 1) the list 2) the page 3) the menu.', 'Plan A) is the only one.', 'See B) first and then A) later.', 'f(A) + g(B) = 3', 'The classes AA) and BB) are gone.', '', 'A) only one']) assert.deepEqual(optionsIn(not), [], not);
+  assert.deepEqual(optionsIn(undefined), []);
+  assert.deepEqual(optionsIn({}), []);
+  // A list that only starts again: the later one counts. And a long text costs nothing.
+  assert.deepEqual(optionsIn('Plan A) was dropped. Now: A) rebuild B) patch').map((o) => o.label), ['A) rebuild', 'B) patch']);
+  const t0 = Date.now();
+  optionsIn(`${'A) '.repeat(3000)}B) x`);
+  optionsIn('A) ' + 'x'.repeat(15000) + ' B) y');
+  assert.ok(Date.now() - t0 < 200, `took ${Date.now() - t0} ms`);
+});

@@ -1,5 +1,5 @@
 import type { AgentSession, Employee, QuestionOption, Task, TaskComment, TaskMention } from '@orchestrator/contracts';
-import { TASK_COMMENTS_MAX, newId, nowIso, redactSecrets, truncate } from '@orchestrator/contracts';
+import { TASK_COMMENTS_MAX, newId, nowIso, optionsIn, redactSecrets, truncate } from '@orchestrator/contracts';
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
 
@@ -262,7 +262,9 @@ export class TaskTalk {
     // Pictures and files that go with what is said: the ones named, and any picture whose path stands in the text
     // (a path on the employee's machine shows nobody anything — the file itself is put on the task).
     const attachmentIds = await this.attach(task, employee, a.files ?? [], body, notes);
-    const options = (Array.isArray(a.options) ? a.options : []).filter((o) => o && typeof o.label === 'string' && o.label.trim()).slice(0, 6).map((o) => ({ label: truncate(String(o.label).trim(), 200), ...(o.description ? { description: truncate(String(o.description), 600) } : {}), ...(o.consequence ? { consequence: truncate(String(o.consequence), 600) } : {}) }));
+    const given = (Array.isArray(a.options) ? a.options : []).filter((o) => o && typeof o.label === 'string' && o.label.trim()).slice(0, 6).map((o) => ({ label: truncate(String(o.label).trim(), 200), ...(o.description ? { description: truncate(String(o.description), 600) } : {}), ...(o.consequence ? { consequence: truncate(String(o.consequence), 600) } : {}) }));
+    // (Choices written into the question itself — "A) … B) …" — are choices all the same.)
+    const options: QuestionOption[] = given.length ? given : a.ask === true ? optionsIn(body) : [];
 
     if (a.ask === true) {
       if (!current || current.id !== task.id) return err(`You can only ask-and-wait on the ticket you are working on${current ? ` (${current.key})` : ''}. On another ticket, comment without "ask" and tag whoever should answer.`);

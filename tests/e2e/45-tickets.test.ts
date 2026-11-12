@@ -209,6 +209,14 @@ test('a question that is a choice carries its choices, and a comment carries its
   const res = await asking;
   assert.equal(res.isError, false);
   assert.match(res.text, /^The boss answered: Layout B/);
+  // Choices written into the question's own text are read out of it: there to click all the same.
+  const inline = tool('Alex', 'comment_on_task', { text: 'One more: do we keep the old list? A) Keep it: nothing breaks. B) Drop it — less to maintain.', ask: true });
+  const second = await until(t.id, (x) => (x.comments ?? []).filter((c) => c.kind === 'question').length === 2, 'the second question');
+  const q2 = second.comments!.filter((c) => c.kind === 'question')[1]!;
+  assert.deepEqual(q2.options, [{ label: 'A) Keep it', description: 'nothing breaks.' }, { label: 'B) Drop it', description: 'less to maintain.' }]);
+  assert.deepEqual((await h.state()).questions.find((x) => x.id === q2.questionId)!.options.map((o) => o.label), ['A) Keep it', 'B) Drop it']);
+  await h.api('POST', `/questions/${q2.questionId}/answer`, { answer: 'B) Drop it' });
+  assert.match((await inline).text, /^The boss answered: B\) Drop it/);
   // (A file that was named and could not be read is said; the question is asked all the same.)
   const plain = await tool('Alex', 'comment_on_task', { text: 'Here is what it looks like now.', files: ['no-such-file.png'] });
   assert.match(plain.text, /no-such-file\.png was not attached/);
@@ -353,4 +361,19 @@ test('several employees on one ticket: it is divided into parts, waits for them,
   assert.equal((await tool('Alex', 'complete_task', { summary: 'Checkout works end to end.', no_code_changes: true })).isError, false);
   const review = await until(t.id, (x) => x.status === 'REVIEW', 'the whole is in review');
   assert.equal(review.reviewBy, 'both');
+});
+
+test('a question that was already waiting, asked with its choices in the text, gets them when the office starts', async () => {
+  const t = await inProgress('Sarah', 'Name the page');
+  const asking = tool('Sarah', 'ask_boss', { question: 'What do we call it? A) Websites B) Sites' });
+  const q = await waitFor(async () => (await h.state()).questions.find((x) => x.taskId === t.id && x.status === 'open'), { label: 'the question is open' });
+  assert.deepEqual(q.options.map((o) => o.label), ['A) Websites', 'B) Sites'], 'ask_boss too');
+  // As it stood before the office read choices out of a question's text.
+  const stored = h.server.engine.core.questions.require(q.id);
+  stored.options = [];
+  h.server.engine.core.put('question', stored);
+  await h.restartServer();
+  void asking.catch(() => undefined);
+  const after = (await h.state()).questions.find((x) => x.id === q.id)!;
+  assert.deepEqual([after.status, after.options.map((o) => o.label)], ['open', ['A) Websites', 'B) Sites']]);
 });
