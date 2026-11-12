@@ -177,7 +177,7 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
   {
     name: 'comment_on_task',
     description:
-      'Write on a ticket\'s conversation: what the boss or a colleague should know about it, an answer when you were tagged on it, or a question. Tag who should read it in the text (@boss, @Name) or in "to"; nobody is told about a comment that tags nobody. With ask: true you are saying "I am not sure, or I cannot go on, without this answer": the call waits for it (a few minutes at most); if none comes the ticket waits for it by itself — you stop working on it, are free for other work, and get it back with the answer. Use that instead of guessing and instead of report_blocker. A question that is a choice carries its choices in "options"; something to look at goes in "files".',
+      'Write on a ticket\'s conversation: what the boss or a colleague should know about it, an answer when you were tagged on it, or a question. Tag who should read it in the text (@boss, @Name) or in "to"; nobody is told about a comment that tags nobody. With ask: true you are saying "I am not sure, or I cannot go on, without this answer": the call waits for it (a few minutes at most); if none comes the ticket waits for it by itself — you stop working on it and wait too (no new task is given to you while a question of yours is open), and you get it back with the answer. Use that instead of guessing and instead of report_blocker. A question that is a choice carries its choices in "options"; something to look at goes in "files".',
     inputSchema: {
       type: 'object',
       properties: {

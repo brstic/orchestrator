@@ -657,6 +657,8 @@ export class Comms {
         else if (onTask) this.setStatus(q, 'delivered', 'Returned as the result of the comment_on_task call');
         else if (q.employeeId) this.enqueueAnswer(q, true);
         else this.setStatus(q, 'failed', 'No session to deliver the answer to.');
+        // Whoever asked was given nothing new while the question was open: now they can be.
+        this.eng.tasks.schedule();
         break;
       }
       case 'terminal': {

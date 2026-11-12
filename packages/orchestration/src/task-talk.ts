@@ -428,7 +428,7 @@ export class TaskTalk {
     const session = this.core.runningSessionOf(employee.id);
     if (session) this.eng.sessions.setActivity(session, 'idle', null);
     this.eng.tasks.schedule();
-    return `No answer from ${of} yet. ${task.key} now waits for it: stop working on it and do not guess. It comes back to you with the answer; meanwhile you are free for other work.`;
+    return `No answer from ${of} yet. ${task.key} now waits for it, and so do you: stop working on it, do not guess, and do not start anything else — no new task is given to you while your question is open. ${task.key} comes back to you with the answer.`;
   }
 
   // ────────────────────── the office's own questions, mirrored ──────────────────────

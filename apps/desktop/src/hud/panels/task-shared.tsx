@@ -134,7 +134,11 @@ export function needOf(task: Task, employees: Record<string, Employee>, tasks: R
     case 'BACKLOG':
       if (!task.released) return { ...base, label: 'Proposed', tone: 'warn', color: 'var(--warn)', group: 'you', line: /^(owner|member:)/.test(task.createdBy) ? 'Not released yet — release it to start' : `Proposed by ${task.createdBy.replace(/^[a-z]+:/, '')} — release it to start` };
       return { ...base, label: 'Up next', group: 'next', line: 'Waits for what it depends on' };
-    default:
+    default: {
+      // Whoever asked something waits for the answer before starting anything new.
+      const asked = task.assigneeId ? Object.values(tasks).find((t) => t.assigneeId === task.assigneeId && t.status === 'BLOCKED' && t.waitingFor?.kind === 'answer') : undefined;
+      if (asked) return { ...base, label: 'Up next', group: 'waiting', line: `${who} starts it after the question on ${asked.key} is answered` };
       return { ...base, label: 'Up next', group: 'next', line: task.assigneeId ? `Next for ${who}` : `For whoever is free${task.roleHint ? ` (${task.roleHint})` : ''}` };
+    }
   }
 }

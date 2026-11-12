@@ -72,8 +72,13 @@ answerTo? }`.
     they are not at their desk); their next comment on that ticket is the answer.
   - The call waits (`timings.askBossWaitMs`, four minutes). Answered in time, the answer is the call's result and the
     ticket never stopped. Not answered: the ticket is **parked** — `BLOCKED` with
-    `waitingFor: { kind: 'answer', commentId }`, shown as "Asks you" or "Waiting" — the employee is free for other
-    work, no alarm is raised (a question is not a blocker), and the answer brings the ticket back to them
+    `waitingFor: { kind: 'answer', commentId }`, shown as "Asks you" or "Waiting" — no alarm is raised (a question
+    is not a blocker), **and whoever asked waits too**: an employee with a question of theirs about a task open — a
+    task parked on one, or a question to the boss about a task, also one that has been handed in since — is given
+    no new task until it is answered (`TaskManager.awaitingAnswer`,
+    read by `isFree`; the owner's rule of 2026-11-12, after an employee parked a task on a question and was
+    handed, and finished, another one meanwhile). The card of what they would do next says so. The answer brings
+    the ticket back to them
     (`TaskManager.unblock(..., { threaded: true })`): in the same session if they are still there, otherwise as the
     task handed to them again, with the conversation in its prompt.
   - `ask_boss` asked while on a ticket is written into its conversation too. `report_blocker` — now for what no

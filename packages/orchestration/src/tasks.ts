@@ -740,9 +740,25 @@ export class TaskManager {
   }
 
   /** Is this employee genuinely able to take a new task right now? */
+  /**
+   * What this employee has asked about a task and not been answered yet: a task of theirs parked on a question, or
+   * a question of theirs to the boss about a task (whatever became of that task since — handed in, in review) that
+   * is still open. While there is one they are given nothing new — whoever asked waits for the answer, and does not
+   * start the next thing with the first one hanging (the owner's rule of 2026-11-12, after an employee parked a
+   * task on a question and was handed, and finished, another one before it was answered). A question that is about
+   * no task — asked in a talk with the boss, in a routine — is not work that is hanging, and holds nothing.
+   */
+  awaitingAnswer(employeeId: string): { task?: Task; question?: string } | null {
+    const task = this.core.tasks.find((t) => t.assigneeId === employeeId && t.status === 'BLOCKED' && t.waitingFor?.kind === 'answer');
+    if (task) return { task };
+    const q = this.core.questions.find((x) => x.employeeId === employeeId && x.status === 'open' && x.channel === 'mcp_tool' && x.kind !== 'permission' && !!x.taskId && !!this.core.tasks.get(x.taskId));
+    return q ? { question: q.id } : null;
+  }
+
   isFree(e: Employee): boolean {
     if (e.archived || !this.withinSchedule(e)) return false;
     if (this.startingEmployees.has(e.id) || this.currentTask(e.id)) return false;
+    if (this.awaitingAnswer(e.id)) return false;
     if (!e.hostId || !this.core.agents.isOnline(e.hostId)) return false;
     if (this.eng.hosts.exhausted(e.hostId)) return false;
     const s = this.core.runningSessionOf(e.id);

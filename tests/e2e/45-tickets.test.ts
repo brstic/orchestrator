@@ -225,7 +225,7 @@ test('a question that is a choice carries its choices, and a comment carries its
   await finish('Alex');
 });
 
-test('no answer in time: the ticket waits by itself, the employee is free, and the answer brings it back', async () => {
+test('no answer in time: the ticket waits and so does the employee — nothing new is started until the answer brings it back', async () => {
   const eng = h.server.engine;
   const usual = eng.core.timings.askBossWaitMs;
   eng.core.timings.askBossWaitMs = 700;
@@ -237,7 +237,14 @@ test('no answer in time: the ticket waits by itself, the employee is free, and t
     assert.equal(parked.status, 'BLOCKED');
     assert.equal(parked.waitingFor?.kind, 'answer');
     assert.match(parked.blockedReason ?? '', /^Waiting for an answer from the boss: Which region/);
-    assert.equal(eng.tasks.currentTask(ids.Alex), undefined, 'Alex is free for other work');
+    // Whoever asked waits for the answer: nothing new is started with the first thing hanging.
+    assert.equal(eng.tasks.currentTask(ids.Alex), undefined);
+    assert.equal(eng.tasks.isFree(eng.core.employees.require(ids.Alex!)), false, 'not free while his question is open');
+    const next = await h.task({ projectId: shop, title: 'The next thing', assigneeId: ids.Alex, reviewBy: 'none', description: 'Wait for what is said on the ticket.' });
+    const unowned = await h.task({ projectId: shop, title: 'For whoever is free', roleHint: 'backend', reviewBy: 'none', description: 'Wait for what is said on the ticket.' });
+    await new Promise((r) => setTimeout(r, 1500));
+    assert.equal((await task(next.id)).status, 'READY', 'his next task is not handed to him');
+    assert.notEqual((await task(unowned.id)).assigneeId, ids.Alex, 'nor is one that is for whoever is free');
     assert.equal((await h.state()).notifications.filter((n) => n.kind === 'blocked' && n.taskId === t.id).length, 0, 'a question is not an alarm');
     // Answered where the office's questions are answered: the ticket goes back to Alex with it, once.
     const q = parked.comments!.find((c) => c.kind === 'question')!;
@@ -249,6 +256,12 @@ test('no answer in time: the ticket waits by itself, the employee is free, and t
     const news = (await messagesTo('Alex')).slice(before);
     assert.deepEqual(news.map((m) => m.body), [`The boss answered on ${t.key}: eu-west\nGo on with the task with this.`]);
     assert.match((await h.state()).questions.find((x) => x.id === q.questionId)!.deliveryDetail ?? '', /Given back with the task that waited for it/);
+    // Answered, the first task is the one he goes on with; the next one starts when that is finished.
+    assert.equal((await task(next.id)).status, 'READY');
+    await finish('Alex');
+    await until(next.id, (x) => x.status === 'IN_PROGRESS', 'the next task starts once the first is handed in');
+    await h.api('DELETE', `/tasks/${unowned.id}`).catch(() => undefined);
+    await until(next.id, (x) => x.delivery.status !== 'queued', 'delivered');
     await finish('Alex');
   } finally {
     eng.core.timings.askBossWaitMs = usual;
@@ -361,6 +374,29 @@ test('several employees on one ticket: it is divided into parts, waits for them,
   assert.equal((await tool('Alex', 'complete_task', { summary: 'Checkout works end to end.', no_code_changes: true })).isError, false);
   const review = await until(t.id, (x) => x.status === 'REVIEW', 'the whole is in review');
   assert.equal(review.reviewBy, 'both');
+});
+
+test('a question about a task holds its employee also after that task was handed in: the next one waits for the answer', async () => {
+  const eng = h.server.engine;
+  const first = await inProgress('Sarah', 'Draw the icons');
+  const asking = tool('Sarah', 'ask_boss', { question: 'Outline or filled icons?' });
+  const q = await waitFor(async () => (await h.state()).questions.find((x) => x.taskId === first.id && x.status === 'open'), { label: 'the question is open' });
+  // She hands the task in with her question still open (it goes to review), and has nothing in progress…
+  await finish('Sarah');
+  assert.equal((await task(first.id)).status, 'REVIEW');
+  assert.equal(eng.tasks.currentTask(ids.Sarah), undefined);
+  // …and still is not given the next thing.
+  const next = await h.task({ projectId: shop, title: 'Draw the logo', assigneeId: ids.Sarah, reviewBy: 'none', description: 'Wait for what is said on the ticket.' });
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.equal((await task(next.id)).status, 'READY');
+  assert.equal(eng.tasks.isFree(eng.core.employees.require(ids.Sarah!)), false);
+  // A question about no task holds nobody.
+  assert.equal(eng.tasks.awaitingAnswer(ids.Rita!), null);
+  // Answered: she gets it.
+  await h.api('POST', `/questions/${q.id}/answer`, { answer: 'Outline.' });
+  assert.match((await asking).text, /Outline\./);
+  await until(next.id, (x) => x.status === 'IN_PROGRESS' && x.delivery.status !== 'queued', 'the next task starts after the answer');
+  await finish('Sarah');
 });
 
 test('a question that was already waiting, asked with its choices in the text, gets them when the office starts', async () => {
