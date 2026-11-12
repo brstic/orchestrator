@@ -122,6 +122,7 @@ const RULES: Rule[] = [
   rule('POST', '/sessions/:id/bind', 'work', path('session'), inBody('employee', 'employeeId')),
   // ── reaching into a machine: its folders and what runs there ──
   rule('GET', '/hosts/:id/browse', 'work', path('host')),
+  rule('POST', '/hosts/:id/folders', 'work', path('host')),
   rule('GET', '/hosts/:id/claude-processes', 'work', path('host')),
   rule('GET', '/hosts/:id/discover', 'work', path('host')),
   // Servers a member brings into the office and may share with it. Whose a server is, is checked by the route itself.

@@ -122,3 +122,36 @@ export async function listFolders(dir: string): Promise<FolderListing> {
   const parent = path.dirname(real);
   return { path: real, parent: parent === real ? null : parent, folders, repo: await exists(path.join(real, '.git')), home: os.homedir() };
 }
+
+/**
+ * A name a new folder may have: one piece of a path, visible in the folder list (not hidden), nothing a shell or a
+ * terminal would read as something else. Returns the name as it will be used, or says why not.
+ */
+export function folderName(raw: unknown): string {
+  const name = typeof raw === 'string' ? raw.trim() : '';
+  if (!name) throw new Error('give the new folder a name');
+  if (name.length > 100) throw new Error('a folder name has at most 100 characters');
+  if (/[\/\\]/.test(name) || name === '.' || name === '..') throw new Error('a folder name is one name, not a path');
+  if (name.startsWith('.')) throw new Error('a folder whose name starts with a dot is hidden and would not be listed');
+  if (name.startsWith('-')) throw new Error('a folder name cannot start with a dash');
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(name)) throw new Error('a folder name cannot contain control characters');
+  return name;
+}
+
+/** Make one new, empty folder inside an existing one (never more than one level, never over something that exists). */
+export async function createFolder(parent: string, raw: unknown): Promise<{ path: string; name: string }> {
+  const name = folderName(raw);
+  const real = await fs.realpath(parent).catch(() => {
+    throw new Error(`${parent} does not exist`);
+  });
+  if (!(await fs.stat(real)).isDirectory()) throw new Error(`${parent} is not a folder`);
+  const target = path.join(real, name);
+  try {
+    await fs.mkdir(target);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`"${name}" already exists there`);
+    throw new Error(`could not make "${name}": ${(e as NodeJS.ErrnoException).code ?? (e as Error).message}`);
+  }
+  return { path: target, name };
+}

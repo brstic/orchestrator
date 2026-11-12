@@ -750,6 +750,16 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
     api.post('/hosts/enroll-token', async (req) => engine.hosts.createEnrollmentToken(String(body(req).label ?? 'host'), Number(body(req).ttlMinutes ?? 60) * 60_000));
     api.get('/hosts/:id/browse', async (req) => engine.core.agents.rpc(param(req, 'id'), { method: 'fs.browse', params: { path: query(req).path ? String(query(req).path) : null } }));
+    // A new folder on a machine, for somebody about to be hired into it: one level, inside what that machine allows.
+    api.post('/hosts/:id/folders', async (req) => {
+      const b = body(req);
+      const made = await engine.core.agents.rpc<{ path: string; name: string }>(param(req, 'id'), { method: 'fs.mkdir', params: { parent: String(b.parent ?? ''), name: String(b.name ?? '') } }).catch((e) => {
+        // (A machine whose agent is older than this does not know how.)
+        throw new EngineError(/unknown|unsupported|not implemented/i.test((e as Error).message) ? 'This machine runs an older agent that cannot make folders yet. Update its app (or agent), or make the folder there by hand.' : (e as Error).message);
+      });
+      engine.core.audit(actorOf(req), 'folder.created', param(req, 'id'), { path: made.path });
+      return made;
+    });
     api.get('/employees/:id/docs', async (req) => engine.documents(param(req, 'id')));
     api.get('/employees/:id/docs/file', async (req) => engine.document(param(req, 'id'), String(query(req).path ?? '')));
     // Servers linked over SSH (see ssh-links.ts). The manager exists once the server is listening.

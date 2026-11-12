@@ -157,6 +157,8 @@ export type AgentRpc =
   /** A piece of a file an employee on this machine leaves as evidence. Read only from the allowed roots, the agent's own folders and the temp folder. */
   | { method: 'files.get'; params: { path: string; cwd?: string | null; sessionId?: ID | null; offset: number; length: number } }
   | { method: 'fs.browse'; params: { path?: string | null } }
+  /** Make one new, empty folder inside an existing one of the allowed roots (for an employee about to be hired into it). */
+  | { method: 'fs.mkdir'; params: { parent: string; name: string } }
   | { method: 'fs.docs.list'; params: { cwd: string } }
   | { method: 'fs.docs.read'; params: { cwd: string; path: string } }
   | { method: 'git.status'; params: { cwd: string } }

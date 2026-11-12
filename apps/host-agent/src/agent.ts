@@ -36,6 +36,7 @@ import {
   gitStatus,
   inspectPath,
   listFolders,
+  createFolder,
   listMarkdown,
   looksLikeClaude,
   mergeBranch,
@@ -1112,6 +1113,13 @@ export class HostAgent {
         const listing = await listFolders(this.assertAllowed(rpc.params.path || roots[0] || os.homedir()));
         const atRoot = roots.some((r) => realpathOfDeepestExisting(r) === listing.path);
         return { ...listing, parent: atRoot ? null : listing.parent, roots };
+      }
+      case 'fs.mkdir': {
+        // A new folder for an employee to work in: one level, inside what this host allows — as browsing is.
+        const parent = this.assertAllowed(rpc.params.parent);
+        const made = await createFolder(parent, rpc.params.name);
+        this.assertAllowed(made.path);
+        return made;
       }
       case 'fs.docs.list':
         return listMarkdown(this.assertAllowed(rpc.params.cwd));

@@ -250,6 +250,8 @@ try {
   const quinn = by('Quinn');
   const quinnSession = s.sessions.find((x) => x.employeeId === quinn?.id);
   const quinnProject = s.projects.find((p) => p.id === quinn?.projectId);
+  const madeFolder = path.join(fs.realpathSync(info.base), 'made-in-the-form');
+  check('the folder made from the hire form exists on the machine, empty', fs.existsSync(madeFolder) && fs.readdirSync(madeFolder).length === 0, madeFolder);
   check('the hired employee exists, owns the folder as an in-place project, and has a real session', !!quinn && quinnProject?.repoPath === hireFolder && quinnProject?.workspace === 'in_place' && quinnSession?.status === 'running' && quinnSession?.cwd === hireFolder, `${quinnProject?.name} @ ${quinnSession?.cwd} (${quinnSession?.tmuxSession})`);
   const task = s.tasks.find((t) => t.title === ctx.taskTitle);
   check('the task made in the form was done by a real session and verified', task?.status === 'DONE' && task?.evidence?.verification?.passed === true && task?.evidence?.commits?.length === 1, `${task?.key} ${task?.status}, verification ${task?.evidence?.verification?.provenance}`);

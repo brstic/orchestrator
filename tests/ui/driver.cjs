@@ -255,6 +255,16 @@ async function scenario() {
     // No path typing: browse the machine's folders and choose one.
     await clickText('Browse…');
     await waitFor(`!!window.__t.near(${JSON.stringify(ctx.hireFolderName)}, 'Choose')`, 10000);
+    // A folder that is not there yet is made right here — and is then the one chosen.
+    await click(`window.__t.scope().querySelector('[data-new-folder]')`, 'New folder');
+    await type(`window.__t.scope().querySelector('[data-new-folder-row] input')`, 'made-in-the-form');
+    await clickText('Create and use');
+    await waitFor(`/\\/made-in-the-form$/.test(window.__t.field('Folder they live in').value) && !window.__t.scope().querySelector('.fp')`, 8000);
+    // (The step goes on with the folder prepared for it: the list opens in the new, empty folder — one up from there.)
+    await clickText('Browse…');
+    await waitFor(`!!window.__t.scope().querySelector('.fp button[title="Up one folder"]:not(:disabled)') && /No folders inside this one/.test(window.__t.scope().querySelector('.fp').textContent)`, 10000);
+    await click(`window.__t.scope().querySelector('.fp button[title="Up one folder"]')`, 'up one folder');
+    await waitFor(`!!window.__t.near(${JSON.stringify(ctx.hireFolderName)}, 'Choose')`, 10000);
     await shot('hire-browse');
     await click(`window.__t.near(${JSON.stringify(ctx.hireFolderName)}, 'Choose')`, 'Choose');
     await waitFor(`window.__t.field('Folder they live in').value === ${JSON.stringify(ctx.hireFolder)}`, 5000);

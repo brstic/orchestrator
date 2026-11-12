@@ -268,7 +268,8 @@ export class Engine {
     const insp = await this.core.agents.rpc(hostId, { method: 'fs.inspect', params: { path: folder } }).catch((e) => {
       throw new EngineError(`the host rejected that folder: ${(e as Error).message}`);
     });
-    if (!insp.exists || !insp.isDirectory) throw new EngineError(`${folder} is not a directory on that machine`);
+    if (!insp.exists) throw new EngineError(`${folder} does not exist on that machine yet. Make it first: "Browse…" → "New folder" where the folder is chosen.`);
+    if (!insp.isDirectory) throw new EngineError(`${folder} is not a directory on that machine`);
     const root: string = insp.repoRoot ?? insp.path;
     let project = this.core.projects.find((p) => p.hostId === hostId && p.repoPath === root && p.status !== 'archived');
     if (!project) {

@@ -1891,6 +1891,19 @@ table.tbl {
   align-items: center;
   gap: 8px;
 }
+.fp-new {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.fp-new > span {
+  flex: none;
+  max-width: 40%;
+}
+.fp-new input {
+  min-width: 0;
+}
 .fp-crumbs {
   flex: 1;
   min-width: 0;

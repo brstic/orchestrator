@@ -182,6 +182,7 @@ test('a visitor reads what is shared and changes nothing', async () => {
     ['POST', `/api/employees/${alex}/stop`, {}],
     ['POST', '/api/me/host', {}],
     ['GET', `/api/hosts/${h.hostId}/browse`, undefined],
+    ['POST', `/api/hosts/${h.hostId}/folders`, { parent: h.tmp, name: 'not-for-visitors' }],
   ] as const) {
     const r = await door(mila, method, p, body);
     assert.equal(r.status, 403, `${method} ${p} as a visitor`);

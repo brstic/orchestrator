@@ -83,6 +83,41 @@ test('browsing a machine lists folders inside what it allows, and nothing outsid
   assert.match(outside.body.error, /outside this host's allowed roots/);
 });
 
+test('a new folder is made on the machine from the office — one level, inside what the machine allows — and somebody is hired into it', async () => {
+  const root = fs.realpathSync(h.tmp);
+  const made = await h.api('POST', `/hosts/${h.hostId}/folders`, { parent: root, name: '  New Shop  ' });
+  assert.deepEqual(made, { path: path.join(root, 'New Shop'), name: 'New Shop' });
+  assert.ok(fs.statSync(made.path).isDirectory());
+  assert.deepEqual(fs.readdirSync(made.path), [], 'empty');
+  assert.ok((await h.api('GET', `/hosts/${h.hostId}/browse`)).folders.some((f: any) => f.path === made.path), 'it is in the list');
+  // One name, not a path; not hidden; not over something that is there; not outside the allowed folders.
+  for (const [body, why] of [
+    [{ parent: root, name: 'New Shop' }, /already exists there/],
+    [{ parent: root, name: 'a/b' }, /one name, not a path/],
+    [{ parent: root, name: '..' }, /one name, not a path/],
+    [{ parent: root, name: '.hidden' }, /starts with a dot/],
+    [{ parent: root, name: '-rf' }, /cannot start with a dash/],
+    [{ parent: root, name: '   ' }, /give the new folder a name/],
+    [{ parent: root, name: 'x'.repeat(101) }, /at most 100 characters/],
+    [{ parent: '/etc', name: 'orchestrator-test' }, /outside this host's allowed roots/],
+    [{ parent: path.join(root, 'no-such-folder'), name: 'x' }, /does not exist/],
+  ] as const) {
+    const res = await h.apiRaw('POST', `/hosts/${h.hostId}/folders`, body);
+    assert.equal(res.status, 400, JSON.stringify(body));
+    assert.match(res.body.error, why);
+  }
+  assert.ok(!fs.existsSync('/etc/orchestrator-test'));
+  assert.ok((await h.api<any[]>('GET', '/audit?limit=20')).some((a) => a.action === 'folder.created' && a.detail?.path === made.path), 'on the record');
+  // The folder is one somebody can be hired into: it becomes their project, as an existing one would.
+  const nia = await h.api('POST', '/employees', { name: 'Nia', roleKey: 'frontend', hostId: h.hostId, workingDir: made.path });
+  assert.equal(nia.workingDir, made.path);
+  assert.equal((await h.state()).projects.find((p) => p.id === nia.projectId)?.repoPath, made.path);
+  // A folder that is not there says how to make it.
+  const none = await h.apiRaw('POST', '/employees', { name: 'Nobody', roleKey: 'frontend', hostId: h.hostId, workingDir: path.join(root, 'not-made-yet') });
+  assert.equal(none.status, 400);
+  assert.match(none.body.error, /does not exist on that machine yet\. Make it first: "Browse…" → "New folder"/);
+});
+
 test('an employee on auto runs in Claude Code\'s auto mode and is not asked for permission', async () => {
   ivy = await h.api('POST', '/employees', { name: 'Ivy', roleKey: 'fullstack', hostId: h.hostId, workingDir: folder, autonomy: 'auto' });
   assert.equal(ivy.autonomy, 'auto');

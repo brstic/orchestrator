@@ -72,6 +72,24 @@ function FolderBrowser({ host, start, onPick }: { host: Host; start: string | nu
   const [listing, setListing] = useState<Listing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
+  /** The name of a folder being made here (null: not making one). */
+  const [making, setMaking] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const make = async () => {
+    if (!listing || !making?.trim() || busy) return;
+    setBusy(true);
+    try {
+      const made = await api<{ path: string; name: string }>('POST', `/hosts/${host.id}/folders`, { parent: listing.path, name: making.trim() });
+      useOffice.getState().toast(`${made.name} was made on ${host.name}`, 'success');
+      setMaking(null);
+      // It was made to be used: it is the folder chosen.
+      onPick(made.path);
+    } catch (e) {
+      useOffice.getState().toast((e as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
   const load = (path: string | null) => {
     setError(null);
     api<Listing>('GET', `/hosts/${host.id}/browse${path ? `?path=${encodeURIComponent(path)}` : ''}`)
@@ -121,10 +139,45 @@ function FolderBrowser({ host, start, onPick }: { host: Host; start: string | nu
           })}
           {listing.repo && <Badge tone="info">git</Badge>}
         </div>
+        <Button small type="button" onClick={() => setMaking(making === null ? '' : null)} title="Make a new, empty folder inside this one" data-new-folder>
+          New folder
+        </Button>
         <Button small variant="primary" type="button" onClick={() => onPick(listing.path)}>
           Use this folder
         </Button>
       </div>
+      {making !== null && (
+        <div className="fp-new" data-new-folder-row>
+          <span className="small muted truncate" title={listing.path}>
+            New folder in {crumbs[crumbs.length - 1] ?? '/'}:
+          </span>
+          <input
+            className="mono grow"
+            aria-label="Name of the new folder"
+            placeholder="its-name"
+            value={making}
+            autoFocus
+            spellCheck={false}
+            onChange={(ev) => setMaking(ev.target.value)}
+            onKeyDown={(ev) => {
+              if (ev.key === 'Enter') {
+                ev.preventDefault();
+                void make();
+              } else if (ev.key === 'Escape') {
+                ev.preventDefault();
+                ev.stopPropagation();
+                setMaking(null);
+              }
+            }}
+          />
+          <Button small variant="primary" type="button" disabled={busy || !making.trim()} onClick={() => void make()}>
+            Create and use
+          </Button>
+          <Button small variant="ghost" type="button" onClick={() => setMaking(null)}>
+            Cancel
+          </Button>
+        </div>
+      )}
       {listing.folders.length > 8 && <input className="fp-filter" value={filter} onChange={(ev) => setFilter(ev.target.value)} placeholder="Filter folders…" aria-label="Filter folders" />}
       <div className="fp-list">
         {shown.length === 0 && <div className="small muted fp-empty">{listing.folders.length ? 'No folder matches.' : 'No folders inside this one.'}</div>}
@@ -150,7 +203,7 @@ function FolderBrowser({ host, start, onPick }: { host: Host; start: string | nu
       </div>
       <div className="small faint">
         Folders on {host.name}
-        {listing.roots.length ? ` inside ${listing.roots.join(', ')}` : ''}. Hidden folders are not listed.
+        {listing.roots.length ? ` inside ${listing.roots.join(', ')}` : ''}. Hidden folders are not listed. "New folder" makes an empty one here.
       </div>
     </div>
   );
