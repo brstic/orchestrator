@@ -56,17 +56,21 @@ test('only what changed on a pad is passed on', () => {
   assert.deepEqual(changes(new Set(['a']), new Set(['a'])), []);
 });
 
-test('who holds what when nobody has said: gamepads first, and the keyboard for whoever has none', () => {
+test('who holds what when nobody has said: the keyboard, the same for everyone — a gamepad is chosen, never assumed', () => {
   assert.deepEqual(usualSeats([]), { p1: 'keys', p2: 'none' });
-  assert.deepEqual(usualSeats([0]), { p1: 0, p2: 'keys' });
-  assert.deepEqual(usualSeats([1, 3]), { p1: 1, p2: 3 });
+  assert.deepEqual(usualSeats([0]), { p1: 'keys', p2: 'none' });
+  assert.deepEqual(usualSeats([1, 3]), { p1: 'keys', p2: 'none' });
+  // …and with nothing chosen the keys are W A S D (or the arrows), J K L and U I O.
+  const seats = settleSeats(null, [0, 1]);
+  assert.deepEqual(seats, { p1: 'keys', p2: 'none' });
+  assert.deepEqual(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyJ', 'KeyK', 'KeyL', 'KeyU', 'KeyI', 'KeyO', 'Enter'].map((c) => buttonOfKey(seats, c)?.button), ['up', 'left', 'down', 'right', 'a', 'b', 'c', 'x', 'y', 'z', 'start']);
 });
 
 test('a choice holds only with what is connected, and one gamepad is never both players\'', () => {
   assert.deepEqual(settleSeats({ p1: 'keys', p2: 'keys' }, []), { p1: 'keys', p2: 'keys' });
   assert.deepEqual(settleSeats({ p1: 2, p2: 'keys' }, []), { p1: 'keys', p2: 'keys' }, 'the gamepad that was chosen is gone');
-  assert.deepEqual(settleSeats({ p1: 'keys', p2: 2 }, [0]), { p1: 'keys', p2: 'keys' }, 'the second player falls back to what is usual with one gamepad');
-  assert.deepEqual(settleSeats(null, [0, 1]), { p1: 0, p2: 1 });
+  assert.deepEqual(settleSeats({ p1: 'keys', p2: 2 }, [0]), { p1: 'keys', p2: 'keys' }, 'the second player, whose gamepad is gone, plays on with the keyboard');
+  assert.deepEqual(settleSeats({ p1: 0, p2: 1 }, [0, 1]), { p1: 0, p2: 1 }, 'two gamepads that were chosen and are there');
   // Player 2 has just taken the gamepad player 1 had: player 1 gives way.
   assert.deepEqual(settleSeats({ p1: 0, p2: 0 }, [0], 2), { p1: 'keys', p2: 0 });
   assert.deepEqual(settleSeats({ p1: 0, p2: 0 }, [0, 1], 2), { p1: 1, p2: 0 });

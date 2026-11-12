@@ -543,7 +543,7 @@ async function scenario() {
     try {
       await waitFor(`!!document.querySelector('[data-arcade-seat="2"] option[value="0"]')`, 5000);
       await js(`window.__t.setSelect(document.querySelector('[data-arcade-seat="2"]'), '0')`);
-      await waitFor(`/^W A S D or arrows/.test(document.querySelector('[data-arcade-legend="1"]').textContent) && /^D-pad/.test(document.querySelector('[data-arcade-legend="2"]').textContent)`, 5000);
+      await waitFor(`/or the arrows/.test(document.querySelector('[data-arcade-legend="1"]').textContent) && /^D-pad/.test(document.querySelector('[data-arcade-legend="2"]').textContent)`, 5000);
       await js(`window.__padHeld = [2, 9]; true`);
       keys('keyDown', 'K');
       await shows('p1:b p2:a+start', 'the gamepad\'s X and Start are player 2\'s A and Start, while K is player 1\'s B');
@@ -559,7 +559,7 @@ async function scenario() {
     // ── With somebody in the office, each at their own computer: a second window of the office sits down at this game. ──
     const shelf = await js(`window.__t.store().arcade.games.map((g) => g.title)`);
     if (!shelf.includes('Orchestrator Pad Test')) throw new Error(`the game is not on the office's shelf: ${JSON.stringify(shelf)}`);
-    await click(`document.querySelector('[data-arcade-invite]')`, 'Play together');
+    // (A game is open to the office from its start: nothing to press.)
     await waitFor(`document.querySelector('[data-arcade-play-view]').dataset.arcadeOpen === 'true' && window.__t.store().arcade.tables.length === 1`, 8000);
     const guest = new BrowserWindow({ width: 1300, height: 900, show: false, webPreferences: { backgroundThrottling: false } });
     const gjs = (code) => guest.webContents.executeJavaScript(code, true);
@@ -626,11 +626,10 @@ async function scenario() {
     } finally {
       guest.destroy();
     }
-    await click(`document.querySelector('[data-arcade-invite]')`, 'close the game to the office');
-    await waitFor(`window.__t.store().arcade.tables.length === 0`, 8000);
 
-    // Leaving keeps where I was: the shelf then offers to continue, with a picture of the moment.
+    // Leaving keeps where I was: the shelf then offers to continue, with a picture of the moment. And the game is no longer one to join.
     await click(`document.querySelector('[data-arcade-back]')`, '← Games');
+    await waitFor(`window.__t.store().arcade.tables.length === 0`, 8000);
     await waitFor(`!!${card}?.querySelector('[data-arcade-continue]') && ${card}.querySelector('img')?.naturalWidth > 0`, 15000);
     await shot('arcade-continue');
     await click(`${card}.querySelector('[data-arcade-continue]')`, 'Continue');

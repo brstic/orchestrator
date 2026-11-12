@@ -38,7 +38,7 @@ export const KEY_LAYOUTS: Record<KeyLayout, Record<string, PadButton>> = {
 
 /** The legend of a layout, in the words on the keys. */
 export const KEY_LEGEND: Record<KeyLayout, string> = {
-  whole: 'W A S D or arrows to move · J K L = A B C · U I O = X Y Z · Enter = Start',
+  whole: 'W A S D to move (or the arrows) · J K L = A B C · U I O = X Y Z · Enter = Start',
   left: 'W A S D to move · F G H = A B C · R T Y = X Y Z · 1 = Start',
   right: 'Arrows to move · J K L = A B C · U I O = X Y Z · Enter = Start',
 };
@@ -96,13 +96,12 @@ export function changes(before: ReadonlySet<PadButton>, now: ReadonlySet<PadButt
 }
 
 /**
- * Who holds what when nobody has said: gamepads first, in the order they were connected. One gamepad leaves the
- * keyboard to the second player; none leaves the whole keyboard to one player, and the second joins by choosing it.
+ * Who holds what when nobody has said: one player on the whole keyboard — W A S D, J K L, U I O — whatever is
+ * plugged in. The same for everyone, so that two people who play together need not ask each other which keys; a
+ * gamepad is something a person chooses (and the choice is remembered).
  */
-export function usualSeats(pads: number[]): Seats {
-  const [first, second] = pads;
-  if (first === undefined) return { p1: 'keys', p2: 'none' };
-  return { p1: first, p2: second ?? 'keys' };
+export function usualSeats(_pads: number[] = []): Seats {
+  return { p1: 'keys', p2: 'none' };
 }
 
 /**
@@ -114,6 +113,8 @@ export function settleSeats(wanted: Partial<Seats> | null, pads: number[], chang
   const here = (s: Seat | undefined): s is Seat => s === 'keys' || s === 'none' || (typeof s === 'number' && pads.includes(s));
   let p1: Seats['p1'] = here(wanted?.p1) && wanted!.p1 !== ('none' as Seat) ? wanted!.p1! : usual.p1;
   let p2: Seat = here(wanted?.p2) ? wanted!.p2! : usual.p2;
+  // A gamepad that was chosen and is gone leaves its player the keyboard — the second player too, who chose to play.
+  if (typeof wanted?.p2 === 'number' && !pads.includes(wanted.p2)) p2 = 'keys';
   if (typeof p1 === 'number' && p1 === p2) {
     const free = pads.find((p) => p !== p1);
     if (changed === 2) p1 = free ?? 'keys';

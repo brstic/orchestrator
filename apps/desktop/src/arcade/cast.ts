@@ -19,6 +19,13 @@ const VIDEO = { codec: 'vp8', width: CAST_WIDTH, height: CAST_HEIGHT };
 /** A picture that stands by itself, this often at least: somebody whose picture broke up is back within it. */
 const KEY_EVERY = 240;
 
+/**
+ * A picture that reaches the guest this much later than the best the way here has managed is behind: it is not
+ * shown, nor are the ones built on it — the guest jumps to the next picture that stands by itself. A guest on a
+ * slow computer or a slow line then sees fewer pictures, each of them current, instead of all of them later and later.
+ */
+const LATE_MS = 300;
+
 /** Whether this browser can show a game to others, and be shown one. */
 export const canCast = (): boolean => typeof VideoEncoder === 'function' && typeof VideoDecoder === 'function';
 
@@ -153,8 +160,10 @@ export class Viewer {
   private playAt = 0;
   private soundOn: boolean;
   private over = false;
-  /** Pictures shown and pieces of sound played. */
-  shown = { v: 0, a: 0 };
+  /** The least a piece has ever been behind the host's clock on arrival (ms, plus the unknown difference of the two clocks). */
+  private best = Infinity;
+  /** Pictures shown and pieces of sound played; `late`: pictures let go for being behind. */
+  shown = { v: 0, a: 0, late: 0 };
   /** Called with the first picture, and never again. */
   onFirst: (() => void) | null = null;
 
@@ -173,7 +182,20 @@ export class Viewer {
     try {
       if (kind === 'cfg') return this.configure(JSON.parse(new TextDecoder().decode(fromBase64(data))) as CastConfig);
       if (!this.cfg) return this.askKey();
+      // How far behind this piece is: by the host's clock it was made at `ts`, and the smallest difference ever seen
+      // is what the way here costs at its best. (That allowance grows a little with time: two clocks drift.)
+      // (Pictures only: they carry the host's clock; sound counts its own samples.)
       if (kind === 'v') {
+        const behind = performance.now() - ts / 1000;
+        this.best = Math.min(this.best + 0.02, behind);
+        const late = behind - this.best > LATE_MS;
+        // Behind, or more waiting to be unpacked than can be shown in time: on to the next one that stands by itself.
+        if (!key && (late || (this.video?.decodeQueueSize ?? 0) > 6)) {
+          this.shown.late++;
+          if (!this.waitingForKey) this.askKey();
+          this.waitingForKey = true;
+          return;
+        }
         // A picture is built on the one before: after a gap, nothing can be shown until one comes that stands by itself.
         if (this.waitingForKey && !key) return;
         if (!this.video) this.openVideo();

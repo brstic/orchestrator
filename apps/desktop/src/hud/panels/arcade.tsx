@@ -289,7 +289,7 @@ function Tables({ tables, onJoin }: { tables: ArcadeTable[]; onJoin: (table: Arc
               {t.host.name} is playing {t.title}
             </div>
             <div className="small muted truncate">
-              {t.player2 ? `${t.player2.name} holds the second pad` : 'The second pad is free'}
+              {t.player2 ? `${t.host.name} and ${t.player2.name} are playing: you can look on` : 'Waiting for a second player'}
               {t.watching.length ? ` · ${t.watching.length} looking on` : ''}
             </div>
           </div>
@@ -298,8 +298,8 @@ function Tables({ tables, onJoin }: { tables: ArcadeTable[]; onJoin: (table: Arc
           ) : (
             <>
               {!t.player2 && (
-                <Button variant="primary" small onClick={() => onJoin(t, 'player')} title="You play from this computer, with the second pad" data-arcade-join>
-                  Join as player 2
+                <Button variant="primary" small onClick={() => onJoin(t, 'player')} title="You play from this computer as player 2: W A S D, J K L, U I O" data-arcade-join>
+                  Join
                 </Button>
               )}
               <Button small onClick={() => onJoin(t, 'watch')} data-arcade-watch>
@@ -419,6 +419,8 @@ function Play({
   const [heard, setHeard] = useState<SoundState | null>(null);
   const [keptAt, setKeptAt] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  /** Whether this person's games are open to the office (the usual), as they last left it. */
+  const [wantOpen, setWantOpen] = useState(() => stored('arcade.open', true));
   const me = useOffice((s) => s.clientId);
   const table = useOffice((s) => s.arcade.tables.find((t) => t.id === s.clientId)) ?? null;
   const second = open ? (table?.player2?.name ?? null) : null;
@@ -471,7 +473,6 @@ function Play({
     if (!caster.current) return;
     caster.current.close();
     caster.current = null;
-    machine.current?.cast(false);
     connection.send({ t: 'arcade.close' });
     setOpen(false);
   }, []);
@@ -479,10 +480,19 @@ function Play({
     if (caster.current || phaseNow.current !== 'running') return;
     caster.current = new Caster((m) => connection.send(m));
     connection.send({ t: 'arcade.open', title: game.title, gameId: game.id });
-    machine.current?.cast(true);
     setOpen(true);
   }, [game.id, game.title]);
   useEffect(() => close, [close]);
+  // A game is open to the office from the moment it runs: somebody who walks up to the arcade finds it and joins.
+  // (Unless this person closed theirs; that is remembered.)
+  useEffect(() => {
+    if (phase === 'running' && wantOpen && canCast()) invite();
+  }, [phase, wantOpen, invite]);
+  // The picture and the sound are taken and sent only while somebody is at the table to get them.
+  const company = open && !!table && (!!table.player2 || table.watching.length > 0);
+  useEffect(() => {
+    if (phase === 'running') machine.current?.cast(company);
+  }, [company, phase]);
   // This window came back to the office under a new name (the connection dropped): the table is opened again.
   useEffect(() => {
     if (open && me) connection.send({ t: 'arcade.open', title: game.title, gameId: game.id });
@@ -569,12 +579,17 @@ function Play({
           small
           variant={open ? 'success' : 'default'}
           disabled={!running || !canCast()}
-          onClick={act(() => (open ? close() : invite()))}
+          onClick={act(() => {
+            const next = !open;
+            setWantOpen(next);
+            store('arcade.open', next);
+            if (!next) close();
+          })}
           aria-pressed={open}
-          title={!canCast() ? 'This browser cannot show a game to others' : open ? 'Close the game to the office again' : 'Let somebody in the office join from their own computer, with the second pad — or look on'}
+          title={!canCast() ? 'This browser cannot show a game to others' : open ? 'Anybody in the office can join this game from their own computer (one with the second pad, the others look on). Click to play it by yourself.' : 'Let somebody in the office join from their own computer, with the second pad — or look on'}
           data-arcade-invite
         >
-          {open ? 'Open to the office ✓' : 'Play together'}
+          {open ? 'Open to the office ✓' : 'Closed — open it'}
         </Button>
         <Button
           small
@@ -623,7 +638,7 @@ function Play({
               <strong>{table.player2.name}</strong> plays with you, from their computer.
             </>
           ) : (
-            'Open to the office: whoever walks up to the arcade can join with the second pad.'
+            'Open to the office: whoever walks up to the arcade can press Join and play with the second pad. Two play; anybody else looks on.'
           )}
           {table && table.watching.length > 0 && ` ${table.watching.map((w) => w.name).join(', ')} ${table.watching.length === 1 ? 'is' : 'are'} looking on.`}
         </div>
@@ -657,7 +672,7 @@ function Remote({ tableId, wanted, seats, sound, onSound, onLeft, leaver, note }
   const wrap = useRef<HTMLDivElement>(null);
   const viewer = useRef<Viewer | null>(null);
   const [seen, setSeen] = useState(false);
-  const [shown, setShown] = useState({ v: 0, a: 0 });
+  const [shown, setShown] = useState({ v: 0, a: 0, late: 0 });
   const me = useOffice((s) => s.clientId);
   const table = useOffice((s) => s.arcade.tables.find((t) => t.id === tableId)) ?? null;
   const playing = table?.player2?.id === me;
@@ -721,7 +736,7 @@ function Remote({ tableId, wanted, seats, sound, onSound, onLeft, leaver, note }
   usePadInput(playing, mine, (_player, button, down) => playingNow.current && connection.send({ t: 'arcade.pad', button, down }));
 
   return (
-    <div className="arc-play" data-arcade-remote data-arcade-remote-as={playing ? 'player' : 'watch'} data-shown-v={shown.v} data-shown-a={shown.a}>
+    <div className="arc-play" data-arcade-remote data-arcade-remote-as={playing ? 'player' : 'watch'} data-shown-v={shown.v} data-shown-a={shown.a} data-shown-late={shown.late}>
       <div className="row arc-bar">
         <Button onClick={() => void leave()} title="Get up from this game (Esc)" data-arcade-back>
           ← Games
