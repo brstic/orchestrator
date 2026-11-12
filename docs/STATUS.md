@@ -21,7 +21,7 @@ _Last updated: 2026-11-12. Update this file with every piece of work (see `CLAUD
 
 **The server runs build `236a02b` since 2026-11-12, 10:24 UTC** (fetched, pushed, deployed from the owner's Mac under the standing go-ahead). It brings the Tasks board back, with a task that opens ("The Tasks board is back…", below); only the UI the office serves changed. Right after: the service is active, no error in its log, the door answers, the served bundle is the new one. A browser gets it at the next reload.
 
-**A desktop app build from `236a02b` is waiting in `release-next/Orchestrator.app`** (15 of 15 package checks). The owner's app was running, so `release/Orchestrator.app` was not touched: it is build `7825e7d` — the one with the window the owner sent back — until the two are swapped with the app closed. (`7825e7d` replaced `13cd634` there at 10:08 UTC, while the app was closed; that older build is `release-next/Orchestrator.app.previous-1008`.)
+**The owner's Mac app was replaced with build `236a02b` on 2026-11-12, 10:28 UTC** (15 of 15 package checks). The app was closed at the time (no process of it; checked before the swap and after) and was not opened. The build it replaced (`7825e7d`, with the window the owner sent back) is kept as `release-next/Orchestrator.app.previous-1028`; `13cd634` before it is `previous-1008`.
 
 **The server ran build `7825e7d` from 2026-11-12, 10:07 UTC**; it added the tickets ("Tickets: review by default…", below). At that start the office switched **19 open tasks** to "reviewed when finished" (its log says so; 18 were waiting in the backlog, one was blocked); the 19 finished tasks and the one already in review were left as they were. `reviewDefault` is not set, so the office reviews by "a colleague, then the boss".
 
