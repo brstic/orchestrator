@@ -41,7 +41,8 @@ const check = (name, ok, detail = '') => {
 };
 
 // (`--review none`: the office of this suite is one whose tasks are done when they pass; the steps about review choose it per ticket.)
-const office = spawn(process.execPath, [path.join(root, 'scripts/dev-office.ts'), '--port', String(port), '--review', 'none'], { stdio: ['ignore', 'pipe', 'pipe'], cwd: root });
+// (`--member-room`: one member with a computer of their own and three employees on it, two at work and one asleep — somebody whose "My work" has something in it.)
+const office = spawn(process.execPath, [path.join(root, 'scripts/dev-office.ts'), '--port', String(port), '--review', 'none', '--member-room', 'Mila:3'], { stdio: ['ignore', 'pipe', 'pipe'], cwd: root });
 let officeErr = '';
 office.stderr.on('data', (d) => (officeErr += d));
 const info = await new Promise((resolve) => {
@@ -188,6 +189,8 @@ try {
     lessonWhen: 'before every commit',
     denyRule: 'Bash(rm -rf:*)',
     reviewTaskId: toReview.id,
+    memberUrl: info.members[0].url,
+    memberName: info.members[0].name,
     spareHost: 'spare-box',
     spareRenamed: 'spare-renamed',
     hireName: 'Quinn',

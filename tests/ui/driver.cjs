@@ -721,7 +721,8 @@ async function scenario() {
       const back = Math.abs(jumped.last.hip - stand.hip);
       const span = jumped.over - jumped.began;
       const shape = `sank ${(-crouch * 100).toFixed(0)} cm before leaving the floor (feet within ${(feetDown * 100).toFixed(1)} cm of it), feet drawn up ${(tuck * 100).toFixed(0)} cm in the air, knees gave ${(-give * 100).toFixed(0)} cm on landing, ${Math.round(span)} ms in all`;
-      if (!(crouch < -0.05 && feetDown < 0.03 && tuck > 0.08 && give < -0.1 && back < 0.04 && span > 700 && span < 1300) || inAir.length < 5) throw new Error(`the jump is not a crouch, a push, a tuck and a landing: ${shape}; hips ${back.toFixed(3)} m from where they stood, ${inAir.length} frames in the air`);
+      // (The feet stay down through the crouch — within what a standing body's ankles ride with its weight, a few centimetres; drawn up in the air they are several times that.)
+      if (!(crouch < -0.05 && feetDown < 0.05 && tuck > 0.08 && give < -0.1 && back < 0.04 && span > 700 && span < 1300) || inAir.length < 5) throw new Error(`the jump is not a crouch, a push, a tuck and a landing: ${shape}; hips ${back.toFixed(3)} m from where they stood, ${inAir.length} frames in the air`);
       if (!(seenTop > 0.3)) throw new Error(`from the other window the jump was ${seenTop.toFixed(2)} m high`);
       const after = await me();
       if (after.panel || after.sit) throw new Error(`after a jump: ${JSON.stringify(after)}`);
@@ -846,6 +847,116 @@ async function scenario() {
     await waitFor(`window.__t.store().panel === 'employee' && String(window.__t.store().panelArg).startsWith(window.__t.emp('Sarah').id)`, 6000);
     await close();
     return `${seen.subtitle}; dev-mac: ${seen.dev.meters.join(', ')}; opened: ${opened.facts.length} facts, ${opened.chips.length} people`;
+  });
+
+  await step('My work (a member\'s own window): people in one list with one word about each, what waits only when something does, a lead hired in place, and one main button', async () => {
+    await close();
+    // The member at their own window: a second window on the same office, signed in as them.
+    // (With a store of its own, in memory: the page keeps who is signed in for its address, and the owner's window must stay the owner's.)
+    const other = new BrowserWindow({ width: 1300, height: 900, show: false, webPreferences: { backgroundThrottling: false, partition: 'my-work-member' } });
+    const ojs = (code) => other.webContents.executeJavaScript(code, true);
+    const owait = async (code, timeout = 15000, what = code) => {
+      for (const end = Date.now() + timeout; Date.now() < end; await sleep(100)) {
+        const v = await ojs(`(() => { try { return (${code}); } catch (e) { return null; } })()`).catch(() => null);
+        if (v) return v;
+      }
+      throw new Error(`the member's window: timed out waiting for ${String(what).slice(0, 160)}`);
+    };
+    /** A real click in the member's window. */
+    const oclick = async (finder, what = finder) => {
+      await owait(`!!(${finder})`, 15000, what);
+      const p = await ojs(`window.__t.point(${finder})`);
+      if (!p.hit) throw new Error(`${what} is covered by ${p.top} in the member's window`);
+      other.webContents.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y });
+      other.webContents.sendInputEvent({ type: 'mouseDown', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+      other.webContents.sendInputEvent({ type: 'mouseUp', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+      await sleep(120);
+    };
+    const W = `window.__t.scope()`;
+    const mine = `Object.values(window.__t.store().employees).filter((e) => !e.archived && e.roleKey !== 'lead' && (window.__t.store().hosts[e.hostId] || {}).memberId === window.__t.store().me.id)`;
+    try {
+      other.webContents.setAudioMuted(true);
+      await other.loadURL(ctx.memberUrl);
+      other.webContents.setZoomFactor(1);
+      await owait(`!!window.__office && !!window.__office.getState().me && window.__office.getState().me.name === ${JSON.stringify(ctx.memberName)} && Object.keys(window.__office.getState().employees).length > 2`, 30000, 'the office, as the member');
+      await ojs(HELPERS);
+      await owait(`(${mine}).length === 3`, 15000, 'the member\'s three employees');
+      await ojs(`window.__t.store().openPanel('mine')`);
+      await owait(`!!document.querySelector('.win [data-mine]')`, 8000, 'My work');
+      const seen = await ojs(`(() => {
+        const w = ${W};
+        const rows = [...w.querySelectorAll('[data-mine-employee]')].map((r) => ({ name: r.querySelector('.k-title').textContent, about: r.querySelector('.k-sub').textContent, states: [...r.querySelectorAll('.k-state')].map((x) => x.textContent), buttons: [...r.querySelectorAll('button')].map((b) => b.textContent.trim()), badges: r.querySelectorAll('.badge').length }));
+        return { kit: w.classList.contains('win-kit'), title: w.querySelector('.win-head h2').textContent, subtitle: w.querySelector('.win-head p').textContent, primary: [...w.querySelectorAll('.btn-primary')].filter((b) => window.__t.visible(b)).map((b) => b.textContent.trim()), rows, waiting: !!w.querySelector('[data-mine-waiting]'), asks: Object.values(window.__t.store().questions).filter((q) => q.status === 'open' && (${mine}).some((e) => e.id === q.employeeId)).length, lead: w.querySelector('[data-lead]').getAttribute('data-lead'), labels: [...w.querySelectorAll('.k-label')].map((l) => l.textContent), text: w.textContent };
+      })()`);
+      if (!seen.kit || seen.title !== 'My work') throw new Error(`the window is "${seen.title}"${seen.kit ? '' : ', not in the calm look'}`);
+      if (!/^3 employees, \d working/.test(seen.subtitle)) throw new Error(`the window's one line reads "${seen.subtitle}"`);
+      if (seen.subtitle.includes(ctx.memberName)) throw new Error(`the window tells the member their own name: "${seen.subtitle}"`);
+      if (seen.primary.join('|') !== 'Hire') throw new Error(`the window's main buttons are: ${seen.primary.join(', ') || 'none'}`);
+      // Each of mine: a name, a phrase, one word about how they are — no badge — and the three things done with them.
+      if (seen.rows.length !== 3) throw new Error(`${seen.rows.length} employees are listed for a member with three`);
+      // The one with no session is asleep, which is no fault: a word, and no colour.
+      if (!seen.rows.some((r) => r.states[0] === 'sleeping')) throw new Error(`nobody of the three is said to be sleeping: ${seen.rows.map((r) => r.states[0]).join(', ')}`);
+      for (const r of seen.rows) {
+        if (r.states.length !== 1 || !/^[a-z ]+$/.test(r.states[0])) throw new Error(`${r.name} is said to be: ${JSON.stringify(r.states)}`);
+        if (r.badges) throw new Error(`${r.name} wears ${r.badges} badge(s)`);
+        if (r.buttons.join('|') !== 'Talk|Terminal|Profile') throw new Error(`the buttons of ${r.name} are: ${r.buttons.join(', ')}`);
+        // (One machine: it is not repeated on every line.)
+        if (/computer/i.test(r.about)) throw new Error(`the line of ${r.name} names the member's only machine: ${r.about}`);
+      }
+      // Nothing waits: nothing is said about waiting.
+      if (seen.asks === 0 && (seen.waiting || /waiting/i.test(seen.text))) throw new Error('with nothing waiting, the window still speaks of waiting');
+      if (seen.labels.join('|') !== (seen.waiting ? 'Waiting for you|' : '') + 'Team lead|Employees|Open tasks|Projects|Machines') throw new Error(`the window's parts are: ${seen.labels.join(', ')}`);
+      // No lead yet: one line, and the long explanation only once asked for.
+      if (seen.lead !== 'none' || /lightest model/.test(seen.text)) throw new Error('a member without a lead is told all about leads before asking');
+      await oclick(`window.__t.byText('Hire a team lead')`, 'Hire a team lead');
+      await owait(`/lightest model/.test(${W}.textContent) && !!${W}.querySelector('input[aria-label="Name of your team lead"]')`, 5000, 'what a lead is, and a name for one');
+      await oclick(`window.__t.byText('Cancel')`, 'Cancel');
+      await owait(`!${W}.querySelector('input[aria-label="Name of your team lead"]') && !/lightest model/.test(${W}.textContent)`, 5000, 'the line as it was');
+      await oclick(`window.__t.byText('Hire a team lead')`, 'Hire a team lead');
+      await oclick(`${W}.querySelector('[data-lead] button[type=submit]')`, 'Hire onto my computer');
+      // The new lead is there to be told something: their conversation opens.
+      await owait(`window.__t.store().panel === 'talk' && (window.__t.store().employees[window.__t.store().panelArg] || {}).roleKey === 'lead'`, 20000, 'the conversation with the new lead');
+      const lead = await ojs(`(() => { const e = window.__t.store().employees[window.__t.store().panelArg]; return { id: e.id, name: e.name }; })()`);
+      if (lead.name !== `${ctx.memberName} Lead`) throw new Error(`a lead hired without a name is called "${lead.name}"`);
+      await ojs(`window.__t.store().openPanel('mine')`);
+      await owait(`(${W}.querySelector('[data-lead]') || { getAttribute: () => '' }).getAttribute('data-lead') === ${JSON.stringify(lead.id)}`, 8000, 'the lead on its own line');
+      // The lead is not counted or listed among the people it directs; what it may direct is set here.
+      const after = await ojs(`({ rows: ${W}.querySelectorAll('[data-mine-employee]').length, subtitle: ${W}.querySelector('.win-head p').textContent, line: ${W}.querySelector('[data-lead] .k-sub').textContent })`);
+      if (after.rows !== 3 || !/^3 employees/.test(after.subtitle)) throw new Error(`with a lead hired the window counts ${after.rows} employees ("${after.subtitle}")`);
+      if (!/hired 0 of \d/.test(after.line)) throw new Error(`the lead's line reads "${after.line}"`);
+      await oclick(`${W}.querySelector('[data-lead] input[type=checkbox]')`, 'Also direct the office\'s shared employees');
+      await owait(`window.__t.store().employees[${JSON.stringify(lead.id)}].leadScope === 'office'`, 8000, 'the lead directing the shared employees too');
+      await oclick(`${W}.querySelector('[data-lead] input[type=checkbox]')`, 'the same box again');
+      await owait(`window.__t.store().employees[${JSON.stringify(lead.id)}].leadScope !== 'office'`, 8000, 'the lead directing my own only');
+      fs.writeFileSync(path.join(outDir, 'my-work.png'), (await other.webContents.capturePage()).toPNG());
+      // One of mine asks something: now it is said, above everything, and a click answers it.
+      // (The one who was asleep: the other two are in the middle of a long task and would not hear it for a while.)
+      const asker = await ojs(`(${mine}).find((e) => !Object.values(window.__t.store().sessions).some((x) => x.employeeId === e.id && (x.status === 'running' || x.status === 'starting'))) || null`);
+      if (!asker) throw new Error('none of the member\'s employees is free to ask something');
+      await ojs(`(async () => (await fetch('/api/employees/${asker.id}/start', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + ((window.orchestrator && window.orchestrator.token) || localStorage.getItem('orch.token') || '') }, body: '{}' })).status)()`);
+      await owait(`Object.values(window.__t.store().sessions).some((x) => x.employeeId === ${JSON.stringify(asker.id)} && x.status === 'running' && x.inTurn === false)`, 30000, `${asker.name} awake and at their prompt`);
+      await ojs(`(async () => (await fetch('/api/employees/${asker.id}/message', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + ((window.orchestrator && window.orchestrator.token) || localStorage.getItem('orch.token') || '') }, body: JSON.stringify({ body: 'One thing first. @@fake: ask Which of the two do you want?@@' }) })).status)()`);
+      await owait(`!!${W}.querySelector('[data-mine-waiting]') && /asks you something/.test(${W}.querySelector('[data-mine-waiting]').textContent)`, 40000, `${asker.name}'s question in "Waiting for you"`);
+      const waitingNow = await ojs(`({ first: ${W}.querySelector('.k-label').textContent, subtitle: ${W}.querySelector('.win-head p').textContent, state: [...${W}.querySelectorAll('[data-mine-employee]')].find((r) => r.getAttribute('data-mine-employee') === ${JSON.stringify(asker.id)}).querySelector('.k-state').className })`);
+      if (waitingNow.first !== 'Waiting for you' || !/1 waiting for you$/.test(waitingNow.subtitle)) throw new Error(`with a question open the window starts with "${waitingNow.first}" and says "${waitingNow.subtitle}"`);
+      if (!/k-state-warn/.test(waitingNow.state)) throw new Error(`the one who asks is not marked as wanting somebody: ${waitingNow.state}`);
+      await oclick(`${W}.querySelector('[data-mine-waiting] button')`, 'the question');
+      await owait(`window.__t.store().panel === 'question'`, 6000, 'the question, opened');
+      const qid = await ojs(`window.__t.store().panelArg`);
+      await ojs(`(async () => (await fetch('/api/questions/${qid}/answer', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + ((window.orchestrator && window.orchestrator.token) || localStorage.getItem('orch.token') || '') }, body: JSON.stringify({ answer: 'Option A' }) })).status)()`);
+      await ojs(`window.__t.store().openPanel('mine')`);
+      await owait(`!!document.querySelector('.win [data-mine]') && !${W}.querySelector('[data-mine-waiting]')`, 15000, 'nothing waiting any more');
+      // Talk on a line opens that conversation.
+      await oclick(`[...${W}.querySelectorAll('[data-mine-employee]')][0].querySelector('button')`, 'Talk');
+      await owait(`window.__t.store().panel === 'talk' && (${mine}).some((e) => e.id === window.__t.store().panelArg)`, 6000, 'the conversation with one of mine');
+      // The lead was this step's own: it is let go again, so the office is as the other steps expect it.
+      await ojs(`(async () => (await fetch('/api/employees/${lead.id}', { method: 'DELETE', headers: { authorization: 'Bearer ' + ((window.orchestrator && window.orchestrator.token) || localStorage.getItem('orch.token') || '') } })).status)()`);
+      return `${seen.subtitle}; ${seen.rows.map((r) => `${r.name}: ${r.states[0]}`).join(', ')}; lead ${lead.name} hired, widened, narrowed; ${asker.name} asked and was answered`;
+    } finally {
+      other.destroy();
+    }
+    // The owner's window did not become the member's by it.
+    if ((await js(`window.__t.store().me.kind`)) !== 'owner' || (await js(`localStorage.getItem('orch.token')`)) === new URL(ctx.memberUrl).searchParams.get('token')) throw new Error('after the member looked at their work, the owner\'s window is signed in as the member');
   });
 
   await step('Machines: creating an enrollment token shows a usable one-time token', async () => {
@@ -1418,17 +1529,19 @@ async function scenario() {
     const zones = await js(`window.__orchScene.zones`);
     if (!zones.length) throw new Error('no project zone is marked although whole pods sit in one project');
     // The counts on the sign are the project's real task counts.
-    const z = zones[0];
+    // (One on the office's own floor: the checks at the end look its people up by their desks.)
+    const z = zones.find((x) => !x.id.startsWith('m:')) || zones[0];
     const real = await js(`(() => { const t = Object.values(window.__t.store().tasks).filter((x) => x.projectId === ${JSON.stringify(z.projectId)} && x.kind !== 'review'); const n = (s) => t.filter((x) => x.status === s).length; return { inProgress: n('IN_PROGRESS'), blocked: n('BLOCKED'), done: n('DONE'), name: window.__t.store().projects[${JSON.stringify(z.projectId)}].name }; })()`);
     if (real.name !== z.name || real.inProgress !== z.inProgress || real.blocked !== z.blocked || real.done !== z.done) throw new Error(`the sign says ${JSON.stringify(z)} but the project has ${JSON.stringify(real)}`);
-    // A pod with nobody in it is nobody's zone.
-    const empty = await js(`(() => { const s = window.__t.store(); const taken = new Set(Object.values(s.employees).filter((e) => !e.archived && e.deskId).map((e) => e.deskId)); return ${JSON.stringify(zones.map((x) => x.id))}.filter((id) => !s.layout.desks.some((d) => d.id.startsWith(id.replace(/-[a-z]$/, '-')) && taken.has(d.id))); })()`);
+    // A pod with nobody in it is nobody's zone. (Of the office's own floor: a member's room — `m:<host>:…` — has no desks in the layout to look its people up by.)
+    const empty = await js(`(() => { const s = window.__t.store(); const taken = new Set(Object.values(s.employees).filter((e) => !e.archived && e.deskId).map((e) => e.deskId)); return ${JSON.stringify(zones.map((x) => x.id).filter((id) => !id.startsWith('m:')))}.filter((id) => !s.layout.desks.some((d) => d.id.startsWith(id.replace(/-[a-z]$/, '-')) && taken.has(d.id))); })()`);
     if (empty.length) throw new Error(`empty pods are marked as zones: ${empty.join(', ')}`);
     // Click the sign, from the overview camera, where a person would.
     await camera('Management');
     await sleep(2500);
     let opened = null;
     for (const [zid, sign] of Object.entries(await js(`window.__orchScene.zoneSigns`))) {
+      if (zid.startsWith('m:') || sign.projectId !== z.projectId) continue;
       const p = await js(`(() => { const p = window.__orchScene.project(${sign.x}, ${sign.y}, ${sign.z}); const c = document.querySelector('canvas').getBoundingClientRect(); const x = Math.round(c.left + p.x), y = Math.round(c.top + p.y); const top = document.elementFromPoint(x, y); return { x, y, visible: p.visible, free: !!top && top.tagName === 'CANVAS' }; })()`);
       if (!p.visible || !p.free) continue;
       win.webContents.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y });
@@ -2088,6 +2201,8 @@ async function scenario() {
     // The same reading hangs on the CEO room wall as a clock: the big hand is the week, the small dial the 5 hours.
     await waitFor(`(window.__orchScene.clocks || []).some((c) => c.name === 'dev@example.test' && Math.round(c.week) === 85 && Math.round(c.five) === 42 && /Week: 15% left/.test(c.lines.join(' ')) && /5 hours: 58% left/.test(c.lines.join(' ')))`, 10000);
     await shot('ceo-claude');
+    // (The wall has a clock for each account of the office's own machines; a member's own account is on the list above and not on the wall.)
+    const clocksBefore = await js(`(window.__orchScene.clocks || []).length`);
     await close();
     await open('employee', `window.__t.emp('Ava').id`);
     // Rarely changed settings are folded away: open them first.
@@ -2103,7 +2218,7 @@ async function scenario() {
     await shot('ceo-claude-two');
     await close();
     // The second account gets a clock of its own at once, with its hands at rest until something is reported.
-    await waitFor(`(window.__orchScene.clocks || []).length === ${after} && window.__orchScene.clocks.some((c) => c.week === null && /Not reported yet/.test(c.lines.join(' ')))`, 10000);
+    await waitFor(`(window.__orchScene.clocks || []).length === ${clocksBefore + 1} && window.__orchScene.clocks.some((c) => c.week === null && /Not reported yet/.test(c.lines.join(' ')))`, 10000);
     // The office is drawn at an even rhythm: on every refresh of the display, or on every second one.
     const pace = await js(`window.__orchPace`);
     if (!pace || ![1, 2].includes(pace.every) || !(pace.fps > 20)) throw new Error(`the render loop reports ${JSON.stringify(pace)}`);
@@ -2111,6 +2226,10 @@ async function scenario() {
   });
 
   await step('Hi-fi: a station is switched on for the office and says what is on air; it is quieter far from the hi-fi; volume and mute are this computer\'s; the top bar stops it for everyone', async () => {
+    // The station of this step is on this very machine, and an office whose door is open does not read "now playing"
+    // from an address inside (the door was opened to let the suite's member in): it is closed from here on.
+    const shut = await js(`(async () => (await fetch('/api/sharing', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + ((window.orchestrator && window.orchestrator.token) || localStorage.getItem('orch.token') || '') }, body: JSON.stringify({ open: false }) })).status)()`);
+    if (shut !== 200) throw new Error(`closing the door: ${shut}`);
     await open('radio');
     await waitFor(`!!document.querySelector('.win .radio-now')`, 8000);
     const builtIn = await js(`window.__t.store().settings.radio.stations.map((x) => x.name).join(', ')`);

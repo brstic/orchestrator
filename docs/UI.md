@@ -26,6 +26,11 @@ What must **not** be lost when a window is moved: anything a person could do the
 | `.k-stack` | The window's parts top to bottom, 20 px apart |
 | `.k-group` › `.k-row` | The list: one frame, hairlines between rows. `.k-row-click` for a row that opens (give it `role="button"`, `tabIndex`, `aria-expanded`), `.k-row-sm` for a list inside something already open, `.k-main` for the name and the phrase under it |
 | `.k-title`, `.k-sub`, `.k-text`, `.k-label` | A name; the phrase under it; a sentence of explanation (at most 68 characters wide); a small capital label over a section |
+| `button.k-row` | A row that is only a way to somewhere (a task, a project): the whole row is the button |
+| `.k-head` › `.k-link` | A section's label with, at its right, the quiet way to the whole of what the section shows a part of ("The board") |
+| `.k-cols` | Two lists side by side; one under the other where there is no room |
+| `.k-key`, `.k-aside`, `.k-title-note` | What the office calls a thing (`T-12`) before its name; a quiet phrase at the end of a row; something more about a thing on its name's own line |
+| `<State>` (`.k-state`) | How somebody or something is: a dot and a word, or the word alone at the end of a row; coloured only when somebody is wanted |
 | `.k-dot` (`-off`, `-busy`, `-bad`) | How it is, as a dot: lit, a ring when away, orange while something is in progress, red when it failed |
 | `.k-chev` | The mark at the end of a row that opens; turns with `aria-expanded` on the row |
 | `.k-detail` › `.k-section` | What a row opens to, indented under the name |
@@ -46,10 +51,10 @@ Colours, fonts and the old classes (`.btn`, `.badge`, `.field`, `.avatar`) are t
 
 1. Look at it as it is, with real content (`node scripts/dev-office.ts --port <free> --member-room "Mila:2" --visitor "Nikola"` prints an address for the owner, the member and the visitor) and write down what a person comes to this window *for*. That is the line and the main button.
 2. Everything else: is it said twice (drop one), is it rarely needed (fold it), is it only for when something is wrong (show it only then)?
-3. Words and numbers that are worked out go into `apps/desktop/src/lib/` as plain functions with a unit test (`lib/machines.ts`, `test/machines.test.ts`); the component only arranges.
+3. Words and numbers that are worked out go into `apps/desktop/src/lib/` as plain functions with a unit test (`lib/machines.ts`, `lib/my-work.ts` and their tests); the component only arranges.
 4. `<Window kit>`, build from the kit, add to the kit only what a second window will also need.
 5. Look at it as owner, colleague and visitor, with the list empty, with one thing, with something wrong.
-6. The UI suite's steps for that window follow the new controls, and one step says what the window no longer prints until asked (`tests/ui/driver.cjs`, "Machines: one line per machine…").
+6. The UI suite's steps for that window follow the new controls, and one step says what the window no longer prints until asked (`tests/ui/driver.cjs`, "Machines: one line per machine…"). A window that only a member has is opened in a second window as the suite's member ("My work (a member's own window)…": the office of the suite has one, Mila, with three employees).
 7. Tick it below.
 
 ## Which windows have been moved
@@ -57,6 +62,7 @@ Colours, fonts and the old classes (`.btn`, `.badge`, `.field`, `.avatar`) are t
 | Window | Moved | Notes |
 | --- | --- | --- |
 | Machines | 2026-11-12 | The first; see below |
+| My work | 2026-11-13 | See below |
 | every other | — | As they were |
 
 ## Machines
@@ -78,3 +84,22 @@ Colours, fonts and the old classes (`.btn`, `.badge`, `.field`, `.avatar`) are t
 **Roles.** A visitor has no Machines window. A colleague sees the list and the details (for a machine they may not look into, the office sends no details and the line shows none), may bring in what runs on a machine they may work on, and has no *Add a machine*, *Rename*, *Revoke…* or *Remove…* — those calls were always the owner's on the server; the window used to offer them to everybody and answer with an error.
 
 **Checked:** unit `apps/desktop/test/machines.test.ts`; the UI suite's five "Machines:" steps (the list and what is not on it, the token, rename and remove, attach, the SSH check); looked at as owner and as colleague in a development office with an online, an offline and a revoked machine. **Not looked at:** a real server linked over SSH in its states (connecting, failed, disconnected) — there is none in a development office, so those lines were only read in the code; the window in a plain browser tab at a narrow width (under 820 px the two measurements are hidden); a machine without Claude Code.
+
+## My work
+
+`hud/panels/mine.tsx`, `lib/my-work.ts` (the words), `lib/mine.ts` (whose a thing is — unchanged). A member's own part of the office; the office's first owner, who has no computer of their own in it, has no such window.
+
+**The window's line:** "3 employees, 2 working · 2 open tasks", and "· 1 waiting for you" when something does. (It used to begin with the member's own name.) **The one main button** is *Hire*; *My room* is beside it, quiet.
+
+**Top to bottom:**
+- **Waiting for you** — *only when something waits*: a question or a request for approval from one of mine, or something stuck around them or my machines. The face of who asks, what they ask for, how long ago; a click opens it. With nothing waiting there is no such section and no sentence saying so.
+- **Team lead** — a line like any employee's (face, name, "Hands your wishes to the right one · hired 0 of 5 · haiku", how they are, *Talk*, *Profile*), and under it the one thing that is set here: *Also direct the office's shared employees*. Without a lead: one line and *Hire a team lead*; a click on it opens, in place, what a lead is, a name for it (empty: "<your name> Lead") and *Hire onto <machine>*.
+- **Employees** — one list. Each line: face, name, a phrase (title · project · the task they are on — the machine only for somebody who has more than one), **one word and a dot** for how they are ("thinking", "sleeping", "needs a decision": lit while there is a session, a ring when there is none, orange and coloured when they want somebody, red when blocked), then *Talk* and, quiet, *Terminal* and *Profile*. A shared employee the member looks after says so on the name's line, with *Not mine* beside it.
+- **Open tasks** — key, title, project · who, and how it stands as a plain word (coloured only for *blocked* and *in review*). The first eight; the rest behind "N more" (forty at most, then "…on the board"). *The board* at the right of the label opens Tasks.
+- **Projects** and **Machines**, side by side: a project with "3 of 8 done", a machine with its dot (and "server", "not here now" where that is so). A project opens itself, a machine opens My room.
+
+**What is no longer printed:** "Nothing of yours is waiting for an answer or stuck"; the paragraph about what a lead is, for everybody who has none (now behind *Hire a team lead*); an upper-case state badge on every employee and a coloured status badge on every task; the machine's name on every employee's line; "computer · in the office" beside every machine; three full buttons per employee (one is a button, two are quiet). Nothing that could be done was removed.
+
+**Roles.** Only somebody with a place of their own in the office has the window (a colleague or an owner who joined as a member); a visitor and the office's first owner do not — unchanged.
+
+**Checked:** unit `apps/desktop/test/my-work.test.ts`; the UI suite's step "My work (a member's own window)…", in a second window as the member: the line, the one main button, three people with one word each and no badge, nothing about waiting while nothing waits, a lead hired in place (explained only once asked), widened and narrowed, a question from one of mine appearing above everything and going again when answered, *Talk* opening the conversation. Looked at in a development office as a member with three employees, a shared employee looked after, a lead, and a question waiting. **Not looked at:** a member with several machines or a server of their own, more than eight open tasks, a member with nothing at all, anything stuck (a blocked task, a machine that dropped out) in "Waiting for you".

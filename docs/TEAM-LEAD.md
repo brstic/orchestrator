@@ -19,7 +19,7 @@ It is not a second foreman on purpose. "One foreman" is a recorded decision (`DE
 
 ## Getting one, and talking to it
 
-**Menu → My work → My team lead → Hire a team lead.** (Or Team → Hire, role *Team Lead*, on your own computer.) It is put on your computer if it is in the office now, else on a server of yours; its folder is the first one that machine lets the office into — only where its session runs, never a project.
+**Menu → My work → Team lead → Hire a team lead** (it opens what a lead is and a name for it; then *Hire onto <your machine>*). (Or Team → Hire, role *Team Lead*, on your own computer.) It is put on your computer if it is in the office now, else on a server of yours; its folder is the first one that machine lets the office into — only where its session runs, never a project.
 
 Then **Talk**. What it does with a request (its prompt, `packages/orchestration/src/prompts.ts`):
 
@@ -33,7 +33,7 @@ Then **Talk**. What it does with a request (its prompt, `packages/orchestration/
 
 **Shared employees you look after** — *Team → Everyone → Mine* on a shared employee's row (`Employee.keptBy`). They are in your lead's team from then on, with the shared projects they work on, and nobody else from the shared office comes along. They stay shared for everyone else (`DECISIONS.md`, "Mine on a shared employee…").
 
-**All the office's shared employees** — the checkbox under the lead in *My work* (`Employee.leadScope: 'office'`). Then its team is the member's own employees first and the shared ones after, and it may tell them things and put tasks on shared projects — what the member may do themselves. Work still does not cross: a member's employee is not given a shared project's task, nor the other way (the office refuses, and the lead is told why).
+**All the office's shared employees** — the checkbox under the lead's line in *My work* (`Employee.leadScope: 'office'`). Then its team is the member's own employees first and the shared ones after, and it may tell them things and put tasks on shared projects — what the member may do themselves. Work still does not cross: a member's employee is not given a shared project's task, nor the other way (the office refuses, and the lead is told why).
 
 ## In the office
 

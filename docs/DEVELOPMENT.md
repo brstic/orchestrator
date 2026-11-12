@@ -29,7 +29,7 @@ tests/linux containers (multi-machine, SSH)                 tests/real the real 
 | `node tests/ui/surroundings.mjs` | where the office stands, in two windows of one office: the Settings page, each place chosen with a real click, the same place in both windows and in the office's state, that no shader failed to build, *Low*, nothing left behind (`SURROUNDINGS.md`) |
 | `pnpm test:ssh`, `pnpm test:machines` | containers; need Docker/Colima |
 | `pnpm test:central` | the office on a Linux container from the portable package (`pnpm package` first), two desktop apps from this machine; starts the real `claude` on the member's side without sending anything (`--no-real-cli` to avoid) |
-| `node scripts/dev-office.ts --port N [--ui <dist>]` | a populated office with scripted workers for manual work and probes |
+| `node scripts/dev-office.ts --port N [--ui <dist>] [--member-room "Mila:3"] [--visitor "Nikola"]` | a populated office with scripted workers for manual work and probes; with a member (a computer and employees of their own) and a visitor when asked, each with an address that opens the office as them. The UI suite's office has the member Mila with three employees |
 | `node scripts/entrance-office.ts [--port N] [--door M] [--room]` | the same office with an invented name, its door open and members with passwords: for looking at the entrance page, trying the door by hand, and retaking the page's pictures |
 
 ## Shipping

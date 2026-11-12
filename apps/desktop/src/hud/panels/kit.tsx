@@ -23,6 +23,19 @@ export function Meter({ label, meter, title }: { label: string; meter: MeterValu
   );
 }
 
+/**
+ * How somebody or something is: a dot and a word (`dot`: lit, a ring, orange, red). Without a dot it is the word
+ * alone, at the end of a row. The colour is for when somebody is wanted.
+ */
+export function State({ word, dot, tone = 'calm', title, width }: { word: string; dot?: 'on' | 'off' | 'busy' | 'bad'; tone?: 'calm' | 'warn' | 'bad'; title?: string; width?: number }) {
+  return (
+    <span className={`k-state ${tone === 'calm' ? '' : `k-state-${tone}`}`} title={title} style={width ? { width, justifyContent: dot ? undefined : 'flex-end' } : undefined}>
+      {dot && <i className={`k-dot ${dot === 'on' ? '' : `k-dot-${dot}`}`} aria-hidden />}
+      {word}
+    </span>
+  );
+}
+
 /** Who is there, as faces: the first few, and how many more. */
 export function Faces({ people, max = 4 }: { people: Employee[]; max?: number }) {
   if (people.length === 0) return null;
