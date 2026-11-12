@@ -1,6 +1,8 @@
 // electron mp-host.cjs <url> : one window of the office on this computer, drivable from outside (CDP on 9444).
 const { app, BrowserWindow } = require('electron');
 app.commandLine.appendSwitch('remote-debugging-port', '9444');
+// A trial office's door has a certificate of its own making; this window is for that trial and nothing else.
+if (/^https:\/\/127\./.test(process.argv[2] || '')) app.commandLine.appendSwitch('ignore-certificate-errors');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-webgl');
 app.whenReady().then(async () => {

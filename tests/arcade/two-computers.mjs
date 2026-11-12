@@ -4,10 +4,19 @@
 //   1. An office the two can reach. For a trial that touches nobody's office, start one on the other computer:
 //        bin/orchestrator-server --port 4731 --data /tmp/arcade-trial/data --ui <a built UI>
 //      and a browser there that can be driven from outside:
-//        google-chrome --headless=new --remote-debugging-port=9333 --user-data-dir=/tmp/arcade-trial/chrome \
+//        google-chrome --headless=new --remote-debugging-port=<a port nobody uses> --remote-debugging-address=127.0.0.1 --user-data-dir=/tmp/arcade-trial/chrome \
 //          --mute-audio --autoplay-policy=no-user-gesture-required --window-size=1100,760 --enable-unsafe-swiftshader about:blank
+//      CHOOSE THAT PORT WITH CARE. On a computer where employees work, their own browsers are driven the same way
+//      and by the usual port numbers: on 2026-11-12 a trial browser on 9333 was picked up by an employee's script
+//      that had just started a browser of its own "on 9333" (which could only take the IPv6 side) and then spoke
+//      to ours. Take a high port nobody would think of, and look (`ss -ltnp`) that only your browser listens on it.
+//      To come in as members, through the office's door, as people do: POST /api/sharing {open, port}, then
+//      POST /api/guests {name, role} for each; the token is inside the invitation; the page takes `?token=` on a
+//      127.x address. Add `--ignore-certificate-errors` to that browser (a trial door's certificate is its own).
+//      For a connection as far away as the internet: `node delay-proxy.mjs <port> 127.0.0.1 <door port> 25 8`
+//      in front of the door on each side.
 //   2. From this computer, a way to both (nothing is opened on the other computer's firewall):
-//        ssh -N -L 14731:127.0.0.1:4731 -L 19333:127.0.0.1:9333 user@other
+//        ssh -N -L 14731:127.0.0.1:4731 -L 19333:127.0.0.1:<that port> user@other
 //   3. The host's window here, drivable from outside on port 9444:
 //        apps/desktop/node_modules/.bin/electron tests/arcade/host-window.cjs "http://127.0.0.1:14731/?token=<that office's owner token>"
 //   4. node tests/arcade/two-computers.mjs "http://127.0.0.1:14731/?token=…" "http://127.0.0.1:4731/?token=…" 9444 19333
@@ -15,6 +24,9 @@
 // It brings the test cartridge (tests/fixtures/md-test-rom.mjs) to that office's shelf, plays it, has the other
 // browser join, checks both players' buttons at the host's console and in the guest's picture, measures how long the
 // guest waits to see what its own key did, counts pictures and sound, and takes the cartridge off the shelf again.
+// With ARCADE_TRIAL_GAME="<title of a game on that office's shelf>" it then plays that game too: how many pictures
+// reach the guest and how many differ, whether the sound is more than silence, how much the host sends, and whether
+// the guest's picture is the host's (compared with the game paused).
 // Stop the trial office and browser afterwards and delete their folder.
 import fs from 'node:fs';
 import { buildTestRom, padsOf } from '../fixtures/md-test-rom.mjs';
@@ -105,6 +117,10 @@ if (/SwiftShader|llvmpipe|Software/i.test(renderer)) {
   await guest.js(`(() => { window.__orchScene.three.gl.render = () => {}; return true; })()`);
   say(`guest has no graphics card (${renderer.slice(0, 60)}…): the 3D office is not drawn there`);
 }
+// Two counts the page itself does not keep, taken from outside it: what the host sends for the table (bytes of
+// picture and of sound), and how much of the sound the guest plays is more than silence.
+await host.js(`(() => { window.__sent = { v: 0, a: 0 }; const send = WebSocket.prototype.send; WebSocket.prototype.send = function (m) { if (typeof m === 'string' && m.startsWith('{"t":"arcade.media"')) { const k = m.includes('"kind":"v"') ? 'v' : m.includes('"kind":"a"') ? 'a' : null; if (k) window.__sent[k] += m.length; } return send.call(this, m); }; return true; })()`);
+await guest.js(`(() => { window.__heard = { n: 0, loud: 0, peak: 0 }; const start = AudioBufferSourceNode.prototype.start; AudioBufferSourceNode.prototype.start = function (...a) { try { const d = this.buffer.getChannelData(0); let p = 0; for (let i = 0; i < d.length; i += 4) p = Math.max(p, Math.abs(d[i])); window.__heard.n++; if (p > 0.01) window.__heard.loud++; window.__heard.peak = Math.max(window.__heard.peak, p); } catch (e) {} return start.apply(this, a); }; return true; })()`);
 say(`host window:  ${await where(host)}`);
 say(`guest window: ${await where(guest)}`);
 
@@ -210,7 +226,61 @@ say('the guest got up: the second pad is free again');
 await host.js(`document.querySelector('[data-arcade-back]').click()`);
 await host.until(`window.__office.getState().arcade.tables.length === 0`, 15000, 'no game to join any more');
 await host.js(`(async () => { const c = document.querySelector('[data-arcade-game="Orchestrator Pad Test"]'); c.querySelector('[data-arcade-remove]').click(); await new Promise((r) => setTimeout(r, 300)); document.querySelector('[data-arcade-remove-sure]').click(); return true; })()`);
-await host.until(`window.__office.getState().arcade.games.length === 0`, 10000, 'the test cartridge off the shelf');
+await host.until(`!window.__office.getState().arcade.games.some((g) => g.title === 'Orchestrator Pad Test')`, 10000, 'the test cartridge off the shelf');
 say('the host left; the test cartridge was taken off the test office\'s shelf');
+
+// ── A real game, if the trial office's shelf has one: ARCADE_TRIAL_GAME="<its title>" ──
+const title = process.env.ARCADE_TRIAL_GAME;
+if (title) {
+  const card = `document.querySelector('[data-arcade-game=${JSON.stringify(title)}]')`;
+  await host.until(`!!${card}`, 15000, `"${title}" on the shelf`);
+  await host.js(`${card}.querySelector('[data-arcade-play]').click()`);
+  await host.until(`document.querySelector('[data-arcade-play-view]')?.dataset.arcadePhase === 'running' && document.querySelector('[data-arcade-play-view]').dataset.arcadeOpen === 'true'`, 60000, `"${title}" running and open`);
+  await guest.until(`!!document.querySelector('[data-arcade-table] [data-arcade-join]')`, 30000, 'the game to join, at the guest');
+  say(`guest sees: "${await guest.js(`document.querySelector('[data-arcade-table]').textContent.replace(/\\s+/g, ' ').trim()`)}"`);
+  await guest.js(`document.querySelector('[data-arcade-table] [data-arcade-join]').click()`);
+  await guest.until(`document.querySelector('[data-arcade-remote]')?.dataset.arcadeRemoteAs === 'player' && Number(document.querySelector('[data-arcade-remote]').dataset.shownV) > 10`, 40000, 'the picture at the guest');
+  // Start, a few times, from the host: past the title, into whatever the game does next.
+  for (let i = 0; i < 3; i++) {
+    await host.key('down', 'Enter');
+    await sleep(160);
+    await host.key('up', 'Enter');
+    await sleep(2200);
+  }
+  const marks = async () => ({
+    g: await guest.js(`({ v: Number(document.querySelector('[data-arcade-remote]').dataset.shownV), a: Number(document.querySelector('[data-arcade-remote]').dataset.shownA), late: Number(document.querySelector('[data-arcade-remote]').dataset.shownLate), heard: { ...window.__heard }, t: performance.now() })`),
+    h: await host.js(`({ ...window.__sent })`),
+  });
+  const m0 = await marks();
+  // Twenty seconds of the game as the guest is shown it: how many different pictures, and how bright.
+  const seen = await guest.js(`new Promise((done) => { const c = document.querySelector('[data-arcade-far]').getContext('2d'); const kinds = new Set(); let light = 0, n = 0; const from = performance.now(); const look = () => { const d = c.getImageData(0, 0, 640, 480).data; let h = 0, sum = 0; for (let y = 10; y < 480; y += 20) for (let x = 10; x < 640; x += 20) { const i = (y * 640 + x) * 4; h = (h * 31 + (d[i] >> 3) * 1024 + (d[i + 1] >> 3) * 32 + (d[i + 2] >> 3)) >>> 0; sum += d[i] + d[i + 1] + d[i + 2]; } kinds.add(h); light += sum / (24 * 32 * 3); n++; if (performance.now() - from < 20000) setTimeout(look, 100); else done({ looks: n, different: kinds.size, brightness: Math.round(light / n) }); }; look(); })`);
+  const m1 = await marks();
+  const secs = (m1.g.t - m0.g.t) / 1000;
+  say(`"${title}" at the guest over ${secs.toFixed(0)} s: ${((m1.g.v - m0.g.v) / secs).toFixed(1)} pictures a second (${m1.g.late - m0.g.late} let go for being behind), ${seen.different} different pictures in ${seen.looks} looks, mean brightness ${seen.brightness} of 255`);
+  say(`sound at the guest: ${((m1.g.a - m0.g.a) / secs).toFixed(1)} pieces a second; of ${m1.g.heard.n - m0.g.heard.n} played, ${m1.g.heard.loud - m0.g.heard.loud} were more than silence (loudest ${m1.g.heard.peak.toFixed(2)} of 1)`);
+  say(`the host sent ${(((m1.h.v - m0.h.v) * 8) / secs / 1e6).toFixed(2)} Mbit/s of picture and ${(((m1.h.a - m0.h.a) * 8) / secs / 1e6).toFixed(2)} Mbit/s of sound (as the messages are, base64 and all)`);
+  // The same picture at both ends: with the game paused, the host's screen and what the guest is shown, compared.
+  await host.js(`document.querySelector('[data-arcade-pause]').click()`);
+  await sleep(2500);
+  const frame2 = await Tab.open(hostPort, (t) => /\/assets\/arcade\.html/.test(t.url));
+  const small = `(() => { const c = document.querySelector('canvas'); const o = document.createElement('canvas'); o.width = 32; o.height = 24; const x = o.getContext('2d'); x.drawImage(c, 0, 0, 32, 24); return [...x.getImageData(0, 0, 32, 24).data]; })()`;
+  const here = await frame2.js(small);
+  const there = await guest.js(small.replace(`document.querySelector('canvas')`, `document.querySelector('[data-arcade-far]')`));
+  let diff = 0, n = 0, lit = 0;
+  for (let i = 0; i < here.length; i += 4) for (let k = 0; k < 3; k++) { diff += Math.abs(here[i + k] - there[i + k]); lit += here[i + k]; n++; }
+  say(`paused, the host's screen and the guest's picture differ by ${(diff / n).toFixed(1)} of 255 a colour on average (the host's picture: mean ${(lit / n).toFixed(0)} of 255)`);
+  await host.js(`document.querySelector('[data-arcade-pause]').click()`);
+  // The guest presses a few buttons as player 2 (what they do is the game's business), then both leave.
+  for (const code of ['KeyD', 'KeyJ', 'KeyK', 'Enter']) {
+    await guest.key('down', code);
+    await sleep(200);
+    await guest.key('up', code);
+  }
+  await guest.js(`document.querySelector('[data-arcade-back]').click()`);
+  await host.until(`window.__office.getState().arcade.tables[0] && window.__office.getState().arcade.tables[0].player2 === null`, 10000, 'the second pad free again');
+  await host.js(`document.querySelector('[data-arcade-back]').click()`);
+  await host.until(`window.__office.getState().arcade.tables.length === 0`, 15000, 'no game to join any more');
+  say(`both left "${title}"`);
+}
 if (process.env.ARCADE_TRIAL_OUT) fs.writeFileSync(process.env.ARCADE_TRIAL_OUT, JSON.stringify({ ...out, delays }, null, 2));
 process.exit(0);
