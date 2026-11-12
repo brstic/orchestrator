@@ -33,6 +33,7 @@ import type {
 } from '@orchestrator/contracts';
 import { b64decode } from '@orchestrator/contracts';
 import { api, connection, type ConnState } from './api.ts';
+import { SETTLE_MS, UNACKNOWLEDGED_MS, answerAmong, askState, type AskState } from './asks.ts';
 import { playKnock, playOuch, playReply, playWhip } from './sfx.ts';
 import { hearVoice, heardEnd, voiceHooks } from './voice.ts';
 
@@ -288,6 +289,11 @@ function saveWaiting(): void {
   }
 }
 
+/** Am I looking at this employee's conversation right now? Then there is nothing to announce. */
+function watchingTalk(s: OfficeState, employeeId: string): boolean {
+  return (s.panel === 'talk' && s.panelArg === employeeId) || (s.cameraMode === 'workstation' && s.workstationId === employeeId);
+}
+
 /**
  * An employee I spoke to has finished a turn: that is their answer. It counts only once my message has
  * actually reached their session (a turn that ends while my message is still queued is the previous one's).
@@ -302,11 +308,68 @@ function noteReply(ev: OrchestratorEvent): void {
   const text = String((ev.data as { lastMessage?: unknown })?.lastMessage ?? '').trim();
   const asks = { ...s.asks };
   delete asks[ev.employeeId];
-  // Looking at the conversation already: nothing to announce.
-  const watching = (s.panel === 'talk' && s.panelArg === ev.employeeId) || (s.cameraMode === 'workstation' && s.workstationId === ev.employeeId);
+  const watching = watchingTalk(s, ev.employeeId);
   useOffice.setState(watching ? { asks } : { asks, replies: { ...s.replies, [ev.employeeId]: { text, ts: ev.ts } } });
   saveWaiting();
   if (!watching) playReply();
+}
+
+/** How one of my waits stands against what the office says now (null: I am not waiting for this employee). See `asks.ts`. */
+export function askStateOf(s: Pick<OfficeState, 'asks' | 'employees' | 'sessions' | 'messages'>, employeeId: string, now = Date.now()): AskState | null {
+  const ask = s.asks[employeeId];
+  if (!ask) return null;
+  return askState({ ask, employee: s.employees[employeeId], session: sessionOfEmployee(s.sessions, employeeId), delivery: ask.messageId ? s.messages[ask.messageId]?.delivery : undefined, now });
+}
+
+/** Since when each wait has looked over (it is ended once that has lasted `SETTLE_MS`). */
+const overSince = new Map<string, number>();
+let askTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * The answer normally ends a wait (`noteReply`). This ends the ones whose answer is not coming, or came unseen: the
+ * turn was interrupted or failed, the session stopped, the employee left, the window was closed when they finished.
+ * If their finished turn is still among the events the office sent, it is put up as the answer (quietly: it is not
+ * news of this moment); otherwise the wait is simply dropped. Looked at whenever the office's state moves.
+ */
+function reviewAsks(): void {
+  if (askTimer) clearTimeout(askTimer);
+  askTimer = null;
+  const s = useOffice.getState();
+  if (!s.ready) return;
+  const now = Date.now();
+  let asks = s.asks;
+  let replies = s.replies;
+  let next = Infinity;
+  for (const [id, ask] of Object.entries(s.asks)) {
+    const state = askStateOf(s, id, now);
+    if (state !== 'over') {
+      overSince.delete(id);
+      // A message typed in and not acknowledged stops being waited for by the clock alone.
+      if (state === 'working' && now - ask.at < UNACKNOWLEDGED_MS) next = Math.min(next, UNACKNOWLEDGED_MS - (now - ask.at) + 50);
+      continue;
+    }
+    const since = overSince.get(id) ?? now;
+    overSince.set(id, since);
+    if (now - since < SETTLE_MS) {
+      next = Math.min(next, SETTLE_MS - (now - since) + 50);
+      continue;
+    }
+    overSince.delete(id);
+    if (asks === s.asks) asks = { ...s.asks };
+    delete asks[id];
+    const employee = s.employees[id];
+    const answer = employee && !employee.archived ? answerAmong(s.events, id, ask, ask.messageId ? s.messages[ask.messageId]?.delivery : undefined) : null;
+    if (answer && !watchingTalk(s, id)) {
+      if (replies === s.replies) replies = { ...s.replies };
+      replies[id] = answer;
+    }
+  }
+  for (const id of overSince.keys()) if (!s.asks[id]) overSince.delete(id);
+  if (asks !== s.asks) {
+    useOffice.setState({ asks, replies });
+    saveWaiting();
+  }
+  if (next < Infinity) askTimer = setTimeout(reviewAsks, next);
 }
 
 export const useOffice = create<OfficeState>((set, get) => ({
@@ -461,6 +524,11 @@ export const useOffice = create<OfficeState>((set, get) => ({
   setFilter: (f) => set((s) => ({ filter: { ...s.filter, ...f } })),
   focusEmployee: (employeeId) => set({ focusRequest: { employeeId, n: ++focusN }, selectedEmployeeId: employeeId }),
 }));
+// My waits are measured against the office whenever what they depend on moves (see `reviewAsks`).
+useOffice.subscribe((s, prev) => {
+  if (!Object.keys(s.asks).length) return;
+  if (s.asks !== prev.asks || s.sessions !== prev.sessions || s.messages !== prev.messages || s.employees !== prev.employees || s.ready !== prev.ready) reviewAsks();
+});
 
 // Handy for debugging from the console, and used by the screenshot tooling.
 (window as any).__office = useOffice;

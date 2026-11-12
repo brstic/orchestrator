@@ -4,7 +4,7 @@ import { OfficeScene, ownerPosition } from '@orchestrator/office-3d';
 import { PeopleActs, myPlace, personInReach } from './hud/people-acts.tsx';
 import { Button } from '@orchestrator/ui';
 import { api, connection, serverBase, setToken } from './lib/api.ts';
-import { loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
+import { askStateOf, loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
 import { loadPrefs, usePrefs } from './lib/prefs.ts';
 import { boardView, ceoView, foremanView, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
 import { ChatBox, CommandBar, ConfirmDialog, DoorBell, Replies, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
@@ -316,16 +316,21 @@ export function App() {
         return { ...p, saying: last && now - last.at < 7000 ? last.text : null, whipAt: s.peopleWhips[p.id], ouchAt: s.peopleOuch[p.id], emote: s.peopleEmotes[p.id] ?? null, speaking: !!s.speaking[p.id] };
       });
   }, [s.people, s.clientId, s.chat, s.peopleWhips, s.peopleOuch, s.peopleEmotes, s.speaking, sayTick]);
-  // My own conversations: dots over whoever is working on what I said, a bubble over whoever has answered.
-  const talkMarks = useMemo(
-    () => [
-      ...Object.keys(s.replies).map((id) => ({ id, kind: 'answered' as const })),
+  // My own conversations: dots over whoever is working on what I said, a bubble over whoever has answered. Only
+  // over somebody who is drawn (not one who was let go, or whose member is away), and dots only while they can
+  // really be working on it — a wait whose turn ended some other way shows nothing and is ended (`lib/asks.ts`).
+  const talkMarks = useMemo(() => {
+    const drawn = new Set(people.map((p) => p.id));
+    if (foreman) drawn.add(foreman.id);
+    return [
+      ...Object.keys(s.replies)
+        .filter((id) => drawn.has(id))
+        .map((id) => ({ id, kind: 'answered' as const })),
       ...Object.keys(s.asks)
-        .filter((id) => !s.replies[id])
+        .filter((id) => !s.replies[id] && drawn.has(id) && askStateOf(s, id) === 'working')
         .map((id) => ({ id, kind: 'waiting' as const })),
-    ],
-    [s.asks, s.replies],
-  );
+    ];
+  }, [s.asks, s.replies, s.sessions, s.messages, s.employees, people, foreman]); // eslint-disable-line react-hooks/exhaustive-deps
   // What I said myself: the same bubble, over my own character.
   const selfSaying = useMemo(() => {
     const last = [...s.chat].reverse().find((c) => c.fromId === s.clientId && !c.emote);

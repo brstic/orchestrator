@@ -270,6 +270,16 @@ async function scenario() {
     const defaults = await js(`[(${model}).value, (${effort}).value, [...(${effort}).options].map((o) => o.value).join(',')].join('|')`);
     if (defaults !== '||,low,medium,high,xhigh,max') throw new Error(`model and effort start as "${defaults}"`);
     await js(`(() => { window.__t.setSelect(${model}, 'opus'); window.__t.setSelect(${effort}, 'high'); })()`);
+    // How much they may do: an owner's hire starts as Unrestricted (the owner's default since 2026-11-11). Chosen here:
+    // Auto — the first Unrestricted session of an account waits at Claude Code's own warning, which only the owner
+    // accepts, in the terminal (tests/e2e/35-unrestricted); this step is about hiring and the first word.
+    await clickText('More options');
+    await waitFor(`!!window.__t.scope().querySelector('[role=radiogroup][aria-label="Autonomy"]')`, 3000);
+    const level = `[...window.__t.scope().querySelectorAll('[role=radiogroup][aria-label="Autonomy"] label')].map((l) => [l.querySelector('.strong').textContent, l.querySelector('input').checked])`;
+    const startsAs = await js(`(${level}).filter((x) => x[1]).map((x) => x[0]).join(',')`);
+    if (startsAs !== 'Unrestricted') throw new Error(`an owner's hire starts as "${startsAs}"`);
+    await click(`[...window.__t.scope().querySelectorAll('[role=radiogroup][aria-label="Autonomy"] label')].find((l) => l.querySelector('.strong').textContent === 'Auto').querySelector('input')`, 'Auto');
+    await waitFor(`(${level}).filter((x) => x[1]).map((x) => x[0]).join(',') === 'Auto'`, 3000);
     await shot('hire-form');
     await clickText('Hire');
     await waitFor(`!!window.__t.emp(${JSON.stringify(ctx.hireName)})`, 10000);
@@ -390,6 +400,29 @@ async function scenario() {
     await js(`window.__t.store().openPanel(null)`);
     if (before !== 0 || kept !== JSON.stringify([ava])) throw new Error(`cards before the answer: ${before}; remembered: ${kept}`);
     return 'dots → "Ava answered you" card and bubble → gone once the conversation is opened';
+  });
+
+  await step('the dots are there only while somebody can be working on what I said: none over someone between turns, none in the air for someone who is gone', async () => {
+    const ava = await js(`window.__t.emp('Ava').id`);
+    await waitFor(`Object.values(window.__t.store().sessions).some((x) => x.employeeId === ${JSON.stringify(ava)} && x.status === 'running' && x.inTurn === false)`, 8000);
+    if (await js(`document.querySelectorAll('.talkmark').length + document.querySelectorAll('.reply-card').length`)) throw new Error('a mark or a card before anything was said');
+    // What this computer remembers from before: I said something to Ava a while ago and the end of that turn never
+    // reached this window (it was closed, or the turn was cut short) — and something to an employee who has since
+    // been let go.
+    await js(`window.__office.setState((s) => ({ asks: { ...s.asks, [${JSON.stringify(ava)}]: { messageId: null, at: Date.now() - 3600000 }, 'emp-who-left': { messageId: null, at: Date.now() - 3600000 } } })); true`);
+    await sleep(700);
+    const dots = await js(`document.querySelectorAll('.talkmark-waiting').length`);
+    if (dots !== 0) throw new Error(`${dots} set(s) of dots in the office although nobody is working on anything I said`);
+    // The waits themselves end a moment later instead of being kept for a day. What Ava said last since then is
+    // still among the office's events, so it is put up as her answer; for the one who left there is nothing.
+    await waitFor(`Object.keys(window.__t.store().asks).length === 0`, 9000);
+    await waitFor(`document.querySelectorAll('.reply-card').length === 1 && /Ava answered you/.test(document.querySelector('.reply-card').textContent) && /later-answer-5512/.test(document.querySelector('.reply-card').textContent)`, 4000);
+    const marks = await js(`document.querySelectorAll('.talkmark-waiting').length + '/' + document.querySelectorAll('.talkmark-answered').length + '/' + Object.keys(window.__t.store().replies).join(',')`);
+    if (marks !== `0/1/${ava}`) throw new Error(`after the waits ended: dots/bubbles/answers = ${marks}`);
+    await shot('wait-ended');
+    await js(`document.querySelector('.reply-card .reply-x').click()`);
+    await waitFor(`document.querySelectorAll('.reply-card').length === 0 && document.querySelectorAll('.talkmark').length === 0`, 4000);
+    return 'no dots; both waits ended by themselves, the answer that was missed is shown';
   });
 
   await step('a routine: "Repeat every … minutes" turns what I type into a standing instruction, listed above the conversation', async () => {

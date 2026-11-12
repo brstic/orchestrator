@@ -152,6 +152,8 @@ const Person = memo(function Person({
   // HTML overlays mounted in the scene's very first commit sometimes never appear (a name tag that is
   // simply missing); they are added once this person has been drawn.
   const [drawn, setDrawn] = useState(false);
+  // Gone from the office (let go, or their member left): nothing is left standing where they were — a mark over their head would hang in the air.
+  useEffect(() => () => void positions.delete(v.id), [v.id, positions]);
   // Whipped: flinch for a moment, then carry on exactly as before.
   const [ouch, setOuch] = useState<string | null>(null);
   useEffect(() => {

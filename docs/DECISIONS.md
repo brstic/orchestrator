@@ -2,6 +2,14 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-12 — "Waiting for their answer" is measured against the office, not only ended by the answer
+The dots over an employee the person spoke to were ended by one event, the end of that employee's turn. A turn can end without it (interrupted, an error, the session stopped, the employee let go), and it can come while the window is closed and be gone from the events the office sends on arrival — the dots then stood for a day over somebody doing nothing, which is what the owner saw.
+- **The window compares each wait with the office's present state** (`apps/desktop/src/lib/asks.ts`): dots only while the employee is in a turn or the message is still on its way to a session that is up. Rejected: a shorter time limit alone — a long turn is real work and must keep its dots, and an hour of false dots is as wrong as a day.
+- **A wait that is over is ended after a few seconds, not at once** (`SETTLE_MS`): the answer event arrives a moment after the session is seen resting, and ending the wait first would swallow the announcement.
+- **A missed answer is shown only if the office still lists that finished turn**; otherwise the wait is dropped without a word. Rejected: "answered you" whenever the turn is over — after an interrupted or failed turn that would be untrue.
+- **A message queued for somebody who is not at work is remembered and shows nothing.** Their answer is still announced when they are started and finish it.
+- **Kept in the window** (as the waits always were — they are one person's, on one computer). Rejected: moving them to the server for this; the office already tells the window everything the rule needs.
+
 ## 2026-11-11 — Asking the same question again is waiting for the same question
 `ask_boss` made a new question at every call. A call cut off by a restart of the office and repeated by the employee therefore doubled the question.
 - **Same employee, same words (spaces aside), still open or answered-and-not-handed-over: the same question** (`CommunicationHub.sameQuestion`). No second notification, no second card. Rejected: recognising "nearly the same" wording — a reworded question may be a different one, and the cost of a miss is a duplicate card, not a wrong answer.

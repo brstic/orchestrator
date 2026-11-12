@@ -13,6 +13,7 @@ export interface TalkMark {
 
 function Mark({ mark, positions, onOpen }: { mark: TalkMark; positions: Map<string, THREE.Vector3>; onOpen: (employeeId: string) => void }) {
   const group = useRef<THREE.Group>(null);
+  const wrap = useRef<HTMLDivElement>(null);
   // After the people have been moved for this frame, before the overlay works out where it is on screen.
   useFrame(() => {
     const p = positions.get(mark.id);
@@ -20,12 +21,14 @@ function Mark({ mark, positions, onOpen }: { mark: TalkMark; positions: Map<stri
     if (!g) return;
     g.visible = !!p;
     if (p) g.position.set(p.x, 0, p.z);
+    // The overlay is HTML: hiding the group does not hide it. Nobody there (not drawn yet, or gone) — no mark in the air.
+    if (wrap.current) wrap.current.hidden = !p;
   }, -0.5);
   return (
     <group ref={group}>
       <Html position={[0, 1.8, 0]} center zIndexRange={[46, 0]} style={{ pointerEvents: 'none' }}>
         {/* Lifted clear of the name tag and its attention icon, which sit around this point. */}
-        <div className="talkmark-wrap">
+        <div className="talkmark-wrap" ref={wrap} hidden>
           {mark.kind === 'answered' ? (
             <button type="button" className="talkmark talkmark-answered" title="They answered you — click to read" onClick={() => onOpen(mark.id)}>
               <span className="talkmark-glyph" aria-hidden>

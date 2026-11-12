@@ -337,8 +337,9 @@ try {
   const bulk = ['XagioPanel', 'AiTuner', 'Scribe'].map((n) => by(n));
   const bulkFolders = ['xagio-panel', 'ai_tuner', 'client notes'].map((f) => path.join(portfolio, f));
   check(
+    // (Unrestricted: what an owner's hires start as since 2026-11-11.)
     'everyone hired in bulk lives in their own folder, which became their project, and none of them was started',
-    bulk.every((e, i) => e?.workingDir === bulkFolders[i] && s.projects.find((p) => p.id === e.projectId)?.workspace === 'in_place' && s.projects.find((p) => p.id === e.projectId)?.repoPath === bulkFolders[i] && e.autonomy === 'auto') && !s.sessions.some((x) => bulk.some((e) => e?.id === x.employeeId)),
+    bulk.every((e, i) => e?.workingDir === bulkFolders[i] && s.projects.find((p) => p.id === e.projectId)?.workspace === 'in_place' && s.projects.find((p) => p.id === e.projectId)?.repoPath === bulkFolders[i] && e.autonomy === 'unrestricted') && !s.sessions.some((x) => bulk.some((e) => e?.id === x.employeeId)),
     bulk.map((e) => `${e?.name} → ${s.projects.find((p) => p.id === e?.projectId)?.name}`).join(', '),
   );
   const seated = s.employees.filter((e) => !e.archived && e.deskId);
