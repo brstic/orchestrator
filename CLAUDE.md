@@ -6,7 +6,7 @@ A 3D office in which real Claude Code CLI sessions (in tmux) are employees. pnpm
 1. `docs/STATUS.md` — what is shipped, what is in progress, known problems. **Start here.**
 2. The active plan under `docs/plans/` (currently `UPDATE-central-office.md`).
 3. `docs/HANDOVER.md` — the whole loop for someone new to this repository: what you need, test, commit, push, deploy. `docs/OPERATIONS.md` — where the server and clients run and how each is updated (`pnpm deploy:server`). `docs/DEVELOPMENT.md` — how to build and test, and the rules that protect the live office.
-4. The page of the feature you are about to touch, where there is one (`docs/MEMORY.md`, `docs/VAULT.md`, `docs/ACCOUNTS.md`, `docs/ARCADE.md`, `docs/ATTACHMENTS.md`, `docs/SIGN-IN.md`, `docs/HELD-REQUESTS.md`, `docs/SURROUNDINGS.md`, `docs/TASKS.md`, `docs/TEAM-LEAD.md`; `docs/README.md` is the map). A feature of that size gets such a page in the same piece of work.
+4. The page of the feature you are about to touch, where there is one (`docs/MEMORY.md`, `docs/VAULT.md`, `docs/ACCOUNTS.md`, `docs/ARCADE.md`, `docs/ATTACHMENTS.md`, `docs/SIGN-IN.md`, `docs/HELD-REQUESTS.md`, `docs/SURROUNDINGS.md`, `docs/TASKS.md`, `docs/TEAM-LEAD.md`, `docs/UI.md` — the look every window is being moved to, read it before changing any window; `docs/README.md` is the map). A feature of that size gets such a page in the same piece of work.
 5. `docs/DECISIONS.md` — why things are the way they are. Add an entry when you decide something a later reader would otherwise have to guess.
 
 ## Keep the docs true (standing rule)

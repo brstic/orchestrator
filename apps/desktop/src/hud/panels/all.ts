@@ -9,8 +9,10 @@
 import { registerLazyPanels } from './index.tsx';
 // The panels' two small stylesheets stay in the main bundle, at the place in the cascade they
 // have always had (before styles.css): loaded late with a chunk they would win ties they used to lose.
+// (`kit.css` is the calm look the windows are being moved to, one at a time: docs/UI.md.)
 import './panels-work.css';
 import './panels-company.css';
+import './kit.css';
 
 registerLazyPanels(['tasks', 'task'], () => import('./tasks.tsx'));
 registerLazyPanels(['projects'], () => import('./projects.tsx'));

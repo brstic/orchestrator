@@ -218,7 +218,7 @@ function MyRoomPanel({ onClose }: { arg: string | null; onClose: () => void }) {
             {host && online && (
               <div>
                 <div className="section-title">Claude sessions already running on this computer</div>
-                <OutsideTmux host={host} />
+                <OutsideTmux host={host} bare />
               </div>
             )}
           </>

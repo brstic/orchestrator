@@ -116,7 +116,7 @@ All machines appear in the same office; where a session runs does not change how
 
 If the office runs on your own computer (the desktop app) and your Claude Code sessions run on a server, link the server over SSH — no port is opened on the server or on your computer, and no TLS certificate is needed.
 
-**Machines → Connect a server over SSH**, type the server as you would after `ssh` (`deploy@my-server.example.com`, a name from `~/.ssh/config`, optionally `:port`), **Check the server**, then **Connect**.
+**Machines → Add a machine → A server over SSH**, type the server as you would after `ssh` (`deploy@my-server.example.com`, a name from `~/.ssh/config`, optionally `:port`), **Check the server**, then **Connect**.
 
 What happens:
 
@@ -154,7 +154,7 @@ When you run the server this way, start the local machine's agent yourself (`orc
 
 ### On each additional machine
 
-In the office: **Machines → Connect a machine** creates a one-time enrollment token (valid for an hour, shown once). Then on the machine:
+In the office: **Machines → Add a machine → Any machine, with a token → Create a token** makes a one-time enrollment token (valid for an hour, shown once, inside the command to run; *Options* changes how long it is valid and the address the machine is told). Then on the machine:
 
 ```bash
 curl -fsSL https://office.example.com/install-agent.sh | sh     # installs ~/.orchestrator/bin/orchestrator-agent
@@ -237,7 +237,7 @@ The server creates its tables on first start. One server per database (it holds 
 - **Data**: `~/.orchestrator/server/orchestrator.db` (+ `-wal`, `-shm`). Copy it while the server is stopped to back up. Schema migrations run on start. With PostgreSQL, back the database up with `pg_dump`.
 - **Owner token**: `~/.orchestrator/server/owner-token`. Delete it and restart to rotate.
 - **Reset the office**: stop the server, remove `~/.orchestrator/server`. Hosts must enroll again (the local one does so automatically with `pnpm start`).
-- **Remove a machine**: Machines → Revoke. Its credential stops working immediately.
+- **Remove a machine**: Machines → click the machine's line → Revoke…. Its credential stops working immediately. (*Remove…* then deletes it from the list; a server linked over SSH has *Remove the link…*, which does both and cleans up on the server.)
 
 ## 5. Development
 

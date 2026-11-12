@@ -797,14 +797,72 @@ async function scenario() {
     await close();
   });
 
+  // ───────────── Machines (docs/UI.md: one line per machine, the rest on a click) ─────────────
+  /** A machine's block in the Machines window, by the name on its line. */
+  const machine = (name) => `[...window.__t.scope().querySelectorAll('[data-machine]')].find((e) => e.querySelector('.k-title').textContent === ${JSON.stringify(name)})`;
+  /** Its line is clicked open, unless it is open already (the only machine of an office starts open). */
+  const unfold = async (name) => {
+    const line = `(${machine(name)}).querySelector('[role=button]')`;
+    await waitFor(`!!(${machine(name)})`, 8000);
+    if (await js(`${line}.getAttribute('aria-expanded') === 'false'`)) await click(line, `the line of ${name}`);
+    await waitFor(`${line}.getAttribute('aria-expanded') === 'true' && !!(${machine(name)}).querySelector('.k-detail')`, 4000);
+  };
+
+  await step('Machines: one line per machine says what it is and how it is; the rest opens on a click, and adding one is the one main button', async () => {
+    await open('hosts');
+    await waitFor(`!!(${machine('dev-mac')}) && !!(${machine(ctx.spareHost)})`, 8000);
+    const seen = await js(`(() => {
+      const w = window.__t.scope();
+      const line = (name) => { const m = [...w.querySelectorAll('[data-machine]')].find((e) => e.querySelector('.k-title').textContent === name); return { text: m.querySelector('[role=button]').textContent, meters: [...m.querySelectorAll('[role=meter]')].map((x) => x.getAttribute('aria-label') + ' ' + x.getAttribute('aria-valuetext')), faces: m.querySelectorAll('.k-faces .avatar').length, open: m.querySelector('[role=button]').getAttribute('aria-expanded'), detail: !!m.querySelector('.k-detail') }; };
+      return { kit: w.classList.contains('win-kit'), subtitle: w.querySelector('.win-head p').textContent, primary: [...w.querySelectorAll('.btn-primary')].filter((b) => window.__t.visible(b)).map((b) => b.textContent.trim()), dev: line('dev-mac'), spare: line(${JSON.stringify(ctx.spareHost)}), text: w.textContent };
+    })()`);
+    if (!seen.kit) throw new Error('the Machines window does not wear the calm look');
+    if (!/^\d+ of \d+ online$/.test(seen.subtitle)) throw new Error(`with a machine offline the window says "${seen.subtitle}"`);
+    if (seen.primary.join('|') !== 'Add a machine') throw new Error(`the window's main buttons are: ${seen.primary.join(', ') || 'none'}`);
+    // The machine that is there: who works on it and its two measurements, on the one line; nothing unfolded.
+    if (seen.dev.open !== 'false' || seen.dev.detail) throw new Error('with several machines, one starts unfolded');
+    if (!/\d+ employees?/.test(seen.dev.text)) throw new Error(`the line of dev-mac does not say how many work there: ${seen.dev.text}`);
+    if (seen.dev.faces < 1) throw new Error('no faces on the line of a machine people work on');
+    if (seen.dev.meters.length !== 2 || !/^CPU \d+%$/.test(seen.dev.meters[0]) || !/^Memory [\d.]+ \/ [\d.]+ GB$/.test(seen.dev.meters[1])) throw new Error(`the measurements of dev-mac read: ${seen.dev.meters.join(' | ')}`);
+    // The machine that is not: why not, and nothing measured.
+    if (!/has never connected|offline, last seen/.test(seen.spare.text) || seen.spare.meters.length) throw new Error(`the line of the machine that is away reads: ${seen.spare.text} (${seen.spare.meters.length} measurements)`);
+    // What used to be printed for every machine, always, is not there until asked for.
+    for (const gone of ['Hostname', 'Worker runtimes', 'Load (1 min)', 'Tracked sessions', 'measured', 'Any other machine', 'Servers over SSH']) if (seen.text.includes(gone)) throw new Error(`"${gone}" is on the window before anything was opened`);
+    // A click opens it: who works there by name, and what the machine is.
+    await unfold('dev-mac');
+    const opened = await js(`(() => { const m = ${machine('dev-mac')}; return { chips: [...m.querySelectorAll('.k-chip')].map((c) => c.textContent.trim()), facts: [...m.querySelectorAll('.k-spec dt')].map((d) => d.textContent) }; })()`);
+    for (const who of ['Sarah', 'David']) if (!opened.chips.includes(who)) throw new Error(`${who} is not among those who work on dev-mac: ${opened.chips.join(', ')}`);
+    for (const fact of ['System', 'Claude Code', 'tmux', 'Sessions']) if (!opened.facts.includes(fact)) throw new Error(`"${fact}" is missing from what dev-mac is: ${opened.facts.join(', ')}`);
+    await shot('machines');
+    // The window hangs from the top: opening and closing a machine does not move what is above it.
+    const top = () => js(`Math.round(window.__t.scope().getBoundingClientRect().top)`);
+    const openTop = await top();
+    await click(`(${machine('dev-mac')}).querySelector('[role=button]')`, 'the line of dev-mac');
+    await waitFor(`!(${machine('dev-mac')}).querySelector('.k-detail')`, 4000);
+    if ((await top()) !== openTop) throw new Error(`the window moved when a machine was folded: ${openTop} → ${await top()}`);
+    // A name on the list opens that employee.
+    await unfold('dev-mac');
+    await click(`[...(${machine('dev-mac')}).querySelectorAll('.k-chip')].find((c) => c.textContent.trim() === 'Sarah')`, 'Sarah');
+    await waitFor(`window.__t.store().panel === 'employee' && String(window.__t.store().panelArg).startsWith(window.__t.emp('Sarah').id)`, 6000);
+    await close();
+    return `${seen.subtitle}; dev-mac: ${seen.dev.meters.join(', ')}; opened: ${opened.facts.length} facts, ${opened.chips.length} people`;
+  });
+
   await step('Machines: creating an enrollment token shows a usable one-time token', async () => {
     await open('hosts');
-    await clickText('Connect with a token');
-    await clickText('Create enrollment token');
+    await clickText('Add a machine');
+    // Two ways, each said in a line; the list stays where it was underneath.
+    await waitFor(`window.__t.scope().querySelectorAll('[data-add-machine] .k-option').length === 2`, 4000);
+    await clickText('Any machine, with a token');
+    await clickText('Create a token');
     // The token as its own element shows it (neighbouring button labels are not part of it).
     const token = await waitFor(`([...document.querySelectorAll('.win *')].find((e) => e.children.length === 0 && /^orch_enroll_[A-Za-z0-9_-]+$/.test(e.textContent.trim())) || { textContent: '' }).textContent.trim()`, 8000);
-    await waitFor(`/orchestrator-agent login --server/.test(document.querySelector('.win').textContent)`, 4000);
+    await waitFor(`/orchestrator-agent login --server \\S+ --token orch_enroll_/.test(document.querySelector('.win .k-code').textContent) && /orchestrator-agent connect/.test(document.querySelector('.win .k-code').textContent)`, 4000);
+    // This office is reached at a loopback address: that it will not do for another machine is said, with the address in sight.
+    await waitFor(`/only works for an agent on the same machine/.test(window.__t.scope().textContent) && !!window.__t.field('Office address')`, 4000);
     await shot('machines-token');
+    await clickText('Cancel');
+    await waitFor(`!window.__t.scope().querySelector('[data-add-machine]')`, 4000);
     await close();
     return token;
   });
@@ -1152,8 +1210,9 @@ async function scenario() {
 
   await step('Machines: a machine is renamed and then removed', async () => {
     await open('hosts');
-    // A machine that is not connected starts folded: there is little to show for it.
-    await click(`window.__t.near(${JSON.stringify(ctx.spareHost)}, 'Details')`, 'Details');
+    await unfold(ctx.spareHost);
+    // A machine that is away cannot be looked into: nothing offers to bring in what runs there.
+    if (await js(`[...(${machine(ctx.spareHost)}).querySelectorAll('button')].some((b) => /Bring in/.test(b.textContent))`)) throw new Error('a machine that is offline offers to bring in what is running there');
     await click(`window.__t.near(${JSON.stringify(ctx.spareHost)}, 'Rename')`, 'Rename');
     await type(`window.__t.scope().querySelector('input[aria-label="Machine name"]')`, ctx.spareRenamed);
     await click(`window.__t.submit('Save')`, 'Save');
@@ -1510,8 +1569,13 @@ async function scenario() {
 
   await step('Machines: an already-running tmux session is found and attached without restarting it', async () => {
     await open('hosts');
+    await unfold('dev-mac');
     await clickText('Bring in what is running there…');
     await waitFor(`/legacy-claude/.test(window.__t.scope().textContent)`, 10000);
+    // What the office already has is not listed again beside it: it is one folded line.
+    const listed = await js(`(() => { const d = window.__t.scope().querySelector('[data-discover]'); return { rows: [...d.querySelectorAll('.k-group')][0].querySelectorAll('.k-row').length, folded: [...d.querySelectorAll('.k-more summary')].map((x) => x.textContent).find((t) => /already/.test(t)) || '', own: [...[...d.querySelectorAll('.k-group')][0].querySelectorAll('.k-row')].filter((r) => /^orch-/.test(r.textContent)).length }; })()`);
+    if (listed.own) throw new Error(`${listed.own} of the office's own sessions are listed among what can be brought in`);
+    if (!/^\d+ already in the office$/.test(listed.folded)) throw new Error(`the sessions the office already has are announced as "${listed.folded}"`);
     await shot('attach-dialog');
     await click(`window.__t.near('legacy-claude', 'Attach')`, 'Attach');
     await waitFor(`Object.values(window.__t.store().sessions).some((s) => s.tmuxSession === 'legacy-claude' && s.origin === 'attached' && s.status === 'running')`, 15000);
@@ -2094,9 +2158,10 @@ async function scenario() {
     return `stations before: ${builtIn}; "${ctx.radioName}" played "${ctx.radioTitle}" for the office; my volume ${mine} (the office's stays ${officeVolume}); at the ${far.kind} spot ${Math.hypot(far.x - hifi.x, far.z - hifi.z).toFixed(0)} m away it was heard at ${(heard.loudness * 100).toFixed(0)}%`;
   });
 
-  await step('Machines: "Connect a server over SSH" checks a server with the real ssh client and says plainly why it cannot connect', async () => {
+  await step('Machines: "A server over SSH" checks a server with the real ssh client and says plainly why it cannot connect', async () => {
     await open('hosts');
-    await clickText('Connect a server over SSH');
+    await clickText('Add a machine');
+    await clickText('A server over SSH');
     const server = `window.__t.scope().querySelector('input[aria-label="Server"]')`;
     await type(server, 'not a server; rm -rf /');
     if (!(await js(`window.__t.byText('Check the server') === null || window.__t.byText('Check the server').disabled`))) throw new Error('nonsense was accepted as a server');
@@ -2104,7 +2169,8 @@ async function scenario() {
     await type(server, 'nobody@127.0.0.1:1');
     await clickText('Check the server');
     await waitFor(`/refused the connection|did not answer/.test(window.__t.scope().textContent)`, 30000);
-    const said = await js(`[...window.__t.scope().querySelectorAll('.ssh-form .bad')].map((e) => e.textContent).join(' ')`);
+    const said = await js(`[...window.__t.scope().querySelectorAll('[data-ssh-form] .bad')].map((e) => e.textContent).join(' ')`);
+    if (!said) throw new Error('why the server cannot be reached is not said in the form');
     if (await js(`!!window.__t.byText('Connect', 'button') && !window.__t.byText('Connect', 'button').disabled && window.__t.byText('Connect', 'button').textContent.trim() === 'Connect'`)) throw new Error('Connect is enabled for a server that could not be checked');
     await shot('ssh-link-form');
     await clickText('Cancel');

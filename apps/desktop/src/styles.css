@@ -2332,24 +2332,6 @@ button.ops-row:hover {
   color: var(--bad);
 }
 
-/* ───────────── servers over SSH ───────────── */
-.ssh-link {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 10px;
-  padding: 9px 11px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: rgba(0, 0, 0, 0.14);
-}
-.ssh-form {
-  gap: 10px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-
 /* ───────────── office editor: the floor plan ───────────── */
 .plan-wrap {
   display: grid;

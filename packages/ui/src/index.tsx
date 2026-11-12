@@ -3,7 +3,11 @@ import type { Appearance } from '@orchestrator/contracts';
 
 /** Small, dependency-free UI primitives shared by every panel. Styling lives in the app stylesheet. */
 
-export function Window({ title, subtitle, onClose, children, width = 980, actions, flush = false }: { title: ReactNode; subtitle?: ReactNode; onClose?: () => void; children: ReactNode; width?: number | string; actions?: ReactNode; flush?: boolean }) {
+/**
+ * A window over the office. `kit`: the calm look of docs/UI.md, for a window that has been moved to it (the styles
+ * are `kit.css` in the app; the windows are moved one at a time).
+ */
+export function Window({ title, subtitle, onClose, children, width = 980, actions, flush = false, kit = false }: { title: ReactNode; subtitle?: ReactNode; onClose?: () => void; children: ReactNode; width?: number | string; actions?: ReactNode; flush?: boolean; kit?: boolean }) {
   useEffect(() => {
     if (!onClose) return;
     const onKey = (e: KeyboardEvent) => {
@@ -18,7 +22,7 @@ export function Window({ title, subtitle, onClose, children, width = 980, action
   }, [onClose]);
   return (
     <div className="win-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
-      <div className="win" style={{ width, maxWidth: 'calc(100vw - 48px)' }} role="dialog" aria-label={typeof title === 'string' ? title : undefined}>
+      <div className={kit ? 'win win-kit' : 'win'} style={{ width, maxWidth: 'calc(100vw - 48px)' }} role="dialog" aria-label={typeof title === 'string' ? title : undefined}>
         <header className="win-head">
           <div className="win-titles">
             <h2>{title}</h2>
