@@ -190,9 +190,12 @@ export class TaskTalk {
    * employee with it); otherwise it is a comment — brought at once to whoever is working on the task, and to
    * everybody tagged in it.
    */
-  async byPerson(taskId: string, text: string, who: Person): Promise<Task> {
+  async byPerson(taskId: string, text: string, who: Person, fileIds: unknown = []): Promise<Task> {
     const task = this.core.tasks.require(taskId);
-    const raw = String(text ?? '').trim();
+    // Files of the task that go with the comment (attached in the box where it was written): shown under it.
+    const attachmentIds = [...new Set((Array.isArray(fileIds) ? fileIds : []).map(String))].filter((id) => (task.attachments ?? []).some((a) => a.id === id)).slice(0, 20);
+    // (A picture can be the whole comment.)
+    const raw = String(text ?? '').trim() || (attachmentIds.length ? 'Look at this.' : '');
     if (!raw) throw new EngineError('write the comment first');
     const from = { kind: who.kind, id: who.id, name: who.kind === 'owner' ? 'The boss' : who.name } as const;
     const open = this.openQuestion(task);
@@ -200,18 +203,24 @@ export class TaskTalk {
     // Asked of the boss through the office's own question: answering here is answering that (one answer, one place).
     if (open && question?.status === 'open') {
       await this.eng.comms.answer(question.id, { answer: raw }, actorOf(who));
-      return this.core.tasks.require(taskId);
+      const now = this.core.tasks.require(taskId);
+      const written = attachmentIds.length ? (now.comments ?? []).find((c) => c.answerTo === open.id) : undefined;
+      if (written) {
+        written.attachmentIds = attachmentIds;
+        this.core.put('task', now);
+      }
+      return now;
     }
     const body = this.eng.vault.capture(truncate(raw, 8000), { kind: 'owner', id: null, name: said(who) }, [this.core.projects.get(task.projectId)?.name ?? '']).text;
     const { mentions } = this.mentionsIn(body);
     const parked = task.status === 'BLOCKED' && task.waitingFor?.kind === 'answer' && open && open.id === task.waitingFor.commentId;
     // A task its employee marked blocked (or parked on a question to a colleague): the boss's word is the answer.
     if (open && (parked || task.status === 'BLOCKED')) {
-      this.answered(task, open, { from, body, mentions });
+      this.answered(task, open, { from, body, mentions, attachmentIds });
       if (task.status === 'BLOCKED') this.eng.tasks.unblock(task.id, body, actorOf(who), undefined, { threaded: true });
       return this.core.tasks.require(taskId);
     }
-    const comment = this.add(task, { from, body, kind: 'note', mentions });
+    const comment = this.add(task, { from, body, kind: 'note', mentions, attachmentIds });
     const told = new Set<string>();
     const assignee = this.core.employees.get(task.assigneeId);
     if (task.status === 'IN_PROGRESS' && assignee && !assignee.archived) {

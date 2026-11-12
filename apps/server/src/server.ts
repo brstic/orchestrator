@@ -849,7 +849,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       return engine.tasks.submitReview('owner', param(req, 'id'), b.verdict, String(b.comments ?? ''), personOf(req));
     });
     // The conversation on a task: a person's comment (the answer, when the task waits for one), and sending a task back.
-    api.post('/tasks/:id/comments', async (req) => engine.talk.byPerson(param(req, 'id'), String(body(req).body ?? ''), personOf(req)));
+    api.post('/tasks/:id/comments', async (req) => engine.talk.byPerson(param(req, 'id'), String(body(req).body ?? ''), personOf(req), body(req).attachmentIds));
     api.post('/tasks/:id/send-back', async (req) => engine.talk.sendBack(param(req, 'id'), String(body(req).note ?? ''), personOf(req)));
     api.post('/tasks/:id/unblock', async (req) => engine.tasks.unblock(param(req, 'id'), String(body(req).note ?? '')));
     api.post('/tasks/:id/retry-merge', async (req) => engine.tasks.retryMerge(param(req, 'id'), actorOf(req)));

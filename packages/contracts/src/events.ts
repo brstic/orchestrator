@@ -71,6 +71,7 @@ export type EventType =
   // An employee began waiting for a colleague's answer or task, or stopped: data { phase: 'began' | 'ended', … }.
   | 'agent.waiting'
   | 'agent.result_submitted'
+  | 'agent.file_given'
   | 'meeting.created'
   | 'meeting.round_started'
   | 'meeting.contribution'

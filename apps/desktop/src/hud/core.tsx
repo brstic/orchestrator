@@ -343,7 +343,8 @@ export function ConfirmDialog() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        e.stopPropagation();
+        // (Also for whoever else listens on the window itself: Escape here answers the question and nothing more.)
+        e.stopImmediatePropagation();
         useOffice.getState().answer(false);
       }
     };

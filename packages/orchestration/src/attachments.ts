@@ -240,17 +240,17 @@ export class Attachments {
    * An employee leaves a file from their machine on a task as evidence: a screenshot of what they built, a report,
    * a log. The machine's agent reads it (only from the folders it is allowed in, and its own); the office keeps it.
    */
-  async attachFrom(task: Task, employee: Employee, filePath: string, caption: string | null): Promise<TaskAttachment> {
-    if (!this.dir) throw new EngineError('this office keeps no files');
+  /**
+   * Take a file from the machine an employee's session runs on into `dest` here, in pieces. The machine decides what
+   * may be read (its allowed folders, the agent's own, the temp folder). Returns the file's name there and its size.
+   */
+  async pull(employee: Employee, filePath: string, dest: string, cwdHint: string | null = null): Promise<{ name: string; size: number }> {
     const session = this.core.runningSessionOf(employee.id);
     const hostId = session?.hostId ?? employee.hostId;
     if (!hostId || !this.core.agents.isOnline(hostId)) throw new EngineError('your machine is not reachable by the office right now; try again shortly');
-    if (this.list(task).length >= MAX_FILES_PER_TASK) throw new EngineError(`${task.key} already holds ${MAX_FILES_PER_TASK} files; remove one or leave this one out`);
-    const cwd = session?.cwd ?? task.worktree ?? employee.workingDir ?? null;
-    const id = newId();
-    const file = this.fileOf(task.id, id);
-    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(file, '', { mode: 0o600 });
+    const cwd = session?.cwd ?? cwdHint ?? employee.workingDir ?? null;
+    fs.mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(dest, '', { mode: 0o600 });
     let size = 0;
     let name = safeName(filePath);
     try {
@@ -258,17 +258,28 @@ export class Attachments {
         const res = await this.core.agents.rpc<{ dataBase64: string; size: number; name: string }>(hostId, { method: 'files.get', params: { path: filePath, cwd, sessionId: session?.id ?? null, offset, length: CHUNK } }, 30000);
         size = res.size;
         name = safeName(res.name);
-        if (size > MAX_FILE_BYTES) throw new EngineError(`${name} is ${(size / 1024 / 1024).toFixed(1)} MB; a file on a task is at most ${MAX_FILE_BYTES / 1024 / 1024} MB`);
+        if (size > MAX_FILE_BYTES) throw new EngineError(`${name} is ${(size / 1024 / 1024).toFixed(1)} MB; a file given through the office is at most ${MAX_FILE_BYTES / 1024 / 1024} MB`);
         if (size === 0) throw new EngineError(`${name} is empty`);
         const buf = Buffer.from(res.dataBase64, 'base64');
-        fs.appendFileSync(file, buf);
+        fs.appendFileSync(dest, buf);
         offset += buf.length;
         if (offset >= size || buf.length === 0) break;
       }
     } catch (e) {
-      fs.rmSync(file, { force: true });
+      fs.rmSync(dest, { force: true });
       throw e instanceof EngineError ? e : new EngineError((e as Error).message);
     }
+    return { name, size };
+  }
+
+  async attachFrom(task: Task, employee: Employee, filePath: string, caption: string | null): Promise<TaskAttachment> {
+    if (!this.dir) throw new EngineError('this office keeps no files');
+    if (this.list(task).length >= MAX_FILES_PER_TASK) throw new EngineError(`${task.key} already holds ${MAX_FILES_PER_TASK} files; remove one or leave this one out`);
+    const id = newId();
+    const file = this.fileOf(task.id, id);
+    const pulled = await this.pull(employee, filePath, file, task.worktree);
+    const size = pulled.size;
+    let name = pulled.name;
     name = this.freeName(task, name);
     return this.add(task.id, { id, name, mime: mimeOf(name), size, kind: 'evidence', caption: truncate(String(caption ?? '').trim(), 300) || null, addedBy: { kind: 'employee', id: employee.id, name: employee.name }, addedAt: nowIso(), sha256: null, paths: {} }, file);
   }

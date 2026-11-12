@@ -59,6 +59,14 @@ window ──(pieces of ≤ 384 KB)──▶ office: <data folder>/files-said/<e
 - **Who:** whoever may talk to that employee (level *work*, and their member's alone on a member's computer). A file is its sender's until it is said: nobody else adds to it or sends it. A visitor neither sends nor sees them.
 - **Sent, and seen to be sent.** A paste that names files is taken in by Claude Code over a moment; the agent presses Enter once it sees the paste in the input box and again while it is still standing there (`DECISIONS.md`, "After Enter, the input box is looked at").
 - **Not for** a repeated instruction (a routine is words), nor for what a team lead or the foreman tells someone.
+
+### The other way: a file from the employee
+
+`attach_file { path, caption? }` is how an employee gives a person a file. **On a task** it is that task's evidence (above). **With no task in progress** it goes into their conversation with the boss: the office takes it from their machine (`Attachments.pull` → `files.get`, the same limits on what may be read), keeps it beside the files that were said to them (`SaidFiles.give`; listed in the office's key-value store under `saidFiles.given`, seven days), and records `agent.file_given` — which is what the conversation window draws: a picture is shown (a click looks closer), and every file has **Download**. The boss is told in the Inbox ("… gave you a file"). A file left on a task is recorded with the same event (with `taskId`), so the conversation shows it too, from the task's own copy. An employee may give sixty files an hour this way. Their instructions say: when the boss asks to see something, give it with `attach_file`; a path in a reply shows nobody anything.
+
+### Files with a comment on a task
+
+A person's comment (`POST /api/tasks/:id/comments { body, attachmentIds }`) may name files of that task: the window uploads them as the task's files first (**Attach…**, a pasted screenshot, a drop in the task's box), and they are then tied to the comment (`TaskComment.attachmentIds`) — delivered to the employee as any file of the task is, and shown under the comment: pictures as pictures, everything else as a name that downloads. An employee's comment carries files the same way (`comment_on_task … files`, `TASKS.md`).
 - Code: `packages/orchestration/src/said-files.ts` (`SaidFiles`), the routes `POST /api/employees/:id/files`, `…/files/:fid/data`, `GET …/files/:fid` and `fileIds` on `POST …/message` in `apps/server/src/server.ts`; the window `apps/desktop/src/hud/panels/said-files.tsx` (`usePendingFiles`, `PendingStrip`, `SaidFilesOf`) used by `talk.tsx`. Test: `tests/e2e/47-said-files.test.ts`.
 
 ## Where things are

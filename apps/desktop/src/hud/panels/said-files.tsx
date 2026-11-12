@@ -228,3 +228,38 @@ export function SaidFilesOf({ employeeId, files }: { employeeId: string; files: 
     </div>
   );
 }
+
+// ───────────── the other way: what an employee gave ─────────────
+
+async function saveSaid(employeeId: string, file: SaidFile): Promise<void> {
+  const href = await urlOf(employeeId, file.id);
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = file.name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+/** A file an employee gave in the conversation: a picture is shown (a click looks closer), anything can be downloaded. */
+export function GivenFile({ employeeId, file, caption, onError }: { employeeId: string; file: SaidFile; caption: string | null; onError: (why: string) => void }) {
+  return (
+    <div className="said-given" data-given-file={file.name}>
+      {SHOWN.test(file.mime) && (
+        <div className="said-sent">
+          <SaidPicture employeeId={employeeId} file={file} />
+        </div>
+      )}
+      <div className="said-given-row">
+        <span className="strong truncate" title={file.name}>
+          {file.name}
+        </span>
+        <span className="faint">{fileSize(file.size)}</span>
+        <button type="button" className="tf-link" onClick={() => void saveSaid(employeeId, file).catch(() => onError('The office no longer keeps this file (a file given in a conversation is kept for a few days).'))}>
+          Download
+        </button>
+      </div>
+      {caption && <div className="small">{caption}</div>}
+    </div>
+  );
+}

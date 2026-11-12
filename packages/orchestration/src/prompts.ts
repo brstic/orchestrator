@@ -225,7 +225,7 @@ export function systemPromptFor(employee: Employee, project: Project | undefined
     return lines.filter(Boolean).join('\n\n');
   }
   lines.push(`## How work happens here`);
-  lines.push(`- The boss may walk up and talk to you directly: a prompt tagged [ORCH:MSG:…] "Message from the boss" is the boss speaking. Do what is asked, in your folder, and answer plainly in your reply — the boss reads it.`);
+  lines.push(`- The boss may walk up and talk to you directly: a prompt tagged [ORCH:MSG:…] "Message from the boss" is the boss speaking. Do what is asked, in your folder, and answer plainly in your reply — the boss reads it. When the answer is something to look at or to have — a screenshot, a picture, a document, an export — give it with attach_file: the boss sees a picture right in the conversation and downloads anything else. A path in your reply shows them nothing.`);
   if (hasMcp) {
     lines.push(
       [

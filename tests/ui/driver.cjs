@@ -436,6 +436,28 @@ async function scenario() {
     return 'no dots; both waits ended by themselves, the answer that was missed is shown';
   });
 
+  await step('an employee gives me a file in the conversation: the picture is shown there, and it can be downloaded', async () => {
+    const ava = await js(`window.__t.emp('Ava').id`);
+    const cwd = await waitFor(`(Object.values(window.__t.store().sessions).find((x) => x.employeeId === ${JSON.stringify(ava)} && x.status === 'running' && x.inTurn === false) || {}).cwd`, 15000);
+    // (Something for her to show: the scripted worker cannot draw.)
+    const file = path.join(cwd, 'shot-for-the-boss.png');
+    fs.writeFileSync(file, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64'));
+    try {
+      await js(`window.__t.store().openPanel('talk', ${JSON.stringify(ava)})`);
+      await type(`window.__t.scope().querySelector('textarea')`, 'Show me how it looks. @@fake: mcp attach_file {"path":"shot-for-the-boss.png","caption":"The page as it is now"}; say here-is-the-picture-8841@@');
+      await clickText('Send');
+      await waitFor(`!!window.__t.scope().querySelector('[data-talk-file="shot-for-the-boss.png"] img')`, 30000);
+      const shown = await js(`window.__t.scope().querySelector('[data-talk-file="shot-for-the-boss.png"]').textContent`);
+      if (!/The page as it is now/.test(shown) || !/Download/.test(shown)) throw new Error(`the file in the conversation reads: ${shown.slice(0, 160)}`);
+      await waitFor(`[...window.__t.scope().querySelectorAll('.talk-them')].some((b) => /here-is-the-picture-8841/.test(b.textContent))`, 20000);
+      await shot('talk-file');
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+    await js(`window.__t.store().openPanel(null)`);
+    return 'a picture from her, with what it shows and a way to download it';
+  });
+
   await step('a routine: "Repeat every … minutes" turns what I type into a standing instruction, listed above the conversation', async () => {
     const ava = await js(`window.__t.emp('Ava').id`);
     await js(`window.__t.store().openPanel('talk', ${JSON.stringify(ava)})`);
@@ -1191,6 +1213,13 @@ async function scenario() {
     // Done is not the end: it can still be sent back from here.
     await waitFor(`(${pane}).querySelector('[data-ticket-need]').dataset.ticketNeed === 'done' && !!window.__t.scope().querySelector('.tk-compose') && [...window.__t.scope().querySelectorAll('.tk-compose button')].some((b) => b.textContent.trim() === 'Send back')`, 8000);
     await shot('ticket-done');
+    // A picture goes with my own comment as well: pasted into the box, it waits there by name and is then under the comment.
+    await js(`(() => { const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0)); const dt = new DataTransfer(); dt.items.add(new File([png], 'my-note.png', { type: 'image/png' })); (${box}).dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); return true; })()`);
+    await waitFor(`(${pane}).querySelector('[data-added-files]')?.dataset.addedFiles === '1' && /my-note\.png/.test((${pane}).querySelector('[data-added-files]').textContent)`, 10000);
+    await type(box, 'Like this.');
+    await clickText('Comment');
+    await waitFor(`(() => { const notes = [...(${pane}).querySelectorAll('[data-comment="note"]')]; const last = notes[notes.length - 1]; return !!last && /Like this\./.test(last.textContent) && !!last.querySelector('[data-picture="my-note.png"] img'); })() && !(${pane}).querySelector('[data-added-files]')`, 10000);
+    await shot('ticket-my-picture');
     ctx.talkTicketId = tid;
     await close();
     return `${who.name}: asked → answered → handed in → sent back → handed in → approved`;

@@ -159,7 +159,7 @@ export function TaskFiles({ task, only }: { task: Task; only?: 'evidence' }) {
   };
   useEffect(() => {
     if (!open) return;
-    const close = (ev: KeyboardEvent) => ev.key === 'Escape' && (ev.stopPropagation(), setOpen(null));
+    const close = (ev: KeyboardEvent) => ev.key === 'Escape' && (ev.stopImmediatePropagation(), setOpen(null));
     window.addEventListener('keydown', close, true);
     return () => window.removeEventListener('keydown', close, true);
   }, [open]);
@@ -324,7 +324,10 @@ function Viewer({ taskId, list, at, onAt, onClose }: { taskId: string; list: Tas
       else if (ev.key === 'ArrowLeft') onAt((at + list.length - 1) % list.length);
       else return;
       ev.preventDefault();
-      ev.stopPropagation();
+      // Nobody after this one hears the key: the window under the picture listens for Escape on the same target, and
+      // whether it hears it before or after this depends on which of the two was registered last (the window registers
+      // again whenever it is drawn again) — heard after, with the picture already gone, it closed the task as well.
+      ev.stopImmediatePropagation();
     };
     window.addEventListener('keydown', key, true);
     return () => window.removeEventListener('keydown', key, true);
@@ -383,6 +386,22 @@ export function Pictures({ taskId, list, fold }: { taskId: string; list: TaskAtt
         </button>
       )}
       {at !== null && list[at] && <Viewer taskId={taskId} list={list} at={at} onAt={setAt} onClose={() => setAt(null)} />}
+    </div>
+  );
+}
+
+/** A file of a task that is not a picture, as a name to click: it is downloaded. */
+export function FileLinks({ taskId, list }: { taskId: string; list: TaskAttachment[] }) {
+  if (!list.length) return null;
+  return (
+    <div className="tp-docs" data-file-links={list.length}>
+      {list.map((a) => (
+        <button key={a.id} type="button" className="tp-doc" title={`${a.caption ?? a.name} · ${size(a.size)} — download`} onClick={() => void act(() => download(taskId, a))} data-file={a.name}>
+          <span className="tf-ext">{(a.name.split('.').pop() ?? 'file').slice(0, 5)}</span>
+          <span className="truncate">{a.name}</span>
+          <span className="faint">{size(a.size)}</span>
+        </button>
+      ))}
     </div>
   );
 }

@@ -217,6 +217,13 @@ test('a question that is a choice carries its choices, and a comment carries its
   assert.deepEqual((await h.state()).questions.find((x) => x.id === q2.questionId)!.options.map((o) => o.label), ['A) Keep it', 'B) Drop it']);
   await h.api('POST', `/questions/${q2.questionId}/answer`, { answer: 'B) Drop it' });
   assert.match((await inline).text, /^The boss answered: B\) Drop it/);
+  // A person's comment carries files too: attached where the comment is written, shown under it.
+  const begun = await h.api<any>('POST', `/tasks/${t.id}/attachments`, { name: 'from-me.png', size: png.length });
+  await h.api('POST', `/tasks/${t.id}/attachments/${begun.id}/data`, { offset: 0, dataBase64: png.toString('base64') });
+  await h.api('POST', `/tasks/${t.id}/comments`, { body: 'Like this one.', attachmentIds: [begun.id, 'not-a-file-of-this-task'] });
+  await h.api('POST', `/tasks/${t.id}/comments`, { body: '  ', attachmentIds: [begun.id] });
+  const mine = (await task(t.id)).comments!.filter((c) => c.from.kind === 'owner' && c.kind === 'note');
+  assert.deepEqual(mine.map((c) => [c.body, c.attachmentIds]), [['Like this one.', [begun.id]], ['Look at this.', [begun.id]]], 'a picture can be the whole comment');
   // (A file that was named and could not be read is said; the question is asked all the same.)
   const plain = await tool('Alex', 'comment_on_task', { text: 'Here is what it looks like now.', files: ['no-such-file.png'] });
   assert.match(plain.text, /no-such-file\.png was not attached/);

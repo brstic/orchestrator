@@ -1045,3 +1045,67 @@ button.tk-person-chip:hover {
   color: var(--good);
   font-weight: 600;
 }
+
+/* Files that go with a comment being written, and files under one that was. */
+.tk-added {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.tk-added-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 2px 4px 2px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(110, 168, 255, 0.12);
+  font-size: 12px;
+}
+.tk-added-file > button {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.tk-added-file > button:hover {
+  color: #fff;
+}
+.tp-docs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.tp-doc {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 320px;
+  padding: 4px 10px 4px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.tp-doc:hover {
+  border-color: rgba(110, 168, 255, 0.7);
+}
+.said-given {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.said-given-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12.5px;
+}

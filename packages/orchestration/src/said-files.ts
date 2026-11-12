@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { newId, type Employee, type SaidFile } from '@orchestrator/contracts';
-import { MAX_FILE_BYTES, isImage, mimeOf, safeName } from './attachments.ts';
+import { MAX_FILE_BYTES, isImage, mimeOf, safeName, type Attachments } from './attachments.ts';
 import { EngineError, type Core } from './core.ts';
 
 /** How many files go with one message. */
@@ -108,6 +108,7 @@ export class SaidFiles {
   /** At start, and once a day: what was said more than a few days ago is no longer kept (nor what was never sent before a restart). */
   sweep(now = Date.now()): number {
     if (!this.dir || !fs.existsSync(this.dir)) return 0;
+    const given = this.given();
     let removed = 0;
     for (const employeeId of fs.readdirSync(this.dir)) {
       const folder = path.join(this.dir, employeeId);
@@ -116,7 +117,7 @@ export class SaidFiles {
         if (this.held.has(id)) continue;
         const file = path.join(folder, id);
         // (A file with no message is one whose upload a restart cut short: nothing lists it.)
-        const said = this.core.messages.find((m) => m.toEmployeeId === employeeId && !!m.files?.some((f) => f.id === id));
+        const said = this.core.messages.find((m) => m.toEmployeeId === employeeId && !!m.files?.some((f) => f.id === id)) ?? given.find((g) => g.employeeId === employeeId && g.file.id === id);
         if (said && now - fs.statSync(file).mtimeMs <= SAID_KEEP_MS) continue;
         fs.rmSync(file, { force: true });
         removed++;
@@ -175,10 +176,33 @@ export class SaidFiles {
     return lines.length ? `\n\nFiles that go with this — open ${lines.length === 1 ? 'it' : 'each'} with the Read tool before you answer:\n${lines.join('\n')}` : '';
   }
 
+  // ───────────── the other way: a file an employee gives the boss ─────────────
+
+  /** What employees have given in their conversations and the office still keeps (newest last). */
+  private given(): Array<{ employeeId: string; file: SaidFile; ts: number }> {
+    return this.core.store.kvGet<Array<{ employeeId: string; file: SaidFile; ts: number }>>('saidFiles.given', []);
+  }
+
+  /**
+   * An employee gives the boss a file outside any task — "here is what it looks like" in a conversation. The office
+   * takes it from their machine and keeps it as long as a file said to them (`SAID_KEEP_MS`); the conversation shows
+   * a picture and offers anything else as a download.
+   */
+  async give(employee: Employee, filePath: string, pull: Attachments['pull']): Promise<SaidFile> {
+    if (!this.dir) throw new EngineError('this office keeps no files');
+    const id = newId();
+    const where = this.fileOf(employee.id, id);
+    const got = await pull(employee, filePath, where);
+    const file: SaidFile = { id, name: got.name, mime: mimeOf(got.name), size: got.size };
+    const now = Date.now();
+    this.core.store.kvSet('saidFiles.given', [...this.given().filter((g) => now - g.ts <= SAID_KEEP_MS), { employeeId: employee.id, file, ts: now }].slice(-2000));
+    return file;
+  }
+
   /** Where a file that was said is, for showing it in the conversation — while the office still has it. */
   open(employeeId: string, id: string): { file: SaidFile; path: string } {
     const message = this.core.messages.find((m) => m.toEmployeeId === employeeId && !!m.files?.some((f) => f.id === id));
-    const file = message?.files?.find((f) => f.id === id);
+    const file = message?.files?.find((f) => f.id === id) ?? this.given().find((g) => g.employeeId === employeeId && g.file.id === id)?.file;
     const where = this.fileOf(employeeId, id);
     if (!file || !fs.existsSync(where)) throw new EngineError('the office no longer keeps this file', 404);
     return { file, path: where };

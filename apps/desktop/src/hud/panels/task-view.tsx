@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import type { Employee, ReviewBy, Task, TaskComment, TaskPriority, TaskStatus } from '@orchestrator/contracts';
+import type { Employee, ReviewBy, Task, TaskAttachment, TaskComment, TaskPriority, TaskStatus } from '@orchestrator/contracts';
 import { reviewByOf } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Markdown, Progress, Tabs, timeAgo } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useAccess } from '../../lib/access.ts';
 import { useOffice } from '../../lib/store.ts';
 import { act, ask } from '../core.tsx';
-import { Pictures, TaskFiles, isPicture } from './task-files.tsx';
+import { FileLinks, Pictures, TaskFiles, isPicture, uploadFile } from './task-files.tsx';
 import { REVIEW_CHOICES, STATUS_META, TASK_STATUSES, activeEmployees, needOf, openQuestionOf, stamp, useAction } from './task-shared.tsx';
 import { Delivery, GitChanges, TaskEvidence, TaskHistory } from './task-work.tsx';
 
@@ -88,6 +88,7 @@ function Thread({ task }: { task: Task }) {
                 </div>
                 {/* What was left with the comment: pictures are shown, and a click enlarges them. */}
                 {c.attachmentIds?.length ? <Pictures taskId={task.id} list={(task.attachments ?? []).filter((a) => c.attachmentIds!.includes(a.id) && isPicture(a))} /> : null}
+                {c.attachmentIds?.length ? <FileLinks taskId={task.id} list={(task.attachments ?? []).filter((a) => c.attachmentIds!.includes(a.id) && !isPicture(a))} /> : null}
                 {c.kind === 'question' && c.options?.length ? (
                   <div className="tk-options-said" data-options-said>
                     {c.options.map((o) => {
@@ -123,7 +124,7 @@ function Thread({ task }: { task: Task }) {
  * A text box that offers the office's people when an @ is typed: the boss first, then everybody whose name starts
  * with (or contains) what follows it. Arrows and Enter or Tab choose; Escape closes the list.
  */
-function MentionBox({ value, onChange, placeholder, disabled, onSubmit }: { value: string; onChange: (v: string) => void; placeholder: string; disabled?: boolean; onSubmit: () => void }) {
+function MentionBox({ value, onChange, placeholder, disabled, onSubmit, onFiles }: { value: string; onChange: (v: string) => void; placeholder: string; disabled?: boolean; onSubmit: () => void; onFiles?: (files: File[]) => void }) {
   const employees = useOffice((s) => s.employees);
   const box = useRef<HTMLTextAreaElement>(null);
   const [at, setAt] = useState<{ from: number; word: string } | null>(null);
@@ -179,7 +180,7 @@ function MentionBox({ value, onChange, placeholder, disabled, onSubmit }: { valu
   return (
     <div className="tk-box">
       {at && options.length > 0 && (
-        <div className="tk-mentions" role="listbox" aria-label="People to tag">
+        <div className="tk-mentions" role="listbox" aria-label="People to tag" data-esc-first>
           {options.map((n, i) => (
             <button key={n} type="button" role="option" aria-selected={i === pick} className={i === pick ? 'on' : ''} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(n)}>
               @{n}
@@ -199,6 +200,19 @@ function MentionBox({ value, onChange, placeholder, disabled, onSubmit }: { valu
         }}
         onKeyDown={onKey}
         onBlur={() => setAt(null)}
+        onPaste={(ev) => {
+          // A screenshot on the clipboard (or copied files) goes with the comment; text is pasted as text.
+          const files = [...ev.clipboardData.files];
+          if (!onFiles || !files.length) return;
+          ev.preventDefault();
+          onFiles(files);
+        }}
+        onDragOver={(ev) => onFiles && ev.dataTransfer.types.includes('Files') && ev.preventDefault()}
+        onDrop={(ev) => {
+          if (!onFiles || !ev.dataTransfer.files.length) return;
+          ev.preventDefault();
+          onFiles([...ev.dataTransfer.files]);
+        }}
       />
     </div>
   );
@@ -209,7 +223,25 @@ function Composer({ task }: { task: Task }) {
   const can = useAccess();
   const [busy, run] = useAction();
   const [text, setText] = useState('');
-  useEffect(() => setText(''), [task.id]);
+  /** Files added to this comment: on the task already, tied to the comment when it is sent. */
+  const [added, setAdded] = useState<TaskAttachment[]>([]);
+  const [sending, setSending] = useState<string | null>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    setText('');
+    setAdded([]);
+  }, [task.id]);
+  const addFiles = async (files: File[]) => {
+    for (const [i, f] of files.entries()) {
+      // A pasted screenshot has no name of its own.
+      const file = f.name && f.name !== 'image.png' ? f : new File([f], `screenshot-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}${i ? `-${i + 1}` : ''}.png`, { type: f.type });
+      setSending(file.name);
+      const a = await act(() => uploadFile(task.id, file));
+      setSending(null);
+      if (!a) break;
+      setAdded((list) => [...list, a]);
+    }
+  };
   const mayWork = can.work(s.projects[task.projectId]?.hostId);
   const who = s.employees[task.assigneeId ?? '']?.name ?? 'the employee';
   const question = openQuestionOf(task);
@@ -218,9 +250,11 @@ function Composer({ task }: { task: Task }) {
   const mergeFailed = !!task.evidence.merge && !task.evidence.merge.ok;
   const said = text.trim();
   const done = (res: unknown) => {
-    if (res !== undefined) setText('');
+    if (res === undefined) return;
+    setText('');
+    setAdded([]);
   };
-  const comment = (ok: string) => run(() => api('POST', `/tasks/${task.id}/comments`, { body: said }), ok).then(done);
+  const comment = (ok: string) => run(() => api('POST', `/tasks/${task.id}/comments`, { body: said, attachmentIds: added.map((a) => a.id) }), ok).then(done);
   const approve = () => run(() => api('POST', `/tasks/${task.id}/review`, { verdict: 'approve', comments: said }), `${task.key} approved`).then(done);
   const sendBack = async () => {
     if (task.status === 'DONE' && !(await ask({ title: `Send ${task.key} back?`, body: `"${task.title}"\n\nIt is opened again${task.assigneeId ? ` for ${who}` : ''} with what you wrote, and is checked and reviewed again when it is handed in. What was done so far stays as it is.`, ok: 'Send it back' }))) return;
@@ -253,6 +287,9 @@ function Composer({ task }: { task: Task }) {
   // What whoever asks proposed as answers (also for a question asked with `ask_boss` before comments carried them).
   const options = answering ? (question!.options?.length ? question!.options : ((question!.questionId && s.questions[question!.questionId]?.status === 'open' && s.questions[question!.questionId]?.options) || [])) : [];
   const choose = (label: string) => run(() => api('POST', `/tasks/${task.id}/comments`, { body: label }), task.status === 'BLOCKED' ? `${task.key} is back with ${who}` : 'Answered').then(done);
+  // Files go with a comment and with an answer (a review's verdict and an unblocking are words).
+  const filesGo = primary.label === 'Comment' || primary.label === 'Answer';
+  const has = !!said || (filesGo && added.length > 0);
   return (
     <div className="tk-compose" data-compose={answering ? 'answer' : blocked ? 'unblock' : task.status === 'REVIEW' ? 'review' : 'comment'}>
       {options.length > 0 && (
@@ -270,11 +307,32 @@ function Composer({ task }: { task: Task }) {
           ))}
         </div>
       )}
-      <MentionBox value={text} onChange={setText} placeholder={placeholder} disabled={busy} onSubmit={() => (primary.need && !said ? undefined : void primary.run())} />
+      <MentionBox value={text} onChange={setText} placeholder={placeholder} disabled={busy} onSubmit={() => (primary.need && !has ? undefined : void primary.run())} onFiles={filesGo ? (f) => void addFiles(f) : undefined} />
+      {(added.length > 0 || sending) && (
+        <div className="tk-added" data-added-files={added.length}>
+          {added.map((a) => (
+            <span key={a.id} className="tk-added-file" title={a.name}>
+              <span className="truncate">{a.name}</span>
+              <button type="button" aria-label={`Leave ${a.name} out of this comment`} title="Leave it out of this comment (it stays among the task's files)" onClick={() => setAdded((list) => list.filter((x) => x.id !== a.id))}>
+                ×
+              </button>
+            </span>
+          ))}
+          {sending && <span className="small muted">Sending {sending}…</span>}
+        </div>
+      )}
       <div className="tk-compose-row">
-        <Button variant={primary.variant} disabled={busy || (primary.need && !said)} onClick={() => void primary.run()} title="⌘/Ctrl + Enter">
+        <Button variant={primary.variant} disabled={busy || !!sending || (primary.need && !has)} onClick={() => void primary.run()} title="⌘/Ctrl + Enter">
           {primary.label}
         </Button>
+        {filesGo && (
+          <>
+            <input ref={picker} type="file" multiple hidden onChange={(ev) => (void addFiles([...(ev.target.files ?? [])]), (ev.target.value = ''))} />
+            <Button variant="ghost" disabled={busy || !!sending} onClick={() => picker.current?.click()} title="A picture, a document — up to 25 MB each. You can also paste a screenshot into the box, or drop files on it." data-attach>
+              Attach…
+            </Button>
+          </>
+        )}
         {task.status === 'REVIEW' && (
           <>
             <Button variant="danger" disabled={busy || !said} onClick={sendBack} title={said ? undefined : 'Write what should change first'}>

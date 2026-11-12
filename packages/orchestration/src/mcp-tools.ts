@@ -409,12 +409,29 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
 
     attach_file: async (a, { employee }) => {
       const task = a.task ? seen(employee, a.task) : eng.tasks.currentTask(employee.id);
-      if (!task) return a.task ? noTask(a.task) : err('You have no task in progress. Name the task this file belongs to ("task").');
-      if (task.assigneeId !== employee.id && !core.tasks.find((t) => t.reviewOf === task.id && t.assigneeId === employee.id)) return err(`${task.key} is not your task. Evidence is left by whoever does or reviews the work.`);
       const file = String(a.path ?? '').trim();
       if (!file) return err('Give the path of the file on this machine.');
+      const caption = a.caption ? truncate(String(a.caption).trim(), 300) : null;
+      const size = (n: number) => (n < 1024 ? `${n} bytes` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+      if (!task) {
+        if (a.task) return noTask(a.task);
+        // Not on a task: the file is for the boss, in the conversation with them.
+        const many = tooMany(employee, 'file given to the boss', 60);
+        if (many) return err(many);
+        try {
+          const given = await eng.saidFiles.give(employee, file, (e, p, dest) => eng.attachments.pull(e, p, dest));
+          core.event({ type: 'agent.file_given', source: 'mcp', summary: `${employee.name} gave the boss a file: ${given.name}`, employeeId: employee.id, projectId: employee.projectId, data: { file: given, caption } });
+          eng.comms.notify({ kind: 'info', severity: 'info', title: `${employee.name} gave you a file`, body: `${given.name}${caption ? ` — ${caption}` : ''}`, employeeId: employee.id });
+          return `${given.name} (${size(given.size)}) is in your conversation with the boss${/^image\//.test(given.mime) ? ', where they see it' : ', where they can download it'}${caption ? `: ${caption}` : ''}. Say in your reply what it is.`;
+        } catch (e) {
+          return err((e as Error).message);
+        }
+      }
+      if (task.assigneeId !== employee.id && !core.tasks.find((t) => t.reviewOf === task.id && t.assigneeId === employee.id)) return err(`${task.key} is not your task. Evidence is left by whoever does or reviews the work.`);
       try {
-        const att = await eng.attachments.attachFrom(task, employee, file, a.caption ? String(a.caption) : null);
+        const att = await eng.attachments.attachFrom(task, employee, file, caption);
+        // (Shown in the conversation with the boss as well: whoever asked "show me" there sees it there.)
+        core.event({ type: 'agent.file_given', source: 'mcp', summary: `${employee.name} left ${att.name} on ${task.key}`, employeeId: employee.id, taskId: task.id, projectId: task.projectId, data: { file: { id: att.id, name: att.name, mime: att.mime, size: att.size }, caption: att.caption, taskId: task.id, quiet: true } });
         return `${att.name} (${att.size < 1024 ? `${att.size} bytes` : att.size < 1024 * 1024 ? `${Math.round(att.size / 1024)} KB` : `${(att.size / 1024 / 1024).toFixed(1)} MB`}) is on ${task.key} as evidence${att.caption ? `: ${att.caption}` : ''}. The boss and reviewers can open it in the office.`;
       } catch (e) {
         return err((e as Error).message);

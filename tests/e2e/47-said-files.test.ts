@@ -143,9 +143,62 @@ test('a message with files is really sent: Claude Code takes such a paste in ove
     throw new Error(`${e.message} — it is "${(await delivered()).status}"; the terminal:\n${s?.tmuxPane ? h.tmux('capture-pane', '-p', '-J', '-t', s.tmuxPane) : ''}`);
   });
   // Sent once: the next message is its own prompt, not glued to this one.
+  // (Said when the turn of the first has ended — a message that arrives during a turn is handed over through the Stop
+  // hook instead of being typed, and then there is no second paste to count.)
+  await waitFor(async () => (await h.session(alex))?.inTurn === false, { label: 'between turns', timeout: 20000 });
   const next = (await as(h.token, 'POST', `/employees/${alex}/message`, { body: 'And one more thing.' })).body;
   await waitFor(async () => (await h.state()).messages.find((m) => m.id === next.id)!.delivery.status === 'confirmed', { label: 'the next message', timeout: 20000 });
   const s = await h.session(alex);
   const pane = h.tmux('capture-pane', '-p', '-J', '-S', '-200', '-t', s!.tmuxPane!);
   assert.ok(pane.split('\n').filter((l) => /^> \[pasted \d+ chars\]\s*$/.test(l)).length >= 2, pane);
+});
+
+test('the other way: an employee gives the boss a file — in the conversation when there is no task, on the task when there is one', async () => {
+  const { handleMcpPost } = await import('@orchestrator/integrations');
+  const path = await import('node:path');
+  const eng = h.server.engine;
+  const employee = eng.core.employees.require(alex);
+  const tool = async (name: string, args: Record<string, unknown>) => {
+    const session = eng.core.runningSessionOf(alex) ?? eng.core.sessionOf(alex)!;
+    const res: any = await handleMcpPost({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, eng.mcp, { employee, session });
+    return { text: String(res.body.result?.content?.[0]?.text ?? JSON.stringify(res.body)), isError: res.body.result?.isError === true };
+  };
+  await h.api('POST', `/employees/${alex}/start`, {}).catch(() => undefined);
+  const cwd = await waitFor(async () => (await h.session(alex))?.cwd, { label: 'Alex has a session' });
+  fs.writeFileSync(path.join(cwd, 'mockup.png'), PNG);
+  fs.writeFileSync(path.join(cwd, 'export.csv'), 'a,b\n1,2\n');
+  assert.equal(eng.tasks.currentTask(alex), undefined, 'no task in progress');
+
+  // With no task: into the conversation. A picture is served as a picture, anything else as a download.
+  const shown = await tool('attach_file', { path: 'mockup.png', caption: 'The new header' });
+  assert.equal(shown.isError, false, shown.text);
+  assert.match(shown.text, /mockup\.png \(\d+ bytes\) is in your conversation with the boss, where they see it: The new header/);
+  const given = await tool('attach_file', { path: path.join(cwd, 'export.csv') });
+  assert.match(given.text, /export\.csv .* is in your conversation with the boss, where they can download it/);
+  const events = (await h.api<any[]>('GET', `/events?employeeId=${alex}&limit=50`)).filter((e) => e.type === 'agent.file_given');
+  assert.deepEqual(events.map((e) => [e.data.file.name, e.data.file.mime, e.data.caption, e.data.taskId ?? null]), [['mockup.png', 'image/png', 'The new header', null], ['export.csv', 'text/csv', null, null]]);
+  const picture = await as(h.token, 'GET', `/employees/${alex}/files/${events[0]!.data.file.id}`);
+  assert.deepEqual([picture.status, picture.type, picture.bytes.equals(PNG), /^inline/.test(picture.disposition ?? '')], [200, 'image/png', true, true]);
+  const sheet = await as(h.token, 'GET', `/employees/${alex}/files/${events[1]!.data.file.id}`);
+  assert.deepEqual([sheet.status, sheet.type, sheet.bytes.toString(), /^attachment/.test(sheet.disposition ?? '')], [200, 'application/octet-stream', 'a,b\n1,2\n', true]);
+  assert.equal((await h.state()).notifications.filter((n) => /Alex gave you a file/.test(n.title)).length, 2);
+  // A visitor does not get it; a file that is not there is said; a path outside what the machine lets be read is refused.
+  assert.ok((await as(visitor, 'GET', `/employees/${alex}/files/${events[0]!.data.file.id}`)).status >= 400);
+  assert.equal((await tool('attach_file', { path: 'nothing-here.png' })).isError, true);
+  assert.equal((await tool('attach_file', { path: '/etc/passwd' })).isError, true);
+
+  // Kept as long as a file that was said, then no longer.
+  assert.equal(eng.saidFiles.sweep(Date.now() + SAID_KEEP_MS - 60_000), 0);
+  assert.ok(eng.saidFiles.sweep(Date.now() + SAID_KEEP_MS + 60_000) >= 2);
+  assert.equal((await as(h.token, 'GET', `/employees/${alex}/files/${events[0]!.data.file.id}`)).status, 404);
+
+  // On a task: left on the task as evidence, and said in the conversation with the task it is on.
+  const t = await h.task({ projectId: employee.projectId!, title: 'Draw the header', assigneeId: alex, description: 'Wait.' });
+  await waitFor(async () => (await h.getTask(t.id)).status === 'IN_PROGRESS', { label: 'in progress', timeout: 30000 });
+  fs.writeFileSync(path.join((await h.session(alex))!.cwd, 'result.png'), PNG);
+  assert.match((await tool('attach_file', { path: 'result.png', caption: 'Done' })).text, /result\.png .* is on T-\d+ as evidence/);
+  const onTask = (await h.getTask(t.id)).attachments!;
+  assert.deepEqual(onTask.map((a) => [a.name, a.kind]), [['result.png', 'evidence']]);
+  const last = (await h.api<any[]>('GET', `/events?employeeId=${alex}&limit=50`)).filter((e) => e.type === 'agent.file_given').pop();
+  assert.deepEqual([last.data.file.id, last.data.taskId], [onTask[0]!.id, t.id]);
 });

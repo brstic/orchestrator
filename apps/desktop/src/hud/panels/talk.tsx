@@ -9,13 +9,28 @@ import { waitingForLines } from '../../lib/views.ts';
 import { QuestionBody, act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { RepeatChoice, RepeatHint, RoutineList, createRoutine } from './routines.tsx';
-import { PendingStrip, SaidFilesOf, usePendingFiles } from './said-files.tsx';
+import { GivenFile, PendingStrip, SaidFilesOf, usePendingFiles } from './said-files.tsx';
+import { FileLinks, Pictures, isPicture } from './task-files.tsx';
 import { uploadFile } from './task-files.tsx';
 
 type Line =
   | { kind: 'boss'; id: string; ts: string; text: string; delivery: string; via: string | null; files: SaidFile[] }
   | { kind: 'reply'; id: string; ts: string; text: string }
+  /** A file the employee gave: in the conversation itself, or left on a task (`taskId`). */
+  | { kind: 'file'; id: string; ts: string; file: SaidFile; caption: string | null; taskId: string | null }
   | { kind: 'note'; id: string; ts: string; text: string; tone: 'good' | 'bad' | 'info' };
+
+/** A file the employee left on a task, shown where they were asked for it: the picture, or the name to download. */
+function TaskFileGiven({ taskId, file, caption }: { taskId: string; file: SaidFile; caption: string | null }) {
+  const a = useOffice((s) => s.tasks[taskId]?.attachments?.find((x) => x.id === file.id));
+  if (!a) return <div className="small muted">{file.name} — no longer on the task</div>;
+  return (
+    <div className="said-given">
+      {isPicture(a) ? <Pictures taskId={taskId} list={[a]} /> : <FileLinks taskId={taskId} list={[a]} />}
+      {caption && !isPicture(a) && <div className="small">{caption}</div>}
+    </div>
+  );
+}
 
 const WORKING = new Set(['thinking', 'reading', 'coding', 'testing', 'debugging', 'running_command', 'researching', 'planning', 'reviewing', 'delegating']);
 
@@ -54,6 +69,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
       seen.add(ev.id);
       const d = ev.data as Record<string, any>;
       if (ev.type === 'agent.turn_finished' && typeof d.lastMessage === 'string' && d.lastMessage.trim()) out.push({ kind: 'reply', id: ev.id, ts: ev.ts, text: d.lastMessage });
+      else if (ev.type === 'agent.file_given' && d.file?.id && d.file?.name) out.push({ kind: 'file', id: ev.id, ts: ev.ts, file: d.file as SaidFile, caption: typeof d.caption === 'string' ? d.caption : null, taskId: typeof d.taskId === 'string' ? d.taskId : null });
       else if (ev.type === 'task.completed') out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: 'good' });
       else if (ev.type === 'task.blocked' || ev.type === 'task.verification_failed') out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: 'bad' });
       else if (ev.type === 'task.started' || ev.type === 'agent.question' || ev.type === 'agent.status_report') out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: 'info' });
@@ -167,6 +183,16 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
                   <span title={l.delivery === 'confirmed' ? 'Claude Code acknowledged receiving it' : l.delivery === 'sent' ? 'Typed into the terminal; not acknowledged (yet)' : l.delivery === 'queued' ? 'Waiting until the session is between turns' : 'Could not be delivered'}>
                     {l.delivery === 'confirmed' ? '✓ received' : l.delivery === 'sent' ? 'sent' : l.delivery === 'queued' ? 'waiting for a free moment…' : l.delivery}
                   </span>
+                </div>
+              </div>
+            </div>
+          ) : l.kind === 'file' ? (
+            <div key={l.id} className="talk-row" data-talk-file={l.file.name}>
+              <Avatar appearance={e.appearance} size={26} />
+              <div className="talk-bubble talk-them">
+                {l.taskId ? <TaskFileGiven taskId={l.taskId} file={l.file} caption={l.caption} /> : <GivenFile employeeId={e.id} file={l.file} caption={l.caption} onError={(why) => s.toast(why, 'error')} />}
+                <div className="talk-meta">
+                  {clock(l.ts)} · {l.taskId && s.tasks[l.taskId] ? `left on ${s.tasks[l.taskId]!.key}` : 'a file from them'}
                 </div>
               </div>
             </div>
