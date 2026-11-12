@@ -81,6 +81,13 @@ function streetTile(ctx: CanvasRenderingContext2D, s: number): void {
   }
 }
 
+/**
+ * What a building is told about itself (`aLook`) is kept on a grid of this many steps: exact in a float, and far
+ * enough from the next step that the hair an interpolated value is off by never crosses one.
+ */
+const SEED_STEPS = 4096;
+const onGrid = (v: number): number => Math.round(v * SEED_STEPS) / SEED_STEPS;
+
 /** One material for every building: its windows are worked out from where on the wall a pixel is. */
 function buildingMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
@@ -126,7 +133,11 @@ function buildingMaterial(): THREE.ShaderMaterial {
       ${FOG.parsFragment}
       void main() {
         vec3 n = normalize(vNormal);
-        float seed = vLook.x;
+        // The seed reaches a pixel through interpolation, which on some graphics cards leaves it a hair off from one
+        // pixel to the next; the hashes below turn a hair into another answer, and a window near the line between lit
+        // and dark then came out as a field of lit and dark pixels that crawled when the camera moved. So the seed is
+        // put back on the grid it was made on (SEED_STEPS), and so is the share of lit windows.
+        float seed = floor(vLook.x * ${SEED_STEPS.toFixed(1)} + 0.5) / ${SEED_STEPS.toFixed(1)};
         vec3 tint = mix(vec3(0.085, 0.095, 0.13), vec3(0.14, 0.115, 0.105), vLook.w);
         vec3 col;
         if (n.y > 0.5) {
@@ -144,7 +155,7 @@ function buildingMaterial(): THREE.ShaderMaterial {
           vec2 id = floor(cell);
           vec2 f = fract(cell);
           vec2 w = fwidth(cell);
-          float kind = vLook.z;
+          float kind = floor(vLook.z + 0.5);
           // Where the glass is within one bay of one floor: separate windows, bands, or a wall of glass.
           vec2 lo = kind < 0.5 ? vec2(0.24, 0.3) : kind < 1.5 ? vec2(0.0, 0.4) : vec2(0.05, 0.07);
           vec2 hi = kind < 0.5 ? vec2(0.76, 0.8) : kind < 1.5 ? vec2(1.0, 0.8) : vec2(0.95, 0.93);
@@ -152,7 +163,7 @@ function buildingMaterial(): THREE.ShaderMaterial {
           float glass = inside.x * inside.y;
           float area = (hi.x - lo.x) * (hi.y - lo.y);
           // Which rooms have the light on: by room, with whole floors working late or gone home.
-          float share = vLook.y;
+          float share = floor(vLook.y * ${SEED_STEPS.toFixed(1)} + 0.5) / ${SEED_STEPS.toFixed(1)};
           float floorMood = hash21(vec2(id.y, seed * 57.0 + side));
           float on = step(hash21(id + vec2(seed * 131.0, side * 7.0)), share * (floorMood > 0.86 ? 2.4 : floorMood < 0.25 ? 0.2 : 1.0));
           float pick = hash21(id * 1.7 + seed * 17.0);
@@ -315,8 +326,8 @@ export function buildSkyline({ quality }: PlaceInput): Place {
   const beacons: number[] = [];
   const beaconLooks: number[] = [];
   const tower = (x: number, z: number, w: number, d: number, h: number) => {
-    const seed = random();
-    const share = 0.05 + random() * random() * 0.42;
+    const seed = onGrid(random());
+    const share = onGrid(0.05 + random() * random() * 0.42);
     const kind = Math.floor(random() * 3);
     const tintOf = random();
     const push = (bx: number, by: number, bz: number, bw: number, bh: number, bd: number) => {
@@ -490,7 +501,7 @@ export function buildTower(plate: Box): { group: THREE.Group; dispose(): void } 
 
   // The shaft, with its own windows; a recess under the terrace, so the top floor reads as a floor of its own.
   const unit = kept.add(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0));
-  unit.setAttribute('aLook', new THREE.InstancedBufferAttribute(new Float32Array([0.37, 0.17, 2, 0.1, 0.37, 0, 1, 0.1]), 4));
+  unit.setAttribute('aLook', new THREE.InstancedBufferAttribute(new Float32Array([onGrid(0.37), onGrid(0.17), 2, 0.1, onGrid(0.37), 0, 1, 0.1]), 4));
   const shaft = instanced(unit, kept.add(buildingMaterial()), [at(cx, -DROP, cz, 0, w - 5, DROP - 1.6, d - 5), at(cx, -1.6, cz, 0, w - 8, 1.2, d - 8)]);
   shaft.frustumCulled = false;
   group.add(shaft);
