@@ -29,7 +29,7 @@ employee: attach_file { path } ──▶ office asks the machine: files.get (pie
 person in the office: GET /api/tasks/:id/attachments/:aid  → the picture, or a download
 ```
 
-- **Limits:** 25 MB a file, 30 files a task. Larger things belong on the machine, named in the task.
+- **Limits:** 25 MB a file, 200 files a task (30 until 2026-11-12: a long task with a picture per step was full, and its employee went back to naming paths on its machine). Larger things belong on the machine, named in the task.
 - **Names** are made safe (`safeName`: no path, no control characters, not hidden) and unique within a task (`spec.pdf`, `spec-2.pdf`).
 - **A file added while the employee is already on the task** is sent at once and they get a message with its path.
 - **A task that is deleted** takes its files along (the office's copies; a copy on an employee's machine stays there).

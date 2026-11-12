@@ -6,7 +6,7 @@ import { api } from '../../lib/api.ts';
 import { useAccess } from '../../lib/access.ts';
 import { useOffice } from '../../lib/store.ts';
 import { act, ask } from '../core.tsx';
-import { TaskFiles } from './task-files.tsx';
+import { Pictures, TaskFiles, isPicture } from './task-files.tsx';
 import { REVIEW_CHOICES, STATUS_META, TASK_STATUSES, activeEmployees, needOf, openQuestionOf, stamp, useAction } from './task-shared.tsx';
 import { Delivery, GitChanges, TaskEvidence, TaskHistory } from './task-work.tsx';
 
@@ -86,6 +86,21 @@ function Thread({ task }: { task: Task }) {
                 <div className="tk-comment-body">
                   <Markdown text={c.body} />
                 </div>
+                {/* What was left with the comment: pictures are shown, and a click enlarges them. */}
+                {c.attachmentIds?.length ? <Pictures taskId={task.id} list={(task.attachments ?? []).filter((a) => c.attachmentIds!.includes(a.id) && isPicture(a))} /> : null}
+                {c.kind === 'question' && c.options?.length ? (
+                  <div className="tk-options-said" data-options-said>
+                    {c.options.map((o) => {
+                      const chosen = !!c.answeredBy && (task.comments ?? []).find((x) => x.id === c.answeredBy)?.body.trim() === o.label;
+                      return (
+                        <span key={o.label} className={chosen ? 'on' : ''} title={[o.description, o.consequence].filter(Boolean).join(' → ') || undefined}>
+                          {chosen ? '✓ ' : ''}
+                          {o.label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : null}
                 {c.mentions.length > 0 && c.kind !== 'handoff' && <div className="tk-to">to {c.mentions.map((m) => (m.kind === 'boss' ? 'the boss' : m.name)).join(', ')}</div>}
               </div>
             </div>
@@ -235,8 +250,26 @@ function Composer({ task }: { task: Task }) {
     primary = { label: 'Approve', run: approve, need: false, variant: 'success' };
     hint = 'Approve lets it finish (merge included). Send back returns it to its author with what you wrote.';
   }
+  // What whoever asks proposed as answers (also for a question asked with `ask_boss` before comments carried them).
+  const options = answering ? (question!.options?.length ? question!.options : ((question!.questionId && s.questions[question!.questionId]?.status === 'open' && s.questions[question!.questionId]?.options) || [])) : [];
+  const choose = (label: string) => run(() => api('POST', `/tasks/${task.id}/comments`, { body: label }), task.status === 'BLOCKED' ? `${task.key} is back with ${who}` : 'Answered').then(done);
   return (
     <div className="tk-compose" data-compose={answering ? 'answer' : blocked ? 'unblock' : task.status === 'REVIEW' ? 'review' : 'comment'}>
+      {options.length > 0 && (
+        <div className="tk-options" role="group" aria-label={`${question!.from.name}'s question: choose an answer`} data-options>
+          <div className="tk-eyebrow">Choose an answer — or write your own below</div>
+          {options.map((o, i) => (
+            <button key={o.label} type="button" className="tk-option" disabled={busy} onClick={() => void choose(o.label)} data-option={o.label}>
+              <span className="tk-option-n">{i + 1}</span>
+              <span className="tk-option-main">
+                <span className="strong">{o.label}</span>
+                {o.description && <span className="small muted">{o.description}</span>}
+                {o.consequence && <span className="small">→ {o.consequence}</span>}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
       <MentionBox value={text} onChange={setText} placeholder={placeholder} disabled={busy} onSubmit={() => (primary.need && !said ? undefined : void primary.run())} />
       <div className="tk-compose-row">
         <Button variant={primary.variant} disabled={busy || (primary.need && !said)} onClick={() => void primary.run()} title="⌘/Ctrl + Enter">
@@ -461,6 +494,9 @@ function Body({ task, editing, onDone }: { task: Task; editing: boolean; onDone:
   const parts = Object.values(s.tasks)
     .filter((t) => t.parentId === task.id)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const files = task.attachments ?? [];
+  // Newest first: what was just sent is what one came to see.
+  const pictures = files.filter(isPicture).slice().reverse();
   const save = async () => {
     const working = task.status === 'IN_PROGRESS';
     const res = await run(() => (working ? api('POST', `/tasks/${task.id}/correct`, { title, description, acceptance, now: false }) : api('PATCH', `/tasks/${task.id}`, { title, description, acceptance })), working ? `${task.key} changed — ${s.employees[task.assigneeId ?? '']?.name ?? 'the employee'} was told` : `${task.key} changed`);
@@ -493,12 +529,18 @@ function Body({ task, editing, onDone }: { task: Task; editing: boolean; onDone:
           <div className="pre">{task.acceptance}</div>
         </div>
       )}
-      {(task.attachments?.length ?? 0) > 0 || attaching ? (
+      {pictures.length > 0 && (
+        <div className="tk-pictures" data-task-pictures>
+          <div className="tk-eyebrow">Pictures ({pictures.length}) — click one to enlarge it</div>
+          <Pictures taskId={task.id} list={pictures} fold={6} />
+        </div>
+      )}
+      {attaching ? (
         <TaskFiles task={task} />
       ) : (
-        task.status !== 'DONE' && (
-          <button type="button" className="tk-link tk-attach" onClick={() => setAttaching(true)}>
-            + Attach a picture or a document
+        (files.length > 0 || task.status !== 'DONE') && (
+          <button type="button" className="tk-link tk-attach" onClick={() => setAttaching(true)} data-files-open>
+            {files.length ? `All ${files.length} files — attach, download, remove` : '+ Attach a picture or a document'}
           </button>
         )
       )}

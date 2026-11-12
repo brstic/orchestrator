@@ -165,7 +165,7 @@ export function TaskFiles({ task, only }: { task: Task; only?: 'evidence' }) {
   }, [open]);
 
   const lightbox = open && (
-    <div className="tf-lightbox" role="dialog" aria-label={open.a.name} onClick={() => setOpen(null)}>
+    <div className="tf-lightbox" role="dialog" aria-label={open.a.name} onClick={() => setOpen(null)} data-esc-first>
       <img src={open.url} alt={open.a.caption ?? open.a.name} onClick={(ev) => ev.stopPropagation()} />
       <div className="tf-lightbox-bar" onClick={(ev) => ev.stopPropagation()}>
         <span className="strong truncate">{open.a.name}</span>
@@ -272,6 +272,117 @@ export function PendingFiles({ files, onChange }: { files: File[]; onChange: (fi
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ───────────────────────────── pictures, to look at ─────────────────────────────
+
+/** Is this file a picture the window can show? */
+export const isPicture = (a: TaskAttachment): boolean => SHOWN.test(a.mime);
+
+function Picture({ taskId, a, onOpen }: { taskId: string; a: TaskAttachment; onOpen: () => void }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    urlOf(taskId, a).then(
+      (u) => live && setUrl(u),
+      () => live && setFailed(true),
+    );
+    return () => {
+      live = false;
+    };
+  }, [taskId, a]);
+  return (
+    <button type="button" className="tp-pic" onClick={onOpen} title={`${a.caption ?? a.name} — click to enlarge`} aria-label={`Enlarge ${a.name}`} data-picture={a.name}>
+      {failed ? <span className="small muted">could not be loaded</span> : url ? <img src={url} alt={a.caption ?? a.name} loading="lazy" /> : <span className="small faint">loading…</span>}
+      <span className="tp-cap">{a.caption ?? a.name}</span>
+    </button>
+  );
+}
+
+/** One picture large, over everything: arrows (and the arrow keys) go to the next and the one before, Escape closes. */
+function Viewer({ taskId, list, at, onAt, onClose }: { taskId: string; list: TaskAttachment[]; at: number; onAt: (i: number) => void; onClose: () => void }) {
+  const a = list[at]!;
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    setUrl(null);
+    urlOf(taskId, a).then(
+      (u) => live && setUrl(u),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [taskId, a]);
+  useEffect(() => {
+    const key = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') onClose();
+      else if (ev.key === 'ArrowRight') onAt((at + 1) % list.length);
+      else if (ev.key === 'ArrowLeft') onAt((at + list.length - 1) % list.length);
+      else return;
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+    window.addEventListener('keydown', key, true);
+    return () => window.removeEventListener('keydown', key, true);
+  }, [at, list.length, onAt, onClose]);
+  return (
+    <div className="tf-lightbox" role="dialog" aria-label={a.name} onClick={onClose} data-viewer={a.name} data-esc-first>
+      {list.length > 1 && (
+        <button type="button" className="tp-nav tp-prev" aria-label="The picture before" onClick={(ev) => (ev.stopPropagation(), onAt((at + list.length - 1) % list.length))}>
+          ‹
+        </button>
+      )}
+      {url ? <img src={url} alt={a.caption ?? a.name} onClick={(ev) => ev.stopPropagation()} /> : <span className="muted">loading…</span>}
+      {list.length > 1 && (
+        <button type="button" className="tp-nav tp-next" aria-label="The next picture" onClick={(ev) => (ev.stopPropagation(), onAt((at + 1) % list.length))}>
+          ›
+        </button>
+      )}
+      <div className="tf-lightbox-bar" onClick={(ev) => ev.stopPropagation()}>
+        <span className="strong truncate">{a.caption ?? a.name}</span>
+        <span className="muted truncate">
+          {a.caption ? `${a.name} · ` : ''}
+          {a.addedBy.name}
+          {list.length > 1 ? ` · ${at + 1} of ${list.length}` : ''}
+        </span>
+        <span className="grow" />
+        <Button small onClick={() => void act(() => download(taskId, a))}>
+          Download
+        </Button>
+        <Button small variant="ghost" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Pictures of a task, shown as pictures: large enough to tell what is on them, each with what it shows, and a click
+ * enlarges one — from there the arrows go through the rest. `fold`: how many are shown before "Show all".
+ */
+export function Pictures({ taskId, list, fold }: { taskId: string; list: TaskAttachment[]; fold?: number }) {
+  const [at, setAt] = useState<number | null>(null);
+  const [all, setAll] = useState(false);
+  if (!list.length) return null;
+  const shown = fold && !all ? list.slice(0, fold) : list;
+  return (
+    <div className="tp-wrap">
+      <div className="tp-grid" data-pictures={list.length}>
+        {shown.map((a) => (
+          <Picture key={a.id} taskId={taskId} a={a} onOpen={() => setAt(list.indexOf(a))} />
+        ))}
+      </div>
+      {shown.length < list.length && (
+        <button type="button" className="tk-link" onClick={() => setAll(true)}>
+          Show all {list.length} pictures
+        </button>
+      )}
+      {at !== null && list[at] && <Viewer taskId={taskId} list={list} at={at} onAt={setAt} onClose={() => setAt(null)} />}
     </div>
   );
 }

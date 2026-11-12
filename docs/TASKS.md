@@ -79,6 +79,17 @@ answerTo? }`.
   - `ask_boss` asked while on a ticket is written into its conversation too. `report_blocker` — now for what no
     answer can solve — is written there as a `question`; what the boss replies on the ticket unblocks it, as the
     Unblock button and a colleague's `unblock_task` still do (each closes that question with what was said).
+- **A question that is a choice carries its choices.** `comment_on_task` takes `options` (`[{ label, description?,
+  consequence? }]`, up to six) with `ask`; they are kept on the comment (`TaskComment.options`) and on the office's
+  question (which is then of kind `decision`), so the boss answers **with one click** wherever they are: at the
+  employee's desk and in the Inbox (the question card, as for `ask_boss`), and in the task — the box at the bottom
+  lists the choices above the text field. Clicking one is answering with its words. `context` and `why` go to the
+  question card. The tool's description and the system prompt tell the employee to always give options when the
+  question is a choice.
+- **A comment carries its pictures.** `comment_on_task` takes `files` — paths on the employee's machine; each is
+  copied into the office (as `attach_file` does) and tied to the comment (`TaskComment.attachmentIds`). A picture's
+  path that only stands in the text of a comment is fetched the same way: a path shows nobody anything. A file that
+  was named and cannot be read is said to the employee; one that was only found in the text is passed over.
 - A task's prompt carries the last twelve entries of its conversation (`TaskTalk.promptLines`), so whoever gets a
   ticket — again, or after somebody else — reads what was said on it. `get_task` shows them as well.
 
@@ -127,7 +138,10 @@ talk there, as in Plane or Trello. So:
   stands in that column; its card says which.)
 - **A click on a card opens that task** (`Ticket` → `TicketView` in `task-view.tsx`, the panel `task`;
   `openPanel('task', '<id>' | '<id>:diff')`; "All tasks" goes back to the board).
-  - *In the middle*: the task's text, files and parts, then the **conversation** — comments, with the office's own
+  - *In the middle*: the task's text, **its pictures** — every picture on the task, newest first, large enough to
+    tell what is on it (`Pictures` in `task-files.tsx`); a click enlarges one, the arrows and the arrow keys go
+    through the rest, Escape closes the picture and not the task — the other files behind "All n files", the parts,
+    then the **conversation**, where a comment's own pictures stand under it and a question shows its choices — comments, with the office's own
     lines of the story between them — and **one box at the bottom** whose first button is what the task is waiting
     for: *Answer* (a question, or a task parked on one), *Approve* / *Send back* (in review), *Unblock*, otherwise
     *Comment* — with *Send back* on a finished task and *Tell them now* on one in progress. `@` offers the office's

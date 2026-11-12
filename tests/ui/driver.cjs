@@ -1114,7 +1114,7 @@ async function scenario() {
     await open('task', `'new'`);
     const title = 'Conversation ticket 4471';
     await type(`window.__t.scope().querySelector('[data-ticket-new] input[aria-label="Title"]')`, title);
-    await type(`window.__t.field('Description')`, 'Make the banner. @@fake: mcp comment_on_task {"text":"Which colour should the banner be?","ask":true}; write banner.txt blue; commit banner; complete the banner is made@@');
+    await type(`window.__t.field('Description')`, 'Make the banner. @@fake: sleep 5000; mcp comment_on_task {"text":"Which colour should the banner be?","ask":true,"options":[{"label":"Blue","description":"As on the home page"},{"label":"Red"}],"files":["sketch.png"]}; write banner.txt blue; commit banner; complete the banner is made@@');
     await js(`(() => { window.__t.setSelect(window.__t.field('Assignee'), ${JSON.stringify(who.id)}); window.__t.setSelect(window.__t.field('Project'), ${JSON.stringify(who.projectId)}); })()`);
     // Who reviews it is chosen in plain view: here, me alone.
     const choices = await js(`[...window.__t.scope().querySelectorAll('[role=radiogroup][aria-label="Review"] button')].map((b) => b.dataset.review + (b.getAttribute('aria-checked') === 'true' ? '*' : '')).join(',')`);
@@ -1126,6 +1126,9 @@ async function scenario() {
     const t = `window.__t.store().tasks[${JSON.stringify(tid)}]`;
     const pane = `window.__t.scope().querySelector('[data-ticket]')`;
     if ((await js(`${t}.reviewBy`)) !== 'boss') throw new Error(`created as reviewed by ${await js(`${t}.reviewBy`)}`);
+    // (A sketch for the employee to send with its question: put into its folder while it "works" — the scripted worker cannot draw.)
+    const folder = await waitFor(`${t}.status === 'IN_PROGRESS' && ${t}.worktree`, 20000);
+    fs.writeFileSync(path.join(folder, 'sketch.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64'));
     // The window stays where it was, now on the new ticket. The employee asks; the ticket says so and the box is for the answer.
     await waitFor(`(${t}.comments || []).some((c) => c.kind === 'question' && !c.answeredBy)`, 30000);
     await waitFor(`(${pane}) && (${pane}).querySelector('[data-ticket-need]').dataset.ticketNeed === 'you' && !!(${pane}).querySelector('[data-comment="question"].tk-open') && (${pane}).querySelector('[data-compose]').dataset.compose === 'answer'`, 8000);
@@ -1149,10 +1152,20 @@ async function scenario() {
     await shot('ticket-mention');
     await key('Enter');
     await waitFor(`(${box}).value === '@boss ' && !(${pane}).querySelector('.tk-mentions')`, 4000);
-    // The answer, written in the same box: the employee goes on with it and hands the work in — to me.
-    await type(box, 'Blue.');
+    // The picture that came with the question is under it and among the task's pictures; a click enlarges it, and Escape closes the picture — not the task.
+    await waitFor(`!!(${pane}).querySelector('[data-comment="question"] [data-picture="sketch.png"] img') && !!(${pane}).querySelector('[data-task-pictures] [data-picture="sketch.png"]')`, 10000);
+    await click(`(${pane}).querySelector('[data-comment="question"] [data-picture="sketch.png"]')`, 'the picture under the question');
+    await waitFor(`!!document.querySelector('[data-viewer="sketch.png"] img')`, 6000);
+    await shot('ticket-picture');
+    await key('Escape');
+    await waitFor(`!document.querySelector('[data-viewer]') && !!(${pane})`, 4000);
+    // The choices the employee proposed are there to click — here, and at their desk (it is the same question).
+    const offered = await js(`[...(${pane}).querySelectorAll('[data-options] [data-option]')].map((b) => b.dataset.option).join(',')`);
+    const atDesk = await js(`(() => { const q = Object.values(window.__t.store().questions).find((x) => x.taskId === ${JSON.stringify(tid)} && x.status === 'open'); return q ? q.options.map((o) => o.label).join(',') : ''; })()`);
+    if (offered !== 'Blue,Red' || atDesk !== 'Blue,Red') throw new Error(`choices offered on the task: "${offered}", at the desk: "${atDesk}"`);
+    await type(box, '');
     await shot('ticket-question');
-    await clickText('Answer');
+    await click(`(${pane}).querySelector('[data-option="Blue"]')`, 'the choice "Blue"');
     await waitFor(`${t}.status === 'REVIEW' && ${t}.reviewStage === 'boss'`, 40000);
     await waitFor(`(${pane}).querySelector('[data-compose]').dataset.compose === 'review' && [...(${pane}).querySelectorAll('[data-comment]')].map((c) => c.dataset.comment).join(',') === 'question,answer,handed_in'`, 8000);
     // Sent back with what should change; it comes back, and is approved.

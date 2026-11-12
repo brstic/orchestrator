@@ -1,4 +1,4 @@
-import type { AgentSession, Employee, Task, TaskComment, TaskMention } from '@orchestrator/contracts';
+import type { AgentSession, Employee, QuestionOption, Task, TaskComment, TaskMention } from '@orchestrator/contracts';
 import { TASK_COMMENTS_MAX, newId, nowIso, redactSecrets, truncate } from '@orchestrator/contracts';
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
@@ -48,7 +48,7 @@ export class TaskTalk {
   // ───────────────────────────── the record ─────────────────────────────
 
   /** Add an entry to a task's conversation. The caller stores the task when it changes more than this. */
-  add(task: Task, c: Pick<TaskComment, 'from' | 'body' | 'kind'> & Partial<Pick<TaskComment, 'mentions' | 'questionId' | 'answerTo'>>, opts: { quiet?: boolean; store?: boolean } = {}): TaskComment {
+  add(task: Task, c: Pick<TaskComment, 'from' | 'body' | 'kind'> & Partial<Pick<TaskComment, 'mentions' | 'questionId' | 'answerTo' | 'options' | 'attachmentIds'>>, opts: { quiet?: boolean; store?: boolean } = {}): TaskComment {
     const comment: TaskComment = {
       id: newId(),
       ts: nowIso(),
@@ -59,6 +59,8 @@ export class TaskTalk {
       ...(c.kind === 'question' ? { answeredBy: null } : {}),
       ...(c.questionId ? { questionId: c.questionId } : {}),
       ...(c.answerTo ? { answerTo: c.answerTo } : {}),
+      ...(c.options?.length ? { options: c.options } : {}),
+      ...(c.attachmentIds?.length ? { attachmentIds: c.attachmentIds } : {}),
     };
     task.comments = [...(task.comments ?? []), comment];
     if (task.comments.length > TASK_COMMENTS_MAX) task.comments.splice(0, task.comments.length - TASK_COMMENTS_MAX);
@@ -233,7 +235,7 @@ export class TaskTalk {
    * `ask`: they cannot go on without the answer — the call waits for it for a while, and if none comes the task is
    * parked until it does.
    */
-  async byEmployee(employee: Employee, session: AgentSession, a: { task?: string; text: string; to?: string[]; ask?: boolean }, signal?: AbortSignal): Promise<{ text: string; isError?: boolean }> {
+  async byEmployee(employee: Employee, session: AgentSession, a: { task?: string; text: string; to?: string[]; ask?: boolean; options?: QuestionOption[]; context?: string; why?: string; files?: string[] }, signal?: AbortSignal): Promise<{ text: string; isError?: boolean }> {
     const err = (text: string) => ({ text, isError: true });
     const current = this.eng.tasks.currentTask(employee.id);
     let task = current;
@@ -257,6 +259,10 @@ export class TaskTalk {
       return !no;
     });
     const notes = [...refused, ...(found.unknown.length ? [`Nobody here is called ${found.unknown.map((u) => `"${u}"`).join(', ')} (get_team shows who is).`] : [])];
+    // Pictures and files that go with what is said: the ones named, and any picture whose path stands in the text
+    // (a path on the employee's machine shows nobody anything — the file itself is put on the task).
+    const attachmentIds = await this.attach(task, employee, a.files ?? [], body, notes);
+    const options = (Array.isArray(a.options) ? a.options : []).filter((o) => o && typeof o.label === 'string' && o.label.trim()).slice(0, 6).map((o) => ({ label: truncate(String(o.label).trim(), 200), ...(o.description ? { description: truncate(String(o.description), 600) } : {}), ...(o.consequence ? { consequence: truncate(String(o.consequence), 600) } : {}) }));
 
     if (a.ask === true) {
       if (!current || current.id !== task.id) return err(`You can only ask-and-wait on the ticket you are working on${current ? ` (${current.key})` : ''}. On another ticket, comment without "ask" and tag whoever should answer.`);
@@ -271,9 +277,9 @@ export class TaskTalk {
         return { text: `The boss answered: ${again.answer ?? ''}` };
       }
       if (!comment) {
-        comment = this.add(task, { from, body, kind: 'question', mentions: to }, { store: false });
+        comment = this.add(task, { from, body, kind: 'question', mentions: to, options, attachmentIds }, { store: false });
         if (toBoss) {
-          const q = this.eng.comms.createQuestion({ kind: 'question', channel: 'mcp_tool', employee, session, text: truncate(body, 4000), taskId: task.id, projectId: task.projectId, onTask: true });
+          const q = this.eng.comms.createQuestion({ kind: options.length ? 'decision' : 'question', channel: 'mcp_tool', employee, session, text: truncate(body, 4000), context: a.context ? truncate(String(a.context), 8000) : '', why: a.why ? truncate(String(a.why), 2000) : '', options, taskId: task.id, projectId: task.projectId, onTask: true });
           comment.questionId = q.id;
         }
         this.core.put('task', task);
@@ -295,7 +301,7 @@ export class TaskTalk {
     // Is this the answer to something this employee was asked on the ticket?
     const asked = (task.comments ?? []).filter((c) => c.kind === 'question' && !c.answeredBy && c.from.id !== employee.id && c.mentions.some((m) => m.kind === 'employee' && m.id === employee.id))[0];
     if (asked) {
-      const answer = this.answered(task, asked, { from, body, mentions });
+      const answer = this.answered(task, asked, { from, body, mentions, attachmentIds });
       const parked = task.status === 'BLOCKED' && task.waitingFor?.kind === 'answer' && task.waitingFor.commentId === asked.id;
       const waited = this.wake(asked.id, answer);
       if (parked) this.eng.tasks.unblock(task.id, body, `employee:${employee.name}`, employee, { threaded: true });
@@ -307,7 +313,7 @@ export class TaskTalk {
       return { text: `Your answer is on ${task.key}${parked ? `, and the ticket is back with ${this.core.employees.get(task.assigneeId)?.name ?? 'its employee'}` : ''}.${notes.length ? ` ${notes.join(' ')}` : ''}` };
     }
 
-    const comment = this.add(task, { from, body, kind: 'note', mentions });
+    const comment = this.add(task, { from, body, kind: 'note', mentions, attachmentIds });
     const told: string[] = [];
     const reached = new Set<string>();
     for (const m of mentions) {
@@ -331,8 +337,29 @@ export class TaskTalk {
     return { text: `Comment added to ${task.key}${told.length ? ` — ${told.join(', ')} ${told.length === 1 ? 'is' : 'are'} told` : ' (nobody was tagged, so nobody is told; tag @boss or a colleague when somebody should read it)'}.${notes.length ? ` ${notes.join(' ')}` : ''}` };
   }
 
+  /**
+   * Put on the task the files that go with a comment: the paths the employee named, and pictures whose paths stand
+   * in the text. Returns their ids. What cannot be read is said for a file that was named, and passed over for one
+   * that was only found in the text.
+   */
+  private async attach(task: Task, employee: Employee, named: string[], text: string, notes: string[]): Promise<string[]> {
+    if (!this.eng.attachments.available()) return [];
+    const wanted = new Map<string, boolean>();
+    for (const f of named.slice(0, 8)) if (typeof f === 'string' && f.trim()) wanted.set(f.trim(), true);
+    for (const m of text.matchAll(/(?:^|[\s("'`])((?:~|\.{1,2})?\/[^\s"'`()<>]{1,400}?\.(?:png|jpe?g|gif|webp))(?=$|[\s"'`).,;:!?])/gi)) if (wanted.size < 8 && !wanted.has(m[1]!)) wanted.set(m[1]!, false);
+    const ids: string[] = [];
+    for (const [file, asked] of wanted) {
+      try {
+        ids.push((await this.eng.attachments.attachFrom(task, employee, file, null)).id);
+      } catch (e) {
+        if (asked) notes.push(`${file} was not attached: ${(e as Error).message}`);
+      }
+    }
+    return ids;
+  }
+
   /** A question on a task got its answer: the answer is written under it. */
-  private answered(task: Task, question: TaskComment, a: Pick<TaskComment, 'from' | 'body' | 'mentions'>): TaskComment {
+  private answered(task: Task, question: TaskComment, a: Pick<TaskComment, 'from' | 'body' | 'mentions'> & Partial<Pick<TaskComment, 'attachmentIds'>>): TaskComment {
     const answer = this.add(task, { ...a, kind: 'answer', answerTo: question.id }, { store: false });
     const q = (task.comments ?? []).find((c) => c.id === question.id);
     if (q) q.answeredBy = answer.id;
@@ -405,12 +432,12 @@ export class TaskTalk {
   // ────────────────────── the office's own questions, mirrored ──────────────────────
 
   /** `ask_boss` on a task: the question is part of that task's conversation too. */
-  questionAsked(q: { id: string; kind: string; channel: string; taskId: string | null; employeeId: string | null; text: string }): void {
-    if (q.kind !== 'question' || q.channel !== 'mcp_tool' || !q.taskId || !q.employeeId) return;
+  questionAsked(q: { id: string; kind: string; channel: string; taskId: string | null; employeeId: string | null; text: string; options?: QuestionOption[] }): void {
+    if ((q.kind !== 'question' && q.kind !== 'decision') || q.channel !== 'mcp_tool' || !q.taskId || !q.employeeId) return;
     const task = this.core.tasks.get(q.taskId);
     const employee = this.core.employees.get(q.employeeId);
     if (!task || !employee || (task.comments ?? []).some((c) => c.questionId === q.id)) return;
-    this.add(task, { from: { kind: 'employee', id: employee.id, name: employee.name }, body: q.text, kind: 'question', mentions: [{ kind: 'boss' }], questionId: q.id });
+    this.add(task, { from: { kind: 'employee', id: employee.id, name: employee.name }, body: q.text, kind: 'question', mentions: [{ kind: 'boss' }], questionId: q.id, options: q.options });
   }
 
   /**

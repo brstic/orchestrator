@@ -7,7 +7,8 @@ export function Window({ title, subtitle, onClose, children, width = 980, action
   useEffect(() => {
     if (!onClose) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !(e.target as HTMLElement)?.closest?.('.xterm')) {
+      // (Something that lies over the window — a picture enlarged, a menu — takes Escape first: `data-esc-first`.)
+      if (e.key === 'Escape' && !(e.target as HTMLElement)?.closest?.('.xterm') && !document.querySelector('[data-esc-first]')) {
         e.stopPropagation();
         onClose();
       }

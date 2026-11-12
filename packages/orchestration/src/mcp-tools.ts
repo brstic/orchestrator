@@ -191,7 +191,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     comment_on_task: async (a, { employee, session, signal }) => {
       const many = tooMany(employee, 'comment on a ticket', 120);
       if (many) return err(many);
-      return eng.talk.byEmployee(employee, session, { task: a.task ? String(a.task) : undefined, text: String(a.text ?? ''), to: Array.isArray(a.to) ? a.to.map(String) : typeof a.to === 'string' ? [a.to] : undefined, ask: a.ask === true }, signal);
+      return eng.talk.byEmployee(employee, session, { task: a.task ? String(a.task) : undefined, text: String(a.text ?? ''), to: Array.isArray(a.to) ? a.to.map(String) : typeof a.to === 'string' ? [a.to] : undefined, ask: a.ask === true, options: Array.isArray(a.options) ? a.options : undefined, context: a.context ? String(a.context) : undefined, why: a.why ? String(a.why) : undefined, files: Array.isArray(a.files) ? a.files.map(String) : typeof a.files === 'string' ? [a.files] : undefined }, signal);
     },
 
     split_task: async (a, { employee }) => {

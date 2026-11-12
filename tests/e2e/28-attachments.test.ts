@@ -249,14 +249,14 @@ test('where a browser for employees is installed, a session is started with it â
 test('files on their way count towards a task\'s limit, and an upload that was never finished is gone after a restart', async () => {
   const task = await h.task({ projectId: project, title: 'Hold many files', released: false, description: 'nothing to do' });
   const begun: string[] = [];
-  for (let i = 0; i < 30; i++) begun.push((await h.api<any>('POST', `/tasks/${task.id}/attachments`, { name: `f${i}.txt`, size: 4 })).id);
+  for (let i = 0; i < 200; i++) begun.push((await h.api<any>('POST', `/tasks/${task.id}/attachments`, { name: `f${i}.txt`, size: 4 })).id);
   const more = await h.apiRaw('POST', `/tasks/${task.id}/attachments`, { name: 'one-too-many.txt', size: 4 });
   assert.equal(more.status, 400);
-  assert.match(more.body.error, /at most 30 files/);
+  assert.match(more.body.error, /at most 200 files/);
   // Two are finished; the rest are left as they are.
   for (const id of begun.slice(0, 2)) await h.api('POST', `/tasks/${task.id}/attachments/${id}/data`, { offset: 0, dataBase64: Buffer.from('four').toString('base64') });
   const folder = path.join(path.dirname(h.agentHome), 'server', 'files', task.id);
-  assert.equal(fs.readdirSync(folder).length, 30);
+  assert.equal(fs.readdirSync(folder).length, 200);
   await h.restartServer();
   assert.deepEqual(fs.readdirSync(folder).sort(), begun.slice(0, 2).sort(), 'only what is on the task is kept');
   assert.equal((await h.getTask(task.id)).attachments!.length, 2);

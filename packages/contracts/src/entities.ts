@@ -558,6 +558,10 @@ export interface TaskComment {
   answeredBy?: ID | null;
   /** `answer`: the question it answers. */
   answerTo?: ID | null;
+  /** `question`: the answers whoever asks proposes — the boss picks one with a click, or writes their own. */
+  options?: QuestionOption[];
+  /** Files of the task that were left with this comment (pictures are shown under it). */
+  attachmentIds?: ID[];
 }
 
 /** How many comments a task keeps (the oldest go first). */

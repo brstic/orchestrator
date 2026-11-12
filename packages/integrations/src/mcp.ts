@@ -177,7 +177,7 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
   {
     name: 'comment_on_task',
     description:
-      'Write on a ticket\'s conversation: what the boss or a colleague should know about it, an answer when you were tagged on it, or a question. Tag who should read it in the text (@boss, @Name) or in "to"; nobody is told about a comment that tags nobody. With ask: true you are saying "I am not sure, or I cannot go on, without this answer": the call waits for it (a few minutes at most); if none comes the ticket waits for it by itself — you stop working on it, are free for other work, and get it back with the answer. Use that instead of guessing and instead of report_blocker.',
+      'Write on a ticket\'s conversation: what the boss or a colleague should know about it, an answer when you were tagged on it, or a question. Tag who should read it in the text (@boss, @Name) or in "to"; nobody is told about a comment that tags nobody. With ask: true you are saying "I am not sure, or I cannot go on, without this answer": the call waits for it (a few minutes at most); if none comes the ticket waits for it by itself — you stop working on it, are free for other work, and get it back with the answer. Use that instead of guessing and instead of report_blocker. A question that is a choice carries its choices in "options"; something to look at goes in "files".',
     inputSchema: {
       type: 'object',
       properties: {
@@ -185,6 +185,14 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
         task: str('Key of the ticket, e.g. "T-12". Leave out for the ticket you are working on'),
         to: { type: 'array', items: { type: 'string' }, description: 'Who it is for: "boss", or colleagues by name. The same as tagging them in the text' },
         ask: { type: 'boolean', description: 'true = a question you cannot go on without. Only on the ticket you are working on. Without "to" it goes to the boss' },
+        options: {
+          type: 'array',
+          description: 'With ask: the answers you propose, two to four. ALWAYS give them when the question is a choice (A or B, yes or no, which of these): the boss answers with one click instead of typing. Put your recommendation first and say why in its description',
+          items: { type: 'object', properties: { label: str('The answer, in a few words — it is what you get back'), description: str('What this option means'), consequence: str('What follows from choosing it') }, required: ['label'] },
+        },
+        context: str('With ask: what the boss needs to know to answer without reading your terminal'),
+        why: str('With ask: what depends on the answer'),
+        files: { type: 'array', items: { type: 'string' }, description: 'Paths of pictures or documents on this machine to show with the comment (a screenshot of what you built, a mock-up, a log). They are put on the ticket and shown under the comment, where the boss sees them and can enlarge them. Never write only the path of a picture in the text: nobody else can open a path on your machine' },
       },
       required: ['text'],
     },

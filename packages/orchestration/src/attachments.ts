@@ -18,7 +18,8 @@ import type { Engine } from './engine.ts';
 
 /** One file, at most. Larger things (a database dump, a video) belong on the machine, named in the task. */
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
-export const MAX_FILES_PER_TASK = 30;
+/** (Thirty until 2026-11-12: one long task with a picture per step was full, and its employee went back to naming paths nobody else could open.) */
+export const MAX_FILES_PER_TASK = 200;
 /** What goes to and from a machine in one message (the link carries 8 MB at most; base64 adds a third). */
 const CHUNK = 1024 * 1024;
 

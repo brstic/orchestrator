@@ -6,6 +6,8 @@
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { handleMcpPost } from '@orchestrator/integrations';
 import type { Task } from '@orchestrator/contracts';
 import { createHarness, waitFor, type Harness } from './harness.ts';
@@ -175,6 +177,43 @@ test('asking instead of blocking: the call waits for the answer, which is given 
   // Only on the ticket one is working on.
   const other = await tool('Sarah', 'comment_on_task', { task: t.key, text: 'And the port?', ask: true });
   assert.deepEqual([other.isError, /only ask-and-wait on the ticket you are working on/.test(other.text)], [true, true]);
+  await finish('Alex');
+});
+
+test('a question that is a choice carries its choices, and a comment carries its pictures', async () => {
+  const eng = h.server.engine;
+  const t = await inProgress('Alex', 'Pick the layout');
+  // Two pictures on Alex's machine: one named, one whose path only stands in the text.
+  const cwd = eng.core.runningSessionOf(ids.Alex!)!.cwd;
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+  fs.writeFileSync(path.join(cwd, 'layout-a.png'), png);
+  fs.writeFileSync(path.join(cwd, 'layout-b.png'), png);
+  const asking = tool('Alex', 'comment_on_task', {
+    text: `Which layout? B is at ${path.join(cwd, 'layout-b.png')}, and see https://example.com/not-mine.png too.`,
+    ask: true,
+    options: [{ label: 'Layout A', description: 'One column', consequence: 'Ships today' }, { label: 'Layout B' }, { nonsense: true }],
+    why: 'The list is built differently for each.',
+    files: ['layout-a.png', 'no-such-file.png'],
+  });
+  const asked = await until(t.id, (x) => (x.comments ?? []).some((c) => c.kind === 'question' && !!c.questionId), 'the question is on the ticket');
+  const q = asked.comments!.find((c) => c.kind === 'question')!;
+  assert.deepEqual(q.options, [{ label: 'Layout A', description: 'One column', consequence: 'Ships today' }, { label: 'Layout B' }]);
+  // Both pictures are on the ticket and belong to the comment; an address on the web is not a file of his.
+  assert.deepEqual((asked.attachments ?? []).map((a) => [a.name, a.kind, a.addedBy.name]), [['layout-a.png', 'evidence', 'Alex'], ['layout-b.png', 'evidence', 'Alex']]);
+  assert.deepEqual(q.attachmentIds, asked.attachments!.map((a) => a.id));
+  // At the desk and in the Inbox it is the same question, with the same choices to click.
+  const office = (await h.state()).questions.find((x) => x.id === q.questionId)!;
+  assert.deepEqual([office.kind, office.options.map((o) => o.label), office.why], ['decision', ['Layout A', 'Layout B'], 'The list is built differently for each.']);
+  // Clicking a choice is answering with its words.
+  await h.api('POST', `/tasks/${t.id}/comments`, { body: 'Layout B' });
+  const res = await asking;
+  assert.equal(res.isError, false);
+  assert.match(res.text, /^The boss answered: Layout B/);
+  // (A file that was named and could not be read is said; the question is asked all the same.)
+  const plain = await tool('Alex', 'comment_on_task', { text: 'Here is what it looks like now.', files: ['no-such-file.png'] });
+  assert.match(plain.text, /no-such-file\.png was not attached/);
+  // (The pictures were copies for the office; in the folder they would be uncommitted work.)
+  for (const f of ['layout-a.png', 'layout-b.png']) fs.rmSync(path.join(cwd, f));
   await finish('Alex');
 });
 
