@@ -27,7 +27,7 @@ import type {
   XpEntry,
   EventSourceKind,
 } from '@orchestrator/contracts';
-import { defaultLayout, newId, nowIso } from '@orchestrator/contracts';
+import { SURROUNDINGS, defaultLayout, newId, nowIso } from '@orchestrator/contracts';
 import type { Collection, Storage } from '@orchestrator/database';
 import { deriveCompanyStats, emptyCompanyStats, initialMilestones } from '@orchestrator/game-systems';
 import type { TerminalGateway } from '@orchestrator/terminal';
@@ -486,6 +486,8 @@ export class Core {
       sleepAfterMinutes: patch.sleepAfterMinutes === undefined ? this._settings.sleepAfterMinutes : sanitizeSleep(patch.sleepAfterMinutes, this._settings.sleepAfterMinutes),
       // A switch is on or off (anything that is not a plain "off" keeps the hold).
       ...(patch.unrestrictedAsksHighRisk === undefined ? {} : { unrestrictedAsksHighRisk: patch.unrestrictedAsksHighRisk !== false }),
+      // A place the office knows, or the one it had.
+      ...(patch.surroundings === undefined ? {} : { surroundings: (SURROUNDINGS as readonly unknown[]).includes(patch.surroundings) ? patch.surroundings : this._settings.surroundings }),
     };
     this._settings.selfImprovement = sanitizeAutopilot(this._settings.selfImprovement, autopilotBefore);
     this.store.kvSet('settings', this._settings);

@@ -2,12 +2,13 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import type { Desk, RoomDef, TerminalScreen } from '@orchestrator/contracts';
+import type { Desk, RoomDef, Surroundings, TerminalScreen } from '@orchestrator/contracts';
 import { drawScreen } from './terminal-texture.ts';
 import type { BoardView, CeoView, HostView, Quality, ScreenSubscribe, UsageClockView, WallView, WhiteboardView, ZoneView } from './types.ts';
 import { DESK_SIZE, WALL_T, deskBox, deskSeat, type Box, type World } from './world.ts';
 import { SMALL_RACK, memberRoomTitle, type MemberRoom } from './member-rooms.ts';
 import { ON_SURFACE } from './surface.ts';
+import { glazed, hasWindows, lookOf } from './surroundings/index.tsx';
 import { InstancedModel, Model } from './models/Model.tsx';
 import { DESK_TOP, desk as deskModel, divider as dividerModel, lampDome, taskChair } from './models/workplace.ts';
 import { arcade, bookshelf, coffeeTable, deskPlant, floorLamp, mug, neonBoard, notebook, plant, rug, sofa, trophyCase } from './models/decor.ts';
@@ -140,7 +141,14 @@ function CanvasPanel({ width, height, px = 1024, draw, deps, emissive = true, ..
 
 // ───────────────────────────── building ─────────────────────────────
 
-export function Building({ world, cutaway, quality, memberClocks }: { world: World; cutaway: boolean; quality: Quality; memberClocks?: Record<string, UsageClockView[]> }) {
+export function Building({ world, cutaway, quality, memberClocks, surroundings = 'studio' }: { world: World; cutaway: boolean; quality: Quality; memberClocks?: Record<string, UsageClockView[]>; surroundings?: Surroundings }) {
+  // An office that stands somewhere has windows in its outer walls, where nothing hangs on them (see `glazed`).
+  const open = hasWindows(surroundings);
+  const walls = useMemo(() => (open ? glazed(world) : world.walls), [open, world]);
+  // For the UI tests: how many windows to the outside the building has.
+  useEffect(() => {
+    sceneProbe().outerWindows = walls.filter((w) => w.glass && w.outer).length;
+  }, [walls]);
   // The building itself is drawn from the stored office; the rooms of connected members are added to it below.
   // `base` stays the same object while members come and go, so nothing of the building is made again then.
   const base = world.base;
@@ -159,6 +167,8 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
   const wallMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#e7eaf0', roughness: 0.92 }), []);
   const outerMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#d5dae3', roughness: 0.9 }), []);
   const glassMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#a9d8ff', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.3, depthWrite: false }), []);
+  // The glass of a window to the outside: clearer than a partition's, which is there to be seen.
+  const windowMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#d9ecff', roughness: 0.04, metalness: 0.1, transparent: true, opacity: 0.13, depthWrite: false }), []);
   const frameMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#2c3442', roughness: 0.4, metalness: 0.6 }), []);
   const capMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#39424f', roughness: 0.7 }), []);
   const skirtMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#4a5361', roughness: 0.6 }), []);
@@ -167,7 +177,7 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
     const unit = new THREE.BoxGeometry(1, 0.085, 1);
     return {
       unit,
-      matrices: world.walls
+      matrices: walls
         .filter((w) => !w.glass)
         .map((w) => {
           const len = Math.hypot(w.x2 - w.x1, w.z2 - w.z1) + WALL_T + 0.024;
@@ -175,7 +185,26 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
           return new THREE.Matrix4().compose(new THREE.Vector3((w.x1 + w.x2) / 2, 0.0425, (w.z1 + w.z2) / 2), new THREE.Quaternion(), new THREE.Vector3(horizontal ? len : WALL_T + 0.024, 1, horizontal ? WALL_T + 0.024 : len));
         }),
     };
-  }, [world.walls]);
+  }, [walls]);
+  // The posts of every window to the outside, about every two and a half metres, in one draw call.
+  const windowPosts = useMemo(() => {
+    const unit = new THREE.BoxGeometry(0.05, 2.86, 0.05);
+    const matrices: THREE.Matrix4[] = [];
+    for (const w of walls) {
+      if (!w.glass || !w.outer) continue;
+      const len = Math.hypot(w.x2 - w.x1, w.z2 - w.z1);
+      const horizontal = Math.abs(w.z2 - w.z1) < 1e-6;
+      const n = Math.max(2, Math.round(len / 2.4) + 1);
+      for (let k = 0; k < n; k++) {
+        const t = (k / (n - 1) - 0.5) * (len - 0.05);
+        matrices.push(new THREE.Matrix4().makeTranslation((w.x1 + w.x2) / 2 + (horizontal ? t : 0), 1.5, (w.z1 + w.z2) / 2 + (horizontal ? 0 : t)));
+      }
+    }
+    return { unit, matrices };
+  }, [walls]);
+  // The walls are made again when the office is moved to another place: the shapes of the old ones are let go of.
+  useEffect(() => () => skirting.unit.dispose(), [skirting]);
+  useEffect(() => () => windowPosts.unit.dispose(), [windowPosts]);
   const group = useRef<THREE.Group>(null);
   const ceiling = useRef<THREE.Group>(null);
   const ceilingMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, transparent: true, opacity: cutaway ? 0 : 1 }), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -282,11 +311,13 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
 
   return (
     <group>
-      {/* ground outside the building */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.2, 0]} receiveShadow>
-        <planeGeometry args={[220, 220]} />
-        <meshStandardMaterial color="#12161e" roughness={1} />
-      </mesh>
+      {/* The ground outside the building — where the office stands by itself; anywhere else the place brings its own. */}
+      {!open && (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.2, 0]} receiveShadow>
+          <planeGeometry args={[220, 220]} />
+          <meshStandardMaterial color="#12161e" roughness={1} />
+        </mesh>
+      )}
       {/* The slab's top is centimetres under the room floors, not millimetres: two surfaces that close flicker from across the office. */}
       <mesh position={[0, -0.09, 0]} receiveShadow material={slabMat}>
         <boxGeometry args={[base.layout.width + 0.6, 0.1, base.layout.depth + 0.6]} />
@@ -360,7 +391,8 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
             );
           }),
         )}
-        {world.walls.map((w) => {
+        <Instanced geometry={windowPosts.unit} material={frameMat} matrices={windowPosts.matrices} castShadow={false} />
+        {walls.map((w) => {
           // Keyed by where the wall stands: when a member room cuts a door into one wall, the others are left as they are.
           const i = `${w.x1}:${w.z1}:${w.x2}:${w.z2}:${w.glass ? 'g' : 's'}`;
           const len = Math.hypot(w.x2 - w.x1, w.z2 - w.z1);
@@ -374,7 +406,7 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
               <group key={i} position={[cx, 0, cz]}>
                 {/* The pane stands between its two rails: no face of it lies inside a rail or under the floor,
                     where it would fight with them for the same depth and shimmer. */}
-                <mesh position={[0, 1.5, 0]} material={glassMat}>
+                <mesh position={[0, 1.5, 0]} material={w.outer ? windowMat : glassMat}>
                   <boxGeometry args={[size[0] * (horizontal ? 1 : 0.35), 2.86, size[2] * (horizontal ? 0.35 : 1)]} />
                 </mesh>
                 <mesh position={[0, 0.035, 0]} material={frameMat}>
@@ -383,8 +415,8 @@ export function Building({ world, cutaway, quality, memberClocks }: { world: Wor
                 <mesh position={[0, 2.965, 0]} material={frameMat}>
                   <boxGeometry args={rail} />
                 </mesh>
-                {/* Posts between the panes, about every metre and a half, and one at each end. */}
-                {Array.from({ length: Math.max(2, Math.round(len / 1.5) + 1) }, (_, k) => {
+                {/* Posts between the panes, about every metre and a half, and one at each end. (A window to the outside has its posts drawn together, below.) */}
+                {!w.outer && Array.from({ length: Math.max(2, Math.round(len / 1.5) + 1) }, (_, k) => {
                   const t = (k / (Math.max(2, Math.round(len / 1.5) + 1) - 1) - 0.5) * (len - 0.05);
                   return (
                     <mesh key={k} position={[horizontal ? t : 0, 1.5, horizontal ? 0 : t]} material={frameMat}>
@@ -509,7 +541,9 @@ function MemberSigns({ room }: { room: MemberRoom }) {
   );
 }
 
-export function Lights({ quality, world }: { quality: Quality; world: World }) {
+export function Lights({ quality, world, surroundings = 'studio' }: { quality: Quality; world: World; surroundings?: Surroundings }) {
+  // The place the office stands in tints its light; the plain office keeps the light it always had.
+  const look = lookOf(surroundings);
   const sun = useRef<THREE.DirectionalLight>(null);
   useLayoutEffect(() => {
     const l = sun.current;
@@ -531,9 +565,9 @@ export function Lights({ quality, world }: { quality: Quality; world: World }) {
   const size = quality === 'high' ? 4096 : 2048;
   return (
     <>
-      <hemisphereLight args={['#eaf1ff', '#4a4f5c', 0.85]} />
-      <directionalLight ref={sun} position={[16, 30, 18]} intensity={2.1} color="#fff4e2" castShadow={quality !== 'low'} shadow-mapSize={[size, size]} />
-      <directionalLight position={[-20, 16, -14]} intensity={0.55} color="#bcd4ff" />
+      <hemisphereLight color={look?.hemisphere[0] ?? '#eaf1ff'} groundColor={look?.hemisphere[1] ?? '#4a4f5c'} intensity={look?.hemisphere[2] ?? 0.85} />
+      <directionalLight ref={sun} position={look?.sun.position ?? [16, 30, 18]} intensity={look?.sun.intensity ?? 2.1} color={look?.sun.color ?? '#fff4e2'} castShadow={quality !== 'low'} shadow-mapSize={[size, size]} />
+      <directionalLight position={[-20, 16, -14]} intensity={look?.fill.intensity ?? 0.55} color={look?.fill.color ?? '#bcd4ff'} />
     </>
   );
 }

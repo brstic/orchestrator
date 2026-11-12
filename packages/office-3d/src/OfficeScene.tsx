@@ -2,7 +2,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { memo, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import type { Desk, OfficeLayout } from '@orchestrator/contracts';
+import type { Desk, OfficeLayout, Surroundings as SurroundingsKind } from '@orchestrator/contracts';
 import type { EffectiveLayout } from './member-rooms.ts';
 import { Documents as DocumentsPart, type DocsView } from './Documents.tsx';
 import { HiFi as HiFiPart } from './HiFi.tsx';
@@ -20,6 +20,7 @@ import { People as PeoplePart } from './People.tsx';
 import { Rig as RigPart, type Keymap } from './Rig.tsx';
 import type { UsageClockView, BoardView, CameraMode, CeoView, HostView, NearbyTarget, PersonView, Quality, RadioView, ScreenSubscribe, WalkRequest, WallView, WhiteboardView, ZoneView, ForemanView } from './types.ts';
 import { buildWorld } from './world.ts';
+import { STUDIO, Surroundings as SurroundingsPart } from './surroundings/index.tsx';
 import { usePacedLoop } from './pace.ts';
 
 // Each part of the office is gone through by React again only when what it shows has changed. The office's state
@@ -38,10 +39,13 @@ const Rooms = memo(RoomsPart);
 const Zones = memo(ZonesPart);
 const People = memo(PeoplePart);
 const Rig = memo(RigPart);
+const Surroundings = memo(SurroundingsPart);
 
 export interface OfficeSceneProps {
   /** The stored layout, or that layout with the rooms of connected members added (see `withMemberRooms`). */
   layout: OfficeLayout;
+  /** Where the office stands (an owner's choice, the same for everybody in it). Not given: by itself, in the dark. */
+  surroundings?: SurroundingsKind;
   /** Office upgrades unlocked by company milestones. */
   unlocked: string[];
   people: PersonView[];
@@ -163,6 +167,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
   useEffect(() => {
     sceneProbe().lazy = props.quality === 'low';
   }, [props.quality]);
+  const surroundings = props.surroundings ?? 'studio';
   const dpr: [number, number] = props.quality === 'low' ? [1, 1] : props.quality === 'medium' ? [1, 1.5] : [1, 2];
   usePacedLoop();
 
@@ -177,8 +182,9 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.05;
         gl.shadowMap.type = THREE.PCFSoftShadowMap;
-        scene.background = new THREE.Color('#0d1118');
-        scene.fog = new THREE.Fog('#0d1118', 70, 170);
+        // The background and the air are the place's (see `Surroundings`), set before this runs: only what was not set is.
+        scene.background ??= new THREE.Color(STUDIO.background);
+        scene.fog ??= new THREE.Fog(...STUDIO.fog);
       }}
       onPointerMissed={(e) => {
         if (e.button === 0) props.onSelect(null);
@@ -186,8 +192,9 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
     >
       <Reflections />
       <PerfProbe />
-      <Lights quality={props.quality} world={world} />
-      <Building world={world} cutaway={cutaway} quality={props.quality} memberClocks={props.memberClocks} />
+      <Surroundings kind={surroundings} world={world} quality={props.quality} />
+      <Lights quality={props.quality} world={world} surroundings={surroundings} />
+      <Building world={world} cutaway={cutaway} quality={props.quality} memberClocks={props.memberClocks} surroundings={surroundings} />
       <Desks desks={core.layout.desks} seats={seats} subscribe={props.subscribeScreen} />
       {world.memberDesks.length > 0 && <Desks desks={world.memberDesks} seats={memberSeats} subscribe={props.subscribeScreen} />}
       <Zones world={world} zones={props.zones} onOpen={props.onOpenProject} />
@@ -203,7 +210,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
         <HiFi world={world} radio={props.radio} onOpen={props.onOpenRadio} />
       </Near>
       <Rooms world={world} board={props.board} wall={props.wall} ceo={props.ceo} hosts={props.hosts} subscribe={props.subscribeScreen} unlocked={unlocked} whiteboard={props.whiteboard} onOpenMeeting={props.onOpenMeeting} player={player} overview={overview} />
-      <SceneProbe zones={props.zones} />
+      <SceneProbe zones={props.zones} surroundings={surroundings} />
       {props.talkMarks && props.talkMarks.length > 0 && props.cameraMode !== 'workstation' && <TalkMarks marks={props.talkMarks} positions={positions} onOpen={props.onOpenTalk ?? (() => undefined)} />}
       <People people={props.people} whips={props.whips} world={world} walks={props.walks} player={player} selectedId={props.selectedId} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />
       {props.foreman && <Foreman foreman={props.foreman} people={props.people} world={world} selected={props.selectedId === props.foreman.id} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />}
@@ -217,18 +224,20 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
  * are mounted, what the whiteboard and the zone signs show, and where a point of the world is on
  * screen (so a test can click a thing in the office the way a person would).
  */
-function SceneProbe({ zones }: { zones: ZoneView[] }) {
+function SceneProbe({ zones, surroundings }: { zones: ZoneView[]; surroundings: SurroundingsKind }) {
   const { camera, size, gl, scene } = useThree();
   useEffect(() => {
     const probe = sceneProbe();
     // The renderer and the scene themselves, for tests that measure what is drawn (e.g. the flicker check).
     (probe as any).three = { gl, scene, camera, THREE };
+    // Where the office stands, and how far the camera sees there.
+    probe.surroundings = { kind: surroundings, far: (camera as THREE.PerspectiveCamera).far, fog: scene.fog ? `#${(scene.fog as THREE.Fog).color.getHexString()}` : null };
     probe.zones = zones.map((z) => ({ id: z.id, projectId: z.projectId, name: z.name, inProgress: z.inProgress, blocked: z.blocked, done: z.done }));
     probe.project = (x: number, y: number, z: number) => {
       const v = new THREE.Vector3(x, y, z).project(camera);
       return { x: Math.round(((v.x + 1) / 2) * size.width), y: Math.round(((1 - v.y) / 2) * size.height), visible: v.z > -1 && v.z < 1 && Math.abs(v.x) < 1 && Math.abs(v.y) < 1 };
     };
-  }, [zones, camera, size, gl, scene]);
+  }, [zones, surroundings, camera, size, gl, scene]);
   return null;
 }
 

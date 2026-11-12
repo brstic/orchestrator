@@ -1491,6 +1491,17 @@ export interface TvSettings {
   bookmarks: Array<{ name: string; url: string }>;
 }
 
+/**
+ * The places an office can stand in (`OwnerSettings.surroundings`). Each is a scene of its own around the same
+ * building — `packages/office-3d/src/surroundings/`, `docs/SURROUNDINGS.md`.
+ */
+export const SURROUNDINGS = ['studio', 'skyline', 'park', 'island', 'north', 'orbit'] as const;
+export type Surroundings = (typeof SURROUNDINGS)[number];
+/** What a stored value means: one of the places, or the plain one for anything else. */
+export function surroundingsOf(value: unknown): Surroundings {
+  return (SURROUNDINGS as readonly unknown[]).includes(value) ? (value as Surroundings) : 'studio';
+}
+
 export interface OwnerSettings {
   /** The office TV. Browsing happens in the owner's own window; employees have nothing to do with it. */
   tv: TvSettings;
@@ -1553,6 +1564,12 @@ export interface OwnerSettings {
    * stay fenced off either way.
    */
   unrestrictedAsksHighRisk?: boolean;
+  /**
+   * Where the office stands: what is seen around the building, from above and through its windows. The office's own
+   * (the same for everybody in it), chosen by an owner. Not set: `studio`, the building by itself in the dark, as it
+   * was before there was a choice.
+   */
+  surroundings?: Surroundings;
   /** Mark each project's desks on the floor (outline, sign and counts). Off unless the owner switches it on. */
   projectZones: boolean;
   /** Move the camera in closer when the owner stands at an employee's desk. Off unless the owner switches it on. */

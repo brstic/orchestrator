@@ -53,6 +53,7 @@ read STATUS.md → change → tests → docs → commit → push → deploy → 
    pnpm build:ui && node scripts/build.mjs && node tests/ui/run.mjs --out /tmp/ui-run    # the UI in Electron, real clicks, ~4 min; screenshots land in --out
    node tests/ui/guest-app.mjs    # only when the app's start screen, joining or one's own room changed
    node tests/ui/entrance.mjs     # only when the page at the office's door, its sign-in or its knock changed (~1.5 min)
+   node tests/ui/surroundings.mjs # only when what is drawn around the office, its windows or the scene's sky/fog changed (~1 min)
    ```
    Do not run the UI suite and a packaging run at the same time: both use `apps/desktop/dist`.
 4. **Docs, in the same piece of work**: a line in `docs/CHANGELOG.md`, the truth in `docs/STATUS.md` (including what you did *not* check), `docs/DECISIONS.md` when you chose something a later reader would have to guess, and the subject's own document.

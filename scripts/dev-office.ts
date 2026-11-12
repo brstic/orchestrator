@@ -101,6 +101,12 @@ for (const [n, arg] of memberArgs.entries()) {
   fs.mkdirSync(root, { recursive: true });
   const socket = `${sock}-m${n}`;
   // ORCH_DEV_ROOM='{"desks":8,…}': how the first of these members arranged their room (as PUT /api/me/room would).
+  // DEV ONLY: these members are made up here and are in nobody's list of people; the office would refuse a computer
+  // that says it belongs to somebody it does not know (as it must), so this script vouches for its own.
+  if (n === 0) {
+    const known = server.engine.hosts.memberInGoodStanding;
+    server.engine.hosts.memberInGoodStanding = (id) => id.startsWith('dev-member-') || known(id);
+  }
   if (n === 0 && process.env.ORCH_DEV_ROOM) server.engine.hosts.setMemberRoom(`dev-member-${n}`, JSON.parse(process.env.ORCH_DEV_ROOM), 'dev');
   const { token } = server.engine.hosts.createMemberEnrollment({ id: `dev-member-${n}`, name });
   const enrolled = await enroll(server.url, token, `${name}'s computer`, { ...info, hostname: `${name.toLowerCase()}-laptop` });

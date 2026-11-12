@@ -48,6 +48,7 @@ It is **not** a dashboard with mascots, and it is **not** a simulation: nothing 
 | 🤝 **Teamwork** | Employees ask each other, wait for each other, hand work over, review each other, release and unblock tasks, and wake a colleague who is needed. |
 | 🧢 **The foreman** | One supervisor walks the floor, answers the operational questions and keeps people moving, so you are asked only about direction. |
 | 🛋️ **Break room** | A hi-fi with internet radio for the whole office and a TV with a real browser in it. |
+| 🌆 **A view** | Put the office on the top floor of a tower over a city at dusk, in a park, on an island at sunset, under the northern lights or in orbit — for everybody in it, with one click. |
 | 🪢 **The whip** | `R`. A crack, a flinch, a "jao!". It sends nothing to anybody's session. It stays in. |
 | 👥 **Multiplayer** | Invite people with a link. Owners, colleagues, visitors; each colleague's own computer becomes a room. |
 

@@ -161,6 +161,23 @@
   border-color: var(--accent);
   background: #1e2a40;
 }
+/* Settings → Surroundings: a card for each place the office can stand in, with a small picture of its sky. */
+.pc-places {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+.pc-place {
+  flex-direction: column;
+  gap: 9px;
+}
+.pc-place-picture {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 6;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
 .pc-swatch {
   display: inline-block;
   width: 10px;

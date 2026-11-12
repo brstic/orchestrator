@@ -1,6 +1,6 @@
 import { useTick } from './company-shared.tsx';
 import { useEffect, useState, type ReactNode } from 'react';
-import { ACTIVITY_LABEL, type AuditEntry, type ForemanSettings, type ForemanStatus, type OwnerSettings, type SelfImprovementSettings } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, SURROUNDINGS, surroundingsOf, type AuditEntry, type ForemanSettings, type ForemanStatus, type OwnerSettings, type SelfImprovementSettings, type Surroundings } from '@orchestrator/contracts';
 import { Badge, Button, Field, Window } from '@orchestrator/ui';
 import { api, forgetToken } from '../../lib/api.ts';
 import { DEFAULT_KEYS, setPrefs, usePrefs, type ClientPrefs, type PrefsPatch } from '../../lib/prefs.ts';
@@ -13,7 +13,7 @@ import { registerPanel } from './index.tsx';
 import { LoadState, fmtDateTime, keyLabel, useLoad, type PanelProps } from './company-shared.tsx';
 import { AutopilotDial } from './growth.tsx';
 
-type SectionId = 'company' | 'graphics' | 'controls' | 'sound' | 'account' | 'improve' | 'workers' | 'foreman' | 'audit';
+type SectionId = 'company' | 'surroundings' | 'graphics' | 'controls' | 'sound' | 'account' | 'improve' | 'workers' | 'foreman' | 'audit';
 
 /** 'mine': kept on this computer, for whoever sits at it. 'office': the office's own settings, which its owners change. */
 const SECTIONS: Array<{ id: SectionId; label: string; group: 'mine' | 'office'; ownerOnly?: boolean; memberOnly?: boolean }> = [
@@ -23,6 +23,8 @@ const SECTIONS: Array<{ id: SectionId; label: string; group: 'mine' | 'office'; 
   // A member's own way in: their password, and signing out of a browser. The office's own computer has neither.
   { id: 'account', label: 'Sign-in', group: 'mine', memberOnly: true },
   { id: 'company', label: 'Company', group: 'office' },
+  // Where the office stands: what is seen around the building and through its windows.
+  { id: 'surroundings', label: 'Surroundings', group: 'office' },
   { id: 'improve', label: 'Growth', group: 'office' },
   { id: 'workers', label: 'Employees', group: 'office' },
   { id: 'foreman', label: 'Foreman', group: 'office' },
@@ -108,6 +110,63 @@ function CompanySection({ settings }: { settings: OwnerSettings }) {
         The command bar understands common instructions by itself. For the rest it can ask Claude on one of your machines, which uses tokens. Either way you see a plan first; nothing changes until you confirm.
       </Toggle>
     </form>
+  );
+}
+
+/** The places an office can stand in: what each is called, what is there, and a small picture of its sky. */
+const PLACES: Record<Surroundings, { name: string; about: string; picture: string }> = {
+  studio: { name: 'By itself', about: 'The building alone in the dark, as it has always been.', picture: 'radial-gradient(ellipse at 50% 120%, #1a2230 0%, #0d1118 60%)' },
+  skyline: {
+    name: 'Skyline',
+    about: 'The top floor of a tower at dusk: a city far below with traffic in its streets, lit windows all round, a helicopter on its round.',
+    picture: 'repeating-linear-gradient(90deg, #1a1c3a 0 9px, transparent 9px 13px, #23254a 13px 25px, transparent 25px 31px) bottom / 100% 42% no-repeat, linear-gradient(#0a1030, #3a2d6e 45%, #a8627e 72%, #ff8a5c)',
+  },
+  park: {
+    name: 'Park',
+    about: 'A pavilion on mown lawns on a clear day: a fountain, a pond, trees moving in the wind, balloons over the hills.',
+    picture: 'radial-gradient(circle at 78% 22%, #ffffff 0 7%, transparent 8%), radial-gradient(ellipse at 30% 105%, #4f9a45 0 45%, transparent 46%), radial-gradient(ellipse at 80% 110%, #63ad52 0 50%, transparent 51%), linear-gradient(#2a66c8, #cfe5f6)',
+  },
+  island: {
+    name: 'Island',
+    about: 'A small island at sunset: palms, a pier out towards the sun with a boat at its end, sails and a lighthouse far out.',
+    picture: 'radial-gradient(circle at 30% 58%, #fff3c4 0 8%, transparent 9%), linear-gradient(transparent 0 62%, #2f7f9a 62% 82%, #e3c690 82%), linear-gradient(#22387a, #b85f8e 40%, #ffb070 62%)',
+  },
+  north: {
+    name: 'Northern lights',
+    about: 'A valley deep in snow at night: mountains all round, pines, cabins with their windows lit, a lake that shows the lights, snow falling.',
+    picture: 'linear-gradient(160deg, transparent 0 30%, rgba(60, 230, 150, 0.55) 42%, rgba(130, 80, 220, 0.35) 55%, transparent 68%), linear-gradient(transparent 0 70%, #5a6788 70%), linear-gradient(#040816, #0a1832 60%, #1d3c5c)',
+  },
+  orbit: {
+    name: 'Orbit',
+    about: 'A station above the Earth: solar wings, a great wheel turning at its end, somebody on a spacewalk, the planet going by below.',
+    picture: 'radial-gradient(circle at 70% 190%, #cfe8ff 0 60%, #3f8be0 61% 64%, rgba(63, 139, 224, 0.35) 65% 67%, transparent 68%), radial-gradient(circle at 20% 30%, #ffffff 0 1px, transparent 2px), radial-gradient(circle at 60% 18%, #ffffff 0 1px, transparent 2px), radial-gradient(circle at 85% 40%, #ffffff 0 1px, transparent 2px), #02030a',
+  },
+};
+
+function SurroundingsSection({ settings }: { settings: OwnerSettings }) {
+  const current = surroundingsOf(settings.surroundings);
+  return (
+    <div className="col" style={{ gap: 12, maxWidth: 720 }} data-settings-section="surroundings">
+      <div className="small muted">
+        Where the office stands. It is the office’s own — everybody in it sees the same place — and it changes at once. Anywhere but “{PLACES.studio.name}” the outer walls get windows wherever nothing hangs on them or stands against them.
+      </div>
+      <div className="pc-places" role="radiogroup" aria-label="Where the office stands">
+        {SURROUNDINGS.map((id) => (
+          <label key={id} className={`pc-choice pc-place ${current === id ? 'pc-choice-on' : ''}`} data-surroundings={id}>
+            <span className="pc-place-picture" style={{ background: PLACES[id].picture }} aria-hidden="true" />
+            <span className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+              <input type="radio" name="surroundings" checked={current === id} onChange={() => void save({ surroundings: id }, `Surroundings: ${PLACES[id].name}`)} />
+              <span>
+                <span className="strong">{PLACES[id].name}</span>
+                <br />
+                <span className="small muted">{PLACES[id].about}</span>
+              </span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <div className="small faint">How much of a place is drawn follows each computer’s own graphics quality (Graphics, under “This computer”): on Low there are fewer trees, cars and flakes.</div>
+    </div>
   );
 }
 
@@ -863,6 +922,7 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
             // A disabled fieldset switches off every control inside it at once.
             <fieldset className="pc-plain" disabled={readOnly}>
               {section === 'company' && <CompanySection settings={settings} />}
+              {section === 'surroundings' && <SurroundingsSection settings={settings} />}
               {section === 'improve' && <ImproveSection settings={settings} />}
               {section === 'workers' && (
                 <div className="col" style={{ gap: 12, maxWidth: 640 }}>

@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { unlockedUpgrades } from '@orchestrator/contracts';
+import { surroundingsOf, unlockedUpgrades } from '@orchestrator/contracts';
 import { OfficeScene, ownerPosition } from '@orchestrator/office-3d';
 import { PeopleActs, myPlace, personInReach } from './hud/people-acts.tsx';
 import { Button } from '@orchestrator/ui';
@@ -390,6 +390,7 @@ export function App() {
           memberClocks={clocks}
           whiteboard={whiteboard}
           onOpenMeeting={on.openMeeting}
+          surroundings={surroundingsOf(s.settings.surroundings)}
           zones={prefs.projectZones ? zones : NO_ZONES}
           approachZoom={prefs.approachZoom}
           onOpenProject={on.openProject}
