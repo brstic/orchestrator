@@ -113,6 +113,9 @@ test('it hands work to the one whose it is: in words, or as a task on that one�
   await assert.rejects(h.api('PATCH', `/tasks/${task.id}`, { assigneeId: ids.Lea }), /400: Lea is a team lead and does not take tasks/);
   const look = await call('Lea', 'team_look', { employee: 'Bo' });
   assert.ok(!look.isError && /Bo — /.test(look.text), look.text);
+  // Each of these is a visit on the record: it is what makes the lead's character walk over to that desk.
+  const visits = (await h.api<any[]>('GET', `/events?limit=200&employeeId=${ids.Lea}`)).filter((e) => e.type === 'lead.visit');
+  assert.deepEqual(visits.map((e) => `${e.data.fromEmployeeId === ids.Lea}:${e.data.action}:${e.data.toEmployeeId}`).sort(), [`true:assign:${ids.Ana}`, `true:assign:${ids.Bo}`, `true:look:${ids.Bo}`, `true:tell:${ids.Ana}`].sort());
 });
 
 test('it finds where things are on its member’s machines, and hires there — never more than five at a time', async () => {
@@ -200,6 +203,9 @@ test('a shared employee a member looks after is in that member’s team, and sta
   assert.ok(!made.isError && /in Shop, assigned to Alex/.test(made.text), made.text);
   // Nothing about who may use him changed: another colleague still works with him.
   assert.equal((await as(ana, 'POST', `/employees/${ids.Alex}/message`, { body: 'hello' })).status, 200);
+  // What the lead does in its member's room is that room's: another colleague is not sent its visits.
+  assert.equal((await as(ana, 'GET', '/events?limit=500')).body.filter((e: any) => e.type === 'lead.visit').length, 0);
+  assert.ok((await as(fenix, 'GET', '/events?limit=500')).body.some((e: any) => e.type === 'lead.visit'));
   // One member at a time: a colleague cannot take him or give him back for Fenix; an owner can move him.
   assert.match((await as(ana, 'POST', `/employees/${ids.Alex}/keep`)).body.error, /is looked after by Fenix/);
   assert.equal((await as(ana, 'POST', `/employees/${ids.Alex}/give-back`)).status, 403);

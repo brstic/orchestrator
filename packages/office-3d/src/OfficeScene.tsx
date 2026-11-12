@@ -59,6 +59,8 @@ export interface OfficeSceneProps {
   onOpenTalk?: (employeeId: string) => void;
   /** The office's foreman, if it has one: it has no desk and walks the floor. */
   foreman?: ForemanView | null;
+  /** Members' team leads: each walks between the desks of its own team. */
+  leads?: ForemanView[];
   /** What the person at this computer has just said out loud: a bubble over their own character for a few seconds. */
   selfSaying?: string | null;
   /** Ease the camera in when the owner stands at a desk (an owner setting, off by default). */
@@ -214,6 +216,9 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       {props.talkMarks && props.talkMarks.length > 0 && props.cameraMode !== 'workstation' && <TalkMarks marks={props.talkMarks} positions={positions} onOpen={props.onOpenTalk ?? (() => undefined)} />}
       <People people={props.people} whips={props.whips} world={world} walks={props.walks} player={player} selectedId={props.selectedId} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />
       {props.foreman && <Foreman foreman={props.foreman} people={props.people} world={world} selected={props.selectedId === props.foreman.id} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />}
+      {(props.leads ?? []).map((lead) => (
+        <Foreman key={lead.id} foreman={lead} people={props.people} world={world} selected={props.selectedId === lead.id} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />
+      ))}
       <Rig whipAt={props.whipAt} ouchAt={props.ouchAt} emote={props.emote} approachZoom={props.approachZoom} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} />
     </Canvas>
   );

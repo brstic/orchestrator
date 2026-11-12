@@ -90,6 +90,8 @@ export function personViews(s: OfficeState, office?: OfficeWithRooms | null): Pe
     if (e.archived) continue;
     // The foreman has no desk: it walks the floor, drawn on its own (see `foremanView`).
     if (e.roleKey === 'foreman') continue;
+    // A member's team lead does not sit either: it walks between its own team's desks (see `leadViews`).
+    if (e.roleKey === 'lead') continue;
     // A member's own employees are in the office only while that member is: in their room, at a desk there.
     if (office?.away.has(e.id)) continue;
     const session = sessionOfEmployee(s.sessions, e.id);
@@ -156,7 +158,7 @@ export function foremanWalks(events: Array<{ id: string; type: string; ts: strin
     const at = Date.parse(e.ts);
     if (at < horizon) break;
     if (e.type === 'foreman.round.finished' && e.employeeId && !ended.has(e.employeeId)) ended.set(e.employeeId, at);
-    if (e.type !== 'foreman.visit') continue;
+    if (e.type !== 'foreman.visit' && e.type !== 'lead.visit') continue;
     const from = e.data.fromEmployeeId;
     const to = e.data.toEmployeeId;
     if (typeof from !== 'string' || typeof to !== 'string' || from === to) continue;
@@ -246,6 +248,45 @@ export function foremanView(s: OfficeState, now: number): ForemanView | null {
   }
   const filtered = (s.filter.projectId && e.projectId !== s.filter.projectId) || (s.filter.hostId && e.hostId !== s.filter.hostId) || (s.filter.employeeId && e.id !== s.filter.employeeId);
   return { id: e.id, name: e.name, appearance: e.appearance, level: e.level, live, patrolling, visitingId: visit?.toId ?? null, space: 'WHOLE OFFICE', doing, dimmed: !!filtered };
+}
+
+/**
+ * Members' team leads as the scene draws them: like the foreman, on their feet — but each among its own team only:
+ * its member's own employees, and the shared employees that member looks after. Read from recorded state and events.
+ * A lead whose member's computer is away is away with it.
+ */
+export function leadViews(s: OfficeState, office: OfficeWithRooms | null | undefined, now: number): ForemanView[] {
+  const walks = foremanWalks(s.events, now);
+  const out: ForemanView[] = [];
+  for (const e of Object.values(s.employees)) {
+    if (e.archived || e.roleKey !== 'lead' || office?.away.has(e.id)) continue;
+    const host = s.hosts[e.hostId ?? ''];
+    const member = host?.memberId;
+    if (!member) continue;
+    const team = Object.values(s.employees)
+      .filter((x) => !x.archived && x.id !== e.id && x.roleKey !== 'lead' && x.roleKey !== 'foreman' && (s.hosts[x.hostId ?? '']?.memberId === member || x.keptBy?.id === member))
+      .map((x) => x.id);
+    const session = sessionOfEmployee(s.sessions, e.id);
+    const visit = walks.find((w) => w.fromId === e.id);
+    const action = visit ? String(s.events.find((x) => x.id === visit.id)?.data.action ?? 'look') : '';
+    const filtered = (s.filter.projectId && e.projectId !== s.filter.projectId) || (s.filter.hostId && e.hostId !== s.filter.hostId) || (s.filter.employeeId && e.id !== s.filter.employeeId);
+    out.push({
+      id: e.id,
+      name: e.name,
+      appearance: e.appearance,
+      level: e.level,
+      live: !!session && (session.status === 'running' || session.status === 'starting'),
+      patrolling: true,
+      visitingId: visit?.toId ?? null,
+      space: `${host.memberName ?? 'a member'}'s team`.toUpperCase(),
+      doing: visit ? `${VISIT_VERB[action] ?? 'with'} ${s.employees[visit.toId]?.name ?? 'someone'}` : team.length ? 'looking after the team' : 'nobody to look after yet',
+      dimmed: !!filtered,
+      title: 'TEAM LEAD',
+      stopsOf: team,
+      homeDeskId: office?.deskOf.get(e.id) ?? e.deskId ?? null,
+    });
+  }
+  return out.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /**

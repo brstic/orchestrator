@@ -10,7 +10,7 @@ One more employee in a member's room, with the role **Team Lead** (`lead`). The 
 | --- | --- | --- |
 | Whose | the office's; the owners' alone | one member's |
 | How many | one | one for each member who wants one |
-| Where | on a machine of the office, no desk | on the member's own computer or server, in their room |
+| Where | on a machine of the office, no desk | on the member's own computer or server; on its feet, among its own team's desks |
 | When it works | in rounds the office calls it for | only when somebody speaks to it |
 | What it reaches | everybody, members' rooms included | that member's employees; the shared ones too if the member says so |
 | Hires | no | yes: onto the member's own machines, five people at a time at most |
@@ -34,6 +34,15 @@ Then **Talk**. What it does with a request (its prompt, `packages/orchestration/
 **Shared employees you look after** — *Team → Everyone → Mine* on a shared employee's row (`Employee.keptBy`). They are in your lead's team from then on, with the shared projects they work on, and nobody else from the shared office comes along. They stay shared for everyone else (`DECISIONS.md`, "Mine on a shared employee…").
 
 **All the office's shared employees** — the checkbox under the lead in *My work* (`Employee.leadScope: 'office'`). Then its team is the member's own employees first and the shared ones after, and it may tell them things and put tasks on shared projects — what the member may do themselves. Work still does not cross: a member's employee is not given a shared project's task, nor the other way (the office refuses, and the lead is told why).
+
+## In the office
+
+The owner's word, the day it went live: "why does the lead sit at a desk — it should walk about and watch over mine." So a lead is drawn the way the foreman is (`packages/office-3d/src/Foreman.tsx`, with `title`, `stopsOf` and `homeDeskId` on its view), by `leadViews` in `apps/desktop/src/lib/views.ts`:
+
+- **Its walk** is the desks of its own team and no others: its member's own employees in their room, and the shared employees that member looks after, out on the shared floor. The whole shared office is not on it, even with `leadScope: 'office'`.
+- **When it acts** — `team_look`, `team_tell`, `team_task` with an assignee, `team_assign` — the office records a `lead.visit` event and its character goes straight to that desk and stays a while, as the foreman's does. The event is about the lead, so it is sent to whoever may read what happens on that member's computer: other colleagues see the lead walk its round, not whom it was called to.
+- **With nobody to look after** it stands at its own seat in the room. While its member's computer is away it is away with the room.
+- The walking costs nothing: it is drawn from the clock, like the foreman's. A lead still runs only when spoken to.
 
 ## What it costs
 
@@ -78,5 +87,6 @@ Whatever the model in the lead's session decides, these hold on the server (`pac
 ## Not verified
 
 - **It has never run with real Claude Code.** The test calls the tools as its session would, against a real office with a second machine; and in the development office a scripted session was started for a lead (on `haiku`, effort `low`), was sent a message, called `team_overview` and `team_tell` through the real MCP connection, and the message reached the employee. Whether a real small model picks the right person, asks when it should, and stays short — the whole point — is not known, nor what a request costs.
+- **The walk was not watched.** In the development office the lead was drawn standing at a desk of its team, with its four stops (three of its member's own, one shared employee looked after) and its tag; the browser it was looked at in was not drawing frames, so the walking from desk to desk and to a visit — the foreman's code, used unchanged — was not seen for a lead.
 - A lead on a member's **server** (not their computer) was not tried; nor a lead whose member's computer leaves the office mid-request.
 - The checkbox for the shared employees was exercised through the API in the test, not clicked in a window.

@@ -87,6 +87,12 @@ export interface ForemanView {
   /** What it is doing, in a few words: "checking Alex", "round: 2 questions", "walking the floor". */
   doing: string;
   dimmed: boolean;
+  /** What it is, for the name tag. Absent: the office's foreman. "TEAM LEAD": a member's lead, drawn the same way. */
+  title?: string;
+  /** Whose desks it walks between. Absent: everybody's (the foreman). A lead: its own team's. */
+  stopsOf?: string[];
+  /** Where it stands when there is nobody to walk to: its own seat. Absent: by the entrance. */
+  homeDeskId?: string | null;
 }
 
 /** One avatar walks to another's desk: the visualisation of a real collaboration event. */

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Character, type PoseName } from './Character.tsx';
 import type { ForemanView, PersonView } from './types.ts';
-import { foremanStopAt, foremanStops } from './foreman-route.ts';
+import { foremanStopAt, foremanStops, standAt } from './foreman-route.ts';
 import type { World } from './world.ts';
 
 /** An unhurried walk from desk to desk: slower than someone going to a colleague's desk. */
@@ -18,6 +18,10 @@ const MIN_STAND_MS = 6000;
  * The foreman: no desk and no chair. While a round runs it stands with whoever it is looking at, answering or
  * giving work to; between rounds it walks the office desk by desk — the shared floor and the members' rooms that
  * are open — pausing at each. With rounds switched off it waits by the entrance.
+ *
+ * A member's team lead is drawn by the same component (`foreman.title`): it walks between the desks of its own team
+ * only (`stopsOf`) — its member's room, and out on the shared floor to the shared employees that member looks after —
+ * and stands at its own seat when it has nobody to walk to.
  */
 export function Foreman({
   foreman,
@@ -44,15 +48,21 @@ export function Foreman({
   const tag = useRef<HTMLDivElement>(null);
   const { camera } = useThree();
   const seatedKey = people.map((p) => `${p.id}:${p.deskId ?? ''}`).join('|');
-  const stops = useMemo(() => foremanStops(world, people), [world, seatedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const everyone = useMemo(() => foremanStops(world, people), [world, seatedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Its walk: everybody's desks, or — a lead — its own team's.
+  const ownKey = foreman.stopsOf?.join('|') ?? '*';
+  const stops = useMemo(() => (foreman.stopsOf ? everyone.filter((s) => foreman.stopsOf!.includes(s.id)) : everyone), [everyone, ownKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const home = useMemo(() => {
+    const own = standAt(world, foreman.homeDeskId);
+    if (own) return own;
     const [x, z] = world.nav.nearestWalkable(world.spawn.x + 1.8, world.spawn.z - 1.4) ?? [world.spawn.x, world.spawn.z];
     return { x, z, rot: world.spawn.rot };
-  }, [world]);
+  }, [world, foreman.homeDeskId]);
 
   /** Where it should be right now, and a key that changes exactly when that place does. */
   const want = (now: number): { key: string; x: number; z: number; rot: number } => {
-    const visit = foreman.visitingId ? stops.find((s) => s.id === foreman.visitingId) : undefined;
+    // Whoever it is called to, on its walk or not.
+    const visit = foreman.visitingId ? everyone.find((s) => s.id === foreman.visitingId) : undefined;
     if (visit) return { key: `visit:${visit.id}`, ...visit };
     const i = foreman.patrolling ? foremanStopAt(stops.length, now) : -1;
     const stop = i >= 0 ? stops[i]! : undefined;
@@ -67,7 +77,15 @@ export function Foreman({
 
   // For the UI tests (see `window.__orchScene`): where the foreman is meant to be and where it is.
   useEffect(() => {
-    const probe = ((window as unknown as { __orchScene?: Record<string, unknown> }).__orchScene ??= { detail: {} });
+    // (The foreman's alone: there is one. A lead is found under `leads`.)
+    const probe = ((window as unknown as { __orchScene?: Record<string, any> }).__orchScene ??= { detail: {} });
+    if (foreman.title) {
+      const leads = ((probe.leads as Record<string, unknown>) ??= {});
+      leads[foreman.id] = () => ({ id: foreman.id, stops: stops.map((s) => s.id), key: rt.current.key, x: rt.current.x, z: rt.current.z, arrived: rt.current.arrived, visitingId: foreman.visitingId });
+      return () => {
+        delete leads[foreman.id];
+      };
+    }
     probe.foreman = () => ({ id: foreman.id, stops: stops.map((s) => s.id), key: rt.current.key, x: rt.current.x, z: rt.current.z, arrived: rt.current.arrived, visitingId: foreman.visitingId, patrolling: foreman.patrolling });
     return () => {
       delete probe.foreman;
@@ -171,7 +189,9 @@ export function Foreman({
         <Html position={[0, 1.95, 0]} center zIndexRange={[30, 0]} style={{ pointerEvents: 'none', display: hideLabels ? 'none' : 'block' }}>
           <div ref={tag} className={`tag tag-foreman ${foreman.dimmed ? 'tag-dim' : ''} ${selected ? 'tag-selected' : ''}`}>
             <div className="tag-name">{foreman.name}</div>
-            <div className="tag-state">FOREMAN · {foreman.space}</div>
+            <div className="tag-state">
+              {foreman.title ?? 'FOREMAN'} · {foreman.space}
+            </div>
             <div className="tag-task tag-foreman-doing">{foreman.doing}</div>
           </div>
         </Html>

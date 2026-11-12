@@ -132,6 +132,16 @@ export class Lead {
     return this.core.hosts.get(lead.hostId ?? '')?.memberName ?? 'your boss';
   }
 
+  /**
+   * The lead is with someone on its team: it looked at them, told them something or gave them work. On the record as
+   * an event — which is also what makes its character walk over to them. It is an event about the lead, so it is
+   * read by whoever may read what happens on that member's computer.
+   */
+  private visit(lead: Employee, target: Employee, action: 'look' | 'tell' | 'assign'): void {
+    const summary = action === 'look' ? `${lead.name} looked at what ${target.name} is doing` : action === 'assign' ? `${lead.name} gave ${target.name} work` : `${lead.name} told ${target.name} what to do`;
+    this.core.event({ type: 'lead.visit', source: 'mcp', summary, employeeId: lead.id, projectId: target.projectId, data: { fromEmployeeId: lead.id, toEmployeeId: target.id, action, quiet: true } });
+  }
+
   /** The team at a glance. Short on purpose: this is read on every request. */
   private overview(lead: Employee): string {
     const core = this.core;
@@ -220,7 +230,9 @@ export class Lead {
 
       team_look: async (a, { employee }) => {
         const target = this.find(employee, String(a.employee ?? ''));
-        return target ? this.look(target) : nobody(a.employee);
+        if (!target) return nobody(a.employee);
+        this.visit(employee, target, 'look');
+        return this.look(target);
       },
 
       team_tell: async (a, { employee }) => {
@@ -231,6 +243,7 @@ export class Lead {
         if (this.memberOf(to) && !core.agents.isOnline(to.hostId ?? '')) return err(`${to.name}'s machine is not in the office right now; nothing can be delivered there. Tell ${this.bossName(employee)}.`);
         this.eng.comms.sendMessage({ from: { kind: 'employee', id: employee.id, name: `${employee.name} (${this.bossName(employee)}'s lead)` }, toEmployeeId: to.id, body: truncate(message, 4000), taskId: this.eng.tasks.currentTask(to.id)?.id ?? null });
         core.audit(actor(employee), 'lead.told', to.id, {});
+        this.visit(employee, to, 'tell');
         // Somebody who has never been started is started for it (someone asleep is woken by the message itself).
         const running = !!core.runningSessionOf(to.id);
         if (!running && !this.eng.sessions.asleep(to.id)) void this.eng.sessions.start(to.id, { resume: true }).catch(() => undefined);
@@ -253,6 +266,7 @@ export class Lead {
           { projectId: project.id, title, description: String(a.description ?? ''), acceptance: a.acceptance ? String(a.acceptance) : '', assigneeId, priority: PRIORITIES.includes(a.priority) ? (a.priority as TaskPriority) : 'normal', kind: KINDS.includes(a.kind) ? (a.kind as TaskKind) : 'feature' },
           actor(employee),
         );
+        if (assigneeId) this.visit(employee, core.employees.require(assigneeId), 'assign');
         return `Created ${task.key} "${task.title}" in ${project.name}${assigneeId ? `, assigned to ${core.employees.get(assigneeId)?.name}` : ', unassigned'} (${task.status}).`;
       },
 
@@ -263,6 +277,7 @@ export class Lead {
         if (!to) return nobody(a.employee);
         if (task.assigneeId === to.id) return `${task.key} is already ${to.name}'s.`;
         this.eng.tasks.updateTask(task.id, { assigneeId: to.id }, actor(employee));
+        this.visit(employee, to, 'assign');
         return `${task.key} "${truncate(task.title, 80)}" is now ${to.name}'s.`;
       },
 

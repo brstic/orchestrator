@@ -21,6 +21,12 @@ function beside(world: World, desk: Parameters<typeof deskSeat>[0]): { x: number
   return { x, z, rot: Math.atan2(seat.x - x, seat.z - z) };
 }
 
+/** Where somebody without a chair of their own stands at a desk (their own, when there is nobody to walk to); null when there is no such desk. */
+export function standAt(world: World, deskId: string | null | undefined): { x: number; z: number; rot: number } | null {
+  const desk = deskId ? world.layout.desks.find((d) => d.id === deskId) : undefined;
+  return desk ? beside(world, desk) : null;
+}
+
 /**
  * The route of the foreman's walk: everyone who has a desk that can be walked to, in the order the desks stand —
  * the shared floor first, then each member's room. A member's room that is locked (they are away) has no door and

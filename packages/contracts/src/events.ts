@@ -106,6 +106,8 @@ export type EventType =
   | 'foreman.round.started'
   | 'foreman.round.finished'
   | 'foreman.visit'
+  /** A member's team lead is with one of its team: it looked at them, told them something or gave them work. */
+  | 'lead.visit'
   | 'foreman.escalated'
   | 'routine.created'
   | 'routine.updated'
