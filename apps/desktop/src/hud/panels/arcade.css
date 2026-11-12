@@ -1,0 +1,180 @@
+/* The arcade window (hud/panels/arcade.tsx). Every class starts with `arc-`. */
+.arc {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+/* The shelf */
+.arc-shelf {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-radius: var(--radius);
+  outline: 2px dashed transparent;
+  outline-offset: 6px;
+}
+.arc-shelf.over {
+  outline-color: var(--accent);
+}
+.arc-shelf-head {
+  gap: 12px;
+  align-items: center;
+}
+.arc-games {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 14px;
+  max-height: min(52vh, 560px);
+  overflow-y: auto;
+  padding: 2px;
+}
+.arc-game {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  min-width: 0;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.arc-game-shot {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  color: var(--faint);
+  font: 600 11px/1 var(--mono);
+  letter-spacing: 0.18em;
+  background: #05070b;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.arc-game-shot:hover,
+.arc-game-shot:focus-visible {
+  border-color: var(--accent);
+}
+.arc-game-shot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+.arc-game-name {
+  font-weight: 600;
+}
+.arc-game-acts {
+  gap: 6px;
+  margin-top: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Who plays with what */
+.arc-players {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.arc-player {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+}
+.arc-player-who {
+  font-weight: 600;
+}
+.arc-player select {
+  min-width: 0;
+}
+.arc-player > .small {
+  grid-column: 1 / -1;
+}
+.arc-players-note {
+  grid-column: 1 / -1;
+}
+
+/* A game being played */
+.arc-play {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.arc-bar {
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.arc-bar-title {
+  font-weight: 600;
+  min-width: 0;
+  max-width: 320px;
+}
+.arc-screen {
+  position: relative;
+  align-self: center;
+  /* A television's shape, as large as the window leaves room for. */
+  width: min(100%, calc((100vh - 330px) * 4 / 3));
+  min-width: 320px;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+}
+.arc-screen:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  border: 0;
+  border-radius: 0;
+}
+.arc-screen iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  /* The console takes no clicks and no keys: this window passes the buttons on. */
+  pointer-events: none;
+}
+.arc-over {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.6);
+}
+.arc-over-bad {
+  background: rgba(0, 0, 0, 0.85);
+}
+.arc-over-bad span {
+  color: var(--muted);
+  max-width: 520px;
+  overflow-wrap: anywhere;
+}
+.arc-sound-wait {
+  align-self: center;
+  padding: 0;
+  cursor: pointer;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  font: inherit;
+  text-decoration: underline;
+}

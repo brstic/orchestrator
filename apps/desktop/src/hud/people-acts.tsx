@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { EMOTES, type EmoteName } from '@orchestrator/contracts';
 import { ownerPosition } from '@orchestrator/office-3d';
 import { usePrefs } from '../lib/prefs.ts';
+import { keyTaken } from '../lib/keys-taken.ts';
 import { useOffice } from '../lib/store.ts';
 import { isTalking, startTalking, stopTalking } from '../lib/voice.ts';
 import { WHEEL_REACH as REACH, sliceAt } from '../lib/people-acts.ts';
@@ -66,6 +67,8 @@ export function PeopleActs() {
         return;
       }
       if (e.repeat || typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+      // A key a game on the arcade holds is the game's, whatever it is bound to here.
+      if (keyTaken(e.code)) return;
       const st = useOffice.getState();
       if (st.commandOpen || !st.ready) return;
       if (e.code === talkKey) {

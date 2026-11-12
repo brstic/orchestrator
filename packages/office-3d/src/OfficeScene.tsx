@@ -77,6 +77,8 @@ export interface OfficeSceneProps {
   onOpenRadio: () => void;
   /** What a click on the vault in the server room does (walking up to it and pressing the interact key goes through `onNearby`). */
   onOpenVault?: () => void;
+  /** What a click on an arcade cabinet does (walking up to it goes through `onNearby`, as for the vault). */
+  onOpenArcade?: () => void;
   /** The owner's whip, a visual gag with no effect on anyone's work: who was last whipped and when (ms), and when the owner last swung. */
   whips: Record<string, number>;
   whipAt: number;
@@ -211,7 +213,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       <Near id="hifi" area={breakArea} player={player} overview={overview}>
         <HiFi world={world} radio={props.radio} onOpen={props.onOpenRadio} />
       </Near>
-      <Rooms world={world} board={props.board} wall={props.wall} ceo={props.ceo} hosts={props.hosts} subscribe={props.subscribeScreen} unlocked={unlocked} whiteboard={props.whiteboard} onOpenMeeting={props.onOpenMeeting} player={player} overview={overview} />
+      <Rooms world={world} board={props.board} wall={props.wall} ceo={props.ceo} hosts={props.hosts} subscribe={props.subscribeScreen} unlocked={unlocked} whiteboard={props.whiteboard} onOpenMeeting={props.onOpenMeeting} onOpenArcade={props.onOpenArcade} player={player} overview={overview} />
       <SceneProbe zones={props.zones} surroundings={surroundings} />
       {props.talkMarks && props.talkMarks.length > 0 && props.cameraMode !== 'workstation' && <TalkMarks marks={props.talkMarks} positions={positions} onOpen={props.onOpenTalk ?? (() => undefined)} />}
       <People people={props.people} whips={props.whips} world={world} walks={props.walks} player={player} selectedId={props.selectedId} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />

@@ -60,6 +60,7 @@ export type PanelId =
   | 'radio'
   | 'tv'
   | 'vault'
+  | 'arcade'
   | 'seat'
   | 'people'
   | 'myroom'
@@ -70,7 +71,7 @@ export type PanelId =
 export type CameraMode = 'ceo' | 'first' | 'management' | 'free' | 'workstation' | 'command';
 
 export interface Nearby {
-  kind: 'employee' | 'desk' | 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv' | 'vault';
+  kind: 'employee' | 'desk' | 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv' | 'vault' | 'arcade';
   id: string;
   label: string;
 }

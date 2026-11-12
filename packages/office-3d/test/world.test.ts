@@ -363,6 +363,29 @@ test('what a reached milestone grants stands in the office: the arcade after ten
   assert.equal(buildWorld(layout, new Set(unlockedUpgrades(milestones))).solids.length, before + 1);
 });
 
+test('an arcade cabinet that stands is something to walk up to: the spot is in front of its screen, and it wins over the room around it', () => {
+  const layout = defaultLayout();
+  assert.equal(buildWorld(layout, new Set()).interactables.some((i) => i.kind === 'arcade'), false, 'no cabinet, nothing to walk up to');
+  const world = buildWorld(layout, new Set(['ten_tasks']));
+  const cabinet = layout.decorations.find((d) => d.kind === 'arcade')!;
+  const spot = world.interactables.find((i) => i.kind === 'arcade')!;
+  assert.ok(spot, 'the cabinet is in the list of what can be walked up to');
+  // In the default office its screen looks west (it is turned by -90°): the spot is a step west of it, at the same depth.
+  assert.ok(Math.abs(spot.x - (cabinet.x - 1)) < 1e-9 && Math.abs(spot.z - cabinet.z) < 1e-9, `${spot.x}, ${spot.z}`);
+  // Nobody has to stand inside the cabinet, or inside anything else, to play.
+  const inside = (b: { minX: number; maxX: number; minZ: number; maxZ: number }) => spot.x > b.minX && spot.x < b.maxX && spot.z > b.minZ && spot.z < b.maxZ;
+  assert.equal(world.obstacles.some(inside), false, 'the spot is free floor');
+  assert.deepEqual(layoutProblems(layout, new Set(['ten_tasks'])), [], 'and it can be reached');
+  // Standing there means the cabinet, whatever wider circle the spot also lies in.
+  assert.equal(world.interactables.find((i) => Math.hypot(i.x - spot.x, i.z - spot.z) < i.radius)!.kind, 'arcade');
+  // A cabinet the owner turned the other way is played from its other side; two cabinets are two spots.
+  const two = { ...layout, decorations: [...layout.decorations.map((d) => (d.kind === 'arcade' ? { ...d, rot: Math.PI / 2 } : d)), { id: 'arcade-2', kind: 'arcade', x: 14, z: 0, rot: 0 }] };
+  const spots = buildWorld(two, new Set(['ten_tasks'])).interactables.filter((i) => i.kind === 'arcade');
+  assert.equal(spots.length, 2);
+  assert.ok(spots.some((i) => Math.abs(i.x - (cabinet.x + 1)) < 1e-9), 'turned east, it is played from the east');
+  assert.ok(spots.some((i) => i.id === 'arcade:arcade-2' && Math.abs(i.x - 14) < 1e-9 && Math.abs(i.z - 1) < 1e-9), 'one that faces south is played from the south');
+});
+
 test('the team room, once earned, has a table and a sofa that people walk around; desks an owner put there are left alone', () => {
   const layout = defaultLayout();
   assert.equal(buildWorld(layout, new Set()).team, null, 'no team room, no furniture');

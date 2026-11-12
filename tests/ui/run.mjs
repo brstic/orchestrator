@@ -213,6 +213,10 @@ try {
   fs.writeFileSync(ctxFile, JSON.stringify(ctx));
   const before = await api('/state');
 
+  // What an earlier run left in this folder is not this run's result: a driver that is stopped before it has
+  // written anything must not be read as the one that passed last time (it was, on 2026-11-12).
+  const resultsFile = path.join(outDir, 'results.json');
+  fs.rmSync(resultsFile, { force: true });
   const driver = spawn(electron, [path.join(root, 'tests/ui/driver.cjs'), info.url, outDir, ctxFile], { stdio: ['ignore', 'inherit', 'inherit'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '' } });
   const code = await new Promise((resolve) => {
     driver.on('exit', resolve);
@@ -221,8 +225,7 @@ try {
       resolve('timeout');
     }, 420000);
   });
-  const resultsFile = path.join(outDir, 'results.json');
-  if (!fs.existsSync(resultsFile)) throw new Error(`the UI driver produced no results (exit ${code})`);
+  if (!fs.existsSync(resultsFile)) throw new Error(code === 'timeout' ? 'the UI driver was stopped after seven minutes without finishing: its steps are failing or waiting (see the FAILED-… pictures in the output folder)' : `the UI driver produced no results (exit ${code})`);
   const res = JSON.parse(fs.readFileSync(resultsFile, 'utf8'));
   console.log('In the UI (real clicks, typing and key presses):');
   for (const r of res.results) check(r.step, r.ok, r.detail);

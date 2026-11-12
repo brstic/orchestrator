@@ -220,10 +220,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     return reply.code(500).send({ error: 'internal error' });
   });
 
-  app.addHook('onSend', async (_req, reply) => {
+  app.addHook('onSend', async (req, reply) => {
     reply.header('x-content-type-options', 'nosniff');
     reply.header('referrer-policy', 'no-referrer');
-    reply.header('x-frame-options', 'DENY');
+    // Nothing of the office is shown in a frame, with one exception: the arcade's console, a page the office's own
+    // page frames (docs/ARCADE.md, "The frame"). No other site may frame that one either.
+    reply.header('x-frame-options', req.url.split('?')[0] === '/assets/arcade.html' ? 'SAMEORIGIN' : 'DENY');
   });
 
   if (process.env.ORCH_DEBUG_HTTP) {
@@ -921,7 +923,18 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   // ───────────── static UI ─────────────
   const uiDir = opts.uiDir && fs.existsSync(path.join(opts.uiDir, 'index.html')) ? opts.uiDir : null;
   if (uiDir) {
-    await app.register(fastifyStatic, { root: uiDir, prefix: '/', index: ['index.html'] });
+    const assets = path.join(uiDir, 'assets') + path.sep;
+    await app.register(fastifyStatic, {
+      root: uiDir,
+      prefix: '/',
+      index: ['index.html'],
+      // The arcade's console runs in a frame that is no origin at all (docs/ARCADE.md, "The frame"), and a script
+      // module is only handed to such a page when the file says anyone may read it. These are the app's own built
+      // files, which the door hands to anybody as it is; nothing else gets the header.
+      setHeaders: (res, file) => {
+        if (file.startsWith(assets)) res.setHeader('access-control-allow-origin', '*');
+      },
+    });
   } else {
     app.get('/', async (_req, reply) => reply.type('text/plain').send('Orchestrator server is running. The office UI has not been built yet: run `pnpm build:ui`, or start the dev UI with `pnpm dev:ui`.'));
   }

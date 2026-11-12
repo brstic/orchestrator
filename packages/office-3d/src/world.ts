@@ -32,7 +32,7 @@ export interface Spot {
 }
 
 export interface Interactable {
-  kind: 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv' | 'vault';
+  kind: 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv' | 'vault' | 'arcade';
   id: string;
   label: string;
   x: number;
@@ -84,6 +84,8 @@ export interface World {
 }
 
 const WALL_T = 0.14;
+/** How far in front of an arcade cabinet's middle somebody stands to play. */
+const ARCADE_REACH = 1.0;
 
 type Interval = [number, number];
 
@@ -607,6 +609,9 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
     if (d.requires && !unlocked.has(d.requires)) continue;
     const box = decorationKind(d.kind)?.solid ? decorationBox(d) : null;
     if (box) obstacles.push(box);
+    // An arcade cabinet is played at: the spot is in front of its screen (which looks toward +Z before it is turned).
+    // Listed first, as the TV is: in front of the cabinet means the cabinet, even inside a room's wider circle.
+    if (d.kind === 'arcade') interactables.unshift({ kind: 'arcade', id: `arcade:${d.id}`, label: 'ARCADE — PLAY', x: d.x + Math.sin(d.rot) * ARCADE_REACH, z: d.z + Math.cos(d.rot) * ARCADE_REACH, radius: 1.2 });
   }
 
   // Standing room in front of the project board: a row of spots, centre first, skipping any that something stands on.

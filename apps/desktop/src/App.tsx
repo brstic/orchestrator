@@ -159,6 +159,7 @@ export function App() {
     openRadio: () => useOffice.getState().openPanel('radio'),
     openTv: () => useOffice.getState().openPanel('tv'),
     openVault: () => useOffice.getState().openPanel('vault'),
+    openArcade: () => useOffice.getState().openPanel('arcade'),
     pickSeat: (deskId: string) => {
       const moving = useOffice.getState().movingEmployeeId;
       if (moving) void seatAt(moving, deskId);
@@ -386,6 +387,7 @@ export function App() {
           tvFrames={onTvFrame}
           onOpenTv={on.openTv}
           onOpenVault={on.openVault}
+          onOpenArcade={on.openArcade}
           freeSeats={freeSeats}
           onPickSeat={on.pickSeat}
           whips={s.whips}

@@ -10,6 +10,7 @@ import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffic
 import { may, memberOfEmployee, whyNot } from '../lib/access.ts';
 import { needsYou } from '../lib/attention.ts';
 import { waitingForLines } from '../lib/views.ts';
+import { arcadeStands } from '../arcade/stands.ts';
 import { TerminalView } from '../terminal/TerminalView.tsx';
 
 /** Run an API call and surface failures as a toast instead of swallowing them. */
@@ -150,6 +151,8 @@ export function TopBar() {
       items: [
         { id: 'radio', label: 'Hi-fi' },
         { id: 'tv', label: 'TV' },
+        // The cabinet is earned (ten delivered tasks) and can be taken off the floor: no cabinet, no line here.
+        ...(arcadeStands(s.layout, s.milestones) ? [{ id: 'arcade' as PanelId, label: 'Arcade' }] : []),
       ],
     },
     {
@@ -384,7 +387,7 @@ export function Toasts() {
   );
 }
 
-const ROOM_PANEL: Record<string, PanelId> = { tv: 'tv', hifi: 'radio', vault: 'vault', board: 'tasks', meeting: 'meetings', server: 'hosts', ops: 'wall', ceo: 'ceo', break: 'overview', reception: 'overview' };
+const ROOM_PANEL: Record<string, PanelId> = { tv: 'tv', hifi: 'radio', vault: 'vault', arcade: 'arcade', board: 'tasks', meeting: 'meetings', server: 'hosts', ops: 'wall', ceo: 'ceo', break: 'overview', reception: 'overview' };
 
 /** What pressing the interact key does for whatever the owner is standing next to. */
 export function interact(): void {

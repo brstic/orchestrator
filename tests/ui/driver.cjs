@@ -458,6 +458,120 @@ async function scenario() {
     return 'a picture from her, with what it shows and a way to download it';
   });
 
+  await step('the arcade: a cartridge of my own runs on the office\'s Mega Drive, two players each hold their own buttons, the office does not hear the keys, and where I stopped is kept', async () => {
+    // A cartridge written for this (tests/fixtures/md-test-rom.mjs): the colour of its screen says what both pads hold.
+    const { buildTestRom, padsOf } = await import(require('node:url').pathToFileURL(path.join(__dirname, '..', 'fixtures', 'md-test-rom.mjs')).href);
+    const rom = buildTestRom().toString('base64');
+    // Read from the console's own picture, inside its frame (a capture of the window gives colours as this machine's
+    // display shows them, which are not the ones that were drawn). Asked for after the emulator has drawn a frame.
+    const consoleFrame = () => win.webContents.mainFrame.framesInSubtree.find((f) => /\/assets\/arcade\.html/.test(f.url));
+    const drawn = () =>
+      consoleFrame().executeJavaScript(
+        // (The picture is there only from the moment a frame is drawn until the page has shown it; in between it is
+        // empty. So it is looked at over and over, at every kind of moment, until it is there — two seconds at most.)
+        `new Promise((done) => { const c = document.querySelector('canvas'); const gl = c.getContext('webgl2') || c.getContext('webgl'); const px = new Uint8Array(4); const from = performance.now(); let over = false; const look = () => { if (over) return false; gl.readPixels(c.width >> 1, c.height >> 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); if (px[0] + px[1] + px[2] === 0 && performance.now() - from < 2000) return false; over = true; done([px[0], px[1], px[2]]); return true; }; const again = () => { if (look()) return; requestAnimationFrame(look); setTimeout(again, 0); }; again(); })`,
+        true,
+      );
+    const held = async () => {
+      const [r, g, b] = await drawn();
+      const h = padsOf(r, g, b);
+      return h.running ? ['p1', 'p2'].map((p) => `${p}:${['a', 'b', 'c', 'start'].filter((k) => h[p][k]).join('+')}`).join(' ') : `not running (${r}, ${g}, ${b})`;
+    };
+    /** What a person sees where the screen is: the window as it is shown. */
+    const seen = async () => {
+      const at = await js(`(() => { const b = document.querySelector('[data-arcade-screen]').getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) }; })()`);
+      const px = (await win.webContents.capturePage({ x: at.x - 2, y: at.y - 2, width: 4, height: 4 })).toBitmap(); // BGRA
+      return { r: px[2], g: px[1], b: px[0] };
+    };
+    const shows = async (want, what) => {
+      let got = '';
+      for (const end = Date.now() + 6000; Date.now() < end; await sleep(120)) if ((got = await held()) === want) return;
+      throw new Error(`${what}: the screen says "${got}", expected "${want}"`);
+    };
+    const keys = (type, ...codes) => codes.forEach((keyCode) => win.webContents.sendInputEvent({ type, keyCode }));
+    const running = () => waitFor(`document.querySelector('[data-arcade-play-view]')?.dataset.arcadePhase === 'running'`, 40000);
+    const card = `document.querySelector('[data-arcade-game="Orchestrator Pad Test"]')`;
+
+    await js(`window.__t.store().openPanel('arcade')`);
+    await waitFor(`!!document.querySelector('[data-arcade-add]')`, 10000);
+    await js(`(() => { const b = Uint8Array.from(atob(${JSON.stringify(rom)}), (c) => c.charCodeAt(0)); const dt = new DataTransfer(); dt.items.add(new File([b], 'Pad Test (World).md')); const i = document.querySelector('[data-arcade-add]'); i.files = dt.files; i.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await waitFor(`!!${card}`, 10000);
+    await shot('arcade-shelf');
+    await click(`${card}.querySelector('[data-arcade-play]')`, 'Play');
+    await running();
+    const frame = await js(`(() => { const f = document.querySelector('[data-arcade-screen] iframe'); return { sandbox: f.getAttribute('sandbox'), src: f.getAttribute('src') }; })()`);
+    if (frame.sandbox !== 'allow-scripts') throw new Error(`the console's frame is sandboxed as "${frame.sandbox}"`);
+    await shows('p1: p2:', 'nothing held');
+    // And the picture is on the page, not only in the console: the cartridge's dark blue where the screen is.
+    const blue = await seen();
+    if (!(blue.b > 80 && blue.r < 30 && blue.g < 30)) throw new Error(`where the screen is, the window shows (${blue.r}, ${blue.g}, ${blue.b}), not the cartridge's blue`);
+    // The console opened its sound, and it plays (the cartridge itself is silent: this is the output, not a tune).
+    const sound = await waitFor(`document.querySelector('[data-arcade-play-view]').dataset.arcadeSoundState`, 8000);
+    if (sound !== 'on') throw new Error(`the console's sound is "${sound}"`);
+
+    // One player, the whole keyboard. The office hears none of it: W would walk.
+    const was = await js(`({ x: window.__orchPlayer.x, z: window.__orchPlayer.z, rot: window.__orchPlayer.rot })`);
+    keys('keyDown', 'W', 'K');
+    await shows('p1:b p2:', 'player 1 holds K (B)');
+    await sleep(500);
+    keys('keyUp', 'W', 'K');
+    await shows('p1: p2:', 'let go');
+    const now = await js(`({ x: window.__orchPlayer.x, z: window.__orchPlayer.z, rot: window.__orchPlayer.rot, focus: document.activeElement.tagName })`);
+    if (Math.hypot(now.x - was.x, now.z - was.z) > 0.01 || Math.abs(now.rot - was.rot) > 0.001) throw new Error(`the keys of the game moved the owner in the office: ${JSON.stringify(was)} → ${JSON.stringify(now)}`);
+    if (now.focus === 'IFRAME') throw new Error('the console took the keyboard from the window');
+
+    // Two players on one keyboard: the left half and the right half.
+    await js(`window.__t.setSelect(document.querySelector('[data-arcade-seat="2"]'), 'keys')`);
+    await waitFor(`/^W A S D to move/.test(document.querySelector('[data-arcade-legend="1"]').textContent) && /^Arrows to move/.test(document.querySelector('[data-arcade-legend="2"]').textContent)`, 5000);
+    keys('keyDown', 'G', 'L', 'Enter');
+    await shows('p1:b p2:c+start', 'G is player 1\'s B; L and Enter are player 2\'s C and Start');
+    // Seen on the page too: red from player 1 and green from player 2 are in the picture now.
+    const both = await seen();
+    if (!(both.r > 40 && both.g > 100)) throw new Error(`with both players holding buttons the window shows (${both.r}, ${both.g}, ${both.b})`);
+    await shot('arcade-two-players');
+    keys('keyUp', 'G', 'L', 'Enter');
+    keys('keyDown', 'F', 'H', '1', 'J', 'K');
+    await shows('p1:a+c+start p2:a+b', 'F H 1 are player 1\'s; J K are player 2\'s');
+    keys('keyUp', 'F', 'H', '1', 'J', 'K');
+    await shows('p1: p2:', 'let go');
+
+    // A gamepad for the second player (one this page is shown; there is none on the machine), the keyboard for the first.
+    await js(`(() => { window.__padHeld = []; navigator.getGamepads = () => [{ index: 0, id: 'Test Pad (STANDARD GAMEPAD Vendor: 0000 Product: 0000)', connected: true, mapping: 'standard', axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, (_x, i) => ({ pressed: window.__padHeld.includes(i), touched: false, value: 0 })) }, null, null, null]; return true; })()`);
+    try {
+      await waitFor(`!!document.querySelector('[data-arcade-seat="2"] option[value="0"]')`, 5000);
+      await js(`window.__t.setSelect(document.querySelector('[data-arcade-seat="2"]'), '0')`);
+      await waitFor(`/^W A S D or arrows/.test(document.querySelector('[data-arcade-legend="1"]').textContent) && /^D-pad/.test(document.querySelector('[data-arcade-legend="2"]').textContent)`, 5000);
+      await js(`window.__padHeld = [2, 9]; true`);
+      keys('keyDown', 'K');
+      await shows('p1:b p2:a+start', 'the gamepad\'s X and Start are player 2\'s A and Start, while K is player 1\'s B');
+      await js(`window.__padHeld = [0, 1]; true`);
+      keys('keyUp', 'K');
+      await shows('p1: p2:b+c', 'the gamepad\'s A and B are player 2\'s B and C');
+      await js(`window.__padHeld = []; true`);
+      await shows('p1: p2:', 'let go');
+    } finally {
+      await js(`delete navigator.getGamepads; window.__t.setSelect(document.querySelector('[data-arcade-seat="2"]'), 'none'); true`).catch(() => undefined);
+    }
+
+    // Leaving keeps where I was: the shelf then offers to continue, with a picture of the moment.
+    await click(`document.querySelector('[data-arcade-back]')`, '← Games');
+    await waitFor(`!!${card}?.querySelector('[data-arcade-continue]') && ${card}.querySelector('img')?.naturalWidth > 0`, 15000);
+    await shot('arcade-continue');
+    await click(`${card}.querySelector('[data-arcade-continue]')`, 'Continue');
+    await running();
+    await shows('p1: p2:', 'continued');
+    // Escape leaves the game for the shelf; the window closes on the next one.
+    await key('Escape');
+    await waitFor(`!!document.querySelector('[data-arcade-shelf]') && !document.querySelector('[data-arcade-play-view]')`, 15000);
+    // The game taken off the shelf is gone from this computer.
+    await click(`${card}.querySelector('[data-arcade-remove]')`, 'Remove');
+    await click(`${card}.querySelector('[data-arcade-remove-sure]')`, 'Remove for good');
+    await waitFor(`!${card} && /No games yet/.test(document.querySelector('[data-arcade-shelf]').textContent)`, 8000);
+    await key('Escape');
+    await waitFor(`!document.querySelector('[data-arcade]')`, 5000);
+    return 'my cartridge ran in a frame that is no origin, its sound output open; one player on the whole keyboard, two on its halves, and a gamepad beside the keyboard each held their own buttons; the owner did not move in the office; Continue was offered with a picture, and Escape left the game and then the window';
+  });
+
   await step('a routine: "Repeat every … minutes" turns what I type into a standing instruction, listed above the conversation', async () => {
     const ava = await js(`window.__t.emp('Ava').id`);
     await js(`window.__t.store().openPanel('talk', ${JSON.stringify(ava)})`);
@@ -2081,6 +2195,9 @@ app.whenReady().then(async () => {
   try {
     win.webContents.setAudioMuted(true); // the whip and the radio are heard by nobody during the test
     await win.loadURL(url);
+    // The page at its own size: a zoom somebody left on this address in this profile (it is kept per address) would
+    // put every click somewhere else.
+    win.webContents.setZoomFactor(1);
     await js(HELPERS);
     win.webContents.focus();
     await scenario();

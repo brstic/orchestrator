@@ -1592,13 +1592,29 @@ function ArcadeScreen() {
 }
 
 /** One decoration from the layout. Mounted only while someone is near it. */
-function Decoration({ d, player, overview }: { d: World['layout']['decorations'][number]; player: THREE.Vector3; overview: boolean }) {
+function Decoration({ d, player, overview, onOpenArcade }: { d: World['layout']['decorations'][number]; player: THREE.Vector3; overview: boolean; onOpenArcade?: () => void }) {
   const area = useMemo(() => ({ minX: d.x, maxX: d.x, minZ: d.z, maxZ: d.z }), [d.x, d.z]);
   if (!useNear(`decoration:${d.id}`, area, player, overview)) return null;
   if (d.kind === 'plant') return <Plant x={d.x} z={d.z} />;
   if (d.kind === 'arcade')
     return (
-      <group position={[d.x, 0, d.z]} rotation={[0, d.rot, 0]}>
+      <group
+        position={[d.x, 0, d.z]}
+        rotation={[0, d.rot, 0]}
+        onClick={(e) => {
+          if (!onOpenArcade) return;
+          e.stopPropagation();
+          onOpenArcade();
+        }}
+        onPointerOver={(e) => {
+          if (!onOpenArcade) return;
+          e.stopPropagation();
+          document.body.style.cursor = 'pointer';
+        }}
+        onPointerOut={() => {
+          if (onOpenArcade) document.body.style.cursor = '';
+        }}
+      >
         <Model model={arcade()} />
         <ArcadeScreen />
       </group>
@@ -1632,6 +1648,7 @@ export function Rooms({
   unlocked,
   whiteboard,
   onOpenMeeting,
+  onOpenArcade,
   player,
   overview,
 }: {
@@ -1644,6 +1661,8 @@ export function Rooms({
   unlocked: Set<string>;
   whiteboard: WhiteboardView;
   onOpenMeeting: (meetingId: string | null) => void;
+  /** What a click on an arcade cabinet does. */
+  onOpenArcade?: () => void;
   player: THREE.Vector3;
   overview: boolean;
 }) {
@@ -1840,7 +1859,7 @@ export function Rooms({
         </group>
       )}
 
-      {world.layout.decorations.map((d) => (d.requires && !unlocked.has(d.requires) ? null : <Decoration key={d.id} d={d} player={player} overview={overview} />))}
+      {world.layout.decorations.map((d) => (d.requires && !unlocked.has(d.requires) ? null : <Decoration key={d.id} d={d} player={player} overview={overview} onOpenArcade={onOpenArcade} />))}
     </group>
   );
 }
