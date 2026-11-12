@@ -2,7 +2,15 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
-## 2026-11-13 — My work: people keep their buttons on the line; what waits is said only when it does
+## 2026-11-13 — My work, second attempt: the fault was the arrangement, not the paint
+The owner sent the first version (the entry below) back within the hour: "still ugly, still crowded, too tall, unorganised". Looked at with eight people and ten tasks it was a page and a half of rows that all looked alike, each ending in the same three buttons.
+- **Restyling a long page gives a long page.** The first attempt kept the old arrangement — five sections one under the other — and changed what a row looked like. What a window is *arranged as* is decided first: here, two things a member looks at together (who is doing what, and what is open), so two columns side by side. Written into `docs/UI.md`'s steps for moving a window: look at it with a real amount of content before designing.
+- **The decision below, to keep three buttons on every line, was wrong.** "Talking is done many times a day" was the argument; but three buttons times eight lines is twenty-four buttons, and that is what "crowded" meant. One quiet *Talk* stays on the line; the line opens, like a machine's, to the rest. One line is open at a time, so the window does not grow down the screen.
+- **Projects and machines are not lists of their own.** A project is the heading of its open tasks (and is there with "nothing open" when it has none); a machine is a chip under the people. Two sections fewer, and each thing stands where it is looked for.
+- **A task in progress says nothing but whose it is** — the face. The word "in progress" on seven rows out of nine was the noise the look is meant to remove; a word is for a task that stands otherwise.
+- **People are ordered by who wants me**, not by name: blocked, asking, working, asleep.
+
+## 2026-11-13 — My work, first attempt: people keep their buttons on the line; what waits is said only when it does
 The second window of the new look (`docs/UI.md`), after the owner's "that is what I want" for Machines.
 - **A person's line does not open; it keeps *Talk* on it.** A machine's line opens because what is behind it is rarely needed. What is done with an employee — talking to them — is done many times a day, and a click to unfold before every *Talk* would be a step backwards. So the line carries one real button (*Talk*) and two quiet ones (*Terminal*, *Profile*); the rule "the rest opens on a click" gives way where the rest is what the window is opened for.
 - **How somebody is, is a word and a dot, not a badge** (`<State>`). The upper-case badge on every line ("THINKING", "SLEEPING") coloured the normal state; now only "needs a decision", "needs approval", "needs you" and "blocked" are coloured, and asleep is a ring — it is not a fault. The words are the office's own (`ACTIVITY_LABEL`), lower-cased and without the marks made for the name tags over the heads.

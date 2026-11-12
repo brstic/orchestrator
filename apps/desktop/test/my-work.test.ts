@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aboutEmployee, askLine, employeeState, myWorkLine, projectLine, taskState } from '../src/lib/my-work.ts';
+import { aboutEmployee, askLine, byAttention, employeeState, myWorkLine, projectLine, taskState, tasksByProject } from '../src/lib/my-work.ts';
 
 /** The words of the My work window (docs/UI.md). */
 
@@ -23,11 +23,36 @@ test('how an employee is: one word, one dot, a colour only when somebody is want
   assert.deepEqual(employeeState('pair_programming'), { word: 'pair programming', dot: 'on', tone: 'calm' });
 });
 
-test('the phrase under an employee: what they are, on what, doing what — the machine only where there are several', () => {
-  const e = { title: 'Frontend Engineer' };
-  assert.equal(aboutEmployee(e, { project: "Mila's notes", machine: "Mila's computer", machines: 1, task: { key: 'T-9', title: 'Notes, part 1' } }), "Frontend Engineer · Mila's notes · T-9 Notes, part 1");
-  assert.equal(aboutEmployee(e, { project: "Mila's notes", machine: 'box', machines: 2 }), "Frontend Engineer · Mila's notes · box");
-  assert.equal(aboutEmployee(e, { machines: 1 }), 'Frontend Engineer');
+test('what an employee is, for whoever opens their line — the machine only where there are several', () => {
+  const e = { title: 'Frontend Engineer', model: 'sonnet' };
+  assert.equal(aboutEmployee(e, { project: "Mila's notes", machine: "Mila's computer", machines: 1 }), "Frontend Engineer · Mila's notes · sonnet");
+  assert.equal(aboutEmployee(e, { project: "Mila's notes", machine: 'box', machines: 2 }), "Frontend Engineer · Mila's notes · box · sonnet");
+  assert.equal(aboutEmployee({ title: 'QA' }, { machines: 1 }), 'QA');
+});
+
+test('who is listed first: whoever wants somebody, then whoever works, then whoever sleeps', () => {
+  const p = (name: string, activity: string, asks = false) => ({ name, state: employeeState(activity, asks) });
+  assert.deepEqual(
+    byAttention([p('Zed', 'offline'), p('Ava', 'coding'), p('Bo', 'blocked'), p('Cy', 'thinking', true), p('Al', 'idle'), p('Di', 'needs_approval')]).map((x) => x.name),
+    ['Bo', 'Cy', 'Di', 'Al', 'Ava', 'Zed'],
+  );
+});
+
+test('open tasks by project: my projects first — each of them — then the others; a limit on the whole, and what was left out is counted', () => {
+  const mine = [{ id: 'n', name: 'Notes' }, { id: 'a', name: 'Atlas' }, { id: 'e', name: 'Empty' }];
+  const all = { n: mine[0], a: mine[1], e: mine[2], s: { id: 's', name: 'Shared platform' } } as any;
+  const t = (id: string, projectId: string) => ({ id, projectId, status: 'IN_PROGRESS' as const });
+  const tasks = [t('1', 'n'), t('2', 's'), t('3', 'a'), t('4', 'n'), t('5', 'n'), t('6', 'gone')];
+  const got = tasksByProject(tasks, mine, all, 4);
+  assert.deepEqual(got.map((g) => [g.project?.name ?? null, g.mine, g.tasks.map((x) => x.id).join(''), g.more]), [
+    ['Atlas', true, '3', 0],
+    ['Empty', true, '', 0],
+    ['Notes', true, '14', 1],
+    [null, false, '', 1],
+    ['Shared platform', false, '2', 0],
+  ]);
+  // Nothing open anywhere: my projects are still there to be seen.
+  assert.deepEqual(tasksByProject([], mine, all, 4).map((g) => g.project!.name), ['Atlas', 'Empty', 'Notes']);
 });
 
 test('the window’s one line', () => {

@@ -26,11 +26,61 @@ export function employeeState(activity: string, needsYou = false): StateWord {
 }
 
 /**
- * The phrase under an employee's name: what they are, on what, and what they are doing now. The machine is said
- * only to somebody who has more than one (otherwise it is the same on every line).
+ * What an employee is, for whoever opens their line: their title, their project, and the machine — the machine only
+ * to somebody who has more than one (otherwise it is the same for everybody) — and the model they run on.
  */
-export function aboutEmployee(e: { title: string }, at: { project?: string | null; machine?: string | null; machines: number; task?: { key: string; title: string } | null }): string {
-  return [e.title, at.project || null, at.machines > 1 ? at.machine || null : null, at.task ? `${at.task.key} ${at.task.title}` : null].filter(Boolean).join(' · ');
+export function aboutEmployee(e: { title: string; model?: string | null }, at: { project?: string | null; machine?: string | null; machines: number }): string {
+  return [e.title, at.project || null, at.machines > 1 ? at.machine || null : null, e.model || null].filter(Boolean).join(' · ');
+}
+
+/** Who is listed first: whoever wants somebody, then whoever is at work, then whoever sleeps; by name within each. */
+export function byAttention<T extends { name: string; state: StateWord }>(people: readonly T[]): T[] {
+  const rank = (s: StateWord): number => (s.tone === 'bad' ? 0 : s.tone === 'warn' ? 1 : s.dot === 'off' ? 3 : 2);
+  return [...people].sort((a, b) => rank(a.state) - rank(b.state) || a.name.localeCompare(b.name));
+}
+
+export interface TaskLike {
+  id: string;
+  projectId: string;
+  status: Task['status'];
+}
+export interface ProjectLike {
+  id: string;
+  name: string;
+}
+export interface TaskGroup<T, P> {
+  project: P | null;
+  /** One of my own projects (it is listed even with nothing open in it). */
+  mine: boolean;
+  tasks: T[];
+  /** How many more open tasks of this project there are than are listed. */
+  more: number;
+}
+
+/**
+ * The open tasks, by project: my own projects first (each of them, even with nothing open), then whichever other
+ * projects have a task of mine. No more than `most` tasks are listed in all — the board has the rest — and a
+ * project says how many of its own were left out.
+ */
+export function tasksByProject<T extends TaskLike, P extends ProjectLike>(tasks: readonly T[], mine: readonly P[], all: Record<string, P | undefined>, most: number): Array<TaskGroup<T, P>> {
+  const groups = new Map<string, TaskGroup<T, P>>();
+  for (const p of [...mine].sort((a, b) => a.name.localeCompare(b.name))) groups.set(p.id, { project: p, mine: true, tasks: [], more: 0 });
+  const others: Array<TaskGroup<T, P>> = [];
+  let left = most;
+  for (const t of tasks) {
+    let g = groups.get(t.projectId);
+    if (!g) {
+      g = { project: all[t.projectId] ?? null, mine: false, tasks: [], more: 0 };
+      groups.set(t.projectId, g);
+      others.push(g);
+    }
+    if (left > 0) {
+      g.tasks.push(t);
+      left--;
+    } else g.more++;
+  }
+  others.sort((a, b) => (a.project?.name ?? '').localeCompare(b.project?.name ?? ''));
+  return [...[...groups.values()].filter((g) => g.mine), ...others];
 }
 
 const count = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;

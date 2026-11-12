@@ -849,7 +849,7 @@ async function scenario() {
     return `${seen.subtitle}; dev-mac: ${seen.dev.meters.join(', ')}; opened: ${opened.facts.length} facts, ${opened.chips.length} people`;
   });
 
-  await step('My work (a member\'s own window): people in one list with one word about each, what waits only when something does, a lead hired in place, and one main button', async () => {
+  await step('My work (a member\'s own window): two columns — people with one word about each, open tasks by project — what waits only when something does, a lead hired in place, and one main button', async () => {
     await close();
     // The member at their own window: a second window on the same office, signed in as them.
     // (With a store of its own, in memory: the page keeps who is signed in for its address, and the owner's window must stay the owner's.)
@@ -885,8 +885,10 @@ async function scenario() {
       await owait(`!!document.querySelector('.win [data-mine]')`, 8000, 'My work');
       const seen = await ojs(`(() => {
         const w = ${W};
-        const rows = [...w.querySelectorAll('[data-mine-employee]')].map((r) => ({ name: r.querySelector('.k-title').textContent, about: r.querySelector('.k-sub').textContent, states: [...r.querySelectorAll('.k-state')].map((x) => x.textContent), buttons: [...r.querySelectorAll('button')].map((b) => b.textContent.trim()), badges: r.querySelectorAll('.badge').length }));
-        return { kit: w.classList.contains('win-kit'), title: w.querySelector('.win-head h2').textContent, subtitle: w.querySelector('.win-head p').textContent, primary: [...w.querySelectorAll('.btn-primary')].filter((b) => window.__t.visible(b)).map((b) => b.textContent.trim()), rows, waiting: !!w.querySelector('[data-mine-waiting]'), asks: Object.values(window.__t.store().questions).filter((q) => q.status === 'open' && (${mine}).some((e) => e.id === q.employeeId)).length, lead: w.querySelector('[data-lead]').getAttribute('data-lead'), labels: [...w.querySelectorAll('.k-label')].map((l) => l.textContent), text: w.textContent };
+        const rows = [...w.querySelectorAll('[data-mine-employee]')].map((r) => ({ name: r.querySelector('.k-title').firstChild.textContent, about: r.querySelector('.k-line').textContent, states: [...r.querySelectorAll('.k-state')].map((x) => x.textContent), buttons: [...r.querySelectorAll('button')].map((b) => b.textContent.trim()), badges: r.querySelectorAll('.badge').length, open: r.querySelector('[role=button]').getAttribute('aria-expanded') }));
+        const cols = [w.querySelector('[data-mine-people]'), w.querySelector('[data-mine-tasks]')].map((c) => { const b = c.getBoundingClientRect(); return { left: Math.round(b.left), top: Math.round(b.top), width: Math.round(b.width) }; });
+        const projects = [...w.querySelectorAll('[data-mine-project]')].map((g) => ({ head: g.querySelector('.k-row-head').textContent, tasks: g.querySelectorAll('[data-mine-task]').length }));
+        return { kit: w.classList.contains('win-kit'), title: w.querySelector('.win-head h2').textContent, subtitle: w.querySelector('.win-head p').textContent, primary: [...w.querySelectorAll('.btn-primary')].filter((b) => window.__t.visible(b)).map((b) => b.textContent.trim()), rows, waiting: !!w.querySelector('[data-mine-waiting]'), asks: Object.values(window.__t.store().questions).filter((q) => q.status === 'open' && (${mine}).some((e) => e.id === q.employeeId)).length, lead: !!w.querySelector('[data-lead]'), cols, projects, tall: Math.round(w.getBoundingClientRect().height), labels: [...w.querySelectorAll('.k-label')].map((l) => l.textContent), text: w.textContent };
       })()`);
       if (!seen.kit || seen.title !== 'My work') throw new Error(`the window is "${seen.title}"${seen.kit ? '' : ', not in the calm look'}`);
       if (!/^3 employees, \d working/.test(seen.subtitle)) throw new Error(`the window's one line reads "${seen.subtitle}"`);
@@ -899,29 +901,48 @@ async function scenario() {
       for (const r of seen.rows) {
         if (r.states.length !== 1 || !/^[a-z ]+$/.test(r.states[0])) throw new Error(`${r.name} is said to be: ${JSON.stringify(r.states)}`);
         if (r.badges) throw new Error(`${r.name} wears ${r.badges} badge(s)`);
-        if (r.buttons.join('|') !== 'Talk|Terminal|Profile') throw new Error(`the buttons of ${r.name} are: ${r.buttons.join(', ')}`);
+        // On the line there is one thing to press; the rest is behind a click on the line.
+        if (r.buttons.join('|') !== 'Talk' || r.open !== 'false') throw new Error(`on the line of ${r.name}: ${r.buttons.join(', ')}${r.open !== 'false' ? ' (and it starts open)' : ''}`);
         // (One machine: it is not repeated on every line.)
         if (/computer/i.test(r.about)) throw new Error(`the line of ${r.name} names the member's only machine: ${r.about}`);
       }
       // Nothing waits: nothing is said about waiting.
       if (seen.asks === 0 && (seen.waiting || /waiting/i.test(seen.text))) throw new Error('with nothing waiting, the window still speaks of waiting');
-      if (seen.labels.join('|') !== (seen.waiting ? 'Waiting for you|' : '') + 'Team lead|Employees|Open tasks|Projects|Machines') throw new Error(`the window's parts are: ${seen.labels.join(', ')}`);
-      // No lead yet: one line, and the long explanation only once asked for.
-      if (seen.lead !== 'none' || /lightest model/.test(seen.text)) throw new Error('a member without a lead is told all about leads before asking');
+      // Two columns side by side, people and tasks: the window is wide, not long.
+      if (seen.labels.join('|') !== 'People|Open tasks') throw new Error(`the window's parts are: ${seen.labels.join(', ')}`);
+      if (!(seen.cols[1].left > seen.cols[0].left + seen.cols[0].width - 4 && Math.abs(seen.cols[0].top - seen.cols[1].top) < 4)) throw new Error(`people and tasks do not stand side by side: ${JSON.stringify(seen.cols)}`);
+      if (seen.tall > 620) throw new Error(`with three people and two tasks the window is ${seen.tall} px tall`);
+      // The open tasks stand under their project; a task somebody is on shows their face and no word.
+      if (seen.projects.length !== 1 || !seen.projects[0].head.startsWith(`${ctx.memberName}'s notes`) || seen.projects[0].tasks !== 2) throw new Error(`the tasks are grouped as: ${JSON.stringify(seen.projects)}`);
+      const taskRow = await ojs(`(() => { const r = ${W}.querySelector('[data-mine-task]'); return { faces: r.querySelectorAll('.avatar').length, words: [...r.querySelectorAll('.k-state')].map((x) => x.textContent) }; })()`);
+      if (taskRow.faces !== 1 || taskRow.words.length) throw new Error(`a task in progress shows ${taskRow.faces} face(s) and says: ${taskRow.words.join(', ') || 'nothing'}`);
+      // A click on a line opens what they are and what else can be done; opening another closes it.
+      const line = (i) => `[...${W}.querySelectorAll('[data-mine-employee]')][${i}].querySelector('[role=button]')`;
+      await oclick(`${line(0)}.querySelector('.k-title')`, 'the first line');
+      const openedOne = await owait(`(() => { const d = [...${W}.querySelectorAll('[data-mine-employee]')][0].querySelector('.k-detail'); return d ? [...d.querySelectorAll('button')].map((b) => b.textContent.trim()).join('|') : null; })()`, 5000, 'the first line, opened');
+      if (openedOne !== 'Talk|Terminal|Profile') throw new Error(`an opened line offers: ${openedOne}`);
+      await oclick(`${line(1)}.querySelector('.k-title')`, 'the second line');
+      await owait(`${W}.querySelectorAll('[data-mine-employee] .k-detail').length === 1 && !![...${W}.querySelectorAll('[data-mine-employee]')][1].querySelector('.k-detail')`, 5000, 'only the second line open');
+      await oclick(`${line(1)}.querySelector('.k-title')`, 'the second line again');
+      await owait(`${W}.querySelectorAll('[data-mine-employee] .k-detail').length === 0`, 5000, 'every line closed');
+      // No lead yet: one quiet line beside the heading, and the long explanation only once asked for.
+      if (seen.lead || /lightest model/.test(seen.text)) throw new Error('a member without a lead is told all about leads before asking');
       await oclick(`window.__t.byText('Hire a team lead')`, 'Hire a team lead');
       await owait(`/lightest model/.test(${W}.textContent) && !!${W}.querySelector('input[aria-label="Name of your team lead"]')`, 5000, 'what a lead is, and a name for one');
       await oclick(`window.__t.byText('Cancel')`, 'Cancel');
       await owait(`!${W}.querySelector('input[aria-label="Name of your team lead"]') && !/lightest model/.test(${W}.textContent)`, 5000, 'the line as it was');
       await oclick(`window.__t.byText('Hire a team lead')`, 'Hire a team lead');
-      await oclick(`${W}.querySelector('[data-lead] button[type=submit]')`, 'Hire onto my computer');
+      await oclick(`${W}.querySelector('[data-lead-form] button[type=submit]')`, 'Hire onto my computer');
       // The new lead is there to be told something: their conversation opens.
       await owait(`window.__t.store().panel === 'talk' && (window.__t.store().employees[window.__t.store().panelArg] || {}).roleKey === 'lead'`, 20000, 'the conversation with the new lead');
       const lead = await ojs(`(() => { const e = window.__t.store().employees[window.__t.store().panelArg]; return { id: e.id, name: e.name }; })()`);
       if (lead.name !== `${ctx.memberName} Lead`) throw new Error(`a lead hired without a name is called "${lead.name}"`);
       await ojs(`window.__t.store().openPanel('mine')`);
       await owait(`(${W}.querySelector('[data-lead]') || { getAttribute: () => '' }).getAttribute('data-lead') === ${JSON.stringify(lead.id)}`, 8000, 'the lead on its own line');
-      // The lead is not counted or listed among the people it directs; what it may direct is set here.
-      const after = await ojs(`({ rows: ${W}.querySelectorAll('[data-mine-employee]').length, subtitle: ${W}.querySelector('.win-head p').textContent, line: ${W}.querySelector('[data-lead] .k-sub').textContent })`);
+      // The lead stands first, is called that, and is not counted among the people it directs; what it may direct is set behind its line.
+      const after = await ojs(`({ rows: ${W}.querySelectorAll('[data-mine-employee]').length, subtitle: ${W}.querySelector('.win-head p').textContent, line: ${W}.querySelector('[data-lead] .k-line').textContent, first: ${W}.querySelector('[data-mine-people] .k-group').firstElementChild.hasAttribute('data-lead'), note: ${W}.querySelector('[data-lead] .k-title-note').textContent, offer: !!window.__t.byText('Hire a team lead') })`);
+      if (!after.first || after.note !== 'team lead' || after.offer) throw new Error(`the lead's place: first ${after.first}, called "${after.note}"${after.offer ? ', and another is still offered' : ''}`);
+      await oclick(`${W}.querySelector('[data-lead] [role=button] .k-title')`, 'the lead\'s line');
       if (after.rows !== 3 || !/^3 employees/.test(after.subtitle)) throw new Error(`with a lead hired the window counts ${after.rows} employees ("${after.subtitle}")`);
       if (!/hired 0 of \d/.test(after.line)) throw new Error(`the lead's line reads "${after.line}"`);
       await oclick(`${W}.querySelector('[data-lead] input[type=checkbox]')`, 'Also direct the office\'s shared employees');
@@ -937,9 +958,10 @@ async function scenario() {
       await owait(`Object.values(window.__t.store().sessions).some((x) => x.employeeId === ${JSON.stringify(asker.id)} && x.status === 'running' && x.inTurn === false)`, 30000, `${asker.name} awake and at their prompt`);
       await ojs(`(async () => (await fetch('/api/employees/${asker.id}/message', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + ((window.orchestrator && window.orchestrator.token) || localStorage.getItem('orch.token') || '') }, body: JSON.stringify({ body: 'One thing first. @@fake: ask Which of the two do you want?@@' }) })).status)()`);
       await owait(`!!${W}.querySelector('[data-mine-waiting]') && /asks you something/.test(${W}.querySelector('[data-mine-waiting]').textContent)`, 40000, `${asker.name}'s question in "Waiting for you"`);
-      const waitingNow = await ojs(`({ first: ${W}.querySelector('.k-label').textContent, subtitle: ${W}.querySelector('.win-head p').textContent, state: [...${W}.querySelectorAll('[data-mine-employee]')].find((r) => r.getAttribute('data-mine-employee') === ${JSON.stringify(asker.id)}).querySelector('.k-state').className })`);
-      if (waitingNow.first !== 'Waiting for you' || !/1 waiting for you$/.test(waitingNow.subtitle)) throw new Error(`with a question open the window starts with "${waitingNow.first}" and says "${waitingNow.subtitle}"`);
-      if (!/k-state-warn/.test(waitingNow.state)) throw new Error(`the one who asks is not marked as wanting somebody: ${waitingNow.state}`);
+      const waitingNow = await ojs(`({ above: ${W}.querySelector('[data-mine-waiting]').getBoundingClientRect().bottom <= ${W}.querySelector('[data-mine-people]').getBoundingClientRect().top, subtitle: ${W}.querySelector('.win-head p').textContent, state: [...${W}.querySelectorAll('[data-mine-employee]')].find((r) => r.getAttribute('data-mine-employee') === ${JSON.stringify(asker.id)}).querySelector('.k-state').className, firstOfMine: ${W}.querySelector('[data-mine-employee]').getAttribute('data-mine-employee') })`);
+      if (!waitingNow.above || !/1 waiting for you$/.test(waitingNow.subtitle)) throw new Error(`with a question open: above the columns ${waitingNow.above}, and the window says "${waitingNow.subtitle}"`);
+      // Whoever wants somebody is marked, and stands first among the people.
+      if (!/k-state-warn/.test(waitingNow.state) || waitingNow.firstOfMine !== asker.id) throw new Error(`the one who asks: ${waitingNow.state}, first of the people: ${waitingNow.firstOfMine === asker.id}`);
       await oclick(`${W}.querySelector('[data-mine-waiting] button')`, 'the question');
       await owait(`window.__t.store().panel === 'question'`, 6000, 'the question, opened');
       const qid = await ojs(`window.__t.store().panelArg`);
