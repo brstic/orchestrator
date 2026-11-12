@@ -37,6 +37,14 @@ Asked for by an owner (Fenix): a visitor could see which Claude the office uses,
 - **Autonomy** has no empty value, so a fixed one is sent and a visitor's page never shows it.
 - **Left as it was:** what colleagues are sent of each other's computers (tasks, notifications and reports are still unfiltered between members); the terminal as a place where a visitor can read what Claude Code prints.
 
+## 2026-11-12 — A prompt nobody acknowledged is looked at on the screen, and Enter is pressed only into an input box
+A prompt is typed into a session as a paste followed by Enter; Claude Code acknowledges it with a hook. On the live office a session woken from sleep took the paste and lost the Enter, and the office waited for an acknowledgement that could not come.
+- **The office reads the terminal** (`inputBox`, `boxHolds` in `comms.ts`) rather than typing blindly again: text that is already in the box must be submitted, not pasted a second time; text that is not there must be typed again, not "submitted" with an Enter into an empty box (newer Claude Code offers a suggested prompt there, and Enter would send it).
+- **Enter is pressed only when the screen shows the input box and the box holds this prompt** — its last forty-eight characters, compared without white space because the terminal wraps, or a paste folded into "[Pasted text …]". A list of numbered answers on screen is a dialog, where Enter approves something: the office does nothing there and tells the owner.
+- **Twice at most, then a person is told.** Rejected: retrying for ever (a session that never takes a prompt is broken in a way more typing does not fix), and failing the delivery (a task would be thrown back for something a keypress solves).
+- **A session younger than twenty seconds is typed into only once its box is up** — where the office sees its screen; a terminal it cannot read is typed into as before, and not waited on for ever.
+- Rejected: a longer fixed delay after starting a session. It makes every start slower and is still a guess about a program whose start time depends on how long the conversation it resumes is.
+
 ## 2026-11-12 — A ticket is a conversation; review is the rule; a ticket can come back and can be shared
 The owner asked for the tasks to be redone (`docs/TASKS.md` describes the result). What was decided on the way, and why:
 - **Review by default, "a colleague, then me"** — the owner's own answer when asked who reviews ("Agent pa ja"). One field says it (`Task.reviewBy`), with the old boolean kept equal to it so that nothing that reads `requiresReview` had to change. Rejected: the boss alone by default (the office would wait for one person at every ticket), and a colleague alone (the owner wanted the last word).

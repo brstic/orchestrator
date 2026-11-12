@@ -43,6 +43,45 @@ function optionKeys(lines: string[], wanted: (label: string) => boolean): string
 }
 
 /**
+ * Claude Code's input box, as it stands in a terminal, and what is typed in it — or null when the screen shows
+ * something else: a dialog with numbered answers (where Enter would choose one), a program that is not at a prompt.
+ * The box is what lies between the last two horizontal rules, starting with the prompt sign; a terminal without
+ * rules that ends in a line with the prompt sign counts too.
+ *
+ * Read when a prompt was typed into a session and never acknowledged: a session that was only just started takes
+ * the pasted text when it is ready and loses the Enter that came with it — the text then stands in the box, unsent,
+ * and the employee sits in front of it (seen on the live office, 2026-11-12: a review that waited 40 minutes).
+ */
+export function inputBox(lines: string[]): { text: string } | null {
+  const plain = plainScreen(lines).map((l) => l.trimEnd());
+  while (plain.length && !plain[plain.length - 1]!.trim()) plain.pop();
+  if (!plain.length) return null;
+  const tail = plain.slice(-40);
+  // A list of numbered answers is a dialog: Enter there is an answer, not a submission.
+  if (tail.filter((l) => /^\s*(?:❯|>|›)?\s*\d+\.\s+\S/.test(l)).length >= 2 && tail.some((l) => /^\s*(?:❯|>|›)\s*\d+\.\s/.test(l))) return null;
+  const rule = (l: string) => /^\s*[─━═╌-]{20,}\s*$/.test(l);
+  const sign = /^\s*(?:❯|>)(?:\s|$)/;
+  let bottom = -1;
+  for (let i = tail.length - 1; i >= 0; i--) if (rule(tail[i]!)) { bottom = i; break; } // prettier-ignore
+  if (bottom > 0) {
+    let top = -1;
+    for (let i = bottom - 1; i >= 0; i--) if (rule(tail[i]!)) { top = i; break; } // prettier-ignore
+    const inside = tail.slice(top + 1, bottom);
+    if (top >= 0 && inside.length && sign.test(inside[0]!)) return { text: inside.join('\n').replace(sign, '').trim() };
+  }
+  const last = tail[tail.length - 1]!;
+  return sign.test(last) ? { text: last.replace(sign, '').trim() } : null;
+}
+
+/** Does the box hold this prompt — its end, as the box shows the end of a long text — or a paste folded into a tag? */
+export function boxHolds(box: { text: string }, prompt: string): boolean {
+  if (/\[pasted\b/i.test(box.text)) return true;
+  const bare = (t: string) => t.replace(/\s+/g, '');
+  const end = bare(prompt).slice(-48);
+  return end.length >= 12 && bare(box.text).includes(end);
+}
+
+/**
  * Claude Code's own permission dialog, as it stands in a terminal: what it asks about, and the keys for each answer.
  * Null when the screen shows none. It is there when the office could not hold the request — the wait for an answer
  * ran out, or the office was restarted meanwhile — and then the employee waits at it until somebody answers.
@@ -100,6 +139,8 @@ export interface Delivery {
   stopRequestId: string | null;
   /** Start the employee's session for this if they have none (a routine that is due), as talking to them does. */
   wake?: boolean;
+  /** How many times it was sent again after Claude Code did not acknowledge it (see `recover`). */
+  recovered?: number;
 }
 
 interface HookPending {
@@ -1182,18 +1223,31 @@ export class Comms {
   }
 
   async pump(employeeId: string): Promise<void> {
-    const list = this.queue.get(employeeId);
-    if (!list?.length) return;
-    const session = this.core.runningSessionOf(employeeId);
-    if (!session) return this.wakeFor(employeeId, list);
     const flying = this.inflight.get(employeeId);
+    // (What was typed and not acknowledged yet is looked at also when nothing else waits behind it: before, it was
+    // only noticed when the next thing came — and a prompt that stood unsent in a terminal stood there until then.)
+    if (!this.queue.get(employeeId)?.length && !flying) return;
+    const session = this.core.runningSessionOf(employeeId);
+    if (!session) {
+      const waiting = this.queue.get(employeeId);
+      return waiting?.length ? this.wakeFor(employeeId, waiting) : undefined;
+    }
     if (flying) {
       // One prompt at a time: wait for the hook that confirms it (or give up waiting).
       if (Date.now() - (flying.sentAt ?? 0) < this.core.timings.deliveryConfirmMs) return this.schedulePump(employeeId, 1000);
       this.inflight.delete(employeeId);
+      if (await this.recover(flying, session)) return;
       this.markUnconfirmed(flying);
     }
+    const list = this.queue.get(employeeId);
+    if (!list?.length) return;
     if (this.blockedReason(session)) return;
+    // A session that was only just started: what is typed before its input box is up arrives without its Enter.
+    // (Only where the office sees the screen; and not for ever — a terminal it cannot read is typed into as before.)
+    if (session.mode !== 'managed_sdk' && session.capabilities.hooks && Date.now() - Date.parse(session.startedAt) < 20_000) {
+      const screen = this.core.gateway.screens.get(session.id);
+      if (screen && !inputBox(screen.lines)) return this.schedulePump(employeeId, 700);
+    }
     const d = list.shift()!;
     d.attempts++;
     const hooks = session!.capabilities.hooks;
@@ -1306,6 +1360,44 @@ export class Comms {
 
   private markConfirmed(d: Delivery, detail: string): void {
     this.applyState(d, 'confirmed', d.via, detail);
+  }
+
+  /**
+   * A prompt was typed into a session and Claude Code never acknowledged it, and the session is between turns: it
+   * did not take it. Where the office can see the terminal it looks: the text standing in the input box is
+   * submitted (Enter); a box without it means the paste itself was lost, and it is typed again. Twice at most;
+   * never at a dialog, never while a person holds the keyboard. Returns whether something was done.
+   */
+  private async recover(d: Delivery, session: AgentSession): Promise<boolean> {
+    if (d.via !== 'terminal_paste' || !session.capabilities.hooks || session.mode === 'managed_sdk' || session.status !== 'running' || session.inTurn !== false) return false;
+    if (this.core.gateway.isHumanControlled(session.id) || this.core.gateway.isPaused(session.id) || !this.core.agents.isOnline(session.hostId)) return false;
+    const screen = this.core.gateway.screens.get(session.id);
+    const box = screen ? inputBox(screen.lines) : null;
+    const name = this.core.employees.get(d.employeeId)?.name ?? 'employee';
+    if (!box || (d.recovered ?? 0) >= 2) {
+      // Nothing more the office can do from here: said where a person sees it, once.
+      if ((d.recovered ?? 0) >= 2 || box === null) this.notify({ kind: 'info', severity: 'warning', title: `${name} has not taken what was typed to them`, body: `${this.whatFor(d)} was typed into ${name}'s terminal and Claude Code did not acknowledge it${(d.recovered ?? 0) ? `, also after ${d.recovered} more ${d.recovered === 1 ? 'try' : 'tries'}` : ''}. Open their terminal and look.`, employeeId: d.employeeId, sessionId: session.id, taskId: d.ref.kind === 'task' ? d.ref.id : null });
+      return false;
+    }
+    d.recovered = (d.recovered ?? 0) + 1;
+    if (boxHolds(box, d.text)) {
+      try {
+        await this.core.agents.rpc(session.hostId, { method: 'session.keys', params: { sessionId: session.id, keys: ['Enter'] } });
+      } catch {
+        return false;
+      }
+      d.sentAt = Date.now();
+      this.inflight.set(d.employeeId, d);
+      this.core.log('info', `delivery ${d.marker}:${d.markerId} to ${name} stood in the input box unsent: submitted`);
+      this.core.event({ type: 'terminal.resubmitted', source: 'server', summary: `What was typed to ${name} stood in their terminal unsent: the office pressed Enter`, employeeId: d.employeeId, sessionId: session.id, taskId: d.ref.kind === 'task' ? d.ref.id : null, data: { marker: d.marker, quiet: true } });
+      this.schedulePump(d.employeeId, this.core.timings.deliveryConfirmMs + 200);
+      return true;
+    }
+    // Not in the box: it never arrived. Typed again, ahead of whatever else waits.
+    this.queue.set(d.employeeId, [d, ...(this.queue.get(d.employeeId) ?? [])]);
+    this.core.log('info', `delivery ${d.marker}:${d.markerId} to ${name} did not arrive: typed again`);
+    this.schedulePump(d.employeeId, 300);
+    return true;
   }
 
   private markUnconfirmed(d: Delivery): void {

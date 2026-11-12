@@ -30,6 +30,7 @@ export type EventType =
   | 'terminal.control_released'
   | 'terminal.interrupt'
   | 'terminal.input_blocked'
+  | 'terminal.resubmitted'
   | 'task.created'
   | 'task.assigned'
   | 'task.delivered'

@@ -401,6 +401,11 @@ export class HookReceiver {
 
     if (employee) for (const m of interp.markers) this.eng.comms.confirmMarker(employee.id, m.kind, m.id);
 
+    // "X is blocked", said outside any task, stands in the owner's Inbox as something that needs them. When that
+    // employee is given a new prompt, somebody has dealt with it — a task's own "blocked" ends with the task's
+    // unblocking, but this one had nothing that ended it and stood there until it was dismissed by hand.
+    if (employee && payload.hook_event_name === 'UserPromptSubmit') this.eng.comms.resolveNotifications((n) => n.kind === 'blocked' && !n.taskId && n.employeeId === employee.id);
+
     // Any hook after a permission prompt proves the prompt was dealt with (possibly in the terminal).
     if (payload.hook_event_name === 'PostToolUse' || payload.hook_event_name === 'PostToolUseFailure' || payload.hook_event_name === 'PermissionDenied') {
       this.eng.comms.confirmBySignal(session.id, { tool: payload.tool_name ?? null, orchestratorTool: interp.orchestratorTool, ran: payload.hook_event_name === 'PostToolUse' });
