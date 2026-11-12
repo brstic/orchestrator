@@ -92,7 +92,7 @@ test('two employees on two accounts: each account shows what Claude Code said in
   // The busiest account comes first.
   assert.equal(rows[0].email, 'owner@example.test');
   const sarah = await h.session(ids.Sarah);
-  assert.match(h.tmux('show-environment', '-t', sarah!.tmuxSession!).concat(h.tmux('list-panes', '-a', '-F', '#{pane_start_command}')), new RegExp(`CLAUDE_CONFIG_DIR=${home}/.claude-second`));
+  assert.match(h.tmux('show-environment', '-t', sarah!.tmuxSession!).concat(h.started()), new RegExp(`CLAUDE_CONFIG_DIR=${home}/.claude-second`));
 });
 
 test('the figures survive a restart of the office, and a window that has reset no longer shows the old figure', async () => {

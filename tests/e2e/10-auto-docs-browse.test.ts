@@ -124,7 +124,7 @@ test('an employee on auto runs in Claude Code\'s auto mode and is not asked for 
   const session = await h.api('POST', `/employees/${ivy.id}/start`, {});
   await idle(ivy.id);
   assert.equal((await h.session(ivy.id))!.permissionMode, 'auto');
-  assert.match(h.tmux('display-message', '-p', '-t', session.tmuxPane, '#{pane_start_command}'), /--permission-mode auto/);
+  assert.match(h.started(session.tmuxPane), /--permission-mode auto/);
   await h.api('POST', `/employees/${ivy.id}/message`, { body: 'Write two files and run something. @@fake: write a.txt one; bash echo hello > b.txt; write c.txt three; say all-done-on-auto@@' });
   await waitFor(() => fs.existsSync(path.join(folder, 'c.txt')), { label: 'work done without approval' });
   await idle(ivy.id);

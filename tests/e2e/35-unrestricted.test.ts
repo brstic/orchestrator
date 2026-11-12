@@ -47,7 +47,7 @@ after(async () => {
 test('started in bypass mode; Claude Code\'s warning waits for the owner, who accepts it once for that account', async () => {
   await h.api('POST', `/employees/${ids.Una}/start`, {});
   const session = (await h.session(ids.Una!))!;
-  assert.match(h.tmux('list-panes', '-a', '-F', '#{session_name} #{pane_start_command}').split('\n').find((l) => l.startsWith(session.tmuxSession!))!, /--permission-mode bypassPermissions/);
+  assert.match(h.started().split('\n').find((l) => l.startsWith(session.tmuxSession!))!, /--permission-mode bypassPermissions/);
   const q = await waitFor(async () => (await h.state()).questions.find((x) => x.employeeId === ids.Una && x.kind === 'trust_prompt' && x.status === 'open'), { label: 'the owner is asked about the warning', timeout: 30000 });
   assert.match(q.text, /accept responsibility before Una can run without permission checks/);
   assert.match(q.context ?? '', /you accept all responsibility/);
@@ -143,7 +143,7 @@ test('a change of level or of Claude account starts the session again: at once w
   fs.writeFileSync(path.join(second, '.fake-bypass-accepted'), 'x');
   const cmd = async (name: string) => {
     const tmuxSession = (await h.session(ids[name]!))!.tmuxSession!;
-    return h.tmux('list-panes', '-a', '-F', '#{session_name} #{pane_start_command}').split('\n').find((l) => l.startsWith(tmuxSession)) ?? '';
+    return h.started().split('\n').find((l) => l.startsWith(tmuxSession)) ?? '';
   };
   const restarted = async (name: string, since: string) => waitFor(async () => {
     const x = await h.session(ids[name]!);

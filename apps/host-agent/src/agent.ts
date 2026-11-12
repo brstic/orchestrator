@@ -43,6 +43,7 @@ import {
   integrationStatus,
   promoteIntegration,
   planClaudeLaunch,
+  type ClaudeLaunchPlan,
   readMarkdown,
   readTranscriptUsage,
   runVerify,
@@ -741,10 +742,10 @@ export class HostAgent {
       // Same tmux session, same pane, scrollback preserved: only the dead process is restarted.
       tmuxSession = existing.tmuxSession;
       paneId = existing.paneId;
-      await this.tmux.respawnPane(paneId, cwd, plan.argv);
+      await this.tmux.respawnPane(paneId, cwd, plan.run ?? plan.argv);
     } else {
       tmuxSession = `orch-${slugify(spec.displayName, 24)}-${sessionId.slice(0, 6)}`;
-      const pane = await this.tmux.newSession({ name: tmuxSession, cwd, cols: spec.cols, rows: spec.rows, argv: plan.argv });
+      const pane = await this.tmux.newSession({ name: tmuxSession, cwd, cols: spec.cols, rows: spec.rows, argv: plan.run ?? plan.argv });
       paneId = pane.paneId;
     }
     const insp = await inspectPath(cwd);
@@ -792,7 +793,7 @@ export class HostAgent {
    * spec file. Permission modes and rules are the same ones an interactive
    * worker gets; nothing is bypassed.
    */
-  private planManagedLaunch(spec: LaunchSpec, sessionId: string, sessionDir: string, hookToken: string, sdkEntry: string): { argv: string[]; files: Array<{ path: string; content: string }>; hookEvents: string[] } {
+  private planManagedLaunch(spec: LaunchSpec, sessionId: string, sessionDir: string, hookToken: string, sdkEntry: string): ClaudeLaunchPlan {
     const specPath = path.join(sessionDir, 'managed.json');
     const managed: ManagedSpec = {
       sessionId,

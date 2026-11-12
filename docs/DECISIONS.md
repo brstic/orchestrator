@@ -2,6 +2,14 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-12 — A session's command is run from a file, because tmux takes 16 KB
+Two employees on the owner's server could not be started: `tmux new-session failed: command too long`. The agent gave tmux the whole of Claude Code's command, and `--append-system-prompt` carries an employee's instructions, which grow with what it learns. tmux's client sends a command to its server as one message of 16 KB at most (measured here: a 40 KB command is refused on this Mac's tmux too; the running sessions on the server were at 12 to 15 KB). `packages/execution/src/claude.ts` (`launcherScript`), unit `packages/execution/test/launch.test.ts`.
+- **The whole command goes into a file in the session's folder, and tmux runs `/bin/sh <that file>`.** Each argument is written in single quotes, so the shell reads it back byte for byte; the file is private like the session's other files (it holds what the command line held) and is written again at every start.
+- **Every session, not only the long ones.** One way to start means the way that matters is the one every test and every session uses; a second path taken only past 16 KB would be tried by one test and by the employees who know most.
+- **Not `--append-system-prompt-file`.** The Claude Code installed here mentions it, but machines differ in version (members' own computers, servers linked over SSH) and an option an older one does not know stops the session from starting. The launcher asks nothing of Claude Code. The system's own limit remains: about 128 KB for one argument on Linux. Instructions of that size would be the next wall, and a reason to shorten what is put in them rather than to find a longer pipe.
+- **Not shortening the instructions**, which was the quick way to get the two employees up: it puts off the same failure to the next lesson learned.
+- The file's name has "claude" in it on purpose: a pane is recognised as Claude Code's by its start command (`looksLikeClaude`), which no longer contains the program's name.
+
 ## 2026-11-12 — After Enter, the input box is looked at
 Found the hour pasting files into a conversation went live: a message with four files stood in an employee's terminal, unsent, and the next message was pasted onto it. The paste had been followed by Enter after a fixed 180 ms; a paste that names files is taken in more slowly, and an Enter during that time is lost. Nothing noticed: no hook fires for a prompt that was never sent, and the delivery stayed "sent".
 - **Look instead of waiting longer.** A longer fixed wait is a guess about somebody else's program. The agent reads the screen (`packages/execution/src/paste-submit.ts`): Enter once the paste is seen in the input box, then up to four more looks (0.5 to 2.5 s apart), and Enter again while the pasted text is still there.

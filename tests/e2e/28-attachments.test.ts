@@ -92,7 +92,7 @@ test('files attached to a task reach the employee with the task: on their machin
   // The hand-over named them, and the session may read that folder.
   await waitFor(async () => /saw\[Attached files\]=yes/.test(await pane('Alex')) && /saw\[header-bug\.png \(image\) — the header overlaps the logo\]=yes/.test(await pane('Alex')), { label: 'the hand-over named the files', timeout: 15000 });
   const session = (await h.session(ids.Alex!))!;
-  assert.match(h.tmux('list-panes', '-a', '-F', '#{session_name} #{pane_start_command}').split('\n').find((l) => l.startsWith(session.tmuxSession!))!, new RegExp(`--add-dir ${path.join(h.agentHome, 'files')}`));
+  assert.match(h.started().split('\n').find((l) => l.startsWith(session.tmuxSession!))!, new RegExp(`--add-dir ${path.join(h.agentHome, 'files')}`));
   ids.task = task.id;
 });
 

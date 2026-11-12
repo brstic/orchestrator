@@ -334,7 +334,7 @@ test('someone lent to a second project takes its tasks and keeps their own; extr
   await h.api('POST', `/employees/${ids.Alex}/stop`, {});
   const session = await h.api<any>('POST', `/employees/${ids.Alex}/start`, {});
   await waitFor(async () => (await h.session(ids.Alex!))!.inTurn === false, { label: 'Alex restarted' });
-  assert.match(h.tmux('display-message', '-p', '-t', session.tmuxPane, '#{pane_start_command}'), new RegExp(`--add-dir ${shared.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} `));
+  assert.match(h.started(session.tmuxPane), new RegExp(`--add-dir ${shared.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} `));
 
   // Dependencies: Handbook builds on Shop; the reverse would be a circle.
   await h.api('PATCH', `/projects/${docs.id}`, { dependsOn: [projectId] });

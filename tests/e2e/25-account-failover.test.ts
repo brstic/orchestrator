@@ -35,7 +35,7 @@ const account = async (dir: string | null) => (await usage()).find((r) => r.host
 const switched = async () => (await h.api<any[]>('GET', '/events?limit=400')).filter((e) => e.type === 'account.switched');
 const envOf = async (name: string) => {
   const s = await h.session(ids[name]!);
-  return h.tmux('list-panes', '-a', '-F', '#{session_name} #{pane_start_command}').split('\n').find((l) => l.startsWith(s!.tmuxSession!)) ?? '';
+  return h.started().split('\n').find((l) => l.startsWith(s!.tmuxSession!)) ?? '';
 };
 
 before(async () => {

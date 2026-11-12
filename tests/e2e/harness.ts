@@ -172,6 +172,12 @@ export interface Harness {
   startAgent(): Promise<void>;
   restartServer(): Promise<void>;
   tmux(...args: string[]): string;
+  /**
+   * How sessions were started: a line "<tmux session> <the command>" for every pane, or only the command of the pane
+   * named. The command is read from the file a pane runs it from (`launcherScript` in the execution package), with
+   * the shell's quotes taken off; a pane that runs no such file gives its own start command.
+   */
+  started(pane?: string): string;
   /** Enroll and start another host agent (its own state directory and tmux server): a second machine. */
   addHost(name: string, overrides?: Partial<AgentConfig>, via?: { serverUrl?: string; enrollToken?: string }): Promise<{ hostId: string; agent: HostAgent; cfg: AgentConfig; root: string; tmux: (...args: string[]) => string; stop: () => Promise<void> }>;
   cleanup(): Promise<void>;
@@ -184,6 +190,28 @@ let counter = 0;
  * 'none' (a task is done when it passes, as it was before 2026-11-12) unless a test is about review itself — the
  * real default, 'both', would put every scripted task of every test in front of a colleague and the boss.
  */
+/**
+ * The command a pane was started with. A session's command is not on tmux's command line (tmux takes 16 KB and an
+ * employee's instructions are longer): the pane runs `/bin/sh <session folder>/claude-launch.sh`, and the command is
+ * the `exec` in that file.
+ */
+export function startedWith(tmux: (...args: string[]) => string, pane?: string): string {
+  const command = (start: string): string => {
+    const file = /(\/\S*claude-launch\.sh)\s*$/.exec(start)?.[1];
+    if (!file || !fs.existsSync(file)) return start;
+    const text = fs.readFileSync(file, 'utf8');
+    const exec = text.slice(text.indexOf('\nexec ') + 6);
+    // Each argument stands in single quotes, and a quote inside one is written '\''.
+    return exec.replace(/'\\''/g, '\u0000').replace(/'/g, '').replace(/\u0000/g, "'").trimEnd();
+  };
+  const lines = tmux('list-panes', '-a', '-F', '#{session_name}\t#{pane_id}\t#{pane_start_command}')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => l.split('\t') as [string, string, string]);
+  if (pane) return command(lines.find(([, id]) => id === pane)?.[2] ?? '');
+  return lines.map(([name, , start]) => `${name} ${command(start).replace(/\n/g, ' ')}`).join('\n');
+}
+
 export async function createHarness(opts: { timings?: Record<string, number>; approvalWaitSeconds?: number; database?: string; memoryBin?: string | null; reviewDefault?: 'both' | 'boss' | 'peer' | 'none' } = {}): Promise<Harness> {
   let base = os.tmpdir();
   // Unix socket paths are limited to ~104 bytes on macOS; keep the root short.
@@ -232,6 +260,7 @@ export async function createHarness(opts: { timings?: Record<string, number>; ap
   const git = (cwd: string, ...args: string[]) =>
     execFileSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.test', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.test' } }).trim();
   const tmux = (...args: string[]) => execFileSync('tmux', ['-L', tmuxSocket, ...args], { encoding: 'utf8' });
+  const started = (pane?: string) => startedWith(tmux, pane);
 
   const h: Harness = {
     tmp,
@@ -302,6 +331,7 @@ export async function createHarness(opts: { timings?: Record<string, number>; ap
       await waitFor(() => agent.isConnected, { label: 'agent reconnect after server restart', timeout: 20000 });
     },
     tmux,
+    started,
     async addHost(name, overrides = {}, via = {}) {
       const home = path.join(tmp, `agent-${name}`);
       const root = path.join(fs.realpathSync(tmp), `machine-${name}`);

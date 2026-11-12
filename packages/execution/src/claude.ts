@@ -222,10 +222,36 @@ export function buildHooksSettings(opts: {
 export const HOOK_RETRY_SECONDS = 45;
 
 export interface ClaudeLaunchPlan {
+  /** The whole command: Claude Code with everything it is told at its start. */
   argv: string[];
+  /**
+   * What the pane is given to run, where that is not `argv` itself: a short command that runs `argv` from a file
+   * in the session's folder (see `launcherScript`). tmux takes a command of about 16 KB and no more.
+   */
+  run?: string[];
   /** `mode`: for a file that is run (default: private, not executable). */
   files: Array<{ path: string; content: string; mode?: number }>;
   hookEvents: string[];
+}
+
+/** The launcher's file name. It has "claude" in it: a pane is recognised as Claude Code's by its start command too (`looksLikeClaude`). */
+export const LAUNCHER = 'claude-launch.sh';
+
+/** One argument as `sh` reads it back, byte for byte: in single quotes, where nothing means anything but the quote itself. */
+export function shellQuote(arg: string): string {
+  return `'${arg.replace(/\0/g, '').replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * A script that runs a command exactly as given. A session is started through one because of tmux, not because of
+ * the shell: tmux's client hands the command to its server as one message of 16 KB at most and refuses a longer one
+ * ("command too long") before anything runs. An employee's instructions are part of Claude Code's command line and
+ * grow with every lesson and decision it has learned — on the owner's server two employees crossed the line on
+ * 2026-11-12 and could not be started at all. In a file the command has no such limit (the system's own is about
+ * 128 KB for one argument on Linux), and tmux is given a path.
+ */
+export function launcherScript(argv: string[]): string {
+  return ['#!/bin/sh', '# Written by Orchestrator for this start of the session, and written again at every start.', '# The command is here and not on tmux\'s command line: tmux takes about 16 KB, and the instructions alone can be longer.', `exec ${argv.map(shellQuote).join(' ')}`, ''].join('\n');
 }
 
 /**
@@ -367,7 +393,10 @@ export function planClaudeLaunch(opts: {
     // --mcp-config is variadic, so it goes last.
     argv.push('--mcp-config', mcpPath);
   }
-  return { argv, files, hookEvents: Object.keys(hooks) };
+  // The pane runs the command from a file (see `launcherScript`): always, so that there is one way a session starts.
+  const launcher = path.join(opts.sessionDir, LAUNCHER);
+  files.push({ path: launcher, content: launcherScript(argv) });
+  return { argv, run: ['/bin/sh', launcher], files, hookEvents: Object.keys(hooks) };
 }
 
 /** Heuristic used only for *discovery* of existing sessions; the owner confirms the attachment. */

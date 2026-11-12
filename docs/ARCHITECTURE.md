@@ -32,10 +32,12 @@ Each tracked session gets one `tmux -C attach` control client (`ControlClient`).
 
 ### Launching Claude Code
 
-`planClaudeLaunch` turns a `LaunchSpec` from the server into exact argv and two per-session files (mode 0600, in the agent's state directory — the project's own `.claude/` is never modified):
+`planClaudeLaunch` turns a `LaunchSpec` from the server into exact argv and per-session files (mode 0600, in the agent's state directory — the project's own `.claude/` is never modified):
 
 - `settings.json` — permission rules and **hooks**. Each hook is a `curl` to the agent's private unix socket carrying the session's token and `$TMUX_PANE`. If the agent is down the hook is a no-op and Claude Code behaves as if no hook were installed.
 - `mcp.json` — the Orchestrator MCP server (HTTP) with a bearer token scoped to this session. With `--strict-mcp-config` by default, so workers do not inherit the owner's personal MCP connectors.
+
+- `claude-launch.sh` — the command itself, each argument in single quotes. The pane runs `/bin/sh` on this file instead of being given the command: tmux refuses a command longer than about 16 KB, and the instructions in `--append-system-prompt` alone outgrow that (DECISIONS.md, "A session's command is run from a file…").
 
 Flags: `--session-id <uuid>` (or `--resume <uuid>` after a crash), `--permission-mode`, `--append-system-prompt`, `--model`, `--name`. Environment markers of a parent Claude Code session are stripped so each worker is a top-level session.
 
