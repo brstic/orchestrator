@@ -6,7 +6,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { MAX_SAID_FILES, SAID_KEEP_MS } from '@orchestrator/orchestration';
-import { createHarness, type Harness } from './harness.ts';
+import { createHarness, waitFor, type Harness } from './harness.ts';
 
 let h: Harness;
 let alex = '';
@@ -127,4 +127,25 @@ test('the office keeps a file that was said for a few days, then no longer; one 
   // After a restart, what was uploaded and never said is nobody's.
   await h.restartServer();
   assert.equal((await as(h.token, 'POST', `/employees/${alex}/message`, { body: 'x', fileIds: [unsent.id] })).status, 404);
+});
+
+test('a message with files is really sent: Claude Code takes such a paste in over a moment, and the Enter is not lost', async () => {
+  // What happened on 2026-11-12: a message with four files was pasted into an employee's terminal and stood there
+  // unsent — Enter had come while the paste was still being taken in — until the next message pushed it out.
+  // (The scripted worker does the same: a paste that names files swallows an Enter for 0.7 s.)
+  await h.api('POST', `/employees/${alex}/start`, {});
+  await waitFor(async () => (await h.session(alex))?.status === 'running', { label: 'Alex at his desk', timeout: 30000 });
+  const shot = await put(h.token, 'bug.png', PNG);
+  const sent = (await as(h.token, 'POST', `/employees/${alex}/message`, { body: 'What is wrong here?', fileIds: [shot.id] })).body;
+  const delivered = async () => (await h.state()).messages.find((m) => m.id === sent.id)!.delivery;
+  await waitFor(async () => (await delivered()).status === 'confirmed', { label: 'the message with a file taken by Claude Code', timeout: 20000 }).catch(async (e) => {
+    const s = await h.session(alex);
+    throw new Error(`${e.message} — it is "${(await delivered()).status}"; the terminal:\n${s?.tmuxPane ? h.tmux('capture-pane', '-p', '-J', '-t', s.tmuxPane) : ''}`);
+  });
+  // Sent once: the next message is its own prompt, not glued to this one.
+  const next = (await as(h.token, 'POST', `/employees/${alex}/message`, { body: 'And one more thing.' })).body;
+  await waitFor(async () => (await h.state()).messages.find((m) => m.id === next.id)!.delivery.status === 'confirmed', { label: 'the next message', timeout: 20000 });
+  const s = await h.session(alex);
+  const pane = h.tmux('capture-pane', '-p', '-J', '-S', '-200', '-t', s!.tmuxPane!);
+  assert.ok(pane.split('\n').filter((l) => /^> \[pasted \d+ chars\]\s*$/.test(l)).length >= 2, pane);
 });

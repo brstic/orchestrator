@@ -1,5 +1,6 @@
 export * from './tmux.ts';
 export * from './pane-stream.ts';
+export * from './paste-submit.ts';
 export * from './claude.ts';
 export * from './git.ts';
 export * from './host.ts';

@@ -502,6 +502,7 @@ function prompt() {
 // ───────────── terminal input: raw mode with bracketed paste, like a real TUI ─────────────
 let line = '';
 let inPaste = false;
+let digestingUntil = 0;
 let keyWaiter = null;
 const queue = [];
 
@@ -545,6 +546,9 @@ function onInput(chunk) {
       out(`\x1b[2m[pasted ${part.length} chars]\x1b[0m`);
       if (end === -1) return;
       inPaste = false;
+      // Like the real CLI, a paste that names files is taken in over a moment (it looks at them), and an Enter that
+      // arrives during that moment is lost: the text stays in the box, unsent.
+      if (/open (it|each) with the Read tool/.test(line)) digestingUntil = Date.now() + 700;
       s = s.slice(end + 6);
       continue;
     }
@@ -567,6 +571,7 @@ function onInput(chunk) {
       if (busy) interrupted = true;
       continue;
     }
+    if ((ch === '\r' || ch === '\n') && Date.now() < digestingUntil) continue;
     if (ch === '\r' || ch === '\n') submit();
     else if (ch === '\x7f') {
       if (line.length) {

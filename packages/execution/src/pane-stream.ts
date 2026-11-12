@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { promptBox, stillInTheBox } from './paste-submit.ts';
 import type { TerminalScreen } from '@orchestrator/contracts';
 import { ControlClient, inputToSendKeys, tmuxQuote, type Tmux } from './tmux.ts';
 
@@ -90,6 +91,11 @@ export interface PaneStreamEvents {
   resync: [];
   closed: [reason: string];
 }
+
+/** How long to wait for a paste to show in the input box before pressing Enter anyway. */
+const PASTE_SEEN_MS = 2500;
+/** After Enter: when to look whether the text is still in the box, and press Enter again if it is. */
+const PASTE_ENTER_AGAIN = [500, 900, 1600, 2500];
 
 /**
  * Live view of one tmux pane: ordered output stream, consistent snapshots for
@@ -329,14 +335,39 @@ export class PaneStream extends EventEmitter<PaneStreamEvents> {
     return p;
   }
 
-  /** Paste text as a single bracketed paste and optionally press Enter. */
+  /** What stands in the session's input box right now; null when no input box can be made out on the screen. */
+  private async box(): Promise<string | null> {
+    const [metaLines, captured] = await this.requireClient().batch([`display-message -p -t ${this.paneId} ${tmuxQuote(META_FORMAT)}`, `capture-pane -p -t ${this.paneId}`]);
+    const m = parseMeta(metaLines![0] ?? '');
+    return promptBox(captured!.slice(0, m.rows || captured!.length), m.cy);
+  }
+
+  /**
+   * Paste text as a single bracketed paste and optionally press Enter.
+   *
+   * Enter is pressed once the paste is seen in the input box (a TUI takes a paste in over a moment, longer when the
+   * text names files), and afterwards the box is looked at: while what was pasted still stands there, unsent, Enter is
+   * pressed again. Where the box cannot be made out, it is the old way: a short wait, one Enter. See `paste-submit.ts`.
+   */
   paste(text: string, submit: boolean): Promise<void> {
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const look = () => this.box().catch(() => null);
     const run = async () => {
       this.requireClient();
       await this.tmux.paste(this.paneId, text);
-      if (submit) {
-        // Give the TUI a beat to ingest the paste before Enter arrives.
-        await new Promise((r) => setTimeout(r, 180));
+      if (!submit) return;
+      // Give the TUI a beat to ingest the paste before Enter arrives — and, when the box can be read, until it shows it.
+      await wait(180);
+      for (const until = Date.now() + PASTE_SEEN_MS; Date.now() < until; await wait(120)) {
+        const box = await look();
+        if (box === null || stillInTheBox(box, text)) break;
+      }
+      await wait(120);
+      await this.requireClient().command(`send-keys -t ${this.paneId} Enter`);
+      // Sent? If what was pasted is still in the box, the Enter came too early for it: again, a little later each time.
+      for (let again = 0; again < PASTE_ENTER_AGAIN.length; again++) {
+        await wait(PASTE_ENTER_AGAIN[again]!);
+        if (this.closed || !stillInTheBox(await look(), text)) return;
         await this.requireClient().command(`send-keys -t ${this.paneId} Enter`);
       }
     };
