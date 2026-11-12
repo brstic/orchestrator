@@ -8,17 +8,20 @@
  *
  * This is NOT how the product runs. Use `pnpm start` for a real office.
  *
- *   node scripts/dev-office.ts [--port 4611] [--ui <folder with a built UI>] [--review both|boss|peer|none] [--member-room "Mila:3"]...
+ *   node scripts/dev-office.ts [--port 4611] [--ui <folder with a built UI>] [--review both|boss|peer|none] [--member-room "Mila:3"]... [--visitor "Nikola"]...
  *
  * `--review`: who reviews a finished task here when nobody chose (`OwnerSettings.reviewDefault`). This office is
  * set to `none` unless told otherwise — its scripted tasks are then done when they pass, which is what the UI tests
  * that use it count on; `--review both` shows the office as a real one starts (a colleague, then the boss).
  *
- * `--member-room "<name>:<employees>"` (may be repeated) adds a member of the office who is connected from "their
+ * `--member-room "<name>:<employees>[:owner]"` (may be repeated) adds a member of the office (a colleague, or an owner)
+ * who is connected from "their
  * own computer": a second host agent in this process, enrolled as that member's personal host, with that many
  * personal employees. Their room is then attached to the office. DEV ONLY: a real member's host is started by
  * their desktop app. `kill -USR1 <pid>` disconnects/reconnects all of these hosts, `kill -USR2 <pid>` only the
- * last one — to watch rooms disappear and come back.
+ * last one — to watch rooms disappear and come back. Each such member is a real member of this office, and the line
+ * printed at the end gives the address that opens the office as them — to see what a member sees of their own things.
+ * `--visitor "<name>"` (may be repeated) adds a visitor and prints the address that opens the office as them.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -101,27 +104,30 @@ await api('POST', '/employees/' + team.Ava.id + '/start', {});
 await api('POST', '/employees/' + team.Rev.id + '/start', {});
 
 // ── DEV ONLY: members connected from their own computers (see the header) ──
-const members: Array<{ name: string; hostId: string; socket: string; cfg: typeof cfg; home: string; agent: HostAgent | null }> = [];
+const members: Array<{ name: string; url: string; hostId: string; socket: string; cfg: typeof cfg; home: string; agent: HostAgent | null }> = [];
+/** The credential inside an invitation, as the tests read it. */
+const tokenOfInvite = (invite: string): string => JSON.parse(Buffer.from(invite.replace(/^orch-invite-v1\./, ''), 'base64url').toString('utf8')).t;
 const memberArgs = process.argv.flatMap((a, i) => (a === '--member-room' && process.argv[i + 1] ? [process.argv[i + 1]!] : []));
+// Members are invited, and an office invites only while its door is open: open it, on a port of its own.
+if (memberArgs.length || process.argv.includes('--visitor')) await api('POST', '/sharing', { open: true, port: port + 1000 });
 for (const [n, arg] of memberArgs.entries()) {
   const [name = `Member ${n + 1}`, count = '2'] = arg.split(':');
   const root = path.join(fs.realpathSync(base), `member-${n}`);
   fs.mkdirSync(root, { recursive: true });
   const socket = `${sock}-m${n}`;
   // ORCH_DEV_ROOM='{"desks":8,…}': how the first of these members arranged their room (as PUT /api/me/room would).
-  // DEV ONLY: these members are made up here and are in nobody's list of people; the office would refuse a computer
-  // that says it belongs to somebody it does not know (as it must), so this script vouches for its own.
-  if (n === 0) {
-    const known = server.engine.hosts.memberInGoodStanding;
-    server.engine.hosts.memberInGoodStanding = (id) => id.startsWith('dev-member-') || known(id);
-  }
-  if (n === 0 && process.env.ORCH_DEV_ROOM) server.engine.hosts.setMemberRoom(`dev-member-${n}`, JSON.parse(process.env.ORCH_DEV_ROOM), 'dev');
-  const { token } = server.engine.hosts.createMemberEnrollment({ id: `dev-member-${n}`, name });
+  // A member like any other: invited, so the office knows them and a window can be opened as them. DEV ONLY is the
+  // computer: a real member's host is started by their desktop app, this one by this script.
+  const invited = await api('POST', '/guests', { name, role: arg.split(':')[2] === 'owner' ? 'owner' : 'colleague' });
+  const memberId: string = invited.guest.id;
+  const memberToken: string = tokenOfInvite(invited.invite);
+  if (n === 0 && process.env.ORCH_DEV_ROOM) server.engine.hosts.setMemberRoom(memberId, JSON.parse(process.env.ORCH_DEV_ROOM), 'dev');
+  const { token } = server.engine.hosts.createMemberEnrollment({ id: memberId, name });
   const enrolled = await enroll(server.url, token, `${name}'s computer`, { ...info, hostname: `${name.toLowerCase()}-laptop` });
   const memberCfg = { ...cfg, name: `${name}'s computer`, allowedRoots: [root], tmuxSocketName: socket, hostId: enrolled.hostId, credential: enrolled.credential };
   const memberHome = path.join(base, `agent-m${n}`);
   saveConfig(memberCfg, memberHome);
-  const member = { name, hostId: enrolled.hostId, socket, cfg: memberCfg, home: memberHome, agent: new HostAgent(memberCfg, memberHome, () => undefined) as HostAgent | null };
+  const member = { name, url: `${server.url}/?token=${memberToken}`, hostId: enrolled.hostId, socket, cfg: memberCfg, home: memberHome, agent: new HostAgent(memberCfg, memberHome, () => undefined) as HostAgent | null };
   await member.agent!.start();
   while (!member.agent!.isConnected) await sleep(50);
   members.push(member);
@@ -153,7 +159,13 @@ const toggle = async (which: typeof members) => {
 process.on('SIGUSR1', () => void toggle(members));
 process.on('SIGUSR2', () => void toggle(members.slice(-1)));
 
-console.log(JSON.stringify({ url: `${server.url}/?token=${server.ownerToken}`, base, tmux: `tmux -L ${sock} attach`, pid: process.pid, members: members.map((m) => ({ name: m.name, hostId: m.hostId })) }));
+const visitors: Array<{ name: string; url: string }> = [];
+for (const name of process.argv.flatMap((a, i) => (a === '--visitor' && process.argv[i + 1] ? [process.argv[i + 1]!] : []))) {
+  const invited = await api('POST', '/guests', { name, role: 'visitor' });
+  visitors.push({ name, url: `${server.url}/?token=${tokenOfInvite(invited.invite)}` });
+}
+
+console.log(JSON.stringify({ url: `${server.url}/?token=${server.ownerToken}`, base, tmux: `tmux -L ${sock} attach`, pid: process.pid, members: members.map((m) => ({ name: m.name, hostId: m.hostId, url: m.url })), visitors }));
 const shutdown = async () => {
   await agent.stop().catch(() => undefined);
   for (const m of members) {

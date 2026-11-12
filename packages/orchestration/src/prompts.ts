@@ -1,5 +1,5 @@
 import type { AutonomyLevel, CollabRequest, CommunicationStyle, Employee, Meeting, Message, Project, Question, Task } from '@orchestrator/contracts';
-import { correlationMarker, roleByKey } from '@orchestrator/contracts';
+import { correlationMarker, roleByKey, LEAD_HIRE_LIMIT } from '@orchestrator/contracts';
 
 const STYLE_GUIDE: Record<CommunicationStyle, string> = {
   concise: 'Communicate briefly: lead with the result, skip preamble.',
@@ -171,7 +171,7 @@ export function systemPromptFor(employee: Employee, project: Project | undefined
   lines.push(STYLE_GUIDE[employee.style] ?? '');
   // A foreman's limits are the role's, not the autonomy level's (see below): it never edits files.
   // Where the owner switched the high-risk hold off for Unrestricted, nothing "still goes to the boss by itself".
-  if (employee.roleKey !== 'foreman') lines.push(employee.autonomy === 'unrestricted' && !heldHighRisk ? UNRESTRICTED_UNHELD : AUTONOMY_GUIDE[employee.autonomy]);
+  if (employee.roleKey !== 'foreman' && employee.roleKey !== 'lead') lines.push(employee.autonomy === 'unrestricted' && !heldHighRisk ? UNRESTRICTED_UNHELD : AUTONOMY_GUIDE[employee.autonomy]);
   if (project) lines.push(`Current project: ${project.name}${project.description ? ` — ${project.description}` : ''}.`);
   if (employee.instructions.trim()) lines.push(`Standing instructions from the boss:\n${employee.instructions.trim()}`);
   if (employee.roleKey === 'foreman') {
@@ -200,6 +200,28 @@ export function systemPromptFor(employee: Employee, project: Project | undefined
       ].join('\n'),
     );
     if (playbook) lines.push(`## What you have learned here so far\n${playbook}`);
+    return lines.filter(Boolean).join('\n\n');
+  }
+  if (employee.roleKey === 'lead') {
+    // A lead gets no tasks: it is spoken to, and hands on. Kept short — it is read on every turn of a small model.
+    lines.push(`## How your work happens here`);
+    lines.push(
+      [
+        `- Your boss talks to you directly: a prompt tagged [ORCH:MSG:…] "Message from the boss". Keep those tags out of your own writing. Between messages you do nothing: never poll, wait or look around unasked.`,
+        hasMcp
+          ? [
+              `- For each thing your boss wants, with the "orchestrator" MCP tools:`,
+              `  1. team_overview — who is on the team, what each works on (project, folder, what they did lately).`,
+              `  2. If one person clearly owns it (their project or their recent work is that thing): hand it over — team_tell for a look, a check or a question; team_task for work to be tracked. Say it in full: they see only your words.`,
+              `  3. If two could own it, or none clearly does: team_look at the likely ones. Still unsure — ask your boss (ask_boss) with the candidates named, and stop until they answer. Never guess, and never give the same thing to two people to be safe.`,
+              `  4. If nobody fits and it is real work: find where it lives (team_folders) and hire for it (team_hire) — or ask your boss where it is. At most ${LEAD_HIRE_LIMIT} people hired by you at a time.`,
+              `  5. Tell your boss in two or three lines whom you gave it to and why. Nothing more.`,
+            ].join('\n')
+          : `- This session has no Orchestrator tools, so you can only say in plain text whom you would hand things to.`,
+        `- You do not do the work yourself, do not read through code and do not change files. Reading costs your boss: look only as far as you need to know whose something is.`,
+        `- Be truthful: say what you saw, not what you assume. If you could not hand something over, say so.`,
+      ].join('\n'),
+    );
     return lines.filter(Boolean).join('\n\n');
   }
   lines.push(`## How work happens here`);

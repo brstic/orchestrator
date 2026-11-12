@@ -3,7 +3,8 @@
  * decided here, from three things: who is asking (their role), what the action needs, and whose
  * the thing they are acting on is.
  *
- *   visitor   — reads what is shared. Changes nothing.
+ *   visitor   — looks at the office: who is here, who works on what, how the shared work stands, the shared terminals.
+ *               Changes nothing, and is not sent what the office runs on or what is said in it (`shownTo`).
  *   colleague — works on everything shared, and on what is on their own computer.
  *   owner     — everything, including what is on other members' computers.
  *
@@ -23,7 +24,7 @@
  *
  * A route that is not listed here needs an owner: forgetting to list a new route fails closed.
  */
-import { matchRole, roleByKey, type FullState, type Message, type OrchestratorEvent, type Question, type Routine } from '@orchestrator/contracts';
+import { matchRole, roleByKey, type AgentSession, type Employee, type EntityKind, type FullState, type Host, type Meeting, type Message, type OrchestratorEvent, type OwnerSettings, type Project, type Question, type Routine, type Task } from '@orchestrator/contracts';
 import { FOREMAN_ROLE, type Engine, type OutcomesScope } from '@orchestrator/orchestration';
 
 export type Role = 'owner' | 'colleague' | 'visitor';
@@ -31,8 +32,11 @@ export type Role = 'owner' | 'colleague' | 'visitor';
 /** Who is making a request. `kind: 'owner'` is full rights: the root owner (id 'owner'), or a member whose role is owner. */
 export type Who = { kind: 'owner'; id: string; name: string; role: 'owner' } | { kind: 'guest'; id: string; name: string; role: 'colleague' | 'visitor' };
 
-/** read: look at it. work: change it, or reach into a machine. admin: run the office. */
-export type Need = 'read' | 'work' | 'admin';
+/**
+ * read: look at it. detail: read what is behind it — documents, code, accounts, the record — which is for those who
+ * work here, not for a visitor. work: change it, or reach into a machine. admin: run the office.
+ */
+export type Need = 'read' | 'detail' | 'work' | 'admin';
 
 type Thing = 'employee' | 'task' | 'project' | 'session' | 'question' | 'host' | 'routine';
 /** Whose a request is about: a thing named in the path (`:id`), or one named in the body. */
@@ -64,24 +68,24 @@ const RULES: Rule[] = [
   rule('GET', '/people', 'read'),
   rule('GET', '/roles', 'read'),
   rule('GET', '/events', 'read'),
-  rule('GET', '/performance', 'read'),
+  rule('GET', '/performance', 'detail'),
   rule('GET', '/layout/capacity', 'read'),
   rule('GET', '/radio/now', 'read'),
   // The hi-fi plays for the whole office: everyone hears what is on; switching a station on or off is for those who work here.
   rule('GET', '/radio', 'read'),
   rule('POST', '/radio/play', 'work'),
   rule('POST', '/radio/stop', 'work'),
-  // How much of each Claude account is used (the clocks). Whose account it is, is told only to those who may work on that machine.
-  rule('GET', '/usage', 'read'),
+  // How much of each Claude account is used (the clocks): for those who work here. Whose account it is, is told only to those who may work on that machine.
+  rule('GET', '/usage', 'detail'),
   // ── looking closer at one thing ──
-  rule('GET', '/employees/:id/docs', 'read', path('employee')),
-  rule('GET', '/employees/:id/docs/file', 'read', path('employee')),
-  rule('GET', '/employees/:id/git', 'read', path('employee')),
+  rule('GET', '/employees/:id/docs', 'detail', path('employee')),
+  rule('GET', '/employees/:id/docs/file', 'detail', path('employee')),
+  rule('GET', '/employees/:id/git', 'detail', path('employee')),
   rule('GET', '/employees/:id/xp', 'read', path('employee')),
-  rule('GET', '/tasks/:id/git', 'read', path('task')),
-  // Files on a task: whoever may see the task may open them; whoever may work with it may add and remove them.
-  rule('GET', '/tasks/:id/attachments/:id', 'read', path('task')),
-  rule('GET', '/projects/:id/integration', 'read', path('project')),
+  rule('GET', '/tasks/:id/git', 'detail', path('task')),
+  // Files on a task: whoever works here and may see the task may open them; whoever may work with it may add and remove them.
+  rule('GET', '/tasks/:id/attachments/:id', 'detail', path('task')),
+  rule('GET', '/projects/:id/integration', 'detail', path('project')),
   rule('GET', '/sessions/:id/history', 'read', path('session')),
   // ── a member's own computer ──
   rule('POST', '/me/host', 'work'),
@@ -101,7 +105,7 @@ const RULES: Rule[] = [
   rule('POST', '/employees/:id/message', 'work', path('employee')),
   rule('POST', '/employees/:id/report', 'work', path('employee')),
   // Routines: standing instructions repeated for one employee. Whoever may work with the employee may set them.
-  rule('GET', '/routines', 'read'),
+  rule('GET', '/routines', 'detail'),
   rule('POST', '/routines', 'work', inBody('employee', 'employeeId')),
   rule('PATCH', '/routines/:id', 'work', path('routine')),
   rule('DELETE', '/routines/:id', 'work', path('routine')),
@@ -160,9 +164,9 @@ const RULES: Rule[] = [
   rule('PATCH', '/lessons/:id', 'work'),
   rule('POST', '/commands/plan', 'work'),
   // Whether what the office learned helped. Counted, for anyone but an owner, only from what they may see (`outcomesScopeFor`).
-  rule('GET', '/growth/outcomes', 'read'),
+  rule('GET', '/growth/outcomes', 'detail'),
   // What the office did by itself with what it learned; each entry is filtered like any other event.
-  rule('GET', '/growth/log', 'read'),
+  rule('GET', '/growth/log', 'detail'),
 ];
 
 /** In place of a member's id: the thing is the foreman's (its profile, its session, its questions), which only owners may touch or look into. */
@@ -239,7 +243,7 @@ export function mayCall(engine: Engine, who: Who, method: string, route: string,
     if (r.method !== method) continue;
     const m = r.re.exec(route);
     if (!m) continue;
-    if (!owner && !allowed(who, r.need, null)) return { ok: false, reason: who.role === 'visitor' ? 'You are visiting this office: you can look, not change anything.' : 'Only an owner of this office can do this.' };
+    if (!owner && !allowed(who, r.need, null)) return { ok: false, reason: who.role !== 'visitor' ? 'Only an owner of this office can do this.' : r.need === 'detail' ? 'You are visiting this office: this is for the people who work here.' : 'You are visiting this office: you can look, not change anything.' };
     for (const s of r.scopes) {
       const raw = s.from === 'path' ? decodeURIComponent(m[1] ?? '') : body?.[s.field];
       // (A field that carries several ids — the tasks to release — is checked id by id; so is one that should
@@ -309,13 +313,24 @@ const FOREMAN_PUBLIC: Record<string, (e: OrchestratorEvent) => Pick<Orchestrator
   'foreman.round.finished': (e) => ({ summary: 'The foreman finished a round', data: { roundId: e.data.roundId, quiet: true } }),
 };
 
+/** What of an event's data the scene needs to move people about: who went to whom, and how. Nothing that was said. */
+const OUTLINE_DATA = ['fromEmployeeId', 'toEmployeeId', 'roundId', 'action', 'quiet'];
+
+/** An event for a visitor: that it happened, when and to whom. Its line for the feed and what it carries are left out. */
+function outline(e: OrchestratorEvent): OrchestratorEvent {
+  const data: Record<string, unknown> = {};
+  for (const k of OUTLINE_DATA) if (k in e.data) data[k] = e.data[k];
+  return { ...e, source: { kind: e.source.kind }, correlationId: null, summary: '', data };
+}
+
 /** An event as this person may read it: whole, with only what is public in it, or not at all (null). */
 export function eventFor(engine: Engine, who: Who, e: OrchestratorEvent): OrchestratorEvent | null {
   // An owner reads everything — except what is said in a room its member has closed.
   if (who.kind === 'owner') return closedTo(engine, who, memberOfEvent(engine, e)) ? null : e;
   const pub = FOREMAN_PUBLIC[e.type];
   if (pub) return { ...e, sessionId: null, taskId: null, projectId: null, ...pub(e) };
-  return can(engine, who, 'read', memberOfEvent(engine, e)) ? e : null;
+  if (!can(engine, who, 'read', memberOfEvent(engine, e))) return null;
+  return who.role === 'visitor' ? outline(e) : e;
 }
 
 /**
@@ -337,8 +352,96 @@ export function mayReadRoutine(engine: Engine, who: Who, r: Pick<Routine, 'emplo
   return can(engine, who, 'read', memberOf(engine, 'employee', r.employeeId));
 }
 
+// ── what a visitor is sent ──
+// A visitor is here to look at the office: who is in it, who works on what, how the shared work stands; they may watch
+// the shared terminals (the owners' word). They are not sent what the office runs on (which Claude, which account, the
+// machines, the folders), what is said in it (instructions, messages, questions, notifications, reports), what the
+// work looks like inside (descriptions, evidence, branches) or what it costs. Left out here, on the server: a page
+// that only hid these would still have handed them over.
+
+const forVisitor = {
+  host: (h: Host): Host => ({ id: h.id, name: h.name, status: h.status, info: null, resources: null, enrolledAt: h.enrolledAt, lastSeenAt: null, revokedAt: h.revokedAt, local: h.local, claudeAccounts: [], memberId: h.memberId ?? null, memberName: h.memberName ?? null, room: h.room ?? null, ownerId: h.ownerId ?? null, ownerName: h.ownerName ?? null }),
+  // (`autonomy` has no empty value: a visitor's page does not show it, and what is sent says nothing about the real one.)
+  employee: (e: Employee): Employee => ({ ...e, model: null, effort: null, claudeConfigDir: null, workingDir: null, instructions: '', allowedTools: [], disallowedTools: [], autonomy: 'standard', captureOnboarded: [], captureSkills: [] }),
+  session: (s: AgentSession): AgentSession => ({ ...s, launchId: null, tmuxSession: '', tmuxPane: null, cwd: '', repoRoot: null, branch: null, claudeSessionId: null, permissionMode: null, claudeConfigDir: null, model: null, effort: null, pid: null, usage: null, exitReason: null }),
+  project: (p: Project): Project => ({ id: p.id, name: p.name, description: p.description, goals: '', requirements: '', docs: '', hostId: p.hostId, repoPath: null, baseBranch: '', integrationBranch: '', workspace: p.workspace, ownerEmployeeId: p.ownerEmployeeId, verifyCommand: null, verifyTimeoutSec: 0, extraRepos: [], dependsOn: p.dependsOn ?? [], color: p.color, status: p.status, policy: { ...p.policy, allow: [], deny: [], highRiskPatterns: [] }, milestones: p.milestones, deliveredAt: p.deliveredAt, createdAt: p.createdAt }),
+  // Named field by field, unlike the others: a task is where the work is talked about, and what it is given later
+  // (as its conversation was) must not reach a visitor just because nobody thought of it here.
+  task: (t: Task): Task => ({
+    id: t.id, key: t.key, projectId: t.projectId, title: t.title, kind: t.kind, priority: t.priority, status: t.status, assigneeId: t.assigneeId, roleHint: null, dependsOn: t.dependsOn,
+    requiresReview: t.requiresReview, reviewerId: t.reviewerId, reviewOf: t.reviewOf, released: t.released, nudges: 0, attempts: t.attempts, delivery: t.delivery,
+    createdAt: t.createdAt, updatedAt: t.updatedAt, startedAt: t.startedAt, completedAt: t.completedAt,
+    description: '', acceptance: '', branch: null, worktree: null, baseSha: null, verifyCommand: null, blockedReason: null, createdBy: '',
+    friction: { failedVerifications: 0, reviewRejections: 0, mergeConflicts: 0, blockers: 0, questions: 0, denials: 0 },
+    progress: { percent: t.progress?.percent ?? null, note: null, ts: t.progress?.ts ?? null },
+    evidence: { summary: null, reportedTests: null, commits: [], filesChanged: [], diffStat: null, verification: null, review: null, merge: null },
+    history: [],
+  }),
+  meeting: (m: Meeting): Meeting => ({ ...m, context: '', contributions: [], decisionDoc: null, generatedTaskIds: [] }),
+  settings: (s: OwnerSettings): OwnerSettings => ({ ...s, autoAsksHighRisk: true, unrestrictedAsksHighRisk: true, lastSeenAt: null }),
+};
+
+/** Kinds of things a visitor is not sent at all: what is said, asked, reported and learned in the office. */
+const NOT_FOR_VISITORS = new Set<EntityKind>(['question', 'message', 'collab', 'notification', 'artifact', 'lesson', 'improvement', 'performance', 'routine']);
+
+/**
+ * One thing of the office as this person is sent it: as it is, with only what a visitor may know of it, or not at all
+ * (null). Those who work here get it as it is — what of a member's own computer is kept from them is decided for
+ * events, messages, questions and routines by the functions above. Taking a thing away is told to everyone.
+ */
+export function shownTo<T>(engine: Engine, who: Who, kind: EntityKind, data: T, op: 'upsert' | 'remove' = 'upsert'): T | null {
+  if (who.role !== 'visitor' || op === 'remove') return data;
+  if (NOT_FOR_VISITORS.has(kind)) return null;
+  const d = data as unknown as { id: string };
+  switch (kind) {
+    case 'host':
+      return forVisitor.host(d as unknown as Host) as unknown as T;
+    case 'employee':
+      return forVisitor.employee(d as unknown as Employee) as unknown as T;
+    case 'session':
+      return forVisitor.session(d as unknown as AgentSession) as unknown as T;
+    // A member's own project and its tasks are theirs; everyone still sees their employees at work.
+    case 'project':
+      return memberOf(engine, 'project', d.id) ? null : (forVisitor.project(d as unknown as Project) as unknown as T);
+    case 'task':
+      return memberOf(engine, 'task', d.id) ? null : (forVisitor.task(d as unknown as Task) as unknown as T);
+    case 'meeting':
+      return forVisitor.meeting(d as unknown as Meeting) as unknown as T;
+    case 'settings':
+      return forVisitor.settings(d as unknown as OwnerSettings) as unknown as T;
+    default:
+      return data;
+  }
+}
+
 /** The office's state as this person may read it. */
 export function stateFor(engine: Engine, who: Who, state: FullState): FullState {
+  if (who.role === 'visitor') {
+    const each = <T>(kind: EntityKind, rows: T[]): T[] => rows.map((r) => shownTo(engine, who, kind, r)).filter((r): r is T => r !== null);
+    return {
+      serverTime: state.serverTime,
+      settings: shownTo(engine, who, 'settings', state.settings)!,
+      layout: state.layout,
+      hosts: each('host', state.hosts),
+      employees: each('employee', state.employees),
+      sessions: each('session', state.sessions),
+      projects: each('project', state.projects),
+      tasks: each('task', state.tasks),
+      questions: [],
+      messages: [],
+      collabs: [],
+      notifications: [],
+      meetings: each('meeting', state.meetings),
+      artifacts: [],
+      milestones: state.milestones,
+      company: state.company,
+      lessons: [],
+      improvements: [],
+      performance: [],
+      routines: [],
+      events: state.events.map((e) => eventFor(engine, who, e)).filter((e): e is OrchestratorEvent => !!e),
+    };
+  }
   // An owner reads the whole state unless some member has closed their room; then what is said there is left out for them too.
   if (who.kind === 'owner' && !engine.hosts.closedMembers().some((id) => id !== who.id)) return state;
   return { ...state, events: state.events.map((e) => eventFor(engine, who, e)).filter((e): e is OrchestratorEvent => !!e), messages: state.messages.filter((m) => mayReadMessage(engine, who, m)), questions: state.questions.filter((q) => mayReadQuestion(engine, who, q)), routines: (state.routines ?? []).filter((r) => mayReadRoutine(engine, who, r)) };

@@ -42,7 +42,9 @@ test('the three roles', () => {
 });
 
 test('requests: shared work for colleagues, a member’s computer for that member, the office for owners', () => {
-  assert.ok(call(mila, 'GET', '/state') && call(mila, 'GET', '/employees/e-shared/docs') && call(mila, 'GET', '/usage'));
+  assert.ok(call(mila, 'GET', '/state') && call(mila, 'GET', '/sessions/s-shared/history'));
+  // Documents, code and the accounts are for those who work here (what a visitor is sent: visitor.test.ts).
+  assert.ok(!call(mila, 'GET', '/employees/e-shared/docs') && !call(mila, 'GET', '/usage') && call(ana, 'GET', '/employees/e-shared/docs') && call(ana, 'GET', '/usage'));
   assert.ok(!call(mila, 'POST', '/employees/e-shared/message') && !call(mila, 'GET', '/employees/e-jovan/docs') && !call(mila, 'POST', '/me/host'));
   assert.ok(call(ana, 'POST', '/employees/e-shared/stop') && call(ana, 'POST', '/questions/q-shared/answer') && call(ana, 'PATCH', '/tasks/t-shared'));
   for (const [m, r, b] of [
@@ -151,7 +153,8 @@ test('the hi-fi plays for the whole office: everyone is told what is on, owners 
 
 test('measured outcomes: everyone may ask, and what is on a member’s own computer is counted only for that member and the owners', async () => {
   const { outcomesReport } = await import('@orchestrator/orchestration');
-  for (const who of [root, vera, jovan, ana, mila]) assert.ok(call(who, 'GET', '/growth/outcomes'), who.name);
+  for (const who of [root, vera, jovan, ana]) assert.ok(call(who, 'GET', '/growth/outcomes'), who.name);
+  assert.ok(!call(mila, 'GET', '/growth/outcomes'), 'what the office learned is for those who work here');
   assert.ok(!call(mila, 'POST', '/growth/outcomes') && !call(ana, 'POST', '/growth/outcomes'));
   // Finished tasks as the office keeps them: one shared, two of Jovan's (one in his project, one that follows him by its assignee).
   const done = (id: string, projectId: string, assigneeId: string, day: number, failed = 0) => ({
@@ -219,7 +222,7 @@ test('the long memory: everyone may see whether there is one; asking it is for t
 
 test('routines: set by whoever may work with the employee, read by whoever may read them', () => {
   // A visitor reads the shared ones and changes none.
-  assert.ok(call(mila, 'GET', '/routines'));
+  assert.ok(!call(mila, 'GET', '/routines') && call(ana, 'GET', '/routines'));
   for (const [m, r, b] of [['POST', '/routines', { employeeId: 'e-shared' }], ['PATCH', '/routines/r-shared'], ['DELETE', '/routines/r-shared'], ['POST', '/routines/r-shared/run']] as Array<[string, string, Record<string, unknown>?]>) {
     assert.equal(call(mila, m, r, b), false, `Mila: ${m} ${r}`);
     assert.equal(call(ana, m, r, b), true, `Ana: ${m} ${r}`);
@@ -258,7 +261,7 @@ test('a server a member brings in is theirs like their own computer; once they s
   assert.equal(memberOf(engine, 'host', 'h-jovan-lent'), null);
   assert.deepEqual([jovan, vera, ana, mila].map((who) => call(who, 'POST', '/employees/e-on-lent/message')), [true, true, true, false]);
   assert.deepEqual([ana, mila].map((who) => call(who, 'POST', '/employees', { hostId: 'h-jovan-lent' })), [true, false]);
-  assert.deepEqual([ana, mila].map((who) => call(who, 'GET', '/employees/e-on-lent/docs')), [true, true]);
+  assert.deepEqual([ana, mila].map((who) => call(who, 'GET', '/employees/e-on-lent/docs')), [true, false]);
   // Bringing servers in, sharing and removing them is for those who have a computer of their own here: not for visitors.
   for (const [m, r] of [['GET', '/me/servers'], ['POST', '/me/servers'], ['PATCH', '/me/servers/h-jovan-server'], ['DELETE', '/me/servers/h-jovan-server']] as const) {
     assert.deepEqual([root, vera, jovan, ana, mila].map((who) => call(who, m, r)), [true, true, true, true, false], `${m} ${r}`);

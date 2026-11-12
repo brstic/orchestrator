@@ -514,6 +514,72 @@ export const MEMORY_TOOLS: McpToolSpec[] = [
 ];
 
 /**
+ * Tools only a member's team lead may use (the handlers refuse anyone else, and nobody else is shown them). They reach
+ * that member's team and no further; the descriptions are short because a lead reads them on every turn.
+ */
+export const LEAD_TOOLS: McpToolSpec[] = [
+  {
+    name: 'team_overview',
+    description: 'Team lead only. Your team at a glance: each person, their project and folder, what they are doing, what they did lately; the projects you can put work on; how many more you may hire. Call it first.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'team_look',
+    description: 'Team lead only. One person on your team in detail: their task, what they were told and answered lately, and their terminal now. Use it when the overview does not tell you whether something is theirs.',
+    inputSchema: { type: 'object', properties: { employee: str('Employee name') }, required: ['employee'] },
+  },
+  {
+    name: 'team_tell',
+    description: 'Team lead only. Hand something to one person on your team in words: a question to look into, something to check, what to do next. They see only this message, so say it in full, and say that it comes from your boss.',
+    inputSchema: { type: 'object', properties: { employee: str('Employee name'), message: str('What they should do, in full') }, required: ['employee', 'message'] },
+  },
+  {
+    name: 'team_task',
+    description: 'Team lead only. Put a task on the board of one of your projects, optionally given to someone. For work that should be tracked and checked when done; for a quick look or a question use team_tell.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: str('Project name'),
+        title: str('Short imperative title'),
+        description: str('What to do'),
+        acceptance: str('How one sees it is done'),
+        assignee: str('Employee name (optional)'),
+        priority: { type: 'string', enum: ['low', 'normal', 'high', 'urgent'] },
+        kind: { type: 'string', enum: ['feature', 'bug', 'test', 'research', 'planning', 'security', 'docs', 'ops', 'refactor', 'chore'] },
+      },
+      required: ['project', 'title', 'description'],
+    },
+  },
+  {
+    name: 'team_assign',
+    description: 'Team lead only. Give a task that is already on one of your boards to someone on your team.',
+    inputSchema: { type: 'object', properties: { task: str('Task key, e.g. "T-7"'), employee: str('Employee name') }, required: ['task', 'employee'] },
+  },
+  {
+    name: 'team_folders',
+    description: "Team lead only. The folders on one of your boss's machines (which are git repositories, which have a CLAUDE.md): to find where a project lives before hiring someone into it. Without a path: where the machine lets the office in.",
+    inputSchema: { type: 'object', properties: { machine: str("Machine name (optional: yours)"), path: str('Folder to look into (optional)') } },
+  },
+  {
+    name: 'team_hire',
+    description: "Team lead only. Hire someone onto one of your boss's own machines when nobody on the team fits the work. At most 5 people hired by you at a time. Your boss is told. Never hire on a guess: know the folder or project first (team_folders), or ask your boss.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: str('Their name'),
+        role: str('Role key, e.g. backend, frontend, fullstack, qa, devops, docs, researcher'),
+        project: str('One of your projects (or give a folder)'),
+        folder: str('A folder on the machine: it becomes their project'),
+        machine: str('Machine name (optional: yours)'),
+        instructions: str('Standing instructions for them (optional)'),
+        why: str('One line for your boss: what you need them for'),
+      },
+      required: ['name', 'role', 'why'],
+    },
+  },
+];
+
+/**
  * Tools only an employee with the `foreman` role may use (the handlers refuse anyone else, and
  * nobody else is shown them). With these a foreman's session supervises the office; none of them
  * can approve a permission request or touch anybody's terminal.

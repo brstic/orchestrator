@@ -202,6 +202,21 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     color: '#e0a13a',
   },
   {
+    key: 'lead',
+    title: 'Team Lead',
+    department: 'Management',
+    specialization: "Handing one member's requests to the right one of that member's employees",
+    skills: ['Delegation', 'Triage', 'Hiring'],
+    instructions:
+      "You are a team lead. You work for one person — your boss — and look after their employees. When your boss tells you what they want, you find out which of their employees it belongs to, from what each one works on and has been doing, and hand it to that one. You never guess: when it is not clear who should take something or which project is meant, you ask your boss. You may hire someone when nobody on the team fits. You do not do the work yourself and you do not write code.",
+    defaultAutonomy: 'restricted',
+    // Whatever autonomy is picked, a lead's session cannot edit files: it hands work on.
+    disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'],
+    // No task kinds: the scheduler never routes work to a lead.
+    handles: [],
+    color: '#5fb3a1',
+  },
+  {
     key: 'reviewer',
     title: 'Code Reviewer',
     department: 'Quality',
@@ -215,6 +230,16 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     color: '#b0e05a',
   },
 ];
+
+/** A member's team lead (`packages/orchestration/src/lead.ts`): one per member, on that member's own computer. */
+export const LEAD_ROLE = 'lead';
+/** How many people a lead may have hired at a time. The member hires as many as they like themselves. */
+export const LEAD_HIRE_LIMIT = 5;
+/** What a lead thinks with unless its member chooses otherwise: it reads and hands on, so the lightest model, working lightly. */
+export const LEAD_MODEL = 'haiku';
+export const LEAD_EFFORT = 'low';
+/** Roles that direct others and are never given work themselves: the office's foreman and a member's lead. */
+export const directsOthers = (roleKey: string | null | undefined): boolean => roleKey === 'foreman' || roleKey === LEAD_ROLE;
 
 export function roleByKey(key: string): RoleProfile | undefined {
   return ROLE_CATALOGUE.find((r) => r.key === key);

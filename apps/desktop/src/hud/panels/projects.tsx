@@ -6,6 +6,8 @@ import { useAccess } from '../../lib/access.ts';
 import { sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { ask } from '../core.tsx';
 import { registerPanel } from './index.tsx';
+import { scoped, whoseProject } from '../../lib/mine.ts';
+import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { TaskChip, activeEmployees, plural, stamp, useAction } from './tasks.tsx';
 import './panels-work.css';
 
@@ -649,7 +651,13 @@ function ProjectDetail({ project }: { project: Project }) {
 /** arg: a project id to preselect. */
 function ProjectsPanel({ arg, onClose }: PanelProps) {
   const s = useOffice();
-  const projects = Object.values(s.projects).sort((a, b) => Number(a.status === 'archived') - Number(b.status === 'archived') || a.name.localeCompare(b.name));
+  const { scope, own } = useScope();
+  const projects = scoped(
+    Object.values(s.projects).sort((a, b) => Number(a.status === 'archived') - Number(b.status === 'archived') || a.name.localeCompare(b.name)),
+    scope,
+    own,
+    (p) => whoseProject(s.hosts, s.me, p).kind === 'mine',
+  );
   const [selected, setSelected] = useState(() => (arg && s.projects[arg] ? arg : (projects[0]?.id ?? NEW)));
   const project = s.projects[selected];
   // The selected project was deleted (here or by someone else): show the next one, not an empty form.
@@ -661,6 +669,7 @@ function ProjectsPanel({ arg, onClose }: PanelProps) {
       <div className="pw-frame">
         <div className="split">
           <div className="split-side col">
+            <ScopeSwitch what="projects" />
             <Button variant={selected === NEW ? 'primary' : 'default'} onClick={() => setSelected(NEW)}>
               New project
             </Button>
@@ -676,6 +685,7 @@ function ProjectsPanel({ arg, onClose }: PanelProps) {
                         {tasks.filter((t) => t.status === 'DONE').length}/{tasks.length} done
                       </span>
                     </span>
+                    {own && scope === 'all' && <WhoseBadge whose={whoseProject(s.hosts, s.me, p)} />}
                     <Badge tone={STATUS_TONE[p.status]}>{p.status}</Badge>
                   </button>
                 );

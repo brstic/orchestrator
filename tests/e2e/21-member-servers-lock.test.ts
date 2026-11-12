@@ -134,7 +134,8 @@ test('shared, the server is a machine of the office: colleagues work on it; it s
   assert.equal((await door('Ana', 'GET', `/api/employees/${rex}/docs`)).status, 200);
   const more = await door('Ana', 'POST', '/api/employees', { name: 'Hired By Ana', roleKey: 'qa', hostId: server.hostId, workingDir: path.join(server.root, 'service') });
   assert.equal(more.status, 200, JSON.stringify(more.body));
-  assert.equal((await door('Mila', 'GET', `/api/employees/${rex}/docs`)).status, 200, 'a visitor reads what is shared');
+  assert.equal((await door('Mila', 'GET', `/api/employees/${rex}/docs`)).status, 403, 'documents are for those who work here');
+  assert.ok((await door('Mila', 'GET', '/api/state')).body.employees.some((e: any) => e.id === rex), 'a visitor sees that the employee is there');
   assert.equal((await door('Mila', 'POST', `/api/employees/${rex}/message`, { body: 'x' })).status, 403);
   // What is on his computer did not become shared with it.
   assert.equal((await door('Ana', 'POST', `/api/employees/${lola}/message`, { body: 'x' })).status, 403);

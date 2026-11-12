@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { mayOpenPanel } from './visitor-panels.ts';
 import type {
   EmoteName,
   AccountUsage,
@@ -62,6 +63,7 @@ export type PanelId =
   | 'seat'
   | 'people'
   | 'myroom'
+  | 'mine'
   | 'reports'
   | 'help';
 
@@ -498,6 +500,8 @@ export const useOffice = create<OfficeState>((set, get) => ({
   focusRequest: null,
 
   openPanel: (panel, arg = null) => {
+    // A visitor's windows: the ones the office sends them something for.
+    if (panel && !mayOpenPanel(get().me?.role, panel)) return;
     set({ panel, panelArg: arg });
     // Opening the conversation is reading the answer.
     if (panel === 'talk' && arg) get().readReply(arg);
@@ -730,6 +734,8 @@ export function startConnection(): void {
 
 /** Read the list of Markdown files in an employee's folder from their machine and remember it. */
 export async function loadDocs(employeeId: string): Promise<DocListing> {
+  // Documents are for those who work here: a visitor's window does not ask (the office would refuse).
+  if (useOffice.getState().me?.role === 'visitor') return { root: null, files: [], truncated: false } as DocListing;
   const listing = await api<DocListing>('GET', `/employees/${employeeId}/docs`).catch((e) => ({ root: null, files: [], truncated: false, unavailable: (e as Error).message }) as DocListing);
   useOffice.setState((s) => ({ docs: { ...s.docs, [employeeId]: listing } }));
   return listing;
@@ -770,6 +776,7 @@ export function activityOf(session: AgentSession | undefined): string {
 
 /** Ask the office how much of each Claude account is used (owner only). */
 export async function loadAccounts(): Promise<void> {
+  if (useOffice.getState().me?.role === 'visitor') return;
   try {
     useOffice.setState({ accounts: await api<AccountUsage[]>('GET', '/usage') });
   } catch {

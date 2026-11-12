@@ -199,6 +199,9 @@ Sessions that were not launched with the MCP server (attached sessions) simply l
 claude mcp add --transport http orchestrator https://<server>/mcp --header "Authorization: Bearer <session token>"
 ```
 
+## A member's team lead
+A second kind of employee that directs others, for one member, with seven tools of its own (`team_*`) and no rounds: `docs/TEAM-LEAD.md`.
+
 ## The foreman: rounds, tools and cost
 
 The foreman is a real Claude Code session with the Orchestrator MCP server, like every employee — but there is **one** for the whole office, it runs on one of the office's own machines (never on a member's own computer), it has **no desk**, and it looks after everyone: the shared office and the employees on members' own computers while those computers are connected. What else is different is what it is sent and which tools it has. Its folder is only where its session runs; it is never made a project.

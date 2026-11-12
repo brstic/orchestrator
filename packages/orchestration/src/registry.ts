@@ -14,7 +14,7 @@ import type {
   TerminalScreen,
   ActivityState,
 } from '@orchestrator/contracts';
-import { EFFORT_CHOICES, HOOKS_VERSION, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd } from '@orchestrator/contracts';
+import { EFFORT_CHOICES, HOOKS_VERSION, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, LEAD_ROLE, LEAD_MODEL, LEAD_EFFORT, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
 import { permissionPrompt, trustPromptKeys } from './comms.ts';
 import { EngineError, within } from './core.ts';
@@ -400,6 +400,8 @@ export interface EmployeeInput {
   schedule?: Employee['schedule'];
   deskId?: string | null;
   selfDriven?: boolean;
+  /** A team lead only: `office` to direct the shared employees too. */
+  leadScope?: Employee['leadScope'];
 }
 
 export class EmployeeRegistry {
@@ -479,6 +481,17 @@ export class EmployeeRegistry {
     if (this.eng.hosts.memberOfHost(hostId)) throw new EngineError("the foreman runs on one of the office's own machines, not on a member's own computer: it looks after the whole office from there.");
   }
 
+  /**
+   * A team lead is a member's: it sits on that member's own computer (or a server they keep to themselves), and a
+   * member has one. Throws when making `self` (or a new employee) a lead would break that.
+   */
+  private assertCanBeLead(hostId: string | null | undefined, selfId: string | null): void {
+    const member = this.eng.hosts.memberOfHost(hostId);
+    if (!member) throw new EngineError("a team lead works for one member and sits on that member's own computer or server, not on a shared machine of the office. (The whole office has the foreman.)");
+    const other = this.eng.lead.leadOf(member, selfId);
+    if (other) throw new EngineError(`${this.core.hosts.get(hostId ?? '')?.memberName ?? 'this member'} already has a team lead (${other.name}). A member has one.`);
+  }
+
   /** Offices from before the foreman walked the floor: whoever has that role gives up their desk. */
   unseatForemen(): void {
     for (const e of this.core.employees.filter((x) => x.roleKey === 'foreman' && !!x.deskId)) {
@@ -487,7 +500,7 @@ export class EmployeeRegistry {
     }
   }
 
-  create(input: EmployeeInput, actor = 'owner'): Employee {
+  create(input: EmployeeInput, actor = 'owner', by: { hiredBy?: string | null } = {}): Employee {
     within(input as unknown as Record<string, unknown>, EMPLOYEE_SIZES);
     const name = input.name?.trim();
     if (!name) throw new EngineError('an employee needs a name');
@@ -503,6 +516,9 @@ export class EmployeeRegistry {
       this.assertCanBeForeman(input.hostId, null);
       if (input.deskId) throw new EngineError('a foreman has no desk: it walks the floor');
     }
+    const lead = role?.key === LEAD_ROLE;
+    if (lead) this.assertCanBeLead(input.hostId, null);
+    if (lead && input.autonomy === 'unrestricted') throw new EngineError('a team lead hands work on and hires; it does not run without permission checks');
     const seat = memberSeatOf(input.deskId);
     if (input.deskId && !personal && !this.core.layout.desks.find((d) => d.id === input.deskId)) throw new EngineError('unknown desk');
     if (input.deskId && personal && !this.sameRoom(seat?.hostId, input.hostId)) throw new EngineError('that seat is not in this member\'s room');
@@ -519,8 +535,9 @@ export class EmployeeRegistry {
       appearance: { ...defaultAppearance(name, role?.color), ...(input.appearance ?? {}) },
       style: input.style ?? 'concise',
       hostId: input.hostId ?? this.core.hosts.find((h) => h.local && h.status !== 'revoked')?.id ?? null,
-      model: cleanModel(input.model),
-      effort: cleanEffort(input.effort),
+      // A lead reads and hands on: unless something else is asked for, the lightest model, working lightly.
+      model: cleanModel(input.model) ?? (lead ? LEAD_MODEL : null),
+      effort: cleanEffort(input.effort) ?? (lead ? LEAD_EFFORT : null),
       projectId: input.projectId ?? null,
       workingDir: input.workingDir ?? null,
       instructions: input.instructions ?? '',
@@ -537,6 +554,8 @@ export class EmployeeRegistry {
       stats: { tasksCompleted: 0, testsPassed: 0, bugsFixed: 0, reviewsCompleted: 0, assists: 0, deliverablesAccepted: 0 },
       createdAt: nowIso(),
       archived: false,
+      ...(by.hiredBy ? { hiredBy: by.hiredBy } : {}),
+      ...(lead ? { leadScope: input.leadScope === 'office' ? ('office' as const) : ('own' as const) } : {}),
       ...(input.selfDriven ? { selfDriven: true } : {}),
     };
     this.core.put('employee', employee);
@@ -622,6 +641,13 @@ export class EmployeeRegistry {
       if (e.archived) e.deskId = null;
       else if (!e.deskId) e.deskId = this.freeDesk();
     }
+    // A lead: its member's, one for each, never Unrestricted; whose employees it directs is the member's to say.
+    if (e.roleKey === LEAD_ROLE && !e.archived) {
+      const was = this.core.employees.require(id);
+      if (was.roleKey !== LEAD_ROLE || patch.hostId !== undefined || (patch.archived === false && was.archived)) this.assertCanBeLead(e.hostId, id);
+      if (e.autonomy === 'unrestricted') throw new EngineError('a team lead hands work on and hires; it does not run without permission checks');
+      if (patch.leadScope !== undefined || !e.leadScope) e.leadScope = (patch.leadScope ?? e.leadScope) === 'office' ? 'office' : 'own';
+    } else if (e.leadScope) delete e.leadScope;
     // No longer the foreman: back at a desk like everyone else.
     if (e.roleKey !== 'foreman' && this.core.employees.require(id).roleKey === 'foreman' && !e.archived && !e.deskId && !this.eng.hosts.memberOfHost(e.hostId)) e.deskId = this.freeDesk();
     const becameForeman = e.roleKey === 'foreman' && (this.core.employees.require(id).roleKey !== 'foreman' || (patch.archived === false && this.core.employees.require(id).archived));

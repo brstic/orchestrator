@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { DeliveryState, Employee, ForemanAttentionItem, ForemanAttentionKind, ForemanRound, ForemanStatus, OrchestratorEvent, Project, Question, Task, TaskKind, TaskPriority, TaskStatus } from '@orchestrator/contracts';
-import { ACTIVITY_LABEL, correlationMarker, formatDuration, newId, nowIso, redactSecrets, roleByKey, truncate } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, directsOthers, correlationMarker, formatDuration, newId, nowIso, redactSecrets, roleByKey, truncate } from '@orchestrator/contracts';
 import type { McpToolHandler, McpToolResult } from '@orchestrator/integrations';
 import { plainScreen } from './comms.ts';
 import type { Engine } from './engine.ts';
@@ -295,7 +295,8 @@ export class Foreman {
     const idleMs = this.idleMs();
     if (idleMs > 0) {
       // A person's own session is theirs to leave idle: the foreman does not ask about it.
-      for (const who of core.employees.filter((e) => !e.archived && e.roleKey !== FOREMAN_ROLE && !e.selfDriven && !this.away(e))) {
+      // (Nor does it ask about a member's team lead, who only works when spoken to.)
+      for (const who of core.employees.filter((e) => !e.archived && !directsOthers(e.roleKey) && !e.selfDriven && !this.away(e))) {
         const s = core.runningSessionOf(who.id);
         if (!s || s.status !== 'running' || s.inTurn === true || (s.activity !== 'idle' && s.activity !== 'waiting_input' && s.activity !== 'task_complete')) continue;
         if (core.gateway.isPaused(s.id) || core.gateway.isHumanControlled(s.id) || !this.eng.tasks.withinSchedule(who)) continue;
@@ -326,7 +327,7 @@ export class Foreman {
       add({ key: `waiting:${waiter.id}:${w.requestId ?? w.taskId}`, kind: 'waiting', text: `${waiter.name} has been waiting ${formatDuration(now - Date.parse(w.since))} for ${lazy.who.name}, who ${lazy.words}: ${what}${this.where(lazy.who)}`, employeeId: waiter.id, taskId: w.taskId, questionId: null, projectId: waiter.projectId, since });
     }
 
-    const free = core.employees.filter((e) => e.roleKey !== FOREMAN_ROLE && !e.selfDriven && !this.away(e) && this.eng.tasks.isFree(e));
+    const free = core.employees.filter((e) => !directsOthers(e.roleKey) && !e.selfDriven && !this.away(e) && this.eng.tasks.isFree(e));
     if (free.length) {
       for (const t of core.tasks.filter((x) => x.status === 'READY' && !x.assigneeId && x.kind !== 'review' && active(x.projectId))) {
         // Give the scheduler its turn first: where a project assigns automatically, this is only what it left over.

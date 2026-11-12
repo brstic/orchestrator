@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { mayOpenPanel } from '../lib/visitor-panels.ts';
 import type { CommandPlan, CommandResult, OrchestratorEvent, Question } from '@orchestrator/contracts';
 import { ACTIVITY_LABEL } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Markdown, Progress, clock, timeAgo } from '@orchestrator/ui';
@@ -95,8 +96,23 @@ export function TopBar() {
   type Item = { id: PanelId; label: string; k?: string; count?: number; bad?: boolean };
   // A member's own computer in this office (not for the office's own machine, nor for a visitor).
   const hasRoom = !!s.me && s.me.role !== 'visitor' && !!s.me.id && s.me.id !== 'owner';
-  // The menu, in the order people look for things: the work, the people, the place, and what is only for pleasure.
+  const mineCount = hasRoom ? Object.values(s.employees).filter((e) => !e.archived && !!e.hostId && s.hosts[e.hostId]?.memberId === s.me!.id).length : 0;
+  // What of mine waits for me: my employees' open questions and approvals.
+  const mineWaiting = hasRoom ? Object.values(s.questions).filter((q) => q.status === 'open' && s.hosts[s.employees[q.employeeId ?? '']?.hostId ?? '']?.memberId === s.me!.id).length : 0;
+  // The menu, in the order people look for things: their own, the work, the people, the place, and what is only for pleasure.
   const groups: Array<{ title: string; items: Item[] }> = [
+    // A member's own part of the shared office comes first: what is theirs, then their room.
+    ...(hasRoom
+      ? [
+          {
+            title: 'Mine',
+            items: [
+              { id: 'mine' as PanelId, label: 'My work', count: mineWaiting || undefined, bad: true },
+              { id: 'myroom' as PanelId, label: 'My room', count: mineCount || undefined },
+            ],
+          },
+        ]
+      : []),
     {
       title: 'Work',
       items: [
@@ -113,7 +129,6 @@ export function TopBar() {
       items: [
         { id: 'team', label: 'Team' },
         { id: 'people', label: 'Access', count: Math.max(0, s.people.length - 1) || undefined },
-        ...(hasRoom ? [{ id: 'myroom' as PanelId, label: 'My room', count: Object.values(s.employees).filter((e) => !e.archived && !!e.hostId && s.hosts[e.hostId]?.memberId === s.me!.id).length || undefined }] : []),
       ],
     },
     {
@@ -141,6 +156,9 @@ export function TopBar() {
       ],
     },
   ];
+  // Only what this person can open: a visitor's menu is the short one.
+  const visitor = s.me?.role === 'visitor';
+  const shownGroups = groups.map((g) => ({ ...g, items: g.items.filter((n) => mayOpenPanel(s.me?.role, n.id)) })).filter((g) => g.items.length);
   // The menu stays out of the way until asked for; it closes on a click elsewhere or once something is chosen.
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -170,7 +188,7 @@ export function TopBar() {
         </button>
         {menu && (
           <div className="glass dock" role="menu">
-            {groups.map((g) => (
+            {shownGroups.map((g) => (
               <div key={g.title || 'app'} className="dock-group" role="group" aria-label={g.title || undefined}>
                 {g.title && <div className="dock-title">{g.title}</div>}
                 {g.items.map((n) => (
@@ -238,17 +256,21 @@ export function TopBar() {
       )}
       <div className="glass pillbar">
         {employees.length > 0 && (
-          <button className="pill" title="Employees doing something right now — open the company overview" onClick={() => s.openPanel('overview')}>
+          <button className="pill" title={visitor ? 'Employees doing something right now — open the team' : 'Employees doing something right now — open the company overview'} onClick={() => s.openPanel(visitor ? 'team' : 'overview')}>
             <span className="dot dot-info" /> {working}/{employees.length} working
           </button>
         )}
-        <button className={`pill ${need ? 'pill-alert' : ''}`} onClick={() => s.openPanel('notifications')} title={need ? `${need} need${need === 1 ? 's' : ''} you (${key('notifications')})` : `Nothing needs you (${key('notifications')})`}>
-          Inbox
-          {need > 0 && <span className="pill-count">{need}</span>}
-        </button>
-        <button className="pill" onClick={() => s.setCommandOpen(true)} title={`Tell Orchestrator what to do (${key('command')})`}>
-          Command
-        </button>
+        {!visitor && (
+          <>
+            <button className={`pill ${need ? 'pill-alert' : ''}`} onClick={() => s.openPanel('notifications')} title={need ? `${need} need${need === 1 ? 's' : ''} you (${key('notifications')})` : `Nothing needs you (${key('notifications')})`}>
+              Inbox
+              {need > 0 && <span className="pill-count">{need}</span>}
+            </button>
+            <button className="pill" onClick={() => s.setCommandOpen(true)} title={`Tell Orchestrator what to do (${key('command')})`}>
+              Command
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -264,6 +286,8 @@ function eventTone(e: OrchestratorEvent): string {
 /** The live office feed: every line is a recorded event; clicking one goes to where it happened. */
 export function Feed() {
   const events = useOffice((s) => s.events);
+  // A visitor is sent that things happen, not the lines about them: there is no feed to show.
+  const visitor = useOffice((s) => s.me?.role === 'visitor');
   const [open, setOpen] = useState(false);
   const shown = useMemo(() => events.filter((e) => !(e.data as any)?.quiet && e.type !== 'session.activity').slice(-60).reverse(), [events]);
   const go = (e: OrchestratorEvent) => {
@@ -271,6 +295,7 @@ export function Feed() {
     if (e.taskId && st.tasks[e.taskId]) st.openPanel('task', e.taskId);
     else if (e.employeeId && st.employees[e.employeeId]) st.focusEmployee(e.employeeId);
   };
+  if (visitor) return null;
   if (!open) {
     const latest = shown[0];
     return (

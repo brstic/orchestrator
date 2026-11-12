@@ -1,9 +1,10 @@
 import type { AgentSession, Employee, Task } from '@orchestrator/contracts';
 import { ACTIVITY_LABEL, reviewByOf, truncate } from '@orchestrator/contracts';
 import type { McpServerOptions, McpToolHandler } from '@orchestrator/integrations';
-import { BOARD_TOOLS, FILE_TOOLS, FOREMAN_TOOLS, MEMORY_TOOLS, ORCHESTRATOR_TOOLS, VAULT_TOOLS } from '@orchestrator/integrations';
+import { BOARD_TOOLS, FILE_TOOLS, FOREMAN_TOOLS, LEAD_TOOLS, MEMORY_TOOLS, ORCHESTRATOR_TOOLS, VAULT_TOOLS } from '@orchestrator/integrations';
 import type { Engine } from './engine.ts';
 import { FOREMAN_ROLE } from './foreman.ts';
+import { LEAD_ROLE } from '@orchestrator/contracts';
 import { answerLine } from './prompts.ts';
 import { RELEVANT } from './memory.ts';
 
@@ -546,9 +547,15 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
 
     // Foreman-only tools (each refuses a caller who is not a foreman).
     ...eng.foreman.handlers(),
+    // A member's team lead's tools (each refuses a caller who is not one).
+    ...eng.lead.handlers(),
   };
 
   const foremanTools = new Set(FOREMAN_TOOLS.map((t) => t.name));
+  const leadTools = new Set(LEAD_TOOLS.map((t) => t.name));
+  // What a lead is shown besides its own tools: how it asks its boss and hears back, and how colleagues reach it. Nothing
+  // about tasks of its own — it has none — so that its every turn carries as little as possible.
+  const LEAD_ALSO = new Set(['ask_boss', 'wait_for_answer', 'report_status', 'send_message', 'check_messages', 'respond_to_request']);
   const boardTools = new Set(BOARD_TOOLS.map((t) => t.name));
   const memoryTools = new Set(MEMORY_TOOLS.map((t) => t.name));
   return {
@@ -556,10 +563,10 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     version: '0.1.0',
     instructions:
       'Orchestrator connects you to the virtual office you work in. Use these tools to learn your task, report real progress, ask the boss for decisions, collaborate with teammates and declare work complete. Completion is verified independently, so report honestly.',
-    tools: [...ORCHESTRATOR_TOOLS, ...BOARD_TOOLS, ...FILE_TOOLS, ...VAULT_TOOLS, ...MEMORY_TOOLS, ...FOREMAN_TOOLS],
+    tools: [...ORCHESTRATOR_TOOLS, ...BOARD_TOOLS, ...FILE_TOOLS, ...VAULT_TOOLS, ...MEMORY_TOOLS, ...FOREMAN_TOOLS, ...LEAD_TOOLS],
     handlers,
     // Only a foreman is shown the foreman's tools; everyone else's tool list (and prompt) stays as small as before.
     // The board tools are shown while the owner leaves the board to the employees (a foreman assigns with its own tool).
-    listed: (tool, { employee }) => tool.name !== 'vault_read' && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
+    listed: (tool, { employee }) => (employee.roleKey === LEAD_ROLE ? leadTools.has(tool.name) || LEAD_ALSO.has(tool.name) : !leadTools.has(tool.name)) && tool.name !== 'vault_read' && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
   };
 }

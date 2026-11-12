@@ -197,13 +197,14 @@ test('what may not be attached is refused, in words the employee can act on', as
   ids.sarahTask = task.id;
 });
 
-test('who may: whoever sees the task opens its files; adding and removing is for those who may work with it; a removed task takes its files along', async () => {
+test('who may: whoever works here and sees the task opens its files; adding and removing is for those who may work with it; a removed task takes its files along', async () => {
   const engine = h.server.engine;
   const task = await h.getTask(ids.task!);
   const a = task.attachments![0]!;
   const visitor = { kind: 'guest' as const, id: 'v1', name: 'V', role: 'visitor' as const };
   const colleague = { kind: 'guest' as const, id: 'c1', name: 'C', role: 'colleague' as const };
-  assert.equal(mayCall(engine, visitor, 'GET', `/tasks/${task.id}/attachments/${a.id}`, null).ok, true);
+  assert.equal(mayCall(engine, visitor, 'GET', `/tasks/${task.id}/attachments/${a.id}`, null).ok, false, 'a visitor sees the title of a task, not what is attached to it');
+  assert.equal(mayCall(engine, colleague, 'GET', `/tasks/${task.id}/attachments/${a.id}`, null).ok, true);
   assert.equal(mayCall(engine, visitor, 'POST', `/tasks/${task.id}/attachments`, {}).ok, false);
   assert.equal(mayCall(engine, visitor, 'POST', `/tasks/${task.id}/attachments/${a.id}/data`, {}).ok, false);
   assert.equal(mayCall(engine, visitor, 'DELETE', `/tasks/${task.id}/attachments/${a.id}`, null).ok, false);

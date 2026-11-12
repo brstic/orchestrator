@@ -1,11 +1,12 @@
 import type { Artifact, Employee, FullState, OfficeLayout, Question } from '@orchestrator/contracts';
-import { matchRole, newId, nowIso, roleByKey } from '@orchestrator/contracts';
+import { matchRole, newId, nowIso, roleByKey, directsOthers } from '@orchestrator/contracts';
 import type { McpServerOptions } from '@orchestrator/integrations';
 import { TerminalGateway, type GatewayDeps } from '@orchestrator/terminal';
 import { CommandCenter } from './commands.ts';
 import { Comms } from './comms.ts';
 import { Core, EngineError, type EngineOptions } from './core.ts';
 import { Foreman } from './foreman.ts';
+import { Lead } from './lead.ts';
 import { HookReceiver } from './hook-receiver.ts';
 import { Improver } from './improve.ts';
 import { Vault } from './vault.ts';
@@ -46,6 +47,8 @@ export class Engine {
   readonly commands: CommandCenter;
   readonly improver: Improver;
   readonly foreman: Foreman;
+  /** Members' team leads: what one may see and do (lead.ts). */
+  readonly lead: Lead;
   readonly routines: Routines;
   readonly sleeper: Sleeper;
   readonly waits: Waits;
@@ -69,6 +72,7 @@ export class Engine {
     this.commands = new CommandCenter(this);
     this.improver = new Improver(this);
     this.foreman = new Foreman(this);
+    this.lead = new Lead(this);
     this.routines = new Routines(this);
     this.sleeper = new Sleeper(this);
     this.waits = new Waits(this);
@@ -247,13 +251,14 @@ export class Engine {
    * becomes their own project, worked in place — "each employee manages the
    * project in the folder they live in". Orchestrator still manages them all.
    */
-  async hire(input: EmployeeInput & { ownFolderProject?: boolean; verifyCommand?: string | null }, actor = 'owner'): Promise<Employee> {
+  async hire(input: EmployeeInput & { ownFolderProject?: boolean; verifyCommand?: string | null }, actor = 'owner', by: { hiredBy?: string | null } = {}): Promise<Employee> {
     const folder = input.workingDir?.trim();
     // (The foreman's folder is only where its session runs: it is not a project, and a refused hire must leave nothing behind.)
-    const foreman = !!input.roleKey && (roleByKey(input.roleKey) ?? matchRole(input.roleKey))?.key === 'foreman';
-    if (!folder || input.projectId || input.ownFolderProject === false || foreman) return this.employees.create(input, actor);
+    // (Nor is a lead's: it hands work on from there.)
+    const foreman = !!input.roleKey && directsOthers((roleByKey(input.roleKey) ?? matchRole(input.roleKey))?.key);
+    if (!folder || input.projectId || input.ownFolderProject === false || foreman) return this.employees.create(input, actor, by);
     const hostId = input.hostId ?? this.core.hosts.find((h) => h.local && h.status !== 'revoked')?.id ?? this.core.hosts.find((h) => h.status === 'online')?.id ?? null;
-    if (!hostId || !this.core.agents.isOnline(hostId)) return this.employees.create({ ...input, hostId }, actor);
+    if (!hostId || !this.core.agents.isOnline(hostId)) return this.employees.create({ ...input, hostId }, actor, by);
     const insp = await this.core.agents.rpc(hostId, { method: 'fs.inspect', params: { path: folder } }).catch((e) => {
       throw new EngineError(`the host rejected that folder: ${(e as Error).message}`);
     });
@@ -266,7 +271,7 @@ export class Engine {
       for (let i = 2; this.core.projects.find((p) => p.name.toLowerCase() === name.toLowerCase() && p.status !== 'archived'); i++) name = `${baseName} (${i})`;
       project = await this.tasks.createProject({ name, repoPath: root, hostId, workspace: 'in_place', verifyCommand: input.verifyCommand ?? null, description: `${input.name.trim()}'s folder: ${root}` }, actor);
     }
-    const employee = this.employees.create({ ...input, hostId, projectId: project.id, workingDir: root }, actor);
+    const employee = this.employees.create({ ...input, hostId, projectId: project.id, workingDir: root }, actor, by);
     if (project.workspace === 'in_place' && !project.ownerEmployeeId) {
       project.ownerEmployeeId = employee.id;
       this.core.put('project', project);

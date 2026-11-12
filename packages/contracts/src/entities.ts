@@ -226,6 +226,10 @@ export interface Employee {
   stats: EmployeeStats;
   createdAt: ISODate;
   archived: boolean;
+  /** Hired by a member's team lead (that lead's id): what the lead's limit counts. Absent: hired by a person. */
+  hiredBy?: ID | null;
+  /** A team lead only: whose employees it directs — its member's own (`own`, the default), or the office's shared ones too (`office`). */
+  leadScope?: 'own' | 'office';
   /**
    * A person's own session: someone sat down at a desk and opened Claude Code for themselves. They type into it;
    * the office gives it no work of its own accord and does not nudge it.

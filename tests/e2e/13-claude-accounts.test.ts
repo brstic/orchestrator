@@ -145,13 +145,12 @@ test('only a session of ours can report, and guests are not told about the accou
     const r = await fetch(`${h.url}/api/usage`, { headers: { authorization: `Bearer ${tokenOf(made.invite)}` } });
     return { status: r.status, rows: (await r.json()) as any[] };
   };
-  const visitor = await as('visitor');
-  assert.equal(visitor.status, 200);
-  assert.ok(visitor.rows.length >= 1 && visitor.rows.every((a) => a.email === null && a.organization === null), 'percentages, but not whose account');
-  assert.equal(visitor.rows.find((a) => a.configDir === null).sevenDay.usedPercent, 85);
+  // A visitor is told nothing about the accounts: not the percentages either.
+  assert.equal((await as('visitor')).status, 403);
   const colleague = await as('colleague');
   assert.equal(colleague.rows.find((a) => a.configDir === null).email, 'owner@example.test', 'a colleague works on the shared machine and sees its account');
   assert.equal((await as('owner')).rows.find((a) => a.configDir === null).email, 'owner@example.test');
   await h.api('POST', '/sharing', { open: false });
-  assert.equal(mayCall(h.server.engine, { kind: 'guest', id: 'm1', name: 'M', role: 'visitor' }, 'GET', '/usage', null).ok, true);
+  assert.equal(mayCall(h.server.engine, { kind: 'guest', id: 'm1', name: 'M', role: 'visitor' }, 'GET', '/usage', null).ok, false);
+  assert.equal(mayCall(h.server.engine, { kind: 'guest', id: 'm2', name: 'M', role: 'colleague' }, 'GET', '/usage', null).ok, true);
 });

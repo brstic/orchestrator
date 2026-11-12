@@ -2,6 +2,33 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-12 — A member's team lead is a role of its own, not a foreman for each member
+Asked for by an owner (Fenix): somebody in charge of *their* agents, told what they want, who gives it to the right one, asks when unsure, and may hire up to five. `docs/TEAM-LEAD.md` is the page.
+- **Not the foreman, scoped.** A foreman for each space was tried and dropped the day it was made ("One foreman", below), and everything about the foreman assumes it is nobody's: owners only, on the office's machine, no desk, called in rounds. A lead is the opposite on each count, so it is a role beside it (`lead`) with its own module, not a mode of the other.
+- **Request-driven, on the lightest model.** A lead does nothing until its member speaks to it — no rounds, no timer, no idle checks — and starts on `haiku` at low effort with a short tool list. The owner's word: it only analyses and hands over, and must not eat tokens. The member can give it a bigger model in its profile.
+- **Whose things it reaches: the machine decides**, as everywhere (`Host.memberId`): the employees on its member's own computers and servers. "The option of everything" (the owner) is a switch on the lead, `leadScope: 'office'`, that adds the shared employees — what that member may direct anyway. Other members' employees are never in reach.
+- **Five is the lead's limit, not the member's**: `Employee.hiredBy` records who a lead hired; five of them may be here at a time. The member hires as many as they like by hand. Chosen over "five in the team" by the owner.
+- **Hire, then tell** (the owner): no approval step; a notification with the lead's reason, and the audit log. Guards instead of approval: only the member's own machines, a role from the catalogue, the role's own autonomy (never Unrestricted through a lead), a folder that machine already lets the office into.
+- **It asks its member, not "the owner".** A lead's questions are an employee's questions on a member's computer, so the ordinary `ask_boss` already reaches that member (and the owners unless the room is closed). No new channel.
+- **Left for later:** reading an employee's whole conversation to decide whose something is. The lead gets each one's project, folder, current task, last finished tasks, recent events and terminal — enough to route by, cheap to read. A transcript search would cost what the lead is there to save.
+
+## 2026-11-12 — One's own things first: a window, a switch, and nothing renamed
+Asked for by an owner (Fenix): the menu and the windows behind it list the whole office together, and someone who comes in cannot find their own.
+- **A window of one's own at the top of the menu** (*My work*, group *Mine*, above everything else, only for a member with a machine in the office): what waits for me, my lead, my employees, my open tasks, my projects, my machines. *My room* moved up beside it.
+- **One switch, "Mine / Everyone", shared by Team, Tasks and Projects** and remembered on the computer: mine alone, or the whole office with mine first and a badge saying whose each row is (yours, shared, a member's name). Somebody with nothing of their own (the root owner at the office's computer, a visitor) sees no switch and the lists as before.
+- **"Mine" follows the machine**, like every other rule about whose a thing is — plus, for tasks, the ones I made. For that the office now writes down who made a task from a window (`member:<name>`; it used to say `owner` for everybody).
+- **Nothing was renamed and no group was dropped.** "Company", "Access" and the group names are in the documents, the help and the UI tests; clearer names are worth doing, but as their own change.
+- **Not done:** the Inbox and its count are still the whole office's; Map, Meetings and Reports have no switch.
+
+## 2026-11-12 — A visitor looks at the office; what is behind it is not sent to them
+Asked for by an owner (Fenix): a visitor could see which Claude the office uses, and far more. Reading the code showed why — "visitor" only meant "cannot change anything": the server sent a visitor the same state as everyone, and the page showed nearly all of it.
+- **Cut on the server, not hidden in the page.** One function says what a visitor may know of each kind of thing (`shownTo`, `apps/server/src/access.ts`); the state and every live message go through it. Fields that have to stay for the page's types are emptied; kinds a visitor has no use for are not sent.
+- **The line:** who is here, who works on what, how the shared work stands (a task's title and state — the owners' word), and the shared terminals (the owners' word: "let them watch"). Not what the office runs on, what is said in it, what the work looks like inside, or what it costs. Members' own projects and tasks are not sent to a visitor at all; their employees are, as people in the scene.
+- **A new level, `detail`,** between read and work: reading what is behind a thing (documents, diffs, attachments, accounts, routines, performance, the growth record). Colleagues and owners have it, a visitor does not. It was that or a list of exceptions for visitors on the `read` rules.
+- **Events in outline.** The scene moves people about on events (who went to whom), so a visitor still gets them — without the line for the feed and without what they carry. No feed for a visitor rather than a feed of empty lines.
+- **Autonomy** has no empty value, so a fixed one is sent and a visitor's page never shows it.
+- **Left as it was:** what colleagues are sent of each other's computers (tasks, notifications and reports are still unfiltered between members); the terminal as a place where a visitor can read what Claude Code prints.
+
 ## 2026-11-12 — A ticket is a conversation; review is the rule; a ticket can come back and can be shared
 The owner asked for the tasks to be redone (`docs/TASKS.md` describes the result). What was decided on the way, and why:
 - **Review by default, "a colleague, then me"** — the owner's own answer when asked who reviews ("Agent pa ja"). One field says it (`Task.reviewBy`), with the old boolean kept equal to it so that nothing that reads `requiresReview` had to change. Rejected: the boss alone by default (the office would wait for one person at every ticket), and a colleague alone (the owner wanted the last word).

@@ -9,6 +9,8 @@ import { TicketNew } from './task-new.tsx';
 import { STATUS_META, TASK_STATUSES, activeEmployees, needOf, plural } from './task-shared.tsx';
 import { TicketView, type TicketTab } from './task-view.tsx';
 import { EmployeeChanges } from './task-work.tsx';
+import { scoped, taskIsMine } from '../../lib/mine.ts';
+import { ScopeSwitch, useScope } from '../mine.tsx';
 import './panels-work.css';
 
 // (Other panels take these from here, as they always did.)
@@ -128,7 +130,10 @@ function TasksPanel({ onClose }: PanelProps) {
 
   const projects = Object.values(s.projects).sort((a, b) => a.name.localeCompare(b.name));
   const projectId = s.filter.projectId && s.projects[s.filter.projectId] ? s.filter.projectId : null;
-  const inProject = Object.values(s.tasks).filter((t) => !projectId || t.projectId === projectId);
+  // One's own tasks alone (on my machines, with my employees, or made by me), or the whole office's.
+  const { scope, own } = useScope();
+  const visitor = s.me?.role === 'visitor';
+  const inProject = scoped(Object.values(s.tasks), scope, own, (t) => taskIsMine(s.hosts, s.me, t, s.projects, s.employees)).filter((t) => !projectId || t.projectId === projectId);
   const proposed = inProject.filter((t) => !t.released && t.status === 'BACKLOG');
   const reviewCount = inProject.filter((t) => t.kind === 'review').length;
   const mine = new Set(inProject.filter((t) => t.kind !== 'review' && needOf(t, s.employees, s.tasks).group === 'you').map((t) => t.id));
@@ -145,6 +150,7 @@ function TasksPanel({ onClose }: PanelProps) {
     <Window title="Tasks" subtitle="Cards move by themselves as work is done and checked. Click one to open it and talk on it; drag one to move it by hand." onClose={onClose} width={1320} flush>
       <div className="pw-frame">
         <div className="pw-toolbar">
+          <ScopeSwitch what="tasks" />
           <input type="search" aria-label="Search tasks" placeholder="Search tasks…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 190 }} />
           <select aria-label="Project" value={projectId ?? ''} onChange={(e) => s.setFilter({ projectId: e.target.value || null })}>
             <option value="">All projects</option>
@@ -171,7 +177,7 @@ function TasksPanel({ onClose }: PanelProps) {
             <input type="checkbox" checked={showReviews} onChange={(e) => setShowReviews(e.target.checked)} /> Show review tasks ({reviewCount})
           </label>
           <div className="grow" />
-          {proposed.length > 0 && (
+          {proposed.length > 0 && !visitor && (
             <Button
               variant="success"
               title="Released tasks are scheduled as soon as their dependencies are done"
@@ -180,9 +186,11 @@ function TasksPanel({ onClose }: PanelProps) {
               Release {plural(proposed.length, 'proposed task')}
             </Button>
           )}
-          <Button variant="primary" onClick={() => s.openPanel('task', 'new')} disabled={!projects.length} title={projects.length ? undefined : 'Create a project first'}>
-            New task
-          </Button>
+          {!visitor && (
+            <Button variant="primary" onClick={() => s.openPanel('task', 'new')} disabled={!projects.length} title={projects.length ? undefined : 'Create a project first'}>
+              New task
+            </Button>
+          )}
         </div>
         {projects.length === 0 ? (
           <Empty title="No projects yet">

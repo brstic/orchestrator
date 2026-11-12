@@ -8,6 +8,8 @@ import { api, connection } from '../../lib/api.ts';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { act } from '../core.tsx';
 import { useAccess } from '../../lib/access.ts';
+import { scoped, whoseEmployee } from '../../lib/mine.ts';
+import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { FolderField } from './folder-picker.tsx';
 import { registerPanel } from './index.tsx';
 import {
@@ -447,7 +449,12 @@ function TeamPanel({ arg, onClose }: PanelProps) {
   const active = all.filter((e) => !e.archived && e.id !== foreman?.id);
   const archived = all.filter((e) => e.archived);
   const needle = search.trim().toLowerCase();
-  const shown = active.filter(
+  // One's own employees alone, or everyone with one's own first.
+  const { scope, own } = useScope();
+  const me = useOffice((s) => s.me);
+  const visitor = me?.role === 'visitor';
+  const isMine = (e: Employee) => whoseEmployee(hosts, me, e).kind === 'mine';
+  const shown = scoped(active, scope, own, isMine).filter(
     (e) => (!projectId || e.projectId === projectId) && (!hostId || e.hostId === hostId) && (!needle || `${e.name} ${e.title} ${e.department} ${e.specialization} ${e.skills.join(' ')}`.toLowerCase().includes(needle)),
   );
   const st = useOffice.getState();
@@ -514,6 +521,7 @@ function TeamPanel({ arg, onClose }: PanelProps) {
       }
     >
       <div className="pc-toolbar">
+        <ScopeSwitch what="employees" />
         <input className="pc-search" value={search} onChange={(ev) => setSearch(ev.target.value)} placeholder="Search by name, title or skill…" aria-label="Search employees" autoFocus />
         <select value={projectId} onChange={(ev) => setProjectId(ev.target.value)} aria-label="Filter by project">
           <option value="">All projects</option>
@@ -538,7 +546,7 @@ function TeamPanel({ arg, onClose }: PanelProps) {
         </select>
       </div>
 
-      {foreman && (
+      {foreman && scope === 'all' && (
         <div className="card row team-foreman" data-foreman={foreman.id} style={{ gap: 12, marginBottom: 12, alignItems: 'center' }}>
           <Avatar appearance={foreman.appearance} size={36} offline={!isLive(sessionOfEmployee(sessions, foreman.id))} />
           <div className="grow">
@@ -561,16 +569,16 @@ function TeamPanel({ arg, onClose }: PanelProps) {
       {active.length === 0 ? (
         <Empty title="Nobody works here yet">Hire your first employee, then give them a machine and a project.</Empty>
       ) : shown.length === 0 ? (
-        <Empty title="No employee matches">Change the search or the filters.</Empty>
+        <Empty title={own && scope === 'mine' && !needle && !projectId && !hostId ? 'Nobody works for you alone yet' : 'No employee matches'}>{own && scope === 'mine' ? 'Your own employees are the ones on your computer and servers. The rest of the office is under Everyone.' : 'Change the search or the filters.'}</Empty>
       ) : (
         <table className="tbl">
           <thead>
             <tr>
               <th>Employee</th>
               {gamification && <th>Level</th>}
-              <th>Machine</th>
+              <th>Whose · machine</th>
               <th>Project</th>
-              <th>Autonomy</th>
+              {!visitor && <th>Autonomy</th>}
               <th>Activity</th>
               <th>Task</th>
               <th />
@@ -602,7 +610,10 @@ function TeamPanel({ arg, onClose }: PanelProps) {
                     </td>
                   )}
                   <td>
-                    <HostLabel host={e.hostId ? hosts[e.hostId] : undefined} />
+                    <span className="row" style={{ gap: 6 }}>
+                      <WhoseBadge whose={whoseEmployee(hosts, me, e)} />
+                      {!visitor && <HostLabel host={e.hostId ? hosts[e.hostId] : undefined} />}
+                    </span>
                   </td>
                   <td>
                     {project ? (
@@ -614,9 +625,11 @@ function TeamPanel({ arg, onClose }: PanelProps) {
                       <span className="faint">none</span>
                     )}
                   </td>
-                  <td>
-                    <AutonomyBadge level={e.autonomy} />
-                  </td>
+                  {!visitor && (
+                    <td>
+                      <AutonomyBadge level={e.autonomy} />
+                    </td>
+                  )}
                   <td>
                     <ActivityBadge activity={activity} needsYou={asking} />
                   </td>
@@ -630,8 +643,8 @@ function TeamPanel({ arg, onClose }: PanelProps) {
                     )}
                   </td>
                   <td className="pc-right pc-nowrap">
-                    <Button small onClick={() => st.enterWorkstation(e.id)} disabled={!session} title={session ? 'Sit at their real terminal' : 'No session yet'}>
-                      Open terminal
+                    <Button small onClick={() => st.enterWorkstation(e.id)} disabled={!session} title={session ? (visitor ? 'Watch what they are doing' : 'Sit at their real terminal') : 'No session yet'}>
+                      {visitor ? 'Watch terminal' : 'Open terminal'}
                     </Button>{' '}
                     <Button small onClick={() => st.openPanel('employee', e.id)}>
                       Profile
@@ -1692,8 +1705,44 @@ function DeskTab({ e }: { e: Employee }) {
   );
 }
 
+/** An employee as a visitor meets them: who they are, what they are on, and their terminal if it is a shared one. */
+function VisitorCard({ e, session }: { e: Employee; session: AgentSession | undefined }) {
+  const can = useAccess();
+  const projects = useOffice((s) => s.projects);
+  const tasks = useOffice((s) => s.tasks);
+  const task = currentTaskOf(tasks, e.id);
+  const watch = !!session && isLive(session) && e.roleKey !== 'foreman' && can.read(e.hostId);
+  return (
+    <div className="col" style={{ gap: 14, padding: 18 }} data-visitor-card>
+      <dl className="kv">
+        <dt>Role</dt>
+        <dd>{roleByKey(e.roleKey)?.title ?? e.title}</dd>
+        <dt>Project</dt>
+        <dd>{(e.projectId && projects[e.projectId]?.name) || <span className="muted">none of the shared ones</span>}</dd>
+        <dt>Working on</dt>
+        <dd>{task ? `${task.key} · ${task.title}` : <span className="muted">nothing right now</span>}</dd>
+        {e.skills.length > 0 && (
+          <>
+            <dt>Skills</dt>
+            <dd>{e.skills.join(', ')}</dd>
+          </>
+        )}
+        <dt>Level</dt>
+        <dd>{e.level}</dd>
+      </dl>
+      <div className="row row-wrap">
+        <Button small disabled={!watch} onClick={() => useOffice.getState().enterWorkstation(e.id)} title={watch ? 'Watch what they are doing' : e.roleKey === 'foreman' || !can.read(e.hostId) ? 'This terminal is not a shared one.' : 'They have no session running.'}>
+          Watch terminal
+        </Button>
+      </div>
+      <div className="small faint">You are visiting this office: you see who works here and how the shared work stands.</div>
+    </div>
+  );
+}
+
 function EmployeePanel({ arg, onClose }: PanelProps) {
   const [id, tabArg] = (arg ?? '').split(':');
+  const visitor = useOffice((s) => s.me?.role === 'visitor');
   const e = useOffice((s) => (id ? s.employees[id] : undefined));
   const sessions = useOffice((s) => s.sessions);
   const questions = useOffice((s) => s.questions);
@@ -1714,6 +1763,13 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
   }
   const session = sessionOfEmployee(sessions, e.id);
   const open = openQuestionsOf(questions, e.id);
+  if (visitor) {
+    return (
+      <Window title={e.name} subtitle={`${e.title} · ${e.department}`} onClose={onClose} width={520} flush actions={<ActivityBadge activity={activityOf(session)} needsYou={false} />}>
+        <VisitorCard e={e} session={session} />
+      </Window>
+    );
+  }
   return (
     <Window
       title={e.name}

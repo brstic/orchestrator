@@ -758,7 +758,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/projects/:id/pause', async (req) => ({ interrupted: await engine.pauseProject(param(req, 'id')) }));
     api.post('/projects/:id/resume', async (req) => engine.tasks.updateProject(param(req, 'id'), { status: 'active' }));
     api.post('/projects/:id/plan', async (req) => engine.tasks.planProject(param(req, 'id'), String(body(req).objective ?? ''), String(body(req).plannerId)));
-    api.post('/tasks', async (req) => engine.tasks.createTask(body(req) as any));
+    // Who made it is written down (`owner`, or `member:<name>`), so a member finds the tasks they made.
+    api.post('/tasks', async (req) => engine.tasks.createTask(body(req) as any, actorOf(req)));
     api.post('/tasks/release', async (req) => engine.tasks.release(body(req).ids ?? []));
     api.patch('/tasks/:id', async (req) => engine.tasks.updateTask(param(req, 'id'), body(req)));
     api.delete('/tasks/:id', async (req) => {

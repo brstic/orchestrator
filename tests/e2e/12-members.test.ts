@@ -164,8 +164,18 @@ test('a visitor reads what is shared and changes nothing', async () => {
   const state = await door(mila, 'GET', '/api/state');
   assert.equal(state.status, 200);
   projectId = state.body.projects[0].id;
-  // Read-only really is reading: documents and diffs of shared employees too.
-  for (const p of [`/api/employees/${alex}/docs`, `/api/employees/${alex}/git`, '/api/events', '/api/people']) assert.equal((await door(mila, 'GET', p)).status, 200, `GET ${p} as a visitor`);
+  // A visitor looks at the office: who is here and that things happen. Documents, diffs and the accounts are for those who work here.
+  for (const p of ['/api/events', '/api/people']) assert.equal((await door(mila, 'GET', p)).status, 200, `GET ${p} as a visitor`);
+  for (const p of [`/api/employees/${alex}/docs`, `/api/employees/${alex}/git`, '/api/usage', '/api/routines', '/api/performance']) assert.equal((await door(mila, 'GET', p)).status, 403, `GET ${p} as a visitor`);
+  // And what they are sent of the office says nothing of the machines, the Claude that runs, or what is said.
+  const shown = state.body;
+  assert.ok(shown.employees.length && shown.employees.every((e: any) => e.name && e.model === null && e.workingDir === null && e.instructions === '' && e.claudeConfigDir === null), 'employees: who they are, not how they run');
+  assert.ok(shown.hosts.length && shown.hosts.every((x: any) => x.info === null && x.resources === null), 'machines: only that they are there');
+  assert.ok(shown.sessions.every((x: any) => x.cwd === '' && x.tmuxSession === '' && x.usage === null && x.model === null && x.claudeSessionId === null), 'sessions: only their state');
+  assert.ok(shown.projects.every((x: any) => x.repoPath === null && x.policy.allow.length === 0), 'projects: by name');
+  assert.ok(shown.tasks.every((x: any) => x.title && x.description === '' && x.history.length === 0 && x.worktree === null), 'tasks: the title and where it stands');
+  for (const k of ['questions', 'messages', 'notifications', 'artifacts', 'lessons', 'improvements', 'routines', 'collabs']) assert.deepEqual(shown[k], [], k);
+  assert.ok(shown.events.every((e: any) => e.summary === ''), 'events in outline only');
   for (const [method, p, body] of [
     ['POST', `/api/employees/${alex}/message`, { body: 'hello' }],
     ['POST', '/api/tasks', { projectId, title: 'x' }],
@@ -186,7 +196,9 @@ test('a colleague works on everything shared, and does not run the office', asyn
   await door(jovan, 'POST', `/api/employees/${alex}/message`, { body: 'Could you look at the README? @@fake: say will-do-for-jovan@@' });
   const delivered = await waitFor(async () => (await h.state()).messages.find((m) => m.toEmployeeId === alex && /README/.test(m.body) && m.delivery.status === 'confirmed'), { label: 'colleague message delivered' });
   assert.match(delivered.from.name, /Jovan \(a colleague the boss invited; not the boss\)/);
-  assert.equal((await door(jovan, 'POST', '/api/tasks', { projectId, title: 'From a colleague', released: false })).status, 200);
+  const made = await door(jovan, 'POST', '/api/tasks', { projectId, title: 'From a colleague', released: false });
+  assert.equal(made.status, 200);
+  assert.equal(made.body.createdBy, 'member:Jovan', 'a task says who made it');
   assert.equal((await door(jovan, 'GET', `/api/employees/${alex}/docs`)).status, 200);
   assert.equal((await door(jovan, 'GET', `/api/hosts/${h.hostId}/browse?path=${encodeURIComponent(h.tmp)}`)).status, 200);
   // Hires on the shared machine, and stops and starts a shared session.

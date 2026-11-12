@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { WebSocket } from 'ws';
-import { eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, mayReadRoutine, maySee, stateFor } from './access.ts';
+import { eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, mayReadRoutine, maySee, shownTo, stateFor } from './access.ts';
 import { VOICE_FRAMES_PER_SECOND, hears, validFrame } from './voice.ts';
 import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, OrchestratorEvent, PersonPresence, RadioNow, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
 import { hueOf, type Who } from './guests.ts';
@@ -407,6 +407,11 @@ export class ClientHub {
   private heardBy(c: ClientConn, msg: ServerToClient): ServerToClient | null {
     // An owner hears everything, except from a room its member has closed.
     if (c.who.kind === 'owner' && !this.engine.hosts.closedMembers().some((id) => id !== c.who.id)) return msg;
+    // A visitor is sent each thing with only what a visitor may know of it, or not at all.
+    if (msg.t === 'entity' && c.who.role === 'visitor') {
+      const data = shownTo(this.engine, c.who, msg.kind, msg.data, msg.op);
+      return data === msg.data ? msg : data === null ? null : { ...msg, data };
+    }
     if (msg.t === 'event') {
       const event = eventFor(this.engine, c.who, msg.event);
       return event === msg.event ? msg : event ? { t: 'event', event } : null;
@@ -422,7 +427,7 @@ export class ClientHub {
     const text = JSON.stringify(msg);
     const scoped = msg.t === 'event' || (msg.t === 'entity' && (msg.kind === 'message' || msg.kind === 'question' || msg.kind === 'routine'));
     for (const c of this.clients.values()) {
-      const mine = scoped ? this.heardBy(c, msg) : msg;
+      const mine = scoped || (msg.t === 'entity' && c.who.role === 'visitor') ? this.heardBy(c, msg) : msg;
       if (!mine) continue;
       if (c.ws.readyState === 1) {
         try {

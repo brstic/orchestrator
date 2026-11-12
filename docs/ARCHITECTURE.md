@@ -207,6 +207,12 @@ Meetings and report requests use `SessionRegistry.present` (running, or asleep a
 - Camera modes: CEO (third person), first person, management, free, workstation, command center.
 - Terminals up close are real xterm.js instances fed by the stream; at most the ones you opened exist.
 
+### A member's team lead
+`packages/orchestration/src/lead.ts` (`Engine.lead`). An employee with role `lead` on a member's own machine; its member is `HostRegistry.memberOfHost(lead.hostId)`. `Lead.team(lead)` is worked out from that — employees on that member's machines, plus shared ones when `leadScope === 'office'` — and every tool (`LEAD_TOOLS` in `packages/integrations/src/mcp.ts`: `team_overview`, `team_look`, `team_tell`, `team_task`, `team_assign`, `team_folders`, `team_hire`) goes through it. Nothing calls a lead: it has no rounds and no state of its own; a message to it is an ordinary message. `directsOthers(roleKey)` (contracts) is what keeps both the foreman and a lead out of scheduling, reviewing and the foreman's idle checks. In the scene it is an ordinary person at a seat in the member's room. `docs/TEAM-LEAD.md`.
+
+### One's own first, on the page
+`apps/desktop/src/lib/mine.ts` says whose a thing is for the person at the window (`whoseEmployee`, `whoseProject`, `whoseTask`, `taskIsMine`, `scoped`) — pure, tested in `apps/desktop/test/mine.test.ts`. `apps/desktop/src/hud/mine.tsx` holds the "Mine / Everyone" switch (`useScope`, kept in `localStorage` as `orch.scope`) and the badge; `hud/panels/mine.tsx` is the *My work* window. What a visitor may open is `lib/visitor-panels.ts`, asked by the menu and by `openPanel`.
+
 ### The foreman on the floor
 The foreman (role `foreman`, at most one) has no desk and is not among the seated people: `personViews` leaves it out, `foremanView` (`apps/desktop/src/lib/views.ts`) builds its own view model, and `packages/office-3d/src/Foreman.tsx` draws it.
 
