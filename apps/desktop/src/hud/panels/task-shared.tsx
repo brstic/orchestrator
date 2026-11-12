@@ -68,9 +68,9 @@ export function TaskChip({ id }: { id: string }) {
 }
 
 
-// ───────────────────── what a ticket needs, in words ─────────────────────
+// ───────────────────── what a task needs, in words ─────────────────────
 
-/** Who reviews a ticket, as a person chooses it. */
+/** Who reviews a task, as a person chooses it. */
 export const REVIEW_CHOICES: Array<{ id: ReviewBy; label: string; hint: string }> = [
   { id: 'both', label: 'A colleague, then me', hint: 'A colleague looks first and sends it back if something is wrong; what they approve comes to you.' },
   { id: 'boss', label: 'Me', hint: 'It comes straight to you when it is handed in.' },
@@ -78,15 +78,8 @@ export const REVIEW_CHOICES: Array<{ id: ReviewBy; label: string; hint: string }
   { id: 'none', label: 'No review', hint: 'Done as soon as its check passes.' },
 ];
 
-/** The groups the list of tickets is in: by what a ticket needs next, not by a column somebody moved it to. */
+/** What a task needs next: the person at this window, whoever works on it, somebody else, its turn — or nothing more. */
 export type Need = 'you' | 'working' | 'waiting' | 'next' | 'done';
-export const NEEDS: Array<{ id: Need; label: string; empty: string }> = [
-  { id: 'you', label: 'Needs you', empty: 'Nothing is waiting for you.' },
-  { id: 'working', label: 'In progress', empty: 'Nobody is working on a ticket right now.' },
-  { id: 'waiting', label: 'Waiting', empty: 'Nothing is waiting for a colleague or for its parts.' },
-  { id: 'next', label: 'Up next', empty: 'No ticket is queued.' },
-  { id: 'done', label: 'Done', empty: 'Nothing is finished yet.' },
-];
 
 export interface TicketNeed {
   group: Need;
@@ -103,7 +96,7 @@ const first = (text: string, n = 110) => {
   return one.length > n ? `${one.slice(0, n - 1)}…` : one;
 };
 
-/** The question on a ticket that nobody has answered yet (the one it is parked on, else the latest). */
+/** The question on a task that nobody has answered yet (the one it is parked on, else the latest). */
 export function openQuestionOf(task: Task): TaskComment | undefined {
   const open = (task.comments ?? []).filter((c) => c.kind === 'question' && !c.answeredBy);
   const parked = task.waitingFor?.kind === 'answer' ? task.waitingFor.commentId : null;

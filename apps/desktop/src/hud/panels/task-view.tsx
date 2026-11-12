@@ -96,7 +96,7 @@ function Thread({ task }: { task: Task }) {
           </div>
         ),
       )}
-      {rows.length === 0 && <div className="muted small">Nothing has been said on this ticket yet.</div>}
+      {rows.length === 0 && <div className="muted small">Nothing has been said on this task yet.</div>}
       <div ref={end} />
     </div>
   );
@@ -213,10 +213,10 @@ function Composer({ task }: { task: Task }) {
   };
   const unblock = () => run(() => api('POST', `/tasks/${task.id}/unblock`, { note: said }), `${task.key} unblocked`).then(done);
 
-  if (!mayWork) return <div className="tk-compose tk-compose-off small muted">{can.why(s.projects[task.projectId]?.hostId) ?? 'You can read this ticket, not write on it.'}</div>;
-  if (task.kind === 'review') return <div className="tk-compose tk-compose-off small muted">A review is written by the colleague who was asked for it; what there is to say goes on the ticket it reviews.</div>;
+  if (!mayWork) return <div className="tk-compose tk-compose-off small muted">{can.why(s.projects[task.projectId]?.hostId) ?? 'You can read this task, not write on it.'}</div>;
+  if (task.kind === 'review') return <div className="tk-compose tk-compose-off small muted">A review is written by the colleague who was asked for it; what there is to say goes on the task it reviews.</div>;
 
-  // What the first button is, and what the box asks for, depends on what the ticket is waiting for.
+  // What the first button is, and what the box asks for, depends on what the task is waiting for.
   const answering = !!question && (task.status === 'BLOCKED' || (task.status === 'IN_PROGRESS' && forBoss));
   const blocked = task.status === 'BLOCKED' && !question && !waitsForParts;
   let placeholder = 'Write a comment — @ to tag an employee';
@@ -225,11 +225,11 @@ function Composer({ task }: { task: Task }) {
   if (answering) {
     placeholder = `Your answer to ${question!.from.name}…`;
     primary = { label: 'Answer', run: () => comment(task.status === 'BLOCKED' ? `${task.key} is back with ${who}` : 'Answered'), need: true, variant: 'success' };
-    hint = task.status === 'BLOCKED' ? `Your answer brings the ticket back to ${who}.` : `${question!.from.name} is waiting for it right now.`;
+    hint = task.status === 'BLOCKED' ? `Your answer brings the task back to ${who}.` : `${question!.from.name} is waiting for it right now.`;
   } else if (blocked) {
     placeholder = `What changed, and what ${who} should do now…`;
     primary = { label: 'Unblock', run: unblock, need: false, variant: 'success' };
-    hint = `Unblocking sends the ticket back to ${who} with your note.`;
+    hint = `Unblocking sends the task back to ${who} with your note.`;
   } else if (task.status === 'REVIEW') {
     placeholder = 'A note with your approval — or what should change, to send it back';
     primary = { label: 'Approve', run: approve, need: false, variant: 'success' };
@@ -282,7 +282,7 @@ function People({ task }: { task: Task }) {
   const mayWork = can.work(s.projects[task.projectId]?.hostId);
   const patch = (body: Record<string, unknown>, ok: string) => run(() => api('PATCH', `/tasks/${task.id}`, body), ok);
   const assignee = task.assigneeId ? s.employees[task.assigneeId] : undefined;
-  // A finished ticket keeps who it was done by; one in progress is not moved from under them.
+  // A finished task keeps who it was done by; one in progress is not moved from under them.
   const editable = mayWork && task.status !== 'IN_PROGRESS' && task.status !== 'DONE';
   const helpers = (task.helperIds ?? []).map((id) => s.employees[id]).filter((e): e is Employee => !!e);
   const everyone = activeEmployees(s.employees).filter((e) => e.roleKey !== 'foreman');
@@ -322,7 +322,7 @@ function People({ task }: { task: Task }) {
                 <Avatar appearance={e.appearance} size={18} />
                 {e.name}
                 {canHelp && (
-                  <button type="button" aria-label={`Take ${e.name} off this ticket`} disabled={busy} onClick={() => patch({ helperIds: (task.helperIds ?? []).filter((id) => id !== e.id) }, `${e.name} is off ${task.key}`)}>
+                  <button type="button" aria-label={`Take ${e.name} off this task`} disabled={busy} onClick={() => patch({ helperIds: (task.helperIds ?? []).filter((id) => id !== e.id) }, `${e.name} is off ${task.key}`)}>
                     ×
                   </button>
                 )}
@@ -330,12 +330,12 @@ function People({ task }: { task: Task }) {
             ))}
             {canHelp && (
               <details className="tk-pop">
-                <summary className="tk-add" title="Put a colleague on this ticket with its assignee" data-add-people>
+                <summary className="tk-add" title="Put a colleague on this task with its assignee" data-add-people>
                   + Add
                 </summary>
                 <div className="tk-pop-body">
                   <div className="small muted" style={{ padding: '2px 4px 6px' }}>
-                    {assignee?.name ?? 'The assignee'} leads the ticket and divides the work.
+                    {assignee?.name ?? 'The assignee'} leads the task and divides the work.
                   </div>
                   {everyone
                     .filter((e) => e.id !== task.assigneeId && !(task.helperIds ?? []).includes(e.id))
@@ -395,7 +395,7 @@ function More({ task, onEdit }: { task: Task; onEdit: () => void }) {
   const remove = async () => {
     close();
     const working = task.status === 'IN_PROGRESS';
-    if (!(await ask({ title: `${working ? 'Stop and delete' : 'Delete'} ${task.key}?`, body: `"${task.title}"\n\n${working ? `${who} is interrupted and told to leave it; the` : 'The'} ticket and its record are removed. This cannot be undone. Its branch and folder on the machine are left as they are.`, ok: working ? 'Stop and delete' : 'Delete', danger: true }))) return;
+    if (!(await ask({ title: `${working ? 'Stop and delete' : 'Delete'} ${task.key}?`, body: `"${task.title}"\n\n${working ? `${who} is interrupted and told to leave it; the` : 'The'} task and its record are removed. This cannot be undone. Its branch and folder on the machine are left as they are.`, ok: working ? 'Stop and delete' : 'Delete', danger: true }))) return;
     const res = await run(() => (working ? api('POST', `/tasks/${task.id}/stop`, { then: 'delete' }) : api('DELETE', `/tasks/${task.id}`)), `${task.key} deleted`);
     if (res !== undefined) s.openPanel('tasks');
   };
@@ -407,11 +407,11 @@ function More({ task, onEdit }: { task: Task; onEdit: () => void }) {
       <div className="tk-pop-body tk-pop-right">
         {task.status !== 'DONE' && task.kind !== 'review' && (
           <button type="button" className="tk-pop-item" onClick={() => (close(), onEdit())}>
-            Change the ticket's text…
+            Change the task's text…
           </button>
         )}
         {task.status === 'IN_PROGRESS' && (
-          <button type="button" className="tk-pop-item" disabled={busy} onClick={() => (close(), void run(() => api('POST', `/tasks/${task.id}/stop`, { then: 'hold' }), `${task.key} stopped and put on hold`))} title={`${who} is interrupted and told to leave it. The ticket waits, with its branch, until you release it again.`}>
+          <button type="button" className="tk-pop-item" disabled={busy} onClick={() => (close(), void run(() => api('POST', `/tasks/${task.id}/stop`, { then: 'hold' }), `${task.key} stopped and put on hold`))} title={`${who} is interrupted and told to leave it. The task waits, with its branch, until you release it again.`}>
             Stop — put on hold
           </button>
         )}
@@ -437,21 +437,21 @@ function More({ task, onEdit }: { task: Task; onEdit: () => void }) {
           </label>
         )}
         <button type="button" className="tk-pop-item tk-danger" disabled={busy} onClick={remove}>
-          {task.status === 'IN_PROGRESS' ? 'Stop and delete…' : 'Delete ticket…'}
+          {task.status === 'IN_PROGRESS' ? 'Stop and delete…' : 'Delete task…'}
         </button>
       </div>
     </details>
   );
 }
 
-/** The ticket's own text, and changing it. Changing the text of a ticket somebody is working on tells them. */
+/** The task's own text, and changing it. Changing the text of a task somebody is working on tells them. */
 function Body({ task, editing, onDone }: { task: Task; editing: boolean; onDone: () => void }) {
   const s = useOffice();
   const [busy, run] = useAction();
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description);
   const [acceptance, setAcceptance] = useState(task.acceptance);
-  /** The place to drop files is opened when wanted: most tickets have none. */
+  /** The place to drop files is opened when wanted: most tasks have none. */
   const [attaching, setAttaching] = useState(false);
   useEffect(() => {
     setTitle(task.title);
@@ -518,7 +518,7 @@ function Body({ task, editing, onDone }: { task: Task; editing: boolean; onDone:
             Parts — {parts.filter((p) => p.status === 'DONE').length} of {parts.length} done
           </div>
           {parts.map((p) => (
-            <button key={p.id} type="button" className="tk-part" onClick={() => s.openPanel(s.panel === 'task' || s.panel === 'tasks' ? s.panel : 'task', p.id)}>
+            <button key={p.id} type="button" className="tk-part" onClick={() => s.openPanel('task', p.id)}>
               <span className="dot" style={{ background: STATUS_META[p.status].color }} />
               <span className="mono muted">{p.key}</span>
               <span className="grow truncate">{p.title}</span>
@@ -563,14 +563,14 @@ function Details({ task }: { task: Task }) {
   );
 }
 
-// ───────────────────────────────── the ticket ─────────────────────────────────
+// ───────────────────────────────── the task ─────────────────────────────────
 
 export function TicketView({ task, tab, onTab }: { task: Task; tab: TicketTab; onTab: (t: TicketTab) => void }) {
   const s = useOffice();
   const [busy, run] = useAction();
   const [editing, setEditing] = useState(false);
   useEffect(() => setEditing(false), [task.id]);
-  // The small menus of the ticket (people to add, more actions) close when one clicks anywhere else.
+  // The small menus of the task (people to add, more actions) close when one clicks anywhere else.
   useEffect(() => {
     const away = (e: MouseEvent) => {
       for (const d of document.querySelectorAll<HTMLDetailsElement>('.tk-pop[open]')) if (!d.contains(e.target as Node)) d.removeAttribute('open');
@@ -582,74 +582,112 @@ export function TicketView({ task, tab, onTab }: { task: Task; tab: TicketTab; o
   const need = needOf(task, s.employees, s.tasks);
   const parent = task.parentId ? s.tasks[task.parentId] : undefined;
   const reviewed = task.reviewOf ? s.tasks[task.reviewOf] : undefined;
-  const open = (id: string) => s.openPanel(s.panel === 'tasks' ? 'tasks' : 'task', id);
+  const open = (id: string) => s.openPanel('task', id);
   return (
-    <div className="tk-pane" data-ticket={task.key} data-ticket-status={task.status}>
-      <div className="tk-head">
-        <div className="tk-head-top">
+    <div className="tk-ticket" data-ticket={task.key} data-ticket-status={task.status}>
+      {/* In the middle: what the task says and what is said on it. */}
+      <div className="tk-pane">
+        <Tabs<TicketTab>
+          tabs={[
+            { id: 'talk', label: 'Conversation', count: task.comments?.length || undefined },
+            { id: 'work', label: 'Work' },
+            { id: 'changes', label: 'Changes' },
+            { id: 'history', label: 'History' },
+          ]}
+          value={tab}
+          onChange={onTab}
+        />
+        {tab === 'talk' ? (
+          <>
+            <div className="tk-scroll">
+              <Body task={task} editing={editing} onDone={() => setEditing(false)} />
+              <Thread task={task} />
+            </div>
+            <Composer task={task} />
+          </>
+        ) : (
+          <div className="tk-scroll tk-scroll-pad">
+            {tab === 'work' && (
+              <>
+                <Details task={task} />
+                <TaskEvidence task={task} />
+              </>
+            )}
+            {tab === 'changes' && <GitChanges path={`/tasks/${task.id}/git`} />}
+            {tab === 'history' && <TaskHistory task={task} />}
+          </div>
+        )}
+      </div>
+      {/* At the side: where it stands and who is on it — each changed right there. */}
+      <aside className="tk-aside">
+        <div className="tk-aside-top">
           <span className="tk-status" style={{ color: need.color, borderColor: need.color }} data-ticket-need={need.group}>
             {need.label}
           </span>
-          <span className="mono muted">{task.key}</span>
-          {project && (
-            <button type="button" className="pw-chip" onClick={() => s.openPanel('projects', project.id)}>
-              <span className="dot" style={{ background: project.color }} />
-              <span className="truncate">{project.name}</span>
-            </button>
-          )}
-          {parent && (
-            <button type="button" className="pw-chip" onClick={() => open(parent.id)} title={parent.title}>
-              part of <span className="mono">{parent.key}</span>
-            </button>
-          )}
-          {reviewed && (
-            <button type="button" className="pw-chip" onClick={() => open(reviewed.id)} title={reviewed.title}>
-              review of <span className="mono">{reviewed.key}</span>
-            </button>
-          )}
-          {task.attempts > 0 && <span className="small muted">sent back {task.attempts}×</span>}
           <div className="grow" />
-          {!task.released && task.status === 'BACKLOG' && (
-            <Button variant="success" small disabled={busy} onClick={() => run(() => api('POST', '/tasks/release', { ids: [task.id] }), `${task.key} released`)}>
-              Release
-            </Button>
-          )}
           <More task={task} onEdit={() => (onTab('talk'), setEditing(true))} />
         </div>
-        <h3 className="tk-title">{task.title}</h3>
         <div className="tk-line">{need.line}</div>
+        {!task.released && task.status === 'BACKLOG' && (
+          <Button variant="success" small disabled={busy} onClick={() => run(() => api('POST', '/tasks/release', { ids: [task.id] }), `${task.key} released`)}>
+            Release
+          </Button>
+        )}
         <People task={task} />
-      </div>
-      <Tabs<TicketTab>
-        tabs={[
-          { id: 'talk', label: 'Conversation', count: task.comments?.length || undefined },
-          { id: 'work', label: 'Work' },
-          { id: 'changes', label: 'Changes' },
-          { id: 'history', label: 'History' },
-        ]}
-        value={tab}
-        onChange={onTab}
-      />
-      {tab === 'talk' ? (
-        <>
-          <div className="tk-scroll">
-            <Body task={task} editing={editing} onDone={() => setEditing(false)} />
-            <Thread task={task} />
+        <div className="tk-meta">
+          <div className="tk-meta-item">
+            <span className="tk-meta-label">Project</span>
+            {project ? (
+              <button type="button" className="pw-chip" onClick={() => s.openPanel('projects', project.id)}>
+                <span className="dot" style={{ background: project.color }} />
+                <span className="truncate">{project.name}</span>
+              </button>
+            ) : (
+              <span className="muted">unknown project</span>
+            )}
           </div>
-          <Composer task={task} />
-        </>
-      ) : (
-        <div className="tk-scroll tk-scroll-pad">
-          {tab === 'work' && (
-            <>
-              <Details task={task} />
-              <TaskEvidence task={task} />
-            </>
+          {parent && (
+            <div className="tk-meta-item">
+              <span className="tk-meta-label">Part of</span>
+              <button type="button" className="pw-chip" onClick={() => open(parent.id)} title={parent.title}>
+                <span className="mono">{parent.key}</span>
+                <span className="truncate">{parent.title}</span>
+              </button>
+            </div>
           )}
-          {tab === 'changes' && <GitChanges path={`/tasks/${task.id}/git`} />}
-          {tab === 'history' && <TaskHistory task={task} />}
+          {reviewed && (
+            <div className="tk-meta-item">
+              <span className="tk-meta-label">Review of</span>
+              <button type="button" className="pw-chip" onClick={() => open(reviewed.id)} title={reviewed.title}>
+                <span className="mono">{reviewed.key}</span>
+                <span className="truncate">{reviewed.title}</span>
+              </button>
+            </div>
+          )}
+          <div className="tk-meta-item">
+            <span className="tk-meta-label">Kind</span>
+            <span>{task.kind}</span>
+          </div>
+          {task.attempts > 0 && (
+            <div className="tk-meta-item">
+              <span className="tk-meta-label">Sent back</span>
+              <span>{task.attempts}×</span>
+            </div>
+          )}
+          <div className="tk-meta-item">
+            <span className="tk-meta-label">Created</span>
+            <span className="small">
+              {stamp(task.createdAt)} by {task.createdBy.replace(/^[a-z]+:/, '')}
+            </span>
+          </div>
+          {task.completedAt && (
+            <div className="tk-meta-item">
+              <span className="tk-meta-label">Completed</span>
+              <span className="small">{stamp(task.completedAt)}</span>
+            </div>
+          )}
         </div>
-      )}
+      </aside>
     </div>
   );
 }

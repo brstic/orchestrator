@@ -7,8 +7,8 @@ ticket, split it and help each other; in comments employees tag the owner and ea
 
 A "ticket" is a `Task` (`packages/contracts/src/entities.ts`). The engine is `packages/orchestration/src/tasks.ts`
 (the life of a task) and `task-talk.ts` (`Engine.talk`: the conversation and what follows from it). The window is
-`apps/desktop/src/hud/panels/tasks.tsx` with `task-view.tsx`, `task-new.tsx`, `task-work.tsx`, `task-shared.tsx`.
-Tests: `tests/e2e/45-tickets.test.ts`; the "Tickets" steps of `tests/ui/driver.cjs`.
+`apps/desktop/src/hud/panels/tasks.tsx` (the board) with `task-view.tsx` (one task), `task-new.tsx`, `task-work.tsx`, `task-shared.tsx`.
+Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
 
 ## 1. Review
 
@@ -112,27 +112,36 @@ comment.
   project uses branches the lead is told to merge the integration branch first: the parts were merged there.
 - Deleting a ticket leaves its parts as tickets of their own; deleting a part counts as that part being settled.
 
-## 5. The window
+## 5. The windows
 
-`Tickets` (the panels `tasks` and `task`; `openPanel('task', '<id>' | '<id>:diff' | 'new' | 'new:<employeeId>')`).
+The first version of this work replaced the board with one window that listed tickets by "what they need". The owner
+sent that back the same day: the board by columns was better, and what was wanted was only to *go into* a ticket and
+talk there, as in Plane or Trello. So:
 
-- **Left: every ticket, grouped by what it needs next** (`needOf` in `task-shared.tsx`), not by a column somebody
-  moved it to: **Needs you** (your review, a question to you, something blocked, a proposal to release) · **In
-  progress** · **Waiting** (for a colleague's review or answer, or for its parts) · **Up next** · **Done**. Search,
-  project, employee, "Only what needs me". Each row: the key and title, one line saying what is going on, who is on
-  it. Opened without a ticket in mind, the window shows the first one that needs the person.
-- **Right: the ticket.** What it needs, in a pill and a sentence; who leads it, who is on it with them ("+ Add"),
-  who reviews it, its priority — each changed right there; the text, the files and the parts; then the
-  **conversation**, with the office's own lines of the story between the comments; and **one box at the bottom**
-  whose first button is what the ticket is waiting for: *Answer* (a question, or a ticket parked on one),
-  *Approve* / *Send back* (in review), *Unblock*, otherwise *Comment* — with *Send back* on a finished ticket and
-  *Tell them now* on one in progress. `@` offers the office's people. ⌘/Ctrl+Enter presses the first button.
-- Folded away: **Work** (the measured evidence — verification, commits, files, merge, friction — and the technical
-  details), **Changes** (the diff, read live from the machine), **History** (every recorded event); and in the
-  ticket's **⋯** menu: change its text, stop it and put it on hold, move it by hand, delete it.
-- A new ticket is written in the same place (`TicketNew`): title, description, files, project, assignee, who works
-  on it with them, who reviews it; the rest under "More options".
-- Roles: a visitor reads; whoever may work on the ticket's machine (an owner, a colleague on the shared office or on
+- **The board is as it was** (`TasksPanel` in `tasks.tsx`, the panel `tasks`): six columns — Backlog, Ready, In
+  progress, Review, Blocked, Done — cards that move by themselves and can be dragged, search, project, employee,
+  "Show review tasks", "Release … proposed tasks", "New task". New on a card: what it waits for when it waits for
+  the person at the window ("Your review · Rev approved it — now you", "Asks you · Sarah: …", with an amber outline),
+  what a waiting one waits for, how many comments and parts it has, who is on it with its assignee. New in the
+  toolbar: "Needs me (n)" shows only those cards. (A ticket parked on a question or on its parts is `BLOCKED`, so it
+  stands in that column; its card says which.)
+- **A click on a card opens that task** (`Ticket` → `TicketView` in `task-view.tsx`, the panel `task`;
+  `openPanel('task', '<id>' | '<id>:diff')`; "All tasks" goes back to the board).
+  - *In the middle*: the task's text, files and parts, then the **conversation** — comments, with the office's own
+    lines of the story between them — and **one box at the bottom** whose first button is what the task is waiting
+    for: *Answer* (a question, or a task parked on one), *Approve* / *Send back* (in review), *Unblock*, otherwise
+    *Comment* — with *Send back* on a finished task and *Tell them now* on one in progress. `@` offers the office's
+    people. ⌘/Ctrl+Enter presses the first button. Tabs beside the conversation: **Work** (the measured evidence and
+    the technical details), **Changes** (the diff, read live), **History** (every recorded event).
+  - *At the side*: what it needs, in a pill and a sentence; assignee, who is on it with them ("+ Add"), who reviews
+    it, priority — each changed right there; project, kind, what it is a part of, dates; and the **⋯** menu: change
+    its text, stop it and put it on hold, move it by hand, delete it.
+- **A new task** is its own window again (`NewTicket` → `TicketNew` in `task-new.tsx`,
+  `openPanel('task', 'new' | 'new:<employeeId>')`): title, description, files, project, assignee, who works on it
+  with them, who reviews it; the rest under "More options". Creating it opens the task.
+- `needOf` (`task-shared.tsx`) is the one place that says what a task needs and in which words; the card and the
+  task's side both read it.
+- Roles: a visitor reads; whoever may work on the task's machine (an owner, a colleague on the shared office or on
   their own computer) writes — the rule every task route has (`apps/server/src/access.ts`).
 
 ## What is not there
@@ -140,4 +149,4 @@ comment.
 - Reviewing a part on its own is possible only by choosing "Reviewed by" on that part after it is made.
 - A comment cannot be edited or deleted.
 - A person cannot split a ticket from the window; they put colleagues on it and its lead does.
-- "Tagged you" is a notification in the Inbox; the list of tickets has no unread mark of its own.
+- "Tagged you" is a notification in the Inbox; a card on the board has no unread mark of its own.

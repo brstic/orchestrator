@@ -954,8 +954,8 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                       ))}
                     </select>
                     <span className="field-hint">
-                      {REVIEW_CHOICES.find((c) => c.id === reviewDefaultOf(settings))!.hint} This is what every new ticket starts with, whoever makes it — you, an employee, a routine; each ticket can be set differently when it is made or
-                      afterwards. A part of a divided ticket is not reviewed on its own: the whole is.
+                      {REVIEW_CHOICES.find((c) => c.id === reviewDefaultOf(settings))!.hint} This is what every new task starts with, whoever makes it — you, an employee, a routine; each task can be set differently when it is made or
+                      afterwards. A part of a divided task is not reviewed on its own: the whole is.
                     </span>
                   </div>
                   <Toggle checked={settings.employeesManageBoard !== false} onChange={(employeesManageBoard) => void save({ employeesManageBoard })} title="Employees manage the task board themselves">

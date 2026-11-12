@@ -354,14 +354,14 @@ async function scenario() {
 
   await step('creating a task through the task form; it is delivered and completed', async () => {
     await js(`window.__t.store().openPanel('tasks')`);
-    await clickText('New ticket');
+    await clickText('New task');
     const titleBox = `window.__t.scope().querySelector('[data-ticket-new] input[aria-label="Title"]')`;
     await waitFor(`!!(${titleBox})`, 5000);
     await js(`(() => { const sel = window.__t.field('Assignee'); const v = window.__t.emp('Noor').id; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, v); sel.dispatchEvent(new Event('change', { bubbles: true })); })()`);
     await type(titleBox, ctx.taskTitle);
     await type(`window.__t.field('Description')`, ctx.taskDescription);
     await shot('task-form');
-    await clickText('Create ticket');
+    await clickText('Create task');
     await waitFor(`Object.values(window.__t.store().tasks).some((t) => t.title === ${JSON.stringify(ctx.taskTitle)})`, 10000);
     await waitFor(`Object.values(window.__t.store().tasks).some((t) => t.title === ${JSON.stringify(ctx.taskTitle)} && t.status === 'DONE')`, 40000);
     await js(`window.__t.store().openPanel(null)`);
@@ -815,19 +815,21 @@ async function scenario() {
     return `Ava (level ${info.level}): ${said.join('; ')}`;
   });
 
-  await step('Tickets: a ticket is moved by hand from its menu, and the list groups it where it now belongs', async () => {
+  await step('Task board: dragging a card to another column moves the task', async () => {
     await open('tasks');
     const pick = await js(`(() => { const t = Object.values(window.__t.store().tasks).find((x) => (x.status === 'READY' || x.status === 'BACKLOG') && !x.assigneeId && x.kind !== 'review'); return t ? { id: t.id, key: t.key, from: t.status, to: t.status === 'READY' ? 'BACKLOG' : 'READY' } : null; })()`);
-    if (!pick) throw new Error('no unassigned READY/BACKLOG task to move');
-    // The list is in groups by what a ticket needs; the one that needs the person at this window comes first.
-    const groups = await js(`[...window.__t.scope().querySelectorAll('[data-ticket-group]')].map((g) => g.dataset.ticketGroup).join(',')`);
-    if (!groups.startsWith('you')) throw new Error(`the groups of the list are ${groups}`);
-    await click(`window.__t.scope().querySelector('[data-ticket-row="${pick.key}"]')`, `the row of ${pick.key}`);
-    await waitFor(`window.__t.scope().querySelector('[data-ticket]')?.dataset.ticket === ${JSON.stringify(pick.key)}`, 5000);
-    await click(`window.__t.scope().querySelector('[data-more]')`, 'More actions');
-    await waitFor(`!!window.__t.scope().querySelector('select[aria-label="Move to another status"]')`, 4000);
-    await shot('ticket-menu');
-    await js(`window.__t.setSelect(window.__t.scope().querySelector('select[aria-label="Move to another status"]'), ${JSON.stringify(pick.to)})`);
+    if (!pick) throw new Error('no unassigned READY/BACKLOG task to drag');
+    const card = `[...window.__t.scope().querySelectorAll('[draggable=true]')].find((c) => c.textContent.includes(${JSON.stringify(pick.key)} + ' ') || [...c.querySelectorAll('.mono')].some((m) => m.textContent.trim() === ${JSON.stringify(pick.key)}))`;
+    const col = `[...window.__t.scope().querySelectorAll('.board-col')].find((c) => c.querySelector('.board-col-head').textContent.trim().toUpperCase().startsWith(${JSON.stringify(pick.to)}))`;
+    await waitFor(`!!(${card}) && !!(${col})`, 8000);
+    // HTML5 drag and drop, event by event, with one shared DataTransfer (the browser's own drag
+    // session cannot be driven in a hidden window, so the events a real drag produces are dispatched).
+    await js(`(() => { window.__dt = new DataTransfer(); (${card}).dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: window.__dt })); })()`);
+    await sleep(150);
+    await js(`(${col}).dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: window.__dt }))`);
+    await sleep(150);
+    await shot('board-drag');
+    await js(`(${col}).dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: window.__dt }))`);
     await waitFor(`window.__t.store().tasks[${JSON.stringify(pick.id)}].status === ${JSON.stringify(pick.to)}`, 8000);
     await close();
     return `${pick.key}: ${pick.from} → ${pick.to}`;
@@ -1105,7 +1107,7 @@ async function scenario() {
     await close();
   });
 
-  await step('Tickets: a ticket has a conversation — the employee asks there instead of blocking, I answer, send the work back, and approve it', async () => {
+  await step('A task has a conversation: the employee asks there instead of blocking, I answer, send the work back, and approve it', async () => {
     // Somebody who is at their desk with nothing to do.
     const who = await js(`(() => { const st = window.__t.store(); const e = Object.values(st.employees).find((x) => !x.archived && x.roleKey !== 'foreman' && x.projectId && !st.hosts[x.hostId]?.memberId && Object.values(st.sessions).some((q) => q.employeeId === x.id && q.status === 'running' && q.inTurn === false) && !Object.values(st.tasks).some((t) => t.assigneeId === x.id && (t.status === 'IN_PROGRESS' || t.status === 'READY'))); return e ? { id: e.id, name: e.name, projectId: e.projectId } : null; })()`);
     if (!who) throw new Error('nobody is free for a ticket');
@@ -1119,7 +1121,7 @@ async function scenario() {
     if (choices !== 'both,boss,peer,none*') throw new Error(`the review choices of this office (set to "none") are ${choices}`);
     await click(`window.__t.scope().querySelector('[data-review="boss"]')`, 'reviewed by me');
     await shot('ticket-new');
-    await clickText('Create ticket');
+    await clickText('Create task');
     const tid = await waitFor(`(Object.values(window.__t.store().tasks).find((t) => t.title === ${JSON.stringify(title)}) || {}).id`, 10000);
     const t = `window.__t.store().tasks[${JSON.stringify(tid)}]`;
     const pane = `window.__t.scope().querySelector('[data-ticket]')`;
@@ -1127,8 +1129,13 @@ async function scenario() {
     // The window stays where it was, now on the new ticket. The employee asks; the ticket says so and the box is for the answer.
     await waitFor(`(${t}.comments || []).some((c) => c.kind === 'question' && !c.answeredBy)`, 30000);
     await waitFor(`(${pane}) && (${pane}).querySelector('[data-ticket-need]').dataset.ticketNeed === 'you' && !!(${pane}).querySelector('[data-comment="question"].tk-open') && (${pane}).querySelector('[data-compose]').dataset.compose === 'answer'`, 8000);
-    const row = await js(`(() => { const r = window.__t.scope().querySelector('[data-ticket-group="you"] [data-ticket-row="' + ${t}.key + '"]'); return r ? r.textContent : ''; })()`);
-    if (!/Asks you/.test(row) || !/Which colour should the banner be/.test(row)) throw new Error(`the row under "Needs you" reads: ${row.slice(0, 120)}`);
+    // On the board its card says what it waits for; a click on the card is the way into the task.
+    await open('tasks');
+    const card = `window.__t.scope().querySelector('[data-ticket-card="' + ${t}.key + '"]')`;
+    await waitFor(`!!(${card}) && /Asks you/.test((${card}).querySelector('[data-card-need]')?.textContent || '') && /Which colour should the banner be/.test((${card}).textContent)`, 8000);
+    await shot('board-asks');
+    await click(card, 'the card of the task');
+    await waitFor(`!!(${pane}) && (${pane}).dataset.ticket === ${t}.key && (${pane}).querySelector('[data-compose]').dataset.compose === 'answer'`, 6000);
     // A colleague is put on the ticket and taken off again, right there.
     await click(`(${pane}).querySelector('[data-add-people]')`, '+ Add');
     await click(`(${pane}).querySelector('.tk-pop[open] .tk-pop-item')`, 'the first colleague offered');
@@ -1260,16 +1267,15 @@ async function scenario() {
     return `${builds} verification runs, ${git} commits/merges listed`;
   });
 
-  await step('Tickets: typing in the search box narrows the list', async () => {
+  await step('Task board: typing in the search box narrows the board', async () => {
     await open('tasks');
-    await waitFor(`window.__t.scope().querySelectorAll('[data-ticket-row]').length > 1`, 5000);
-    const all = await js(`window.__t.scope().querySelectorAll('[data-ticket-row]').length`);
-    await type(`window.__t.scope().querySelector('input[aria-label="Search tickets"]')`, 'UI-created marker');
-    await waitFor(`window.__t.scope().querySelectorAll('[data-ticket-row]').length === 1`, 5000);
-    const only = await js(`window.__t.scope().querySelector('[data-ticket-row]').textContent`);
+    const all = await js(`window.__t.scope().querySelectorAll('[draggable=true]').length`);
+    await type(`window.__t.scope().querySelector('input[aria-label="Search tasks"]')`, 'UI-created marker');
+    await waitFor(`window.__t.scope().querySelectorAll('[draggable=true]').length === 1`, 5000);
+    const only = await js(`window.__t.scope().querySelector('[draggable=true]').textContent`);
     if (!/UI-created marker/.test(only)) throw new Error(`the remaining card is not the searched one: ${only.slice(0, 80)}`);
     await close();
-    return `${all} tickets → 1 ("${only.slice(0, 60)}")`;
+    return `${all} cards → 1 ("${only.slice(0, 60)}")`;
   });
 
   await step('Projects: the Integration tab shows how the integration branch stands, and runs its tests on request', async () => {
@@ -1332,9 +1338,9 @@ async function scenario() {
     await js(`window.__confirms = []; delete window.__orchConfirm; true`);
     await open('task', JSON.stringify(ctx.throwawayTaskId));
     // Deleting is not something done in passing: it is in the ticket's menu.
-    const del = `[...window.__t.scope().querySelectorAll('.tk-more .tk-pop-item')].find((b) => b.textContent.trim() === 'Delete ticket…')`;
+    const del = `[...window.__t.scope().querySelectorAll('.tk-more .tk-pop-item')].find((b) => b.textContent.trim() === 'Delete task…')`;
     await click(`window.__t.scope().querySelector('[data-more]')`, 'More actions');
-    await click(del, 'Delete ticket…');
+    await click(del, 'Delete task…');
     await waitFor(`!!document.querySelector('.confirm-dialog')`, 5000);
     const asked = await js(`document.querySelector('.confirm-dialog').textContent`);
     if (!/Delete .*This cannot be undone/s.test(asked)) throw new Error(`no delete confirmation was asked (got: ${asked.slice(0, 80)})`);
@@ -1344,7 +1350,7 @@ async function scenario() {
     await sleep(300);
     if (!(await js(`!!window.__t.store().tasks[${JSON.stringify(ctx.throwawayTaskId)}]`))) throw new Error('Cancel deleted the task');
     await click(`window.__t.scope().querySelector('[data-more]')`, 'More actions');
-    await click(del, 'Delete ticket…');
+    await click(del, 'Delete task…');
     await waitFor(`!!document.querySelector('.confirm-dialog [data-confirm-ok]')`, 5000);
     await click(`document.querySelector('.confirm-dialog [data-confirm-ok]')`, 'the confirming button');
     await waitFor(`!window.__t.store().tasks[${JSON.stringify(ctx.throwawayTaskId)}]`, 8000);
@@ -1385,7 +1391,7 @@ async function scenario() {
     const entries = [
       ['Talk', `window.__t.store().panel === 'talk'`],
       ['Open terminal', `!!document.querySelector('.ws .xterm')`],
-      ['Assign task…', `!!document.querySelector('.win [data-ticket-new]') && /New ticket for Ava/.test(document.querySelector('.win [data-ticket-new]').textContent)`],
+      ['Assign task…', `!!document.querySelector('.win [data-ticket-new]') && /New task/.test(document.querySelector('.win h2').textContent) && /Ava/.test(document.querySelector('.win').textContent)`],
       ['Profile', `window.__t.store().panel === 'employee' && /Ava/.test(document.querySelector('.win').textContent)`],
       ['Their project', `window.__t.store().panel === 'projects'`],
       ['Desk and working hours…', `window.__t.store().panel === 'employee' && String(window.__t.store().panelArg).endsWith(':desk')`],

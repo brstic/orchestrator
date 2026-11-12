@@ -12,7 +12,7 @@ const CREATABLE_KINDS: TaskKind[] = ['feature', 'bug', 'test', 'research', 'plan
 const PRIORITIES: TaskPriority[] = ['urgent', 'high', 'normal', 'low'];
 
 /**
- * A new ticket, written in the place where it will then be read: what to do, who does it (and who with), and who
+ * A new task, written in the place where it will then be read: what to do, who does it (and who with), and who
  * looks at it when it is done. Everything else is folded away, and what was changed in there is said on the fold.
  */
 export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: string | null; onCreated: (task: Task) => void; onCancel: () => void }) {
@@ -64,7 +64,7 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
         roleHint: assigneeId ? null : roleHint || null,
         dependsOn,
         reviewBy,
-        // With files, the ticket is held until they are in the office: the employee gets them with it, not after.
+        // With files, the task is held until they are in the office: the employee gets them with it, not after.
         released: released && files.length === 0,
       }),
     );
@@ -82,7 +82,7 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
     return (
       <div className="tk-pane tk-pane-pad">
         <Empty title="No projects yet">
-          A ticket belongs to a project.{' '}
+          A task belongs to a project.{' '}
           <button type="button" className="pw-chip" onClick={() => s.openPanel('projects')}>
             Create a project
           </button>
@@ -93,10 +93,7 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
   return (
     <form className="tk-pane tk-new" onSubmit={submit} data-ticket-new>
       <div className="tk-new-scroll">
-        <div className="tk-new-head">
-          <div className="tk-eyebrow">New ticket{preset ? ` for ${preset.name}` : ''}</div>
-          <input className="tk-title-input" aria-label="Title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs to be done" autoFocus required />
-        </div>
+        <input className="tk-title-input" aria-label="Title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs to be done" autoFocus required />
         <Field label="Description" wide>
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Context, constraints, where to look. This goes to the employee as written." style={{ minHeight: 130 }} />
         </Field>
@@ -145,7 +142,7 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
         {assigneeId && (
           <div className="field">
             <span className="field-label">Working on it with {s.employees[assigneeId]?.name ?? 'them'}</span>
-            <div className="tk-people-pick" role="group" aria-label="Also on this ticket">
+            <div className="tk-people-pick" role="group" aria-label="Also on this task">
               {everyone
                 .filter((e) => e.id !== assigneeId)
                 .map((e) => {
@@ -158,7 +155,7 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
                   );
                 })}
             </div>
-            <span className="field-hint">{helperIds.length ? `${s.employees[assigneeId]?.name ?? 'The assignee'} leads it and divides the work between them.` : 'Nobody: one employee does it. Pick colleagues for a ticket that is too much for one.'}</span>
+            <span className="field-hint">{helperIds.length ? `${s.employees[assigneeId]?.name ?? 'The assignee'} leads it and divides the work between them.` : 'Nobody: one employee does it. Pick colleagues for a task that is too much for one.'}</span>
           </div>
         )}
         <div className="field">
@@ -172,7 +169,7 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
           </div>
           <span className="field-hint">{REVIEW_CHOICES.find((c) => c.id === reviewBy)!.hint}</span>
         </div>
-        {/* What most tickets leave as it is stays folded away; the line says what it holds. */}
+        {/* What most tasks leave as it is stays folded away; the line says what it holds. */}
         <details className="pc-more" open={more} onToggle={(ev) => setMore((ev.currentTarget as HTMLDetailsElement).open)}>
           <summary>
             More options: how to tell it is done, kind, priority, what it waits for
@@ -215,7 +212,7 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
             <div className="field field-wide">
               <span className="field-label">Depends on{dependsOn.length ? ` (${dependsOn.length})` : ''}</span>
               {candidates.length === 0 ? (
-                <span className="field-hint">{projectId ? 'This project has no other tickets yet.' : 'Choose a project to pick what it depends on.'}</span>
+                <span className="field-hint">{projectId ? 'This project has no other tasks yet.' : 'Choose a project to pick what it depends on.'}</span>
               ) : (
                 <div className="pw-picklist">
                   {candidates.map((t) => (
@@ -243,7 +240,7 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
       </div>
       <div className="tk-new-foot">
         <Button variant="primary" type="submit" disabled={busy || !projectId || !title.trim()}>
-          Create ticket
+          Create task
         </Button>
         <Button variant="ghost" type="button" onClick={onCancel}>
           Cancel
