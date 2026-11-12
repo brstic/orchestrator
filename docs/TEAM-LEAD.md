@@ -31,7 +31,9 @@ Then **Talk**. What it does with a request (its prompt, `packages/orchestration/
 
 "Tickets" means what the employee on that project can reach: the office has task boards and no connection to an outside tracker, so the lead passes the request to the employee who works in that project's folder.
 
-**The office's shared employees too** — the checkbox under the lead in *My work* (`Employee.leadScope: 'office'`). Then its team is the member's own employees first and the shared ones after, and it may tell them things and put tasks on shared projects — what the member may do themselves. Work still does not cross: a member's employee is not given a shared project's task, nor the other way (the office refuses, and the lead is told why).
+**Shared employees you look after** — *Team → Everyone → Mine* on a shared employee's row (`Employee.keptBy`). They are in your lead's team from then on, with the shared projects they work on, and nobody else from the shared office comes along. They stay shared for everyone else (`DECISIONS.md`, "Mine on a shared employee…").
+
+**All the office's shared employees** — the checkbox under the lead in *My work* (`Employee.leadScope: 'office'`). Then its team is the member's own employees first and the shared ones after, and it may tell them things and put tasks on shared projects — what the member may do themselves. Work still does not cross: a member's employee is not given a shared project's task, nor the other way (the office refuses, and the lead is told why).
 
 ## What it costs
 
@@ -51,7 +53,7 @@ Whatever the model in the lead's session decides, these hold on the server (`pac
 
 - **A member's, one each.** A lead is hired only onto a member's own computer or server (`assertCanBeLead`), and a member has one. Making an existing employee a lead is held to the same.
 - **Its tools refuse anybody else** (`only()`, audited as `lead.tool_refused`), and nobody else is shown them.
-- **The team is worked out, not named**: employees on machines whose member is the lead's member — and shared ones only with `leadScope: 'office'`. Never the foreman, another lead, or a person's own session. Another member's employees are never in it.
+- **The team is worked out, not named**: employees on machines whose member is the lead's member, shared employees that member looks after (`keptBy`), and the other shared ones only with `leadScope: 'office'`. Never the foreman, another lead, or a person's own session. Another member's employees are never in it.
 - **It cannot edit files** (the role's refused tools, as for the foreman) and **is never Unrestricted** — refused at hire and at change.
 - **It is not given work**: assigning it a task is refused, the scheduler and the reviewer picker skip it.
 - **Hiring** (`team_hire`): onto the member's own machines only, never a shared one; a role from the catalogue except foreman and lead; a project of the team's or a folder on that machine; a reason, which the member reads. The new employee gets the role's own autonomy (so never Unrestricted through a lead) and no model of the lead's choosing. **Five at a time**: counted from `Employee.hiredBy` over those still here (`LEAD_HIRE_LIMIT`); when one of them is archived or deleted a place is free again. The member's own hiring is not limited by this.

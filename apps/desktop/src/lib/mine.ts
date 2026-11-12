@@ -2,7 +2,8 @@
  * Whose a thing is, for the person at this window. The office is shared, and everything in it is listed together;
  * someone who comes in wants to find their own first. "Mine" follows the machine, as everywhere else in the office
  * (`Host.memberId`): my computers and the servers I keep to myself, the employees on them, the projects that live
- * there, and the tasks of those projects or employees — plus the tasks I made myself, wherever they are.
+ * there, and the tasks of those projects or employees — plus the tasks I made myself, wherever they are, and the
+ * shared employees I look after (`Employee.keptBy`: they stay shared, and are listed among mine).
  *
  * Pure: no store, no window. The switch between "Mine" and "Everyone" that the lists share is in `hud/mine.tsx`.
  */
@@ -10,15 +11,19 @@ import type { Employee, Host, Me, Project, Task } from '@orchestrator/contracts'
 
 type Hosts = Record<string, Host>;
 
-/** mine: on a machine of mine. shared: on one of the office's machines. member: on another member's own machine. */
-export type Whose = { kind: 'mine' } | { kind: 'shared' } | { kind: 'member'; name: string };
+/**
+ * mine: on a machine of mine, or a shared employee I look after (`kept`). shared: on one of the office's machines
+ * (`keeper`: the member who looks after them, if any). member: on another member's own machine.
+ */
+export type Whose = { kind: 'mine'; kept?: boolean } | { kind: 'shared'; keeper?: string } | { kind: 'member'; name: string };
 
 const SHARED: Whose = { kind: 'shared' };
 const MINE: Whose = { kind: 'mine' };
 
 /** Has this person machines of their own in the office (so that "Mine" means something)? */
-export function hasOwn(hosts: Hosts, me: Me | null): boolean {
-  return !!me?.id && me.role !== 'visitor' && Object.values(hosts).some((h) => h.memberId === me.id && h.status !== 'revoked');
+export function hasOwn(hosts: Hosts, me: Me | null, employees: Record<string, Pick<Employee, 'keptBy' | 'archived'>> = {}): boolean {
+  if (!me?.id || me.role === 'visitor') return false;
+  return Object.values(hosts).some((h) => h.memberId === me.id && h.status !== 'revoked') || Object.values(employees).some((e) => !e.archived && e.keptBy?.id === me.id);
 }
 
 export function whoseHost(hosts: Hosts, me: Me | null, hostId: string | null | undefined): Whose {
@@ -27,7 +32,15 @@ export function whoseHost(hosts: Hosts, me: Me | null, hostId: string | null | u
   return me?.id && host.memberId === me.id ? MINE : { kind: 'member', name: host.memberName || 'a member' };
 }
 
-export const whoseEmployee = (hosts: Hosts, me: Me | null, e: Pick<Employee, 'hostId'> | undefined): Whose => whoseHost(hosts, me, e?.hostId);
+export function whoseEmployee(hosts: Hosts, me: Me | null, e: Pick<Employee, 'hostId' | 'keptBy'> | undefined): Whose {
+  const byMachine = whoseHost(hosts, me, e?.hostId);
+  if (byMachine.kind !== 'shared' || !e?.keptBy) return byMachine;
+  return me?.id && e.keptBy.id === me.id ? { kind: 'mine', kept: true } : { kind: 'shared', keeper: e.keptBy.name };
+}
+
+/** May this person take that employee among their own: a shared one, by a member (not at the office's own computer). */
+export const mayKeep = (hosts: Hosts, me: Me | null, e: Pick<Employee, 'hostId' | 'roleKey' | 'archived'>): boolean =>
+  !!me?.id && me.id !== 'owner' && me.role !== 'visitor' && !e.archived && e.roleKey !== 'foreman' && e.roleKey !== 'lead' && !!e.hostId && !!hosts[e.hostId] && !hosts[e.hostId]!.memberId;
 export const whoseProject = (hosts: Hosts, me: Me | null, p: Pick<Project, 'hostId'> | undefined): Whose => whoseHost(hosts, me, p?.hostId);
 
 /** How the office writes down who made something: `owner` at the office's own computer, `member:<name>` otherwise. */
@@ -56,7 +69,7 @@ export function mineFirst<T>(rows: readonly T[], isMine: (row: T) => boolean): T
 
 /** A few words for a badge: "yours", "shared", or whose it is. */
 export function whoseLabel(w: Whose): string {
-  return w.kind === 'mine' ? 'yours' : w.kind === 'shared' ? 'shared' : w.name;
+  return w.kind === 'mine' ? (w.kept ? 'yours · shared' : 'yours') : w.kind === 'shared' ? (w.keeper ? `shared · ${w.keeper}` : 'shared') : w.name;
 }
 
 export type Scope = 'mine' | 'all';

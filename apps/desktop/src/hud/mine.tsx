@@ -32,7 +32,7 @@ const useScopeStore = create<{ scope: Scope; set: (scope: Scope) => void }>((set
 export function useScope(): { scope: Scope; own: boolean; setScope: (scope: Scope) => void } {
   const scope = useScopeStore((s) => s.scope);
   const setScope = useScopeStore((s) => s.set);
-  const own = useOffice((s) => hasOwn(s.hosts, s.me));
+  const own = useOffice((s) => hasOwn(s.hosts, s.me, s.employees));
   return { scope: own ? scope : 'all', own, setScope };
 }
 
@@ -55,7 +55,7 @@ export function ScopeSwitch({ what }: { what: string }) {
 /** Whose a row is. */
 export function WhoseBadge({ whose }: { whose: Whose }) {
   return (
-    <Badge tone={whose.kind === 'mine' ? 'accent' : whose.kind === 'shared' ? 'muted' : 'info'} title={whose.kind === 'mine' ? 'On your own computer or server' : whose.kind === 'shared' ? "On the office's shared machines" : `On ${whose.name}'s own computer`}>
+    <Badge tone={whose.kind === 'mine' ? 'accent' : whose.kind === 'shared' ? 'muted' : 'info'} title={whose.kind === 'mine' ? (whose.kept ? 'A shared employee you look after: listed among yours, still shared with the office' : 'On your own computer or server') : whose.kind === 'shared' ? (whose.keeper ? `On the office's shared machines; ${whose.keeper} looks after them` : "On the office's shared machines") : `On ${whose.name}'s own computer`}>
       {whoseLabel(whose)}
     </Badge>
   );

@@ -228,6 +228,12 @@ export interface Employee {
   archived: boolean;
   /** Hired by a member's team lead (that lead's id): what the lead's limit counts. Absent: hired by a person. */
   hiredBy?: ID | null;
+  /**
+   * A shared employee a member looks after: it stays shared — on the office's machine, for everyone who works here to
+   * see and use — and is listed among that member's own (My work, Mine, their team lead's team). One member at a time.
+   * Says nothing about access. Absent on a member's own computer, where everything is that member's already.
+   */
+  keptBy?: { id: ID; name: string } | null;
   /** A team lead only: whose employees it directs — its member's own (`own`, the default), or the office's shared ones too (`office`). */
   leadScope?: 'own' | 'office';
   /**

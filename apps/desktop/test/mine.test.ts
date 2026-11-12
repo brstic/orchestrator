@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { actorOf, hasOwn, madeByMe, mineFirst, scoped, taskIsMine, whoseEmployee, whoseLabel, whoseProject, whoseTask } from '../src/lib/mine.ts';
+import { actorOf, hasOwn, madeByMe, mayKeep, mineFirst, scoped, taskIsMine, whoseEmployee, whoseLabel, whoseProject, whoseTask } from '../src/lib/mine.ts';
 import { mayOpenPanel, VISITOR_PANELS } from '../src/lib/visitor-panels.ts';
 
 /** Whose a thing is for the person at the window, and what the lists make of it. */
@@ -59,4 +59,22 @@ test('a visitor’s windows are the ones the office sends them something for', (
   for (const p of ['tasks', 'team', 'employee', 'people', 'map', 'wall', 'radio', 'tv', 'settings', 'help']) assert.ok(mayOpenPanel('visitor', p), p);
   for (const p of ['overview', 'ceo', 'notifications', 'hosts', 'vault', 'growth', 'reports', 'meetings', 'projects', 'task', 'question', 'talk', 'docs', 'myroom', 'mine', 'office', 'seat']) assert.ok(!mayOpenPanel('visitor', p), p);
   for (const role of ['colleague', 'owner', undefined, null]) for (const p of ['overview', 'vault', 'mine', ...VISITOR_PANELS]) assert.ok(mayOpenPanel(role, p), `${role} ${p}`);
+});
+
+test('a shared employee I look after is listed among mine, and stays shared', () => {
+  const andra = { id: 'x', hostId: 'office', roleKey: 'backend', archived: false, keptBy: { id: 'fenix', name: 'Fenix' } } as any;
+  assert.deepEqual(whoseEmployee(hosts, fenix, andra), { kind: 'mine', kept: true });
+  assert.equal(whoseLabel(whoseEmployee(hosts, fenix, andra)), 'yours · shared');
+  // To everyone else they are shared, with the name of who looks after them.
+  assert.deepEqual([whoseLabel(whoseEmployee(hosts, lazar, andra)), whoseLabel(whoseEmployee(hosts, root, andra))], ['shared · Fenix', 'shared · Fenix']);
+  // Their tasks are mine to find, on the shared project they work on.
+  assert.equal(taskIsMine(hosts, fenix, { projectId: 'po', assigneeId: 'x', createdBy: 'owner' }, projects, { ...employees, x: andra }), true);
+  // Someone with no machine of their own who looks after somebody has something of their own.
+  assert.deepEqual([hasOwn(hosts, lazar, { x: { ...andra, keptBy: { id: 'lazar', name: 'Lazar' } } }), hasOwn(hosts, lazar, { x: andra }), hasOwn(hosts, lazar, { x: { ...andra, keptBy: { id: 'lazar', name: 'Lazar' }, archived: true } })], [true, false, false]);
+  // On a member's own computer the mark means nothing: the machine says whose they are.
+  assert.deepEqual(whoseEmployee(hosts, fenix, { hostId: 'janca', keptBy: { id: 'fenix', name: 'Fenix' } }), { kind: 'member', name: 'Janca' });
+  // Who is offered the button: a member, for a shared employee who does work.
+  const row = (over: object) => ({ hostId: 'office', roleKey: 'backend', archived: false, ...over });
+  assert.deepEqual([fenix, lazar, root, visitor, null].map((me) => mayKeep(hosts, me, row({}))), [true, true, false, false, false]);
+  assert.deepEqual([row({ hostId: 'mine' }), row({ hostId: 'janca' }), row({ roleKey: 'foreman' }), row({ roleKey: 'lead' }), row({ archived: true }), row({ hostId: null })].map((e) => mayKeep(hosts, fenix, e)), [false, false, false, false, false, false]);
 });

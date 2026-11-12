@@ -668,6 +668,18 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.patch('/employees/:id', async (req) => engine.employees.update(param(req, 'id'), body(req)));
     // For good, with what is theirs (see Engine.deleteEmployee). `?tasks=delete` takes their tasks too; otherwise they go back on the board.
     api.delete('/employees/:id', async (req) => engine.deleteEmployee(param(req, 'id'), { tasks: query(req).tasks === 'delete' ? 'delete' : 'keep' }, actorOf(req)));
+    // A member takes a shared employee among their own, or gives them back. Listing only: who may use them does not change.
+    api.post('/employees/:id/keep', async (req) => {
+      const who = whoOf(req);
+      if (who.id === 'owner') throw new EngineError("At the office's own computer everything shared is yours to see already; taking someone among one's own is for members.");
+      return engine.employees.keep(param(req, 'id'), { id: who.id, name: who.name }, actorOf(req), who.kind === 'owner');
+    });
+    api.post('/employees/:id/give-back', async (req) => {
+      const who = whoOf(req);
+      const kept = engine.core.employees.require(param(req, 'id')).keptBy;
+      if (kept && kept.id !== who.id && who.kind !== 'owner') throw new EngineError(`${kept.name} looks after them: they give them back themselves, or an owner of the office does.`, 403);
+      return engine.employees.keep(param(req, 'id'), null, actorOf(req));
+    });
     api.post('/employees/:id/start', async (req) => engine.sessions.start(param(req, 'id'), { resume: body(req).resume !== false, cwd: body(req).cwd ?? null, continueLast: body(req).continueLast === true }));
     api.post('/employees/:id/stop', async (req) => {
       await engine.sessions.stop(param(req, 'id'), { reason: 'stopped by the owner' });

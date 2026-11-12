@@ -2,6 +2,14 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-12 — "Mine" on a shared employee is a mark for lists, not ownership
+Asked for by an owner (Fenix) the hour "My work" went live: four of the employees on the office's server are his in every way but the machine, and "mine follows the machine" left them out.
+- **`Employee.keptBy` — who looks after a shared employee.** It decides where they are listed (My work, Mine, the member's team lead's team and that employee's shared projects for the lead) and nothing else. Who may see, use or change them is still the machine's rule: they stay shared. This is why it does not contradict "no per-object ownership field" (below, "Members, roles…"): that rule is about access, and access did not get a second source.
+- **One member at a time.** Two leads handing work to the same employee is what the mark exists to avoid. A colleague cannot take someone another member looks after; an owner can move them.
+- **Its own two requests** (`POST /employees/:id/keep`, `/give-back`), not a field of the profile: the member is the one asking, so nobody marks an employee as someone else's, and the ordinary change of a profile cannot set it.
+- **Not for** a member's own computer (the machine already says so), the foreman, a team lead, or the office's own computer (the root owner has no "mine").
+- **Not done:** a shared *project* cannot be marked this way; it shows among one's own only through the tasks of one's employees. Nothing clears the mark when a member is removed — an owner gives the employee back.
+
 ## 2026-11-12 — A member's team lead is a role of its own, not a foreman for each member
 Asked for by an owner (Fenix): somebody in charge of *their* agents, told what they want, who gives it to the right one, asks when unsure, and may hire up to five. `docs/TEAM-LEAD.md` is the page.
 - **Not the foreman, scoped.** A foreman for each space was tried and dropped the day it was made ("One foreman", below), and everything about the foreman assumes it is nobody's: owners only, on the office's machine, no desk, called in rounds. A lead is the opposite on each count, so it is a role beside it (`lead`) with its own module, not a mode of the other.

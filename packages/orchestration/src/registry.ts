@@ -14,7 +14,7 @@ import type {
   TerminalScreen,
   ActivityState,
 } from '@orchestrator/contracts';
-import { EFFORT_CHOICES, HOOKS_VERSION, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, LEAD_ROLE, LEAD_MODEL, LEAD_EFFORT, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd } from '@orchestrator/contracts';
+import { EFFORT_CHOICES, HOOKS_VERSION, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, directsOthers, LEAD_ROLE, LEAD_MODEL, LEAD_EFFORT, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
 import { permissionPrompt, trustPromptKeys } from './comms.ts';
 import { EngineError, within } from './core.ts';
@@ -490,6 +490,27 @@ export class EmployeeRegistry {
     if (!member) throw new EngineError("a team lead works for one member and sits on that member's own computer or server, not on a shared machine of the office. (The whole office has the foreman.)");
     const other = this.eng.lead.leadOf(member, selfId);
     if (other) throw new EngineError(`${this.core.hosts.get(hostId ?? '')?.memberName ?? 'this member'} already has a team lead (${other.name}). A member has one.`);
+  }
+
+  /**
+   * A member takes a shared employee among their own, or gives them back (`member` null). It changes where the employee
+   * is listed and whose team lead may direct them — not who may see or use them. One member at a time: somebody
+   * else's is taken over only by an owner (`force`).
+   */
+  keep(id: string, member: { id: string; name: string } | null, actor = 'owner', force = false): Employee {
+    const e = this.core.employees.require(id);
+    if (e.archived) throw new EngineError(`${e.name} no longer works here`);
+    if (directsOthers(e.roleKey)) throw new EngineError(`${e.name} is ${e.roleKey === 'foreman' ? "the office's foreman" : "a member's team lead"}, not somebody to take among one's own.`);
+    if (this.eng.hosts.memberOfHost(e.hostId)) throw new EngineError(`${e.name} is on a member's own computer: they are that member's already.`);
+    const now = e.keptBy ?? null;
+    if (member && now && now.id !== member.id && !force) throw new EngineError(`${e.name} is looked after by ${now.name}. They give them back first, or an owner of the office moves them.`);
+    if ((now?.id ?? null) === (member?.id ?? null)) return e;
+    if (member) e.keptBy = { id: member.id, name: member.name };
+    else delete e.keptBy;
+    this.core.put('employee', e);
+    this.core.audit(actor, member ? 'employee.kept' : 'employee.given_back', id, { name: e.name, by: member?.name ?? now?.name ?? null });
+    this.core.event({ type: 'employee.updated', source: 'owner', summary: member ? `${member.name} looks after ${e.name} now` : `${e.name} is nobody's in particular again`, employeeId: id, data: { fields: ['keptBy'], quiet: true } });
+    return e;
   }
 
   /** Offices from before the foreman walked the floor: whoever has that role gives up their desk. */

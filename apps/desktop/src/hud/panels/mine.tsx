@@ -136,6 +136,7 @@ function MinePanel({ onClose }: { arg: string | null; onClose: () => void }) {
           </span>
           <span className="small muted truncate">
             {project ? project.name : 'no project'} · {s.hosts[e.hostId ?? '']?.name ?? 'no machine'}
+            {e.keptBy?.id === me?.id ? ' (shared)' : ''}
             {task ? ` · ${task.key} ${task.title}` : ''}
           </span>
         </div>
@@ -149,6 +150,11 @@ function MinePanel({ onClose }: { arg: string | null; onClose: () => void }) {
         <Button small onClick={() => open('employee', e.id)}>
           Profile
         </Button>
+        {e.keptBy?.id === me?.id && (
+          <Button small onClick={() => act(() => api('POST', `/employees/${e.id}/give-back`, {}), `${e.name} is no longer among yours`)} title="A shared employee you look after. Stop listing them among your own; they stay in the office as they are.">
+            Not mine
+          </Button>
+        )}
       </div>
     );
   };
@@ -208,7 +214,7 @@ function MinePanel({ onClose }: { arg: string | null; onClose: () => void }) {
           <div className="section-title">My employees</div>
           {employees.length === 0 ? (
             <Empty title="Nobody works for you alone yet">
-              Hire someone onto your own computer or server and they sit in your room. The office's shared employees are in <b>Team → Everyone</b>.
+              Hire someone onto your own computer or server and they sit in your room. A shared employee you look after can be listed here too: <b>Team → Everyone</b>, then <b>Mine</b> on their row.
             </Empty>
           ) : (
             <div className="list">{employees.map(row)}</div>

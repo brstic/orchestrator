@@ -97,8 +97,12 @@ export function TopBar() {
   // A member's own computer in this office (not for the office's own machine, nor for a visitor).
   const hasRoom = !!s.me && s.me.role !== 'visitor' && !!s.me.id && s.me.id !== 'owner';
   const mineCount = hasRoom ? Object.values(s.employees).filter((e) => !e.archived && !!e.hostId && s.hosts[e.hostId]?.memberId === s.me!.id).length : 0;
+  const isMineEmployee = (id: string | null | undefined) => {
+    const e = s.employees[id ?? ''];
+    return !!e && (s.hosts[e.hostId ?? '']?.memberId === s.me!.id || e.keptBy?.id === s.me!.id);
+  };
   // What of mine waits for me: my employees' open questions and approvals.
-  const mineWaiting = hasRoom ? Object.values(s.questions).filter((q) => q.status === 'open' && s.hosts[s.employees[q.employeeId ?? '']?.hostId ?? '']?.memberId === s.me!.id).length : 0;
+  const mineWaiting = hasRoom ? Object.values(s.questions).filter((q) => q.status === 'open' && isMineEmployee(q.employeeId)).length : 0;
   // The menu, in the order people look for things: their own, the work, the people, the place, and what is only for pleasure.
   const groups: Array<{ title: string; items: Item[] }> = [
     // A member's own part of the shared office comes first: what is theirs, then their room.

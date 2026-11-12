@@ -45,6 +45,7 @@ before(async () => {
   await h.api('POST', '/sharing', { open: true, port: 20000 + Math.floor(Math.random() * 20000) });
   const fenix = await h.api<any>('POST', '/guests', { name: 'Fenix', role: 'colleague' });
   ids.fenix = fenix.guest.id;
+  ids.fenixToken = JSON.parse(Buffer.from(String(fenix.invite).replace(/^orch-invite-v1\./, ''), 'base64url').toString('utf8')).t;
   const { token } = h.server.engine.hosts.createMemberEnrollment({ id: fenix.guest.id, name: 'Fenix' });
   mine = await h.addHost('fenix-laptop', {}, { enrollToken: token });
   // Two employees of his, each in a folder of their own (which is their project).
@@ -167,4 +168,45 @@ test('asked to, it directs the office’s shared employees too — on their own 
   assert.ok(elsewhere.isError, elsewhere.text);
   assert.equal((await h.api<any>('PATCH', `/employees/${ids.Lea}`, { leadScope: 'own' })).leadScope, 'own');
   assert.ok(!/Alex/.test((await call('Lea', 'team_overview')).text));
+});
+
+test('a shared employee a member looks after is in that member’s team, and stays everybody’s', async () => {
+  const token = (invite: string) => JSON.parse(Buffer.from(invite.replace(/^orch-invite-v1\./, ''), 'base64url').toString('utf8')).t as string;
+  const as = async (t: string, method: string, route: string, body: unknown = {}) => {
+    const r = await fetch(`${h.url}/api${route}`, { method, headers: { authorization: `Bearer ${t}`, 'content-type': 'application/json' }, ...(method === 'GET' ? {} : { body: JSON.stringify(body) }) });
+    return { status: r.status, body: (await r.json()) as any };
+  };
+  const fenix = ids.fenixToken!;
+  const ana = token((await h.api<any>('POST', '/guests', { name: 'Other', role: 'colleague' })).invite);
+  const vera = token((await h.api<any>('POST', '/guests', { name: 'Vera', role: 'owner' })).invite);
+  const nik = token((await h.api<any>('POST', '/guests', { name: 'Nik', role: 'visitor' })).invite);
+
+  // Not from the office's own computer, not a visitor, not somebody on a member's computer, not a lead.
+  await assert.rejects(h.api('POST', `/employees/${ids.Alex}/keep`, {}), /taking someone among one's own is for members/);
+  assert.equal((await as(nik, 'POST', `/employees/${ids.Alex}/keep`)).status, 403);
+  assert.match((await as(fenix, 'POST', `/employees/${ids.Ana}/keep`)).body.error, /is on a member's own computer: they are that member's already/);
+  assert.match((await as(fenix, 'POST', `/employees/${ids.Lea}/keep`)).body.error, /a member's team lead, not somebody to take/);
+
+  assert.ok(!/Alex/.test((await call('Lea', 'team_overview')).text), 'before: not in the team');
+  const kept = await as(fenix, 'POST', `/employees/${ids.Alex}/keep`);
+  assert.deepEqual([kept.status, kept.body.keptBy], [200, { id: ids.fenix, name: 'Fenix' }]);
+  // In the lead's team now, with the shared project he works on — without the whole office coming along.
+  const seen = (await call('Lea', 'team_overview')).text;
+  assert.match(seen, /- Alex — .*\(shared office, looked after by your boss\) · project: Shop/);
+  assert.match(seen, /- Shop · /);
+  assert.ok(seen.indexOf('- Ana') < seen.indexOf('- Alex'));
+  assert.ok(!(await call('Lea', 'team_tell', { employee: 'Alex', message: 'From Fenix: how is the Shop build?' })).isError);
+  const made = await call('Lea', 'team_task', { project: 'Shop', title: 'Look at the Shop tickets', description: 'Say which are urgent.', assignee: 'Alex' });
+  assert.ok(!made.isError && /in Shop, assigned to Alex/.test(made.text), made.text);
+  // Nothing about who may use him changed: another colleague still works with him.
+  assert.equal((await as(ana, 'POST', `/employees/${ids.Alex}/message`, { body: 'hello' })).status, 200);
+  // One member at a time: a colleague cannot take him or give him back for Fenix; an owner can move him.
+  assert.match((await as(ana, 'POST', `/employees/${ids.Alex}/keep`)).body.error, /is looked after by Fenix/);
+  assert.equal((await as(ana, 'POST', `/employees/${ids.Alex}/give-back`)).status, 403);
+  assert.deepEqual((await as(vera, 'POST', `/employees/${ids.Alex}/keep`)).body.keptBy.name, 'Vera');
+  assert.ok(!/Alex/.test((await call('Lea', 'team_overview')).text), 'no longer Fenix’s to direct');
+  assert.equal((await as(vera, 'POST', `/employees/${ids.Alex}/give-back`)).body.keptBy, undefined);
+  // The ordinary change of a profile cannot set it.
+  assert.equal((await h.api<any>('PATCH', `/employees/${ids.Alex}`, { keptBy: { id: ids.fenix, name: 'Fenix' } })).keptBy, undefined);
+  assert.ok((await h.api<any[]>('GET', '/audit?limit=80')).some((a) => a.action === 'employee.kept' && a.actor === 'member:Fenix'));
 });

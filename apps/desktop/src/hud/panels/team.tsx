@@ -8,7 +8,7 @@ import { api, connection } from '../../lib/api.ts';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { act } from '../core.tsx';
 import { useAccess } from '../../lib/access.ts';
-import { scoped, whoseEmployee } from '../../lib/mine.ts';
+import { mayKeep, scoped, whoseEmployee } from '../../lib/mine.ts';
 import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { FolderField } from './folder-picker.tsx';
 import { registerPanel } from './index.tsx';
@@ -643,6 +643,21 @@ function TeamPanel({ arg, onClose }: PanelProps) {
                     )}
                   </td>
                   <td className="pc-right pc-nowrap">
+                    {/* A shared employee: take them among one's own, or give them back. Whose they are to use does not change. */}
+                    {mayKeep(hosts, me, e) &&
+                      (e.keptBy?.id === me?.id ? (
+                        <>
+                          <Button small onClick={() => act(() => api('POST', `/employees/${e.id}/give-back`, {}), `${e.name} is no longer among yours`)} title="Stop listing them among your own. They stay in the office as they are.">
+                            Not mine
+                          </Button>{' '}
+                        </>
+                      ) : !e.keptBy || me?.kind === 'owner' ? (
+                        <>
+                          <Button small onClick={() => act(() => api('POST', `/employees/${e.id}/keep`, {}), `${e.name} is among yours now`)} title={e.keptBy ? `${e.keptBy.name} looks after them now. As an owner you can take them over.` : 'List them among your own: in My work, under Mine, and in your team lead\'s team. They stay shared with the office.'}>
+                            Mine
+                          </Button>{' '}
+                        </>
+                      ) : null)}
                     <Button small onClick={() => st.enterWorkstation(e.id)} disabled={!session} title={session ? (visitor ? 'Watch what they are doing' : 'Sit at their real terminal') : 'No session yet'}>
                       {visitor ? 'Watch terminal' : 'Open terminal'}
                     </Button>{' '}

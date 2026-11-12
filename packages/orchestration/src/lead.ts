@@ -21,8 +21,9 @@ import type { McpContext } from './mcp-tools.ts';
  * at a time. When it is not sure who should take something it asks its member (the ordinary ask_boss): its
  * questions are its own, so they reach that member.
  *
- * The team: the employees on the member's own computers and servers. Where the member asked for it
- * (`leadScope: 'office'`), the shared employees of the office too — what that member may direct anyway.
+ * The team: the employees on the member's own computers and servers, and the shared employees that member looks
+ * after (`Employee.keptBy`). Where the member asked for it (`leadScope: 'office'`), all the shared employees of the
+ * office — what that member may direct anyway.
  */
 
 const err = (text: string): McpToolResult => ({ text, isError: true });
@@ -72,14 +73,24 @@ export class Lead {
 
   /** The people a lead directs: everyone within its reach who does work — not itself, not the foreman, not another lead. */
   team(lead: Employee): Employee[] {
+    const member = this.memberOf(lead);
+    const rank = (e: Employee) => (this.memberOf(e) ? 0 : e.keptBy?.id === member ? 1 : 2);
     return this.core.employees
-      .filter((e) => !e.archived && e.id !== lead.id && !NOT_HIRED.has(e.roleKey) && !e.selfDriven && this.within(lead, e.hostId))
-      .sort((a, b) => Number(!this.memberOf(a)) - Number(!this.memberOf(b)) || a.name.localeCompare(b.name));
+      .filter((e) => !e.archived && e.id !== lead.id && !NOT_HIRED.has(e.roleKey) && !e.selfDriven && (this.within(lead, e.hostId) || this.kept(lead, e)))
+      .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  }
+
+  /** A shared employee the lead's member looks after: theirs to direct, on the shared projects that employee works on. */
+  private kept(lead: Employee, e: Employee): boolean {
+    const member = this.memberOf(lead);
+    return !!member && e.keptBy?.id === member && !this.eng.hosts.memberOfHost(e.hostId);
   }
 
   /** The projects a lead may put work on. */
   private projects(lead: Employee): Project[] {
-    return this.core.projects.filter((p) => p.status !== 'archived' && this.within(lead, p.hostId)).sort((a, b) => a.name.localeCompare(b.name));
+    // …and the shared projects of the shared employees its member looks after.
+    const theirs = new Set(this.core.employees.filter((e) => !e.archived && this.kept(lead, e)).flatMap((e) => [e.projectId, ...(e.alsoProjectIds ?? [])]));
+    return this.core.projects.filter((p) => p.status !== 'archived' && (this.within(lead, p.hostId) || theirs.has(p.id))).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** The member's own machines: where a lead may hire and look for folders. Never a shared one. */
@@ -111,6 +122,11 @@ export class Lead {
     return !host ? 'no machine' : this.eng.hosts.memberOfHost(host.id) ? host.name : `${host.name} (shared office)`;
   }
 
+  /** Where somebody is, and — for a shared employee the member looks after — that they are. */
+  private place(lead: Employee, e: Employee): string {
+    return this.kept(lead, e) ? `${this.core.hosts.get(e.hostId ?? '')?.name ?? 'no machine'} (shared office, looked after by your boss)` : this.whose(lead, e.hostId);
+  }
+
   /** Who the lead answers to, by name, for its own words. */
   private bossName(lead: Employee): string {
     return this.core.hosts.get(lead.hostId ?? '')?.memberName ?? 'your boss';
@@ -138,7 +154,7 @@ export class Lead {
       const away = !!this.memberOf(e) && !core.agents.isOnline(e.hostId ?? '');
       const state = away ? 'their machine is not in the office now' : !s ? 'no session yet (starts when given work)' : !live ? (this.eng.sessions.asleep(e.id) ? 'asleep (wakes when given work)' : `not running (${s.status})`) : `${ACTIVITY_LABEL[s.activity] ?? s.activity} for ${formatDuration(now - Date.parse(s.activitySince))}`;
       lines.push(
-        `- ${e.name} — ${e.title} · ${this.whose(lead, e.hostId)} · project: ${projects.join(', ') || 'none'}${e.workingDir ? ` · folder: ${e.workingDir}` : ''} · ${state} · ${task ? `on ${task.key} "${truncate(task.title, 60)}"` : 'free'}${queued ? ` · ${queued} more waiting` : ''}${done.length ? ` · lately did: ${done.join(', ')}` : ''}${e.specialization ? ` · ${truncate(e.specialization, 60)}` : ''}`,
+        `- ${e.name} — ${e.title} · ${this.place(lead, e)} · project: ${projects.join(', ') || 'none'}${e.workingDir ? ` · folder: ${e.workingDir}` : ''} · ${state} · ${task ? `on ${task.key} "${truncate(task.title, 60)}"` : 'free'}${queued ? ` · ${queued} more waiting` : ''}${done.length ? ` · lately did: ${done.join(', ')}` : ''}${e.specialization ? ` · ${truncate(e.specialization, 60)}` : ''}`,
       );
     }
     const projects = this.projects(lead);
