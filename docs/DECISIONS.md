@@ -2,6 +2,12 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-12 — What Claude Code acknowledged is never sent again, whatever the machine says afterwards
+The office sends a prompt by asking the machine to type it (`session.paste`) and takes the session's own hook (UserPromptSubmit) as the proof that it arrived. Until `70bb746` the machine answered 180 ms after typing, always before the hook. Since then it answers after it has watched the input box (up to 5.5 s), so the hook comes first — and a machine whose agent is restarted in between never answers at all. The office treated that as "not sent" and queued the prompt again: delivered twice, done twice (e2e `38-hook-outlives-agent` failed on it from `70bb746` on; nobody saw, because that commit was shipped on the tests of what it touched, and so were the ones after it).
+- **The hook outranks the machine's answer.** A delivery that was acknowledged is done with (`Comms.taken`); a failed send is tried again only while nothing has acknowledged it.
+- **Not: make the machine answer sooner.** Its look at the input box is worth keeping (the entry "After Enter, the input box is looked at"); the fault was the office's assumption about the order of two messages.
+- **What this says about how changes are checked**: a change to how prompts reach a session touches every session, and is one for the whole e2e suite, not for the files beside it (CLAUDE.md, "Checking a change").
+
 ## 2026-11-12 — A session's command is run from a file, because tmux takes 16 KB
 Two employees on the owner's server could not be started: `tmux new-session failed: command too long`. The agent gave tmux the whole of Claude Code's command, and `--append-system-prompt` carries an employee's instructions, which grow with what it learns. tmux's client sends a command to its server as one message of 16 KB at most (measured here: a 40 KB command is refused on this Mac's tmux too; the running sessions on the server were at 12 to 15 KB). `packages/execution/src/claude.ts` (`launcherScript`), unit `packages/execution/test/launch.test.ts`.
 - **The whole command goes into a file in the session's folder, and tmux runs `/bin/sh <that file>`.** Each argument is written in single quotes, so the shell reads it back byte for byte; the file is private like the session's other files (it holds what the command line held) and is written again at every start.

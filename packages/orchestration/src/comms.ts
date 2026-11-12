@@ -164,6 +164,8 @@ export class Comms {
   private eng: Engine;
   private queue = new Map<string, Delivery[]>();
   private inflight = new Map<string, Delivery>();
+  /** Deliveries Claude Code has acknowledged. One of these is done with, whatever is heard about it afterwards. */
+  private taken = new WeakSet<Delivery>();
   private pumpTimers = new Map<string, { timer: NodeJS.Timeout; due: number }>();
   private hookPending = new Map<string, HookPending>();
   /** Questions whose hook a machine may still be holding although the link to it is gone (see `rejoinHook`). */
@@ -1275,6 +1277,11 @@ export class Comms {
         if (list.length) this.schedulePump(employeeId, 4000);
       }
     } catch (e) {
+      // The host did not answer the send — its agent was restarted, the link dropped — but the session may have
+      // taken the prompt all the same, and said so with its hook while the answer was awaited. (The host answers
+      // only once it has seen the prompt leave the input box, several seconds after it was typed.) What Claude Code
+      // acknowledged is never sent again: sent twice, the employee does the work twice.
+      if (this.taken.has(d)) return this.schedulePump(employeeId, 200);
       if (this.inflight.get(employeeId) === d) this.inflight.delete(employeeId);
       if (d.attempts < 3) {
         list.unshift(d);
@@ -1359,6 +1366,7 @@ export class Comms {
   }
 
   private markConfirmed(d: Delivery, detail: string): void {
+    this.taken.add(d);
     this.applyState(d, 'confirmed', d.via, detail);
   }
 
