@@ -115,6 +115,9 @@ The hi-fi plays for the whole office, so what is on is the office's, not a windo
 ### A member's team lead
 A member may have one employee with the role **Team Lead** on their own computer or server. It is an employee on a member's machine like any other — its terminal, conversation and questions are that member's and the owners' — with tools that reach **that member's employees and nobody else's**; with `leadScope: 'office'` (the member's choice) the shared employees as well, which that member may direct anyway. It hires onto the member's own machines only, five people at a time at most, never as Unrestricted. Hiring one is level **work** on one's own machine, like any hire there; the office refuses a lead on a shared machine and a second lead for the same member. `docs/TEAM-LEAD.md`.
 
+### Files said to an employee
+`POST /employees/:id/files`, `…/files/:fid/data`, `GET …/files/:fid` — level **work** on that employee, like talking to them. The upload is its sender's alone until the message that names it is sent.
+
 ### A shared employee a member looks after
 `POST /employees/:id/keep` and `/give-back` (level **work**; a member, not the office's own computer) set and clear `Employee.keptBy` on a shared employee. It is a mark for lists and for that member's team lead; **it gives and takes no access**. One member at a time: taking over somebody else's, or giving them back for them, is an owner's.
 

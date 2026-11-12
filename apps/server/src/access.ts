@@ -106,6 +106,10 @@ const RULES: Rule[] = [
   rule('POST', '/employees/:id/pause', 'work', path('employee')),
   rule('POST', '/employees/:id/resume', 'work', path('employee')),
   rule('POST', '/employees/:id/message', 'work', path('employee')),
+  // Files that go with a message: whoever may talk to the employee sends them, and sees them in the conversation.
+  rule('POST', '/employees/:id/files', 'work', path('employee')),
+  rule('POST', '/employees/:id/files/:id/data', 'work', path('employee')),
+  rule('GET', '/employees/:id/files/:id', 'work', path('employee')),
   rule('POST', '/employees/:id/report', 'work', path('employee')),
   // Routines: standing instructions repeated for one employee. Whoever may work with the employee may set them.
   rule('GET', '/routines', 'detail'),

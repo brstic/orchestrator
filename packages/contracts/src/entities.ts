@@ -765,6 +765,14 @@ export interface DeliveryState {
 /** (`comment`: something said on a task's conversation, brought to an employee it concerns — the text says by whom and how to answer.) */
 export type MessageKind = 'chat' | 'collab_request' | 'handoff' | 'review_request' | 'review_feedback' | 'task' | 'answer' | 'meeting' | 'system' | 'report_request' | 'comment';
 
+/** A file that went with a message to an employee (a pasted screenshot, a document): what the conversation shows of it. */
+export interface SaidFile {
+  id: ID;
+  name: string;
+  mime: string;
+  size: number;
+}
+
 export interface Message {
   id: ID;
   kind: MessageKind;
@@ -779,6 +787,10 @@ export interface Message {
   readAt: ISODate | null;
   /** Set when the office sent this as one run of a routine (see `Routine`). */
   routineId?: ID | null;
+  /** Files that went with it. Their paths on the employee's machine stand at the end of `body`, after `said`. */
+  files?: SaidFile[];
+  /** What the person wrote, without the lines about files the office added for the employee. Absent: `body` is it. */
+  said?: string;
 }
 
 // ───────────────────────────── Routines ──────────────────────────

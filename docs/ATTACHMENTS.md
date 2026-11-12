@@ -35,6 +35,31 @@ person in the office: GET /api/tasks/:id/attachments/:aid  → the picture, or a
 - **A task that is deleted** takes its files along (the office's copies; a copy on an employee's machine stays there).
 - **Shown or downloaded:** PNG, JPEG, GIF and WebP are sent to the window as pictures. Everything else — PDF, HTML, SVG, anything — is sent as a download with `nosniff`, never as a page.
 
+## Files in a conversation
+
+Asked for by an owner (Fenix, 2026-11-12): "when I talk to an employee I want to paste a picture — I grab a screenshot and say 'look at this'. They are temporary, we need not remember them long. And a way to give them files. But most of all: Ctrl+V."
+
+In the conversation window (Talk): **Ctrl+V** with a picture on the clipboard, a file **dropped** on the box, or **Attach…**. What was added waits above the text box as a small picture or a name, with a × to take it out; it is sent to the office at once, so *Send* does not wait for it. A picture can be the whole message (the office writes "Look at this." for the words).
+
+```
+window ──(pieces of ≤ 384 KB)──▶ office: <data folder>/files-said/<employee id>/<file id>      held for whoever sent it
+          Send, with the ids        │  files.put, before the words go
+                                    ▼
+              machine of the employee: <agent home>/files/said/<8 of the id>-<name>             mode 600, outside any repository
+                                    │  the paths stand under the message: "Files that go with this — open each with the Read tool…"
+                                    ▼
+                         Claude Code: Read <path>   → an image is seen, a document is read
+```
+
+- **Not a task's files.** Nothing is tracked and nothing is evidence. With *Track as a task* ticked, the same files are attached to the new task instead (the part above), and are kept with it.
+- **The message keeps two texts**: `said` — what the person wrote, which the conversation shows with the pictures over it — and `body`, the same with the paths added for the employee. `Message.files` lists what went along.
+- **Nothing is sent without its file.** A file that has not arrived whole, or a machine that is not in the office, refuses the message: "look at this" does not arrive alone.
+- **How long.** The office keeps its copy **seven days** (`SAID_KEEP_MS`) so the conversation can show the picture, then drops it and the conversation says "no longer kept here". A file that was uploaded and never said is given up after an hour, or at a restart. **The copy on the employee's machine is not removed by anything**: there is no call for it yet, and a member's own computer runs the agent of their desktop app.
+- **Limits:** 25 MB a file, 10 files a message. Names are made safe as for a task's files.
+- **Who:** whoever may talk to that employee (level *work*, and their member's alone on a member's computer). A file is its sender's until it is said: nobody else adds to it or sends it. A visitor neither sends nor sees them.
+- **Not for** a repeated instruction (a routine is words), nor for what a team lead or the foreman tells someone.
+- Code: `packages/orchestration/src/said-files.ts` (`SaidFiles`), the routes `POST /api/employees/:id/files`, `…/files/:fid/data`, `GET …/files/:fid` and `fileIds` on `POST …/message` in `apps/server/src/server.ts`; the window `apps/desktop/src/hud/panels/said-files.tsx` (`usePendingFiles`, `PendingStrip`, `SaidFilesOf`) used by `talk.tsx`. Test: `tests/e2e/47-said-files.test.ts`.
+
 ## Where things are
 
 | | |

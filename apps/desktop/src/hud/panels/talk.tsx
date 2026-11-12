@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { OrchestratorEvent } from '@orchestrator/contracts';
+import type { OrchestratorEvent, SaidFile } from '@orchestrator/contracts';
 import { ACTIVITY_LABEL } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Markdown, Window, clock } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
@@ -9,9 +9,11 @@ import { waitingForLines } from '../../lib/views.ts';
 import { QuestionBody, act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { RepeatChoice, RepeatHint, RoutineList, createRoutine } from './routines.tsx';
+import { PendingStrip, SaidFilesOf, usePendingFiles } from './said-files.tsx';
+import { uploadFile } from './task-files.tsx';
 
 type Line =
-  | { kind: 'boss'; id: string; ts: string; text: string; delivery: string; via: string | null }
+  | { kind: 'boss'; id: string; ts: string; text: string; delivery: string; via: string | null; files: SaidFile[] }
   | { kind: 'reply'; id: string; ts: string; text: string }
   | { kind: 'note'; id: string; ts: string; text: string; tone: 'good' | 'bad' | 'info' };
 
@@ -34,13 +36,17 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
   const [busy, setBusy] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  // A pasted screenshot, a dropped or chosen file: they go with the next message.
+  const pending = usePendingFiles(arg, (why) => useOffice.getState().toast(why, 'error'));
+  const picker = useRef<HTMLInputElement>(null);
+  const [over, setOver] = useState(false);
   const history = useQuery({ queryKey: ['talk-events', arg], enabled: !!arg, queryFn: () => api<OrchestratorEvent[]>('GET', `/events?employeeId=${arg}&limit=400`) });
 
   const lines = useMemo(() => {
     if (!e) return [];
     const out: Line[] = [];
     for (const m of Object.values(s.messages)) {
-      if (m.toEmployeeId === e.id && (m.from.kind === 'owner' || m.routineId)) out.push({ kind: 'boss', id: m.id, ts: m.createdAt, text: m.body, delivery: m.delivery.status, via: m.delivery.via });
+      if (m.toEmployeeId === e.id && (m.from.kind === 'owner' || m.routineId)) out.push({ kind: 'boss', id: m.id, ts: m.createdAt, text: m.said ?? m.body, delivery: m.delivery.status, via: m.delivery.via, files: m.files ?? [] });
     }
     const seen = new Set<string>();
     for (const ev of [...(history.data ?? []), ...s.events]) {
@@ -74,7 +80,10 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
 
   const send = async () => {
     const body = text.trim();
-    if (!body || busy) return;
+    const withFiles = pending.files.length > 0;
+    if ((!body && !withFiles) || busy) return;
+    if (repeat.on && withFiles) return s.toast('A repeated instruction is words only. Take the files out, or send this once.', 'error');
+    if (asTask && !body) return s.toast('A task needs a line that says what to do.', 'error');
     setBusy(true);
     try {
       // Repeated by the office from now on: the first run is now, and the office starts their session for it itself.
@@ -89,14 +98,18 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
       if (!live && e.hostId) await api('POST', `/employees/${e.id}/start`, {});
       if (asTask && e.projectId) {
         const first = body.split('\n')[0]!;
-        await api('POST', '/tasks', { projectId: e.projectId, title: first.length > 90 ? `${first.slice(0, 87)}…` : first, description: body, assigneeId: e.id });
+        const made = await api<{ id: string }>('POST', '/tasks', { projectId: e.projectId, title: first.length > 90 ? `${first.slice(0, 87)}…` : first, description: body, assigneeId: e.id });
+        // On a task the files are the task's: kept with it, and handed over with it.
+        for (const f of pending.files) await uploadFile(made.id, f.file);
         s.toast(`Task created for ${e.name}; it is handed over as soon as they are between turns.`, 'success');
       } else {
-        const sent = await api<{ id?: string }>('POST', `/employees/${e.id}/message`, { body });
+        const fileIds = withFiles ? await pending.ready() : [];
+        const sent = await api<{ id?: string }>('POST', `/employees/${e.id}/message`, { body, fileIds });
         // I am waiting for what they say back: their answer is announced if I have walked away by then.
         s.asked(e.id, sent?.id ?? null);
       }
       setText('');
+      pending.clear();
     } catch (err) {
       s.toast((err as Error).message, 'error');
     } finally {
@@ -147,6 +160,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
           l.kind === 'boss' ? (
             <div key={l.id} className="talk-row talk-row-me">
               <div className="talk-bubble talk-me">
+                <SaidFilesOf employeeId={e.id} files={l.files} />
                 <div className="pre">{l.text}</div>
                 <div className="talk-meta">
                   {clock(l.ts)} ·{' '}
@@ -191,13 +205,24 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
         {!hooks && live && <div className="talk-note talk-note-info">This session has no hooks, so replies cannot be captured here — open the terminal to read them.</div>}
         <div ref={bottom} />
       </div>
-      <div className="talk-compose">
+      <div
+        className={`talk-compose ${over ? 'talk-compose-over' : ''}`}
+        onDragOver={(ev) => {
+          if (![...ev.dataTransfer.types].includes('Files')) return;
+          ev.preventDefault();
+          if (!over) setOver(true);
+        }}
+        onDragLeave={(ev) => !ev.currentTarget.contains(ev.relatedTarget as Node | null) && setOver(false)}
+        onDrop={(ev) => (setOver(false), pending.onDrop(ev))}
+      >
+        <PendingStrip files={pending.files} onRemove={pending.remove} />
         <textarea
           ref={input}
           value={text}
           rows={2}
-          placeholder={live ? `Tell ${e.name} what to do…` : `${e.name} is not at their desk. Sending a message starts their session.`}
+          placeholder={live ? `Tell ${e.name} what to do… (paste a screenshot with Ctrl+V)` : `${e.name} is not at their desk. Sending a message starts their session.`}
           onChange={(ev) => setText(ev.target.value)}
+          onPaste={pending.onPaste}
           onKeyDown={(ev) => {
             if (ev.key === 'Enter' && !ev.shiftKey) {
               ev.preventDefault();
@@ -212,13 +237,17 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
           </label>
           <RepeatChoice on={repeat.on} minutes={repeat.minutes} name={e.name} onChange={(on, minutes) => setRepeat({ on, minutes })} />
           <div className="row">
+            <input ref={picker} type="file" multiple hidden onChange={(ev) => (pending.add([...(ev.target.files ?? [])]), (ev.target.value = ''))} />
+            <Button small onClick={() => picker.current?.click()} title="A picture or a document that goes with what you say. A screenshot can simply be pasted (Ctrl+V), and files dropped here.">
+              Attach…
+            </Button>
             <span className="small faint">Enter to send · Shift+Enter for a new line</span>
             {session && live && (
               <Button small onClick={() => act(() => api('POST', `/employees/${e.id}/pause`, {}), `${e.name} paused`)} title="Stops what they are doing right now. They do nothing more until you resume them.">
                 Pause {e.name}
               </Button>
             )}
-            <Button variant="primary" small disabled={!text.trim() || busy || (!live && !e.hostId)} onClick={send}>
+            <Button variant="primary" small disabled={(!text.trim() && !pending.files.length) || busy || (!live && !e.hostId)} onClick={send}>
               {repeat.on ? 'Repeat' : asTask ? 'Assign' : 'Send'}
             </Button>
           </div>

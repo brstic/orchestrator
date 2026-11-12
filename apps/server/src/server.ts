@@ -17,7 +17,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { ROLE_CATALOGUE, type Host, stripEnd } from '@orchestrator/contracts';
 import { NotFoundError, PgStore, Store, generateToken, type Storage } from '@orchestrator/database';
 import { handleMcpPost } from '@orchestrator/integrations';
-import { Engine, EngineError, type Timings } from '@orchestrator/orchestration';
+import { Engine, EngineError, type Timings, SaidFiles } from '@orchestrator/orchestration';
 import { AgentHub, ClientHub } from './hubs.ts';
 
 export interface ServerOptions {
@@ -694,11 +694,32 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       return { ok: true };
     });
     api.post('/employees/:id/message', async (req) => {
-      const text = String(body(req).body ?? '').trim();
+      const b = body(req);
+      const ids: string[] = Array.isArray(b.fileIds) ? b.fileIds.map(String) : [];
+      // A picture can be the whole message.
+      const text = String(b.body ?? '').trim() || (ids.length ? 'Look at this.' : '');
       if (!text) throw new EngineError('message is empty');
       // From a colleague, the employee is told who is speaking: it is not the boss.
       const who = whoOf(req);
-      return engine.comms.sendMessage({ from: { kind: 'owner', id: null, name: who.kind === 'owner' ? (who.id === 'owner' ? 'the boss' : `${who.name} (an owner of this office)`) : `${who.name} (a colleague the boss invited; not the boss)` }, toEmployeeId: param(req, 'id'), body: text });
+      // Files that go with it (a pasted screenshot, a document) are on the employee's machine before the words are.
+      const sent = await engine.saidFiles.deliver(engine.core.employees.require(param(req, 'id')), ids, who.id);
+      return engine.comms.sendMessage({ from: { kind: 'owner', id: null, name: who.kind === 'owner' ? (who.id === 'owner' ? 'the boss' : `${who.name} (an owner of this office)`) : `${who.name} (a colleague the boss invited; not the boss)` }, toEmployeeId: param(req, 'id'), body: text + SaidFiles.note(sent.lines), files: sent.files, said: text });
+    });
+    // Files for a message to an employee: begun, sent in pieces, then named in the message (`fileIds`). Only the one who began a file adds to it and sends it.
+    api.post('/employees/:id/files', async (req) => engine.saidFiles.begin(param(req, 'id'), { name: String(body(req).name ?? ''), size: Number(body(req).size) }, whoOf(req).id));
+    api.post('/employees/:id/files/:fid/data', async (req) => engine.saidFiles.append(param(req, 'id'), param(req, 'fid'), Number(body(req).offset) || 0, Buffer.from(String(body(req).dataBase64 ?? ''), 'base64'), whoOf(req).id));
+    api.get('/employees/:id/files/:fid', async (req, reply) => {
+      const { file, path: where } = engine.saidFiles.open(param(req, 'id'), param(req, 'fid'));
+      // As for a task's files: only the picture formats a browser shows safely are sent as what they are.
+      const inline = /^image\/(png|jpeg|gif|webp)$/.test(file.mime);
+      reply
+        .header('content-type', inline ? file.mime : 'application/octet-stream')
+        .header('content-length', String(fs.statSync(where).size))
+        .header('content-disposition', `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(file.name)}`)
+        .header('x-content-type-options', 'nosniff')
+        .header('content-security-policy', "default-src 'none'; sandbox")
+        .header('cache-control', 'private, max-age=3600');
+      return reply.send(fs.createReadStream(where));
     });
     // Routines: a standing instruction the office repeats for one employee (see `routines.ts`).
     const actorOf = (req: FastifyRequest) => (whoOf(req).id === 'owner' ? 'owner' : `member:${whoOf(req).name}`);

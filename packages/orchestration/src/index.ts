@@ -12,6 +12,7 @@ export * from './prompts.ts';
 export * from './improve.ts';
 export * from './foreman.ts';
 export * from './lead.ts';
+export * from './said-files.ts';
 export * from './learning/outcomes.ts';
 export * from './routines.ts';
 export * from './sleep.ts';

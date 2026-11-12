@@ -7,6 +7,7 @@ import { Comms } from './comms.ts';
 import { Core, EngineError, type EngineOptions } from './core.ts';
 import { Foreman } from './foreman.ts';
 import { Lead } from './lead.ts';
+import { SaidFiles } from './said-files.ts';
 import { HookReceiver } from './hook-receiver.ts';
 import { Improver } from './improve.ts';
 import { Vault } from './vault.ts';
@@ -47,6 +48,8 @@ export class Engine {
   readonly commands: CommandCenter;
   readonly improver: Improver;
   readonly foreman: Foreman;
+  /** Files that go with a message to an employee: a pasted screenshot, a document (said-files.ts). */
+  readonly saidFiles: SaidFiles;
   /** Members' team leads: what one may see and do (lead.ts). */
   readonly lead: Lead;
   readonly routines: Routines;
@@ -86,6 +89,8 @@ export class Engine {
       });
     this.memory = new Memory(this, opts.memory ?? { bin: null, dir: null });
     this.attachments = new Attachments(this.core, this, opts.filesDir ?? null);
+    // Beside the tasks' files, not among them: the sweep of each knows only its own.
+    this.saidFiles = new SaidFiles(this.core, opts.filesDir ? `${opts.filesDir}-said` : null);
     // A task that is deleted takes its files with it.
     this.core.bus.on('entity', (kind, op, data) => {
       if (kind === 'task' && op === 'remove') this.attachments.dropTask(String((data as { id?: string })?.id ?? ''));
@@ -159,6 +164,7 @@ export class Engine {
     this.waits.restore();
     this.comms.restore();
     try {
+      this.saidFiles.sweep();
       const swept = this.attachments.sweep();
       if (swept) this.core.log('info', `removed ${swept} unfinished upload${swept === 1 ? '' : 's'} left from before the restart`);
     } catch (e) {
