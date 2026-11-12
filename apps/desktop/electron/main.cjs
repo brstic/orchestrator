@@ -998,3 +998,15 @@ app.on('before-quit', (e) => {
   stopBackend();
 });
 app.on('window-all-closed', () => app.quit());
+
+// Closed to be replaced by a newer build (`scripts/update-mac-app.mjs`, run by the person whose app this is, or at
+// their word): SIGUSR2 quits the app the way "Leave" does, without the question — there is nobody at the dialog to
+// answer it, and the app is opened again a moment later. Only the same user of this computer can send it, which is
+// whoever could close the app anyway. Employees' sessions keep running in tmux, as at any quit.
+if (process.platform !== 'win32') {
+  process.on('SIGUSR2', () => {
+    app.isQuitting = 'confirmed';
+    if (win && !win.isDestroyed()) win.forceClose = true;
+    app.quit();
+  });
+}

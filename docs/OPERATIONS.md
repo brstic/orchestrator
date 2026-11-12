@@ -93,22 +93,17 @@ ssh -p <ssh-port> <user>@<server> 'cd ~/orchestrator-office && rm -rf app.new ap
 ### 2. The desktop app (client)
 Needed only when something under `apps/desktop/electron/` changed (the start screen, joining, the relay and agent for one's own room, the TV, packaging) or the bundled host agent (`apps/host-agent`, used for one's own room). The office UI itself comes from the server.
 
-On the owner's Mac:
+On the owner's Mac — the app is built next to the one that runs, checked, and then swapped in by a script that closes the running app and opens the new one (the owner's standing word of 2026-11-12: "close the app for me and start the new one, every time"):
 
 ```sh
-pgrep -f release/Orchestrator.app/Contents/MacOS    # must print nothing: the app has to be closed
-node scripts/package.mjs                            # builds release/Orchestrator.app and the .dmg
-node scripts/smoke-package.mjs                      # 15/15
-open release/Orchestrator.app                       # walks into the server office by itself
+node scripts/package.mjs --out release-next         # builds release-next/Orchestrator.app; release/ is not touched
+node scripts/smoke-package.mjs --out release-next   # 15/15
+node scripts/update-mac-app.mjs                     # closes the app, swaps the build in, opens it
 ```
 
-The packager refuses to replace an app that is running. The app asks before it quits, so do not script the quit: close it yourself, or build next to it and swap later:
+`update-mac-app.mjs` never kills the app. A build since 2026-11-12 quits without its "Leave this office?" question when it gets SIGUSR2 from the same user (`main.cjs`); an older build is asked to quit and shows the question, which the script answers where the terminal is allowed to (macOS Accessibility) and which otherwise waits for the person — if the app is still running after a minute and a half, nothing is replaced. The build that was in `release/` is kept as `release-next/Orchestrator.app.previous-HHMM` (each is a whole app; delete old ones by hand). Employees' sessions keep running in tmux; the Mac is back in the office when the app is.
 
-```sh
-node scripts/package.mjs --out release-next && node scripts/smoke-package.mjs --out release-next
-# after closing the app:
-rm -rf release/Orchestrator.app && mv release-next/Orchestrator.app release/ && open release/Orchestrator.app
-```
+The packager itself still refuses to replace an app that is running (`node scripts/package.mjs` without `--out` writes into `release/`).
 
 A collaborator, from their own checkout:
 
