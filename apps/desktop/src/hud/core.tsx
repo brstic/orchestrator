@@ -394,7 +394,10 @@ export function interact(): void {
   const s = useOffice.getState();
   if (s.cameraMode === 'workstation') return;
   const n = s.nearby;
-  if (!n) return;
+  // Nothing to act on in front of them: the key is a jump.
+  if (!n) return s.jump();
+  // A place to sit: down, or up again.
+  if (n.kind === 'seat') return s.sit(s.seatedAt === n.id ? null : n.id);
   const moving = s.movingEmployeeId ? s.employees[s.movingEmployeeId] : undefined;
   if (n.kind === 'desk') {
     // An empty desk: put down whoever is being moved, or choose someone to sit here.

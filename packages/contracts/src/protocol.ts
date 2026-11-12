@@ -280,7 +280,9 @@ export type ClientToServer =
   | { t: 'control.release'; sessionId: ID }
   | { t: 'screens.focus'; sessionId: ID | null }
   /** Where this person's character is, so the others in the office can see them. */
-  | { t: 'presence'; x: number; z: number; rot: number; moving: boolean; at?: number }
+  | { t: 'presence'; x: number; z: number; rot: number; moving: boolean; at?: number; sit?: boolean }
+  /** This person's character jumped (the interact key with nothing to act on in front of them): everyone sees it. */
+  | { t: 'jump' }
   /** Something said out loud to the other people in the office (not to employees). */
   | { t: 'say'; text: string }
   /**
@@ -340,6 +342,8 @@ export interface PersonPresence {
   moving: boolean;
   /** The sender's own clock at that report (ms): the others draw the walk evenly by it. */
   at?: number;
+  /** They are sitting (on a sofa, a chair): `x`, `z` and `rot` are the seat's. */
+  sit?: boolean;
   hue: number;
 }
 
@@ -377,6 +381,8 @@ export type ServerToClient =
    * `approved`: how many permission requests of that employee the crack approved (absent: none).
    */
   | { t: 'whipped'; from: ChatFrom; employeeId?: string; personId?: string; approved?: number; ts: string }
+  /** Someone's character jumped (`from`: their window). */
+  | { t: 'jumped'; from: string }
   /** Someone's character made a gesture. */
   | { t: 'emoted'; from: ChatFrom; name: EmoteName; ts: string }
   /** A frame of someone's voice (`from`: their window), sent only to those within earshot. */

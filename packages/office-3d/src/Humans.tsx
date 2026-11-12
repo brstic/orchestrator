@@ -5,6 +5,7 @@ import type * as THREE from 'three';
 import type { Appearance } from '@orchestrator/contracts';
 import { Character, type Motion } from './Character.tsx';
 import { RemoteTrack } from './remote-motion.ts';
+import { jumpY } from './Rig.tsx';
 import { useActs } from './character/acts.ts';
 
 /** Another person in the office (the owner, or a guest), as the server reports them about ten times a second. */
@@ -29,6 +30,10 @@ export interface HumanView {
   emote?: { name: string; at: number } | null;
   /** They are talking right now (holding the talk key), within earshot of this window. */
   speaking?: boolean;
+  /** They are sitting: where they are is a seat, and their character sits on it. */
+  sit?: boolean;
+  /** When their character last jumped, by this window's clock (`performance.now()`). */
+  jumpAt?: number;
 }
 
 const SKIN = ['#f1c9a5', '#e0ac69', '#c68642', '#8d5524', '#ffdbac'];
@@ -83,6 +88,10 @@ const Human = memo(function Human({ h }: { h: HumanView }) {
   const look = useMemo(() => lookOf(h), [h.hue]);
   // A whip crack, a flinch from someone else's, a gesture: each plays once when it is announced (as the owner's own character does).
   const act = useActs({ whipAt: h.whipAt, ouchAt: h.ouchAt, emote: h.emote });
+  const jumpAt = useRef(h.jumpAt);
+  jumpAt.current = h.jumpAt;
+  const sitNow = useRef(h.sit);
+  sitNow.current = h.sit;
   // Before the character animates (see `motion` in Character.tsx): its feet are then placed for this frame's position.
   useFrame(() => {
     const g = group.current;
@@ -125,15 +134,17 @@ const Human = memo(function Human({ h }: { h: HumanView }) {
       if (speed < 0.02) m.vx = m.vz = 0;
     }
     at.current = p;
-    g.position.set(p.x, 0, p.z);
+    // A jump of theirs: up and down again, as this window saw it begin.
+    const lift = jumpAt.current ? jumpY((now - jumpAt.current) / 1000) : 0;
+    g.position.set(p.x, lift, p.z);
     g.rotation.y = p.rot;
     // For the UI tests (see `window.__orchScene`): where each other person is drawn right now and how they move.
     const probe = ((window as unknown as { __orchScene?: Record<string, any> }).__orchScene ??= { detail: {} });
-    (probe.humans ??= {})[h.id] = { x: p.x, z: p.z, rot: p.rot, vx: m.vx, vz: m.vz, turn: m.turn, run: m.run, name: h.name, t: now };
+    (probe.humans ??= {})[h.id] = { x: p.x, z: p.z, rot: p.rot, vx: m.vx, vz: m.vz, turn: m.turn, run: m.run, name: h.name, t: now, y: lift, sit: !!sitNow.current };
   }, -1);
   const body = useMemo(
-    () => <Character appearance={look} pose={act.pose ?? 'stand'} cue={act.cue ?? 0} whip={act.whipping} level={h.role === 'owner' ? 9 : 1} motion={motion} />,
-    [look, act.pose, act.cue, act.whipping, h.role],
+    () => <Character appearance={look} pose={h.sit ? (act.pose === 'ouch' ? 'ouch' : 'idle') : (act.pose ?? 'stand')} cue={act.cue ?? 0} whip={act.whipping} level={h.role === 'owner' ? 9 : 1} motion={motion} />,
+    [look, act.pose, act.cue, act.whipping, h.role, h.sit],
   );
   // (No position on the group itself: it is placed every frame above. A position given here would be put back on the
   // character at every report — a jump to where they are *now*, in the middle of walking to where they were.)
@@ -164,7 +175,7 @@ const Human = memo(function Human({ h }: { h: HumanView }) {
 function sameButForPlace(a: { h: HumanView }, b: { h: HumanView }): boolean {
   const x = a.h;
   const y = b.h;
-  return x.id === y.id && x.name === y.name && x.role === y.role && x.hue === y.hue && x.saying === y.saying && x.whipAt === y.whipAt && x.ouchAt === y.ouchAt && x.emote?.at === y.emote?.at && x.emote?.name === y.emote?.name && !!x.speaking === !!y.speaking;
+  return x.id === y.id && x.name === y.name && x.role === y.role && x.hue === y.hue && x.saying === y.saying && !!x.sit === !!y.sit && x.jumpAt === y.jumpAt && x.whipAt === y.whipAt && x.ouchAt === y.ouchAt && x.emote?.at === y.emote?.at && x.emote?.name === y.emote?.name && !!x.speaking === !!y.speaking;
 }
 
 /** The other people in the office: real persons at their own computers, drawn where they say they are. */

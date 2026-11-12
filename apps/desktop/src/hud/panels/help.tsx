@@ -21,7 +21,7 @@ const ROOMS: Array<{ name: string; text: string }> = [
 
 const BINDINGS: Array<{ id: string; label: string }> = [
   { id: 'talk', label: 'Talk to the employee next to you' },
-  { id: 'interact', label: 'Use what you are standing at: a desk, a room, an empty desk' },
+  { id: 'interact', label: 'Use what you are standing at: a desk, a room, a seat — and jump where there is nothing' },
   { id: 'notifications', label: 'Inbox: what needs you' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'projects', label: 'Projects' },
@@ -86,6 +86,10 @@ function HelpPanel({ onClose }: PanelProps) {
             <dd>Drag to look around, scroll to zoom</dd>
             <dt>Right-click</dt>
             <dd>On an employee: everything you can do with them</dd>
+            <dt>
+              <Key>{k('interact')}</Key>
+            </dt>
+            <dd>At a sofa, an armchair or a chair at a table: sit down (a step, or the key again, gets you up). With nothing in front of you: jump. The others in the office see both.</dd>
             <dt>
               <Key>Enter</Key>
             </dt>

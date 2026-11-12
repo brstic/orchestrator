@@ -386,6 +386,49 @@ test('an arcade cabinet that stands is something to walk up to: the spot is in f
   assert.ok(spots.some((i) => i.id === 'arcade:arcade-2' && Math.abs(i.x - 14) < 1e-9 && Math.abs(i.z - 1) < 1e-9), 'one that faces south is played from the south');
 });
 
+test('places to sit: the sofas and armchairs of the rooms, a sofa an owner put down, and the chairs at the meeting and team tables', () => {
+  const layout = defaultLayout();
+  const world = buildWorld(layout, new Set(['team_room']));
+  const of = (prefix: string) => world.seats.filter((x) => x.id.startsWith(prefix));
+  const br = world.room('break')!;
+  // The break room's sofa: two seats, exactly where the employees on a break sit, facing the TV.
+  const sofa = of('break-sofa');
+  assert.equal(sofa.length, 2);
+  const onBreak = world.breakSpots.filter((x) => x.sit);
+  for (const seat of sofa) {
+    assert.ok(onBreak.some((b) => Math.abs(b.x - seat.x) < 0.02 && Math.abs(b.z - seat.z) < 0.02), `${seat.x}, ${seat.z}`);
+    assert.ok(Math.abs(Math.cos(seat.rot) + 1) < 1e-9, 'facing north, where the TV hangs');
+    assert.equal(seat.kind, 'sofa');
+  }
+  assert.ok(sofa.every((x) => x.z > br.z + br.d - 1.5));
+  // The long sofa at reception seats three, facing into the room (west); each armchair in the CEO's room seats one, facing east.
+  const waiting = of('reception-sofa');
+  assert.equal(waiting.length, 3);
+  assert.ok(waiting.every((x) => Math.abs(Math.sin(x.rot) + 1) < 1e-9));
+  const armchairs = of('ceo-armchair');
+  assert.equal(armchairs.length, 2);
+  assert.ok(armchairs.every((x) => Math.abs(Math.sin(x.rot) - 1) < 1e-9));
+  // Every chair at the meeting table and at the team table, facing the table as the people in a meeting do.
+  assert.deepEqual(of('meeting:').map((x) => [x.x, x.z, x.rot, x.kind]), world.meeting!.seats.map((x) => [x.x, x.z, x.rot, 'chair']));
+  assert.deepEqual(of('team:').map((x) => [x.x, x.z, x.rot]), world.team!.seats.map((x) => [x.x, x.z, x.rot]));
+  assert.equal(of('team-sofa').length, 2);
+  // No team room, none of its seats.
+  assert.equal(buildWorld(layout, new Set()).seats.some((x) => x.id.startsWith('team')), false);
+  // A sofa an owner put on the floor is one to sit on, the way it was turned: turned a quarter, its seats lie along the other axis.
+  const withSofa = { ...layout, decorations: [...layout.decorations, { id: 'mine', kind: 'sofa', x: 0, z: 0, rot: Math.PI / 2 }] };
+  const mine = buildWorld(withSofa, new Set()).seats.filter((x) => x.id.startsWith('sofa:mine'));
+  assert.equal(mine.length, 2);
+  assert.ok(mine.every((x) => Math.abs(x.x + 0.05) < 1e-9) && Math.abs(mine[0]!.z + mine[1]!.z) < 1e-9, JSON.stringify(mine));
+  assert.ok(mine.every((x) => Math.abs(Math.sin(x.rot) + 1) < 1e-9), 'facing the way the sofa looks');
+  // From every seat somebody can get up onto floor that can be walked on, within a step.
+  for (const seat of world.seats) {
+    const at = world.nav.walkable(seat.x, seat.z) ? [seat.x, seat.z] : world.nav.nearestWalkable(seat.x + Math.sin(seat.rot) * 0.7, seat.z + Math.cos(seat.rot) * 0.7);
+    assert.ok(at && Math.hypot(at[0]! - seat.x, at[1]! - seat.z) < 1.6, `nowhere to stand up from ${seat.id}`);
+  }
+  // Ids are one seat's each.
+  assert.equal(new Set(world.seats.map((x) => x.id)).size, world.seats.length);
+});
+
 test('the team room, once earned, has a table and a sofa that people walk around; desks an owner put there are left alone', () => {
   const layout = defaultLayout();
   assert.equal(buildWorld(layout, new Set()).team, null, 'no team room, no furniture');

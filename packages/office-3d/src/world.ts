@@ -31,6 +31,18 @@ export interface Spot {
   sit: boolean;
 }
 
+/**
+ * A place a person can sit down: a seat on a sofa or an armchair, or a chair at the meeting or the team table.
+ * `x`, `z`: where the sitter is; `rot`: the way they face.
+ */
+export interface Seat {
+  id: string;
+  kind: 'sofa' | 'chair';
+  x: number;
+  z: number;
+  rot: number;
+}
+
 export interface Interactable {
   kind: 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv' | 'vault' | 'arcade';
   id: string;
@@ -78,6 +90,8 @@ export interface World {
   /** The team room, once the company has earned it: a table to gather round and a sofa against the far wall. */
   team: { table: { x: number; z: number; w: number; d: number }; seats: Spot[]; sofa: { x: number; z: number; rot: number; w: number } } | null;
   interactables: Interactable[];
+  /** Where a person can sit down (sofas, armchairs, the chairs at the meeting and team tables). */
+  seats: Seat[];
   spawn: { x: number; z: number; rot: number };
   nav: NavGrid;
   room(kind: RoomDef['kind']): RoomDef | undefined;
@@ -460,6 +474,16 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
   const obstacles: Box[] = [];
   for (const d of layout.desks) obstacles.push(deskBox(d));
   const interactables: Interactable[] = [];
+  const places: Seat[] = [];
+  /**
+   * The seats of a sofa (the model's front looks toward -Z before it is turned by `rot`): one on an armchair, two on
+   * a sofa, three on a long one, a hand's width in front of its middle line — where the employees on a break sit too.
+   */
+  const onSofa = (id: string, x: number, z: number, rot: number, w: number) => {
+    const along = w < 1.5 ? [0] : w < 2.8 ? [-0.27 * w, 0.27 * w] : [-0.3 * w, 0, 0.3 * w];
+    along.forEach((o, i) => places.push({ id: `${id}:${i}`, kind: 'sofa', x: x + Math.cos(rot) * o - Math.sin(rot) * 0.05, z: z - Math.sin(rot) * o - Math.cos(rot) * 0.05, rot: rot + Math.PI }));
+  };
+  const atTable = (id: string, spots: Spot[]) => spots.forEach((s, i) => places.push({ id: `${id}:${i}`, kind: 'chair', x: s.x, z: s.z, rot: s.rot }));
 
   // Meeting room: a table sized to the room with seats around it.
   let meeting: World['meeting'] = null;
@@ -480,6 +504,7 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
     seats.push({ x: cx - tw / 2 - 0.6, z: cz, rot: Math.PI / 2, sit: true });
     seats.push({ x: cx + tw / 2 + 0.6, z: cz, rot: -Math.PI / 2, sit: true });
     meeting = { x: cx, z: cz, w: tw, d: td, seats };
+    atTable('meeting', seats);
     whiteboard = { x: cx, z: mr.z + 0.11, rot: 0, w: Math.min(4.4, mr.w - 2), h: 1.5 };
     obstacles.push(rect(cx, cz, tw, td));
     interactables.push({ kind: 'meeting', id: 'meeting', label: 'MEETING ROOM — PLAN & COLLABORATE', x: cx, z: cz + 2.2, radius: 2.6 });
@@ -498,6 +523,7 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
     obstacles.push(rect(cx - 0.8, br.z + br.d - 2.5, 1.3, 0.7)); // coffee table
     breakSpots.push({ x: cx - 1.5, z: br.z + br.d - 1.05, rot: Math.PI, sit: true }, { x: cx - 0.1, z: br.z + br.d - 1.05, rot: Math.PI, sit: true });
     breakSpots.push({ x: br.x + br.w - 1.5, z: br.z + 2.2, rot: Math.PI / 2, sit: false }, { x: br.x + br.w - 1.5, z: br.z + 4.2, rot: Math.PI / 2, sit: false }, { x: cx - 2.6, z: br.z + 3.4, rot: 0.6, sit: false }, { x: cx - 1.2, z: br.z + 3.0, rot: -0.7, sit: false });
+    onSofa('break-sofa', cx - 0.8, br.z + br.d - 1.0, 0, 2.6);
     interactables.push({ kind: 'break', id: 'break', label: 'BREAK ROOM — WHO IS IDLE', x: cx - 0.8, z: br.z + 3.6, radius: 2.4 });
     // The hi-fi: a sideboard with the stereo and two floor speakers against the west wall.
     hifi = { x: br.x + 0.45, z: br.z + 2.0, rot: Math.PI / 2 };
@@ -516,6 +542,7 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
     ceoDesk = { x: cr.x + cr.w / 2 - 0.6, z: cr.z + 3.0, rot: Math.PI };
     obstacles.push(rect(ceoDesk.x, ceoDesk.z, 2.4, 1.1));
     obstacles.push(rect(cr.x + 1.3, cr.z + cr.d - 2.2, 0.9, 2.2)); // lounge chairs
+    for (const dz of [-0.56, 0.56]) onSofa(`ceo-armchair${dz < 0 ? 'a' : 'b'}`, cr.x + 1.3, cr.z + cr.d - 2.2 + dz, -Math.PI / 2, 1.0);
     interactables.push({ kind: 'ceo', id: 'ceo', label: 'CEO DESK — COMPANY CONTROL', x: ceoDesk.x, z: ceoDesk.z - 1.3, radius: 1.9 });
   }
 
@@ -525,6 +552,7 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
     reception = { x: rr.x + rr.w / 2, z: rr.z + rr.d - 4.2, rot: 0 };
     obstacles.push(rect(reception.x, reception.z, 3.4, 0.9));
     obstacles.push(rect(rr.x + rr.w - 1.0, rr.z + 2.6, 0.9, 3.0)); // waiting bench
+    onSofa('reception-sofa', rr.x + rr.w - 1.0, rr.z + 2.6, Math.PI / 2, 3.0);
     interactables.push({ kind: 'reception', id: 'reception', label: 'RECEPTION — COMPANY OVERVIEW', x: reception.x, z: reception.z + 1.5, radius: 2.0 });
   }
 
@@ -600,6 +628,8 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
     const free = !taken.some((t) => wanted.some((w) => t.minX < w.maxX && t.maxX > w.minX && t.minZ < w.maxZ && t.maxZ > w.minZ));
     if (free) {
       team = { table: { x: cx, z: cz, w: tw, d: td }, seats, sofa };
+      atTable('team', seats);
+      onSofa('team-sofa', sofa.x, sofa.z, sofa.rot, sofa.w);
       obstacles.push(rect(cx, cz, tw, td));
       obstacles.push(rect(sofa.x, sofa.z, 0.9, sofa.w));
     }
@@ -611,6 +641,8 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
     if (box) obstacles.push(box);
     // An arcade cabinet is played at: the spot is in front of its screen (which looks toward +Z before it is turned).
     // Listed first, as the TV is: in front of the cabinet means the cabinet, even inside a room's wider circle.
+    // A sofa an owner put somewhere is one to sit on, like the ones the rooms come with.
+    if (d.kind === 'sofa') onSofa(`sofa:${d.id}`, d.x, d.z, d.rot, 2.0);
     if (d.kind === 'arcade') interactables.unshift({ kind: 'arcade', id: `arcade:${d.id}`, label: 'ARCADE — PLAY', x: d.x + Math.sin(d.rot) * ARCADE_REACH, z: d.z + Math.cos(d.rot) * ARCADE_REACH, radius: 1.2 });
   }
 
@@ -636,7 +668,7 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
   const spawn = rr ? { x: rr.x + rr.w / 2, z: rr.z + rr.d - 1.6, rot: Math.PI } : { x: 0, z: bounds.maxZ - 2, rot: Math.PI };
   const solids = obstacles;
   const all = [...wallBoxes, ...solids];
-  const world = { layout, rooms, walls, obstacles: all, solids, bounds, memberRooms: NO_ROOMS, memberDesks: NO_DESKS, meeting, breakSpots, ceoDesk, hifi, tv, reception, board, boardSpots, whiteboard, opsWall, racks, vault, team, interactables, spawn, nav: new NavGrid(bounds, all), room } as unknown as World;
+  const world = { layout, rooms, walls, obstacles: all, solids, bounds, memberRooms: NO_ROOMS, memberDesks: NO_DESKS, meeting, breakSpots, ceoDesk, hifi, tv, reception, board, boardSpots, whiteboard, opsWall, racks, vault, team, interactables, seats: places, spawn, nav: new NavGrid(bounds, all), room } as unknown as World;
   world.base = world;
   return world;
 }

@@ -86,6 +86,11 @@ export interface OfficeSceneProps {
   ouchAt?: number;
   /** The gesture this person last asked their character to make (the wheel), and when. */
   emote?: { name: string; at: number } | null;
+  /** Sit down on a seat (`id`) or get up (`id: null`), each time `n` changes; and jump, each time `jumpAsk` changes. */
+  seatAsk?: { id: string | null; n: number } | null;
+  jumpAsk?: number;
+  onSeated?: (seatId: string | null) => void;
+  onJumped?: () => void;
   walks: WalkRequest[];
   hosts: HostView[];
   board: BoardView;
@@ -221,7 +226,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       {(props.leads ?? []).map((lead) => (
         <Foreman key={lead.id} foreman={lead} people={props.people} world={world} selected={props.selectedId === lead.id} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />
       ))}
-      <Rig whipAt={props.whipAt} ouchAt={props.ouchAt} emote={props.emote} approachZoom={props.approachZoom} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} />
+      <Rig whipAt={props.whipAt} ouchAt={props.ouchAt} emote={props.emote} approachZoom={props.approachZoom} seatAsk={props.seatAsk} jumpAsk={props.jumpAsk} onSeated={props.onSeated} onJumped={props.onJumped} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} />
     </Canvas>
   );
 });

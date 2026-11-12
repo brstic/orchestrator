@@ -113,22 +113,22 @@ function useStable<T extends Record<string, (...args: any[]) => any>>(fns: T): T
 
 function usePresence(): void {
   useEffect(() => {
-    let last = { x: NaN, z: NaN, rot: NaN, moving: false };
+    let last = { x: NaN, z: NaN, rot: NaN, moving: false, sit: false };
     let still = 0;
     const timer = window.setInterval(() => {
       const st = useOffice.getState();
       if (st.conn !== 'online') return;
-      const { x, z, rot } = ownerPosition;
+      const { x, z, rot, sit } = ownerPosition;
       // Under way means going somewhere: looking around on the spot is reported (the others see the turn), but it is not walking.
       const went = Math.abs(x - last.x) > 0.01 || Math.abs(z - last.z) > 0.01;
       const turned = Math.abs(rot - last.rot) > 0.01;
       still = went ? 0 : still + 1;
       const moving = still < 3 && !Number.isNaN(last.x);
       // Also say so once when coming to a stop, and every few seconds so newcomers see everyone.
-      if (!went && !turned && moving === last.moving && still % 30 !== 3) return;
-      last = { x, z, rot, moving };
+      if (!went && !turned && moving === last.moving && sit === last.sit && still % 30 !== 3) return;
+      last = { x, z, rot, moving, sit };
       // With this window's own clock: the others move the character evenly by it, however unevenly the reports reach them.
-      connection.send({ t: 'presence', x, z, rot, moving, at: Date.now() });
+      connection.send({ t: 'presence', x, z, rot, moving, at: Date.now(), ...(sit ? { sit: true } : {}) });
     }, 100);
     return () => window.clearInterval(timer);
   }, []);
@@ -160,6 +160,9 @@ export function App() {
     openTv: () => useOffice.getState().openPanel('tv'),
     openVault: () => useOffice.getState().openPanel('vault'),
     openArcade: () => useOffice.getState().openPanel('arcade'),
+    seated: (seatId: string | null) => useOffice.setState({ seatedAt: seatId }),
+    // The others see the jump once it has really begun.
+    jumped: () => connection.send({ t: 'jump' }),
     pickSeat: (deskId: string) => {
       const moving = useOffice.getState().movingEmployeeId;
       if (moving) void seatAt(moving, deskId);
@@ -317,9 +320,9 @@ export function App() {
       .filter((p) => p.id !== s.clientId)
       .map((p) => {
         const last = [...s.chat].reverse().find((c) => c.fromId === p.id && !c.emote);
-        return { ...p, saying: last && now - last.at < 7000 ? last.text : null, whipAt: s.peopleWhips[p.id], ouchAt: s.peopleOuch[p.id], emote: s.peopleEmotes[p.id] ?? null, speaking: !!s.speaking[p.id] };
+        return { ...p, saying: last && now - last.at < 7000 ? last.text : null, whipAt: s.peopleWhips[p.id], ouchAt: s.peopleOuch[p.id], emote: s.peopleEmotes[p.id] ?? null, jumpAt: s.peopleJumps[p.id], speaking: !!s.speaking[p.id] };
       });
-  }, [s.people, s.clientId, s.chat, s.peopleWhips, s.peopleOuch, s.peopleEmotes, s.speaking, sayTick]);
+  }, [s.people, s.clientId, s.chat, s.peopleWhips, s.peopleOuch, s.peopleEmotes, s.peopleJumps, s.speaking, sayTick]);
   // My own conversations: dots over whoever is working on what I said, a bubble over whoever has answered. Only
   // over somebody who is drawn (not one who was let go, or whose member is away), and dots only while they can
   // really be working on it — a wait whose turn ended some other way shows nothing and is ended (`lib/asks.ts`).
@@ -394,6 +397,10 @@ export function App() {
           whipAt={s.whipAt}
           ouchAt={s.ouchAt}
           emote={s.emote}
+          seatAsk={s.seatAsk}
+          jumpAsk={s.jumpAsk}
+          onSeated={on.seated}
+          onJumped={on.jumped}
           walks={walks}
           hosts={hosts}
           board={board}

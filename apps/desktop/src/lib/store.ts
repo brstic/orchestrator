@@ -74,7 +74,7 @@ export type PanelId =
 export type CameraMode = 'ceo' | 'first' | 'management' | 'free' | 'workstation' | 'command';
 
 export interface Nearby {
-  kind: 'employee' | 'desk' | 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv' | 'vault' | 'arcade';
+  kind: 'employee' | 'desk' | 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv' | 'vault' | 'arcade' | 'seat';
   id: string;
   label: string;
 }
@@ -165,6 +165,15 @@ export interface OfficeState {
   /** The gesture this person's character last made (the wheel), and other people's by their window id. */
   emote: { name: string; at: number } | null;
   peopleEmotes: Record<string, { name: string; at: number }>;
+  /** When each other person's character last jumped, by this window's clock (`performance.now()`). */
+  peopleJumps: Record<string, number>;
+  /** Asked of this person's character: sit down on a seat or get up (`id: null`), and jump — each acted on when its number changes. */
+  seatAsk: { id: string | null; n: number } | null;
+  jumpAsk: number;
+  /** The seat this person is sitting on. */
+  seatedAt: string | null;
+  sit: (seatId: string | null) => void;
+  jump: () => void;
   doEmote: (name: EmoteName) => void;
   /** Push to talk: this window is sending its microphone; how loud it is (0…1); and who is being heard here right now. */
   talking: boolean;
@@ -455,6 +464,12 @@ export const useOffice = create<OfficeState>((set, get) => ({
   },
   emote: null,
   peopleEmotes: {},
+  peopleJumps: {},
+  seatAsk: null,
+  jumpAsk: 0,
+  seatedAt: null,
+  sit: (seatId) => set((s) => ({ seatAsk: { id: seatId, n: (s.seatAsk?.n ?? 0) + 1 } })),
+  jump: () => set((s) => ({ jumpAsk: s.jumpAsk + 1 })),
   doEmote: (name) => {
     set({ emote: { name, at: Date.now() } });
     connection.send({ t: 'emote', name });
@@ -520,7 +535,8 @@ export const useOffice = create<OfficeState>((set, get) => ({
   leaveWorkstation: () => set((s) => ({ workstationId: null, cameraMode: s.previousCameraMode === 'workstation' ? 'ceo' : s.previousCameraMode })),
   setNearby: (n) => {
     const cur = get().nearby;
-    if (cur?.id === n?.id && cur?.kind === n?.kind) return;
+    // (The label too: the same seat reads "sit down" and then "stand up".)
+    if (cur?.id === n?.id && cur?.kind === n?.kind && cur?.label === n?.label) return;
     set({ nearby: n });
   },
   setCommandOpen: (open) => set({ commandOpen: open }),
@@ -679,6 +695,10 @@ function handle(msg: ServerToClient): void {
       playOuch(pitchOf(employeeId));
       break;
     }
+    case 'jumped':
+      // Someone's character jumped. (My own already does, here.)
+      if (msg.from !== useOffice.getState().clientId) useOffice.setState((s) => ({ peopleJumps: { ...s.peopleJumps, [msg.from]: performance.now() } }));
+      break;
     case 'emoted':
       // Someone's character made a gesture. (My own already plays here.)
       if (msg.from.id !== useOffice.getState().clientId) useOffice.setState((s) => ({ peopleEmotes: { ...s.peopleEmotes, [msg.from.id]: { name: msg.name, at: Date.now() } } }));

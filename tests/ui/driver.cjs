@@ -649,6 +649,81 @@ async function scenario() {
     return 'my cartridge ran in a frame that is no origin, its sound output open; one player on the whole keyboard, two on its halves, and a gamepad beside the keyboard each held their own buttons; the owner did not move in the office; Continue was offered with a picture, and Escape left the game and then the window' + together;
   });
 
+  await step('sitting and jumping: the interact key sits down where there is a seat, a step gets up, and with nothing to act on it is a jump — and the others in the office see both', async () => {
+    await js(`window.__t.store().openPanel(null)`);
+    await camera('CEO');
+    const me = () => js(`({ x: window.__orchPlayer.x, z: window.__orchPlayer.z, rot: window.__orchPlayer.rot, sit: window.__orchPlayer.sit, y: window.__orchPlayer.y || 0, near: window.__t.store().nearby, panel: window.__t.store().panel })`);
+    const seat = await js(`window.__orchPlayer.seats.find((x) => x.id === 'break-sofa:0')`);
+    if (!seat) throw new Error('the break room sofa has no seat');
+    // Somebody else in the office, to see what the others see.
+    const other = new BrowserWindow({ width: 1200, height: 800, show: false, webPreferences: { backgroundThrottling: false } });
+    const ojs = (code) => other.webContents.executeJavaScript(code, true);
+    const owait = async (code, timeout = 15000, what = code) => {
+      for (const end = Date.now() + timeout; Date.now() < end; await sleep(100)) {
+        const v = await ojs(`(() => { try { return (${code}); } catch (e) { return null; } })()`).catch(() => null);
+        if (v) return v;
+      }
+      throw new Error(`the other window: timed out waiting for ${String(what).slice(0, 140)}`);
+    };
+    // The one other person the second window sees: me.
+    const seen = `Object.values((window.__orchScene || {}).humans || {}).sort((a, b) => b.t - a.t)[0]`;
+    try {
+      other.webContents.setAudioMuted(true);
+      await other.loadURL(win.webContents.getURL());
+      other.webContents.setZoomFactor(1);
+      await owait(`window.__office && window.__office.getState().ready`, 30000, 'the office');
+
+      // In front of the sofa the key means the sofa.
+      await js(`window.__orchPlayer.goto = { x: ${seat.x + 0.2}, z: ${seat.z - 0.9}, rot: 0 }; true`);
+      await waitFor(`window.__t.store().nearby && window.__t.store().nearby.kind === 'seat'`, 8000);
+      const asked = await js(`document.querySelector('.prompt').textContent`);
+      if (!/SOFA — SIT DOWN/.test(asked)) throw new Error(`in front of the sofa the prompt reads "${asked}"`);
+      await key('Space');
+      await waitFor(`window.__orchPlayer.sit === 'break-sofa:0' && /STAND UP/.test(document.querySelector('.prompt').textContent)`, 8000);
+      const sat = await me();
+      if (Math.hypot(sat.x - seat.x, sat.z - seat.z) > 0.02 || Math.abs(Math.cos(sat.rot) - Math.cos(seat.rot)) > 0.05) throw new Error(`seated at ${JSON.stringify(sat)}, the seat is ${JSON.stringify(seat)}`);
+      await owait(`(() => { const h = ${seen}; return h && h.sit && Math.hypot(h.x - ${seat.x}, h.z - ${seat.z}) < 0.1; })()`, 15000, 'me, sitting on the sofa');
+      await sleep(400);
+      await shot('sitting');
+      fs.writeFileSync(path.join(outDir, 'sitting-seen-by-another.png'), (await other.webContents.capturePage()).toPNG());
+      // A step gets me up, onto floor I can walk on.
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'W' });
+      await waitFor(`window.__orchPlayer.sit === null`, 5000);
+      await sleep(250);
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'W' });
+      const up = await me();
+      if (Math.hypot(up.x - seat.x, up.z - seat.z) > 2.5) throw new Error(`got up ${Math.hypot(up.x - seat.x, up.z - seat.z).toFixed(1)} m from the sofa`);
+      await owait(`(() => { const h = ${seen}; return h && !h.sit; })()`, 15000, 'me, on my feet again');
+
+      // On open floor, with nothing to act on, the same key is a jump: up and down again, and seen from the other window.
+      await js(`window.__orchPlayer.goto = { x: 2, z: 6, rot: 0 }; true`);
+      await waitFor(`window.__t.store().nearby === null && Math.abs(window.__orchPlayer.x - 2) < 0.05`, 8000);
+      await owait(`(() => { const h = ${seen}; return h && Math.hypot(h.x - 2, h.z - 6) < 0.3; })()`, 15000, 'me on the open floor');
+      const theirs = ojs(`new Promise((done) => { let top = 0; const from = performance.now(); const look = () => { const h = ${seen}; if (h) top = Math.max(top, h.y || 0); if (performance.now() - from < 1800) setTimeout(look, 25); else done(top); }; look(); })`);
+      const mine = js(`new Promise((done) => { let top = 0; let end = null; const from = performance.now(); const look = () => { const y = window.__orchPlayer.y || 0; top = Math.max(top, y); if (top > 0.3 && y === 0 && end === null) end = performance.now() - from; if (performance.now() - from < 1500) setTimeout(look, 20); else done({ top, end }); }; look(); })`);
+      await sleep(150);
+      await key('Space');
+      const [jumped, seenTop] = [await mine, await theirs];
+      if (!(jumped.top > 0.5 && jumped.top < 0.7) || jumped.end === null) throw new Error(`the jump: ${JSON.stringify(jumped)}`);
+      if (!(seenTop > 0.3)) throw new Error(`from the other window the jump was ${seenTop.toFixed(2)} m high`);
+      const after = await me();
+      if (after.panel || after.sit) throw new Error(`after a jump: ${JSON.stringify(after)}`);
+
+      // Where there is something to act on, the key still means that thing: no jump in front of the project board.
+      const board = await js(`window.__orchPlayer.spots.find((x) => x.kind === 'board')`);
+      const jumps = await js(`window.__t.store().jumpAsk`);
+      await js(`window.__orchPlayer.goto = { x: ${board.x}, z: ${board.z}, rot: 0 }; true`);
+      await waitFor(`window.__t.store().nearby && window.__t.store().nearby.kind === 'board'`, 8000);
+      await key('Space');
+      await waitFor(`window.__t.store().panel === 'tasks'`, 8000);
+      if ((await js(`window.__t.store().jumpAsk`)) !== jumps) throw new Error('the key jumped although the project board was in front');
+      await js(`window.__t.store().openPanel(null)`);
+      return `sat on the break room sofa (the prompt: "${asked.trim()}", then "STAND UP"), got up with a step; jumped ${jumped.top.toFixed(2)} m and landed after ${Math.round(jumped.end)} ms; another window saw me sit, get up and jump (${seenTop.toFixed(2)} m)`;
+    } finally {
+      other.destroy();
+    }
+  });
+
   await step('a routine: "Repeat every … minutes" turns what I type into a standing instruction, listed above the conversation', async () => {
     const ava = await js(`window.__t.emp('Ava').id`);
     await js(`window.__t.store().openPanel('talk', ${JSON.stringify(ava)})`);

@@ -158,7 +158,7 @@ export type Quality = 'low' | 'medium' | 'high';
 export type CameraMode = 'ceo' | 'first' | 'management' | 'free' | 'workstation' | 'command';
 
 export interface NearbyTarget {
-  kind: 'employee' | 'desk' | 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv' | 'vault' | 'arcade';
+  kind: 'employee' | 'desk' | 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv' | 'vault' | 'arcade' | 'seat';
   id: string;
   label: string;
 }

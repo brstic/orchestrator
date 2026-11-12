@@ -6,7 +6,7 @@ import { Character, type Motion } from './Character.tsx';
 import { useActs } from './character/acts.ts';
 import { sceneProbe } from './Environment.tsx';
 import type { CameraMode, NearbyTarget, PersonView } from './types.ts';
-import { deskSeat, moveWithCollision, type World } from './world.ts';
+import { deskSeat, moveWithCollision, type Seat, type World } from './world.ts';
 
 /** The owner: a navy two-piece suit, burgundy tie, dark brown oxfords. */
 const CEO_LOOK: Appearance = { skin: '#e0ac69', hair: '#241c17', hairStyle: 'short', shirt: '#2b3c66', pants: '#2b3c66', accessory: 'none', build: 1.03 };
@@ -67,7 +67,21 @@ const wrapPi = (a: number) => a - Math.PI * 2 * Math.round(a / (Math.PI * 2));
  * Where the owner's avatar stands, updated every frame. Read by the HUD when something is
  * placed "where I am standing" (the office editor); never written from outside the scene.
  */
-export const ownerPosition = { x: 0, z: 0, rot: 0 };
+/** The spots that mean a whole room: standing right at a seat inside one means the seat. */
+const ROOM_SPOTS = new Set(['board', 'meeting', 'server', 'ops', 'ceo', 'break', 'reception']);
+
+export const ownerPosition = { x: 0, z: 0, rot: 0, sit: false };
+
+/** A jump: how high the feet get, and how long it takes from the floor back to the floor. */
+export const JUMP_HEIGHT = 0.62;
+export const JUMP_SECONDS = 0.52;
+/** How high off the floor a jump is, `t` seconds after it began (0 once it is over). */
+export const jumpY = (t: number): number => (t <= 0 || t >= JUMP_SECONDS ? 0 : JUMP_HEIGHT * 4 * (t / JUMP_SECONDS) * (1 - t / JUMP_SECONDS));
+/** A seat is sat on from this close (m): right at it when a room's own spot is around it, a step away otherwise. */
+const SEAT_AT = 0.85;
+const SEAT_NEAR = 1.15;
+/** A sitter's eyes are this much lower than a stander's. */
+const SIT_DROP = 0.42;
 
 export interface Keymap {
   forward: string;
@@ -112,6 +126,10 @@ export function Rig({
   ouchAt,
   emote,
   approachZoom = false,
+  seatAsk,
+  jumpAsk = 0,
+  onSeated,
+  onJumped,
 }: {
   world: World;
   mode: CameraMode;
@@ -130,6 +148,14 @@ export function Rig({
   emote?: { name: string; at: number } | null;
   /** Ease the camera in at a desk (an owner setting; off by default). */
   approachZoom?: boolean;
+  /** Sit down on a seat of the world (`id`), or get up (`id: null`); acted on each time `n` changes. */
+  seatAsk?: { id: string | null; n: number } | null;
+  /** Jump, each time this changes (where the owner is on foot and not sitting). */
+  jumpAsk?: number;
+  /** The owner sat down (on which seat) or got up. */
+  onSeated?: (seatId: string | null) => void;
+  /** A jump really began (so the others can be told). */
+  onJumped?: () => void;
 }) {
   const { camera, gl } = useThree();
   const avatar = useRef<THREE.Group>(null);
@@ -167,6 +193,9 @@ export function Rig({
     cam: { on: false, x: 0, z: 0, yaw: 0, pitch: 0, dist: 0, px: 0, pz: 0, pyaw: 0 },
     /** Set when the owner is put somewhere at once (or the camera mode changes): the camera glides over instead of trailing. */
     jump: true,
+    /** The seat the owner is sitting on, and how long (s) the jump they are in has lasted (-1: on the floor). */
+    seat: null as Seat | null,
+    air: -1,
     off: new THREE.Vector3(),
     offLook: new THREE.Vector3(),
   });
@@ -182,11 +211,60 @@ export function Rig({
   approachRef.current = approachZoom;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const [seated, setSeated] = useState(false);
+  const seatedRef = useRef(onSeated);
+  seatedRef.current = onSeated;
+  const jumpedRef = useRef(onJumped);
+  jumpedRef.current = onJumped;
+  /** Sit down there: the body is put on the seat, facing the way it faces. */
+  const sitDown = (seat: Seat) => {
+    const s = st.current;
+    s.seat = seat;
+    s.air = -1;
+    s.vf = s.vs = s.af = s.as = s.tv = s.ta = 0;
+    player.set(seat.x, 0, seat.z);
+    s.playerRot = seat.rot;
+    setSeated(true);
+    seatedRef.current?.(seat.id);
+  };
+  /** Get up: onto the floor at the seat (a chair), or the nearest floor in front of it (a sofa is something to walk around). */
+  const standUp = () => {
+    const s = st.current;
+    const seat = s.seat;
+    if (!seat) return;
+    s.seat = null;
+    const [x, z] = world.nav.walkable(seat.x, seat.z) ? [seat.x, seat.z] : (world.nav.nearestWalkable(seat.x + Math.sin(seat.rot) * 0.7, seat.z + Math.cos(seat.rot) * 0.7) ?? [seat.x, seat.z]);
+    player.set(x, 0, z);
+    setSeated(false);
+    seatedRef.current?.(null);
+  };
+  useEffect(() => {
+    if (!seatAsk) return;
+    const seat = seatAsk.id ? world.seats.find((x) => x.id === seatAsk.id) : null;
+    if (seat && (modeRef.current === 'ceo' || modeRef.current === 'first')) sitDown(seat);
+    else standUp();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seatAsk?.n]);
+  // The seat went away under them (the floor plan was edited): on their feet again.
+  useEffect(() => {
+    const seat = st.current.seat;
+    if (seat && !world.seats.some((x) => x.id === seat.id && x.x === seat.x && x.z === seat.z)) standUp();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [world]);
+  const firstJump = useRef(true);
+  useEffect(() => {
+    if (firstJump.current) return void (firstJump.current = false);
+    const s = st.current;
+    if (s.seat || s.air >= 0 || (modeRef.current !== 'ceo' && modeRef.current !== 'first')) return;
+    s.air = 0;
+    jumpedRef.current?.();
+  }, [jumpAsk]);
 
   // The interactable spots, for the UI tests; they move when the floor plan is edited.
   useEffect(() => {
     const probe = ((window as any).__orchPlayer ??= { x: 0, z: 0, rot: 0 });
     probe.spots = world.interactables.map((i) => ({ kind: i.kind, x: i.x, z: i.z }));
+    probe.seats = world.seats.map((x) => ({ ...x }));
     probe.seatOf = (deskId: string) => {
       const d = world.layout.desks.find((x) => x.id === deskId);
       return d ? deskSeat(d) : null;
@@ -324,7 +402,14 @@ export function Rig({
     const fwd = (k.has(keymap.forward) || k.has('ArrowUp') ? 1 : 0) - (k.has(keymap.back) || k.has('ArrowDown') ? 1 : 0);
     const turnKeys = (k.has(keymap.right) || k.has('ArrowRight') ? 1 : 0) - (k.has(keymap.left) || k.has('ArrowLeft') ? 1 : 0);
     const sideKeys = (k.has(keymap.strafeRight) ? 1 : 0) - (k.has(keymap.strafeLeft) ? 1 : 0);
-    const walking = mode === 'ceo' || mode === 'first';
+    // Sitting: any step gets them up first; until then the body stays where the seat is.
+    if (s.seat && (mode === 'workstation' || ((mode === 'ceo' || mode === 'first') && (fwd || k.has(keymap.strafeLeft) || k.has(keymap.strafeRight))))) standUp();
+    const walking = (mode === 'ceo' || mode === 'first') && !s.seat;
+    if (s.air >= 0) {
+      s.air += dt;
+      if (s.air >= JUMP_SECONDS) s.air = -1;
+    }
+    const lift = s.air >= 0 ? jumpY(s.air) : 0;
     // On foot, left/right turn the body (and the camera with it) and the strafe keys sidestep.
     // In the overview and free cameras there is no body to turn, so both pairs move sideways.
     const turn = walking ? turnKeys : 0;
@@ -392,7 +477,11 @@ export function Rig({
       if (k.has('KeyQ')) s.free.y -= dt * 8;
       s.free.y = THREE.MathUtils.clamp(s.free.y, 0.6, 60);
     }
-    if (mode === 'first') s.playerRot = s.yaw + Math.PI;
+    if (s.seat) {
+      // Seated, the body faces the way the seat does; the head (the camera) still looks around.
+      player.set(s.seat.x, 0, s.seat.z);
+      s.playerRot += wrapPi(s.seat.rot - s.playerRot) * (1 - Math.exp(-dt * 12));
+    } else if (mode === 'first') s.playerRot = s.yaw + Math.PI;
     else if (mode === 'ceo' && (fwd || strafe || turn || moved || s.tv)) {
       // The body faces where the camera looks: turning turns it in place, sidestepping keeps it facing forward.
       // After looking around with the mouse it comes round briskly, but it does not spin like a top.
@@ -428,6 +517,9 @@ export function Rig({
     probe.x = ownerPosition.x = player.x;
     probe.z = ownerPosition.z = player.z;
     probe.rot = ownerPosition.rot = s.playerRot;
+    probe.sit = s.seat?.id ?? null;
+    ownerPosition.sit = !!s.seat;
+    probe.y = lift;
 
     // ── desired camera ──
     let fov = 50;
@@ -476,9 +568,11 @@ export function Rig({
       }
       probe.camDist = dist;
     } else if (mode === 'first') {
-      camPos.set(player.x, 1.62, player.z);
+      // Through their own eyes: lower when they sit, and up and down with a jump.
+      const eye = 1.62 - (s.seat ? SIT_DROP : 0) + lift;
+      camPos.set(player.x, eye, player.z);
       const cp = Math.cos(s.pitch);
-      camLook.set(player.x + fx * cp, 1.62 - Math.sin(s.pitch), player.z + fz * cp);
+      camLook.set(player.x + fx * cp, eye - Math.sin(s.pitch), player.z + fz * cp);
       fov = 68;
     } else if (mode === 'management') {
       camLook.copy(s.mgmt);
@@ -543,7 +637,7 @@ export function Rig({
     }
 
     if (avatar.current) {
-      avatar.current.position.set(player.x, 0, player.z);
+      avatar.current.position.set(player.x, lift, player.z);
       avatar.current.rotation.y = s.playerRot;
       avatar.current.visible = mode !== 'first' && mode !== 'workstation';
     }
@@ -598,6 +692,20 @@ export function Rig({
           }
         }
       }
+      // A place to sit. Standing right at a seat means the seat even inside a room's own wide circle (the meeting
+      // room's chairs are all inside its circle); a thing one walks up to on purpose — the TV, the hi-fi, the vault,
+      // the arcade — keeps its meaning. Seated, the only thing in reach is getting up.
+      if (s.seat) best = { kind: 'seat', id: s.seat.id, label: 'STAND UP' };
+      else if (!best || ROOM_SPOTS.has(best.kind)) {
+        let near = best ? SEAT_AT : SEAT_NEAR;
+        for (const seat of world.seats) {
+          const d = Math.hypot(seat.x - player.x, seat.z - player.z);
+          if (d < near) {
+            near = d;
+            best = { kind: 'seat', id: seat.id, label: seat.kind === 'sofa' ? 'SOFA — SIT DOWN' : 'CHAIR — SIT DOWN' };
+          }
+        }
+      }
       onNearby(best);
     }
     // Before everything else in the frame: the avatar's gait and the name tags then work from this frame's position and camera.
@@ -605,17 +713,17 @@ export function Rig({
 
   return (
     <group ref={avatar}>
-      <PlayerBody motion={motion} whipAt={whipAt} ouchAt={ouchAt} emote={emote} />
+      <PlayerBody motion={motion} whipAt={whipAt} ouchAt={ouchAt} emote={emote} seated={seated} />
     </group>
   );
 }
 
-function PlayerBody({ motion, whipAt, ouchAt, emote }: { motion: { current: Motion }; whipAt?: number; ouchAt?: number; emote?: { name: string; at: number } | null }) {
+function PlayerBody({ motion, whipAt, ouchAt, emote, seated }: { motion: { current: Motion }; whipAt?: number; ouchAt?: number; emote?: { name: string; at: number } | null; seated: boolean }) {
   // The gait reads `motion` every frame, so walking never re-renders; only a whip crack, a flinch or a gesture does (twice: start and end).
   const act = useActs({ whipAt, ouchAt, emote });
   return (
     <>
-      <Character appearance={CEO_LOOK} detail={CEO_DETAIL} pose={act.pose ?? 'stand'} cue={act.cue ?? 0} level={10} motion={motion} whip />
+      <Character appearance={CEO_LOOK} detail={CEO_DETAIL} pose={seated ? (act.pose === 'ouch' ? 'ouch' : 'idle') : (act.pose ?? 'stand')} cue={act.cue ?? 0} level={10} motion={motion} whip />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <ringGeometry args={[0.34, 0.4, 32]} />
         <meshBasicMaterial color="#ffd166" transparent opacity={0.85} toneMapped={false} />

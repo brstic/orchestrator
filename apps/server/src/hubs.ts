@@ -339,7 +339,9 @@ interface ClientConn {
   /** This window is being closed by the office: nothing it still sends is acted on. */
   dropped?: boolean;
   /** Where their character is, once they have said so. */
-  presence: { x: number; z: number; rot: number; moving: boolean; at?: number } | null;
+  presence: { x: number; z: number; rot: number; moving: boolean; at?: number; sit?: boolean } | null;
+  /** When their character last jumped (for the rate limit). */
+  jumpedAt?: number;
   /** When this window last cracked the whip. */
   whippedAt?: number;
   /** When this window's character last made a gesture. */
@@ -592,7 +594,7 @@ export class ClientHub {
           case 'presence': {
             const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-500, Math.min(500, v)) : 0);
             const first = !conn.presence;
-            conn.presence = { x: n(msg.x), z: n(msg.z), rot: n(msg.rot), moving: msg.moving === true, ...(typeof msg.at === 'number' && Number.isFinite(msg.at) ? { at: msg.at } : {}) };
+            conn.presence = { x: n(msg.x), z: n(msg.z), rot: n(msg.rot), moving: msg.moving === true, ...(typeof msg.at === 'number' && Number.isFinite(msg.at) ? { at: msg.at } : {}), ...(msg.sit === true ? { sit: true } : {}) };
             // The first report is news for everyone (the list each client keeps includes itself); after that, only for the others.
             this.schedulePeople(first ? '*' : id);
             break;
@@ -640,6 +642,14 @@ export class ClientHub {
             }
             this.remember({ from, text: approved ? `cracks the whip at ${employee.name} — and approves what ${approved === 1 ? 'was' : 'they'} asked` : `cracks the whip at ${employee.name}`, ts, emote: true });
             this.broadcast({ t: 'whipped', from, employeeId: employee.id, ...(approved ? { approved } : {}), ts });
+            break;
+          }
+          case 'jump': {
+            // Their character jumped: seen by everyone who sees them. Not faster than a person can land.
+            const now = Date.now();
+            if (!conn.presence || now - (conn.jumpedAt ?? 0) < 350) break;
+            conn.jumpedAt = now;
+            this.broadcast({ t: 'jumped', from: id });
             break;
           }
           case 'emote': {

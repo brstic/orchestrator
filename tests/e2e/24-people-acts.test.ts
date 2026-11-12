@@ -94,6 +94,34 @@ test('a gesture is seen by everyone in the office, and only a gesture the charac
   for (const p of [ana, jovan, mila]) p.ws.close();
 });
 
+test('sitting down and jumping are seen by everyone: where somebody sits, and each jump once', async () => {
+  const [ana, jovan, mila] = await Promise.all([join('Ana'), join('Jovan'), join('Mila')]);
+  await ana.stand(3, 4);
+  await jovan.stand(5, 4);
+  await mila.stand(8, 4);
+  const of = (p: Awaited<ReturnType<typeof join>>, id: string) => (p.got.filter((m) => m.t === 'people').pop() as Extract<ServerToClient, { t: 'people' }> | undefined)?.people.find((x) => x.id === id);
+  // Ana sits down on a sofa: the others are told that she sits, and where.
+  ana.send({ t: 'presence', x: 6.5, z: 4.45, rot: Math.PI, moving: false, sit: true });
+  for (const p of [jovan, mila]) await waitFor(() => of(p, ana.id)?.sit === true || undefined, { label: `${p.who} sees Ana sit` });
+  assert.deepEqual([of(jovan, ana.id)!.x, of(jovan, ana.id)!.z, of(jovan, ana.id)!.sit], [6.5, 4.45, true]);
+  assert.equal(of(mila, jovan.id)?.sit, undefined, 'somebody on their feet is not said to sit');
+  // She gets up: sitting is said only while it is so, and only `true` means it.
+  ana.send({ t: 'presence', x: 6.5, z: 3.7, rot: Math.PI, moving: false, sit: 'yes' });
+  await waitFor(() => (of(jovan, ana.id)?.z === 3.7 && of(jovan, ana.id)?.sit === undefined) || undefined, { label: 'Ana is up' });
+  // A jump: everyone sees it, a visitor's too, each once — and not more often than somebody can land.
+  const seen = jovan.got.length;
+  ana.send({ t: 'jump' });
+  for (const p of [ana, jovan, mila]) assert.equal((await p.until('jumped', (m) => m.from === ana.id)).from, ana.id);
+  ana.send({ t: 'jump' });
+  ana.send({ t: 'jump' });
+  await sleep(450);
+  mila.send({ t: 'jump' });
+  await jovan.until('jumped', (m) => m.from === mila.id);
+  // (Somebody who is not in the room as a character — a window that never said where it is — has nothing to jump with.)
+  assert.deepEqual(jovan.since(seen).filter((m) => m.t === 'jumped').map((m: any) => m.from), [ana.id, mila.id], 'the two that came while she was in the air were not passed on');
+  for (const p of [ana, jovan, mila]) p.ws.close();
+});
+
 test('people crack the whip at each other: only at someone standing next to them, and nobody at themselves', async () => {
   const [ana, jovan, mila] = await Promise.all([join('Ana'), join('Jovan'), join('Mila')]);
   await ana.stand(-10, 2);

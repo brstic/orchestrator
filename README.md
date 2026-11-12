@@ -44,13 +44,16 @@ It is **not** a dashboard with mascots, and it is **not** a simulation: nothing 
 | 🧑‍💻 **Hire** | A name, a role, a folder, a desk. Pick the **model** (Fable, Opus, Sonnet, Haiku) and the **effort** for each hire. |
 | 🚶 **Walk** | `W` `A` `S` `D` through your company. `F` talks to whoever you stand next to, `Space` sits you at their real terminal. |
 | ✋ **Answer** | A raised hand is a real question or a real permission request, held open until you decide. |
-| 📋 **Quests** | Tasks get a worktree and a branch. *Done* means the office ran your tests, got the review, and merged — not that somebody said so. |
+| 📋 **Quests** | Tasks get a worktree and a branch, and each one is a conversation: employees ask there (with answers to click), you answer, attach pictures, send work back. *Done* means the office ran your tests, a colleague and then you reviewed it, and it merged — not that somebody said so. |
 | 🤝 **Teamwork** | Employees ask each other, wait for each other, hand work over, review each other, release and unblock tasks, and wake a colleague who is needed. |
 | 🧢 **The foreman** | One supervisor walks the floor, answers the operational questions and keeps people moving, so you are asked only about direction. |
-| 🛋️ **Break room** | A hi-fi with internet radio for the whole office and a TV with a real browser in it. |
+| 🛋️ **Break room** | A hi-fi with internet radio for the whole office, a TV with a real browser in it, and sofas you can actually sit on. |
+| 🕹️ **Arcade** | A Mega Drive in the corner. Bring your own cartridge files; they go on the office's shelf for everybody. Play alone, two on one keyboard — or press *Play together* and a colleague joins from their own computer with the second pad. |
+| 🦘 **Space** | Sits you down where there is a seat, opens whatever you stand at — and where there is nothing at all, you jump. Everybody sees it. |
 | 🌆 **A view** | Put the office on the top floor of a tower over a city at dusk, in a park, on an island at sunset, under the northern lights or in orbit — for everybody in it, with one click. |
 | 🪢 **The whip** | `R`. A crack, a flinch, a "jao!". It sends nothing to anybody's session. It stays in. |
-| 👥 **Multiplayer** | Invite people with a link. Owners, colleagues, visitors; each colleague's own computer becomes a room. |
+| 👥 **Multiplayer** | Invite people with a link. Owners, colleagues, visitors; each colleague's own computer becomes a room, with a team lead of their own if they want one. Talk with your voice (`V`), wave, dance. |
+| 🔐 **A vault** | A safe in the server room: passwords and keys the employees may use by name, without ever seeing them typed into a prompt. |
 
 ## 🧱 How it is built
 
@@ -94,11 +97,11 @@ Then in the office, either way of working is fine — they share the same state:
 
 **Talk to an employee directly (the "cubicle" model).** Every employee can live in a folder and own the project in it.
 
-1. **Menu → Team → Hire** — a name, a role and a **folder** (use *Browse…*). That folder becomes their project, and they work in it in place. New hires are on **Auto**: they do not ask for permission, only for decisions.
-2. Walk to their desk (`W`/`S` to walk, `A`/`D` to turn, `Q`/`E` to sidestep) and press `F` to **talk**: tell them what to do in plain words. Your message goes into their real Claude Code session; their reply comes back in the conversation. Tick *Track as a task* when you want the work verified before it counts as done.
+1. **Menu → Team → Hire** — a name, a role and a **folder** (use *Browse…*; **New folder** makes one on that machine). That folder becomes their project, and they work in it in place. An owner's new hires are **Unrestricted** (Claude Code's bypass-permissions mode: nothing is asked; high-risk commands are still held for you unless you switch that off), a colleague's are on **Auto**; choose another level under *More options*.
+2. Walk to their desk (`W`/`S` to walk, `A`/`D` to turn, `Q`/`E` to sidestep) and press `F` to **talk**: tell them what to do in plain words. Your message goes into their real Claude Code session; their reply comes back in the conversation. Paste a screenshot or drop a file into it and they get the file; ask them to show you something and the picture appears there, to look at or download. Tick *Track as a task* when you want the work verified before it counts as done.
 3. Press `Space` instead to sit at their terminal and watch it, and **Take control** if you want the keyboard. The folders on their desk are the Markdown files in their folder — click them to read.
 
-**Extras.** The **hi-fi** in the break room (or **Menu → Hi-fi**) plays internet radio in your window: pick a station, or add any direct stream address; a small player in the top bar shows what is on and stops it. `R` next to an employee cracks a whip — a sound, a flinch and a “jao!”, and nothing else: it sends nothing to their session.
+**Extras.** The **hi-fi** in the break room (or **Menu → Hi-fi**) plays internet radio for the whole office: pick a station, or add any direct stream address; a small player in the top bar shows what is on and stops it. `R` next to an employee cracks a whip — a sound, a flinch and a “jao!”, and nothing else: it sends nothing to their session. The **arcade cabinet** (it arrives after ten delivered tasks) plays Mega Drive cartridge files you bring: *Add games…*, *Play*, and *Play together* to let somebody in the office join from their computer ([docs/ARCADE.md](docs/ARCADE.md)). `Space` at a sofa or a chair sits you down; `Space` on open floor is a jump.
 
 **Let Orchestrator manage a team on a shared project.**
 
@@ -136,6 +139,8 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Window
 | The TV in the break room | A real browser inside the window (desktop app): its own storage, no access to the office or your files, camera and microphone refused. Put away, it keeps playing; the screen on the wall shows its real picture |
 | Machines → Connect a server over SSH | The office runs `ssh` as you (keys only), copies the host agent to the server and keeps a reverse tunnel open; the server enrols with a single-use token and its Claude Code sessions become employees. No port is opened anywhere |
 | A card on the Tasks board that says **Your review** or **Asks you** | Something really waits for you: finished work to approve or send back (a colleague may have approved it first), a question an employee asked on the ticket and cannot go on without, or a proposal to release. Click the card: your answer in the task's box is delivered into that employee's session |
+| An employee asks on a ticket, with **A / B / C** to click | Its session called `comment_on_task` with a question: the task is parked on that question and the employee takes no new work until it is answered. Your click is delivered into the session as the answer |
+| **Send back** on a finished task | The task is reopened with your note, on a fresh branch from where it stood; the same employee picks it up again |
 | A task with parts | Its assignee divided it (`split_task`): each part is a ticket of its own that a colleague's session really works on; the ticket waits for them and comes back to its lead |
 | An employee hands a task to a colleague | The agent called `hand_off_task`: its work had to be committed, the task branch moves to the colleague's worktree, and the notes travel with the task |
 | Projects → Integration | After each merge your verification command also runs on the integration branch; **Bring in main** merges the base branch in, **Promote to main** fast-forwards the base branch to it — refused while tests fail, when it is not a fast-forward, or over uncommitted changes. Nothing is ever pushed |
@@ -145,6 +150,11 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Window
 | An employee's question is answered without you | The foreman's session called `answer_question`; the employee gets the answer as usual and the record says the foreman gave it. Approving or denying an action is never the foreman's |
 | Hire → **Model**, **Effort** | That employee's sessions are started with `claude --model … --effort …`. The effort levels offered are the ones the Claude Code on that machine says it has |
 | An employee releases, unblocks, assigns or reviews a task, or wakes a colleague | Their session called `release_task`, `unblock_task`, `give_task`, `submit_review` or `wake_colleague`; it is on the record under their name. They cannot approve a permission request, mark work done unverified, or delete anything. Settings → Employees takes the board back |
+| The arcade → **Add games…** | The cartridge file goes to the office in pieces and is kept on its shelf; everyone in the office gets it from there. The emulator runs in a sandboxed frame of your own window that can reach nothing of the office |
+| The arcade → **Play together**, and somebody else's **Join as player 2** | Your console keeps running the game; your window packs its picture and sound (the browser's own encoders) and the office passes them to whoever sat down. Their keys come back as the second pad — from the one who holds it and from nobody else. The office keeps nothing of the game |
+| `Space` at a sofa; `Space` on open floor | Your character sits there, or jumps. Your app tells the office, the office tells the others: nothing else happens anywhere |
+| The **vault** in the server room | Credentials are stored encrypted with the office; an employee's command gets one by name through a helper in its session's folder, and what goes through a terminal is redacted in the records ([docs/VAULT.md](docs/VAULT.md)) |
+| Menu → **My work** → *Hire a team lead* | One more session on your own computer with tools held to your own employees: you tell it what you want, it hands it to the one whose it is and asks you what is yours to decide ([docs/TEAM-LEAD.md](docs/TEAM-LEAD.md)) |
 | Projects → **Delete project…** | The project and its tasks are removed from the office, work in progress is interrupted first, its people stay. Nothing on disk is touched |
 | Meeting room | Each participant's session writes a proposal and a response; the facilitator's session writes the decision document and follow-up tasks |
 | Growth | Workers record lessons after real friction; Orchestrator proposes policy and process changes from its own history |
@@ -198,14 +208,15 @@ tests/
   real/          checks against the real Claude Code CLI and the real Agent SDK
   ui/            the built UI driven in Electron with real clicks against a live office
   linux/         the agent on Debian in a container, enrolled over TLS
-docs/            architecture, install, security, Claude Code integration
+docs/            architecture, install, security, Claude Code integration, and a page per larger feature (docs/README.md is the map)
 ```
 
 ## 🧪 Tests
 
 ```bash
 pnpm test                  # unit tests
-pnpm test:e2e              # 165 end-to-end scenarios: real server, real agents, real tmux, real git; scripted worker
+pnpm test:e2e              # about 340 end-to-end scenarios: real server, real agents, real tmux, real git; scripted worker
+pnpm check:changed         # while working: typecheck and the tests beside what you touched (not instead of the above)
 pnpm test:ui               # the UI used for real in Electron (clicks, typing, keys) against a live development office
 pnpm package && pnpm package:smoke   # build the tarball and macOS app, then run them (incl. the connect screen)
 pnpm package:linux         # .deb and Linux desktop bundles;  pnpm test:linux:deb / test:linux:desktop run them (Docker)
@@ -227,7 +238,9 @@ pnpm test:real:sdk         # an SDK-managed worker with the real Agent SDK (need
 
 ## 🚧 Status and limits
 
-Working and verified on macOS (Apple silicon) with Claude Code 2.1.321/2.1.322 and tmux 3.8; the host agent, the `.deb` and the desktop bundle are also verified on Linux (Debian 12, Ubuntu 24.04). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#status) for exactly what was and was not validated. In short: both worker runtimes; reviews, rework, meetings, retrospectives, merge conflicts, nudges and restarts with real sessions; three machines on three operating systems with a real network partition; PostgreSQL; and every package except the Windows one were run for real. Three things could not be done on the development machine: running anything on Windows itself, testing on physically separate computers, and notarizing the macOS app.
+Working and verified on macOS (Apple silicon) with Claude Code 2.1.321/2.1.322 and tmux 3.8; the host agent, the `.deb` and the desktop bundle are also verified on Linux (Debian 12, Ubuntu 24.04). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#status) for exactly what was and was not validated. In short: both worker runtimes; reviews, rework, meetings, retrospectives, merge conflicts, nudges and restarts with real sessions; three machines on three operating systems with a real network partition; PostgreSQL; and every package except the Windows one were run for real. Three things could not be done on the development machine: running anything on Windows itself, testing on physically separate computers, and notarizing the macOS app. What is in use and what is not yet verified, day by day, is in [docs/STATUS.md](docs/STATUS.md).
+
+**Not ours:** the arcade runs RetroArch with the Genesis Plus GX core (in the repository, packed, with its source and checksums in `apps/desktop/src/arcade/core/NOTICE.md`). Genesis Plus GX may be used and passed on free of charge and **may not be sold or be part of something sold**. No game is in the repository, and none may be added: you bring your own.
 
 ---
 
