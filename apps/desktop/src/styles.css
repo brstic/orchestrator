@@ -1618,6 +1618,19 @@ table.tbl {
 .talk-live-before {
   color: var(--faint);
 }
+/* Their own sentence, as the terminal shows it above the tool. */
+.talk-live-said {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 62%;
+  color: var(--text);
+  font-size: 12.5px;
+}
+/* What the tool is at, beside the sentence: quieter. */
+.talk-live-under {
+  color: var(--muted);
+  font-size: 11.5px;
+}
 .talk-live-rest {
   flex: 0 1 auto;
   min-width: 0;

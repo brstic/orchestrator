@@ -2,6 +2,15 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-13 — The live line shows the agent's sentence, read from the end of its transcript
+The owner, on seeing the line below live: "where it says *running command* I meant the text, like 'Fix committed' — the one small sentence that is already in the terminal".
+- **Two sources, both Claude Code's own.** The description of a command is in the hook's `tool_input.description` and costs nothing (`sayTool` in `hooks.ts`). The sentence above the tool is not in any hook; it is in the transcript, whose path every hook carries. The machine's agent reads **the end of that file** on `PreToolUse` (`readLastSaid`, `packages/execution/src/host.ts`) and adds it to the payload as `orch_said`.
+- **Cost:** one read of at most 96 KB per tool call, on the machine where the session runs, before a hook that was already being forwarded; nothing more on the wire than a line of text on an entity that was sent anyway (`AgentSession.saying`). Not the whole transcript, and not on a timer.
+- **Only this turn's words.** The search backwards stops at the prompt that started the turn: the answer of the turn before is not shown as what is being said now. A subagent's words are not the employee's.
+- **Where the exact command matters it stays**: an approval, a held high-risk call and the record of events use `describeTool`, never the description — a description is what the agent says the command is, not what it is.
+- **A visitor is not sent it** (`forVisitor.session`): it is the employee's text about their work.
+- **Checked against a real transcript's shape** (the one of the session this was written in: one content block to a record, the tool's record already in the file while the tool runs). **Not checked with a real session in the office.**
+
 ## 2026-11-13 — The live line in a conversation: shown, not stored, and no new traffic
 An owner (Fenix): "we mostly work through this window — give it room and colour, and if we already have the information, show more than *Thinking*; it need not be remembered, one field that changes as it arrives; only if it costs us little".
 - **What is shown is what the window already has**: `AgentSession.activity`, `activityDetail` and `activitySince` (set by Claude Code's hooks and broadcast to every window as they change, as they always were) and the `progress` of the task in hand. So the cost to the server is nothing, and to the window one small component that redraws once a second only while somebody is at work (`LiveLine` in `talk.tsx`, `lib/live-line.ts`).

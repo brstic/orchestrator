@@ -420,6 +420,7 @@ export class HookReceiver {
       }
     }
 
+    if (interp.said !== undefined) session.saying = interp.said;
     if (interp.activity) {
       const wait = session.waitingOn;
       const toolHook = payload.hook_event_name === 'PreToolUse' || payload.hook_event_name === 'PostToolUse' || payload.hook_event_name === 'PostToolUseFailure';

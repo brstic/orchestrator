@@ -13,6 +13,11 @@ export interface HookInterpretation {
   events: Array<{ type: EventType; summary: string; data: Record<string, unknown>; quiet?: boolean }>;
   /** null = this hook does not change what the employee is doing. */
   activity: { state: ActivityState; detail: string | null } | null;
+  /**
+   * What the agent last wrote in words before the tool it now runs (read from its transcript by its machine).
+   * undefined: this hook says nothing about it; null: a new turn, nothing said yet.
+   */
+  said?: string | null;
   toolName: string | null;
   /** Name of the Orchestrator MCP tool being called, without the mcp__orchestrator__ prefix. */
   orchestratorTool: string | null;
@@ -154,8 +159,18 @@ export function waitsForColleague(tool: string | null, input: any): boolean {
   return tool === 'wait_for_colleague' || ((tool === 'request_collaboration' || tool === 'request_help') && input?.wait === true);
 }
 
+/**
+ * A tool call as shown while it runs: for a command, what Claude Code itself says it is for (the line the terminal
+ * shows above it), when it gave one — a sentence reads better than a shell line. Where the exact command matters
+ * (an approval, the record of events) `describeTool` is used, not this.
+ */
+export function sayTool(name: string, input: any, cwd?: string): string {
+  if (name === 'Bash' && typeof input?.description === 'string' && input.description.trim()) return truncate(redactSecrets(input.description.trim().replace(/\s+/g, ' ')), 160);
+  return describeTool(name, input, cwd);
+}
+
 function toolActivity(name: string, input: any, ctx: HookContext, cwd?: string): { state: ActivityState; detail: string | null } | null {
-  const detail = describeTool(name, input, cwd);
+  const detail = sayTool(name, input, cwd);
   if (name === 'AskUserQuestion') return { state: 'waiting_answer', detail: 'Asking a question' };
   if (name.startsWith('mcp__orchestrator__')) {
     const tool = name.slice('mcp__orchestrator__'.length);
@@ -243,6 +258,7 @@ export function interpretHook(payload: HookPayload, ctx: HookContext): HookInter
       if (payload.reason !== 'clear' && payload.reason !== 'resume') out.activity = { state: 'offline', detail: null };
       break;
     case 'UserPromptSubmit': {
+      out.said = null;
       const prompt = String(payload.prompt ?? '');
       out.markers = parseCorrelationMarkers(prompt);
       out.events.push({
@@ -264,6 +280,7 @@ export function interpretHook(payload: HookPayload, ctx: HookContext): HookInter
         });
       }
       out.activity = toolActivity(tool, input, ctx, cwd);
+      if (typeof payload.orch_said === 'string' && payload.orch_said.trim()) out.said = truncate(redactSecrets(payload.orch_said.trim()), 240);
       break;
     }
     case 'PostToolUse': {
@@ -342,6 +359,7 @@ export function interpretHook(payload: HookPayload, ctx: HookContext): HookInter
       break;
     }
     case 'Stop':
+      out.said = null;
       out.turnFinished = true;
       out.events.push({
         type: 'agent.turn_finished',

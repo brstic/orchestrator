@@ -43,7 +43,7 @@ const NOTE_WORD: Record<string, string> = { good: 'done', bad: 'stuck', start: '
  * command), for how long, the step before while they are back to thinking, and the note of the task in progress.
  * All of it is already in this window (`lib/live-line.ts`); nothing is asked for and nothing is kept.
  */
-function LiveLine({ name, activity, detail, since, working, task }: { name: string; activity: string; detail: string | null; since: string | null; working: boolean; task: { key: string; progress: { percent: number | null; note: string | null } } | undefined }) {
+function LiveLine({ name, activity, detail, saying, since, working, task }: { name: string; activity: string; detail: string | null; saying: string | null; since: string | null; working: boolean; task: { key: string; progress: { percent: number | null; note: string | null } } | undefined }) {
   const [trail, setTrail] = useState(NO_TRAIL);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -63,7 +63,19 @@ function LiveLine({ name, activity, detail, since, working, task }: { name: stri
     <div className={`talk-live talk-live-${tone}`} data-talk-live={activity} title={`What ${name} is doing right now, as their Claude Code session reports it`}>
       <span className="talk-live-dot" />
       <span className="talk-live-state">{ACTIVITY_LABEL[activity as keyof typeof ACTIVITY_LABEL] ?? activity}</span>
-      {at ? <span className="talk-live-at mono truncate">{at}</span> : working && trail.last ? <span className="talk-live-at talk-live-before mono truncate">after: {trail.last}</span> : null}
+      {/* Their own sentence first — what the terminal shows above the tool — then what the tool is at. */}
+      {working && saying && (
+        <span className="talk-live-said truncate" title={saying}>
+          {saying}
+        </span>
+      )}
+      {at ? (
+        <span className={`talk-live-at truncate ${working && saying ? 'talk-live-under' : ''}`} title={at}>
+          {at}
+        </span>
+      ) : working && trail.last ? (
+        <span className={`talk-live-at talk-live-before truncate ${saying ? 'talk-live-under' : ''}`}>after: {trail.last}</span>
+      ) : null}
       <span className="talk-live-rest">
         {task && (task.progress.note || task.progress.percent != null) && (
           <span className="truncate" title={task.progress.note ?? undefined}>
@@ -269,7 +281,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
         {!hooks && live && <div className="talk-note talk-note-info">This session has no hooks, so replies cannot be captured here — open the terminal to read them.</div>}
         <div ref={bottom} />
       </div>
-      {live && <LiveLine name={e.name} activity={activity} detail={session?.activityDetail ?? null} since={session?.activitySince ?? null} working={WORKING.has(activity)} task={task} />}
+      {live && <LiveLine name={e.name} activity={activity} detail={session?.activityDetail ?? null} saying={session?.saying ?? null} since={session?.activitySince ?? null} working={WORKING.has(activity)} task={task} />}
       <div
         className={`talk-compose ${over ? 'talk-compose-over' : ''}`}
         onDragOver={(ev) => {

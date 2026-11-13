@@ -107,3 +107,20 @@ test('quoted text is not mistaken for a test run', () => {
   assert.ok(!isTestCommand("echo 'run pytest later'"));
   assert.ok(isTestCommand('git add -A && npm test'));
 });
+
+test('a command is shown by what Claude Code says it is for; the sentence before it goes with the step', () => {
+  const pre = (input: any, extra: object = {}) => interpretHook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: input, ...extra } as any, ctx);
+  // The description when there is one, the command when not — and where the exact command matters, always the command.
+  assert.equal(pre({ command: 'git format-patch -1 038a39b --stdout > x.patch', description: 'Applying the new patch on dev,\n building and verifying' }).activity?.detail, 'Applying the new patch on dev, building and verifying');
+  assert.equal(pre({ command: 'ls -la', description: '  ' }).activity?.detail, '$ ls -la');
+  assert.equal(pre({ command: 'ls -la' }).activity?.detail, '$ ls -la');
+  assert.equal(describeTool('Bash', { command: 'ls -la', description: 'List the folder' }), '$ ls -la');
+  assert.match(pre({ command: 'ls -la', description: 'List the folder' }).events[0]!.summary, /\$ ls -la/);
+  // What the agent wrote before the tool, as its machine read it; a secret in it is not passed on.
+  assert.equal(pre({ command: 'ls' }, { orch_said: ' Fix committed and pushed as 038a39b. ' }).said, 'Fix committed and pushed as 038a39b.');
+  assert.equal(pre({ command: 'ls' }).said, undefined, 'a hook that says nothing about it changes nothing');
+  assert.doesNotMatch(pre({ command: 'ls' }, { orch_said: 'Using the key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 now' }).said ?? '', /abcdefghijklmnop/);
+  // A new turn and the end of one: nothing is being said.
+  assert.equal(interpretHook({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' } as any, ctx).said, null);
+  assert.equal(interpretHook({ hook_event_name: 'Stop', last_assistant_message: 'Done.' } as any, ctx).said, null);
+});

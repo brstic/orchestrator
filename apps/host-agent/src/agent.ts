@@ -46,7 +46,7 @@ import {
   planClaudeLaunch,
   type ClaudeLaunchPlan,
   readMarkdown,
-  readTranscriptUsage,
+  readLastSaid, readTranscriptUsage,
   runVerify,
   startBranch,
   commitWip,
@@ -1863,6 +1863,12 @@ export class HostAgent {
       this.saveState();
     }
     if (payload.hook_event_name === 'Stop' || payload.hook_event_name === 'SessionEnd') this.scheduleUsage(tracked);
+    // What the agent wrote before this tool — the sentence one reads in the terminal above it — goes with the hook,
+    // for the line of a conversation that says what they are doing (one small read of the end of the transcript).
+    if (payload.hook_event_name === 'PreToolUse' && tracked.transcriptPath) {
+      const said = await readLastSaid(tracked.transcriptPath);
+      if (said) payload = { ...payload, orch_said: said };
+    }
 
     // A hook that tries again after this agent was restarted comes under the same name: the event keeps its id, so
     // the office knows it for the request it is already asking about.

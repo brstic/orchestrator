@@ -350,6 +350,11 @@ export interface AgentSession {
   activityDetail: string | null;
   activitySince: ISODate;
   /**
+   * What the agent last wrote in words in the turn in progress — the sentence above the tool it runs, as its
+   * terminal shows it. null between turns and before it has said anything. Absent where its machine's agent is older.
+   */
+  saying?: string | null;
+  /**
    * Whether Claude is in the middle of a turn, derived from hooks
    * (UserPromptSubmit … Stop). false = between turns, safe to hand it a prompt;
    * null = unknown (no hooks). Separate from `activity`, which is for display.

@@ -1093,8 +1093,79 @@ button.tk-person-chip:hover {
   font-size: 12.5px;
   cursor: pointer;
 }
+.tp-doc {
+  --file: var(--muted);
+  border-color: color-mix(in srgb, var(--file) 55%, transparent);
+  border-left: 3px solid var(--file);
+  background: color-mix(in srgb, var(--file) 12%, transparent);
+  color: var(--text);
+}
 .tp-doc:hover {
-  border-color: rgba(110, 168, 255, 0.7);
+  border-color: var(--file);
+  background: color-mix(in srgb, var(--file) 20%, transparent);
+}
+.tp-doc .tf-ext {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--file) 26%, transparent);
+  color: var(--file);
+  font-weight: 700;
+}
+.tp-doc-does {
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--file);
+}
+.tp-doc-text {
+  --file: var(--accent);
+}
+.tp-doc-data {
+  --file: #f0c674;
+}
+.tp-doc-code {
+  --file: var(--good);
+}
+.tp-doc-doc {
+  --file: #ff8f6b;
+}
+.tp-doc-archive {
+  --file: var(--violet);
+}
+.tp-doc-picture {
+  --file: #4dd0e1;
+}
+/* A file read in the window. */
+.tf-reader-box {
+  cursor: default;
+}
+.tf-reader {
+  width: min(1100px, 100%);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel-solid);
+  cursor: auto;
+}
+.tf-reader-text {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  user-select: text;
+}
+.tf-reader-cut {
+  margin-top: 12px;
+  color: var(--warn);
+}
+.tf-reader-bar {
+  width: min(1100px, 100%);
 }
 .said-given {
   display: flex;

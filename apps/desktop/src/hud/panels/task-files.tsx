@@ -4,7 +4,9 @@ import { Button } from '@orchestrator/ui';
 import { api, apiBlob } from '../../lib/api.ts';
 import { useAccess } from '../../lib/access.ts';
 import { useOffice } from '../../lib/store.ts';
+import { familyOf, readableAs } from '../../lib/readable.ts';
 import { act, ask } from '../core.tsx';
+import { TextViewer } from './file-view.tsx';
 
 /**
  * Files on a task: what people attach for the employee (a picture of the bug, a mock-up, a document), and what the
@@ -390,18 +392,28 @@ export function Pictures({ taskId, list, fold }: { taskId: string; list: TaskAtt
   );
 }
 
-/** A file of a task that is not a picture, as a name to click: it is downloaded. */
+/**
+ * A file of a task that is not a picture, as a name to click. One that can be read (text, Markdown, JSON, a log, a
+ * patch) opens in the window; anything else is downloaded.
+ */
 export function FileLinks({ taskId, list }: { taskId: string; list: TaskAttachment[] }) {
+  const [open, setOpen] = useState<TaskAttachment | null>(null);
   if (!list.length) return null;
+  const reading = open ? readableAs(open.name, open.mime, open.size) : null;
   return (
     <div className="tp-docs" data-file-links={list.length}>
-      {list.map((a) => (
-        <button key={a.id} type="button" className="tp-doc" title={`${a.caption ?? a.name} · ${size(a.size)} — download`} onClick={() => void act(() => download(taskId, a))} data-file={a.name}>
-          <span className="tf-ext">{(a.name.split('.').pop() ?? 'file').slice(0, 5)}</span>
-          <span className="truncate">{a.name}</span>
-          <span className="faint">{size(a.size)}</span>
-        </button>
-      ))}
+      {list.map((a) => {
+        const reads = !!readableAs(a.name, a.mime, a.size);
+        return (
+          <button key={a.id} type="button" className={`tp-doc tp-doc-${familyOf(a.name, a.mime)}`} title={`${a.caption ?? a.name} · ${size(a.size)} — ${reads ? 'open it here' : 'download'}`} onClick={() => (reads ? setOpen(a) : void act(() => download(taskId, a)))} data-file={a.name} data-file-reads={reads ? 'yes' : 'no'}>
+            <span className="tf-ext">{(a.name.split('.').pop() ?? 'file').slice(0, 5)}</span>
+            <span className="truncate">{a.name}</span>
+            <span className="faint">{size(a.size)}</span>
+            <span className="tp-doc-does">{reads ? 'Open' : 'Download'}</span>
+          </button>
+        );
+      })}
+      {open && reading && <TextViewer name={open.name} note={open.caption ? `${open.caption} · ${open.addedBy.name}` : open.addedBy.name} as={reading} load={() => apiBlob(`/tasks/${taskId}/attachments/${open.id}`)} onDownload={() => void act(() => download(taskId, open))} onClose={() => setOpen(null)} />}
     </div>
   );
 }

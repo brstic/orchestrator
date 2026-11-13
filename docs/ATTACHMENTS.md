@@ -4,6 +4,14 @@ How a picture or a document gets from a person to the employee who does the task
 
 _Built on 2026-11-11 on the owner's request: "an option on the task board to attach pictures and files; agents should be able to leave a screenshot of what they did with their evidence; give them vision so they understand better; they should have a browser from the server, or whatever they need to work efficiently". Why it is built this way: `DECISIONS.md`, "Files on tasks; a browser for employees". What protects what: `SECURITY.md`, "Files on tasks" and "A browser for employees"._
 
+## Reading a file in the window
+A file that is text is not downloaded to be looked at: a click opens it over the conversation or the ticket
+(`hud/panels/file-view.tsx`, `TextViewer`). Which files, and the colour of a file's chip: `lib/readable.ts` — by the
+extension first (what arrives is often typed `application/octet-stream`), then by a `text/…` type; never documents
+(PDF, Office), archives, or anything over 2 MB; pictures keep their own viewer. Markdown is drawn as Markdown, the
+rest as plain text; of a very long file the first 300 000 characters. It is fetched through the same route as a
+download, so nobody reads here what they could not download.
+
 ## The three parts in one paragraph each
 
 **Files for the employee.** In the task window (and in *New task*) a person attaches files — a button, a drop, or a pasted screenshot. The office keeps the bytes. When the task is handed over, each file is copied to the machine the employee's session runs on, into a folder of the host agent *outside every repository*, and the hand-over lists the paths. The employee opens them with Claude Code's own **Read** tool.
