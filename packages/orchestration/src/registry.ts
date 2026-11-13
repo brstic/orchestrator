@@ -730,6 +730,14 @@ const RESUME_KNOWN_MS = 3 * 60_000;
 /** States in which a session waits for something from outside and does nothing by itself. */
 const BETWEEN_TURNS = new Set<string>(['idle', 'waiting_input', 'waiting_answer', 'blocked', 'task_complete', 'paused']);
 
+/**
+ * How large a session's terminal is when it starts. Wide (it was 120 by 34 until 2026-11-13): people watch these on
+ * wide screens, and Claude Code's own layout — diffs, tables, long paths — has room. Somebody at the keyboard can
+ * still fit it to their window.
+ */
+export const SESSION_COLS = 160;
+export const SESSION_ROWS = 44;
+
 /** Claude Code's warning at the first start in bypass mode (its wording, as in the installed program). */
 const BYPASS_WARNING = /Bypass Permissions mode/i;
 const TRUST_PROMPT = /(do you trust the files in this folder|trust this folder|is this a project you (created|trust))/i;
@@ -1647,8 +1655,8 @@ export class SessionRegistry {
       permissionMode: null,
       model: employee.model,
       effort: employee.effort ?? null,
-      cols: 120,
-      rows: 34,
+      cols: SESSION_COLS,
+      rows: SESSION_ROWS,
       pid: null,
       usage: null,
       startedAt: now,
@@ -1693,8 +1701,8 @@ export class SessionRegistry {
         CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: String(Math.max(600_000, Math.max(this.core.timings.askBossWaitMs, this.core.timings.colleagueWaitMs) * 2)),
         MCP_TOOL_TIMEOUT: String(Math.max(900_000, Math.max(this.core.timings.askBossWaitMs, this.core.timings.colleagueWaitMs) * 3)),
       },
-      cols: 120,
-      rows: 34,
+      cols: SESSION_COLS,
+      rows: SESSION_ROWS,
     };
   }
 

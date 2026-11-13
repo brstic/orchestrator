@@ -138,6 +138,11 @@ export function Seating({ layout }: { layout: OfficeLayout }) {
               <Button small variant="ghost" disabled={desks.length >= 6} title={desks.length >= 6 ? 'A table has at most six seats' : 'Add a seat to this table'} onClick={() => void act(() => api('POST', `/layout/pods/${pod}/desks`, {}), 'A seat was added')}>
                 + seat
               </Button>
+              {seated === 0 && (
+                <Button small variant="ghost" title="Take this empty table off the floor. It can be put back with “Add a table”." onClick={() => void act(() => api('POST', '/layout/desks/remove', { ids: desks.map((d) => d.id) }), 'Table removed')}>
+                  Remove table
+                </Button>
+              )}
             </div>
           );
         })}

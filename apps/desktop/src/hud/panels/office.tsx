@@ -218,6 +218,19 @@ function FloorPlan({ layout, unlocked }: { layout: OfficeLayout; unlocked: Set<s
                   ↓
                 </button>
               </div>
+              {pod && (
+                <div className="row">
+                  <Button
+                    small
+                    variant="danger"
+                    disabled={busy || names(pod.deskIds).length > 0}
+                    title={names(pod.deskIds).length ? 'Somebody sits here: move them first (Who sits where)' : 'Take this empty table off the floor. It can be put back with “Add a table”.'}
+                    onClick={() => void act(() => api('POST', '/layout/desks/remove', { ids: pod.deskIds }), 'Table removed')}
+                  >
+                    Remove table
+                  </Button>
+                </div>
+              )}
               {decoration && (
                 <div className="row">
                   <Button small disabled={busy} onClick={() => void commit(moveDecoration(layout, unlocked, decoration.id, 0, 0, Math.PI / 2), 'Decoration turned')}>

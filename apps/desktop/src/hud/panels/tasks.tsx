@@ -147,7 +147,7 @@ function TasksPanel({ onClose }: PanelProps) {
   );
 
   return (
-    <Window kit title="Tasks" subtitle="Cards move by themselves as work is done and checked. Click one to open it and talk on it; drag one to move it by hand." onClose={onClose} width={1320} flush>
+    <Window kit title="Tasks" subtitle="Cards move by themselves as work is done and checked. Click one to open it and talk on it; drag one to move it by hand." onClose={onClose} width="96vw" flush>
       <div className="pw-frame">
         <div className="pw-toolbar">
           <ScopeSwitch what="tasks" />

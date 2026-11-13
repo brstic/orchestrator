@@ -43,3 +43,35 @@ test('a seat an earlier version put into the neighbouring table is moved back to
   await h.restartServer();
   assert.equal(JSON.stringify((await h.state()).layout.desks), before);
 });
+
+test('an empty table can be taken off the floor and put back; one somebody sits at cannot', async () => {
+  const before = (await h.state()).layout.desks.length;
+  const capacity = async () => (await h.api<{ desks: number; freePodSlots: number }>('GET', '/layout/capacity'));
+  const free = (await capacity()).freePodSlots;
+  // Table d, where nobody sits, with a label on it.
+  await h.api('PUT', '/layout/pods/d/label', { label: 'Spare' });
+  const d = (await pod('d')).map((x) => x[0] as string);
+  assert.equal(d.length, 4);
+  const after = await h.api<any>('POST', '/layout/desks/remove', { ids: d });
+  assert.equal(after.desks.length, before - 4);
+  assert.equal(after.podLabels?.d, undefined, 'its label went with it');
+  assert.deepEqual(await pod('d'), []);
+  // The place it stood in is free for a table again.
+  assert.equal((await capacity()).freePodSlots, free + 1);
+  // Somebody sits at table c: the whole request is refused and nothing is removed.
+  const project = await h.project('Seats', h.makeRepo('seats'));
+  const sam = await h.employee('Sam', 'backend', { projectId: project.id, deskId: 'c-a' });
+  const refused = await h.apiRaw('POST', '/layout/desks/remove', { ids: ['c-a', 'c-b'] });
+  assert.equal(refused.status, 400);
+  assert.match(JSON.stringify(refused.body), /Sam sits there; move them first/);
+  assert.equal((await pod('c')).length, 4);
+  assert.equal((await h.state()).employees.find((e) => e.id === sam.id)!.deskId, 'c-a');
+  // Unknown desks and an empty list are refused too.
+  assert.equal((await h.apiRaw('POST', '/layout/desks/remove', { ids: ['nope-a'] })).status, 400);
+  assert.equal((await h.apiRaw('POST', '/layout/desks/remove', { ids: [] })).status, 400);
+  // "Add a table" fills free places until the one that was emptied has a table again.
+  for (let i = 0; i <= free; i++) await h.api('POST', '/layout/pods', {});
+  const desks = (await h.state()).layout.desks;
+  assert.ok(desks.filter((x) => Math.hypot(x.x - 4.5, x.z + 0.2) < 2.2).length === 4, 'a table stands where table d stood');
+  assert.equal((await capacity()).freePodSlots, 0);
+});

@@ -553,6 +553,15 @@ export class Engine {
     [-16.5, 6.2, 'south'],
     [-2.5, 12, 'south'],
     [4.5, 12, 'south'],
+    // Where the office's first tables stand (`defaultLayout`): free again once such a table was taken away.
+    [-16.5, -0.2, 'north'],
+    [-9.5, -0.2, 'north'],
+    [-2.5, -0.2, 'north'],
+    [4.5, -0.2, 'north'],
+    [-9.5, 6.2, 'south'],
+    [-2.5, 6.2, 'south'],
+    [4.5, 6.2, 'south'],
+    [-9.5, 12, 'south'],
   ];
 
   /** How many more pods the floor can take. */
@@ -665,6 +674,23 @@ export class Engine {
     if (text) labels[pod] = text;
     else delete labels[pod];
     return this.updateLayout({ ...this.core.layout, podLabels: labels }, actor);
+  }
+
+  /**
+   * Take desks away: one seat, or a whole table. Only empty ones — somebody sitting at any of them refuses the lot.
+   * A table that is left with no desks loses its label with them. They come back with "add a table" (a free place on
+   * the floor) or "+ seat" (while the table still has a desk).
+   */
+  removeDesks(deskIds: string[], actor = 'owner'): OfficeLayout {
+    const ids = new Set(deskIds.map(String));
+    if (!ids.size) throw new EngineError('name the desks to remove');
+    for (const id of ids) if (!this.core.layout.desks.some((d) => d.id === id)) throw new EngineError('unknown desk');
+    const occupant = this.core.employees.find((e) => !e.archived && !!e.deskId && ids.has(e.deskId));
+    if (occupant) throw new EngineError(`${occupant.name} sits there; move them first`);
+    const desks = this.core.layout.desks.filter((d) => !ids.has(d.id));
+    const left = new Set(desks.map((d) => Engine.podOf(d.id)));
+    const podLabels = Object.fromEntries(Object.entries(this.core.layout.podLabels ?? {}).filter(([pod]) => left.has(pod)));
+    return this.updateLayout({ ...this.core.layout, desks, podLabels }, actor);
   }
 
   /** Remove an empty desk. */

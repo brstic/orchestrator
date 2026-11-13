@@ -5,6 +5,7 @@ import { api } from '../../lib/api.ts';
 import { approvalLine, byDay, deliveryWord, needLine, oneLine } from '../../lib/inbox.ts';
 import { useOffice } from '../../lib/store.ts';
 import { needsYou } from '../../lib/attention.ts';
+import { ScopeSwitch, useMineOnly } from '../mine.tsx';
 import { act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { More, State } from './kit.tsx';
@@ -98,18 +99,27 @@ function NotificationsPanel({ arg, onClose }: PanelProps) {
   const [tab, setTab] = useState<TabId>(arg === 'all' || arg === 'answered' ? arg : 'needs');
   const [newsShown, setNewsShown] = useState(NEWS_STEP);
 
+  // One's own first: on "Mine" the Inbox holds what waits for this person — their employees, their tasks, their
+  // machines — and "Everyone" brings the rest of the office back. (The same switch as Team, Tasks and Projects.)
+  const mineOnly = useMineOnly();
+  const keep = mineOnly ?? (() => true);
+  const scopeKey = mineOnly ? 'mine' : 'all';
+
+  /** What "read" covers: what this Inbox shows — the whole office's only on "Everyone". */
+  const shownIds = (): string[] | 'all' => (mineOnly ? Object.values(useOffice.getState().notifications).filter((n) => !n.readAt && mineOnly(n)).map((n) => n.id) : 'all');
   // Opening the inbox counts as reading it — but only once it has actually been looked at.
   useEffect(() => {
     const t = window.setTimeout(() => {
-      const unread = Object.values(useOffice.getState().notifications).some((n) => !n.readAt);
-      if (unread) void api('POST', '/notifications/read', { ids: 'all' }).catch(() => undefined);
+      const ids = shownIds();
+      const unread = ids === 'all' ? Object.values(useOffice.getState().notifications).some((n) => !n.readAt) : ids.length > 0;
+      if (unread) void api('POST', '/notifications/read', { ids }).catch(() => undefined);
     }, 1500);
     return () => window.clearTimeout(t);
-  }, []);
+  }, [scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const questions = useMemo(() => Object.values(questionsById), [questionsById]);
-  const notifications = useMemo(() => Object.values(notificationsById).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)), [notificationsById]);
-  const { questions: open, stuck, count: needCount } = useMemo(() => needsYou(questionsById, notificationsById), [questionsById, notificationsById]);
+  const questions = useMemo(() => Object.values(questionsById).filter(keep), [questionsById, scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const notifications = useMemo(() => Object.values(notificationsById).filter(keep).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)), [notificationsById, scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { questions: open, stuck, count: needCount } = useMemo(() => needsYou(questionsById, notificationsById, mineOnly), [questionsById, notificationsById, scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // Whoever asks to be allowed something stands still until told: those first, then the questions.
   const approvals = open.filter((q) => q.kind === 'permission');
   const asked = open.filter((q) => q.kind !== 'permission');
@@ -133,12 +143,13 @@ function NotificationsPanel({ arg, onClose }: PanelProps) {
           { id: 'answered', label: 'Answered' },
         ]}
       />
-      <div className="k-body" data-inbox={tab}>
+      <div className="k-body" data-inbox={tab} data-inbox-scope={scopeKey}>
+        <ScopeSwitch what="inbox" />
         {tab === 'needs' && (
           <div className="k-stack">
             {needCount === 0 && (
               <div className="k-empty">
-                <div className="k-title">Nothing needs you</div>
+                <div className="k-title">{mineOnly ? 'Nothing of yours needs you' : 'Nothing needs you'}</div>
                 <div className="k-text">When an employee asks you something, asks to be allowed something, or is stuck until you act, it stands here — and on the Inbox button at the top of the office.</div>
               </div>
             )}
@@ -189,7 +200,7 @@ function NotificationsPanel({ arg, onClose }: PanelProps) {
                     {unread > 0 ? `${unread} new · ` : ''}
                     {live.length} to look at{dismissed.length ? ` · ${dismissed.length} dismissed` : ''}
                   </div>
-                  <Button small variant="ghost" className="k-quiet" disabled={unread === 0} onClick={() => act(() => api('POST', '/notifications/read', { ids: 'all' }), 'All notifications marked read')}>
+                  <Button small variant="ghost" className="k-quiet" disabled={unread === 0} onClick={() => act(() => api('POST', '/notifications/read', { ids: shownIds() }), mineOnly ? 'Your notifications marked read' : 'All notifications marked read')}>
                     Mark all read
                   </Button>
                 </div>

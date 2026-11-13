@@ -537,7 +537,10 @@ export const useOffice = create<OfficeState>((set, get) => ({
     const cur = get().nearby;
     // (The label too: the same seat reads "sit down" and then "stand up".)
     if (cur?.id === n?.id && cur?.kind === n?.kind && cur?.label === n?.label) return;
-    set({ nearby: n });
+    // Walking up to somebody else is choosing them: the card of whoever was clicked before gives way, so that the card
+    // and the keys (F, Space) are about the same person.
+    const picked = get().selectedEmployeeId;
+    set(n?.kind === 'employee' && picked && picked !== n.id ? { nearby: n, selectedEmployeeId: null } : { nearby: n });
   },
   setCommandOpen: (open) => set({ commandOpen: open }),
   toast: (text, kind = 'info') => {
@@ -684,10 +687,12 @@ function handle(msg: ServerToClient): void {
       }
       const employeeId = msg.employeeId ?? '';
       const victim = st.employees[employeeId];
-      const line = say(`cracks the whip at ${victim?.name ?? 'someone'}${msg.approved ? ` — and approves what ${msg.approved === 1 ? 'was' : 'they'} asked` : ''}`);
+      const what = [msg.approved ? `approves what ${msg.approved === 1 ? 'was' : 'they'} asked` : '', msg.woke ? 'gets them up' : ''].filter(Boolean).join(', and ');
+      const line = say(`cracks the whip at ${victim?.name ?? 'someone'}${what ? ` — and ${what}` : ''}`);
       if (mine) {
         useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), line] }));
         if (msg.approved) st.toast(`Approved: ${victim?.name ?? 'they'} can go on`, 'success');
+        if (msg.woke) st.toast(`${victim?.name ?? 'They'} is getting up: their session is being started`, 'success');
         break;
       }
       useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), line], peopleWhips: { ...s.peopleWhips, [msg.from.id]: now }, whips: { ...s.whips, [employeeId]: now + 230 } }));

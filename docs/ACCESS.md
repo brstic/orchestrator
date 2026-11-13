@@ -110,6 +110,7 @@ The hi-fi plays for the whole office, so what is on is the office's, not a windo
 ### Talking, gestures and the whip between people
 - **Everyone with a character in the office** — visitors included — may talk (push-to-talk), make gestures and crack the whip at a person nearby. None of it changes anything in the office, so it needs no level; each is rate-limited per window.
 - **A voice is passed only to those in earshot**: within range of the speaker and on the same side of a closed meeting room's walls. The office decides it per frame from where the characters stand; a window without a character neither speaks nor hears.
+- **The whip getting somebody up** (since 2026-11-13): a crack at an employee who is asleep or was never started starts their session, or takes up the one they left — for whoever may press *Start* for that employee anyway (the rule of `POST /employees/:id/start`: level **work**; not a visitor; not in someone's closed room; a personal employee only by its member or an owner; the foreman only by an owner), and only when they can be started. For anyone else, and at somebody who is at work, the crack stays a crack.
 - **The whip approving** (Settings → Employees → *The whip approves*, an owner's setting, off by default) answers only the permission questions the whipper may answer anyway: the same check as the Allow button (level **work**, not a visitor; not in someone's closed room; a personal employee only by its member or an owner). For anyone else the crack stays a crack.
 
 ### A member's team lead

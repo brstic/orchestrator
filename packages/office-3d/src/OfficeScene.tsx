@@ -153,6 +153,9 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
   hifiPosition.at = world.hifi ? { x: world.hifi.x, z: world.hifi.z } : null;
   const player = useMemo(() => new THREE.Vector3(world.spawn.x, 0, world.spawn.z), []); // eslint-disable-line react-hooks/exhaustive-deps
   const positions = useRef(new Map<string, THREE.Vector3>()).current;
+  // Those who walk the floor and have no desk to be met at.
+  const walkersKey = [props.foreman, ...(props.leads ?? [])].map((w) => (w ? `${w.id}:${w.name}` : '')).join('|');
+  const walkers = useMemo(() => [props.foreman, ...(props.leads ?? [])].filter((w): w is NonNullable<typeof w> => !!w).map((w) => ({ id: w.id, name: w.name })), [walkersKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // Where everyone stands or sits right now, for tests and captures that look at one person.
   sceneProbe().positions = positions;
   const cutaway = props.cameraMode === 'ceo' || props.cameraMode === 'management' || props.cameraMode === 'command' || props.cameraMode === 'free';
@@ -229,7 +232,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       {(props.leads ?? []).map((lead) => (
         <Foreman key={lead.id} foreman={lead} people={props.people} world={world} selected={props.selectedId === lead.id} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />
       ))}
-      <Rig whipAt={props.whipAt} ouchAt={props.ouchAt} emote={props.emote} approachZoom={props.approachZoom} seatAsk={props.seatAsk} jumpAsk={props.jumpAsk} onSeated={props.onSeated} onJumped={props.onJumped} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} />
+      <Rig positions={positions} walkers={walkers} whipAt={props.whipAt} ouchAt={props.ouchAt} emote={props.emote} approachZoom={props.approachZoom} seatAsk={props.seatAsk} jumpAsk={props.jumpAsk} onSeated={props.onSeated} onJumped={props.onJumped} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} />
     </Canvas>
   );
 });

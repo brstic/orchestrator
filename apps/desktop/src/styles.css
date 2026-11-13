@@ -1085,7 +1085,7 @@ table.tbl {
   position: absolute;
   inset: 64px 12px 12px 12px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 330px;
+  grid-template-columns: minmax(0, 1fr) 296px;
   gap: 12px;
   pointer-events: none;
 }

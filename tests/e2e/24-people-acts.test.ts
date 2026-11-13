@@ -290,3 +290,35 @@ test('the whip is for show — unless the owners switch it on: then it approves 
   await h.api('PATCH', '/settings', { whipApproves: false });
   for (const p of [ana, mila]) p.ws.close();
 });
+
+test('a crack at somebody who is not at work gets them up — for whoever may start them; a visitor’s stays a crack', async () => {
+  const eve = await h.employee('Eve', 'docs', { projectId });
+  assert.equal(await h.session(eve.id), undefined, 'never started');
+  const [ana, mila] = await Promise.all([join('Ana'), join('Mila')]);
+  // A visitor may not start anybody: a crack, and nothing else.
+  mila.send({ t: 'whip', employeeId: eve.id });
+  const gag = await ana.until('whipped', (x) => x.employeeId === eve.id);
+  assert.equal(gag.woke, undefined);
+  await sleep(800);
+  assert.equal(await h.session(eve.id), undefined);
+  // A colleague may start a shared employee, so their crack does.
+  ana.send({ t: 'whip', employeeId: eve.id });
+  const got = await mila.until('whipped', (x) => x.employeeId === eve.id && x.woke === true);
+  assert.equal(got.from.name, 'Ana');
+  await waitFor(async () => (await h.session(eve.id))?.status === 'running', { label: 'Eve at her desk', timeout: 30000 });
+  // Once she is up, a crack is a crack again.
+  await sleep(700);
+  const seen = mila.got.length;
+  ana.send({ t: 'whip', employeeId: eve.id });
+  await waitFor(() => mila.since(seen).find((m) => m.t === 'whipped') || undefined, { label: 'one more crack' });
+  assert.equal((mila.since(seen).find((m) => m.t === 'whipped') as any).woke, undefined);
+  // Asleep: the session she left is taken up again.
+  await h.server.engine.sessions.stop(eve.id, { asleep: true });
+  await waitFor(async () => h.server.engine.sessions.asleep(eve.id), { label: 'Eve asleep' });
+  await sleep(700);
+  ana.send({ t: 'whip', employeeId: eve.id });
+  await mila.until('whipped', (x) => x.employeeId === eve.id && x.woke === true);
+  await waitFor(async () => (await h.session(eve.id))?.status === 'running', { label: 'Eve up again', timeout: 30000 });
+  const events = await h.api<any[]>('GET', `/events?limit=200&employeeId=${eve.id}`);
+  assert.ok(events.some((e) => e.type === 'session.woken' && /Ana, who came to get them up/.test(e.summary)), JSON.stringify(events.filter((e) => /woken|started/.test(e.type)).map((e) => e.summary)));
+});

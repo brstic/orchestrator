@@ -7,7 +7,7 @@
  *
  * Pure: no store, no window. The switch between "Mine" and "Everyone" that the lists share is in `hud/mine.tsx`.
  */
-import type { Employee, Host, Me, Project, Task } from '@orchestrator/contracts';
+import type { Employee, Host, Me, Notification, Project, Question, Task } from '@orchestrator/contracts';
 
 type Hosts = Record<string, Host>;
 
@@ -60,6 +60,21 @@ export const madeByMe = (me: Me | null, t: Pick<Task, 'createdBy'>): boolean => 
 /** Is this task one of mine to look at first: on my machines, with my employee, or made by me? */
 export function taskIsMine(hosts: Hosts, me: Me | null, t: Pick<Task, 'projectId' | 'assigneeId' | 'createdBy'>, projects: Record<string, Project>, employees: Record<string, Employee>): boolean {
   return whoseTask(hosts, me, t, projects, employees).kind === 'mine' || madeByMe(me, t);
+}
+
+type Things = { projects: Record<string, Project>; employees: Record<string, Employee>; tasks: Record<string, Task> };
+
+/**
+ * Is what waits in the Inbox one of mine: asked by an employee of mine (my own, or a shared one I look after), or
+ * about a task or a project of mine, or — for news — about a machine of mine? What is about nobody in particular
+ * (a sign-in alert, the office's own news) is the office's, and is found under Everyone.
+ */
+export function waitsForMe(hosts: Hosts, me: Me | null, x: Pick<Question, 'employeeId' | 'taskId' | 'projectId'> & Partial<Pick<Notification, 'hostId'>>, things: Things): boolean {
+  if (x.hostId && whoseHost(hosts, me, x.hostId).kind === 'mine') return true;
+  if (x.employeeId && whoseEmployee(hosts, me, things.employees[x.employeeId]).kind === 'mine') return true;
+  const task = x.taskId ? things.tasks[x.taskId] : undefined;
+  if (task && taskIsMine(hosts, me, task, things.projects, things.employees)) return true;
+  return !!x.projectId && whoseProject(hosts, me, things.projects[x.projectId]).kind === 'mine';
 }
 
 /** The same rows with mine first; the order within each part is kept. */

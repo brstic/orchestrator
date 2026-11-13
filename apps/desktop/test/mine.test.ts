@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { actorOf, hasOwn, madeByMe, mayKeep, mineFirst, scoped, taskIsMine, whoseEmployee, whoseLabel, whoseProject, whoseTask } from '../src/lib/mine.ts';
+import { needsYou } from '../src/lib/attention.ts';
+import { actorOf, hasOwn, madeByMe, mayKeep, mineFirst, waitsForMe, scoped, taskIsMine, whoseEmployee, whoseLabel, whoseProject, whoseTask } from '../src/lib/mine.ts';
 import { mayOpenPanel, VISITOR_PANELS } from '../src/lib/visitor-panels.ts';
 
 /** Whose a thing is for the person at the window, and what the lists make of it. */
@@ -77,4 +78,26 @@ test('a shared employee I look after is listed among mine, and stays shared', ()
   const row = (over: object) => ({ hostId: 'office', roleKey: 'backend', archived: false, ...over });
   assert.deepEqual([fenix, lazar, root, visitor, null].map((me) => mayKeep(hosts, me, row({}))), [true, true, false, false, false]);
   assert.deepEqual([row({ hostId: 'mine' }), row({ hostId: 'janca' }), row({ roleKey: 'foreman' }), row({ roleKey: 'lead' }), row({ archived: true }), row({ hostId: null })].map((e) => mayKeep(hosts, fenix, e)), [false, false, false, false, false, false]);
+});
+
+test('the Inbox on "Mine": what my employees ask, what is stuck on my tasks, projects and machines — the rest is the office’s', () => {
+  const kept = { id: 'x', hostId: 'office', keptBy: { id: 'fenix', name: 'Fenix' } } as any;
+  const things = { projects, employees: { ...employees, x: kept }, tasks: { tm: { id: 'tm', projectId: 'pm', assigneeId: null, createdBy: 'owner' }, to: { id: 'to', projectId: 'po', assigneeId: 'b', createdBy: 'owner' }, made: { id: 'made', projectId: 'po', assigneeId: 'b', createdBy: 'member:Fenix' } } } as any;
+  const mine = (x: object) => waitsForMe(hosts, fenix, { employeeId: null, taskId: null, projectId: null, ...x } as any, things);
+  // Asked by an employee of mine: on my machine, or a shared one I look after.
+  assert.deepEqual([mine({ employeeId: 'a' }), mine({ employeeId: 'x' }), mine({ employeeId: 'b' }), mine({ employeeId: 'c' })], [true, true, false, false]);
+  // About a task or a project of mine — a task I made on shared ground too.
+  assert.deepEqual([mine({ taskId: 'tm' }), mine({ taskId: 'made' }), mine({ taskId: 'to' }), mine({ projectId: 'pm' }), mine({ projectId: 'po' })], [true, true, false, true, false]);
+  // News about a machine of mine; what is about nobody in particular is the office's.
+  assert.deepEqual([mine({ hostId: 'mine' }), mine({ hostId: 'office' }), mine({ hostId: 'janca' }), mine({})], [true, false, false, false]);
+  // Somebody with nothing of their own has nothing that is "theirs".
+  assert.equal(waitsForMe(hosts, lazar, { employeeId: 'a', taskId: null, projectId: null } as any, things), false);
+
+  // The count on the Inbox button follows: all of it, or mine alone.
+  const questions = { q1: { id: 'q1', status: 'open', employeeId: 'a', createdAt: '2' }, q2: { id: 'q2', status: 'open', employeeId: 'b', createdAt: '1' }, q3: { id: 'q3', status: 'answered', employeeId: 'a', createdAt: '0' } } as any;
+  const notifications = { n1: { id: 'n1', kind: 'blocked', resolvedAt: null, employeeId: 'c', createdAt: '1' }, n2: { id: 'n2', kind: 'blocked', resolvedAt: null, employeeId: 'x', createdAt: '2' }, n3: { id: 'n3', kind: 'info', resolvedAt: null, employeeId: 'a', createdAt: '3' } } as any;
+  const all = needsYou(questions, notifications);
+  assert.deepEqual([all.count, all.questions.map((q) => q.id), all.stuck.map((n) => n.id)], [4, ['q2', 'q1'], ['n2', 'n1']]);
+  const only = needsYou(questions, notifications, (x) => waitsForMe(hosts, fenix, x as any, things));
+  assert.deepEqual([only.count, only.questions.map((q) => q.id), only.stuck.map((n) => n.id)], [2, ['q1'], ['n2']]);
 });

@@ -5,7 +5,8 @@
 import { create } from 'zustand';
 import { Badge } from '@orchestrator/ui';
 import { useOffice } from '../lib/store.ts';
-import { hasOwn, whoseLabel, type Scope, type Whose } from '../lib/mine.ts';
+import type { Notification, Question } from '@orchestrator/contracts';
+import { hasOwn, waitsForMe, whoseLabel, type Scope, type Whose } from '../lib/mine.ts';
 
 const KEY = 'orch.scope';
 const read = (): Scope => {
@@ -34,6 +35,21 @@ export function useScope(): { scope: Scope; own: boolean; setScope: (scope: Scop
   const setScope = useScopeStore((s) => s.set);
   const own = useOffice((s) => hasOwn(s.hosts, s.me, s.employees));
   return { scope: own ? scope : 'all', own, setScope };
+}
+
+/**
+ * For the Inbox and its count: which questions and news are this person's, while the lists stand on "Mine".
+ * Undefined on "Everyone" (and for someone with nothing of their own): everything counts.
+ */
+export function useMineOnly(): ((x: Question | Notification) => boolean) | undefined {
+  const { scope, own } = useScope();
+  const hosts = useOffice((s) => s.hosts);
+  const me = useOffice((s) => s.me);
+  const projects = useOffice((s) => s.projects);
+  const employees = useOffice((s) => s.employees);
+  const tasks = useOffice((s) => s.tasks);
+  if (!own || scope !== 'mine') return undefined;
+  return (x) => waitsForMe(hosts, me, x, { projects, employees, tasks });
 }
 
 /** The switch itself; nothing for someone with no machines of their own (everything they see is the office's). */

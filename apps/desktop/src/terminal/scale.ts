@@ -5,8 +5,14 @@
  * drawn whole, with letters as large as the panel allows — whichever of width and height runs out first decides.
  */
 
-/** The largest and smallest letters, in pixels: a tiny pane does not become a poster, a huge one stays readable at all. */
-export const MAX_FONT = 32;
+/**
+ * The largest and smallest letters, in pixels: a tiny pane does not become a poster, a huge one stays readable at all.
+ * (The largest was 32 until 2026-11-13. Two wishes meet here: a pane must not be left small in a corner of a large
+ * window — the reason it is scaled up at all — and on a very wide screen its letters must not be twice the size of
+ * everything else. So it still grows to fill, up to 20 px; what makes the letters smaller for good is that sessions
+ * now start wider, `SESSION_COLS`.)
+ */
+export const MAX_FONT = 20;
 export const MIN_FONT = 6;
 
 /**

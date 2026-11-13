@@ -666,6 +666,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.get('/layout/capacity', async () => ({ desks: engine.core.layout.desks.length, freePodSlots: engine.freePodSlots() }));
     api.post('/layout/pods', async () => engine.addDeskPod());
     api.delete('/layout/desks/:id', async (req) => engine.removeDesk(param(req, 'id')));
+    // Several empty desks at once: a whole table.
+    api.post('/layout/desks/remove', async (req) => engine.removeDesks(Array.isArray(body(req).ids) ? body(req).ids.map(String) : []));
     api.post('/layout/pods/:id/desks', async (req) => engine.addSeat(param(req, 'id')));
     api.put('/layout/pods/:id/label', async (req) => engine.setPodLabel(param(req, 'id'), String(body(req).label ?? '')));
 

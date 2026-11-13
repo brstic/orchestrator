@@ -137,7 +137,12 @@ interface Slot {
   plaqueDir: 1 | -1 | 0;
   /** What the door opens into: 0 an open area (hall, floor, reception), 1 a closed room, 2 the CEO's office. */
   quality: 0 | 1 | 2;
+  /** The door opens into the end of a corridor between two closed rooms: a place of last resort. */
+  squeezed: boolean;
 }
+
+/** How far to either side of a door a closed room has to begin for the door to count as squeezed in between two. */
+const SQUEEZE = 2.0;
 
 /** The only kind of place a member's room is attached to: one whose door opens into the shared part of the office. */
 const SHARED_FLOOR = 0;
@@ -169,6 +174,10 @@ function boxOf(p: [number, number], q: [number, number]): Box {
  * meeting, is not a place to work; the same goes for the server room, the break room and the CEO's office. Places
  * are found over the whole wall as before and then kept only where the door is in the shared part, so the places
  * that were good already stay exactly where they were.
+ *
+ * Last of all come the places whose door is at the end of a corridor between two closed rooms (in the default office:
+ * the east end of the hall, between the server room and the break room). A room there is reached and works, and it
+ * looks pushed in between two others — so it is taken only when every other place is.
  */
 function slots(core: World): Slot[] {
   const b = core.bounds;
@@ -197,6 +206,13 @@ function slots(core: World): Slot[] {
       const r = core.rooms.find((o) => !o.open && x > o.x && x < o.x + o.w && z > o.z && z < o.z + o.d);
       return !r ? 0 : r.kind === 'ceo' ? 2 : 1;
     };
+    // A door at the end of a corridor, a closed room hard on either side of it (the hall between the server room and
+    // the break room): the room is in the office, and reads as pushed in between two others rather than as part of it.
+    const closedAt = (c: number): boolean => {
+      const [x, z] = at(c, -0.9);
+      return core.rooms.some((o) => !o.open && x > o.x && x < o.x + o.w && z > o.z && z < o.z + o.d);
+    };
+    const squeezed = (c: number): boolean => closedAt(c - SQUEEZE) && closedAt(c + SQUEEZE);
     const list: Slot[] = [];
     const step = 0.2;
     let s = min;
@@ -212,7 +228,7 @@ function slots(core: World): Slot[] {
         const score = q * 100 + (dir ? 0 : 10) + Math.abs(c - mid);
         if (score < bestScore - 1e-9) {
           bestScore = score;
-          best = { side, start: round(s), door: round(c), plaqueDir: dir, quality: q };
+          best = { side, start: round(s), door: round(c), plaqueDir: dir, quality: q, squeezed: squeezed(c) };
         }
       }
       if (best) {
@@ -228,7 +244,8 @@ function slots(core: World): Slot[] {
     const first = usable[0];
     if (first) ordered.push(...usable.sort((p, q) => Math.abs(p.start - first.start) - Math.abs(q.start - first.start)));
   }
-  return ordered;
+  // Places off the open parts of the office first, in the order they always had; a squeezed one only when those are taken.
+  return [...ordered.filter((x) => !x.squeezed), ...ordered.filter((x) => x.squeezed)];
 }
 
 const slotCache = new WeakMap<OfficeLayout, Map<string, { core: World; slots: Slot[] }>>();

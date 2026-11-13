@@ -344,3 +344,20 @@ test('chosen seats in a member room: honoured first, the rest fill in order, and
   assert.deepEqual([clash.deskOf.get('emp-0-0'), clash.deskOf.get('emp-0-1')], ['m:host-0:2', 'm:host-0:1']);
   assert.equal(new Set(office.deskOf.values()).size, office.deskOf.size);
 });
+
+test('a place squeezed in between two closed rooms is the last to be taken', () => {
+  // The default office: two places on the west wall, two on the east. One of the east ones has its door at the end of
+  // the hall, between the server room and the break room — a room there reads as pushed in between two others (an
+  // owner's own room stood there, 2026-11-13). The third member gets the one by reception; the squeezed one waits.
+  const rooms = withMemberRooms(layout, hosts([1, 1, 1, 1])).rooms;
+  assert.deepEqual(rooms.map((r) => r.side), ['w', 'w', 'e', 'e']);
+  const closed = layout.rooms.filter((r) => !r.open);
+  const inClosed = (x: number, z: number) => closed.some((o) => x > o.x && x < o.x + o.w && z > o.z && z < o.z + o.d);
+  const squeezed = (r: (typeof rooms)[number]) => inClosed(r.door.x + (r.side === 'e' ? -0.9 : 0.9), r.door.z - 2) && inClosed(r.door.x + (r.side === 'e' ? -0.9 : 0.9), r.door.z + 2);
+  assert.deepEqual(rooms.map(squeezed), [false, false, false, true]);
+  // The third room's door opens by reception, on the open side of the office.
+  const reception = layout.rooms.find((r) => r.kind === 'reception')!;
+  assert.ok(rooms[2]!.door.z > reception.z && rooms[2]!.door.z < reception.z + reception.d, `the third door is at z ${rooms[2]!.door.z}`);
+  // Nobody who had a good place moved: the first two are where they always were.
+  assert.deepEqual(rooms.slice(0, 2).map((r) => [r.side, r.z]), [['w', -8.2], ['w', 2.6]]);
+});

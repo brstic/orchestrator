@@ -112,6 +112,11 @@ function typingInUi(): boolean {
  *
  * Mode changes blend smoothly but quickly: this is a tool first.
  */
+/** Within this of their own chair, somebody counts as at their desk (the camera's approach is for a workstation). */
+const AT_OWN_DESK = 0.9;
+/** How near one has to come to somebody who is not at their desk. */
+const AWAY_REACH = 1.7;
+
 export function Rig({
   world,
   mode,
@@ -121,6 +126,8 @@ export function Rig({
   keymap,
   player,
   onNearby,
+  positions,
+  walkers,
   onLeaveWorkstation,
   whipAt,
   ouchAt,
@@ -139,6 +146,10 @@ export function Rig({
   keymap: Keymap;
   player: THREE.Vector3;
   onNearby: (n: NearbyTarget | null) => void;
+  /** Where every character really is right now (kept by whoever draws them): somebody who got up is met where they went. */
+  positions?: Map<string, THREE.Vector3>;
+  /** Those who have no desk and walk the floor — the foreman, members' team leads: met where they stand. */
+  walkers?: Array<{ id: string; name: string }>;
   onLeaveWorkstation: () => void;
   /** Timestamp (ms) of the owner's latest whip crack; the avatar plays the swing each time it changes. 0/undefined = never. */
   whipAt?: number;
@@ -207,6 +218,10 @@ export function Rig({
   const desks = useMemo(() => new Map(world.layout.desks.map((d) => [d.id, d])), [world]);
   const peopleRef = useRef(people);
   peopleRef.current = people;
+  const positionsRef = useRef(positions);
+  positionsRef.current = positions;
+  const walkersRef = useRef(walkers);
+  walkersRef.current = walkers;
   const approachRef = useRef(approachZoom);
   approachRef.current = approachZoom;
   const modeRef = useRef(mode);
@@ -674,13 +689,29 @@ export function Rig({
       let bestDesk: { x: number; z: number } | null = null;
       for (const p of peopleRef.current) {
         const desk = p.deskId ? desks.get(p.deskId) : undefined;
-        if (!desk) continue;
-        const seat = deskSeat(desk);
-        const d = (seat.x - player.x) ** 2 + (seat.z - player.z) ** 2;
-        if (d < bestD) {
+        const seat = desk ? deskSeat(desk) : null;
+        // Where they are: at the board, in the meeting room, at a colleague's desk — or at their own, which is also
+        // where somebody is taken to be before they have been drawn once.
+        const at = positionsRef.current?.get(p.id) ?? seat;
+        if (!at) continue;
+        const away = !seat || Math.hypot(seat.x - at.x, seat.z - at.z) > AT_OWN_DESK;
+        const d = (at.x - player.x) ** 2 + (at.z - player.z) ** 2;
+        // Somebody on their feet is met from a little closer than a desk is: the places people go to (the meeting
+        // room, the board) are things one walks up to themselves.
+        if (d < (away ? Math.min(bestD, AWAY_REACH * AWAY_REACH) : bestD)) {
           bestD = d;
           best = { kind: 'employee', id: p.id, label: p.name };
-          bestDesk = desk;
+          bestDesk = away ? null : desk!;
+        }
+      }
+      for (const w of walkersRef.current ?? []) {
+        const at = positionsRef.current?.get(w.id);
+        if (!at) continue;
+        const d = (at.x - player.x) ** 2 + (at.z - player.z) ** 2;
+        if (d < Math.min(bestD, AWAY_REACH * AWAY_REACH)) {
+          bestD = d;
+          best = { kind: 'employee', id: w.id, label: w.name };
+          bestDesk = null;
         }
       }
       // The camera's approach follows the same "standing at a workstation" test as the prompt does.

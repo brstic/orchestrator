@@ -640,8 +640,17 @@ export class ClientHub {
                 void this.engine.comms.answer(q.id, { decision: 'allow' }, who.id === 'owner' ? 'owner' : `member:${who.name}`).catch((e) => this.log('warn', `the whip could not approve ${q.id}: ${(e as Error).message}`));
               }
             }
-            this.remember({ from, text: approved ? `cracks the whip at ${employee.name} — and approves what ${approved === 1 ? 'was' : 'they'} asked` : `cracks the whip at ${employee.name}`, ts, emote: true });
-            this.broadcast({ t: 'whipped', from, employeeId: employee.id, ...(approved ? { approved } : {}), ts });
+            // Somebody asleep, or not at their desk at all, is got up by it: their session is started, or the one they
+            // left is taken up again. Only for whoever may start that employee anyway (the Start button's own rule), and
+            // only when they can be started — otherwise it stays a crack. On the record as the office waking them.
+            let woke = false;
+            if (!this.engine.core.runningSessionOf(employee.id) && mayCall(this.engine, who, 'POST', `/employees/${employee.id}/start`, null).ok && !this.engine.sessions.cannotStart(employee)) {
+              woke = true;
+              void this.engine.sessions.wake(employee.id, `${who.id === 'owner' ? 'the boss' : who.name}, who came to get them up`).catch((e) => this.log('warn', `${employee.name} could not be got up: ${(e as Error).message}`));
+            }
+            const what = [approved ? `approves what ${approved === 1 ? 'was' : 'they'} asked` : '', woke ? 'gets them up' : ''].filter(Boolean).join(', and ');
+            this.remember({ from, text: `cracks the whip at ${employee.name}${what ? ` — and ${what}` : ''}`, ts, emote: true });
+            this.broadcast({ t: 'whipped', from, employeeId: employee.id, ...(approved ? { approved } : {}), ...(woke ? { woke } : {}), ts });
             break;
           }
           case 'jump': {

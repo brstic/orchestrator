@@ -11,6 +11,7 @@ import { RadioPillButtons } from './radio-bits.tsx';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice, type Ask, type CameraMode, type PanelId } from '../lib/store.ts';
 import { may, memberOfEmployee, whyNot } from '../lib/access.ts';
 import { needsYou } from '../lib/attention.ts';
+import { useMineOnly } from './mine.tsx';
 import { waitingForLines } from '../lib/views.ts';
 import { arcadeStands } from '../arcade/stands.ts';
 import { TerminalView } from '../terminal/TerminalView.tsx';
@@ -87,7 +88,9 @@ function CameraMenu() {
 export function TopBar() {
   const s = useOffice();
   const employees = Object.values(s.employees).filter((e) => !e.archived);
-  const need = needsYou(s.questions, s.notifications).count;
+  // The number on the Inbox button is the Inbox's: mine alone while the lists stand on "Mine".
+  const mineOnly = useMineOnly();
+  const need = needsYou(s.questions, s.notifications, mineOnly).count;
   const blocked = Object.values(s.tasks).filter((t) => t.status === 'BLOCKED' && !t.waitingFor).length;
   const working = employees.filter((e) => {
     const a = activityOf(sessionOfEmployee(s.sessions, e.id));
@@ -967,7 +970,7 @@ export function ContextMenu({ menu, onClose }: { menu: ContextMenuState; onClose
         </>
       )}
       <hr />
-      {item('Crack the whip (just for show)', () => s.whip(e.id))}
+      {item(live ? 'Crack the whip (just for show)' : work ? 'Crack the whip (gets them up)' : 'Crack the whip (just for show)', () => s.whip(e.id))}
     </div>
   );
 }

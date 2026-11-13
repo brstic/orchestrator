@@ -380,7 +380,7 @@ export type ServerToClient =
    * Someone cracked the whip: at an employee, or at another person (`personId`: that person's window).
    * `approved`: how many permission requests of that employee the crack approved (absent: none).
    */
-  | { t: 'whipped'; from: ChatFrom; employeeId?: string; personId?: string; approved?: number; ts: string }
+  | { t: 'whipped'; from: ChatFrom; employeeId?: string; personId?: string; approved?: number; woke?: boolean; ts: string }
   /** Someone's character jumped (`from`: their window). */
   | { t: 'jumped'; from: string }
   /** Someone's character made a gesture. */
