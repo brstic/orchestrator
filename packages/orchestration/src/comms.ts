@@ -24,6 +24,25 @@ export function plainScreen(lines: string[]): string[] {
   return (Array.isArray(lines) ? lines : []).slice(-500).map((l) => String(l ?? '').slice(0, 8000).replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').slice(0, 600));
 }
 
+/**
+ * The keys that move, in a numbered menu on screen ("❯ 1. Stop and wait for limit to reset", "  2. …"), from the
+ * marked option to the one `wanted` picks, and confirm it. Null when the menu cannot be read — no key is pressed blind.
+ */
+export function menuKeys(lines: string[], wanted: (label: string) => boolean): string[] | null {
+  const options: Array<{ selected: boolean; label: string }> = [];
+  for (const line of plainScreen(lines)) {
+    const m = /^[\s│┃|]*(❯|>|›)?\s*\d+\.\s+(.+?)[\s│┃|]*$/.exec(line);
+    if (m) options.push({ selected: !!m[1], label: m[2]!.trim() });
+  }
+  const from = options.findIndex((o) => o.selected);
+  const to = options.findIndex((o) => wanted(o.label));
+  if (options.length < 2 || from < 0 || to < 0) return null;
+  const keys: string[] = [];
+  for (let i = 0; i < Math.abs(to - from); i++) keys.push(to > from ? 'Down' : 'Up');
+  keys.push('Enter');
+  return keys;
+}
+
 /** The keys that move from the highlighted option of a Yes/No list on screen to the one `wanted` picks, and confirm it. */
 function optionKeys(lines: string[], wanted: (label: string) => boolean): string[] | null {
   const plain = plainScreen(lines);

@@ -18,7 +18,7 @@ import type {
 } from '@orchestrator/contracts';
 import { AUTONOMY_LEVELS, EFFORT_CHOICES, HOOKS_VERSION, isAutonomyLevel, memberSeatOf, modelFamily, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, directsOthers, LEAD_ROLE, LEAD_MODEL, LEAD_EFFORT, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
-import { inputBox, permissionPrompt, trustPromptKeys } from './comms.ts';
+import { inputBox, menuKeys, permissionPrompt, plainScreen, trustPromptKeys } from './comms.ts';
 import { EngineError, within } from './core.ts';
 import type { Engine } from './engine.ts';
 import { DEFAULT_HIGH_RISK_PATTERNS, asksHighRisk, permissionsFor, systemPromptFor } from './prompts.ts';
@@ -1250,46 +1250,135 @@ export class SessionRegistry {
     this.accounts.set(key, { key, hostId, configDir: msg.configDir, email: msg.email, organization: msg.organization, fiveHour: msg.fiveHour ?? had?.fiveHour ?? null, sevenDay: msg.sevenDay ?? had?.sevenDay ?? null, ...(Object.keys(weeks).length ? { modelWeeks: weeks } : {}), reportedAt: nowIso(), reportedBy: s.employeeId ?? null, employeeIds: [], spentUntil: had?.spentUntil ?? null, provider: had?.provider ?? null, endpoint: had?.endpoint ?? null });
     this.core.store.kvSet('accounts', [...this.accounts.values()]);
     // An account that has just run out — or a model's week on it: its people go to another one, if the machine has one with room.
+    for (const [family, w] of Object.entries(weeks)) if (w.from === 'reported' && weekFull(w) && !(had?.modelWeeks?.[family] && weekFull(had.modelWeeks[family]!))) this.switchModels(key, family, w.resetsAt);
     if (exhausted({ fiveHour: msg.fiveHour, sevenDay: msg.sevenDay }) || Object.values(weeks).some(weekFull)) void this.failover();
   }
 
+  /** When each session's last refused turn was taken in (a refusal comes by the hook and again on the screen: once is enough). */
+  private refusedAt = new Map<string, number>();
+  /** Employees whose last turn was refused, to be told to go on when their session is started again on another model. */
+  private refusedTurn = new Set<string>();
+
   /**
-   * A turn ended because Claude refused it for the account's limit (Claude Code's StopFailure, error "rate_limit" or
-   * a billing error). The figures of the status line do not show every limit there is (a model's own weekly one,
-   * for instance), so this counts by itself: the account is taken as used up until its nearest known reset, or for
-   * an hour when none is known.
+   * A turn ended because Claude refused it for a limit (Claude Code's StopFailure, error "rate_limit"; or its menu
+   * "What do you want to do?" on the screen). What the refusal says decides what is done:
+   *  - **one model's limit** ("You've hit your Fable limit · resets Nov 19, 1pm (UTC)"): that model counts as used up
+   *    on this account until then — not the account. Everybody on this account who thinks with that model goes on,
+   *    with the same conversation, with the next model that has room here (`modelFor`: Fable → Opus → Sonnet →
+   *    Haiku). Only somebody for whom no model has room here is moved to another account (`failover`). The owner's
+   *    order, 2026-11-13: another model first, another organisation only when no other model can.
+   *  - **the account's limit**: it counts as used up until the time it names, else its nearest known reset, else an
+   *    hour; its people go to another account (`failover`).
    */
   onLimitHit(session: AgentSession, error: string): void {
     const e = this.core.employees.get(session.employeeId ?? '');
     if (!e || !e.hostId) return;
+    const last = this.refusedAt.get(session.id);
+    if (last && Date.now() - last < 60_000) return;
+    this.refusedAt.set(session.id, Date.now());
+    this.refusedTurn.add(e.id);
     this.loadAccounts();
     // The account the refused process runs on — which, right after a move, is not the one its employee is on now.
     const dir = session.claudeConfigDir !== undefined ? session.claudeConfigDir : (e.claudeConfigDir ?? null);
     const key = `${e.hostId}|${dir ?? 'default'}`;
     const a = this.accounts.get(key) ?? { key, hostId: e.hostId, configDir: dir, email: null, organization: null, fiveHour: null, sevenDay: null, reportedAt: null, reportedBy: null, employeeIds: [] };
-    // The week of one model ("weekly limit … Fable"): the account is not used up, that model on it is. Whoever
-    // thinks with it goes to an account where it has room; the others stay.
-    const family = /week/i.test(error) ? modelFamily(error) : '';
+    const read = limitIn(error) ?? { family: '', resetsAt: null };
+    // (A refusal that names no model, of a session that runs one: the account is meant.)
+    const family = read.family;
     if (family) {
-      const named = resetNamedIn(error);
       const week = a.sevenDay?.resetsAt && Date.parse(a.sevenDay.resetsAt) > Date.now() ? a.sevenDay.resetsAt : null;
       // (Until the time it names; else until the week for all models turns; else for a day, and then it is tried again.)
-      const until = named ?? week ?? new Date(Date.now() + 24 * 3600_000).toISOString();
+      const until = read.resetsAt ?? week ?? new Date(Date.now() + 24 * 3600_000).toISOString();
       a.modelWeeks = { ...(a.modelWeeks ?? {}), [family]: { usedPercent: 100, resetsAt: until, from: 'refused' } };
       // Their own model may be "whatever the account uses": the refusal says which that is.
-      this.refusedFamily.set(e.id, family);
+      if (!modelFamily(e.model)) this.refusedFamily.set(e.id, family);
       this.accounts.set(key, a);
       this.core.store.kvSet('accounts', [...this.accounts.values()]);
-      this.core.log('info', `${e.name}'s turn was refused for the weekly limit of ${family} (${truncate(error, 160)}); on ${a.email ?? a.configDir ?? 'the default account'} ${family} counts as used up until ${until}`);
+      this.core.log('info', `${e.name}'s turn was refused for the limit of ${family} (${truncate(error, 160)}); on ${a.email ?? a.configDir ?? 'the default account'} ${family} counts as used up until ${until}`);
+      this.switchModels(key, family, until);
       void this.failover();
       return;
     }
     const resets = [a.fiveHour, a.sevenDay].filter((w) => !!w && w.usedPercent >= 90 && !!w.resetsAt && Date.parse(w.resetsAt) > Date.now()).map((w) => w!.resetsAt!).sort();
-    a.spentUntil = resets[0] ?? new Date(Date.now() + 60 * 60_000).toISOString();
+    a.spentUntil = read.resetsAt ?? resets[0] ?? new Date(Date.now() + 60 * 60_000).toISOString();
     this.accounts.set(key, a);
     this.core.store.kvSet('accounts', [...this.accounts.values()]);
     this.core.log('info', `${e.name}'s turn was refused for the account's limit (${truncate(error, 160)}); ${a.email ?? a.configDir ?? 'the default account'} counts as used up until ${a.spentUntil}`);
     void this.failover();
+  }
+
+  /**
+   * The model a session of this employee is started with on that account: their own — unless that model's limit is
+   * reached there, and then the next weaker one that has room there (`MODEL_FALLBACK`). Their own setting is not
+   * changed: when the limit lifts, their next start is on their own model again. `instead`: what was passed over.
+   */
+  modelFor(e: Pick<Employee, 'id' | 'model'>, hostId: string, configDir: string | null): { model: string | null; instead?: { family: string; until: string | null } } {
+    const family = modelFamily(e.model) || this.refusedFamily.get(e.id) || '';
+    if (!family) return { model: e.model };
+    this.loadAccounts();
+    const weeks = this.accounts.get(`${hostId}|${configDir ?? 'default'}`)?.modelWeeks ?? {};
+    const full = (f: string) => !!weeks[f] && weekFull(weeks[f]!);
+    if (!full(family)) return { model: e.model };
+    for (const next of MODEL_FALLBACK[family] ?? []) if (!full(next)) return { model: next, instead: { family, until: weeks[family]!.resetsAt } };
+    // No model has room here: they are moved to another account (`failover`), or wait where they are.
+    return { model: e.model };
+  }
+
+  /**
+   * One model's limit is reached on an account: every session there that runs that model is started again on the
+   * model it goes on with (`modelFor`) — at once when it is between turns, at the end of its turn otherwise — with
+   * the same conversation.
+   */
+  private switchModels(key: string, family: string, until: string | null): void {
+    const [hostId] = key.split('|');
+    const when = until ? new Date(until).toUTCString().replace(/:00 GMT$/, ' UTC').replace(/^\w+, /, '') : 'it resets';
+    for (const s of this.core.sessions.filter((x) => x.hostId === hostId && x.status === 'running' && x.origin === 'managed')) {
+      const e = this.core.employees.get(s.employeeId ?? '');
+      if (!e || e.archived) continue;
+      const dir = s.claudeConfigDir !== undefined ? s.claudeConfigDir : (e.claudeConfigDir ?? null);
+      if (`${hostId}|${dir ?? 'default'}` !== key) continue;
+      const runs = modelFamily(s.model) || this.refusedFamily.get(e.id) || '';
+      if (runs !== family) continue;
+      const next = this.modelFor(e, hostId!, dir).model;
+      if (!next || modelFamily(next) === family) continue;
+      const Name = (f: string) => f.charAt(0).toUpperCase() + f.slice(1);
+      this.core.event({ type: 'employee.updated', source: 'server', summary: `${e.name} goes on with ${Name(modelFamily(next) || next)}: ${Name(family)}'s limit is reached on their Claude account until ${when}`, employeeId: e.id, sessionId: s.id, hostId, data: { modelFallback: { from: family, to: next, until } } });
+      this.restartForChange(e.id, `${Name(family)}'s limit is reached on your Claude account until ${when}, so you go on with ${Name(modelFamily(next) || next)}`);
+    }
+  }
+
+  /**
+   * Claude Code's own menu after a refused turn — "What do you want to do? 1. Stop and wait for limit to reset /
+   * 2. Wait here, then continue automatically at … / 3. Switch to usage credits" — stands in the terminal and the
+   * session waits there for ever. The office reads the refusal from the screen (when the hook has not already told
+   * it) and acts on it (`onLimitHit`); a session it starts again on another model or account leaves the menu behind
+   * with its process. Otherwise it chooses "Stop and wait", which puts Claude Code back at its prompt: never "usage
+   * credits" (that spends money — the owner's to decide), never days of waiting inside a turn.
+   */
+  private limitMenus = new Map<string, number>();
+  private limitMenuOnScreen(sessionId: string, screen: TerminalScreen): void {
+    const s = this.core.sessions.get(sessionId);
+    if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli') return;
+    const lines = plainScreen(screen.lines);
+    const text = lines.join('\n');
+    if (!/Stop and wait for (the )?limit to reset/i.test(text) || !/What do you want to do\?/i.test(text)) return;
+    const seen = this.limitMenus.get(sessionId);
+    if (seen && Date.now() - seen < 20_000) return;
+    this.limitMenus.set(sessionId, Date.now());
+    // The turn is over: Claude Code waits at its own question.
+    s.inTurn = false;
+    this.setActivity(s, 'blocked', 'A Claude limit was reached');
+    this.core.put('session', s);
+    const said = lines.filter((l) => /hit\s+(your|the)\b.*limit|limit.*reset|rate.?limit/i.test(l)).join(' ').trim();
+    this.onLimitHit(s, said || 'rate_limit');
+    const e = this.core.employees.get(s.employeeId ?? '');
+    if (e && (this.restartWhy.has(e.id) || this.restarting.has(e.id))) return void this.restartNow(e.id);
+    const keys = menuKeys(screen.lines, (label) => /^Stop and wait/i.test(label));
+    if (!keys) return;
+    void this.core.agents
+      .rpc(s.hostId, { method: 'session.keys', params: { sessionId: s.id, keys } })
+      .then(() => this.core.audit('system', 'limit_menu.answered', s.id, { employee: e?.name ?? null, chose: 'Stop and wait for limit to reset' }))
+      .catch(() => this.limitMenus.delete(sessionId));
   }
 
   /**
@@ -1485,6 +1574,8 @@ export class SessionRegistry {
       await this.wake(employeeId, 'a change of their settings');
       // Somebody in the middle of a task is told to go on; somebody idle needs no message (it would only cost a turn).
       const task = this.eng.tasks.currentTask(employeeId);
+      const refused = this.refusedTurn.delete(employeeId);
+      if (!task && refused) this.eng.comms.sendMessage({ from: { kind: 'system', id: null, name: 'the office' }, toEmployeeId: employeeId, kind: 'system', taskId: null, body: `Your session was started again because ${why}. Your last turn was refused for that limit: go on with what you were asked before it, from where you were.` });
       if (task) this.eng.comms.sendMessage({ from: { kind: 'system', id: null, name: 'the office' }, toEmployeeId: employeeId, kind: 'system', taskId: task.id, body: `Your session was started again because ${why}. Go on with ${task.key} "${truncate(task.title, 80)}" from where you were.` });
     } catch (err) {
       this.core.log('warn', `restarting ${e.name} for a change of settings: ${(err as Error).message}`);
@@ -1735,10 +1826,12 @@ export class SessionRegistry {
           if ((theirs && theirs.origin !== 'managed') || e.selfDriven) continue;
           // What they think with: their own setting, what their session runs, or what a refused turn said it was.
           const family = modelFamily(e.model) || modelFamily(theirs?.model) || this.refusedFamily.get(id) || '';
-          // Only a model's week is used up here, and it is not theirs: they stay.
-          if (!force && !from.exhausted && !fullFor(from, family)) continue;
-          // Not onto an account where the same model's week is used up too.
-          const fit = ready.filter((a) => !fullFor(a, family));
+          // Only a model's limit is reached here: they go on with another model on this same account (`modelFor`) —
+          // moved only when theirs is reached and no other model has room here either.
+          const noModelHere = fullFor(from, family) && !this.modelFor(e, from.hostId, from.configDir).instead;
+          if (!force && !from.exhausted && !noModelHere) continue;
+          // Onto an account where their model has room, or another one does.
+          const fit = ready.filter((a) => !fullFor(a, family) || !!this.modelFor(e, a.hostId, a.configDir).instead);
           if (!fit.length) continue;
           // The account with the most room, counting whom this round already put there.
           const to = [...fit].sort((a, b) => used(a) + (load.get(a.key) ?? 0) * 3 - (used(b) + (load.get(b.key) ?? 0) * 3))[0]!;
@@ -1788,6 +1881,7 @@ export class SessionRegistry {
   onScreen(sessionId: string, screen: TerminalScreen): void {
     this.promptOnScreen(sessionId, false, screen);
     this.bypassWarningOnScreen(sessionId, screen);
+    this.limitMenuOnScreen(sessionId, screen);
     if (this.trustAsked.has(sessionId)) return;
     const s = this.core.sessions.get(sessionId);
     // Only the interactive CLI shows a trust prompt; an SDK-managed worker's pane is a transcript.
@@ -1855,7 +1949,7 @@ export class SessionRegistry {
       controllerId: null,
       capabilities: { terminal: true, hooks: true, mcp: true, structuredApproval: true, structuredMessaging: true, usage: false },
       permissionMode: null,
-      model: employee.model,
+      model: this.modelFor(employee, hostId, employee.claudeConfigDir ?? null).model,
       effort: employee.effort ?? null,
       cols: SESSION_COLS,
       rows: SESSION_ROWS,
@@ -1877,7 +1971,8 @@ export class SessionRegistry {
       displayName: employee.name,
       cwd,
       mode,
-      model: employee.model,
+      // Their own model — or, where its limit is reached on their account, the one they go on with (`modelFor`).
+      model: this.modelFor(employee, session.hostId, employee.claudeConfigDir ?? null).model,
       // Only an effort that machine's Claude Code has (its agent says which); otherwise Claude Code's own default.
       effort: employee.effort && host?.info?.claudeEffortLevels?.includes(employee.effort) ? employee.effort : null,
       permissionMode: perms.permissionMode,
@@ -2209,11 +2304,71 @@ export class SessionRegistry {
 export const weekFull = (w: { usedPercent: number; resetsAt: string | null }): boolean => w.usedPercent >= 99 && (!w.resetsAt || Date.parse(w.resetsAt) > Date.now());
 
 /** The time a refusal names for when the limit lifts, if it names one the office can read: an ISO time, or seconds since 1970 after "reset". */
-export function resetNamedIn(text: string): string | null {
+export function resetNamedIn(text: string, now = Date.now()): string | null {
   const iso = /\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)\b/.exec(text)?.[1];
-  const at = iso ? Date.parse(iso) : Number(/reset[a-z_ ]*[^0-9]{0,12}(\d{10})\b/i.exec(text)?.[1] ?? NaN) * 1000;
-  return Number.isFinite(at) && at > Date.now() && at < Date.now() + 14 * 86_400_000 ? new Date(at).toISOString() : null;
+  let at = iso ? Date.parse(iso) : Number(/reset[a-z_ ]*[^0-9]{0,12}(\d{10})\b/i.exec(text)?.[1] ?? NaN) * 1000;
+  // As Claude Code says it on the screen: "resets Nov 19, 1pm (UTC)", "resets 5:30am (Europe/Belgrade)".
+  if (!Number.isFinite(at)) at = resetWordsAt(text, now) ?? NaN;
+  return Number.isFinite(at) && at > now && at < now + 14 * 86_400_000 ? new Date(at).toISOString() : null;
 }
+
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/** "resets Nov 19, 1pm (UTC)" → that moment; a time alone is the next such time. The zone in brackets is honoured; none means UTC. */
+function resetWordsAt(text: string, now: number): number | null {
+  const m = /resets?\s+(?:on\s+)?(?:([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(?:at\s+)?)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:\(([^)]+)\))?/i.exec(text);
+  if (!m) return null;
+  const month = m[1] ? MONTHS.indexOf(m[1].toLowerCase()) : -1;
+  if (m[1] && month < 0) return null;
+  let hour = Number(m[3]);
+  const minute = Number(m[4] ?? 0);
+  const half = m[5]?.toLowerCase();
+  if (!half && !m[4]) return null; // a bare number is not a time
+  if (half === 'pm' && hour < 12) hour += 12;
+  if (half === 'am' && hour === 12) hour = 0;
+  if (hour > 23 || minute > 59) return null;
+  const zone = (m[6] ?? 'UTC').trim();
+  const offset = (instant: number): number | null => {
+    if (/^(utc|gmt|z)$/i.test(zone)) return 0;
+    try {
+      const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }).formatToParts(new Date(instant)).map((p) => [p.type, p.value]));
+      return Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour) % 24, Number(parts.minute)) - Math.floor(instant / 60_000) * 60_000;
+    } catch {
+      return null; // a zone this machine does not know
+    }
+  };
+  const today = new Date(now);
+  const at = (year: number, mon: number, day: number): number | null => {
+    const guess = Date.UTC(year, mon, day, hour, minute);
+    const off = offset(guess);
+    return off === null ? null : guess - off;
+  };
+  if (month >= 0) {
+    const day = Number(m[2]);
+    let t = at(today.getUTCFullYear(), month, day);
+    // "Jan 2" said in late December is next year's.
+    if (t !== null && t < now - 2 * 86_400_000) t = at(today.getUTCFullYear() + 1, month, day);
+    return t;
+  }
+  let t = at(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  if (t !== null && t <= now) t = at(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + 1);
+  return t;
+}
+
+/**
+ * What a refusal for a limit says, read from its words: whose limit (one model's — "You've hit your Fable limit" —
+ * or the account's, family '') and until when. Null when the words are not about a limit at all.
+ */
+export function limitIn(text: string, now = Date.now()): { family: string; resetsAt: string | null } | null {
+  const said = String(text ?? '');
+  if (!/limit|rate.?limit|billing/i.test(said)) return null;
+  const named = /hit\s+(?:your|the)\s+([A-Za-z][\w.-]*)\s+limit/i.exec(said)?.[1] ?? /([A-Za-z][\w.-]*)\s+(?:weekly\s+)?limit\s+(?:reached|hit)/i.exec(said)?.[1] ?? /(?:weekly\s+)?limit\s+for\s+([A-Za-z][\w.-]*)/i.exec(said)?.[1] ?? '';
+  const family = modelFamily(named) || (/week/i.test(said) ? modelFamily(said) : '');
+  return { family, resetsAt: resetNamedIn(said, now) };
+}
+
+/** The models to go on with, in order, when one model's limit is reached: the next weaker that has room. */
+export const MODEL_FALLBACK: Record<string, string[]> = { mythos: ['opus', 'sonnet', 'haiku'], fable: ['opus', 'sonnet', 'haiku'], opus: ['sonnet', 'haiku'], sonnet: ['haiku'], haiku: [] };
 
 export function exhausted(a: Pick<AccountUsage, 'fiveHour' | 'sevenDay'> & { spentUntil?: string | null; reportedAt?: string | null }): boolean {
   // A figure that names no reset time is believed for as long as its window is (five hours, a week) from when it was

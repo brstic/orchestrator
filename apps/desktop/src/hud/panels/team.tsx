@@ -1956,9 +1956,11 @@ function OverviewTab({ e, onTab }: { e: Employee; onTab: (tab: TabId) => void })
             </div>
             <div>
               <dt>Thinks with</dt>
-              <dd>
+              <dd data-thinks-with>
                 {e.model ?? 'the default model'}
                 {e.effort ? ` · ${e.effort} effort` : ''}
+                {/* Their own model's limit is reached on their account: the office runs them on the next one until it lifts. */}
+                {live && session?.model && e.model && session.model !== e.model && <span className="k-warn"> · now on {session.model} (a limit of {e.model})</span>}
               </dd>
             </div>
             <div title={`${autonomy.text}\n${autonomy.maps}`}>

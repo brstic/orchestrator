@@ -1120,6 +1120,21 @@ The owner: "in the profile's settings, right after the name and what they are, I
 - **The project they leave is left alone.** It holds what was done in that folder; emptying or archiving it because its one employee moved would be a second decision nobody asked for.
 - **It waits for the next start.** A running session sits in the folder it was started in. Restarting it for a folder change — as is done for a level or an account — would cut work off for something that is not urgent; the save bar says when it takes effect.
 
+## A model's limit: another model first, another organisation when no model can (2026-11-13)
+The owner, pasting a session stuck at Claude Code's menu after "You've hit your Fable limit · resets Nov 19, 1pm (UTC)": "this must not block — go through it: select another model, and if not even another model can, select another organisation."
+- **The account was not used up; Fable on it was.** The refusal names the model; reading it as the account's limit (as the office did until then, for an hour) moved people who did not think with Fable at all, and took the account out of use for everybody.
+- **Another model before another organisation.** Moving to another organisation costs more than it looks: Claude Code cannot use the earlier thinking of a conversation written under another organisation ("Claude can't use thinking from another organization… rereads this session"), and the other organisation's Fable may be spent too (it was, that afternoon). Staying, on Opus, keeps the thinking and the account the owner chose.
+- **The employee's own model is not changed.** The fallback is decided at each start from what is known of the account (`modelFor`); when the limit lifts, the next start is on their own model again. Writing "opus" into their setting would make a temporary state permanent and lose what the owner chose.
+- **The menu is answered by the office — never with money.** "Stop and wait" is the only harmless answer; "Switch to usage credits" spends money and stays the owner's to choose; "Wait here" would keep a turn open for days.
+- **A refused turn ends the turn.** The office waited for a `Stop` after a `StopFailure`; the hooks reference says StopFailure comes instead of it. A session refused for any reason looked busy for ever, and a change waiting for its turn to end never came.
+
+## Employees set what they and their colleagues think with (2026-11-13)
+The owner: "agents should be able to change models, effort and so on for themselves or other agents — for the project manager, say, so that the others do not use the most expensive when it is not needed."
+- **Model and effort, nothing else.** The level is a permission and stays a person's to give; the Claude account is where the money is and is the owner's (*Who is on what*). Not the foreman, not a member's lead, and not across to or from a member's own computer — the same lines every other employee tool keeps.
+- **Always with a reason, always on the record.** The change is in the feed and the audit log with who made it and why, and the colleague is told in a message. A wrong choice is easy to see and to undo.
+- **On by default, with a switch.** The owner asked for it; *Settings → Employees → "Employees may change models and effort"* takes it back.
+- **The project manager is told about it** in its role, and `get_team` shows what everybody thinks with — the information a choice needs.
+
 ## The office answers Claude Code's start-up questions (2026-11-13)
 The owner: "when I first start in some folder — this 'accessing workspace' — make it say yes and trust the folder by itself instead of getting stuck", and, pasting the Bypass Permissions warning: "this too should pass by itself."
 - **The folder: yes, at every level.** It was answered for Auto and Unrestricted; somebody on Standard waited for the owner in the Inbox, and a session that waits at its first screen looks broken. The choice of folder *is* the trust: a person put that employee there. It stays on the record.

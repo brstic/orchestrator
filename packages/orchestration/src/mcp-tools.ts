@@ -315,6 +315,48 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       return msgs.map((m) => `From ${m.from.name}${m.threadId ? ` (request id ${m.threadId})` : ''}: ${m.body}`).join('\n\n');
     },
 
+    set_model: async (a, { employee }) => {
+      if (core.settings.employeesSetModels === false) return err('The owner keeps models and effort to themselves in this office (Settings → Employees). Ask the boss (ask_boss) if a change is needed.');
+      const often = tooMany(employee, 'model change', 30);
+      if (often) return err(often);
+      const name = String(a.employee ?? '').trim();
+      const to = name ? eng.comms.resolveTeammate(employee, name) : employee;
+      if (!to || to.archived) return err(`No teammate matches "${name}". Use get_team.`);
+      const self = to.id === employee.id;
+      if (!self && to.roleKey === FOREMAN_ROLE) return err(`${to.name} is the foreman: what it thinks with is the owner's to set.`);
+      if (!self && to.roleKey === LEAD_ROLE) return err(`${to.name} is a member's team lead: what it thinks with is that member's to set.`);
+      if (!sameSide(employee, to)) return err(`${to.name} works on ${personal(to.hostId) ? "a member's own computer" : 'the shared office'} and you do not: their settings are not yours to change.`);
+      const closed = closedTo(employee, to);
+      if (closed) return err(closed);
+      const reason = String(a.reason ?? '').trim();
+      if (reason.length < 8) return err('Say in "reason" why — what the work needs. It is on the record, and they read it.');
+      const MODELS = ['fable', 'opus', 'sonnet', 'haiku'];
+      const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+      const patch: { model?: string | null; effort?: string | null } = {};
+      if (a.model !== undefined && String(a.model).trim()) {
+        const m = String(a.model).trim().toLowerCase();
+        if (m !== 'default' && !MODELS.includes(m)) return err(`"${a.model}" is not a model to choose: ${MODELS.join(', ')}, or default.`);
+        patch.model = m === 'default' ? null : m;
+      }
+      if (a.effort !== undefined && String(a.effort).trim()) {
+        const x = String(a.effort).trim().toLowerCase();
+        if (x !== 'default' && !EFFORTS.includes(x)) return err(`"${a.effort}" is not an effort: ${EFFORTS.join(', ')}, or default.`);
+        patch.effort = x === 'default' ? null : x;
+      }
+      if (!('model' in patch) && !('effort' in patch)) return err('Say the model, the effort, or both.');
+      const changes = Object.fromEntries(Object.entries(patch).filter(([k, v]) => (to as any)[k] !== v));
+      if (!Object.keys(changes).length) return `${self ? 'You are' : `${to.name} is`} already on that.`;
+      const words = (m: string | null | undefined, x: string | null | undefined) => `${m ? m.charAt(0).toUpperCase() + m.slice(1) : "the account's default model"}, ${x ? `${x} effort` : 'the default effort'}`;
+      const before = words(to.model, to.effort);
+      const after = eng.employees.update(to.id, changes, by(employee));
+      const now = words(after.model, after.effort);
+      core.audit(by(employee), 'employee.model_set', to.id, { employee: to.name, before, after: now, reason: truncate(reason, 400) });
+      core.event({ type: 'employee.updated', source: 'mcp', summary: `${employee.name} put ${self ? 'themselves' : to.name} on ${now}: ${truncate(reason, 160)}`, employeeId: to.id, data: { by: employee.name, model: after.model, effort: after.effort, reason: truncate(reason, 400) } });
+      if (!self) eng.comms.sendMessage({ from: { kind: 'employee', id: employee.id, name: `${employee.name} (${employee.title})` }, toEmployeeId: to.id, body: `I put you on ${now} (it was ${before}): ${truncate(reason, 600)}`, taskId: eng.tasks.currentTask(to.id)?.id ?? null });
+      const live = core.runningSessionOf(to.id);
+      return `${self ? 'You are' : `${to.name} is`} on ${now} now (was ${before}).${live ? ` ${self ? 'Your' : 'Their'} session is started again with the same conversation ${self ? 'when this turn ends' : live.inTurn ? 'when their turn ends' : 'now'}.` : ` It applies when ${self ? 'your' : 'their'} next session starts.`}`;
+    },
+
     get_team: async (_a, { employee }) => {
       const team = core.employees.filter((e) => !e.archived && e.id !== employee.id);
       if (!team.length) return 'You are the only employee.';
@@ -335,7 +377,9 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
           // What their finished work here shows (counted, not declared): whom to ask about what.
           const record = eng.improver.capture.skillsLine(e);
           const waiting = s?.waitingOn ? ` · waiting for ${eng.waits.words(s.waitingOn)}` : '';
-          return `- ${e.name} — ${e.title}${where(e)} · ${s ? (ACTIVITY_LABEL[s.activity] ?? s.activity) : 'OFFLINE'}${waiting}${t ? ` · working on ${t.key} "${truncate(t.title, 50)}"` : ''}${record ? ` · ${record}` : ''}`;
+          // What they think with (set_model changes it): their own setting, and what their session really runs when that differs.
+          const thinks = `${e.model ?? 'default model'}${e.effort ? `, ${e.effort} effort` : ''}${s?.model && e.model && s.model !== e.model ? ` (now running ${s.model})` : ''}`;
+          return `- ${e.name} — ${e.title}${where(e)} · ${s ? (ACTIVITY_LABEL[s.activity] ?? s.activity) : 'OFFLINE'}${waiting}${t ? ` · working on ${t.key} "${truncate(t.title, 50)}"` : ''}${record ? ` · ${record}` : ''} · thinks with ${thinks}`;
         })
         .join('\n');
     },

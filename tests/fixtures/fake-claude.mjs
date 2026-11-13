@@ -395,12 +395,17 @@ async function runDirectives(text) {
           say('\x1b[31m⎿ MCP server "orchestrator" is not connected\x1b[0m');
           await fireHook('PostToolUseFailure', { tool_name: `mcp__orchestrator__${rest || 'get_current_task'}`, tool_input: {}, tool_use_id: `toolu_fake_${Date.now()}`, error: 'MCP server "orchestrator" is not connected' });
           break;
-        case 'limit':
-          // Claude refuses the turn for the account's limit: the turn ends with StopFailure, not Stop.
+        case 'limit': {
+          // Claude refuses the turn for a limit: the turn ends with StopFailure, not Stop — with the words the real one
+          // shows (`rest`, e.g. "You've hit your Fable limit · resets Nov 19, 1pm (UTC)") — and then Claude Code opens
+          // its own menu of what to do, which waits for a key (`limitMenu`).
           turnFailed = true;
-          say("\x1b[31mYou've hit your limit\x1b[0m");
-          await fireHook('StopFailure', { error: rest || 'rate_limit', error_details: '429 usage limit reached' });
-          return "You've hit your limit";
+          const words = rest || "You've hit your limit";
+          say(`\x1b[31m  ⎿  ${words}\x1b[0m`);
+          await fireHook('StopFailure', { error: 'rate_limit', error_details: '429 usage limit reached', last_assistant_message: words });
+          limitMenuDue = words;
+          return words;
+        }
         case 'complete': {
           const res = await orchestrator('complete_task', { summary: rest || 'scripted completion', tests_run: 'npm test (scripted)' });
           lastMessage = res.text;
@@ -532,6 +537,57 @@ async function handlePrompt(text, viaStopHook = false) {
   }
   await statusLine();
   busy = false;
+  if (limitMenuDue) {
+    limitMenuDue = null;
+    await limitMenu();
+  } else prompt();
+}
+
+/**
+ * Claude Code's menu after a refused turn, laid out like the real one; it waits for a key. "Stop and wait" puts it
+ * back at its prompt; "Switch to usage credits" leaves a mark in the config folder (`.fake-usage-credits`) so that a
+ * test can say it was never chosen.
+ */
+let limitMenuDue = null;
+async function limitMenu() {
+  say('\r\n\x1b[1m❯\x1b[0m /rate-limit-options');
+  say('──────────────────────────────────────────────');
+  say('  What do you want to do?');
+  say('');
+  say('  ❯ 1. Stop and wait for limit to reset');
+  say('    2. Wait here, then continue automatically when it resets');
+  say('    3. Switch to usage credits');
+  say('');
+  say('  Enter to confirm · Esc to cancel');
+  dialogOpen = true;
+  let at = 0;
+  for (;;) {
+    const key = await nextKey();
+    if (key === '\x1b') {
+      const a = await Promise.race([nextKey(), sleep(150).then(() => null)]);
+      if (a === null) {
+        keyWaiter = null;
+        break; // Escape on its own: closed, back at the prompt
+      }
+      const b = a === '[' || a === 'O' ? await nextKey() : '';
+      if (b === 'B') at = Math.min(2, at + 1);
+      else if (b === 'A') at = Math.max(0, at - 1);
+      continue;
+    }
+    if (key === '\r') break;
+    if (key >= '1' && key <= '3') {
+      at = Number(key) - 1;
+      break;
+    }
+  }
+  dialogOpen = false;
+  keyQueue.length = 0;
+  out('\x1b[10A\x1b[J');
+  if (at === 2) {
+    fs.writeFileSync(path.join(process.env.CLAUDE_CONFIG_DIR ?? process.env.HOME ?? '/nonexistent', '.fake-usage-credits'), new Date().toISOString());
+    say('  Switched to usage credits.');
+  } else if (at === 1) say('  Waiting here until the limit resets…');
+  else say('  Stopped. Waiting for the limit to reset.');
   prompt();
 }
 

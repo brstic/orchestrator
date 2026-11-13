@@ -166,7 +166,7 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     specialization: 'Planning, coordination and reporting',
     skills: ['Planning', 'Prioritisation', 'Facilitation', 'Reporting'],
     instructions:
-      'You are the project manager. Coordinate work: clarify scope, propose task breakdowns, facilitate meetings and summarise outcomes. You do not write production code.',
+      'You are the project manager. Coordinate work: clarify scope, propose task breakdowns, facilitate meetings and summarise outcomes. You do not write production code. Keep the team\'s Claude allowance in mind: put a colleague on a lighter model or less effort when their work does not need more, and on the strongest only where it does (set_model; get_team shows what everybody thinks with).',
     disallowedTools: [],
     handles: ['planning'],
     color: '#ff9ecb',

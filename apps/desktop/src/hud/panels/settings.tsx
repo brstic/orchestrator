@@ -944,6 +944,10 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                     deploying, deleting, reading credential files all run at once, and nothing asks you. Switching it off takes effect at once, also for sessions that are already running (on a computer with an older desktop app, the session is started again between turns, once); switching it back on starts each such session again between turns.
                     Either way the office's own files on a machine stay fenced off, and a project's deny rules still refuse what they refuse.
                   </Toggle>
+                  <Toggle checked={settings.employeesSetModels !== false} onChange={(employeesSetModels) => void save({ employeesSetModels })} title="Employees may change models and effort">
+                    An employee may set the <b>model</b> and the <b>effort</b> of their own and their colleagues' sessions — a project manager putting routine work on a lighter model, say — with a reason that is in the feed and the audit log.
+                    Never the level, never the Claude account, never the foreman, and not across to or from a member's own computer. Off: only you change them.
+                  </Toggle>
                   <Toggle checked={settings.acceptStartPrompts !== false} onChange={(acceptStartPrompts) => void save({ acceptStartPrompts })} title="Answer Claude Code's start-up questions for me">
                     When a session starts in a folder for the first time, Claude Code asks whether to <b>trust the folder</b>; the first time an account runs an <b>Unrestricted</b> employee it shows its <b>Bypass Permissions warning</b> ("you accept
                     all responsibility…"). With this on, the office answers yes to both by itself — the folder for whoever you put there, the warning for whoever an owner put on Unrestricted, on the office's own machines — and says so in the feed.

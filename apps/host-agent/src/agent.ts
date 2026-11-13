@@ -1494,7 +1494,7 @@ export class HostAgent {
   }
 
   private lastLimits = new Map<string, string>();
-  private limitNames = '';
+  private limitNames = new Set<string>();
 
   /**
    * Claude Code's status line input for one of our sessions. Only the account's rate limits are
@@ -1525,9 +1525,9 @@ export class HostAgent {
       if (w) windows[name] = w;
     }
     const names = Object.keys(input?.rate_limits && typeof input.rate_limits === 'object' ? input.rate_limits : {}).sort().join(', ');
-    if (names && names !== this.limitNames) {
-      // Said once (and again when it changes): which windows this Claude Code reports at all.
-      this.limitNames = names;
+    if (names && !this.limitNames.has(names)) {
+      // Said once for each set of windows seen: which windows this Claude Code reports at all.
+      this.limitNames.add(names);
       this.log('info', `Claude Code reports these limit windows: ${names}`);
     }
     if (!fiveHour && !sevenDay && !Object.keys(windows).length) return; // not a subscription account, or no answer yet in this session

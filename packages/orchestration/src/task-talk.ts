@@ -302,7 +302,10 @@ export class TaskTalk {
           if (!this.core.runningSessionOf(colleague.id)) void this.eng.sessions.start(colleague.id, { actor: `employee:${employee.name}` }).catch(() => undefined);
         }
       }
-      this.eng.sessions.setActivity(session, 'waiting_answer', truncate(body, 120));
+      // Waiting for the boss is "needs a decision"; waiting for a colleague is waiting, said with whom — the owner is
+      // not the one it waits for (the label used to say "? NEEDS A DECISION" for both).
+      if (toBoss) this.eng.sessions.setActivity(session, 'waiting_answer', truncate(body, 120));
+      else this.eng.sessions.setActivity(session, 'waiting_input', `Waiting for ${to.map((m) => (m.kind === 'employee' ? (this.core.employees.get(m.id)?.name ?? 'a colleague') : 'a colleague')).join(' and ')}'s answer on ${task.key}`);
       const answer = await this.waitForAnswer(task.id, comment, this.core.timings.askBossWaitMs, signal);
       if (answer) return { text: `${answer.from.kind === 'employee' ? answer.from.name : 'The boss'} answered: ${answer.body}` };
       if (signal?.aborted) return err('The call was cut off before an answer came. Ask again with the same words to go on waiting.');

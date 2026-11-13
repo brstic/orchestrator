@@ -1702,6 +1702,14 @@ export interface OwnerSettings {
    * work done without verification, or deletes anything.
    */
   employeesManageBoard?: boolean;
+  /**
+   * true (default — the owner's word of 2026-11-13: "agents should be able to change models and effort for
+   * themselves or other agents, so that e.g. the project manager can put the others on a cheaper model when the
+   * work does not need the most expensive"): an employee may set the model and the effort of their own and of a
+   * colleague's sessions (the `set_model` tool), each change on the record with its reason. Not the level, not the
+   * account, not across to or from a member's own computer, never the foreman. false: those stay the owner's.
+   */
+  employeesSetModels?: boolean;
   /** Who reviews a finished task when nobody chose for it (`reviewDefaultOf`: a colleague, then the boss). */
   reviewDefault?: ReviewBy;
   /**

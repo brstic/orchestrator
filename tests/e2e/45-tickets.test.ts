@@ -282,6 +282,9 @@ test('a colleague is asked the same way — and answers on the ticket', async ()
   const forSarah = await waitFor(async () => (await messagesTo('Sarah')).find((m) => m.taskId === t.id && /cannot go on without your answer/.test(m.body)), { label: 'Sarah is asked' });
   assert.match(forSarah.body, new RegExp(`^Alex \\(.*\\) asks you on ${t.key} `));
   assert.equal((await h.state()).questions.filter((x) => x.taskId === t.id).length, 0, 'not a question for the boss');
+  // While he waits, he is shown waiting for Sarah — not as "needs a decision", which is for what waits for the boss.
+  const waiting = (await h.session(ids.Alex!))!;
+  assert.deepEqual([waiting.activity, waiting.activityDetail], ['waiting_input', `Waiting for Sarah's answer on ${t.key}`]);
   const said = await tool('Sarah', 'comment_on_task', { task: t.key, text: 'GET /api/items' });
   assert.match(said.text, new RegExp(`Your answer is on ${t.key}`));
   assert.deepEqual(await asking, { text: 'Sarah answered: GET /api/items', isError: false });

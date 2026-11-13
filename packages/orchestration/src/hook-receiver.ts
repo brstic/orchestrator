@@ -458,12 +458,14 @@ export class HookReceiver {
     if (payload.hook_event_name === 'PostToolUseFailure' && /^mcp__orchestrator__/.test(String(payload.tool_name ?? '')) && /not connected/i.test(String(payload.error ?? ''))) this.eng.sessions.onOfficeUnreachable(session);
     // Claude refused the turn for the account's limit: its people go to another account, if the machine has one.
     if (payload.hook_event_name === 'StopFailure') {
-      // Everything the refusal says: which limit it was (the account's, or one model's week) is read from its words.
-      const said = [payload.error, payload.error_details, payload.message].filter((x) => typeof x === 'string' && x).join(' — ');
-      if (/rate.?limit|usage.?limit|weekly.?limit|billing/i.test(said)) this.eng.sessions.onLimitHit(session, said || 'rate_limit');
+      // Everything the refusal says — first the words Claude Code showed ("You've hit your Fable limit · resets Nov 19,
+      // 1pm (UTC)"): which limit it was (one model's, or the account's) and until when are read from them.
+      const said = [payload.last_assistant_message, payload.error_details, payload.message].filter((x) => typeof x === 'string' && x).join(' — ');
+      if (payload.error === 'rate_limit' || payload.error === 'billing_error' || /rate.?limit|usage.?limit|weekly.?limit|hit\s+your\b.*limit|billing/i.test(said)) this.eng.sessions.onLimitHit(session, said || String(payload.error ?? 'rate_limit'));
     }
     // A Stop that arrived through the non-blocking path (host had no server link at the time).
-    if (interp.turnFinished && payload.hook_event_name === 'Stop' && !this.isRequest(raw)) this.afterTurn(session, employee, payload);
+    // (A turn that Claude refused ends there too: StopFailure comes instead of Stop — and nothing else will say it ended.)
+    if (interp.turnFinished && (payload.hook_event_name === 'Stop' || payload.hook_event_name === 'StopFailure') && !this.isRequest(raw)) this.afterTurn(session, employee, payload);
     return { session, employee, payload };
   }
 

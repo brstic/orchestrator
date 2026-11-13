@@ -310,6 +310,21 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
     inputSchema: { type: 'object', properties: {} },
   },
   {
+    name: 'set_model',
+    description:
+      'Choose what you, or a teammate, think with: the model (fable — the strongest and dearest, opus, sonnet, haiku — the lightest; or "default") and the effort (low, medium, high, xhigh, max; or "default"). Use it to spend the Claude allowance where it pays: a lighter model or less effort for routine work, the strongest only where the work needs it. Say why in "reason" — it is on the record and the teammate reads it. A change starts that person\'s session again with the same conversation, at the end of their turn (yours: when this turn ends). get_team shows what everybody thinks with.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        employee: str('Whose: a teammate\'s name; leave out for yourself'),
+        model: str('fable, opus, sonnet, haiku, or default (whatever their Claude account uses)'),
+        effort: str('low, medium, high, xhigh, max, or default'),
+        reason: str('Why — what the work needs, in a sentence'),
+      },
+      required: ['reason'],
+    },
+  },
+  {
     name: 'get_team',
     description: 'List your teammates, their roles and what they are doing right now.',
     inputSchema: { type: 'object', properties: {} },

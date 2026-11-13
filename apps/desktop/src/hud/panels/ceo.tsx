@@ -283,8 +283,8 @@ export function ClaudeAccounts() {
                           <Meter w={a.sevenDay} label="of the week" />
                           {/* A model's own week (Fable's): beside the week for all models, when anything is known of it. */}
                           {Object.entries(a.modelWeeks ?? {}).map(([family, w]) => (
-                            <div key={family} className={`cl-model-week${w.usedPercent >= 99 ? ' bad' : w.usedPercent >= 80 ? ' warn' : ''}`} data-model-week={family} title={`${w.from === 'refused' ? `Claude refused a turn for the weekly limit of ${family}; the office counts it as used up until then.` : `The week of ${family} alone, as Claude Code reports it.`}${w.resetsAt ? ` Resets ${new Date(w.resetsAt).toLocaleString()}.` : ''}`}>
-                              <span className="cl-model-name">{family[0]!.toUpperCase() + family.slice(1)} week</span>
+                            <div key={family} className={`cl-model-week${w.usedPercent >= 99 ? ' bad' : w.usedPercent >= 80 ? ' warn' : ''}`} data-model-week={family} title={`${w.from === 'refused' ? `Claude refused a turn for the limit of ${family}; until it lifts, those who think with ${family} on this account go on with the next model.` : `The limit of ${family} alone, as Claude Code reports it.`}${w.resetsAt ? ` Resets ${new Date(w.resetsAt).toLocaleString()}.` : ''}`}>
+                              <span className="cl-model-name">{family[0]!.toUpperCase() + family.slice(1)} limit</span>
                               <span className="mono">{w.usedPercent >= 99 ? 'used up' : `${Math.round(w.usedPercent)}%`}</span>
                               <span className="faint">{(limitText(w) ?? '').split('·')[1]?.trim() ?? ''}</span>
                             </div>

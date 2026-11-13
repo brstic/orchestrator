@@ -32,3 +32,38 @@ test('the time a refusal names is read when it is a time the office can read —
   assert.equal(resetNamedIn(`resets ${new Date(Date.now() + 60 * 86_400_000).toISOString()}`), null, 'two months away is not a weekly limit');
   assert.equal(resetNamedIn('rate_limit'), null);
 });
+
+test('the refusal as Claude Code words it: one model\'s limit and when it lifts, or the account\'s', async () => {
+  const { limitIn } = await import('../src/registry.ts');
+  const now = Date.parse('2026-11-13T15:58:53Z');
+  assert.deepEqual(limitIn("You've hit your Fable limit · resets Nov 19, 1pm (UTC)", now), { family: 'fable', resetsAt: '2026-11-19T13:00:00.000Z' });
+  assert.deepEqual(limitIn("You've hit your Opus limit · resets 5:30pm (UTC)", now), { family: 'opus', resetsAt: '2026-11-13T17:30:00.000Z' });
+  // A time already past today is tomorrow's.
+  assert.deepEqual(limitIn("You've hit your limit · resets 9am (UTC)", now), { family: '', resetsAt: '2026-11-14T09:00:00.000Z' });
+  // In the zone it names.
+  assert.equal(limitIn("You've hit your limit · resets Nov 14, 2am (Europe/Belgrade)", now)!.resetsAt, '2026-11-14T01:00:00.000Z');
+  assert.deepEqual(limitIn('API Error: Rate limit reached', now), { family: '', resetsAt: null });
+  assert.equal(limitIn('Claude can\'t use thinking from another organization', now), null);
+  // The words from before, still understood.
+  assert.equal(limitIn('You have reached your weekly limit for Fable', now)!.family, 'fable');
+  assert.equal(limitIn('Weekly limit reached for Fable, resets 2026-11-15T13:00:00Z', now)!.resetsAt, '2026-11-15T13:00:00.000Z');
+});
+
+test('Claude Code\'s menu after a refused turn: "Stop and wait" is chosen — the keys read from the screen', async () => {
+  const { menuKeys } = await import('../src/comms.ts');
+  const menu = (marked: number) => [
+    "  ⎿  You've hit your Fable limit · resets Nov 19, 1pm (UTC)",
+    '',
+    '❯ /rate-limit-options',
+    '─────────────────────────────',
+    '  What do you want to do?',
+    '',
+    ...['Stop and wait for limit to reset', 'Wait here, then continue automatically at Nov 19, 1pm', 'Switch to usage credits'].map((l, i) => `  ${i === marked ? '❯' : ' '} ${i + 1}. ${l}`),
+    '',
+    '  Enter to confirm · Esc to cancel',
+  ];
+  const stop = (l: string) => /^Stop and wait/i.test(l);
+  assert.deepEqual(menuKeys(menu(0), stop), ['Enter']);
+  assert.deepEqual(menuKeys(menu(2), stop), ['Up', 'Up', 'Enter']);
+  assert.equal(menuKeys(['  What do you want to do?', '  1. Stop and wait for limit to reset'], stop), null, 'nothing marked, one option: not pressed blind');
+});
