@@ -1458,11 +1458,12 @@ table.tbl {
 
 /* talking to an employee */
 .talk-thread {
-  flex: 1;
-  min-height: 260px;
-  max-height: 56vh;
+  /* Most of the work in the office goes through this window: it takes the height the screen has. */
+  flex: 1 1 calc(100vh - 380px);
+  min-height: 220px;
+  max-height: none;
   overflow: auto;
-  padding: 14px 16px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1476,7 +1477,7 @@ table.tbl {
   justify-content: flex-end;
 }
 .talk-bubble {
-  max-width: 78%;
+  max-width: 86%;
   padding: 8px 11px;
   border-radius: 12px;
   line-height: 1.45;
@@ -1501,20 +1502,151 @@ table.tbl {
   margin-top: 3px;
 }
 .talk-note {
-  align-self: center;
-  font-size: 11.5px;
+  --note: var(--muted);
+  align-self: stretch;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
   color: var(--muted);
-  padding: 2px 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  max-width: 90%;
-  text-align: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border-left: 3px solid var(--note);
+  background: color-mix(in srgb, var(--note) 7%, transparent);
+}
+.talk-note-word {
+  flex: none;
+  min-width: 52px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--note);
+}
+.talk-note-time {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
 }
 .talk-note-good {
-  color: #7ff0b0;
+  --note: var(--good);
+  color: #b9f3d2;
 }
 .talk-note-bad {
-  color: #ff9aa9;
+  --note: var(--bad);
+  color: #ffc2cb;
+}
+.talk-note-start {
+  --note: var(--accent);
+}
+.talk-note-ask {
+  --note: var(--warn);
+  color: #ffdf9c;
+}
+.talk-note-report {
+  --note: var(--violet);
+}
+/* A ticket's key, wherever it is named. */
+.talk-key {
+  font-family: var(--mono);
+  font-size: 0.94em;
+  color: var(--accent);
+  font-weight: 600;
+}
+/* What they wrote: the things one looks for stand out. */
+.talk-them strong {
+  color: #fff;
+}
+.talk-them code {
+  color: #9fd0ff;
+}
+.talk-them pre code {
+  color: inherit;
+}
+.talk-them a {
+  color: var(--accent);
+}
+.talk-them li::marker {
+  color: var(--accent);
+}
+.talk-them h1,
+.talk-them h2,
+.talk-them h3 {
+  color: var(--violet);
+}
+/* What they are doing right now: one line, always in sight, that changes as it happens. */
+.talk-live {
+  --live: var(--faint);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  padding: 0 16px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--live) 8%, transparent);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.talk-live-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--live);
+}
+.talk-live:not(.talk-live-quiet):not(.talk-live-wait):not(.talk-live-bad) .talk-live-dot {
+  animation: blink 1.2s ease-in-out infinite alternate;
+}
+.talk-live-state {
+  flex: none;
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--live);
+}
+.talk-live-at {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text);
+  font-size: 11.5px;
+}
+.talk-live-before {
+  color: var(--faint);
+}
+.talk-live-rest {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  color: var(--faint);
+}
+.talk-live-think {
+  --live: var(--violet);
+}
+.talk-live-read {
+  --live: var(--accent);
+}
+.talk-live-write {
+  --live: var(--good);
+}
+.talk-live-run {
+  --live: #4dd0e1;
+}
+.talk-live-test {
+  --live: #f0c674;
+}
+.talk-live-wait {
+  --live: var(--warn);
+}
+.talk-live-bad {
+  --live: var(--bad);
 }
 .talk-dots::after {
   content: '…';
@@ -1537,7 +1669,7 @@ table.tbl {
   gap: 8px;
 }
 .talk-compose textarea {
-  min-height: 54px;
+  min-height: 72px;
 }
 /* Files that go with what is said: waiting above the text box, and in the conversation once sent. */
 .talk-compose-over {

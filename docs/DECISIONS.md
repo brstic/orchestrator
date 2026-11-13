@@ -2,6 +2,13 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-13 — The live line in a conversation: shown, not stored, and no new traffic
+An owner (Fenix): "we mostly work through this window — give it room and colour, and if we already have the information, show more than *Thinking*; it need not be remembered, one field that changes as it arrives; only if it costs us little".
+- **What is shown is what the window already has**: `AgentSession.activity`, `activityDetail` and `activitySince` (set by Claude Code's hooks and broadcast to every window as they change, as they always were) and the `progress` of the task in hand. So the cost to the server is nothing, and to the window one small component that redraws once a second only while somebody is at work (`LiveLine` in `talk.tsx`, `lib/live-line.ts`).
+- **Nothing is stored.** "The step before" and the count of steps live in the open window; a window opened in the middle of a turn counts from there, and says "steps", not "steps this turn of N".
+- **Not done: streaming what the session writes** (its thinking, tool output). That would be new traffic for every open conversation and is what the terminal is for.
+- **One line, of fixed height, outside the scrolling conversation**, so it is in sight wherever one has scrolled to and the text does not jump as it changes.
+
 ## 2026-11-13 — A review that is no longer needed closes itself
 What happened on the live office (reported by the employee it happened to, and passed on by an owner, Fenix): T-201 was in review, its review (T-206) with the reviewer who had been asked. With the board in the employees' hands any colleague may review finished work, and another one approved T-201 first. T-206 could then not be finished by anything its reviewer could call, so they reported a blocker — a "blocked" ticket in the Inbox that was, in truth, finished work with nothing waiting.
 - **The office closes it** (`TaskManager.closeStaleReviews`, after every verdict and at every pass of the scheduler). The rule is one sentence: a review is open only while the task it reviews still waits for a colleague's verdict (`waitsForPeer`). It is a sweep and not a call at each place a task can leave review, because there are many such places (a verdict, send back, stop, a move by hand) and the next one added would be forgotten.

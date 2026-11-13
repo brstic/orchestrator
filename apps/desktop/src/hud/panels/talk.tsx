@@ -5,6 +5,7 @@ import { ACTIVITY_LABEL } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Markdown, Window, clock } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
+import { NO_TRAIL, stepInto, toneOf, took, withKeys } from '../../lib/live-line.ts';
 import { waitingForLines } from '../../lib/views.ts';
 import { QuestionBody, act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
@@ -18,7 +19,7 @@ type Line =
   | { kind: 'reply'; id: string; ts: string; text: string }
   /** A file the employee gave: in the conversation itself, or left on a task (`taskId`). */
   | { kind: 'file'; id: string; ts: string; file: SaidFile; caption: string | null; taskId: string | null }
-  | { kind: 'note'; id: string; ts: string; text: string; tone: 'good' | 'bad' | 'info' };
+  | { kind: 'note'; id: string; ts: string; text: string; tone: 'good' | 'bad' | 'info' | 'start' | 'ask' | 'report' };
 
 /** A file the employee left on a task, shown where they were asked for it: the picture, or the name to download. */
 function TaskFileGiven({ taskId, file, caption }: { taskId: string; file: SaidFile; caption: string | null }) {
@@ -33,6 +34,50 @@ function TaskFileGiven({ taskId, file, caption }: { taskId: string; file: SaidFi
 }
 
 const WORKING = new Set(['thinking', 'reading', 'coding', 'testing', 'debugging', 'running_command', 'researching', 'planning', 'reviewing', 'delegating']);
+
+/** What each kind of line in the feed is called, in the small label in front of it. */
+const NOTE_WORD: Record<string, string> = { good: 'done', bad: 'stuck', start: 'started', ask: 'asks', report: 'report', info: 'note' };
+
+/**
+ * What they are doing right now, in one line that changes as it happens: the activity, what it is at (a file, a
+ * command), for how long, the step before while they are back to thinking, and the note of the task in progress.
+ * All of it is already in this window (`lib/live-line.ts`); nothing is asked for and nothing is kept.
+ */
+function LiveLine({ name, activity, detail, since, working, task }: { name: string; activity: string; detail: string | null; since: string | null; working: boolean; task: { key: string; progress: { percent: number | null; note: string | null } } | undefined }) {
+  const [trail, setTrail] = useState(NO_TRAIL);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    setTrail((t) => stepInto(t, working, detail, since));
+  }, [working, detail, since]);
+  // (A clock only while there is something to time.)
+  useEffect(() => {
+    if (!working) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [working, since]);
+  const tone = toneOf(activity);
+  const at = detail?.trim() || null;
+  const sinceMs = since ? Date.parse(since) : NaN;
+  return (
+    <div className={`talk-live talk-live-${tone}`} data-talk-live={activity} title={`What ${name} is doing right now, as their Claude Code session reports it`}>
+      <span className="talk-live-dot" />
+      <span className="talk-live-state">{ACTIVITY_LABEL[activity as keyof typeof ACTIVITY_LABEL] ?? activity}</span>
+      {at ? <span className="talk-live-at mono truncate">{at}</span> : working && trail.last ? <span className="talk-live-at talk-live-before mono truncate">after: {trail.last}</span> : null}
+      <span className="talk-live-rest">
+        {task && (task.progress.note || task.progress.percent != null) && (
+          <span className="truncate" title={task.progress.note ?? undefined}>
+            <span className="talk-key">{task.key}</span>
+            {task.progress.percent != null ? ` ${task.progress.percent}%` : ''}
+            {task.progress.note ? ` · ${task.progress.note}` : ''}
+          </span>
+        )}
+        {working && trail.steps > 0 && <span>{trail.steps} {trail.steps === 1 ? 'step' : 'steps'}</span>}
+        {working && !Number.isNaN(sinceMs) && <span className="mono">{took(now - sinceMs)}</span>}
+      </span>
+    </div>
+  );
+}
 
 /**
  * Talking to an employee at their desk.
@@ -72,7 +117,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
       else if (ev.type === 'agent.file_given' && d.file?.id && d.file?.name) out.push({ kind: 'file', id: ev.id, ts: ev.ts, file: d.file as SaidFile, caption: typeof d.caption === 'string' ? d.caption : null, taskId: typeof d.taskId === 'string' ? d.taskId : null });
       else if (ev.type === 'task.completed') out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: 'good' });
       else if (ev.type === 'task.blocked' || ev.type === 'task.verification_failed') out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: 'bad' });
-      else if (ev.type === 'task.started' || ev.type === 'agent.question' || ev.type === 'agent.status_report') out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: 'info' });
+      else if (ev.type === 'task.started' || ev.type === 'agent.question' || ev.type === 'agent.status_report') out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: ev.type === 'task.started' ? 'start' : ev.type === 'agent.question' ? 'ask' : 'report' });
     }
     return out.sort((a, b) => (a.ts < b.ts ? -1 : 1)).slice(-120);
   }, [e, s.messages, s.events, history.data]);
@@ -147,7 +192,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
       }
       subtitle={folder ? <span className="mono">{folder}</span> : 'No folder yet — give them a project or a working directory in their profile.'}
       onClose={onClose}
-      width={760}
+      width="min(1180px, 94vw)"
       flush
       actions={
         <>
@@ -207,7 +252,9 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
             </div>
           ) : (
             <div key={l.id} className={`talk-note talk-note-${l.tone}`}>
-              {clock(l.ts)} — {l.text}
+              <span className="talk-note-word">{NOTE_WORD[l.tone]}</span>
+              <span className="talk-note-time">{clock(l.ts)}</span>
+              <span>{withKeys(l.text).map((p, i) => (p.key ? <span key={i} className="talk-key">{p.text}</span> : p.text))}</span>
             </div>
           ),
         )}
@@ -219,19 +266,10 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
         {waitingForLines(s, e.id).map((line) => (
           <div key={line} className="talk-note talk-note-info">{line}</div>
         ))}
-        {live && WORKING.has(activity) && (
-          <div className="talk-row">
-            <Avatar appearance={e.appearance} size={26} />
-            <div className="talk-bubble talk-them talk-working">
-              {(ACTIVITY_LABEL[activity] ?? activity).toLowerCase()}
-              {session?.activityDetail ? <span className="mono"> — {session.activityDetail}</span> : null}
-              <span className="talk-dots" />
-            </div>
-          </div>
-        )}
         {!hooks && live && <div className="talk-note talk-note-info">This session has no hooks, so replies cannot be captured here — open the terminal to read them.</div>}
         <div ref={bottom} />
       </div>
+      {live && <LiveLine name={e.name} activity={activity} detail={session?.activityDetail ?? null} since={session?.activitySince ?? null} working={WORKING.has(activity)} task={task} />}
       <div
         className={`talk-compose ${over ? 'talk-compose-over' : ''}`}
         onDragOver={(ev) => {
@@ -246,7 +284,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
         <textarea
           ref={input}
           value={text}
-          rows={2}
+          rows={3}
           placeholder={live ? `Tell ${e.name} what to do… (paste a screenshot with Ctrl+V)` : `${e.name} is not at their desk. Sending a message starts their session.`}
           onChange={(ev) => setText(ev.target.value)}
           onPaste={pending.onPaste}
