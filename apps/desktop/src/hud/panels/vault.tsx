@@ -73,7 +73,7 @@ function VaultPanel({ onClose }: { arg: string | null; onClose: () => void }) {
 
   if (!works) {
     return (
-      <Window title="Vault" subtitle="The office's passwords, tokens and keys" onClose={onClose} width={560}>
+      <Window kit title="Vault" subtitle="The office's passwords, tokens and keys" onClose={onClose} width={560}>
         <p className="muted">The vault is for the people who work in this office. Visitors cannot open it.</p>
       </Window>
     );
@@ -96,7 +96,7 @@ function VaultPanel({ onClose }: { arg: string | null; onClose: () => void }) {
   };
 
   return (
-    <Window title="Vault" subtitle="The office's passwords, tokens and keys" onClose={onClose} width={780}>
+    <Window kit title="Vault" subtitle="The office's passwords, tokens and keys" onClose={onClose} width={780}>
       <div className="col" style={{ gap: 12 }}>
         <div className="small muted">
           Employees use what is here by its name, inside their commands; the value does not appear in their conversation. A password or a key you write to an employee in a message is moved here by itself, and the message goes on with its name.

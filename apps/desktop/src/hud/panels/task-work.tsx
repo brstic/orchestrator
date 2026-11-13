@@ -322,7 +322,7 @@ export function TaskHistory({ task }: { task: Task }) {
 export function EmployeeChanges({ employeeId, onClose }: { employeeId: string; onClose: () => void }) {
   const e = useOffice((s) => s.employees[employeeId]);
   return (
-    <Window title={e ? `${e.name}'s working tree` : 'Working tree'} subtitle="What they have changed in their folder so far" onClose={onClose} width={1040} flush>
+    <Window kit title={e ? `${e.name}'s working tree` : 'Working tree'} subtitle="What they have changed in their folder so far" onClose={onClose} width={1040} flush>
       <div className="pw-frame">
         <div className="pw-body">{e ? <GitChanges path={`/employees/${employeeId}/git`} /> : <Empty title="Unknown employee" />}</div>
       </div>

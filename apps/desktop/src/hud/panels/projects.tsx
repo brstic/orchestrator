@@ -370,28 +370,42 @@ function ProjectPolicyTab({ project }: { project: Project }) {
   );
 
   return (
-    <form className="pw-form" onSubmit={save}>
-      <Field label="Verification command" hint="Run by Orchestrator on the host after an employee reports a task complete. Empty = nothing is run.">
-        <input className="mono" value={draft.verifyCommand} placeholder="npm test" spellCheck={false} onChange={(e) => set({ verifyCommand: e.target.value })} />
-      </Field>
-      <Field label="Verification timeout (seconds)" hint={timeoutOk ? 'The command is stopped and counted as failed after this long.' : 'Enter a whole number of seconds greater than zero.'}>
-        <input type="number" min={1} step={1} value={draft.verifyTimeoutSec} onChange={(e) => set({ verifyTimeoutSec: e.target.value })} />
-      </Field>
+    <form className="k-stack pf-form" onSubmit={save} data-project-policy>
+      <section className="k-section">
+        <div className="k-label">When a task is handed in</div>
+        <div className="pw-form">
+          <Field label="Verification command" hint="Run by the office on the machine after an employee says a task is complete. Empty: nothing is run.">
+            <input className="mono" value={draft.verifyCommand} placeholder="npm test" spellCheck={false} onChange={(e) => set({ verifyCommand: e.target.value })} />
+          </Field>
+          <Field label="Verification timeout (seconds)" hint={timeoutOk ? 'The command is stopped and counted as failed after this long.' : 'Enter a whole number of seconds greater than zero.'}>
+            <input type="number" min={1} step={1} value={draft.verifyTimeoutSec} onChange={(e) => set({ verifyTimeoutSec: e.target.value })} />
+          </Field>
+          {check('requireReview', 'Require review', 'Code tasks created from now on need an approved review before they count as done.')}
+          {check('integrationTests', 'Integration tests', 'After every merge the verification command also runs on the integration branch itself, so work that passes alone but breaks together is caught.')}
+        </div>
+      </section>
 
-      {check('autoAssign', 'Auto-assign', 'READY tasks start on their own when a matching employee is free, and tasks proposed by employees are released without waiting for you.')}
-      {check('requireReview', 'Require review', 'Code tasks created from now on need an approved review before they count as DONE.')}
-      {check('autoMerge', 'Auto-merge', 'Verified work is merged into the integration branch automatically.')}
-      {check('integrationTests', 'Integration tests', 'After every merge the verification command also runs on the integration branch itself, so work that passes alone but breaks together is caught.')}
+      <section className="k-section">
+        <div className="k-label">What happens by itself</div>
+        <div className="pw-form">
+          {check('autoAssign', 'Auto-assign', 'Ready tasks start on their own when a matching employee is free, and tasks proposed by employees are released without waiting for you.')}
+          {check('autoMerge', 'Auto-merge', 'Verified work is merged into the integration branch automatically.')}
+          {check('oneAtATime', 'One at a time in a shared folder', 'Off (the default): employees who work in the same folder work side by side; each is told who else is there, and a task counts only the files its own session wrote. On: the next task for a folder somebody is changing waits its turn.')}
+        </div>
+      </section>
 
-      {check('oneAtATime', 'One at a time in a shared folder', 'Off (the default): employees who work in the same folder work side by side; each is told who else is there, and a task counts only the files its own session wrote. On: the next task for a folder somebody is changing waits its turn.')}
+      <section className="k-section">
+        <div className="k-label">What employees may run here</div>
+        <div className="pw-form">
+          {rules('allow', 'Allow rules', 'One Claude Code permission rule per line. Matching tools run without asking you.', 'Bash(npm test:*)')}
+          {rules('deny', 'Deny rules', 'One rule per line. Matching tools are refused outright.', 'Bash(git push:*)')}
+          {rules('highRisk', 'Extra high-risk patterns', 'One regular expression per line. Matching shell commands always need your approval, in addition to the built-in ones.', 'terraform\\s+apply')}
+          {badRegexes.length > 0 && <div className="pw-error field-wide">Not a valid regular expression: {badRegexes.join('   ')}</div>}
+        </div>
+      </section>
 
-      {rules('allow', 'Allow rules', 'One Claude Code permission rule per line. Matching tools run without asking you.', 'Bash(npm test:*)')}
-      {rules('deny', 'Deny rules', 'One rule per line. Matching tools are refused outright.', 'Bash(git push:*)')}
-      {rules('highRisk', 'Extra high-risk patterns', 'One regular expression per line. Matching shell commands always need your approval, in addition to the built-in ones.', 'terraform\\s+apply')}
-      {badRegexes.length > 0 && <div className="pw-error field-wide">Not a valid regular expression: {badRegexes.join('   ')}</div>}
-
-      <div className="pw-note field-wide">These rules reach a session when it starts: change them, then restart whoever should follow the new ones.</div>
-      <div className="row field-wide">
+      <div className="pf-save" data-policy-save>
+        <div className="pf-save-note">{dirty ? 'Unsaved changes. The rules reach a session when it starts: after saving, restart whoever should follow the new ones.' : 'Nothing is changed. The rules reach a session when it starts.'}</div>
         <Button variant="primary" type="submit" disabled={busy || !dirty || !timeoutOk || badRegexes.length > 0}>
           Save policy
         </Button>
@@ -425,55 +439,53 @@ function ProjectPlan({ project }: { project: Project }) {
 
   if (!planners.length) {
     return (
-      <Empty title="Nobody to plan with">
-        Planning is done by an employee's real session.{' '}
-        <button type="button" className="pw-chip" onClick={() => s.openPanel('team')}>
-          Open the team
-        </button>
-      </Empty>
+      <div className="k-empty">
+        <div className="k-title">Nobody to plan with</div>
+        <div className="k-text">A plan is made by an employee: their session reads the project and proposes the tasks.</div>
+        <Button onClick={() => s.openPanel('team', 'hire')}>Hire somebody</Button>
+      </div>
     );
   }
   return (
-    <div className="col" style={{ gap: 14 }}>
-      <div className="pw-note">
-        Nothing is generated here. The planner gets a real task: their Claude Code session reads the requirements, inspects the repository and proposes a task breakdown through Orchestrator. The objective is also added to the project's goals.{' '}
-        {project.policy.autoAssign
-          ? 'Auto-assign is on for this project, so the proposed tasks are released and start on their own.'
-          : 'Auto-assign is off for this project, so the proposed tasks wait on the board as “proposed” until you release them.'}
+    <div className="k-stack" data-project-plan>
+      <div className="k-text">
+        Say what you want built or changed. The planner gets it as a real task: their Claude Code session reads the requirements, looks through the repository and proposes the tasks, which appear on the board. What you write is also added to the
+        project's goals.{' '}
+        {project.policy.autoAssign ? 'Auto-assign is on for this project, so the proposed tasks are released and start on their own.' : 'Auto-assign is off for this project, so the proposed tasks wait on the board as “proposed” until you release them.'}
       </div>
-      <form className="col" style={{ gap: 12 }} onSubmit={submit}>
-        <Field label="Objective">
-          <textarea value={objective} onChange={(e) => setObjective(e.target.value)} placeholder="What should be built or changed, in your own words." style={{ minHeight: 110 }} autoFocus />
+      <form className="k-form" onSubmit={submit}>
+        <Field label="What you want">
+          <textarea value={objective} onChange={(e) => setObjective(e.target.value)} placeholder="What should be built or changed, in your own words." style={{ minHeight: 110 }} autoFocus aria-label="Objective" />
         </Field>
-        <Field label="Planner" hint="Architects and project managers are listed first.">
-          <select value={plannerId} onChange={(e) => setPlannerId(e.target.value)}>
+        <Field label="Who plans it" hint="Architects and project managers are listed first.">
+          <select value={plannerId} onChange={(e) => setPlannerId(e.target.value)} aria-label="Planner">
             {planners.map((e) => {
               const status = sessionOfEmployee(s.sessions, e.id)?.status;
               return (
                 <option key={e.id} value={e.id}>
                   {e.name} — {e.title}
-                  {status === 'running' || status === 'starting' ? '' : ' (no live session)'}
+                  {status === 'running' || status === 'starting' ? '' : ' (asleep: this wakes them)'}
                 </option>
               );
             })}
           </select>
         </Field>
-        <div className="row">
+        <div className="k-actions">
           <Button variant="primary" type="submit" disabled={busy || !objective.trim() || !plannerId}>
             Ask for a plan
           </Button>
-          {project.status !== 'active' && <span className="small muted">The project is {project.status}: the planning task waits until it is active.</span>}
+          {project.status !== 'active' && <span className="k-sub">The project is {project.status}: the planning task waits until it is active.</span>}
         </div>
       </form>
       {planning.length > 0 && (
-        <div>
-          <div className="section-title">Planning tasks so far</div>
-          <div className="row row-wrap">
+        <section className="k-section">
+          <div className="k-label">Plans asked for so far</div>
+          <div className="k-actions">
             {planning.map((t) => (
               <TaskChip key={t.id} id={t.id} />
             ))}
           </div>
-        </div>
+        </section>
       )}
     </div>
   );
@@ -604,12 +616,19 @@ function ProjectIntegration({ project }: { project: Project }) {
 
   if (project.workspace === 'in_place')
     return (
-      <Empty title="Worked on in place">
-        {project.name} is one employee working directly in its folder, on the branch that is checked out there. There is no integration branch: nothing is merged or promoted by Orchestrator.
-      </Empty>
+      <div className="k-empty">
+        <div className="k-title">Worked on in place</div>
+        <div className="k-text">{project.name} is one employee working directly in its folder, on the branch that is checked out there. There is no integration branch: nothing is merged or promoted by the office.</div>
+      </div>
     );
-  if (error) return <Empty title="Integration status is not available">{error}</Empty>;
-  if (!view) return <div className="small muted">Reading the repository…</div>;
+  if (error)
+    return (
+      <div className="k-empty">
+        <div className="k-title">Integration status is not available</div>
+        <div className="k-text">{error}</div>
+      </div>
+    );
+  if (!view) return <div className="k-sub">Reading the repository…</div>;
   const t = view.lastTest;
   const act2 = (fn: () => Promise<unknown>, ok: string) => run(fn, ok).then(() => load());
   const promote = async () => {
@@ -618,43 +637,57 @@ function ProjectIntegration({ project }: { project: Project }) {
     if (!(await ask({ title: `Move ${view.base} forward by ${view.ahead} commit${view.ahead === 1 ? '' : 's'}?`, body: `${view.base} then matches ${view.integration}. ${where} Nothing is pushed.${red ? '\n\nThe integration tests are FAILING.' : ''}`, ok: red ? 'Promote anyway' : 'Promote', danger: red }))) return;
     void act2(() => api('POST', `/projects/${project.id}/promote`, { force: red }), `${view.base} now has the integrated work`);
   };
+  const testWord = !view.integrationTests ? 'off' : !t ? 'not run' : t.passed ? 'passing' : t.passed === false ? 'failing' : 'could not run';
   return (
-    <div className="col" style={{ gap: 14 }}>
-      <div className="pc-stats">
-        <Stat label="Ahead of the base" value={view.ahead} sub={`commits on ${view.integration} not yet on ${view.base}`} tone={view.ahead ? 'info' : undefined} />
-        <Stat label="Behind the base" value={view.behind} sub={`commits on ${view.base} it lacks`} tone={view.behind ? 'warn' : undefined} />
-        <Stat
-          label="Integration tests"
-          value={!view.integrationTests ? 'off' : !t ? 'not run' : t.passed ? 'passing' : t.passed === false ? 'failing' : 'could not run'}
-          sub={t ? `${t.after} · ${timeAgo(t.ts)}` : view.integrationTests ? 'they run after each merge' : project.verifyCommand ? 'switched off in Policy' : 'no verification command'}
-          tone={t?.passed ? 'good' : t?.passed === false ? 'bad' : undefined}
-        />
+    <div className="k-stack" data-project-integration>
+      <div className="k-figures">
+        <div className="k-figure" title={`commits on ${view.integration} not yet on ${view.base}`}>
+          <b>{view.ahead}</b>
+          <span>finished and waiting to go to {view.base}</span>
+        </div>
+        <div className="k-figure" title={`commits on ${view.base} that ${view.integration} lacks`}>
+          <b className={view.behind ? 'k-warn' : ''}>{view.behind}</b>
+          <span>on {view.base} and not brought in yet</span>
+        </div>
+        <div className="k-figure">
+          <b className={t?.passed ? '' : t?.passed === false ? 'k-bad' : ''} style={{ fontSize: 17, lineHeight: '26px' }}>
+            {testWord}
+          </b>
+          <span>integration tests{t ? ` · ${t.after} · ${timeAgo(t.ts)}` : view.integrationTests ? ' · they run after each merge' : project.verifyCommand ? ' · switched off in Policy' : ' · no verification command'}</span>
+        </div>
       </div>
-      <div className="row" style={{ flexWrap: 'wrap' }}>
+      <div className="k-actions">
         <Button disabled={busy || view.behind === 0} title={view.behind ? `Merge ${view.base} into ${view.integration} (aborted if it conflicts), then test` : `${view.integration} already has everything on ${view.base}`} onClick={() => void act2(() => api('POST', `/projects/${project.id}/integration/sync`, {}), `${view.base} brought into the integration branch`)}>
           Bring in {view.base}
         </Button>
         <Button disabled={busy || !project.verifyCommand} title={project.verifyCommand ? `Run "${project.verifyCommand}" on ${view.integration} now` : 'Set a verification command in Policy first'} onClick={() => void act2(() => api('POST', `/projects/${project.id}/integration/test`, {}), 'Integration tests finished')}>
           Test now
         </Button>
-        <Button variant={t?.passed === false ? 'danger' : 'primary'} disabled={busy || view.ahead === 0 || view.behind > 0 || view.baseDirty} title={view.ahead === 0 ? 'Nothing to promote' : view.behind > 0 ? `Bring in ${view.base} first: promotion is only ever a fast-forward` : view.baseDirty ? `${view.base} has uncommitted changes in ${view.baseCheckout}` : `Fast-forward ${view.base} to ${view.integration}`} onClick={promote}>
+        <Button variant={t?.passed === false ? 'danger' : 'primary'} disabled={busy || view.ahead === 0 || view.behind > 0 || view.baseDirty} title={view.ahead === 0 ? 'Nothing to promote' : view.behind > 0 ? `Bring in ${view.base} first` : view.baseDirty ? `${view.base} has uncommitted changes` : `Move ${view.base} forward to the integrated work`} onClick={promote}>
           Promote to {view.base}
         </Button>
-        <span className="small faint">Promotion is a fast-forward of {view.base} on this machine. Orchestrator never pushes.</span>
       </div>
-      {view.baseDirty && <div className="small bad">{view.base} is checked out in {view.baseCheckout} with uncommitted changes — commit or stash them before promoting.</div>}
-      {t && (
-        <div>
-          <div className="section-title">
-            Last integration test — <span className="mono">{t.command}</span> on {t.sha ? t.sha.slice(0, 8) : 'unknown commit'}
-          </div>
-          <pre className="code" style={{ maxHeight: 220, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
-            {t.outputTail.trim() || (t.passed ? '(no output)' : '(no output; the command failed)')}
-          </pre>
+      <div className="k-text">
+        Finished tasks are merged into <span className="k-mono">{view.integration}</span>. Promoting moves <span className="k-mono">{view.base}</span> forward to it, on this machine; the office never pushes.
+      </div>
+      {view.baseDirty && (
+        <div className="k-note">
+          {view.base} is checked out in {view.baseCheckout} with uncommitted changes — commit or stash them before promoting.
         </div>
       )}
+      {t && (
+        <section className="k-section">
+          <div className="k-label">The last integration test</div>
+          <div className="k-sub" style={{ whiteSpace: 'normal' }}>
+            <span className="k-mono">{t.command}</span> on {t.sha ? t.sha.slice(0, 8) : 'an unknown commit'}
+          </div>
+          <pre className="k-code" style={{ maxHeight: 220, overflow: 'auto', padding: '12px 14px', margin: 0 }}>
+            {t.outputTail.trim() || (t.passed ? '(no output)' : '(no output; the command failed)')}
+          </pre>
+        </section>
+      )}
       {view.lastPromotion && (
-        <div className="small muted">
+        <div className="k-sub">
           Last promoted {timeAgo(view.lastPromotion.ts)}: {view.lastPromotion.commits} commit{view.lastPromotion.commits === 1 ? '' : 's'}, to {view.lastPromotion.sha.slice(0, 8)}.
         </div>
       )}
@@ -779,7 +812,8 @@ function ProjectsPanel({ arg, onClose }: PanelProps) {
       width={1160}
       flush
       actions={
-        <Button variant={selected === NEW ? 'default' : 'primary'} disabled={selected === NEW} onClick={() => setSelected(NEW)}>
+        // (Not blue: what is done most in this window is inside a project — saving, asking for a plan, promoting.)
+        <Button disabled={selected === NEW} onClick={() => setSelected(NEW)}>
           New project
         </Button>
       }

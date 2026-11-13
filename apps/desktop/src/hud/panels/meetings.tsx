@@ -346,7 +346,7 @@ function MeetingsPanel({ arg, onClose }: PanelProps) {
   const [selected, setSelected] = useState(() => (arg && s.meetings[arg] ? arg : (meetings[0]?.id ?? NEW)));
   const meeting = s.meetings[selected];
   return (
-    <Window title="Meetings" subtitle="Put a question to several employees and get one decision" onClose={onClose} width={1120} flush>
+    <Window kit title="Meetings" subtitle="Put a question to several employees and get one decision" onClose={onClose} width={1120} flush>
       <div className="pw-frame">
         <div className="split">
           <div className="split-side col">

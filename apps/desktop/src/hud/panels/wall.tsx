@@ -107,7 +107,7 @@ function WallPanel({ onClose }: PanelProps) {
   const st = useOffice.getState();
 
   return (
-    <Window title="Terminals" subtitle={`${runningTotal} running session${runningTotal === 1 ? '' : 's'} · watching only`} onClose={onClose} width="96vw" flush>
+    <Window kit title="Terminals" subtitle={`${runningTotal} running session${runningTotal === 1 ? '' : 's'} · watching only`} onClose={onClose} width="96vw" flush>
       <div className="pc-wall">
         <div className="pc-wall-bar">
           <div className="seg" role="tablist" aria-label="What the wall shows">

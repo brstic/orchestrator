@@ -165,7 +165,7 @@ function Proposal({ imp }: { imp: Improvement }) {
   const advice = imp.action.type === 'advice';
   const about = imp.projectId ? s.projects[imp.projectId]?.name : imp.employeeId ? s.employees[imp.employeeId]?.name : null;
   return (
-    <div className="card col">
+    <div className="lib-card">
       <div className="row spread" style={{ alignItems: 'flex-start' }}>
         <span className="strong">{imp.title}</span>
         {about && <Badge tone="neutral">{about}</Badge>}
@@ -215,7 +215,7 @@ function ProposedLesson({ lesson }: { lesson: Lesson }) {
   const [busy, run] = useAction();
   const setStatus = (status: Lesson['status'], ok: string) => run(() => api('PATCH', `/lessons/${lesson.id}`, { status }), ok);
   return (
-    <div className="card col">
+    <div className="lib-card">
       <div className="row spread" style={{ alignItems: 'flex-start' }}>
         <span className="strong">
           {lesson.authoredBy.name} proposes a lesson for {whoseLesson(lesson, s.employees, s.projects)}
@@ -257,13 +257,18 @@ function WaitingForYou() {
   };
   return (
     <div className="col" style={{ gap: 12 }}>
-      <div className="row spread">
-        <span className="small muted">What the office found in its own recorded work and will not do without you. Each one says what it is based on.</span>
+      <div className="k-head">
+        <span className="k-text">What the office found in its own recorded work and will not do without you. Each one says what it is based on, and what saying yes does.</span>
         <Button small disabled={busy || !enabled} title={enabled ? 'Read the recorded work again now (it also happens by itself after every finished task)' : 'Learning is switched off'} onClick={look}>
           {busy ? 'Looking…' : 'Look again now'}
         </Button>
       </div>
-      {proposals.length + lessons.length === 0 && <Empty title="Nothing is waiting for you">Proposals appear here when the recorded work shows a pattern — never from a single incident.</Empty>}
+      {proposals.length + lessons.length === 0 && (
+        <div className="k-empty">
+          <div className="k-title">Nothing is waiting for you</div>
+          <div className="k-text">A proposal appears here when the recorded work shows a pattern — never from a single incident: a lesson an employee wants to keep, a rule worth allowing, who should get which kind of task.</div>
+        </div>
+      )}
       {lessons.map((l) => (
         <ProposedLesson key={l.id} lesson={l} />
       ))}
@@ -366,7 +371,7 @@ function LogRow({ e, reverted }: { e: OrchestratorEvent; reverted: Set<string> }
   const reversal = /revert|undone|undo/.test(e.type);
   const about = e.projectId ? s.projects[e.projectId]?.name : e.employeeId ? s.employees[e.employeeId]?.name : null;
   return (
-    <div className="card col" style={{ gap: 6 }}>
+    <div className="lib-card" style={{ gap: 6 }}>
       <div className="row" style={{ alignItems: 'flex-start' }}>
         <div className="grow">
           <div className="strong">{what}</div>
@@ -425,11 +430,12 @@ function DoneByItself() {
   const reverted = new Set(log.map((e) => text(e.data?.revertedEvent)).filter((x): x is string => !!x));
   return (
     <div className="col" style={{ gap: 10 }}>
-      <div className="small muted">Everything the office changed by itself because of what it learned, newest first. Each entry says why, and can be undone.</div>
+      <div className="k-text">Everything the office changed by itself because of what it learned, newest first. Each entry says why, and can be undone.</div>
       {log.length === 0 ? (
-        <Empty title="The office has done nothing by itself">
-          {!enabled ? 'Learning is switched off.' : dial === 'off' ? 'It is set to ask you first, so nothing will appear here.' : 'When it applies something it learned, it is listed here with the reason and an Undo.'}
-        </Empty>
+        <div className="k-empty">
+          <div className="k-title">The office has done nothing by itself</div>
+          <div className="k-text">{!enabled ? 'Learning is switched off.' : dial === 'off' ? 'It is set to ask you first, so nothing will appear here.' : 'When it applies something it learned, it is listed here with the reason and an Undo.'}</div>
+        </div>
       ) : (
         log.map((e) => <LogRow key={e.id} e={e} reverted={reverted} />)
       )}
@@ -596,7 +602,7 @@ function AddLesson({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <form className="card pw-form" onSubmit={submit}>
+    <form className="k-sheet pw-form" onSubmit={submit}>
       <div className="small muted field-wide">Tell your team something once. It is used immediately: added, in your words, to the task prompts of whoever it is for.</div>
       <Field label="Who is it for">
         <select value={scope} onChange={(e) => setScope(e.target.value as Lesson['scope'])}>
@@ -743,7 +749,7 @@ function Outcomes() {
   return (
     <div className="col" style={{ gap: 10 }}>
       <div>
-        <div className="section-title">Is it getting better?</div>
+        <div className="k-label">Is it getting better?</div>
         {previous.tasks === 0 ? (
           <div className="small muted">
             {report.tasks} finished task{report.tasks === 1 ? '' : 's'} so far: {pct(report.trends.overall.firstPassRate)} done right the first time. A comparison appears after {window * 2} tasks.
@@ -771,7 +777,7 @@ function Outcomes() {
       </div>
       {(judged.length > 0 || changes.length > 0) && (
         <div>
-          <div className="section-title">Did what it learned help?</div>
+          <div className="k-label">Did what it learned help?</div>
           <div className="col" style={{ gap: 4 }}>
             {judged.map((l) => (
               <div key={l.lessonId} className="row small" style={{ alignItems: 'flex-start', gap: 8 }}>
@@ -807,14 +813,17 @@ function Results() {
   return (
     <div className="col" style={{ gap: 12 }}>
       <Outcomes />
-      <div className="section-title">Who delivers what</div>
+      <div className="k-label">Who delivers what</div>
       <div className="small muted">
         Counted from the task records. “First time” means no failed verification and no review that sent it back.{' '}
         {routing ? 'Among equally suitable people, the better first-time record gets the task, once they have completed two of that kind.' : 'Learned routing is switched off in Settings, so these counts do not decide who gets a task.'}
         {routing && preferences.length > 0 && ` Preferences you accepted: ${preferences.join('; ')}.`}
       </div>
       {rows.length === 0 ? (
-        <Empty title="No results yet">Rows appear when employees complete tasks.</Empty>
+        <div className="k-empty">
+          <div className="k-title">No results yet</div>
+          <div className="k-text">A line appears for each employee and kind of task once they have completed one.</div>
+        </div>
       ) : (
         <table className="tbl">
           <thead>

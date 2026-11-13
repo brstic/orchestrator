@@ -318,7 +318,7 @@ function OfficePanel({ arg, onClose }: { arg: string | null; onClose: () => void
   const unseated = employees.filter((e) => !e.deskId && e.roleKey !== 'foreman' && !s.hosts[e.hostId ?? '']?.memberId).length;
   const earned = s.milestones.filter((m) => m.unlocks);
   return (
-    <Window title="Floor plan" subtitle={`${s.layout.desks.length} desks, ${free.length} free${unseated ? ` · ${unseated} without a desk` : ''}`} onClose={onClose} width={940} flush>
+    <Window kit title="Floor plan" subtitle={`${s.layout.desks.length} desks, ${free.length} free${unseated ? ` · ${unseated} without a desk` : ''}`} onClose={onClose} width={940} flush>
       <Tabs<'seats' | 'plan' | 'earned'>
         value={tab}
         onChange={setTab}

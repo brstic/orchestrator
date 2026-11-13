@@ -1012,6 +1012,11 @@ button.k-row:focus-visible {
 }
 .pf-form {
   padding-bottom: 8px;
+  /* As tall as the window's body, so that the bar that saves stands at its bottom even under a short form. */
+  min-height: calc(min(600px, 100vh - 250px) - 44px);
+}
+.pf-form > .pf-save {
+  margin-top: auto;
 }
 .pf-form > div:not(.pf-save) {
   display: flex;
@@ -1379,4 +1384,46 @@ button.k-row:focus-visible {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 2px 12px;
+}
+
+/* ───────────── an employee's look: the face beside what is chosen for it ───────────── */
+.lk-cols {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+.lk-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.022);
+}
+.pf-form .pc-color {
+  width: 100%;
+  height: 36px;
+  padding: 3px;
+  border-radius: 10px;
+}
+.pf-form > div.lk-cols {
+  display: grid;
+  gap: 28px;
+}
+
+/* ───────────── windows of the old insides in the new frame: they hang from the top, so they are a little lower ───────────── */
+.win-kit .pw-frame {
+  height: min(820px, calc(100vh - 215px));
+}
+.win-kit .pc-tabbody {
+  height: min(640px, calc(100vh - 255px));
+}
+.win-kit .pc-fixed {
+  height: min(680px, calc(100vh - 215px));
+}
+.win-kit .doc-cols {
+  height: min(70vh, 760px, calc(100vh - 215px));
 }

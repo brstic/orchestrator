@@ -44,7 +44,7 @@ function SeatPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
   const mine = !!seat && !!can.me?.id && roomHost?.memberId === can.me.id;
   if (!arg || (!desk && !roomHost)) {
     return (
-      <Window title="This desk" onClose={onClose} width={520}>
+      <Window kit title="This desk" onClose={onClose} width={520}>
         <p className="muted">That desk no longer exists.</p>
       </Window>
     );
@@ -88,13 +88,13 @@ function SeatPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
   // Somebody already sits here: the only question is who takes their place.
   if (occupant) {
     return (
-      <Window title={`${occupant.name}'s desk`} subtitle="Choosing someone swaps the two of them" onClose={onClose} width={620}>
+      <Window kit title={`${occupant.name}'s desk`} subtitle="Choosing someone swaps the two of them" onClose={onClose} width={620}>
         {list}
       </Window>
     );
   }
   return (
-    <Window title="An empty desk" subtitle={`${where}${neighbours.length ? ` · next to ${neighbours.map((n) => n.name).join(', ')}` : ''}`} onClose={onClose} width={620}>
+    <Window kit title="An empty desk" subtitle={`${where}${neighbours.length ? ` · next to ${neighbours.map((n) => n.name).join(', ')}` : ''}`} onClose={onClose} width={620}>
       {!allowed ? (
         <p className="muted">{seat ? 'Only the member whose room this is, or an owner, can use this desk.' : 'Visitors can look around; they cannot hire or seat anyone.'}</p>
       ) : moving ? (

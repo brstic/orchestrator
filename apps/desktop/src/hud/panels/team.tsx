@@ -472,6 +472,7 @@ function TeamPanel({ arg, onClose }: PanelProps) {
   if (hiring) {
     return (
       <Window
+        kit
         title={self ? 'Sit here with your own Claude Code' : hiring === 'many' ? 'Hire one employee per project folder' : atDesk ? 'Hire someone for this desk' : 'Hire an employee'}
         subtitle={self ? 'A session of your own at this desk: you type, the office only shows it' : 'An employee is a Claude Code session with a name, a folder and a desk'}
         onClose={onClose}
@@ -1137,71 +1138,86 @@ function AppearanceTab({ e }: { e: Employee }) {
     setBusy(false);
     if (res) setA(res.appearance);
   };
+  const changed = (Object.keys(a) as Array<keyof Appearance>).filter((k) => a[k] !== e.appearance[k]);
+  const WORD: Record<string, string> = { skin: 'skin', hair: 'hair colour', shirt: 'shirt', pants: 'trousers', hairStyle: 'hair style', accessory: 'accessory', build: 'build' };
   return (
-    <div className="row" style={{ gap: 24, alignItems: 'flex-start' }}>
-      <div className="col" style={{ alignItems: 'center', width: 150, flex: 'none' }}>
-        <Avatar appearance={a} size={120} />
-        <div className="strong">{e.name}</div>
-        <div className="small faint" style={{ textAlign: 'center' }}>
-          The portrait shows skin, hair and shirt; the rest is seen on the character in the office.</div>
+    <div className="k-stack pf-form" data-profile-look>
+      <div className="lk-cols">
+        <div className="lk-face">
+          <Avatar appearance={a} size={132} />
+          <div className="k-sub" style={{ whiteSpace: 'normal', textAlign: 'center' }}>
+            As they will look. The face shows skin, hair and shirt; the rest is seen on them in the office.
+          </div>
+        </div>
+        <div className="k-stack">
+          <section className="k-section">
+            <div className="k-label">Colours</div>
+            <div className="grid4">
+              {colour('skin', 'Skin')}
+              {colour('hair', 'Hair')}
+              {colour('shirt', 'Shirt')}
+              {colour('pants', 'Trousers')}
+            </div>
+          </section>
+          <section className="k-section">
+            <div className="k-label">Hair and what they wear</div>
+            <div className="grid2">
+              <Field label="Hair style">
+                <select value={a.hairStyle} onChange={(ev) => set('hairStyle', ev.target.value as Appearance['hairStyle'])}>
+                  {HAIR_STYLES.map((h) => {
+                    const need = lockedAt('hairStyle', h);
+                    return (
+                      <option key={h} value={h} disabled={need != null}>
+                        {h}
+                        {need != null ? ` — unlocks at level ${need}` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </Field>
+              <Field label="Accessory">
+                <select value={a.accessory} onChange={(ev) => set('accessory', ev.target.value as Appearance['accessory'])}>
+                  {ACCESSORIES.map((x) => {
+                    const need = lockedAt('accessory', x);
+                    return (
+                      <option key={x} value={x} disabled={need != null}>
+                        {x}
+                        {need != null ? ` — unlocks at level ${need}` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </Field>
+            </div>
+            {/* What is earned with levels, in a sentence: what they have, and what comes next. */}
+            <div className="k-sub look-locks" style={{ whiteSpace: 'normal' }} aria-label="Looks unlocked by level">
+              {e.name} is level {e.level}. Some looks are earned with levels:{' '}
+              {unlocks.map((u, i) => (
+                <span key={u.label} title={e.level >= u.level ? 'Unlocked' : `Unlocks at level ${u.level}`} style={e.level >= u.level ? { color: 'var(--text)' } : undefined}>
+                  {i > 0 ? ', ' : ''}
+                  {u.label} at level {u.level}
+                  {e.level >= u.level ? ' ✓' : ''}
+                </span>
+              ))}
+              .
+            </div>
+          </section>
+          <section className="k-section">
+            <div className="k-label">Build</div>
+            <Field label={`${a.build.toFixed(2)}× — how big they are in the office, 0.90 to 1.10`}>
+              <input type="range" className="pc-range" min={0.9} max={1.1} step={0.01} value={a.build} onChange={(ev) => set('build', Number(ev.target.value))} />
+            </Field>
+          </section>
+        </div>
       </div>
-      <div className="grow col" style={{ gap: 14 }}>
-        <div className="grid4">
-          {colour('skin', 'Skin')}
-          {colour('hair', 'Hair')}
-          {colour('shirt', 'Shirt')}
-          {colour('pants', 'Trousers')}
-        </div>
-        <div className="grid2">
-          <Field label="Hair style">
-            <select value={a.hairStyle} onChange={(ev) => set('hairStyle', ev.target.value as Appearance['hairStyle'])}>
-              {HAIR_STYLES.map((h) => {
-                const need = lockedAt('hairStyle', h);
-                return (
-                  <option key={h} value={h} disabled={need != null}>
-                    {h}
-                    {need != null ? ` — unlocks at level ${need}` : ''}
-                  </option>
-                );
-              })}
-            </select>
-          </Field>
-          <Field label="Accessory">
-            <select value={a.accessory} onChange={(ev) => set('accessory', ev.target.value as Appearance['accessory'])}>
-              {ACCESSORIES.map((x) => {
-                const need = lockedAt('accessory', x);
-                return (
-                  <option key={x} value={x} disabled={need != null}>
-                    {x}
-                    {need != null ? ` — unlocks at level ${need}` : ''}
-                  </option>
-                );
-              })}
-            </select>
-          </Field>
-        </div>
-        <div className="look-locks small" aria-label="Looks unlocked by level">
-          <span className="muted">
-            {e.name} is level {e.level}. Earned with levels:
-          </span>
-          {unlocks.map((u) => (
-            <Badge key={u.label} tone={e.level >= u.level ? 'good' : 'muted'} title={e.level >= u.level ? 'Unlocked' : `Unlocks at level ${u.level}`}>
-              {u.label} · level {u.level}
-              {e.level >= u.level ? ' ✓' : ''}
-            </Badge>
-          ))}
-        </div>
-        <Field label={`Build — ${a.build.toFixed(2)}×`} hint="Body scale of the 3D character, 0.90 to 1.10.">
-          <input type="range" className="pc-range" min={0.9} max={1.1} step={0.01} value={a.build} onChange={(ev) => set('build', Number(ev.target.value))} />
-        </Field>
-        <div className="row">
-          <Button variant="primary" disabled={!dirty || busy} onClick={save}>
-            Save appearance
-          </Button>
-          <Button variant="ghost" disabled={!dirty || busy} onClick={() => setA(e.appearance)}>
-            Discard
-          </Button>
-        </div>
+      <div className="pf-save" data-look-save>
+        <div className="pf-save-note">{dirty ? `Unsaved: ${changed.map((k) => WORD[k] ?? k).join(', ')}. Everybody in the office sees it once it is saved.` : 'Nothing is changed.'}</div>
+        <Button variant="ghost" className="k-quiet" disabled={!dirty || busy} onClick={() => setA(e.appearance)}>
+          Discard
+        </Button>
+        <Button variant="primary" disabled={!dirty || busy} onClick={save}>
+          Save appearance
+        </Button>
       </div>
     </div>
   );
@@ -1623,13 +1639,11 @@ function DeskTab({ e }: { e: Employee }) {
   const scheduleDirty = available !== e.schedule.available || from !== (e.schedule.from ?? '') || to !== (e.schedule.to ?? '');
   const saveSchedule = () => act(() => api('PATCH', `/employees/${e.id}`, { schedule: { available, ...(from ? { from } : {}), ...(to ? { to } : {}) } }), 'Schedule saved');
   return (
-    <div className="col" style={{ gap: 14 }}>
-      <div>
-        <div className="section-title">Desk</div>
-        <div className="row row-wrap" style={{ marginBottom: 8 }}>
-          <span className="small muted">{e.archived ? 'Archived employees have no desk.' : `Click a desk to move ${e.name} there. An occupied desk swaps the two employees.`}</span>
-          <span className="grow" />
-          <select style={{ width: 'auto' }} value={e.deskId ?? ''} disabled={busy || e.archived} onChange={(ev) => ev.target.value && void move(ev.target.value)} aria-label="Desk">
+    <div className="k-stack" data-profile-desk>
+      <section className="k-section">
+        <div className="k-head">
+          <div className="k-label">Where they sit</div>
+          <select style={{ width: 'auto', maxWidth: 280 }} value={e.deskId ?? ''} disabled={busy || e.archived} onChange={(ev) => ev.target.value && void move(ev.target.value)} aria-label="Desk">
             {!e.deskId && <option value="">No desk</option>}
             {layout.desks.map((desk) => {
               const o = occupants.get(desk.id);
@@ -1641,7 +1655,8 @@ function DeskTab({ e }: { e: Employee }) {
             })}
           </select>
         </div>
-        <OfficeSvg layout={layout} unlocked={unlocked} label="Desk picker" style={{ maxHeight: 380 }}>
+        <div className="k-text">{e.archived ? 'Archived employees have no desk.' : `Click a desk on the plan to move ${e.name} there. A desk somebody sits at swaps the two.`}</div>
+        <OfficeSvg layout={layout} unlocked={unlocked} label="Desk picker" style={{ maxHeight: 340 }}>
           {layout.desks.map((desk) => {
             const o = occupants.get(desk.id);
             const mine = o?.id === e.id;
@@ -1668,59 +1683,58 @@ function DeskTab({ e }: { e: Employee }) {
             );
           })}
         </OfficeSvg>
-        <div className="pc-legend" style={{ marginTop: 8 }}>
+        <div className="k-legend">
           <span>
-            <i style={{ background: 'var(--accent-strong)', borderRadius: 3 }} /> {e.name}
+            <i style={{ background: 'var(--accent-strong)' }} /> {e.name}
           </span>
           <span>
-            <i style={{ background: '#3a3350', borderRadius: 3 }} /> occupied (initials)
+            <i style={{ background: '#3a3350' }} /> somebody else (their initials)
           </span>
           <span>
-            <i style={{ background: '#232c3e', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 3 }} /> free
+            <i style={{ background: '#232c3e', border: '1px solid rgba(255,255,255,0.3)' }} /> free
           </span>
         </div>
-      </div>
+      </section>
 
-      <div>
-        <div className="section-title">Schedule</div>
-        <div className="col">
-          <label className="check">
-            <input type="checkbox" checked={available} onChange={(ev) => setAvailable(ev.target.checked)} />
-            <span>
-              Available for work
-              <br />
-              <span className="small faint">When off, the scheduler never starts work for {e.name} on its own. You can still assign and start things by hand.</span>
-            </span>
-          </label>
-          <div className="row row-wrap" style={{ alignItems: 'flex-end' }}>
-            <div style={{ width: 140 }}>
-              <Field label="From">
-                <input type="time" className="pc-input" value={from} onChange={(ev) => setFrom(ev.target.value)} disabled={!available} />
-              </Field>
-            </div>
-            <div style={{ width: 140 }}>
-              <Field label="To">
-                <input type="time" className="pc-input" value={to} onChange={(ev) => setTo(ev.target.value)} disabled={!available} />
-              </Field>
-            </div>
-            <Button variant="primary" disabled={!scheduleDirty} onClick={saveSchedule}>
-              Save schedule
-            </Button>
-            {(from || to) && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setFrom('');
-                  setTo('');
-                }}
-              >
-                Clear window
-              </Button>
-            )}
+      <section className="k-section">
+        <div className="k-label">When they work</div>
+        <label className="check" style={{ alignItems: 'flex-start' }}>
+          <input type="checkbox" checked={available} onChange={(ev) => setAvailable(ev.target.checked)} />
+          <span>
+            Available for work
+            <br />
+            <span className="k-sub" style={{ whiteSpace: 'normal' }}>When off, the office never starts work for {e.name} by itself. You can still give them tasks and start them by hand.</span>
+          </span>
+        </label>
+        <div className="k-actions" style={{ alignItems: 'flex-end' }}>
+          <div style={{ width: 140 }}>
+            <Field label="From">
+              <input type="time" className="pc-input" value={from} onChange={(ev) => setFrom(ev.target.value)} disabled={!available} />
+            </Field>
           </div>
-          <div className="small faint">The server's local time. A window needs both times (it may cross midnight); leave them empty for “always”.</div>
+          <div style={{ width: 140 }}>
+            <Field label="To">
+              <input type="time" className="pc-input" value={to} onChange={(ev) => setTo(ev.target.value)} disabled={!available} />
+            </Field>
+          </div>
+          <Button disabled={!scheduleDirty} onClick={saveSchedule}>
+            Save schedule
+          </Button>
+          {(from || to) && (
+            <Button
+              variant="ghost"
+              className="k-quiet"
+              onClick={() => {
+                setFrom('');
+                setTo('');
+              }}
+            >
+              Clear the hours
+            </Button>
+          )}
         </div>
-      </div>
+        <div className="k-sub" style={{ whiteSpace: 'normal' }}>Hours are in the server's local time and need both ends (they may cross midnight). Left empty: always.</div>
+      </section>
     </div>
   );
 }

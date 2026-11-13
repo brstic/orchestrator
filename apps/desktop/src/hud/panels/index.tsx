@@ -28,7 +28,7 @@ export function registerLazyPanels(ids: PanelId[], load: () => Promise<unknown>)
 
 function Unavailable({ id, why, onClose }: { id: string; why: string; onClose: () => void }) {
   return (
-    <Window title={id} onClose={onClose} width={520}>
+    <Window kit title={id} onClose={onClose} width={520}>
       <p className="muted">{why}</p>
     </Window>
   );
@@ -41,7 +41,7 @@ function Unavailable({ id, why, onClose }: { id: string; why: string; onClose: (
  */
 function OutOfDate({ onClose }: { onClose: () => void }) {
   return (
-    <Window title="The office was updated" onClose={onClose} width={520}>
+    <Window kit title="The office was updated" onClose={onClose} width={520}>
       <p className="muted">This window was opened before the update and is asking for parts of the old version, which the office no longer has. Reload it to get the new one. Nothing your employees are doing is interrupted.</p>
       <div className="row" style={{ gap: 8, marginTop: 10 }}>
         <Button variant="primary" small onClick={() => window.location.reload()}>
@@ -87,7 +87,7 @@ function QuestionPanel({ arg, onClose }: { arg: string | null; onClose: () => vo
   const q = useOffice((s) => (arg ? s.questions[arg] : undefined));
   if (!q) return null;
   return (
-    <Window title={q.kind === 'permission' ? 'Approval request' : q.kind === 'trust_prompt' ? 'Claude Code needs a decision' : 'Question from your team'} onClose={onClose} width={640}>
+    <Window kit title={q.kind === 'permission' ? 'Approval request' : q.kind === 'trust_prompt' ? 'Claude Code needs a decision' : 'Question from your team'} onClose={onClose} width={640}>
       <QuestionBody q={q} onDone={onClose} />
     </Window>
   );

@@ -9,6 +9,8 @@ import { ClaudeAccounts, Portfolio, Timeline, Usage } from './ceo.tsx';
 import { registerPanel } from './index.tsx';
 import { ActivityBadge, HostLabel, NOT_AVAILABLE, attentionOf, byName, fmtDateTime, fmtInt, humanize, isLive, isWorking, onActivate, openNotificationTarget, useTick, type PanelProps } from './company-shared.tsx';
 import { needsYou } from '../../lib/attention.ts';
+import { employeeState } from '../../lib/my-work.ts';
+import { State } from './kit.tsx';
 
 interface AttentionItem {
   key: string;
@@ -133,6 +135,7 @@ function OverviewPanel({ arg, onClose }: PanelProps) {
 
   return (
     <Window
+      kit
       title={settings?.companyName || 'Company'}
       subtitle={summary}
       onClose={onClose}
@@ -159,44 +162,37 @@ function OverviewPanel({ arg, onClose }: PanelProps) {
       />
       <div className="pc-tabbody">
         {tab === 'now' && (
-          <div className="col" style={{ gap: 16 }}>
-        <div>
-          <div className="section-title">Needs you{attention.length ? ` (${attention.length})` : ''}</div>
+          <div className="k-stack">
+        <section className="k-section" data-company-needs>
+          <div className="k-label section-title" style={{ margin: 0 }}>
+            Needs you{attention.length ? ` (${attention.length})` : ''}
+          </div>
           {attention.length === 0 ? (
-            <div className="card small muted">Nothing needs you right now.</div>
+            <div className="k-sub">Nothing needs you right now.</div>
           ) : (
-            <div className="list">
+            <div className="k-group k-notice">
               {attention.map((a) => (
-                <button key={a.key} className="pc-rowbtn" onClick={a.go}>
-                  <Badge tone={a.tone}>{a.tag}</Badge>
-                  <span className="grow">
-                    <span className="truncate" style={{ display: 'block' }}>
-                      {a.text}
-                    </span>
-                    {a.sub && (
-                      <span className="small muted truncate" style={{ display: 'block' }}>
-                        {a.sub}
-                      </span>
-                    )}
+                <button key={a.key} type="button" className="k-row k-row-sm" onClick={a.go}>
+                  <span className="k-main">
+                    <span className="k-title k-title-sm">{a.text}</span>
+                    {a.sub && <span className="k-sub">{a.sub}</span>}
                   </span>
-                  {a.when && <span className="small faint pc-nowrap">{timeAgo(a.when)}</span>}
+                  {a.when && <span className="k-aside">{timeAgo(a.when)}</span>}
+                  <State word={a.tag} tone={a.tone === 'bad' ? 'bad' : 'warn'} width={84} />
                 </button>
               ))}
             </div>
           )}
           {proposed > 0 && (
-            <button className="pc-rowbtn small muted" style={{ marginTop: 6 }} onClick={() => useOffice.getState().openPanel('tasks')}>
+            <button type="button" className="k-link" style={{ alignSelf: 'flex-start' }} onClick={() => useOffice.getState().openPanel('tasks')}>
               {proposed} proposed task{proposed === 1 ? '' : 's'} in the backlog {proposed === 1 ? 'waits' : 'wait'} for you to release {proposed === 1 ? 'it' : 'them'} — open Tasks
             </button>
           )}
-        </div>
+        </section>
         <div>
-          <div className="row" style={{ marginBottom: 6 }}>
-            <div className="section-title" style={{ margin: 0 }}>
-              Everyone
-            </div>
-            <span className="grow" />
-            <input style={{ width: 260 }} value={search} onChange={(ev) => setSearch(ev.target.value)} placeholder="Search people, tasks or states…" aria-label="Search employees" />
+          <div className="k-head" style={{ marginBottom: 8 }}>
+            <div className="k-label">Everyone — who is doing what (a click walks to their desk)</div>
+            <input style={{ width: 280 }} value={search} onChange={(ev) => setSearch(ev.target.value)} placeholder="Find by name, task or state…" aria-label="Search employees" />
           </div>
           {team.length === 0 ? (
             <Empty title="No employees yet">Hire someone from the Team panel.</Empty>
@@ -229,7 +225,7 @@ function OverviewPanel({ arg, onClose }: PanelProps) {
                         </div>
                       </td>
                       <td>
-                        <ActivityBadge activity={activity} needsYou={attn === 'needs'} />
+                        <State {...employeeState(activity, attn === 'needs')} />
                       </td>
                       <td style={{ maxWidth: 240 }}>
                         <div className="small mono muted truncate" title={session?.activityDetail ?? undefined}>

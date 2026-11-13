@@ -888,7 +888,7 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
   const readOnly = current.group === 'office' && !owner;
   return (
     // While a key is being captured the window must not react to Escape: it may be the key being bound.
-    <Window title="Settings" subtitle={`${GROUPS.find((g) => g.id === current.group)!.label} · ${current.label}`} onClose={capturing ? undefined : onClose} width={940} flush>
+    <Window kit title="Settings" subtitle={`${GROUPS.find((g) => g.id === current.group)!.label} · ${current.label}`} onClose={capturing ? undefined : onClose} width={940} flush>
       <div className="split pc-fixed" style={{ gridTemplateColumns: '190px 1fr' }}>
         <nav className="split-side list" aria-label="Settings sections">
           {GROUPS.map((g) => (

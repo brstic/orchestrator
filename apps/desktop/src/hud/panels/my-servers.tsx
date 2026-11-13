@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Host } from '@orchestrator/contracts';
-import { Badge, Button, Empty, Field } from '@orchestrator/ui';
+import { Button, Field } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { nativeCall } from '../../lib/native-call.ts';
 import { useOffice } from '../../lib/store.ts';
@@ -163,41 +163,43 @@ export function MyServers({ memberId }: { memberId: string }) {
 
   return (
     <div className="k-stack my-servers">
-      <div className="row">
-        <span className="section-title grow" style={{ margin: 0 }}>
-          My servers ({servers.length})
-        </span>
+      <div className="k-head">
+        <div className="k-text">
+          Servers only you can reach, brought in over SSH with the keys on this computer. They are yours like your computer, and stay in the office when you leave. Share one and it becomes a machine of the office that colleagues work on.
+        </div>
         {!adding && (
-          <Button small variant="primary" disabled={!native} title={native ? undefined : 'Open this office in the Orchestrator desktop app: bringing a server in uses the SSH keys on your computer'} onClick={() => setAdding(true)}>
+          <Button small disabled={!native} title={native ? undefined : 'Open this office in the Orchestrator desktop app: bringing a server in uses the SSH keys on your computer'} onClick={() => setAdding(true)}>
             Bring a server in…
           </Button>
         )}
       </div>
-      <div className="small muted">
-        Servers only you can reach, brought in over SSH with the keys on this computer. They are yours like your computer, and stay in the office when you leave. Share one and it becomes a machine of the office that colleagues work on.
-      </div>
-      {!native && <div className="small faint">A browser tab cannot reach your servers: open this office in the desktop app to add one. Sharing and taking back work from here.</div>}
+      {!native && <div className="k-note">A browser tab cannot reach your servers: open this office in the desktop app to add one. Sharing and taking back work from here.</div>}
 
-      {servers.length === 0 && pending.length === 0 && !adding && <Empty title="No server of yours here yet">A server you can ssh into, with Node.js 22.18+, tmux and Claude Code on it.</Empty>}
+      {servers.length === 0 && pending.length === 0 && !adding && (
+        <div className="k-empty">
+          <div className="k-title">No server of yours here yet</div>
+          <div className="k-text">A server you can ssh into, with Node.js 22.18+, tmux and Claude Code on it.</div>
+        </div>
+      )}
 
-      <div className="list">
+      <div className={servers.length + pending.length > 0 ? 'k-group' : undefined}>
         {servers.map((h) => {
           const rec = recordOf(h);
           const shared = !h.memberId;
           return (
-            <div key={h.id} className="row my-server-row" style={{ padding: '6px 0', gap: 10 }}>
-              <div className="grow" style={{ minWidth: 0 }}>
-                <span className="strong">{h.name}</span> <span className="small muted">{rec?.target ?? h.info?.hostname ?? ''}</span>
-                <div className="small faint">
-                  {staff(h)} {staff(h) === 1 ? 'employee' : 'employees'} · {shared ? 'shared: a machine of the office, colleagues work on it' : 'yours alone, in your room'}
-                  {rec?.step ? ` · ${rec.step}…` : ''}
+            <div key={h.id} className="k-row my-server-row" style={{ flexWrap: 'wrap' }}>
+              <span className={`k-dot ${h.status === 'online' ? '' : 'k-dot-off'}`} title={h.status === 'online' ? 'in the office' : 'not connected'} aria-hidden />
+              <div className="k-main">
+                <div className="k-title">
+                  {h.name}
+                  <span className="k-title-note">{rec?.target ?? h.info?.hostname ?? ''}</span>
                 </div>
-                {rec && (
-                  <div className="small faint">
-                    Folders: <span className="mono">{rec.roots.length ? rec.roots.join(', ') : 'the home folder'}</span>
-                  </div>
-                )}
-                {rec?.error && <div className="small bad">{rec.error}</div>}
+                <div className="k-sub" style={{ whiteSpace: 'normal' }}>
+                  {h.status === 'online' ? 'in the office' : 'not connected'} · {staff(h)} {staff(h) === 1 ? 'employee' : 'employees'} · {shared ? 'shared: a machine of the office, colleagues work on it' : 'yours alone, in your room'}
+                  {rec?.step ? ` · ${rec.step}…` : ''}
+                  {rec ? ` · folders: ${rec.roots.length ? rec.roots.join(', ') : 'the home folder'}` : ''}
+                </div>
+                {rec?.error && <div className="small k-bad">{rec.error}</div>}
                 {rec && editing?.id === rec.id && (
                   <div className="col" style={{ gap: 6, marginTop: 6 }}>
                     <input value={editing.text} placeholder="~/code, /srv/app" onChange={(ev) => setEditing({ ...editing, text: ev.target.value })} aria-label="Folders employees may work in" spellCheck={false} autoFocus disabled={editing.busy} />
@@ -270,7 +272,6 @@ export function MyServers({ memberId }: { memberId: string }) {
                   </div>
                 )}
               </div>
-              <Badge tone={h.status === 'online' ? 'good' : 'muted'}>{h.status === 'online' ? 'in the office' : 'not connected'}</Badge>
               {h.status !== 'online' && rec && native && (
                 <Button small onClick={() => void nativeCall(() => native.reconnect(rec.id)).then((r) => 'error' in r && r.error && useOffice.getState().toast(r.error, 'error'))} title="Start the agent on the server again (after the server was restarted)">
                   Reconnect
@@ -291,17 +292,23 @@ export function MyServers({ memberId }: { memberId: string }) {
               <Button small onClick={() => void share(h, !shared)}>
                 {shared ? 'Take back' : 'Share…'}
               </Button>
-              <Button small variant="ghost" onClick={() => void remove(h)}>
+              <Button small variant="ghost" className="k-quiet" onClick={() => void remove(h)}>
                 Remove…
               </Button>
             </div>
           );
         })}
         {pending.map((r) => (
-          <div key={r.id} className="row my-server-row" style={{ padding: '6px 0', gap: 10 }}>
-            <div className="grow" style={{ minWidth: 0 }}>
-              <span className="strong">{r.name}</span> <span className="small muted">{r.target}</span>
-              <div className={`small ${r.error ? 'bad' : 'faint'}`}>{r.error ?? (r.step ? `${r.step}…` : 'not in the office')}</div>
+          <div key={r.id} className="k-row my-server-row">
+            <span className={`k-dot ${r.error ? 'k-dot-bad' : r.step ? 'k-dot-busy' : 'k-dot-off'}`} aria-hidden />
+            <div className="k-main">
+              <div className="k-title">
+                {r.name}
+                <span className="k-title-note">{r.target}</span>
+              </div>
+              <div className={`k-sub ${r.error ? 'k-bad' : ''}`} style={{ whiteSpace: 'normal' }}>
+                {r.error ?? (r.step ? `${r.step}…` : 'not in the office')}
+              </div>
             </div>
             {native && !r.step && (
               <Button small variant="ghost" onClick={() => void nativeCall(() => native.remove(r.id)).then((res) => 'error' in res && res.error && useOffice.getState().toast(res.error, 'error'))}>
@@ -313,7 +320,7 @@ export function MyServers({ memberId }: { memberId: string }) {
       </div>
 
       {adding && native && (
-        <div className="col" style={{ gap: 8 }}>
+        <div className="k-sheet">
           <div className="grid2">
             <Field label="Server" hint="As you would type it after ssh: user@host, a name from your ~/.ssh/config, optionally :port. Key login only.">
               <input value={target} placeholder="deploy@build.example.com" onChange={(ev) => setTarget(ev.target.value)} aria-label="Server" autoFocus spellCheck={false} />

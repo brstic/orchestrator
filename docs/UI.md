@@ -79,12 +79,14 @@ Colours, fonts and the old classes (`.btn`, `.badge`, `.field`, `.avatar`) are t
 | The menu | 2026-11-13 | See below |
 | Inbox | 2026-11-13 | See below |
 | Team | 2026-11-13 | See below |
-| An employee's window (Profile) | 2026-11-13 | See below; all its tabs but Look and Desk and hours (in the new frame, their insides as they were) |
-| Projects | 2026-11-13 | See below; its Plan, Integration and Policy tabs are in the new frame with their old insides |
+| An employee's window (Profile) | 2026-11-13 | See below; every tab |
+| Projects | 2026-11-13 | See below; every tab |
 | Reports | 2026-11-13 | See below |
-| Growth | 2026-11-13 | See below; what stands inside "Waiting for you", "Done by itself" and "Is it working?" is as it was |
-| My room | 2026-11-13 | See below; "My servers" is in the new frame with its old insides |
-| every other | — | As they were |
+| Growth | 2026-11-13 | See below; every shelf (the table under "Is it working?" is still a table: it is one) |
+| My room | 2026-11-13 | See below; every tab |
+| Company | 2026-11-13 | Its frame, and the *Now* tab: what needs you as lines, and "Everyone" with a word and a dot instead of a badge (it stays a table: this is where everybody is compared). Projects, Claude, History and Record: the new frame, their insides as they were |
+| Help | 2026-11-13 | The new frame, and a list of what each window is for |
+| Tasks, a task, New task, Meetings, Access, Vault, Settings, Map, Floor plan, Terminals, Hi-fi, TV, Arcade, Talk, a question, a desk | 2026-11-13 | **The new frame only** (the window's head, its air, hanging from the top): their insides are as they were. Tasks keeps the board the owner knows (`add-to-a-layout-do-not-replace-it`) |
 
 ## Machines
 
@@ -166,7 +168,8 @@ The same names and lines are in **Help**, under *What each window is for* (each 
 - **Session**: one sentence on what a session is; *Pause* / *Stop session…* / *Open terminal* (no red button: stopping asks first); the session now in two lines — how it is and since when, and who holds the keyboard — then six facts (machine, model, last heard from, folder, branch, tokens); the rest (how it runs, what the office can do with it, tmux, process, permission mode) under *Technical details*; earlier sessions folded.
 - **Messages**: everything said to and by them, one line each under *Today / Yesterday / Earlier* ("From Boss · …", how long ago, and one word for whether it got there); a click shows all of it.
 - **History**: what they did and what was done with them, one line each by day — the time, what happened, and who it came from in words ("by the office", "from their session", "by a person"); the event's code is in the tooltip; a line about a task opens it.
-- **Look** (was "Appearance") and **Desk and hours**: in the new frame, their insides as they were.
+- **Look** (was "Appearance"): the face as it will look beside what is chosen for it — colours, hair and what they wear (what is earned with levels in one sentence, not three badges), build — and the same bar at the bottom ("Unsaved: shirt, hair style…", *Discard*, *Save appearance*).
+- **Desk and hours**: *Where they sit* (the plan of the floor; a click moves them, a taken desk swaps) and *When they work* (available or not, and the hours).
 - The window keeps one size from tab to tab. `openPanel('employee', '<id>:settings')` (or `:profile`) opens the settings; without a tab it opens Overview.
 
 **Roles.** A visitor gets the small card as before (role, project, task, skills, level, *Watch terminal*), now with the same head.
@@ -181,7 +184,9 @@ The same names and lines are in **Help**, under *What each window is for* (each 
 
 - **Overview** (new, and where a project opens): **How far it is** — one bar in parts (done, in review, in progress, blocked, not started) with what the parts are; **Open now** — its open tasks with the face of whoever is on each (a click opens the task; *Its tasks* opens the board filtered to it) and under them what was **done lately**; **Who is on it** — its people with how each is (a click opens the person); **What it is** — the description, and the way to change it; *Show only this project in the office*.
 - **About** (was the Overview's form): description, goals, requirements, notes — "what employees on this project are told about it" — where it lives (folder, machine, branches), other repositories and what it builds on.
-- **Plan**, **Integration**, **Policy**: as they were, each beginning with a line that says what it is for.
+- **Plan**: what you want, who plans it, *Ask for a plan*; what happens then is said above the box.
+- **Integration**: what it is for, three figures (finished and waiting to go to the main branch, on it and not brought in yet, how the integration tests stand), *Bring in* / *Test now* / *Promote*, and the last test's output.
+- **Policy**: the same switches and rules, under three headings — *When a task is handed in*, *What happens by itself*, *What employees may run here* — with the bar that saves at the bottom.
 
 ## Reports
 
@@ -199,4 +204,4 @@ It is **what employees wrote for you**, kept to be read: on the left the documen
 
 `hud/panels/my-room.tsx`, `my-servers.tsx`. It was four cards one under the other. Now the head says whether this computer is in the office and how many work in the room, *Add folders…* is the one main button, and three tabs keep one size: **Who is in it** (one line each: face, name, title, their folder, how they are, *Talk* or *Start*; what the room is, in three lines; Claude Code found running outside the office), **The room** (its name, colour, desks, floor, furniture, and *Close my room*; saved as it is changed), **My servers**. `openPanel('myroom', 'room' | 'servers')` opens on a tab.
 
-**Checked, for these four:** unit `apps/desktop/test/project-view.test.ts`; the UI suite's steps for Projects (created, paused, resumed; Integration; Policy; deleted), Reports (a document listed and shown), Growth (the new step "Growth is a library…": the shelves and their counts, one open at a time, the dial under *How it learns*; a lesson taught, found, retired, edited; a suggestion applied). Looked at in a development office with two projects, six lessons on four shelves and two reports, as owner; My room as a member with five employees. **Not looked at:** Projects' Plan, Integration and Policy tabs beyond that they work (old insides); a report long enough to scroll, and more than a handful of them; Growth with something waiting and with dozens of lessons; *My servers* (it needs the desktop app and a real server); none of the four as a visitor or a colleague.
+**Checked, for these four:** unit `apps/desktop/test/project-view.test.ts`; the UI suite's steps for Projects (created, paused, resumed; Integration; Policy; deleted), Reports (a document listed and shown), Growth (the new step "Growth is a library…": the shelves and their counts, one open at a time, the dial under *How it learns*; a lesson taught, found, retired, edited; a suggestion applied). Looked at in a development office with two projects, six lessons on four shelves and two reports, as owner; My room as a member with five employees. **Not looked at:** a project worked on in place (no integration branch) and one whose integration tests fail; a report long enough to scroll, and more than a handful of them; Growth with something waiting and with dozens of lessons; *My servers* with a server in it (it needs the desktop app and a real server: its lines were restyled and only read); none of the four as a colleague.

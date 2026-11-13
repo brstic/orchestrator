@@ -125,6 +125,7 @@ function DocsPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
   const meta = files.find((f) => f.path === selected);
   return (
     <Window
+      kit
       title={`${employee.name}'s documents`}
       subtitle={listing?.root ? <span className="mono">{listing.root}</span> : 'The Markdown files in their folder'}
       onClose={onClose}

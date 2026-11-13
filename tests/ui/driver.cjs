@@ -1932,10 +1932,12 @@ async function scenario() {
     const pid = await js(`Object.values(window.__t.store().projects).find((p) => p.name === 'Customer Platform').id`);
     await open('projects', JSON.stringify(pid));
     await clickText('Integration');
-    await waitFor(`/Ahead of the base/.test(window.__t.scope().textContent)`, 10000);
+    // What the tab is for is said at its top; then three figures, and what can be done.
+    await waitFor(`/Where finished work comes together/.test(window.__t.scope().textContent) && /waiting to go to/.test(window.__t.scope().textContent) && window.__t.scope().querySelectorAll('[data-project-integration] .k-figure').length === 3`, 10000);
     await clickText('Test now');
-    await waitFor(`/Last integration test/.test(window.__t.scope().textContent) && /on request/.test(window.__t.scope().textContent)`, 30000);
-    const verdict = await js(`(window.__t.scope().textContent.match(/Integration tests(passing|failing|could not run)/) || [])[1]`);
+    await waitFor(`/The last integration test/.test(window.__t.scope().textContent) && /on request/.test(window.__t.scope().textContent)`, 30000);
+    const verdict = await js(`(window.__t.scope().textContent.match(/(passing|failing|could not run)integration tests/) || [])[1]`);
+    if (!verdict) throw new Error('the tab does not say how the integration tests went');
     await shot('project-integration');
     await close();
     return `integration tests ${verdict}, run on request`;

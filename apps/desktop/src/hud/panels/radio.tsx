@@ -54,7 +54,7 @@ function RadioPanel({ onClose }: { arg: string | null; onClose: () => void }) {
 
   const by = hifi ? (hifi.by.id === (can.me?.id ?? 'owner') ? 'you' : hifi.by.name) : null;
   return (
-    <Window title="Hi-fi" subtitle="Internet radio for the whole office — everyone who is in it hears what is on" onClose={onClose} width={640}>
+    <Window kit title="Hi-fi" subtitle="Internet radio for the whole office — everyone who is in it hears what is on" onClose={onClose} width={640}>
       <div className="col" style={{ gap: 14 }}>
         <div className="card radio-now">
           <div className="radio-disc" data-on={!!hifi} aria-hidden>

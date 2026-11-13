@@ -763,7 +763,7 @@ function ArcadePanel({ onClose }: { arg: string | null; onClose: () => void }) {
   };
 
   return (
-    <Window title="Arcade" subtitle="A Mega Drive for the games the office brought — alone, or with somebody in the office, each at their own computer" onClose={close} width={seated ? 1040 : 900}>
+    <Window kit title="Arcade" subtitle="A Mega Drive for the games the office brought — alone, or with somebody in the office, each at their own computer" onClose={close} width={seated ? 1040 : 900}>
       <div className="arc" data-arcade>
         {seated?.at === 'game' ? (
           <Play key={`${seated.game.id}:${seated.resume}`} game={seated.game} resume={seated.resume} sound={sound} onSound={saySound} onLeft={left} leaver={leaver} note={note} />

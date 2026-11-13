@@ -136,6 +136,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
   const docCount = s.docs[e.id]?.files.length ?? 0;
   return (
     <Window
+      kit
       title={
         <span className="row">
           <Avatar appearance={e.appearance} size={30} offline={!live} />

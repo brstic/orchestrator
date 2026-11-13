@@ -58,14 +58,14 @@ function AccessPanel({ onClose }: { arg: string | null; onClose: () => void }) {
   const others = people.filter((p) => p.id !== clientId);
   if (me?.kind === 'owner') {
     return (
-      <Window title="Access" subtitle={`Who can come into ${office}, and as what`} onClose={onClose} width={700}>
+      <Window kit title="Access" subtitle={`Who can come into ${office}, and as what`} onClose={onClose} width={700}>
         <OwnerAccess here={new Set(others.map((p) => p.memberId).filter((id): id is string => !!id))} />
       </Window>
     );
   }
   const role = me?.role ?? 'visitor';
   return (
-    <Window title="Access" subtitle={`You are in ${office} as ${role === 'owner' ? 'an owner' : `a ${role}`}`} onClose={onClose} width={560}>
+    <Window kit title="Access" subtitle={`You are in ${office} as ${role === 'owner' ? 'an owner' : `a ${role}`}`} onClose={onClose} width={560}>
       <div className="col" style={{ gap: 14 }}>
         <div className="small">{ROLE_TEXT[role]}</div>
         <div>

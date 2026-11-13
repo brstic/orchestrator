@@ -147,7 +147,7 @@ function TasksPanel({ onClose }: PanelProps) {
   );
 
   return (
-    <Window title="Tasks" subtitle="Cards move by themselves as work is done and checked. Click one to open it and talk on it; drag one to move it by hand." onClose={onClose} width={1320} flush>
+    <Window kit title="Tasks" subtitle="Cards move by themselves as work is done and checked. Click one to open it and talk on it; drag one to move it by hand." onClose={onClose} width={1320} flush>
       <div className="pw-frame">
         <div className="pw-toolbar">
           <ScopeSwitch what="tasks" />
@@ -252,13 +252,14 @@ function Ticket({ id, initialTab, onClose }: { id: string; initialTab: TicketTab
   const [tab, setTab] = useState<TicketTab>(initialTab);
   if (!task) {
     return (
-      <Window title="Task" onClose={onClose} width={520}>
+      <Window kit title="Task" onClose={onClose} width={520}>
         <Empty title="This task is not on the board">It may have been deleted.</Empty>
       </Window>
     );
   }
   return (
     <Window
+      kit
       title={
         <>
           <span className="mono muted">{task.key}</span> {task.title}
@@ -284,7 +285,7 @@ function Ticket({ id, initialTab, onClose }: { id: string; initialTab: TicketTab
 function NewTicket({ employeeId, onClose }: { employeeId: string | null; onClose: () => void }) {
   const preset = useOffice((s) => (employeeId ? s.employees[employeeId] : undefined));
   return (
-    <Window title="New task" subtitle={preset ? `For ${preset.name} · ${preset.title}` : 'Given to an employee; reviewed when it is handed in'} onClose={onClose} width={760} flush>
+    <Window kit title="New task" subtitle={preset ? `For ${preset.name} · ${preset.title}` : 'Given to an employee; reviewed when it is handed in'} onClose={onClose} width={760} flush>
       <div className="pw-frame tk-frame tk-frame-new">
         <TicketNew employeeId={employeeId} onCreated={(t) => useOffice.getState().openPanel('task', t.id)} onCancel={onClose} />
       </div>
