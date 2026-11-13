@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { Host, OrchestratorEvent } from '@orchestrator/contracts';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { AccountInfo, AccountLogin, Host, OrchestratorEvent } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Progress, Provenance, Stat, clock, timeAgo } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { loadAccounts, useOffice } from '../../lib/store.ts';
 import { useAccess } from '../../lib/access.ts';
 import { limitText } from '../../lib/views.ts';
+import { NOT_SIGNED_IN, accountName, providerName, signInLink } from '../../lib/accounts.ts';
+import { More } from './kit.tsx';
 import { NOT_AVAILABLE, copyText, eventTone, fmtInt, isLoudEvent } from './company-shared.tsx';
 import { useAction } from './tasks.tsx';
 
@@ -190,6 +192,7 @@ export function ClaudeAccounts() {
   const [busy, run] = useAction();
   const [open, setOpen] = useState<string | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
+  const [signing, setSigning] = useState<{ hostId: string; dir: string | null } | null>(null);
   useEffect(() => {
     void loadAccounts();
   }, []);
@@ -238,12 +241,13 @@ export function ClaudeAccounts() {
               {host?.status !== 'online' ? ' · offline' : ''}
             </span>
             {can.admin && host && !host.memberId && adding !== hostId && (
-              <Button small disabled={host.status !== 'online'} title={host.status !== 'online' ? `${host.name} is offline` : 'Another Claude account for this machine, with an allowance of its own'} onClick={() => setAdding(hostId)}>
+              <Button small disabled={host.status !== 'online'} title={host.status !== 'online' ? `${host.name} is offline` : 'Another Claude account for this machine, with an allowance of its own'} onClick={() => (setSigning(null), setAdding(hostId))}>
                 Add an account…
               </Button>
             )}
           </div>
-          {adding === hostId && host && <AddAccount host={host} taken={list.map((a) => a.configDir)} onClose={() => setAdding(null)} />}
+          {adding === hostId && host && <div style={{ marginBottom: 10 }}><AddAccount host={host} onClose={() => setAdding(null)} /></div>}
+          {signing?.hostId === hostId && host && <div style={{ marginBottom: 10 }}><SignIn key={signing.dir ?? 'default'} host={host} dir={signing.dir} onClose={() => setSigning(null)} /></div>}
           <div className="cl-table">
             <div className="cl-row cl-head">
               <span>Account</span>
@@ -257,7 +261,10 @@ export function ClaudeAccounts() {
               const added = !!a.configDir && !!host?.claudeAccounts?.includes(a.configDir);
               const others = list.filter((x) => x.key !== a.key && ready(x));
               const isOpen = open === a.key;
-              const name = a.email ?? (host?.memberId ? `${host.memberName ?? 'Member'}'s Claude` : (a.configDir ?? 'Default login'));
+              // Signing in from here: a Claude login on one of the office's own machines that is in the office now.
+              const canSignIn = !providerName(a) && !!host && !host.memberId && host.status === 'online';
+              const name = accountName(a, host);
+              const service = providerName(a);
               return (
                 <div key={a.key} className={`claude-account${isOpen ? ' cl-open' : ''}`}>
                   <div className="cl-row cl-click" role="button" tabIndex={0} aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : a.key)} onKeyDown={(ev) => (ev.key === 'Enter' || ev.key === ' ') && (ev.preventDefault(), setOpen(isOpen ? null : a.key))}>
@@ -265,9 +272,9 @@ export function ClaudeAccounts() {
                       <div className="row" style={{ gap: 6 }}>
                         <span className="strong truncate">{name}</span>
                         {a.exhausted && <Badge tone="bad">used up</Badge>}
-                        {a.loggedIn === false && <Badge tone="warn">nobody logged in</Badge>}
+                        {a.loggedIn === false && name !== NOT_SIGNED_IN && <Badge tone="warn">{service ? 'no key' : 'nobody signed in'}</Badge>}
                       </div>
-                      <div className="small faint truncate">{[a.organization, a.configDir ?? 'default login'].filter((x) => !!x && x !== name).join(' · ') || 'an account added to this machine'}</div>
+                      <div className="small faint truncate">{[service && service !== name ? service : null, service ? 'with an API key' : null, a.organization, a.configDir ?? 'the machine\'s default login'].filter((x) => !!x && x !== name).join(' · ')}</div>
                     </div>
                     {a.reportedAt ? (
                       <>
@@ -276,7 +283,7 @@ export function ClaudeAccounts() {
                       </>
                     ) : (
                       <span className="small muted cl-span2" title="The figures come from Claude Code in a running session; they appear the next time an employee on this account starts one.">
-                        {a.loggedIn === false ? 'Waiting for somebody to log in' : 'Not reported yet'}
+                        {service ? 'An API key: no allowance is reported' : a.loggedIn === false ? 'Waiting for somebody to sign in' : 'Not reported yet'}
                       </span>
                     )}
                     <div className="cl-people" aria-label={who.length ? `used by ${who.map((e) => e.name).join(', ')}` : 'used by nobody'} title={who.map((e) => e.name).join(', ') || 'Nobody is on this account'}>
@@ -300,8 +307,13 @@ export function ClaudeAccounts() {
                             : 'Not reported yet. The figures appear the next time an employee on this account starts a session.'}
                       </div>
                       {a.spentUntil && Date.parse(a.spentUntil) > Date.now() && <div className="small warn">Claude refused a turn on this account for its limit; it counts as used up until {new Date(a.spentUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.</div>}
-                      {can.admin && ((who.length > 0 && others.length > 0) || (added && who.length === 0)) && (
+                      {can.admin && (canSignIn || (who.length > 0 && others.length > 0) || (added && who.length === 0)) && (
                         <div className="row" style={{ gap: 6 }}>
+                          {canSignIn && (
+                            <Button small variant={a.loggedIn === false ? 'primary' : undefined} disabled={busy} title="Claude Code's own sign-in, on that machine, shown here: a link to open and a code to paste" onClick={() => (setAdding(null), setSigning({ hostId: a.hostId, dir: a.configDir }))} data-sign-in-open>
+                              {a.loggedIn === false ? 'Sign in…' : 'Sign in again…'}
+                            </Button>
+                          )}
                           {who.length > 0 && others.length > 0 && (
                             <Button small disabled={busy} title="Puts everybody on this account on another account of the same machine and starts their sessions again there" onClick={() => void then(() => api<{ moved: number }>('POST', `/hosts/${a.hostId}/accounts/move`, { from: a.configDir }), 'Moved to another account')}>
                               Move {who.length === 1 ? who[0]!.name : `these ${who.length}`} to another account
@@ -324,90 +336,266 @@ export function ClaudeAccounts() {
       ))}
       <div className="small faint">
         The percentages are Claude Code's own for a subscription account; an account billed by API key reports none.{' '}
-        {settings?.accountFailover === false ? 'An employee whose account runs out waits for it to reset (Settings → Employees).' : 'When an account runs out, its employees go on working on another account of the same machine.'}
+        {settings?.accountFailover === false ? 'An employee whose account runs out waits for it to reset (Settings → Employees).' : 'When an account runs out, its employees go on working on another account of the same kind on the same machine.'}
       </div>
     </div>
   );
 }
 
-type AccountAnswer = { dir: string | null; loggedIn: boolean; email: string | null; login: string };
+/** The three steps of a sign-in, read from what its terminal shows: a link to open, a code to give back, done. */
+const KEYS: Array<[string, string, string]> = [['up', '↑', 'Up'], ['down', '↓', 'Down'], ['enter', 'Enter', 'Enter'], ['escape', 'Esc', 'Escape']];
 
-/** Another Claude account for a machine: the office makes its folder there; somebody logs in to it once, on that machine. */
-function AddAccount({ host, taken, onClose }: { host: Host; taken: Array<string | null>; onClose: () => void }) {
-  const [dir, setDir] = useState('');
-  const [answer, setAnswer] = useState<AccountAnswer | null>(null);
-  const [busy, run] = useAction();
-  const suggested = useMemo(() => {
-    for (let i = 2; ; i++) if (!taken.includes(`~/.claude-${i}`)) return `~/.claude-${i}`;
-    // Suggested once, when the form opens: the list changes as soon as the account is added.
+/**
+ * Signing in to a Claude account without leaving the office (docs/ACCOUNTS.md, "Signing in from the office").
+ * Claude Code's own sign-in runs on the machine; this shows what it shows and passes on what is typed here: it gives
+ * a link, the link is opened in this computer's browser, and the code that page gives is pasted back.
+ * `dir` null with `fresh`: a new account, whose folder the office chooses; `dir` null without it: the machine's default login.
+ */
+function SignIn({ host, dir, fresh = false, onClose }: { host: Host; dir: string | null; fresh?: boolean; onClose: () => void }) {
+  const [login, setLogin] = useState<AccountLogin | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [sending, setSending] = useState(false);
+  const wasSignedIn = useRef(false);
+  const where = login?.dir ?? dir;
+  const q = where ? `?dir=${encodeURIComponent(where)}` : '';
+  // Started once, when the sheet opens; from then on its terminal is looked at every second and a half.
+  useEffect(() => {
+    let over = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let at: string | null = dir;
+    const look = async () => {
+      try {
+        const res = await api<AccountLogin>('GET', `/hosts/${host.id}/accounts/login${at ? `?dir=${encodeURIComponent(at)}` : ''}`);
+        if (over) return;
+        setLogin(res);
+        setError(null);
+      } catch (e) {
+        if (!over) setError((e as Error).message);
+      }
+      if (!over) timer = setTimeout(look, 1500);
+    };
+    void (async () => {
+      try {
+        const res = await api<AccountLogin>('POST', `/hosts/${host.id}/accounts/login`, { dir, fresh });
+        if (over) return;
+        at = res.dir;
+        wasSignedIn.current = res.account.loggedIn;
+        setLogin(res);
+        void loadAccounts();
+        timer = setTimeout(look, 1200);
+      } catch (e) {
+        if (!over) setError((e as Error).message);
+      }
+    })();
+    return () => {
+      over = true;
+      if (timer) clearTimeout(timer);
+      // Whatever was left of the sign-in is put away with the sheet.
+      void api('DELETE', `/hosts/${host.id}/accounts/login${at ? `?dir=${encodeURIComponent(at)}` : ''}`).catch(() => undefined);
+      void loadAccounts();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const add = async () => {
-    const res = await run(() => api<AccountAnswer>('POST', `/hosts/${host.id}/accounts`, { dir: dir.trim() || suggested }));
-    if (res) setAnswer(res);
-    await loadAccounts();
+  }, [host.id, dir, fresh]);
+  const send = async (payload: { text?: string; key?: string }) => {
+    setSending(true);
+    try {
+      setLogin(await api<AccountLogin>('POST', `/hosts/${host.id}/accounts/login/input`, { dir: where, ...payload }));
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    setSending(false);
   };
-  const check = async () => {
-    const res = await run(() => api<{ accounts: AccountAnswer[] }>('POST', `/hosts/${host.id}/accounts/check`, {}));
-    const mine = res?.accounts.find((x) => x.dir === answer!.dir);
-    if (mine) setAnswer(mine);
-    await loadAccounts();
-  };
-  const command = answer?.login.replace(/\s+\(then \/login\)$/, '') ?? '';
+  const link = login ? signInLink(login.lines) : null;
+  // Signed in: somebody is, now — and, for an account somebody was signed in to already when this began (signing in
+  // again), only once the sign-in itself has finished.
+  const signedIn = !!login?.account.loggedIn && (wasSignedIn.current ? !login.running : true);
+  const stopped = !!login && !login.running && !signedIn;
+  // The list under the sheet says so too, as soon as it is true.
+  useEffect(() => {
+    if (signedIn) void loadAccounts();
+  }, [signedIn]);
   return (
-    <div className="card col" style={{ gap: 8, marginBottom: 8 }}>
-      <div className="strong">Add a Claude account to {host.name}</div>
-      {!answer ? (
-        <>
-          <div className="small muted">An account is a folder of its own on the machine, with its own login and its own allowance. The office makes the folder; you then log in to it once, on that machine.</div>
-          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-            <input className="mono grow" value={dir} onChange={(ev) => setDir(ev.target.value)} placeholder={suggested} spellCheck={false} aria-label="Account folder" style={{ minWidth: 160 }} />
-            <Button small variant="primary" disabled={busy} onClick={() => void add()}>
-              Add
-            </Button>
-            <Button small variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-          </div>
-        </>
-      ) : answer.loggedIn ? (
-        <>
-          <div className="small good">
-            {answer.email ?? 'Somebody'} is logged in to {answer.dir}. The account is ready: employees are put on it when theirs runs out, and anybody can be put on it in their profile.
-          </div>
-          <div className="row">
-            <Button small onClick={onClose}>
-              Done
-            </Button>
-          </div>
-        </>
+    <div className="k-sheet" data-sign-in={where ?? 'default'}>
+      <div className="k-sheet-head">
+        <div className="k-title">{fresh ? `A new Claude account on ${host.name}` : `Sign in to Claude on ${host.name}`}</div>
+        <Button small variant="ghost" onClick={onClose}>
+          {signedIn ? 'Done' : 'Cancel'}
+        </Button>
+      </div>
+      {error && <div className="k-note k-bad">{error}</div>}
+      {signedIn ? (
+        <div className="k-text" data-signed-in>
+          <b>{login!.account.email ?? 'Somebody'}</b> is signed in{login!.account.organization ? ` (${login!.account.organization})` : ''}. The account is ready: put an employee on it in their settings, and when another account of this machine runs out its employees go on working here.
+        </div>
+      ) : !login ? (
+        !error && <div className="k-text">Starting the sign-in on {host.name}…</div>
       ) : (
         <>
-          <div className="small">
-            <b>1.</b> The folder <span className="mono">{answer.dir}</span> is there. On {host.name}, as the user the office runs as, run:
+          <ol className="cl-steps">
+            <li className={link ? 'cl-step-on' : ''}>
+              <span>
+                <b>Open the sign-in page</b> in your browser and sign in with the Claude account you want here.
+              </span>
+              {link ? (
+                <span className="row" style={{ gap: 6 }}>
+                  <a className="btn btn-primary btn-sm" href={link} target="_blank" rel="noopener noreferrer" data-sign-in-link>
+                    Open the sign-in page
+                  </a>
+                  <Button small variant="ghost" onClick={() => void copyText(link, 'Link copied')}>
+                    Copy the link
+                  </Button>
+                </span>
+              ) : (
+                <span className="k-sub">{stopped ? 'The sign-in ended before it gave a link — see below.' : 'Waiting for Claude Code to give the link…'}</span>
+              )}
+            </li>
+            <li>
+              <span>
+                <b>Paste the code</b> the page gives you when you have signed in.
+              </span>
+              <form
+                className="row"
+                style={{ gap: 6 }}
+                onSubmit={(ev) => {
+                  ev.preventDefault();
+                  if (!code.trim()) return;
+                  void send({ text: code.trim(), key: 'enter' });
+                  setCode('');
+                }}
+              >
+                <input className="mono grow" value={code} onChange={(ev) => setCode(ev.target.value)} placeholder="The code from the page" spellCheck={false} autoComplete="off" aria-label="Sign-in code" style={{ minWidth: 200 }} />
+                <Button small type="submit" disabled={sending || !code.trim() || !login.running}>
+                  Send
+                </Button>
+              </form>
+            </li>
+          </ol>
+          <div>
+            <div className="k-label">What Claude Code shows on {host.name}</div>
+            <pre className="cl-term" data-sign-in-screen aria-live="polite">
+              {login.lines.filter((l, i, all) => l.trim() || (all[i - 1] ?? '').trim()).slice(-14).join('\n') || (login.running ? '…' : 'Nothing: the sign-in is not running.')}
+            </pre>
+            <div className="row" style={{ gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+              <span className="k-sub">If it asks you to choose something:</span>
+              {KEYS.map(([key, label, name]) => (
+                <button key={key} type="button" className="k-quiet" disabled={sending || !login.running} onClick={() => void send({ key })} aria-label={`Press ${name}`}>
+                  {label}
+                </button>
+              ))}
+              {stopped && (
+                <Button small onClick={() => void api<AccountLogin>('POST', `/hosts/${host.id}/accounts/login`, { dir: where }).then(setLogin, (e) => setError((e as Error).message))}>
+                  Start the sign-in again
+                </Button>
+              )}
+            </div>
           </div>
-          <div className="row" style={{ gap: 6 }}>
-            <code className="mono small grow cl-command">{command}</code>
-            <Button small onClick={() => void copyText(command, 'Command copied')}>
-              Copy
-            </Button>
-          </div>
-          <div className="small">
-            <b>2.</b> Type <span className="mono">/login</span> there, finish in the browser with the other account, and leave with <span className="mono">/exit</span>.
-          </div>
-          <div className="small">
-            <b>3.</b> Come back and press Check.
-          </div>
-          <div className="row" style={{ gap: 6 }}>
-            <Button small variant="primary" disabled={busy} onClick={() => void check()}>
-              Check
-            </Button>
-            <Button small variant="ghost" onClick={onClose}>
-              Later
-            </Button>
+          <div className="k-sub" style={{ whiteSpace: 'normal' }}>
+            The sign-in is Claude Code&apos;s own, on {host.name}; the office passes on what you type and keeps none of it.{where ? ` The account's folder there is ${where}.` : ''}
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * An account of Z.AI's GLM Coding Plan: Claude Code on that account talks to Z.AI's models with an API key instead
+ * of a Claude login. The key is written into the account's own folder on the machine and nowhere else.
+ */
+function ZaiAccount({ host, onClose }: { host: Host; onClose: () => void }) {
+  const [token, setToken] = useState('');
+  const [models, setModels] = useState({ opus: '', sonnet: '', haiku: '' });
+  const [made, setMade] = useState<AccountInfo | null>(null);
+  const [busy, run] = useAction();
+  const add = async () => {
+    const named = models.opus.trim() || models.sonnet.trim() || models.haiku.trim();
+    const res = await run(() => api<AccountInfo>('POST', `/hosts/${host.id}/accounts/provider`, { provider: 'zai', token: token.trim(), ...(named ? { models } : {}) }));
+    if (res) {
+      setMade(res);
+      setToken('');
+    }
+    await loadAccounts();
+  };
+  return (
+    <div className="k-sheet" data-zai-account>
+      <div className="k-sheet-head">
+        <div className="k-title">A Z.AI account on {host.name}</div>
+        <Button small variant="ghost" onClick={onClose}>
+          {made ? 'Done' : 'Cancel'}
+        </Button>
+      </div>
+      {made ? (
+        <div className="k-text" data-zai-made>
+          The account is there (<span className="mono">{made.dir}</span>). Put an employee on it in their settings — <b>Claude account → Z.AI</b>: their session then runs on Z.AI&apos;s models. Nobody is moved onto it or off it by the office itself.
+        </div>
+      ) : (
+        <form
+          className="k-form"
+          onSubmit={(ev) => {
+            ev.preventDefault();
+            if (token.trim()) void add();
+          }}
+        >
+          <div className="k-text">
+            Claude Code can run on Z.AI&apos;s GLM models instead of Anthropic&apos;s (their <b>GLM Coding Plan</b>). It needs an API key from{' '}
+            <a href="https://z.ai/manage-apikey/apikey-list" target="_blank" rel="noopener noreferrer">
+              z.ai → API keys
+            </a>
+            . The key is written into the account&apos;s folder on {host.name} and is not kept in the office.
+          </div>
+          <label className="field">
+            <span className="field-label">API key</span>
+            <input type="password" className="mono" value={token} onChange={(ev) => setToken(ev.target.value)} placeholder="Your Z.AI API key" spellCheck={false} autoComplete="off" aria-label="Z.AI API key" />
+          </label>
+          <More summary="Which models (Z.AI chooses when these are empty)">
+            <div className="grid3" style={{ marginTop: 10 }}>
+              {(['opus', 'sonnet', 'haiku'] as const).map((k) => (
+                <label key={k} className="field">
+                  <span className="field-label">Instead of {k}</span>
+                  <input className="mono" value={models[k]} onChange={(ev) => setModels({ ...models, [k]: ev.target.value })} placeholder="a model's name at Z.AI" spellCheck={false} aria-label={`Model instead of ${k}`} />
+                </label>
+              ))}
+            </div>
+            <div className="k-sub" style={{ whiteSpace: 'normal', marginTop: 8 }}>
+              An employee&apos;s model in the office is still called opus, sonnet or haiku; here you can say which of Z.AI&apos;s models each of those means (the names are in Z.AI&apos;s instructions for Claude Code).
+            </div>
+          </More>
+          <div className="k-actions">
+            <Button small variant="primary" type="submit" disabled={busy || !token.trim()}>
+              Add the account
+            </Button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+/** Another account for a machine: a Claude subscription signed in to from here, or Z.AI with an API key. */
+function AddAccount({ host, onClose }: { host: Host; onClose: () => void }) {
+  const [kind, setKind] = useState<'claude' | 'zai' | null>(null);
+  if (kind === 'claude') return <SignIn host={host} dir={null} fresh onClose={onClose} />;
+  if (kind === 'zai') return <ZaiAccount host={host} onClose={onClose} />;
+  return (
+    <div className="k-sheet" data-add-account>
+      <div className="k-sheet-head">
+        <div className="k-title">Add an account to {host.name}</div>
+        <Button small variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+      <div className="k-options">
+        <button className="k-option" onClick={() => setKind('claude')} data-add-claude>
+          <strong>A Claude account</strong>
+          <span>A subscription with an allowance of its own (Pro, Max, Team). You sign in right here: open a link, sign in, paste the code. Nothing to do on the machine.</span>
+        </button>
+        <button className="k-option" onClick={() => setKind('zai')} data-add-zai>
+          <strong>Z.AI — GLM Coding Plan</strong>
+          <span>Claude Code running on Z.AI&apos;s models, with an API key from z.ai. For employees you choose to put on it.</span>
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import path from 'node:path';
 import type {
+  AccountInfo,
+  AccountLogin,
   AccountUsage,
   MemberRoomPrefs,
   AgentSession,
@@ -257,6 +259,17 @@ export class HostRegistry {
     this.core.put('host', host);
     this.core.event({ type: 'worker.connected', source: 'host', summary: `Host "${host.name}" connected`, hostId, data: { claude: info.claudeVersion, tmux: info.tmuxVersion } });
     this.eng.comms.resolveNotifications((n) => n.kind === 'host_disconnected' && n.hostId === hostId);
+    // Who is signed in to its Claude accounts: asked now, so that each is known by its name.
+    // (A moment after it has been welcomed, and once more if it did not answer: a machine that has just connected is
+    // still starting.)
+    const ask = (again: boolean): void => {
+      const t = setTimeout(() => {
+        if (this.core.hosts.get(hostId)?.status !== 'online') return;
+        void this.eng.sessions.learnAccounts(hostId).catch((e) => (again ? ask(false) : this.core.log('info', `asking ${host.name} about its Claude accounts: ${(e as Error).message}`)));
+      }, again ? 300 : 4000);
+      t.unref?.();
+    };
+    ask(true);
   }
 
   disconnected(hostId: string): void {
@@ -649,7 +662,10 @@ export class EmployeeRegistry {
     if (patch.claudeConfigDir !== undefined) {
       const dir = stripEnd(String(patch.claudeConfigDir ?? '').trim(), '/');
       if (dir && (!/^(~\/|\/)[A-Za-z0-9._ \/@+-]+$/.test(dir) || dir.includes('..'))) throw new EngineError('the Claude account folder must be a path like ~/.claude-work');
+      const other = (dir || null) !== (e.claudeConfigDir ?? null);
       e.claudeConfigDir = dir || null;
+      // A folder the office may not have asked about yet: asked now, so that the account has its name at once.
+      if (other && dir && e.hostId) void this.eng.sessions.learnAccounts(e.hostId, [dir]).catch(() => undefined);
     }
     if (patch.alsoProjectIds !== undefined) {
       const ids = [...new Set((Array.isArray(patch.alsoProjectIds) ? patch.alsoProjectIds : []).map(String))].filter((p) => p !== e.projectId);
@@ -1181,7 +1197,7 @@ export class SessionRegistry {
     if (!s || s.hostId !== hostId) return;
     this.loadAccounts();
     const key = `${hostId}|${msg.configDir ?? 'default'}`;
-    this.accounts.set(key, { key, hostId, configDir: msg.configDir, email: msg.email, organization: msg.organization, fiveHour: msg.fiveHour, sevenDay: msg.sevenDay, reportedAt: nowIso(), reportedBy: s.employeeId ?? null, employeeIds: [], spentUntil: this.accounts.get(key)?.spentUntil ?? null });
+    this.accounts.set(key, { key, hostId, configDir: msg.configDir, email: msg.email, organization: msg.organization, fiveHour: msg.fiveHour, sevenDay: msg.sevenDay, reportedAt: nowIso(), reportedBy: s.employeeId ?? null, employeeIds: [], spentUntil: this.accounts.get(key)?.spentUntil ?? null, provider: this.accounts.get(key)?.provider ?? null, endpoint: this.accounts.get(key)?.endpoint ?? null });
     this.core.store.kvSet('accounts', [...this.accounts.values()]);
     // An account that has just run out: its people go to another one, if the machine has one with room.
     if (exhausted({ fiveHour: msg.fiveHour, sevenDay: msg.sevenDay })) void this.failover();
@@ -1466,36 +1482,138 @@ export class SessionRegistry {
 
   /** What each machine last said about who is logged in to which account folder. */
   private logins = new Map<string, { loggedIn: boolean; email: string | null; login: string; at: number }>();
-  /** When an employee was last moved to another account (not again for a while: figures need time to follow). */
   private movedAt = new Map<string, number>();
   private failingOver = false;
 
+  /**
+   * What a machine has just said about an account is kept: for the list and for choosing (in memory), and — who is
+   * signed in and whose models it talks to — with the account's record, so that it is known by its e-mail address
+   * and not by its folder after a restart too, before any session on it has reported.
+   */
+  private noteAccount(hostId: string, a: AccountInfo): void {
+    const key = `${hostId}|${a.dir ?? 'default'}`;
+    this.logins.set(key, { loggedIn: a.loggedIn, email: a.email, login: a.login, at: Date.now() });
+    if (a.error) return;
+    this.loadAccounts();
+    const row = this.accounts.get(key) ?? { key, hostId, configDir: a.dir ?? null, email: null, organization: null, fiveHour: null, sevenDay: null, reportedAt: null, reportedBy: null, employeeIds: [] };
+    const provider = a.provider ?? 'anthropic';
+    const next = { ...row, email: a.email ?? (a.loggedIn ? row.email : null), organization: a.organization ?? (a.loggedIn ? row.organization : null), provider, endpoint: a.endpoint ?? null };
+    if (next.email === row.email && next.organization === row.organization && next.provider === (row.provider ?? null) && (next.endpoint ?? null) === (row.endpoint ?? null) && this.accounts.has(key)) return;
+    this.accounts.set(key, next);
+    this.core.store.kvSet('accounts', [...this.accounts.values()]);
+  }
+
   /** Ask a machine about its account folders (`prepare`: make the ones that are missing). Remembered for the list and for choosing. */
-  async checkAccounts(hostId: string, dirs: Array<string | null>, prepare = false): Promise<Array<{ dir: string | null; path: string; exists: boolean; loggedIn: boolean; email: string | null; organization: string | null; login: string; error?: string }>> {
-    const res = await this.core.agents.rpc<{ accounts: Array<{ dir: string | null; path: string; exists: boolean; loggedIn: boolean; email: string | null; organization: string | null; login: string; error?: string }> }>(hostId, { method: 'claude.accounts', params: { dirs, prepare } }, 15000);
-    for (const a of res.accounts) this.logins.set(`${hostId}|${a.dir ?? 'default'}`, { loggedIn: a.loggedIn, email: a.email, login: a.login, at: Date.now() });
+  async checkAccounts(hostId: string, dirs: Array<string | null>, prepare = false): Promise<AccountInfo[]> {
+    const res = await this.core.agents.rpc<{ accounts: AccountInfo[] }>(hostId, { method: 'claude.accounts', params: { dirs, prepare } }, 10_000);
+    for (const a of res.accounts) this.noteAccount(hostId, a);
     return res.accounts;
   }
 
   /**
+   * Who is signed in to each account of a machine, asked when the machine comes into the office: its default login,
+   * the accounts on its list and whatever folder an employee there is on. So that every account has its name from
+   * the start.
+   */
+  async learnAccounts(hostId: string, also: string[] = []): Promise<void> {
+    const host = this.core.hosts.get(hostId);
+    if (!host || !this.core.agents.isOnline(hostId)) return;
+    const dirs = new Set<string | null>([null, ...(host.claudeAccounts ?? []), ...also]);
+    for (const e of this.core.employees.filter((x) => !x.archived && x.hostId === hostId && !!x.claudeConfigDir)) dirs.add(e.claudeConfigDir!);
+    await this.checkAccounts(hostId, [...dirs]);
+  }
+
+  /** The folder of an account an owner names (`~/.claude-2`), or the next free one of that kind when they name none. */
+  private accountFolder(host: Host, rawDir: string | null | undefined, stem: string | null = '~/.claude'): string {
+    let dir = stripEnd(String(rawDir ?? '').trim(), '/');
+    // (`stem` null: the folder has to be named.)
+    if (!dir && stem) {
+      const taken = new Set<string>([...(host.claudeAccounts ?? []), ...this.core.employees.filter((e) => e.hostId === host.id && !!e.claudeConfigDir).map((e) => e.claudeConfigDir!)]);
+      // (`~/.claude` itself is the default login: an account of Anthropic's starts at `-2`, another service's at its own name.)
+      for (let i = stem === '~/.claude' ? 2 : 1; ; i++) {
+        dir = i === 1 ? stem : `${stem}-${i}`;
+        if (!taken.has(dir)) break;
+      }
+    }
+    if (!/^~\/[A-Za-z0-9._@+-]+$/.test(dir)) throw new EngineError('an account folder is a folder in the home of the machine\'s user, like ~/.claude-2');
+    if (dir === '~/.claude') throw new EngineError('~/.claude is the machine\'s default account; it is there already');
+    if (!this.core.agents.isOnline(host.id)) throw new EngineError(`${host.name} is offline`);
+    return dir;
+  }
+
+  private listAccount(host: Host, dir: string, actor: string, how: Record<string, unknown> = {}): void {
+    if ((host.claudeAccounts ?? []).includes(dir)) return;
+    host.claudeAccounts = [...(host.claudeAccounts ?? []), dir];
+    this.core.put('host', host);
+    this.core.audit(actor, 'account.added', host.id, { dir, ...how });
+  }
+
+  /**
    * Add a Claude account to a machine: a config folder of its own (`~/.claude-2`). The folder is made there, sharing
-   * the conversations of the default account; somebody then logs in to it once on that machine (the answer says with
-   * which command). From then on employees can be put on it, and are moved to it when theirs runs out.
+   * the conversations of the default account; somebody then signs in to it once — from the office (`accountLogin`),
+   * or on that machine (the answer says with which command). From then on employees can be put on it, and are
+   * moved to it when theirs runs out.
    */
   async addAccount(hostId: string, rawDir: string, actor = 'owner'): Promise<{ dir: string; loggedIn: boolean; email: string | null; login: string }> {
     const host = this.core.hosts.require(hostId);
-    const dir = stripEnd(String(rawDir ?? '').trim(), '/');
-    if (!/^~\/[A-Za-z0-9._@+-]+$/.test(dir)) throw new EngineError('an account folder is a folder in the home of the machine\'s user, like ~/.claude-2');
-    if (dir === '~/.claude') throw new EngineError('~/.claude is the machine\'s default account; it is there already');
-    if (!this.core.agents.isOnline(hostId)) throw new EngineError(`${host.name} is offline`);
+    const dir = this.accountFolder(host, rawDir, null);
     const [a] = await this.checkAccounts(hostId, [dir], true);
     if (!a || a.error) throw new EngineError(a?.error ?? `${host.name} did not answer`);
-    if (!(host.claudeAccounts ?? []).includes(dir)) {
-      host.claudeAccounts = [...(host.claudeAccounts ?? []), dir];
-      this.core.put('host', host);
-      this.core.audit(actor, 'account.added', hostId, { dir });
-    }
+    this.listAccount(host, dir, actor);
     return { dir, loggedIn: a.loggedIn, email: a.email, login: a.login };
+  }
+
+  /**
+   * Signing in to a Claude account without leaving the office. `start` (with no folder: a new account, in the next
+   * free folder) has the machine run Claude Code's own sign-in in a terminal of its own; `screen` says what that
+   * terminal shows; `input` types a line (the code the sign-in page gives) or presses a key there; `stop` ends it.
+   * The office passes on what the owner types and what the terminal shows, and keeps neither.
+   */
+  async accountLogin(hostId: string, p: { op: 'start' | 'screen' | 'input' | 'stop'; dir?: string | null; fresh?: boolean; text?: string; key?: string; email?: string }, actor = 'owner'): Promise<AccountLogin> {
+    const host = this.core.hosts.require(hostId);
+    if (!this.core.agents.isOnline(hostId)) throw new EngineError(`${host.name} is offline`);
+    // null: the machine's default login. A new account: `fresh`, in the folder named or the next free one.
+    let dir: string | null = p.dir ? stripEnd(String(p.dir).trim(), '/') : null;
+    if (p.op === 'start' && (p.fresh || dir)) {
+      dir = this.accountFolder(host, dir);
+      if (dir && !(host.claudeAccounts ?? []).includes(dir)) this.listAccount(host, dir, actor, { signIn: 'from the office' });
+    }
+    let res: AccountLogin;
+    try {
+      res = await this.core.agents.rpc<AccountLogin>(hostId, { method: 'claude.login', params: { op: p.op, dir, ...(p.text !== undefined ? { text: String(p.text).slice(0, 4096) } : {}), ...(p.key ? { key: String(p.key) } : {}), ...(p.email ? { email: String(p.email).slice(0, 200) } : {}) } }, 15_000);
+    } catch (e) {
+      if (/unknown|unsupported|not implemented/i.test((e as Error).message)) throw new EngineError(`${host.name} runs an older agent that cannot sign in from the office: update it, or sign in on that machine`);
+      throw e;
+    }
+    this.noteAccount(hostId, res.account);
+    if (p.op === 'start') this.core.audit(actor, 'account.login_started', hostId, { dir: dir ?? 'default' });
+    return res;
+  }
+
+  /**
+   * An account of another service that speaks Claude Code's protocol — Z.AI's GLM Coding Plan: a config folder whose
+   * own settings name the service and hold its API key. The key goes from the owner to that machine and is written
+   * there; the office does not keep it, log it or send it to anybody.
+   */
+  async addProviderAccount(hostId: string, p: { dir?: string | null; provider: 'zai' | 'custom'; token: string; baseUrl?: string; models?: { opus?: string; sonnet?: string; haiku?: string } }, actor = 'owner'): Promise<AccountInfo> {
+    const host = this.core.hosts.require(hostId);
+    if (p.provider !== 'zai' && p.provider !== 'custom') throw new EngineError('unknown kind of account');
+    const token = String(p.token ?? '').trim();
+    if (!token) throw new EngineError('the API key is missing');
+    if (/\s/.test(token) || token.length > 512) throw new EngineError('that does not look like an API key');
+    if (p.provider === 'custom' && !/^https:\/\/[^\s]+$/.test(String(p.baseUrl ?? '').trim())) throw new EngineError('the address of the service must begin with https://');
+    const dir = this.accountFolder(host, p.dir, p.provider === 'zai' ? '~/.claude-zai' : '~/.claude-other');
+    let res: { account: AccountInfo };
+    try {
+      res = await this.core.agents.rpc<{ account: AccountInfo }>(hostId, { method: 'claude.provider', params: { dir, provider: p.provider, token, ...(p.baseUrl ? { baseUrl: String(p.baseUrl) } : {}), ...(p.models ? { models: p.models } : {}) } }, 15_000);
+    } catch (e) {
+      if (/unknown|unsupported|not implemented/i.test((e as Error).message)) throw new EngineError(`${host.name} runs an older agent that cannot set up such an account: update it first`);
+      throw e;
+    }
+    if (res.account.error) throw new EngineError(res.account.error);
+    this.noteAccount(hostId, res.account);
+    this.listAccount(host, dir, actor, { provider: p.provider });
+    return res.account;
   }
 
   /** Take an account off a machine's list. Nobody may be on it. Nothing on the machine is deleted. */
@@ -1525,7 +1643,8 @@ export class SessionRegistry {
       const spent = accounts.filter((a) => (force ? a.key === force.key : a.exhausted) && a.employeeIds.length > 0);
       for (const from of spent) {
         if (!this.core.agents.isOnline(from.hostId)) continue;
-        const others = accounts.filter((a) => a.hostId === from.hostId && a.key !== from.key && !a.exhausted);
+        // The same service only: nobody is taken from Claude to another service's models (or back) by the office itself.
+        const others = accounts.filter((a) => a.hostId === from.hostId && a.key !== from.key && !a.exhausted && (a.provider ?? 'anthropic') === (from.provider ?? 'anthropic'));
         if (!others.length) continue;
         // Who is really logged in, asked now (a folder that was added and never logged in to cannot take anybody).
         const fresh = await this.checkAccounts(from.hostId, others.map((a) => a.configDir)).catch(() => []);

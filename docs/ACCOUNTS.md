@@ -8,20 +8,49 @@ _Built on 2026-11-11 on the owner's request: every employee on the server ran on
 
 To Claude Code an account is a **config folder**: `~/.claude` by default, any other folder when `CLAUDE_CONFIG_DIR` points at it. Each folder has a login of its own and an allowance of its own. The office keeps, per machine, a list of such folders (`Host.claudeAccounts`); every employee runs on one of them (`Employee.claudeConfigDir`, empty = the machine's default login). When the account an employee runs on is used up and another account **on the same machine** has room and somebody logged in, the office puts the employee on that one and starts their session again there — continuing the same conversation — and tells them to go on with the task they had.
 
-## Adding an account (an owner)
+## Adding an account (an owner) — all of it from the office
 
-1. **Company → Claude**: the accounts are listed machine by machine. **Add an account…** on the machine's line (the office's own machines; a member's computer is theirs to arrange), keep or change the folder (`~/.claude-2` is offered), **Add**.
-   The machine's agent makes the folder (mode 700) and, inside it, a link `projects` → the default account's `projects` folder, so the conversations are shared (see "Continuing the conversation").
-2. The window shows a command. **Run it on that machine, as the user the office runs as**, and log in with the other account:
-   ```
-   CLAUDE_CONFIG_DIR=/home/<user>/.claude-2 claude
-   ```
-   then `/login`, finish in the browser, `/exit`. (On the server: `ssh` in first; see `OPERATIONS.md`, "Adding a Claude account".) The office never logs in for anybody and never sees a credential — the login is between that person and Claude Code.
-3. **Check** in the window (or reopen the Claude tab): the account shows who is logged in. From now on it takes employees.
+**Company → Claude → Add an account…** on the machine's line (the office's own machines that are online; a member's computer is theirs to arrange). Two kinds:
 
-An account can also be made by hand as before (`CLAUDE_CONFIG_DIR=~/.claude-second claude` on the machine, then the folder in an employee's profile); such a folder works, but the office moves people *to* an account only when it is on the machine's list, so add it there too. Adding a folder that already exists changes nothing in it except the `projects` link, and that only when the folder has no `projects` yet.
+### A Claude account — signed in to from the window
+
+1. **A Claude account**. The office chooses the folder (`~/.claude-2`, `-3`, …), has the machine make it (mode 700, with `projects` linked to the default account's so that conversations are shared — see "Continuing the conversation") and puts it on the machine's list.
+2. The machine starts **Claude Code's own sign-in** for that folder (`claude auth login`, with `CLAUDE_CONFIG_DIR` at the folder) in a terminal of its own. The window shows what that terminal shows and turns the address it prints into a button: **Open the sign-in page** — it opens in *your* browser, on the computer you sit at.
+3. Sign in there with the account you want, and **paste the code** the page gives into the window → *Send*.
+4. The window says who is signed in. Done: the account takes employees from now on.
+
+Nothing is done on the machine by hand: no folder to make, no `ssh`, no command. An account that is on the list and not signed in (or is to be signed in to as somebody else) has **Sign in…** / **Sign in again…** in its row — the same sheet; so has the machine's default login.
+
+How it is built, and what passes through the office:
+- On the machine: RPC `claude.login` (`start` / `screen` / `input` / `stop`) in `apps/host-agent/src/agent.ts` (`accountLogin`). The sign-in runs in a tmux session on **a tmux server of its own** (socket `<the agent's>-login`), so it is never listed, discovered or taken for an employee's session; it is 420 columns wide so that the long address is printed in one piece; it is killed when the sheet closes, when the agent stops, and after thirty minutes if nobody finished it.
+- A Claude Code that has no `auth login` (the agent asks its `auth --help` once) is started as it is instead: in a folder nobody is signed in to it begins with its sign-in by itself. The window shows whatever the terminal shows either way, with ↑ ↓ Enter Esc for a choice it may ask for — it does not depend on the exact words.
+- In the office: `SessionRegistry.accountLogin`; `POST|GET|DELETE /api/hosts/:id/accounts/login`, `POST …/login/input` — **owners only** (no rule in `access.ts`). The window asks for the screen every second and a half while the sheet is open.
+- **What the office handles:** the text of that terminal (the address of the sign-in page, which is not a secret by itself) and the code you paste, on their way between your window and that machine. Neither is stored, logged, audited or sent to anybody else; the audit log says only that a sign-in was started, by whom, for which folder. The login itself — the token Claude Code gets for the code — is written by Claude Code into its own folder on the machine and never leaves it. (Until 2026-11-13 the rule was "the office never sees anything of a login"; the owner asked to do it from the office, and a code typed into a remote terminal passes through whatever shows that terminal.)
+
+### Z.AI — GLM Coding Plan (Claude Code on another service's models)
+
+**Z.AI — GLM Coding Plan**, then the **API key** from z.ai (and, folded away, which of Z.AI's models stand for *opus*, *sonnet* and *haiku*; empty = Z.AI chooses). The office chooses the folder (`~/.claude-zai`), and the machine writes into that folder's own `settings.json`, readable by its user only (mode 600):
+
+```json
+{ "env": { "ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic", "ANTHROPIC_AUTH_TOKEN": "<the key>", "API_TIMEOUT_MS": "3000000" } }
+```
+
+(what Z.AI's own instructions for Claude Code say — <https://docs.z.ai/devpack/tool/claude>; their helper tool `@z_ai/coding-helper` writes the same into `~/.claude`) and marks the folder as set up (`hasCompletedOnboarding` in its `.claude.json`) so that the first session does not stop at Claude Code's first-run screens. A session started with `CLAUDE_CONFIG_DIR` at that folder talks to Z.AI; nobody signs in.
+
+- An employee is put on it **by a person**: their Settings → *Claude account* → **Z.AI**. **The office never moves anybody onto it or off it by itself**: when an account runs out, its people go to another account *of the same service* on that machine (`failover` compares `AccountUsage.provider`). Taking somebody from Claude's models to another service's — or back — is a decision, not housekeeping.
+- **The key** goes from your window to the server to that machine, and is written there. It is not kept by the office, not in the audit log (which says that an account was added, of which kind, in which folder), not in any event, and no answer contains it; the list knows the account as "Z.AI · with an API key" and whether a key is set. Changing the key is adding the account again with the same folder.
+- No allowance is shown for it: Claude Code reports the 5-hour and weekly figures for a Claude subscription only.
+- RPC `claude.provider` (`setAccountProvider`); `SessionRegistry.addProviderAccount`; `POST /api/hosts/:id/accounts/provider` (owners only). The same call with `provider: "custom"` and a `baseUrl` (https only) makes an account of any other service that speaks Claude Code's protocol; the window offers Z.AI only.
+
+### By hand, as before
+
+An account can still be made on the machine (`CLAUDE_CONFIG_DIR=~/.claude-second claude`, `/login`) and an employee put on it in their Settings (*Claude account → Another folder…*). The office moves people *to* an account only when it is on the machine's list, so add it there too: `POST /api/hosts/:id/accounts { "dir": "~/.claude-second" }` puts an existing folder on the list (and changes nothing in it except the `projects` link when it has none).
 
 **Remove from the list** (open the account's row) takes an account nobody is on off the list. Nothing on the machine is deleted.
+
+## An account is called by who is signed in to it
+
+Everywhere an account is named — the Claude tab, an employee's Settings, the clocks on the wall — it is the **e-mail address** signed in to it (or "Z.AI"), and the folder is the quiet line under the name. The folder alone showed whenever the office did not know who was signed in, which was often: it learned it only from a running session's report, or when somebody pressed Check, and forgot it at a restart. Now the machine is asked (`claude.accounts`: its default login, the accounts on its list and every folder an employee there is on) **when it comes into the office**, when an employee is put on a folder, and after every sign-in; what it says — who, which organisation, which service — is kept with the account's record (`SessionRegistry.noteAccount`, in the store), so it is known after a restart too. An account nobody is signed in to is "Not signed in yet". In an employee's Settings the account is **chosen by that name** from the accounts of their machine (`lib/accounts.ts`: `accountName`, `accountChoices`).
 
 ## When an account counts as used up
 
@@ -63,15 +92,16 @@ Claude Code keeps conversations in `<config folder>/projects/<folder name>/<sess
 | The pool, the signals, the move | `packages/orchestration/src/registry.ts` — `addAccount`, `removeAccount`, `checkAccounts`, `onLimits`, `onLimitHit`, `failover`, `accountUsage`, `exhausted` |
 | The refused turn | `packages/orchestration/src/hook-receiver.ts` (the `StopFailure` line near the end of `handle`) |
 | The minute's look | `Engine.start` in `packages/orchestration/src/engine.ts` (`accountsTimer`) |
-| On the machine | `apps/host-agent/src/agent.ts` — RPC `claude.accounts`, `describeAccount` (folder, link, who is logged in — two fields of `.claude.json`, nothing else) |
+| On the machine | `apps/host-agent/src/agent.ts` — RPC `claude.accounts`, `describeAccount` (folder, link, who is logged in — two fields of `.claude.json` — and which service its `settings.json` names); `claude.login` (`accountLogin`), `claude.provider` (`setAccountProvider`) |
 | Types | `Host.claudeAccounts`, `AccountUsage.{loggedIn, exhausted, spentUntil}`, `OwnerSettings.accountFailover` in `packages/contracts/src/entities.ts`; the RPC in `protocol.ts` |
 | For people | `POST /api/hosts/:id/accounts` (add), `POST …/accounts/check`, `POST …/accounts/move`, `DELETE …/accounts?dir=` — **owners only** (no rule in `access.ts`); `GET /api/usage` as before |
-| The window | `ClaudeAccounts` and `AddAccount` in `apps/desktop/src/hud/panels/ceo.tsx`; the toggle in `settings.tsx`; the folder field in `team.tsx` suggests the machine's accounts |
+| The window | `ClaudeAccounts`, `AddAccount`, `SignIn` and `ZaiAccount` in `apps/desktop/src/hud/panels/ceo.tsx`; the names in `apps/desktop/src/lib/accounts.ts`; `AccountField` in `team.tsx`; the toggle in `settings.tsx`; the folder field in `team.tsx` suggests the machine's accounts |
 
 ## Testing it
 
 - `tests/e2e/25-account-failover.test.ts` — real sessions with the scripted worker in a home folder of its own: adding (folder, mode, link, refusals, owners only); nobody moved while no other account has a login; the move with a running session (same conversation, new `CLAUDE_CONFIG_DIR`, told to go on) and without one; a refused turn with figures that say 5 %; the switch off and on; the ten minutes; the owner's move; removing; a restart.
-- `tests/e2e/13-claude-accounts.test.ts` — the reporting underneath (unchanged).
+- `tests/e2e/13-claude-accounts.test.ts` — the reporting underneath.
+- `tests/e2e/51-account-sign-in.test.ts` — the name known as soon as the machine is in the office; a new account signed in to from the office (the folder, the whole address in one line, a refused code, the right one, nothing left running, nothing typed or shown on the record); the default login signed in to again; owners only; a Z.AI account (the file, its mode, the key nowhere in the office, models added later with the rest of the settings kept, refusals); nobody moved to Z.AI by the office, and an employee put there by hand started with that folder. The scripted worker has `auth --help` and `auth login` (the "code" is the name the account gets).
 - The scripted worker (`tests/fixtures/fake-claude.mjs`): an account's figures are `fake-limits.json` in its config folder; the step `limit` ends a turn the way a refused turn ends (`StopFailure`, error `rate_limit`, no `Stop`).
 
 ## Limits, plainly
@@ -88,3 +118,5 @@ Claude Code keeps conversations in `<config folder>/projects/<folder name>/<sess
 - That `--resume` of a conversation begun on one account continues on another through the linked `projects` folder (if it does not, the fallback above applies: a new conversation, the task handed over again).
 - The exact text of the `StopFailure` error when a subscription's limit is reached (the office looks for "rate limit", "usage limit" or "billing" in `error` / `error_details`), and whether the status line's percentage reaches 99 before turns are refused.
 - That a turn cut off mid-way and resumed goes on sensibly after "go on with T-…".
+- **Signing in from the office has never met the real sign-in.** It was built against Claude Code 2.1.323's `claude auth login --help` (which exists, takes `--claudeai`, `--console`, `--email`, `--sso`) and tried with the scripted worker, whose sign-in prints an address and waits for a code. What the real one prints, whether it asks anything before the address (the window has ↑ ↓ Enter Esc for that), whether the code it wants is exactly what the page shows, and whether it exits by itself when done, have not been seen. The first real sign-in is the test; if the window cannot finish it, the old way still works (the command is in the account's record as before).
+- **A Z.AI account has never run a session.** What is written is what Z.AI's instructions say; that Claude Code started in such a folder goes straight to work — no first-run screen, no question about the key — and that the office's hooks, status line and `--resume` behave there as with a Claude login, has not been seen. Nor has a model name been tried: the three fields are passed on as typed.

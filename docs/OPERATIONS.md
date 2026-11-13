@@ -149,13 +149,10 @@ Sessions on the server have a headless browser (Playwright's MCP server on the s
 ### Adding a Claude account
 So that employees do not wait when the server's one account reaches its limit (`ACCOUNTS.md` explains all of it):
 
-1. In the office: **Company → Claude → Add an account…** on the server's line → *Add*. It makes `~/.claude-2` there (or the folder you name) and shows a command.
-2. On the server, as `sparkcan` — the login needs a terminal and a browser, so do it over `ssh`:
-   ```sh
-   ssh -p <ssh-port> <user>@<server>
-   CLAUDE_CONFIG_DIR=$HOME/.claude-2 claude      # then /login (open the address it prints in any browser), then /exit
-   ```
-3. Back in the office: **Check**. The account's card shows who is logged in.
+1. In the office: **Company → Claude → Add an account…** on the server's line → **A Claude account**. The office makes `~/.claude-2` there (the next free one) and starts Claude Code's sign-in on the server.
+2. In the same window: **Open the sign-in page** (it opens in your browser), sign in with the other account, and **paste the code** the page gives → *Send*. The window says who is signed in.
+
+Nothing is done on the server by hand. (If the window cannot finish a sign-in — it has not met the real one yet, see `ACCOUNTS.md` "Not verified" — the old way works: `ssh -p <ssh-port> <user>@<server>`, `CLAUDE_CONFIG_DIR=$HOME/.claude-2 claude`, `/login`, `/exit`.) A **Z.AI** account is the other choice in the same sheet: paste the API key; employees are put on it in their Settings.
 
 From then on employees on an account that runs out are moved to one that has room, by themselves (Settings → Employees switches that off). `journalctl --user -u orchestrator-office | grep -i account` shows the moves; the feed shows them too ("… was put on another Claude account"). Nothing about accounts is in the deploy package: the folders live in the server user's home and stay across updates. They are logins — treat them like `~/.claude`, and keep them out of anything you share.
 

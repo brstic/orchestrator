@@ -646,3 +646,63 @@ fieldset.pc-plain {
     grid-column: 1 / 3;
   }
 }
+
+/* ───────────── signing in to a Claude account from the office ───────────── */
+.cl-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: cl-step;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cl-steps > li {
+  counter-increment: cl-step;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 34px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.cl-steps > li::before {
+  content: counter(cl-step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cl-steps > li.cl-step-on::before {
+  background: var(--accent-strong);
+  color: #fff;
+}
+.cl-steps a.btn {
+  text-decoration: none;
+}
+.cl-term {
+  margin: 6px 0 0;
+  padding: 12px 14px;
+  min-height: 96px;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0b0f17;
+  color: #c9d2e1;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

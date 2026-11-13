@@ -30,6 +30,12 @@ Unauthenticated requests get `401`; a client WebSocket without the owner token i
 - Taking control, releasing it and interrupting are written to the audit log. Keystrokes are not logged.
 - Terminal streams and monitor frames are never persisted.
 
+## Claude accounts: what passes through the office
+
+- **Signing in from the office** (`ACCOUNTS.md`): the machine runs Claude Code's own sign-in in a terminal apart from the employees'; an owner's window shows its text and passes on what is typed. The office handles the address of the sign-in page and the single-use code on their way, and keeps, logs and audits neither; the token Claude Code receives stays in its folder on the machine. Owners only.
+- **An API key of another service (Z.AI)** goes from an owner's window to the machine and is written into that account's `settings.json` there (mode 600). The office does not keep it and nothing it says or records contains it (tested: `tests/e2e/51-account-sign-in.test.ts`). Anybody who can read that user's files on that machine can read the key — as with a Claude login.
+- The office never moves an employee from one service's models to another's by itself.
+
 ## Agent permissions
 
 How much an employee may do without asking is one of **three levels** — Standard, Auto, Unrestricted — and each is expressed in Claude Code's own permission system and nothing else. (Until 2026-11-13 there were six; Restricted, Supervised and Autonomous were removed on the owner's word — `DECISIONS.md`, "Three levels". Whoever was on one of them was put on Standard when the office next started, on the record as `autonomy.three_levels`; nobody can be put on one again: `POST`/`PATCH /employees` and the host agent's `create` refuse a level that is not one of the three.)

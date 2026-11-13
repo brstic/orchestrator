@@ -128,6 +128,7 @@ export function Rig({
   onNearby,
   positions,
   walkers,
+  moving = false,
   onLeaveWorkstation,
   whipAt,
   ouchAt,
@@ -150,6 +151,8 @@ export function Rig({
   positions?: Map<string, THREE.Vector3>;
   /** Those who have no desk and walk the floor — the foreman, members' team leads: met where they stand. */
   walkers?: Array<{ id: string; name: string }>;
+  /** Somebody is being moved to another desk: then a desk stands for whoever sits at it, also while they are away from it. */
+  moving?: boolean;
   onLeaveWorkstation: () => void;
   /** Timestamp (ms) of the owner's latest whip crack; the avatar plays the swing each time it changes. 0/undefined = never. */
   whipAt?: number;
@@ -222,6 +225,8 @@ export function Rig({
   positionsRef.current = positions;
   const walkersRef = useRef(walkers);
   walkersRef.current = walkers;
+  const movingRef = useRef(moving);
+  movingRef.current = moving;
   const approachRef = useRef(approachZoom);
   approachRef.current = approachZoom;
   const modeRef = useRef(mode);
@@ -702,6 +707,16 @@ export function Rig({
           bestD = d;
           best = { kind: 'employee', id: p.id, label: p.name };
           bestDesk = away ? null : desk!;
+        }
+        // While somebody is being moved, a desk means "swap with whoever sits here" — and that is so whether or not
+        // they are in their chair this minute (they may be at the board, in a meeting, at a colleague's desk).
+        if (movingRef.current && away && seat) {
+          const atDesk = (seat.x - player.x) ** 2 + (seat.z - player.z) ** 2;
+          if (atDesk < bestD) {
+            bestD = atDesk;
+            best = { kind: 'employee', id: p.id, label: p.name };
+            bestDesk = desk!;
+          }
         }
       }
       for (const w of walkersRef.current ?? []) {

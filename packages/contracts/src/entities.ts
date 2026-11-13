@@ -1578,6 +1578,42 @@ export interface LimitWindow {
  * the sessions running on that account. Several employees can share an account; different
  * employees can be on different accounts (a different machine, or a different Claude config folder).
  */
+/**
+ * Whose models an account's Claude Code talks to: Anthropic's with a Claude login (`anthropic`), Z.AI's GLM Coding
+ * Plan with an API key (`zai`), or another service that speaks the same protocol (`custom`). An account is a Claude
+ * config folder either way; for the last two the folder's `settings.json` names the service and holds the key.
+ */
+export type AccountProvider = 'anthropic' | 'zai' | 'custom';
+
+/** What a machine says about one of its Claude config folders (`claude.accounts`, `claude.login`, `claude.provider`). */
+export interface AccountInfo {
+  /** As it was asked for (`~/.claude-2`); null = the machine's default login. */
+  dir: string | null;
+  /** Where that is on the machine. */
+  path: string;
+  exists: boolean;
+  /** Somebody is signed in there (a Claude login), or a key is set (another service). */
+  loggedIn: boolean;
+  email: string | null;
+  organization: string | null;
+  provider?: AccountProvider;
+  /** For a service that is not Anthropic: its address's host name ("api.z.ai"). Never the key. */
+  endpoint?: string | null;
+  /** The command that signs in to it by hand, on that machine. */
+  login: string;
+  error?: string;
+}
+
+/** A sign-in to Claude Code that is in progress on a machine, in a terminal of its own: what that terminal shows. */
+export interface AccountLogin {
+  dir: string | null;
+  /** The sign-in is still running (false: it finished, or was never started). */
+  running: boolean;
+  /** The last lines of its terminal, as text. */
+  lines: string[];
+  account: AccountInfo;
+}
+
 export interface AccountUsage {
   /** `<hostId>|<config folder or "default">`. */
   key: string;
@@ -1587,6 +1623,9 @@ export interface AccountUsage {
   /** Who is logged in there, read from Claude Code's own config on that machine. */
   email: string | null;
   organization: string | null;
+  /** Whose models it talks to; absent or null: not known yet (taken as Anthropic's). */
+  provider?: AccountProvider | null;
+  endpoint?: string | null;
   fiveHour: LimitWindow | null;
   sevenDay: LimitWindow | null;
   /** When these figures were reported, and by whose session. Null: no session on this account has reported yet. */

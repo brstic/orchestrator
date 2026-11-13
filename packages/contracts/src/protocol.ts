@@ -153,6 +153,14 @@ export type AgentRpc =
   | { method: 'fs.inspect'; params: { path: string } }
   /** Claude accounts of this machine's user: for each config folder, is anybody logged in there, and who. `prepare`: make the folder (and let it share the conversations of the default one) so that it only needs a login. */
   | { method: 'claude.accounts'; params: { dirs: Array<string | null>; prepare?: boolean } }
+  /**
+   * Signing in to a Claude account from the office: `start` runs Claude Code's own sign-in for that folder in a
+   * terminal of its own on the machine, `screen` says what it shows, `input` types into it (a line of text — the code
+   * the sign-in page gives — or one named key), `stop` ends it. Answers with `AccountLogin`.
+   */
+  | { method: 'claude.login'; params: { op: 'start' | 'screen' | 'input' | 'stop'; dir: string | null; text?: string; key?: string; email?: string } }
+  /** Make a config folder an account of another service (Z.AI): its address and key go into that folder's own settings, on the machine. Answers with `{ account: AccountInfo }`. */
+  | { method: 'claude.provider'; params: { dir: string; provider: 'zai' | 'custom'; token: string; baseUrl?: string; models?: { opus?: string; sonnet?: string; haiku?: string } } }
   /** A piece of a file for an employee on this machine (a task's attachment). Kept in the agent's own folder; answers with its path there. */
   | { method: 'files.put'; params: { folder: string; name: string; offset: number; dataBase64: string; last: boolean } }
   /** A piece of a file an employee on this machine leaves as evidence. Read only from the allowed roots, the agent's own folders and the temp folder. */

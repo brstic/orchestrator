@@ -20,6 +20,7 @@ import type {
   SessionCapabilities,
 } from '@orchestrator/contracts';
 import { HOOKS_VERSION, PROTOCOL_VERSION, redactSecrets, slugify } from '@orchestrator/contracts';
+import type { AccountInfo, AccountLogin } from '@orchestrator/contracts';
 import {
   NESTED_SESSION_ENV,
   PaneStream,
@@ -131,6 +132,18 @@ type Logger = (level: 'info' | 'warn' | 'error', msg: string) => void;
 
 const OUTBOX_LIMIT = 5000;
 
+/** Where Claude Code is sent for Z.AI's GLM Coding Plan (their instructions: docs.z.ai/devpack/tool/claude). */
+const ZAI_BASE_URL = 'https://api.z.ai/api/anthropic';
+/** The keys the office may press in a sign-in's terminal, by the names it uses for them. */
+const LOGIN_KEYS: Record<string, string> = { enter: 'Enter', up: 'Up', down: 'Down', left: 'Left', right: 'Right', escape: 'Escape', tab: 'Tab', backspace: 'BSpace', space: 'Space' };
+
+/** Does this Claude Code have the `auth login` command? Its own help says so; an older one answers with its general help. */
+function hasAuthLogin(bin: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile(bin, ['auth', '--help'], { encoding: 'utf8', timeout: 15000 }, (err, stdout) => resolve(!err && /\blogin\b/.test(stdout) && /authentication/i.test(stdout)));
+  });
+}
+
 /**
  * The host agent daemon. It owns nothing but observation and delivery: tmux
  * sessions keep running whether or not this process (or the server) is alive.
@@ -148,6 +161,8 @@ export class HostAgent {
   readonly home: string;
   readonly p: ReturnType<typeof paths>;
   readonly tmux: Tmux;
+  /** Sign-ins to Claude accounts run on a tmux server of their own: they are not sessions, and are never found as one. */
+  private readonly loginTmux: Tmux;
   private ws: WebSocket | null = null;
   private connected = false;
   private stopping = false;
@@ -178,6 +193,7 @@ export class HostAgent {
     this.home = home;
     this.p = paths(home);
     this.tmux = new Tmux({ socketName: cfg.tmuxSocketName });
+    this.loginTmux = new Tmux({ socketName: `${cfg.tmuxSocketName ?? 'orchestrator'}-login` });
     this.log = log ?? ((level, msg) => console.error(`[${new Date().toISOString()}] ${level.toUpperCase()} ${msg}`));
   }
 
@@ -217,6 +233,9 @@ export class HostAgent {
   }
 
   async stop(): Promise<void> {
+    // A sign-in somebody left open goes with the agent: it is of no use to anybody without it.
+    for (const l of this.logins.values()) await this.loginTmux.killSession(l.name).catch(() => undefined);
+    this.logins.clear();
     this.stopping = true;
     for (const t of this.timers) clearInterval(t);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
@@ -1106,6 +1125,10 @@ export class HostAgent {
         return this.getFile(rpc.params);
       case 'claude.accounts':
         return { accounts: (rpc.params.dirs ?? []).map((raw: string | null) => this.describeAccount(raw, rpc.params.prepare === true)) };
+      case 'claude.login':
+        return this.accountLogin(rpc.params);
+      case 'claude.provider':
+        return { account: this.setAccountProvider(rpc.params) };
       case 'fs.inspect':
         return inspectPath(this.assertAllowed(rpc.params.path));
       case 'fs.browse': {
@@ -1597,11 +1620,13 @@ export class HostAgent {
    * that does not exist yet is made, and its conversations are the default account's (a link to the same `projects`
    * folder) — so an employee moved from one account to another goes on with the conversation they had.
    */
-  private describeAccount(raw: string | null, prepare: boolean): { dir: string | null; path: string; exists: boolean; loggedIn: boolean; email: string | null; organization: string | null; login: string; error?: string } {
+  private describeAccount(raw: string | null, prepare: boolean): AccountInfo {
     const base = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude');
     if (!raw) {
       const who = this.claudeAccount(null);
-      return { dir: null, path: base, exists: true, loggedIn: !!who.email || fs.existsSync(path.join(os.homedir(), '.claude.json')), ...who, login: `${this.cfg.claudeBin}   (then /login)` };
+      const other = this.accountProvider(base);
+      if (other) return { dir: null, path: base, exists: true, loggedIn: other.hasKey, email: null, organization: null, provider: other.provider, endpoint: other.endpoint, login: '' };
+      return { dir: null, path: base, exists: true, loggedIn: !!who.email || fs.existsSync(path.join(os.homedir(), '.claude.json')), ...who, provider: 'anthropic', login: `${this.cfg.claudeBin}   (then /login)` };
     }
     let dir: string;
     try {
@@ -1623,8 +1648,146 @@ export class HostAgent {
     } catch (e) {
       return { dir: raw, path: dir, exists: fs.existsSync(dir), loggedIn: false, email: null, organization: null, login, error: (e as Error).message };
     }
+    const other = this.accountProvider(dir);
+    if (other) return { dir: raw, path: dir, exists: true, loggedIn: other.hasKey, email: null, organization: null, provider: other.provider, endpoint: other.endpoint, login: '' };
     const who = this.claudeAccount(dir);
-    return { dir: raw, path: dir, exists: fs.existsSync(dir), loggedIn: fs.existsSync(path.join(dir, '.claude.json')) && !!who.email, ...who, login };
+    return { dir: raw, path: dir, exists: fs.existsSync(dir), loggedIn: fs.existsSync(path.join(dir, '.claude.json')) && !!who.email, ...who, provider: 'anthropic', login };
+  }
+
+  /**
+   * Does this config folder send Claude Code to another service than Anthropic's? Read from the folder's own
+   * `settings.json` (`env.ANTHROPIC_BASE_URL`). Says which service and whether a key is set — never the key.
+   */
+  private accountProvider(configDir: string): { provider: 'zai' | 'custom'; endpoint: string | null; hasKey: boolean } | null {
+    try {
+      const env = JSON.parse(fs.readFileSync(path.join(configDir, 'settings.json'), 'utf8'))?.env;
+      const url = typeof env?.ANTHROPIC_BASE_URL === 'string' ? env.ANTHROPIC_BASE_URL.trim() : '';
+      if (!url) return null;
+      let endpoint: string | null = null;
+      try {
+        endpoint = new URL(url).hostname;
+      } catch {
+        /* not an address: said as it is not */
+      }
+      return { provider: endpoint && /(^|\.)z\.ai$/.test(endpoint) ? 'zai' : 'custom', endpoint, hasKey: !!String(env.ANTHROPIC_AUTH_TOKEN ?? env.ANTHROPIC_API_KEY ?? '').trim() };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Make a config folder an account of another service that speaks Claude Code's protocol (Z.AI's GLM Coding Plan):
+   * the service's address and the key go into the folder's own `settings.json` (`env`), readable by this user only.
+   * Claude Code started with `CLAUDE_CONFIG_DIR` at that folder then talks to that service; nobody signs in.
+   * The folder is marked as set up (`hasCompletedOnboarding`), so that the first session does not stop at the
+   * first-run screens. What was in the folder's settings stays; only these keys are written.
+   */
+  private setAccountProvider(p: { dir: string; provider: 'zai' | 'custom'; token: string; baseUrl?: string; models?: { opus?: string; sonnet?: string; haiku?: string } }): AccountInfo {
+    const token = String(p.token ?? '').trim();
+    if (!token || /\s/.test(token) || token.length > 512) throw new Error('that does not look like an API key');
+    const baseUrl = p.provider === 'zai' ? ZAI_BASE_URL : String(p.baseUrl ?? '').trim();
+    let url: URL;
+    try {
+      url = new URL(baseUrl);
+    } catch {
+      throw new Error('the address of the service is not a web address');
+    }
+    if (url.protocol !== 'https:') throw new Error('the address of the service must begin with https://');
+    const prepared = this.describeAccount(p.dir, true);
+    if (prepared.error) throw new Error(prepared.error);
+    const dir = this.accountDir(p.dir);
+    const file = path.join(dir, 'settings.json');
+    let settings: Record<string, any> = {};
+    try {
+      const had = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (had && typeof had === 'object' && !Array.isArray(had)) settings = had;
+    } catch {
+      /* none yet */
+    }
+    const env: Record<string, unknown> = { ...(settings.env && typeof settings.env === 'object' ? settings.env : {}) };
+    env.ANTHROPIC_BASE_URL = url.toString().replace(/\/$/, '');
+    env.ANTHROPIC_AUTH_TOKEN = token;
+    delete env.ANTHROPIC_API_KEY;
+    // The services answer more slowly than Anthropic's; their own instructions set this.
+    env.API_TIMEOUT_MS ??= '3000000';
+    for (const [key, name] of [['opus', 'ANTHROPIC_DEFAULT_OPUS_MODEL'], ['sonnet', 'ANTHROPIC_DEFAULT_SONNET_MODEL'], ['haiku', 'ANTHROPIC_DEFAULT_HAIKU_MODEL']] as const) {
+      const model = String(p.models?.[key] ?? '').trim();
+      if (model && /^[A-Za-z0-9._:\[\]\/-]{1,80}$/.test(model)) env[name] = model;
+      else if (p.models && key in p.models) delete env[name];
+    }
+    settings.env = env;
+    fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n', { mode: 0o600 });
+    fs.chmodSync(file, 0o600);
+    const state = path.join(dir, '.claude.json');
+    let own: Record<string, any> = {};
+    try {
+      const had = JSON.parse(fs.readFileSync(state, 'utf8'));
+      if (had && typeof had === 'object' && !Array.isArray(had)) own = had;
+    } catch {
+      /* none yet */
+    }
+    if (own.hasCompletedOnboarding !== true) {
+      own.hasCompletedOnboarding = true;
+      fs.writeFileSync(state, JSON.stringify(own, null, 2) + '\n', { mode: 0o600 });
+    }
+    return this.describeAccount(p.dir, false);
+  }
+
+  /** Sign-ins in progress: the tmux session of each, by config folder, and when it was started. */
+  private logins = new Map<string, { name: string; pane: string; at: number }>();
+  /** Does this Claude Code have `claude auth login`? Asked once (its help says so). */
+  private authLogin: boolean | null = null;
+
+  /**
+   * Signing in to a Claude account from the office. Claude Code's own sign-in runs in a terminal of its own on this
+   * machine (a tmux server apart from the one employees work in, so it is never taken for a session); the office
+   * shows what that terminal shows and types into it what the person at the office types: it prints a link, the
+   * person opens it in their own browser and signs in, and pastes the code the page gives back here. Nothing of
+   * the sign-in is read or kept by the agent beyond that terminal's text; the login itself is Claude Code's.
+   */
+  private async accountLogin(p: { op: 'start' | 'screen' | 'input' | 'stop'; dir: string | null; text?: string; key?: string; email?: string }): Promise<AccountLogin> {
+    const key = p.dir ?? 'default';
+    // A sign-in nobody finished is not left standing.
+    for (const [k, l] of this.logins) if (Date.now() - l.at > 30 * 60_000) (await this.loginTmux.killSession(l.name), this.logins.delete(k));
+    let cur = this.logins.get(key);
+    if (p.op === 'start') {
+      const account = this.describeAccount(p.dir, true);
+      if (account.error) throw new Error(account.error);
+      if (cur) await this.loginTmux.killSession(cur.name);
+      if (this.authLogin === null) this.authLogin = await hasAuthLogin(this.cfg.claudeBin);
+      const email = String(p.email ?? '').trim();
+      // `claude auth login` is the sign-in and nothing else. A Claude Code without it is started as it is: in a folder
+      // nobody is signed in to, it begins with the sign-in by itself (and `/login` typed there starts it otherwise).
+      const argv = this.authLogin ? [this.cfg.claudeBin, 'auth', 'login', ...(/^[^\s@]+@[^\s@]+$/.test(email) ? ['--email', email] : [])] : [this.cfg.claudeBin];
+      const name = `orch-login-${crypto.createHash('sha1').update(key).digest('hex').slice(0, 10)}`;
+      await this.loginTmux.killSession(name);
+      // (Wide, so that the long address of the sign-in page is printed in one piece.)
+      const pane = await this.loginTmux.newSession({ name, cwd: os.homedir(), cols: 420, rows: 32, argv, env: p.dir ? { CLAUDE_CONFIG_DIR: account.path } : {} });
+      cur = { name, pane: pane.paneId, at: Date.now() };
+      this.logins.set(key, cur);
+    } else if (p.op === 'input' && cur) {
+      const text = String(p.text ?? '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 4096);
+      if (text) await this.loginTmux.sendKeys(cur.pane, ['-l', '--', text]);
+      const named = LOGIN_KEYS[String(p.key ?? '')];
+      if (named) await this.loginTmux.sendKeys(cur.pane, [named]);
+    } else if (p.op === 'stop' && cur) {
+      await this.loginTmux.killSession(cur.name);
+      this.logins.delete(key);
+      cur = undefined;
+    }
+    let lines: string[] = [];
+    let running = false;
+    if (cur) {
+      try {
+        const text = await this.loginTmux.exec(['capture-pane', '-p', '-J', '-t', cur.pane, '-S', '-200']);
+        lines = text.replace(/\s+$/, '').split('\n').map((l) => l.replace(/\s+$/, '')).slice(-80);
+        running = (await this.loginTmux.exec(['display-message', '-p', '-t', cur.pane, '#{pane_dead}'])).trim() !== '1';
+      } catch {
+        // The terminal is gone (the tmux server was stopped): the sign-in is over.
+        this.logins.delete(key);
+      }
+    }
+    return { dir: p.dir, running, lines, account: this.describeAccount(p.dir, false) };
   }
 
   /** Who is logged in to Claude Code in this config folder (or the default one), from its own config file. */

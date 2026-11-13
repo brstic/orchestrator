@@ -5,7 +5,7 @@ import type { AgentSession, Appearance, AutonomyLevel, CommunicationStyle, Deliv
 import { DESK_SIZE, EFFORT_CHOICES, MODEL_CHOICES, ROLE_CATALOGUE, memberSeatOf, roleByKey } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field, Progress, Provenance, Stat, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api, connection } from '../../lib/api.ts';
-import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
+import { activityOf, currentTaskOf, loadAccounts, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { act } from '../core.tsx';
 import { useAccess } from '../../lib/access.ts';
 import { mayKeep, scoped, whoseEmployee, whoseLabel } from '../../lib/mine.ts';
@@ -13,6 +13,7 @@ import { byAttention, employeeState } from '../../lib/my-work.ts';
 import { byProject, levelLine, teamLine } from '../../lib/team.ts';
 import { byDay, oneLine } from '../../lib/inbox.ts';
 import { More, PickMany, State } from './kit.tsx';
+import { accountChoices } from '../../lib/accounts.ts';
 import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { FolderField } from './folder-picker.tsx';
 import { registerPanel } from './index.tsx';
@@ -767,6 +768,47 @@ function patchOf(e: Employee, d: Draft): Record<string, unknown> {
   return p;
 }
 
+/**
+ * Which Claude account an employee runs on: the accounts of their machine by name — the e-mail address signed in to
+ * each, or the service — and not by folder. A login made by hand in a folder the office does not know is still
+ * reachable ("Another folder…").
+ */
+function AccountField({ hostId, host, value, onChange }: { hostId: string; host: Host | undefined; value: string; onChange: (dir: string) => void }) {
+  const accounts = useOffice((s) => s.accounts);
+  useEffect(() => {
+    void loadAccounts();
+  }, [hostId]);
+  const choices = useMemo(() => accountChoices(accounts, hostId || null, host), [accounts, hostId, host]);
+  const known = choices.some((c) => c.value === value);
+  const [other, setOther] = useState(false);
+  const typing = other || !known;
+  return (
+    <div className="field">
+      <span className="field-label">Claude account</span>
+      <select
+        aria-label="Claude account"
+        value={typing ? '\u0000other' : value}
+        onChange={(ev) => {
+          if (ev.target.value === '\u0000other') return setOther(true);
+          setOther(false);
+          onChange(ev.target.value);
+        }}
+      >
+        {choices.map((c) => (
+          <option key={c.value || 'default'} value={c.value}>
+            {c.label}
+          </option>
+        ))}
+        <option value={'\u0000other'}>Another folder…</option>
+      </select>
+      {typing && <input value={value} onChange={(ev) => onChange(ev.target.value)} className="mono" placeholder="~/.claude-work" spellCheck={false} aria-label="Claude account folder" style={{ marginTop: 6 }} />}
+      <span className="field-hint">
+        {typing ? 'The folder of a Claude login made by hand on that machine. ' : ''}Accounts are added and signed in to in Company → Claude. A running session is started again on the new account; when an account runs out, the office moves its employees to another one of the same kind by itself (Settings → Employees).
+      </span>
+    </div>
+  );
+}
+
 /** What was changed, in the words of the form and not of the record. */
 const FIELD_WORD: Record<string, string> = { roleKey: 'role', specialization: 'specialisation', allowedTools: 'allowed tools', disallowedTools: 'denied tools', autonomy: 'level', executionMode: 'runtime', projectId: 'project', alsoProjectIds: 'other projects', hostId: 'machine', workingDir: 'folder', claudeConfigDir: 'Claude account' };
 const changedWords = (patch: object): string =>
@@ -1029,14 +1071,7 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
           </select>
         </Field>
         <RuntimeField value={d.executionMode} onChange={(v) => set('executionMode', v)} host={d.hostId ? hostsById[d.hostId] : undefined} />
-        <Field label="Claude account folder" hint="Leave empty to use the machine's own Claude login. More accounts are added to a machine in Company → Claude; pick one here, or write the folder of a login made by hand. A running session is started again on the new account. When an account runs out, the office moves its employees to another one by itself (Settings → Employees).">
-          <input value={d.claudeConfigDir} onChange={(ev) => set('claudeConfigDir', ev.target.value)} className="mono" placeholder="default login" spellCheck={false} aria-label="Claude account folder" list="claude-accounts-of-machine" />
-          <datalist id="claude-accounts-of-machine">
-            {(hostsById[d.hostId ?? '']?.claudeAccounts ?? []).map((a) => (
-              <option key={a} value={a} />
-            ))}
-          </datalist>
-        </Field>
+        <AccountField hostId={d.hostId} host={d.hostId ? hostsById[d.hostId] : undefined} value={d.claudeConfigDir} onChange={(v) => set('claudeConfigDir', v)} />
           </div>
       {role && (
         <div className="small faint">

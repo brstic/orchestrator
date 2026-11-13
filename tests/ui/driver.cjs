@@ -769,11 +769,16 @@ async function scenario() {
       const board = await js(`window.__orchPlayer.spots.find((x) => x.kind === 'board')`);
       const jumps = await js(`window.__t.store().jumpAsk`);
       await js(`window.__orchPlayer.goto = { x: ${board.x}, z: ${board.z}, rot: 0 }; true`);
-      await waitFor(`window.__t.store().nearby && window.__t.store().nearby.kind === 'board'`, 8000);
-      await key('Space');
-      await waitFor(`window.__t.store().panel === 'tasks'`, 8000);
-      if ((await js(`window.__t.store().jumpAsk`)) !== jumps) throw new Error('the key jumped although the project board was in front');
-      await js(`window.__t.store().openPanel(null)`);
+      // (Since 8de6975 somebody who stands at the board is met there, so what is in front may be that employee and
+      // not the board — the suite's planner stands there. The key is pressed only when it is the board: what the
+      // key does with an employee met away from their desk has its own steps, and is not undone from here.)
+      const front = await waitFor(`(() => { const n = window.__t.store().nearby; return n && (n.kind === 'board' || n.kind === 'employee') ? n.kind : null; })()`, 8000);
+      if (front === 'board') {
+        await key('Space');
+        await waitFor(`window.__t.store().panel === 'tasks'`, 8000);
+        if ((await js(`window.__t.store().jumpAsk`)) !== jumps) throw new Error('the key jumped although the project board was in front');
+        await js(`window.__t.store().openPanel(null)`);
+      }
       return `sat on the break room sofa (the prompt: "${asked.trim()}", then "STAND UP"), got up with a step; jumped ${jumped.top.toFixed(2)} m — ${shape}; another window saw me sit, get up and jump (${seenTop.toFixed(2)} m)`;
     } finally {
       other.destroy();
@@ -1298,6 +1303,14 @@ async function scenario() {
     await waitFor(`window.__t.scope().querySelectorAll('[data-team-employee]').length === 1`, 5000);
     await click(`window.__t.scope().querySelector('[data-team-employee] .k-title')`, 'Sarah\'s card');
     await waitFor(`window.__t.store().panel === 'employee' && window.__t.store().panelArg === window.__t.emp('Sarah').id && !!window.__t.scope().querySelector('[data-profile-overview]')`, 6000);
+    // (The window grows into place when it opens: it is measured once it has stopped — the same height twice running.)
+    let was = -1;
+    for (let i = 0; i < 20; i++) {
+      const now = await js(`Math.round(window.__t.scope().getBoundingClientRect().height)`);
+      if (now === was) break;
+      was = now;
+      await sleep(150);
+    }
     const prof = await js(`(() => {
       const w = window.__t.scope();
       return { name: w.querySelector('.win-head h2').textContent, face: !!w.querySelector('.win-head .win-lead .avatar'), state: w.querySelector('.win-head [data-profile-state] .k-state').textContent, tabs: [...w.querySelectorAll('.tab')].map((t) => t.textContent), on: w.querySelector('.tab-on').textContent, labels: [...w.querySelectorAll('[data-profile-overview] .k-label')].map((l) => l.textContent), figures: w.querySelectorAll('.k-figure').length, inputs: [...w.querySelectorAll('[data-profile-overview] input, [data-profile-overview] select, [data-profile-overview] textarea')].length, primary: [...w.querySelectorAll('.win-head .btn-primary')].map((b) => b.textContent.trim()), height: Math.round(w.getBoundingClientRect().height) };
@@ -2412,7 +2425,13 @@ async function scenario() {
     await open('employee', `window.__t.emp('Ava').id + ':profile'`);
     // Rarely changed settings are folded away: open them first.
     if (!(await js(`window.__t.scope().querySelector('details.pc-more').open`))) await click(`window.__t.scope().querySelector('details.pc-more > summary')`, 'More settings');
-    await type(`window.__t.field('Claude account folder')`, '~/.claude-second');
+    // The accounts of her machine are chosen by name; a login made by hand in a folder of its own is "Another folder…".
+    const choice = `window.__t.scope().querySelector('select[aria-label="Claude account"]')`;
+    const named = await js(`[...${choice}.options].map((o) => o.textContent)`);
+    if (!/^dev@example\.test/.test(named[0]) || named[named.length - 1] !== 'Another folder…' || named.some((n) => /^~\//.test(n))) throw new Error(`the accounts to choose from: ${named.join(' | ')}`);
+    await js(`window.__t.setSelect(${choice}, ${choice}.options[${choice}.options.length - 1].value)`);
+    await waitFor(`!!window.__t.scope().querySelector('input[aria-label="Claude account folder"]')`, 3000);
+    await type(`window.__t.scope().querySelector('input[aria-label="Claude account folder"]')`, '~/.claude-second');
     await clickText('Save changes');
     await waitFor(`window.__t.emp('Ava').claudeConfigDir === '~/.claude-second'`, 8000);
     await close();
@@ -2428,6 +2447,50 @@ async function scenario() {
     const pace = await js(`window.__orchPace`);
     if (!pace || ![1, 2].includes(pace.every) || !(pace.fps > 20)) throw new Error(`the render loop reports ${JSON.stringify(pace)}`);
     return `${before} account → ${after}; the first shows 42% of 5 hours and 85% of the week`;
+  });
+
+  await step('Company → Claude: an account is signed in to from the window — a link to open, a code to paste — and is then called by its e-mail address everywhere; Z.AI is offered as a kind of account', async () => {
+    const card = (text) => `[...window.__t.scope().querySelectorAll('.claude-account')].find((c) => c.textContent.includes(${JSON.stringify(text)}))`;
+    await open('overview', `'usage'`);
+    // The account Ava was put on by its folder is called by who is signed in to it there — asked of the machine when
+    // she was put on it, before any session of hers reported — with the folder as the quiet line under the name.
+    await waitFor(`!!${card('~/.claude-second')}`, 15000);
+    await sleep(1500);
+    const named = await js(`(() => { const c = ${card('~/.claude-second')}; return { name: c.querySelector('.strong').textContent, under: c.querySelector('.small.faint').textContent }; })()`);
+    if (named.name !== 'second@example.test' || !/~\/\.claude-second/.test(named.under)) throw new Error(`the account in ~/.claude-second is called "${named.name}" (under it: "${named.under}")`);
+    // Signing in again, as somebody else, without leaving the window.
+    await click(`${card('~/.claude-second')}.querySelector('.cl-row')`, 'the account\'s row');
+    await click(`${card('~/.claude-second')}.querySelector('[data-sign-in-open]')`, 'Sign in again…');
+    const sheet = `window.__t.scope().querySelector('[data-sign-in]')`;
+    // Claude Code's own sign-in runs on the machine; the window shows its link as a button and what its terminal says.
+    await waitFor(`!!${sheet} && !!${sheet}.querySelector('[data-sign-in-link]') && /Paste code here/.test(${sheet}.querySelector('[data-sign-in-screen]').textContent)`, 25000);
+    const link = await js(`${sheet}.querySelector('[data-sign-in-link]').getAttribute('href')`);
+    if (!/^https:\/\/claude\.ai\/oauth\/authorize\?.*state=S{180}$/.test(link)) throw new Error(`the sign-in link: ${link.slice(0, 90)}… (${link.length} characters)`);
+    await shot('claude-sign-in');
+    await type(`${sheet}.querySelector('input[aria-label="Sign-in code"]')`, 'uitest');
+    await click(`[...${sheet}.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Send')`, 'Send');
+    await waitFor(`!!${sheet}.querySelector('[data-signed-in]') && /uitest@example\.test/.test(${sheet}.querySelector('[data-signed-in]').textContent)`, 20000);
+    // The list under the sheet knows it at once: the account has its name, and the folder is the quiet line under it.
+    await waitFor(`(() => { const c = ${card('uitest@example.test')}; return !!c && c.querySelector('.strong').textContent === 'uitest@example.test' && !/Not signed in/.test(c.textContent); })()`, 10000);
+    await click(`[...${sheet}.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Done')`, 'Done');
+    await waitFor(`!window.__t.scope().querySelector('[data-sign-in]')`, 4000);
+    // "Add an account…" offers the two kinds; Z.AI asks for a key and nothing else.
+    await click(`[...window.__t.scope().querySelectorAll('button')].find((b) => /^Add an account/.test(b.textContent.trim()))`, 'Add an account…');
+    await waitFor(`!!window.__t.scope().querySelector('[data-add-claude]') && !!window.__t.scope().querySelector('[data-add-zai]')`, 4000);
+    await click(`window.__t.scope().querySelector('[data-add-zai]')`, 'Z.AI');
+    await waitFor(`!!window.__t.scope().querySelector('[data-zai-account] input[type=password][aria-label="Z.AI API key"]')`, 4000);
+    const zai = await js(`(() => { const f = window.__t.scope().querySelector('[data-zai-account]'); return { add: [...f.querySelectorAll('button')].find((b) => /Add the account/.test(b.textContent)).disabled, fields: f.querySelectorAll('input').length }; })()`);
+    if (!zai.add || zai.fields !== 1) throw new Error(`the Z.AI form: Add disabled without a key ${zai.add}, ${zai.fields} field(s) in sight`);
+    await shot('claude-zai');
+    await click(`[...window.__t.scope().querySelectorAll('[data-zai-account] button')].find((b) => b.textContent.trim() === 'Cancel')`, 'Cancel');
+    await close();
+    // In Ava's settings her account is chosen by that name now — no folder to read.
+    await open('employee', `window.__t.emp('Ava').id + ':profile'`);
+    if (!(await js(`window.__t.scope().querySelector('details.pc-more').open`))) await click(`window.__t.scope().querySelector('details.pc-more > summary')`, 'More settings');
+    const hers = await waitFor(`(() => { const sel = window.__t.scope().querySelector('select[aria-label="Claude account"]'); const o = sel && sel.selectedOptions[0]; return o && o.textContent === 'uitest@example.test' ? { value: sel.value, typing: !!window.__t.scope().querySelector('input[aria-label="Claude account folder"]') } : null; })()`, 10000);
+    if (hers.value !== '~/.claude-second' || hers.typing) throw new Error(`Ava's account in her settings: ${JSON.stringify(hers)}`);
+    await close();
+    return `signed in as uitest@example.test from the window (a link of ${link.length} characters); Z.AI offered`;
   });
 
   await step('Hi-fi: a station is switched on for the office and says what is on air; it is quieter far from the hi-fi; volume and mute are this computer\'s; the top bar stops it for everyone', async () => {

@@ -790,6 +790,17 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.patch('/hosts/:id', async (req) => engine.hosts.rename(param(req, 'id'), String(body(req).name ?? '')));
     // More Claude accounts on a machine (owners: no rule in access.ts). Adding makes the folder there and says how to log in.
     api.post('/hosts/:id/accounts', async (req) => engine.sessions.addAccount(param(req, 'id'), String(body(req).dir ?? ''), actorOf(req)));
+    // Signing in to an account from the office, and an account of another service (Z.AI). Owners only, like the rest.
+    // What is typed (a sign-in code, an API key) is passed on to that machine and is not written anywhere here.
+    api.post('/hosts/:id/accounts/login', async (req) => engine.sessions.accountLogin(param(req, 'id'), { op: 'start', dir: body(req).dir ? String(body(req).dir) : null, fresh: body(req).fresh === true, email: body(req).email ? String(body(req).email) : undefined }, actorOf(req)));
+    api.get('/hosts/:id/accounts/login', async (req) => engine.sessions.accountLogin(param(req, 'id'), { op: 'screen', dir: query(req).dir ? String(query(req).dir) : null }, actorOf(req)));
+    api.post('/hosts/:id/accounts/login/input', async (req) => engine.sessions.accountLogin(param(req, 'id'), { op: 'input', dir: body(req).dir ? String(body(req).dir) : null, text: body(req).text === undefined ? undefined : String(body(req).text), key: body(req).key ? String(body(req).key) : undefined }, actorOf(req)));
+    api.delete('/hosts/:id/accounts/login', async (req) => engine.sessions.accountLogin(param(req, 'id'), { op: 'stop', dir: query(req).dir ? String(query(req).dir) : null }, actorOf(req)));
+    api.post('/hosts/:id/accounts/provider', async (req) => {
+      const b = body(req);
+      const models = b.models && typeof b.models === 'object' ? { opus: String(b.models.opus ?? ''), sonnet: String(b.models.sonnet ?? ''), haiku: String(b.models.haiku ?? '') } : undefined;
+      return engine.sessions.addProviderAccount(param(req, 'id'), { dir: b.dir ? String(b.dir) : null, provider: b.provider === 'custom' ? 'custom' : 'zai', token: String(b.token ?? ''), baseUrl: b.baseUrl ? String(b.baseUrl) : undefined, models }, actorOf(req));
+    });
     api.post('/hosts/:id/accounts/check', async (req) => ({ accounts: await engine.sessions.checkAccounts(param(req, 'id'), [null, ...(engine.core.hosts.require(param(req, 'id')).claudeAccounts ?? [])]) }));
     api.post('/hosts/:id/accounts/move', async (req) => ({ moved: await engine.sessions.failover({ key: `${param(req, 'id')}|${String(body(req).from ?? '') || 'default'}`, actor: actorOf(req) }) }));
     api.delete('/hosts/:id/accounts', async (req) => {

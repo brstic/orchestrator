@@ -58,7 +58,10 @@ test('before anyone has worked, each account is listed without figures — not l
   const second = rows.find((r) => r.configDir === '~/.claude-second');
   assert.deepEqual(mine.employeeIds.sort(), [ids.Alex, ids.Noor].sort());
   assert.deepEqual(second.employeeIds, [ids.Sarah]);
-  for (const r of rows) assert.deepEqual([r.reportedAt, r.fiveHour, r.sevenDay, r.email], [null, null, null, null]);
+  for (const r of rows) assert.deepEqual([r.reportedAt, r.fiveHour, r.sevenDay], [null, null, null]);
+  // Who is signed in is asked of the machine itself when it comes into the office, so the default login has its name
+  // before any session has run on it (tests/e2e/51-account-sign-in.test.ts).
+  assert.equal(mine.email, 'owner@example.test');
 });
 
 test('two employees on two accounts: each account shows what Claude Code said in their own session', async () => {

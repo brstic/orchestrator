@@ -30,6 +30,46 @@ if (argv.includes('--version')) {
   console.log('2.1.321 (Claude Code)');
   process.exit(0);
 }
+// `claude auth …`: the sign-in by itself, the way the real CLI has it — it prints the address of the sign-in page and
+// waits for the code that page gives. Here the "code" is the name the account gets: `second` signs in
+// second@example.test (and `wrong` is a code that is refused).
+if (argv[0] === 'auth') {
+  if (argv.includes('--help')) {
+    console.log('Usage: claude auth [options] [command]\n\nManage authentication\n\nCommands:\n  login [options]   Sign in to your Anthropic account\n  logout            Log out from your Anthropic account\n  status [options]  Show authentication status');
+    process.exit(0);
+  }
+  if (argv[1] !== 'login') process.exit(1);
+  const os = await import('node:os');
+  const readline = await import('node:readline');
+  const file = path.join(process.env.CLAUDE_CONFIG_DIR ?? os.homedir(), '.claude.json');
+  const state = 'S'.repeat(180);
+  console.log('Opening browser to sign in…');
+  console.log('Browser did not open? Use the url below to sign in:\n');
+  console.log(`https://claude.ai/oauth/authorize?code=true&client_id=fake-client&response_type=code&redirect_uri=https%3A%2F%2Fconsole.example.test%2Foauth%2Fcode%2Fcallback&scope=user%3Ainference&state=${state}\n`);
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const ask = () =>
+    rl.question('Paste code here if prompted > ', (code) => {
+      const name = code.trim().split('#')[0];
+      if (!name || name === 'wrong') {
+        console.log('Invalid code. Try again.');
+        return ask();
+      }
+      let had = {};
+      try {
+        had = JSON.parse(fs.readFileSync(file, 'utf8'));
+      } catch {
+        /* a new folder */
+      }
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ ...had, oauthAccount: { emailAddress: `${name}@example.test`, organizationName: 'Signed In Org' } }));
+      console.log('Login successful.');
+      rl.close();
+      process.exit(0);
+    });
+  ask();
+  // (Nothing below is for a sign-in.)
+  await new Promise(() => undefined);
+}
 if (argv.includes('--help')) {
   // The two options the office reads from the real CLI's help.
   console.log('Usage: claude [options] [command] [prompt]\n\nOptions:\n  --effort <level>                      Effort level for the current session\n                                        (low, medium, high, xhigh, max)\n  --model <model>                       Model for the current session.');
