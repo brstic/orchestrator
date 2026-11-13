@@ -187,6 +187,10 @@ async function scenario() {
       await sleep(350);
       await shot(`panel-${panel}`);
       const title = await js(`document.querySelector('.win h2').textContent`);
+      // Every window wears the one frame, and all of it is on the screen: what does not fit scrolls inside it.
+      const box = await js(`(() => { const w = document.querySelector('.win'); const b = w.getBoundingClientRect(); return { kit: w.classList.contains('win-kit'), top: Math.round(b.top), bottom: Math.round(b.bottom), left: Math.round(b.left), right: Math.round(b.right), h: innerHeight, w: innerWidth }; })()`);
+      if (!box.kit) throw new Error(`the ${panel} window is not in the frame the others wear`);
+      if (box.top < 0 || box.left < 0 || box.bottom > box.h || box.right > box.w) throw new Error(`the ${panel} window leaves the screen: ${JSON.stringify(box)}`);
       await clickText('✕');
       await waitFor(`!document.querySelector('.win')`, 5000);
       return title;
@@ -254,6 +258,11 @@ async function scenario() {
     await waitFor(`document.querySelectorAll('.win .hire-place').length >= 1`, 8000);
     if (await js(`document.querySelectorAll('.win .hire-place').length > 1 && !!document.querySelector('.win form')`)) throw new Error('a place was chosen without asking');
     await js(`[...document.querySelectorAll('.win .hire-place')].find((b) => /dev-mac/.test(b.textContent)).click()`);
+    // The tallest form there is: it stays on the screen, and what does not fit scrolls inside the window.
+    await waitFor(`!!window.__t.field('Name')`, 5000);
+    await sleep(300);
+    const form = await js(`(() => { const b = document.querySelector('.win').getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), h: innerHeight }; })()`);
+    if (form.top < 0 || form.bottom > form.h) throw new Error(`the hire form leaves the screen: ${JSON.stringify(form)}`);
     await type(`window.__t.field('Name')`, ctx.hireName);
     // No path typing: browse the machine's folders and choose one.
     await clickText('Browse…');
@@ -1265,7 +1274,8 @@ async function scenario() {
     await click(`window.__t.byText('Change')`, 'Change');
     await waitFor(`window.__t.scope().querySelector('.tab-on').textContent === 'Settings' && window.__t.visible(window.__t.scope().querySelector('[data-profile-settings]'))`, 5000);
     const set = await js(`(() => { const w = window.__t.scope(); const bar = w.querySelector('[data-profile-save]').getBoundingClientRect(); const body = w.querySelector('.pf-body').getBoundingClientRect(); return { height: Math.round(w.getBoundingClientRect().height), barIn: bar.bottom <= body.bottom + 1 && bar.top >= body.top, save: w.querySelector('[data-profile-save] .btn-primary').disabled, note: w.querySelector('.pf-save-note').textContent, picks: [...w.querySelectorAll('[role=radiogroup][aria-label="Autonomy"] label')].map((l) => Math.round(l.getBoundingClientRect().height)), more: [...w.querySelectorAll('[role=radiogroup][aria-label="Autonomy"] .k-pick-more')].length }; })()`);
-    if (set.height !== prof.height) throw new Error(`the window changes size between Overview and Settings: ${prof.height} → ${set.height}`);
+    // (To the pixel a measurement is rounded to: the body's height is a part of the screen's.)
+    if (Math.abs(set.height - prof.height) > 1) throw new Error(`the window changes size between Overview and Settings: ${prof.height} → ${set.height}`);
     if (!set.barIn || !set.save || !/^Nothing is changed/.test(set.note)) throw new Error(`the save bar: in sight ${set.barIn}, Save disabled ${set.save}, says "${set.note.slice(0, 60)}"`);
     // Six levels of autonomy, a line each; only the chosen one says the rest.
     if (set.picks.length !== 6 || set.more !== 1 || set.picks.filter((h) => h > 70).length > 1) throw new Error(`the autonomy levels take ${set.picks.join(', ')} px, ${set.more} of them explained`);

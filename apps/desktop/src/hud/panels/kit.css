@@ -7,7 +7,8 @@
  */
 
 /* ───────────── the window ───────────── */
-.win-kit {
+/* (`.win.win-kit`, not `.win-kit`: the app's own stylesheet comes after this one and would win a tie with `.win`.) */
+.win.win-kit {
   border-radius: 16px;
   border-color: var(--line);
   background: #11161f;
@@ -37,8 +38,9 @@
   align-items: flex-start;
   padding-top: min(11vh, 96px);
 }
-.win-kit {
-  max-height: calc(100vh - min(11vh, 96px) - 28px);
+.win.win-kit {
+  /* It hangs from the top, so what is left under that is its room: the body scrolls inside, the window never leaves the screen. */
+  max-height: calc(100vh - min(11vh, 96px) - 24px);
 }
 
 /* A window with tabs: the tabs under its head, and a body that keeps its size whatever the tab holds. */

@@ -57,6 +57,8 @@ What must **not** be lost when a window is moved: anything a person could do the
 | `.k-note`, `.k-notice`, `.k-warn`, `.k-bad` | A warning in a sentence; a list that wants a decision; text in the warning and the error colour |
 | `.k-empty` | Nothing here yet: a title, a sentence, the main button |
 
+**The cascade, once more, because it cost a bug:** a kit rule on `.win-kit` alone ties with the app's `.win` rule and loses (the app's stylesheet comes later). The frame's own rules are written `.win.win-kit`. The first night's builds had the window's height limit on `.win-kit`, so tall windows hung lower *and* kept the old limit, and left the screen at the bottom.
+
 Colours, fonts and the old classes (`.btn`, `.badge`, `.field`, `.avatar`) are the app's own (`styles.css`); the kit adds nothing of its own to them. Note the cascade: the panel stylesheets come *before* `styles.css`, so a kit rule that ties with an element rule there (an `input`'s width) loses — give the element the style directly.
 
 ## Moving a window
