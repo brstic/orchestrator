@@ -39,6 +39,16 @@ import { b64decode } from '@orchestrator/contracts';
 import { api, connection, type ConnState } from './api.ts';
 import { SETTLE_MS, UNACKNOWLEDGED_MS, answerAmong, askState, type AskState } from './asks.ts';
 import { playKnock, playOuch, playReply, playWhip } from './sfx.ts';
+import { crackFalloff, ownerPosition } from '@orchestrator/office-3d';
+
+/**
+ * How loud somebody else's crack of the whip is here: by how far this person's character stands from whoever swung
+ * it (or, when that one has no character, from the person it was meant for). Nobody to measure to: half.
+ */
+function crackHeard(people: ReadonlyArray<{ id: string; x: number; z: number }>, fromId: string, atPersonId: string | null): number {
+  const at = people.find((p) => p.id === fromId) ?? (atPersonId ? people.find((p) => p.id === atPersonId) : undefined);
+  return crackFalloff(at ? Math.hypot(at.x - ownerPosition.x, at.z - ownerPosition.z) : null);
+}
 import { hearVoice, heardEnd, voiceHooks } from './voice.ts';
 
 export type PanelId =
@@ -681,8 +691,12 @@ function handle(msg: ServerToClient): void {
           break;
         }
         useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), line], peopleWhips: { ...s.peopleWhips, [msg.from.id]: now }, ...(atMe ? { ouchAt: now + 230 } : { peopleOuch: { ...s.peopleOuch, [personId]: now + 230 } }) }));
-        playWhip();
-        playOuch(pitchOf(personId));
+        // Heard from where it cracks: loud beside it, faint from the other end of the floor.
+        const loud = crackHeard(st.people, msg.from.id, personId);
+        if (loud > 0.02) {
+          playWhip(0.7 * loud);
+          playOuch(pitchOf(personId), 0.24, 0.6 * loud);
+        }
         break;
       }
       const employeeId = msg.employeeId ?? '';
@@ -696,8 +710,11 @@ function handle(msg: ServerToClient): void {
         break;
       }
       useOffice.setState((s) => ({ chat: [...s.chat.slice(-49), line], peopleWhips: { ...s.peopleWhips, [msg.from.id]: now }, whips: { ...s.whips, [employeeId]: now + 230 } }));
-      playWhip();
-      playOuch(pitchOf(employeeId));
+      const loud = crackHeard(st.people, msg.from.id, null);
+      if (loud > 0.02) {
+        playWhip(0.7 * loud);
+        playOuch(pitchOf(employeeId), 0.24, 0.6 * loud);
+      }
       break;
     }
     case 'jumped':

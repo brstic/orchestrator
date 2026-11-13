@@ -436,7 +436,9 @@ export function App() {
         <PeopleActs />
         {s.conn !== 'online' && <div className="glass banner">Connection to the server lost — the office is frozen at its last known state. Reconnecting…</div>}
         {inWorkstation ? (
-          <div className="left-dock">
+          // At a terminal the chat stands behind it: what is said in the office does not lie over what the employee
+          // writes. It comes forward only while this person is typing a line of their own.
+          <div className={`left-dock ${saying ? '' : 'left-dock-behind'}`}>
             <ChatBox open={saying} onOpen={() => setSaying(true)} onClose={() => setSaying(false)} quiet />
           </div>
         ) : (

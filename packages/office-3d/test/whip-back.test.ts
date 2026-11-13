@@ -44,3 +44,19 @@ test('cracks far apart are not one telling-off: the count starts again', () => {
   told = crackAt(told, stubborn, told.last + 1000);
   assert.equal(sentBack(told, told.last + 1), true);
 });
+
+test('a crack is heard from where it cracks: full beside it, fainter with every step, gone at the far end of the floor', async () => {
+  const { CRACK_FAR, CRACK_NEAR, crackFalloff } = await import('../src/voice-sound.ts');
+  assert.deepEqual([crackFalloff(0), crackFalloff(CRACK_NEAR), crackFalloff(CRACK_FAR), crackFalloff(CRACK_FAR + 20)], [1, 1, 0, 0]);
+  // Never louder further off, and already clearly quieter a few desks away.
+  let last = 1;
+  for (let d = 0; d <= 40; d += 0.5) {
+    const v = crackFalloff(d);
+    assert.ok(v <= last + 1e-9 && v >= 0 && v <= 1, `at ${d} m`);
+    last = v;
+  }
+  assert.ok(crackFalloff(8) < 0.7 && crackFalloff(8) > 0.3, `8 m: ${crackFalloff(8)}`);
+  assert.ok(crackFalloff(20) < 0.15, `20 m: ${crackFalloff(20)}`);
+  // Somebody with no character to measure to: half, not full and not silent.
+  assert.deepEqual([crackFalloff(null), crackFalloff(undefined), crackFalloff(NaN)], [0.5, 0.5, 0.5]);
+});

@@ -2988,6 +2988,10 @@ button.ops-row:hover {
   gap: 6px;
   pointer-events: none;
 }
+/* At a terminal: under the terminal's own panel (which comes later in the page and so is drawn over it). */
+.left-dock-behind {
+  z-index: auto;
+}
 .left-dock > .feed,
 .left-dock > .feed-pill {
   position: static;
