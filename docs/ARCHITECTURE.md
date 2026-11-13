@@ -75,6 +75,7 @@ One outbound WebSocket per host, authenticated by its first message. Non-blockin
 | Sleep | `sleep.ts`, `registry.ts` (`wake`), `comms.ts` (`pump`) | stopping sessions that have no work; starting them again for what they are needed for |
 | Work log | `work-log.ts` | how long each employee has worked this month, and who has worked the most (`CompanyStats.employeeOfMonth`; the "Employee of the month" decoration shows them) |
 | Waiting for a colleague | `waits.ts` | tool calls held open for a colleague's answer or the end of a task; what may be waited for, when a wait is cut short, what stands after the call |
+| Goals | `goals.ts` | the office's `/goal`: a condition an employee is sent on toward, through the Stop hook, until they say it holds (and a person's check command agrees), or it stops by itself |
 | Commands in the background | `background.ts`; `shells.ts` (execution) | which commands of a session run in the background (machine: the process table; office: the hooks), and the state `waiting_command` |
 | Persistence & recovery | `core.ts`, `engine.ts` | everything is rebuilt from the database on start |
 

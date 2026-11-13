@@ -2792,6 +2792,48 @@ async function scenario() {
     return `${who.name}: shown over their head, on the card and in the profile; gone when it ended`;
   });
 
+  await step('/goal in Talk: the goal stands over the conversation, over their head and in their profile, they keep at it, and Clear ends it', async () => {
+    await close();
+    const free = `(() => { const st = window.__t.store(); const e = Object.values(st.employees).find((e) => !e.archived && e.autonomy !== 'standard' && e.roleKey !== 'foreman' && e.roleKey !== 'lead' && Object.values(st.sessions).some((x) => x.employeeId === e.id && x.status === 'running' && x.inTurn === false && !x.waitingOn) && !Object.values(st.questions).some((q) => q.employeeId === e.id && q.status === 'open')); return e ? { id: e.id, name: e.name } : null; })()`;
+    await waitFor(`!!${free}`, 30000).catch(() => undefined);
+    const who = await js(free);
+    if (!who) throw new Error('nobody on Auto between turns to give a goal to');
+    const goal = `Object.values(window.__t.store().employees).find((e) => e.id === ${JSON.stringify(who.id)}).goal`;
+    const messagesBefore = await js(`Object.values(window.__t.store().messages).filter((m) => m.toEmployeeId === ${JSON.stringify(who.id)} && m.from.kind === 'owner').length`);
+    await js(`window.__t.store().openPanel('talk', ${JSON.stringify(who.id)})`);
+    // A step every turn that never finishes it: they keep at it until the goal is cleared.
+    await type(`window.__t.scope().querySelector('textarea')`, '/goal The notes are complete. @@fake: sleep 1200; bash echo note >> ui-goal-notes.txt@@');
+    await clickText('Send');
+    await waitFor(`(() => { const g = ${goal}; return !!g && g.status === 'active'; })()`, 8000);
+    await waitFor(`!!window.__t.scope().querySelector('.goal-strip[data-goal="active"]') && window.__t.scope().querySelector('.goal-strip').textContent.includes('The notes are complete.')`, 8000);
+    if ((await js(`window.__t.scope().querySelector('textarea').value`)) !== '') throw new Error('the box still holds the /goal line');
+    const sent = await js(`Object.values(window.__t.store().messages).filter((m) => m.toEmployeeId === ${JSON.stringify(who.id)} && m.from.kind === 'owner').length`);
+    if (sent !== messagesBefore) throw new Error('/goal went to them as a message of mine as well');
+    // Sent on: the count of turns goes up while nobody types anything.
+    await waitFor(`(${goal}).turns >= 2`, 30000);
+    await sleep(300);
+    await shot('goal-talk');
+    // Over their head.
+    await close();
+    await camera('Management');
+    const tag = `[...document.querySelectorAll('.tag')].find((t) => t.querySelector('.tag-name') && t.querySelector('.tag-name').textContent.trim().startsWith(${JSON.stringify(who.name)}))`;
+    await waitFor(`!!(${tag}) && ((${tag}).querySelector('.tag-goal') || { textContent: '' }).textContent.includes('The notes are complete')`, 10000);
+    // In their profile, and cleared from there.
+    await open('employee', JSON.stringify(who.id));
+    await waitFor(`!!window.__t.scope().querySelector('[data-profile-goal]') && window.__t.scope().querySelector('[data-profile-goal]').textContent.includes('Goal: The notes are complete.')`, 8000);
+    await sleep(300);
+    await shot('goal-profile');
+    await click(`[...window.__t.scope().querySelectorAll('[data-profile-goal] button')].find((b) => b.textContent.trim() === 'Clear')`, 'Clear');
+    await waitFor(`(${goal}).status === 'stopped'`, 8000);
+    const turns = await js(`(${goal}).turns`);
+    await close();
+    await waitFor(`!(${tag}).querySelector('.tag-goal')`, 8000);
+    // Nothing sends them on any more.
+    await sleep(4000);
+    if ((await js(`(${goal}).turns`)) !== turns) throw new Error('they were sent on after the goal was cleared');
+    return `${who.name}: sent on ${turns} times, shown in Talk, over their head and in the profile; cleared from the profile`;
+  });
+
   await step('Access: the address people come to, an invitation as a short link, the member listed as invited, and access taken away', async () => {
     await close();
     const port = await new Promise((resolve) => { const srv = require('node:net').createServer(); srv.listen(0, () => { const p = srv.address().port; srv.close(() => resolve(p)); }); });

@@ -115,7 +115,7 @@ For `PreToolUse`, `PermissionRequest` and `Stop` the same `curl` stands inside a
 | `PermissionRequest` | approval held open until the owner decides | **yes** |
 | `PermissionDenied` | denial confirmed; the owner gets a security notification saying what was refused | no |
 | `Notification` | `permission_prompt` (terminal fallback is showing), `idle_prompt` | no |
-| `Stop` | turn ended; queued messages delivered as `{"decision":"block","reason":…}`; bounded nudges | briefly |
+| `Stop` | turn ended; queued messages delivered as `{"decision":"block","reason":…}`; a goal sends it on (see "Goals"); bounded nudges | briefly |
 | `StopFailure`, `SubagentStart`, `SubagentStop` | error state; delegating | no |
 | `TaskCreated`, `TaskCompleted` | a step of Claude Code's own task list was planned / finished (`agent.step_planned`, `agent.step_completed`). These are steps inside a turn: an Orchestrator task is only ever completed by verification | no |
 | `TeammateIdle` | a teammate of a Claude Code agent team went idle (`agent.teammate_idle`) | no |
@@ -198,6 +198,17 @@ Sessions that were not launched with the MCP server (attached sessions) simply l
 ```
 claude mcp add --transport http orchestrator https://<server>/mcp --header "Authorization: Bearer <session token>"
 ```
+
+### Goals (the office's `/goal`)
+
+Claude Code 2.1.323 has `/goal <condition>`: a Stop hook of type `prompt`, scoped to the session, and after each turn "a separate check decides whether the condition is met, and Claude keeps working until it is"; it clears itself when met (read from the CLI's own text, not run). The office does the same with the Stop hook it already holds for every session (`Goals`, `goals.ts`):
+
+- **Given** by a person (`PUT /employees/:id/goal {condition, check?}`; in Talk `/goal <condition>`, `/goal clear`, `/goal`; the profile's *Goal* row), or by the employee for themselves (`set_goal {condition}`) — not over a person's goal. They are told in their session: what it is, to treat it as their directive and not stop to ask, and how to finish.
+- **Sent on**: when a turn ends while the goal stands, the Stop hook answers `{"decision":"block","reason":"Goal not yet met — keep working toward it: …"}`. Messages waiting for them go first; a task's nudges do not come on top. Not while a question of theirs is open, they wait for a colleague, a command of theirs runs in the background, they reported a blocker, the session is paused or somebody is at its terminal — the goal stands, and is there again at the end of their next turn.
+- **Met**: they call `goal_met {evidence}`. With a command to check by (only a person gives one), the machine runs it in the session's folder (`verify.run`, as a project's verification command), and only a pass ends the goal; a failure is returned with the output's tail.
+- **Stopped by itself**: three turns in a row in which no tool was used (the office's bookkeeping tools do not count), or 100 turns (`GOAL_IDLE_TURNS`, `GOAL_MAX_TURNS`); the owner is told in the Inbox.
+- **Rather than a model's check after every turn** (what Claude Code's own does): the employee says when it holds and why, and a person's command decides where there is one — no extra model run per turn, and the reason is on the record. A person can still type `/goal` at the terminal; that is Claude Code's own and the office does not see it.
+- A Stop that reaches the office without being held (its machine had no link to the office just then) cannot be answered: that turn ends, and the goal goes on at the end of the next. Seen with the fake CLI on real tmux (`tests/e2e/57-goal.test.ts`); **not seen with real Claude Code**, nor with the SDK-managed worker.
 
 ### Commands in the background
 

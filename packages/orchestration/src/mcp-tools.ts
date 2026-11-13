@@ -6,6 +6,7 @@ import type { Engine } from './engine.ts';
 import { FOREMAN_ROLE } from './foreman.ts';
 import { LEAD_ROLE } from '@orchestrator/contracts';
 import { answerLine } from './prompts.ts';
+import { GOAL_IDLE_TURNS } from './goals.ts';
 import { RELEVANT } from './memory.ts';
 
 /** Who is calling: resolved from the session's bearer token, never from tool arguments. */
@@ -96,11 +97,13 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
   const handlers: Record<string, McpToolHandler<McpContext>> = {
     get_current_task: async (_a, { employee }) => {
       const task = eng.tasks.currentTask(employee.id);
+      const goal = eng.goals.describe(employee.id);
       if (!task) {
         const next = core.tasks.filter((t) => t.assigneeId === employee.id && (t.status === 'READY' || t.status === 'REVIEW' || t.status === 'BLOCKED'));
+        if (goal) return `You have no task in progress${next.length ? ` (assigned to you: ${next.map((t) => `${t.key} [${t.status}] ${t.title}`).join('; ')})` : ''}.\n\n${goal}`;
         return next.length ? `You have no task in progress. Assigned to you: ${next.map((t) => `${t.key} [${t.status}] ${t.title}`).join('; ')}. Wait until one is handed to you.` : 'You have no task right now. Wait for one; do not invent work.';
       }
-      return describeTask(eng, task);
+      return goal ? `${describeTask(eng, task)}\n\n${goal}` : describeTask(eng, task);
     },
 
     get_project_context: async (_a, { employee }) => {
@@ -314,6 +317,19 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       if (!msgs.length) return 'No new messages.';
       return msgs.map((m) => `From ${m.from.name}${m.threadId ? ` (request id ${m.threadId})` : ''}: ${m.body}`).join('\n\n');
     },
+
+    set_goal: async (a, { employee }) => {
+      const often = tooMany(employee, 'goal', 20);
+      if (often) return err(often);
+      try {
+        const g = eng.goals.set(employee.id, { condition: a.condition }, { kind: 'employee', id: employee.id, name: employee.name });
+        return `Goal set: ${g.condition}\n\nWork toward it now. Each time your turn ends while it does not hold, the office sends you on. When it holds, call goal_met with how you know. (It stops by itself after ${GOAL_IDLE_TURNS} turns in a row without anything done.)`;
+      } catch (e) {
+        return err((e as Error).message);
+      }
+    },
+
+    goal_met: async (a, { employee, session }) => eng.goals.met(employee, session, a.evidence),
 
     set_model: async (a, { employee }) => {
       if (core.settings.employeesSetModels === false) return err('The owner keeps models and effort to themselves in this office (Settings → Employees). Ask the boss (ask_boss) if a change is needed.');

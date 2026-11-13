@@ -1263,6 +1263,65 @@ table.tbl {
 .tag-wait .tag-state {
   color: #dab0ff;
 }
+/* A goal they keep working toward (the office's /goal): one line, cut to the tag's width. */
+.tag-goal {
+  max-width: 190px;
+  margin: 2px auto 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  color: #ffd27a;
+}
+/* The goal in the window one talks to them in, above the conversation. */
+.goal-strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 210, 122, 0.06);
+}
+.goal-strip.goal-met {
+  background: rgba(127, 240, 176, 0.06);
+}
+.goal-strip.goal-stopped {
+  background: rgba(255, 255, 255, 0.03);
+}
+.goal-mark {
+  font-size: 16px;
+}
+.goal-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.goal-word {
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  font-size: 11px;
+}
+.goal-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.goal-sub {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.goal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 /* Between turns, a command of theirs running on (⏳ COMMAND RUNNING) — and the line naming it, under any state. */
 .tag-cmd .tag-state,
 .tag-bg {

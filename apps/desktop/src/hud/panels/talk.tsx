@@ -10,6 +10,8 @@ import { waitingForLines } from '../../lib/views.ts';
 import { QuestionBody, act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { RepeatChoice, RepeatHint, RoutineList, createRoutine } from './routines.tsx';
+import { GoalStrip, clearGoal, goalNow, setGoal } from './goal.tsx';
+import { goalCommand } from '../../lib/goal.ts';
 import { GivenFile, PendingStrip, SaidFilesOf, usePendingFiles } from './said-files.tsx';
 import { FileLinks, Pictures, isPicture } from './task-files.tsx';
 import { uploadFile } from './task-files.tsx';
@@ -128,6 +130,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
       if (ev.type === 'agent.turn_finished' && typeof d.lastMessage === 'string' && d.lastMessage.trim()) out.push({ kind: 'reply', id: ev.id, ts: ev.ts, text: d.lastMessage });
       else if (ev.type === 'agent.file_given' && d.file?.id && d.file?.name) out.push({ kind: 'file', id: ev.id, ts: ev.ts, file: d.file as SaidFile, caption: typeof d.caption === 'string' ? d.caption : null, taskId: typeof d.taskId === 'string' ? d.taskId : null });
       else if (ev.type === 'task.completed') out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: 'good' });
+      else if (ev.type === 'agent.goal' && (d.phase === 'set' || d.phase === 'met' || d.phase === 'stopped')) out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: d.phase === 'met' ? 'good' : d.phase === 'set' ? 'start' : 'bad' });
       else if (ev.type === 'task.blocked' || ev.type === 'task.verification_failed') out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: 'bad' });
       else if (ev.type === 'task.started' || ev.type === 'agent.question' || ev.type === 'agent.status_report') out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: ev.type === 'task.started' ? 'start' : ev.type === 'agent.question' ? 'ask' : 'report' });
     }
@@ -155,6 +158,16 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
     const body = text.trim();
     const withFiles = pending.files.length > 0;
     if ((!body && !withFiles) || busy) return;
+    // `/goal …`, as in Claude Code: a goal they keep working toward until it holds (`/goal clear` takes it away).
+    const goal = withFiles ? null : goalCommand(body);
+    if (goal?.kind === 'show') return s.toast(goalNow(e), 'info');
+    if (goal) {
+      setBusy(true);
+      const done = await act(() => (goal.kind === 'set' ? setGoal(e.id, goal.condition, null) : clearGoal(e.id)), goal.kind === 'set' ? `${e.name} has the goal: they keep at it until it holds` : `${e.name}'s goal is cleared`);
+      setBusy(false);
+      if (done !== undefined) setText('');
+      return;
+    }
     if (repeat.on && withFiles) return s.toast('A repeated instruction is words only. Take the files out, or send this once.', 'error');
     if (asTask && !body) return s.toast('A task needs a line that says what to do.', 'error');
     setBusy(true);
@@ -221,6 +234,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
       }
     >
       <RoutineList employeeId={e.id} />
+      <GoalStrip employee={e} />
       <div className="talk-thread">
         {lines.length === 0 && (
           <div className="empty">
@@ -297,7 +311,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
           ref={input}
           value={text}
           rows={3}
-          placeholder={live ? `Tell ${e.name} what to do… (paste a screenshot with Ctrl+V)` : `${e.name} is not at their desk. Sending a message starts their session.`}
+          placeholder={live ? `Tell ${e.name} what to do… (paste a screenshot with Ctrl+V; /goal … to keep them at it until it holds)` : `${e.name} is not at their desk. Sending a message starts their session.`}
           onChange={(ev) => setText(ev.target.value)}
           onPaste={pending.onPaste}
           onKeyDown={(ev) => {

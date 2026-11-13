@@ -250,6 +250,31 @@ export interface Employee {
   captureOnboarded?: ID[];
   /** capture: what their finished work shows, counted from task records and hook events. `skills` above is what was declared at hiring. */
   captureSkills?: MeasuredSkill[];
+  /** What they keep working toward until it holds (`EmployeeGoal`), or the last one, met or stopped. Absent: never had one. */
+  goal?: EmployeeGoal | null;
+}
+
+/**
+ * A goal (like Claude Code's `/goal`): a condition the employee keeps working toward, turn after turn, until it holds.
+ * When their turn ends while it does not, the office sends them on (through the Stop hook); they say when it holds
+ * (`goal_met`), and where a person gave a command to check it by, that command decides.
+ */
+export interface EmployeeGoal {
+  /** What has to be true, in words: "every test in packages/api passes and the branch is pushed". */
+  condition: string;
+  /** A shell command, run in their folder, that succeeds once the condition holds. Only a person gives one. */
+  check: string | null;
+  /** Who set it: a person by name, or the employee themselves. */
+  setBy: { kind: 'owner' | 'employee'; id: ID | null; name: string };
+  setAt: ISODate;
+  status: 'active' | 'met' | 'stopped';
+  /** How many times the office sent them on toward it. */
+  turns: number;
+  /** Turns in a row that ended without anything done (no tool used); at three the goal stops. */
+  idle: number;
+  endedAt: ISODate | null;
+  /** Met: how they showed it holds. Stopped: why it stopped (cleared, no progress, the turn limit). */
+  outcome: string | null;
 }
 
 // ─────────────────────────── Sessions ────────────────────────────

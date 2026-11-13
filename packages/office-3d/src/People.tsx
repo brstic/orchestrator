@@ -333,6 +333,11 @@ const Person = memo(function Person({
               {v.controlled && <span className="tag-ctl">YOU</span>}
             </div>
             <div className="tag-state">{v.label}</div>
+            {v.goal && (
+              <div className="tag-goal" title={`Goal: ${v.goal}`}>
+                🎯 {v.goal}
+              </div>
+            )}
             {v.background && (
               <div className="tag-bg" title={v.background.what}>
                 ⏳ {v.background.count > 1 ? `${v.background.count} commands running` : v.background.what}

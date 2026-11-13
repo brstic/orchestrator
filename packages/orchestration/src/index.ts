@@ -19,6 +19,7 @@ export * from './sleep.ts';
 export * from './work-log.ts';
 export * from './waits.ts';
 export * from './background.ts';
+export * from './goals.ts';
 export * from './vault.ts';
 export * from './memory.ts';
 export * from './vault-detect.ts';

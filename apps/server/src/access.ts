@@ -112,6 +112,10 @@ const RULES: Rule[] = [
   rule('POST', '/employees/:id/pause', 'work', path('employee')),
   rule('POST', '/employees/:id/resume', 'work', path('employee')),
   rule('POST', '/employees/:id/message', 'work', path('employee')),
+  // A goal (like Claude Code's /goal): whoever may give the employee work. Its command to check by runs on their
+  // machine as a project's verification command does — which the same people may set.
+  rule('PUT', '/employees/:id/goal', 'work', path('employee')),
+  rule('DELETE', '/employees/:id/goal', 'work', path('employee')),
   // Files that go with a message: whoever may talk to the employee sends them, and sees them in the conversation.
   rule('POST', '/employees/:id/files', 'work', path('employee')),
   rule('POST', '/employees/:id/files/:id/data', 'work', path('employee')),
@@ -376,7 +380,7 @@ export function mayReadRoutine(engine: Engine, who: Who, r: Pick<Routine, 'emplo
 const forVisitor = {
   host: (h: Host): Host => ({ id: h.id, name: h.name, status: h.status, info: null, resources: null, enrolledAt: h.enrolledAt, lastSeenAt: null, revokedAt: h.revokedAt, local: h.local, claudeAccounts: [], memberId: h.memberId ?? null, memberName: h.memberName ?? null, room: h.room ?? null, ownerId: h.ownerId ?? null, ownerName: h.ownerName ?? null }),
   // (`autonomy` has no empty value: a visitor's page does not show it, and what is sent says nothing about the real one.)
-  employee: (e: Employee): Employee => ({ ...e, model: null, effort: null, claudeConfigDir: null, workingDir: null, instructions: '', allowedTools: [], disallowedTools: [], autonomy: 'standard', captureOnboarded: [], captureSkills: [], keptBy: null, hiredBy: null }),
+  employee: (e: Employee): Employee => ({ ...e, model: null, effort: null, claudeConfigDir: null, workingDir: null, instructions: '', allowedTools: [], disallowedTools: [], autonomy: 'standard', captureOnboarded: [], captureSkills: [], keptBy: null, hiredBy: null, goal: null }),
   session: (s: AgentSession): AgentSession => ({ ...s, launchId: null, tmuxSession: '', tmuxPane: null, cwd: '', repoRoot: null, branch: null, claudeSessionId: null, permissionMode: null, claudeConfigDir: null, saying: null, model: null, effort: null, pid: null, usage: null, exitReason: null }),
   project: (p: Project): Project => ({ id: p.id, name: p.name, description: p.description, goals: '', requirements: '', docs: '', hostId: p.hostId, repoPath: null, baseBranch: '', integrationBranch: '', workspace: p.workspace, ownerEmployeeId: p.ownerEmployeeId, verifyCommand: null, verifyTimeoutSec: 0, extraRepos: [], dependsOn: p.dependsOn ?? [], color: p.color, status: p.status, policy: { ...p.policy, allow: [], deny: [], highRiskPatterns: [] }, milestones: p.milestones, deliveredAt: p.deliveredAt, createdAt: p.createdAt }),
   // Named field by field, unlike the others: a task is where the work is talked about, and what it is given later

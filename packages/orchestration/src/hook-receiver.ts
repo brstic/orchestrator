@@ -12,6 +12,8 @@ interface SessionRuntime {
   highRisk: { tool: string; input: string } | null;
   /** Going in circles: how often each failure (the same tool, the same error) has come back during the task in hand. */
   failures?: { taskId: string | null; counts: Map<string, number> };
+  /** Tools used since the turn began or the office last sent it on (a turn that used none did nothing). */
+  tools?: number;
 }
 
 const NUDGE_LIMIT: Record<string, number> = { standard: 1, auto: 3, unrestricted: 3 };
@@ -212,12 +214,13 @@ export class HookReceiver {
    */
   private stopDecision(session: AgentSession, employee: Employee | null, payload: HookPayload, requestId: string): Record<string, unknown> | null {
     if (!employee) return null;
+    const rt = this.runtime(session.id);
+    const didSomething = (rt.tools ?? 0) > 0;
+    rt.tools = 0;
     const batch = this.eng.comms.takeForStopHook(employee.id, requestId);
     if (batch) return { decision: 'block', reason: batch };
     // stop_hook_active only says "a Stop hook already continued this chain". Runaway loops are
-    // prevented by the per-task nudge budget below, which is finite at every autonomy level.
-    const task = this.eng.tasks.currentTask(employee.id);
-    if (!task || task.delivery.status !== 'confirmed') return null;
+    // prevented by the per-task nudge budget below, which is finite at every autonomy level (and a goal's ceiling).
     if (this.core.gateway.isHumanControlled(session.id) || this.core.gateway.isPaused(session.id)) return null;
     // Cut off from the office's tools: it could not complete, ask or report whatever it is told. It is started again instead.
     if (this.eng.sessions.cutOff(session.id)) return null;
@@ -228,6 +231,11 @@ export class HookReceiver {
     // Stopped to wait for a command of its own that runs in the background: Claude Code tells it when that ends.
     if (this.eng.background.busy(session.id)) return null;
     if (this.core.questions.find((q) => q.employeeId === employee.id && (q.status === 'open' || q.status === 'answered') && q.channel !== 'system')) return null;
+    // A goal: sent on toward it until it holds (and not nudged about a task as well).
+    const goal = this.eng.goals.onStop(employee, session, didSomething);
+    if (goal) return { decision: 'block', reason: goal };
+    const task = this.eng.tasks.currentTask(employee.id);
+    if (!task || task.delivery.status !== 'confirmed') return null;
     const limit = NUDGE_LIMIT[employee.autonomy] ?? 0;
     if (task.nudges >= limit) return null;
     task.nudges++;
@@ -323,6 +331,9 @@ export class HookReceiver {
     });
 
     if (payload.hook_event_name === 'PreToolUse') rt.highRisk = payload.orch_policy === 'high_risk' ? { tool: payload.tool_name ?? '', input: JSON.stringify(payload.tool_input ?? null) } : null;
+    // What a turn did: any tool but the office's own bookkeeping (saying "still on it" is not a step).
+    if (payload.hook_event_name === 'UserPromptSubmit') rt.tools = 0;
+    if (payload.hook_event_name === 'PostToolUse' && !/^mcp__orchestrator__(report_progress|get_current_task|get_team|set_goal)$/.test(String(payload.tool_name ?? ''))) rt.tools = (rt.tools ?? 0) + 1;
     if (payload.hook_event_name === 'SubagentStart') rt.activeSubagents++;
     if (payload.hook_event_name === 'SubagentStop') rt.activeSubagents = Math.max(0, rt.activeSubagents - 1);
     if (interp.sessionStarted || interp.sessionEnded) rt.activeSubagents = 0;

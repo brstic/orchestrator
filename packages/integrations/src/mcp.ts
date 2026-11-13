@@ -310,6 +310,25 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
     inputSchema: { type: 'object', properties: {} },
   },
   {
+    name: 'set_goal',
+    description:
+      'Set yourself a goal, like Claude Code\'s /goal: a condition you then keep working toward, turn after turn, until it holds — each time your turn ends while it does not, the office sends you on. Use it for work that takes many steps you can take on your own ("all tests in packages/api pass and the branch is pushed"). When it holds, call goal_met. It replaces a goal you set before, not one a person gave you.',
+    inputSchema: {
+      type: 'object',
+      properties: { condition: str('What has to be true when you are done, so that anybody could check it') },
+      required: ['condition'],
+    },
+  },
+  {
+    name: 'goal_met',
+    description: 'Say that your goal holds, with how you know. Where a person gave a command to check it by, the office runs it, and only a pass ends the goal.',
+    inputSchema: {
+      type: 'object',
+      properties: { evidence: str('How you know: what you ran and what it showed, what you looked at') },
+      required: ['evidence'],
+    },
+  },
+  {
     name: 'set_model',
     description:
       'Choose what you, or a teammate, think with: the model (fable — the strongest and dearest, opus, sonnet, haiku — the lightest; or "default") and the effort (low, medium, high, xhigh, max; or "default"). Use it to spend the Claude allowance where it pays: a lighter model or less effort for routine work, the strongest only where the work needs it. Say why in "reason" — it is on the record and the teammate reads it. A change starts that person\'s session again with the same conversation, at the end of their turn (yours: when this turn ends). get_team shows what everybody thinks with.',

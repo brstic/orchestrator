@@ -2,6 +2,15 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-13 — Goals: the office's /goal, on the Stop hook it already holds
+The owner: "agents need something like Claude Code's /goal, so that they can work until they have finished everything the goal asks." Claude Code's `/goal` is a session Stop hook of type `prompt`: a separate model checks after every turn whether the condition holds, and the session goes on until it does.
+- **The office's own, not Claude Code's typed in.** Every session's Stop hook is already the office's to answer (it delivers messages there and nudges a task on): a goal is one more answer, and with it comes what typing `/goal` into a terminal would not give — the goal seen in the office, given from Talk or the profile, on the record, the same for the SDK-managed worker, testable with the fake CLI, and not dependent on whether a Claude Code version has `/goal` switched on.
+- **The employee says when it holds; a person's command decides where there is one.** Not a model's check after every turn: that is a run of a model per turn on the account, and a judgement nobody can read back. `goal_met` takes how they know, and a command to check by (`pnpm test`) is the hard edge where one is wanted.
+- **Only a person gives a command to check by.** It runs outside Claude Code's permissions, as a project's verification command does — given by the same people. An employee setting themselves a goal gets words only, so a goal is never a way past a permission.
+- **It cannot run for ever.** Three turns in a row without a tool used (talking is not progress), or a hundred turns, and it stops and the owner is told. It waits — without ending — for what the employee waits for: an answer, a colleague, a command in the background, a blocker they reported.
+- **A person's goal stands over the employee's own**, and only a person clears it; the employee can only say they cannot go on (`report_blocker`).
+- **`/goal` in Talk**, because that is what the owner knows from Claude Code; the profile has the same with a field for the check.
+
 ## 2026-11-13 — Thinking: the chin in the palm, placed by measurement
 The owner: "make a better animation for a thinking agent, it looks bad now." The old pose set the arm's angles by hand, and the hand never reached the chin (9 cm away) — from the front it was a palm held up as if waving.
 - **The classic seated "hmm":** a forearm across the waist, the other elbow resting on its hand, the chin in the palm. Chosen over a hand at the cheek or fingers along the jaw because the hand is one relaxed shape (no finger joints): with the fingers pointing up in front of the face it reads as a wave from most sides, and level along the jaw it does not.

@@ -713,6 +713,15 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       const sent = await engine.saidFiles.deliver(engine.core.employees.require(param(req, 'id')), ids, who.id);
       return engine.comms.sendMessage({ from: { kind: 'owner', id: null, name: who.kind === 'owner' ? (who.id === 'owner' ? 'the boss' : `${who.name} (an owner of this office)`) : `${who.name} (a colleague the boss invited; not the boss)` }, toEmployeeId: param(req, 'id'), body: text + SaidFiles.note(sent.lines), files: sent.files, said: text });
     });
+    // A goal: they keep working toward it until it holds (`Goals`). From a colleague, the goal says who gave it.
+    api.put('/employees/:id/goal', async (req) => {
+      const who = whoOf(req);
+      return engine.goals.set(param(req, 'id'), { condition: body(req).condition, check: body(req).check }, { kind: 'owner', id: who.id, name: who.kind === 'owner' ? (who.id === 'owner' ? 'the boss' : who.name) : `${who.name} (a colleague)` });
+    });
+    api.delete('/employees/:id/goal', async (req) => {
+      const who = whoOf(req);
+      return { goal: engine.goals.clear(param(req, 'id'), { kind: 'owner', id: who.id, name: who.kind === 'owner' ? (who.id === 'owner' ? 'the boss' : who.name) : `${who.name} (a colleague)` }) };
+    });
     // Files for a message to an employee: begun, sent in pieces, then named in the message (`fileIds`). Only the one who began a file adds to it and sends it.
     api.post('/employees/:id/files', async (req) => engine.saidFiles.begin(param(req, 'id'), { name: String(body(req).name ?? ''), size: Number(body(req).size) }, whoOf(req).id));
     api.post('/employees/:id/files/:fid/data', async (req) => engine.saidFiles.append(param(req, 'id'), param(req, 'fid'), Number(body(req).offset) || 0, Buffer.from(String(body(req).dataBase64 ?? ''), 'base64'), whoOf(req).id));

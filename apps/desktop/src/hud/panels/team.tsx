@@ -15,6 +15,7 @@ import { byDay, oneLine } from '../../lib/inbox.ts';
 import { More, PickMany, State } from './kit.tsx';
 import { accountChoices } from '../../lib/accounts.ts';
 import { RoutinesOf } from './routines.tsx';
+import { GoalRow } from './goal.tsx';
 import { homeOf, homePatch } from '../../lib/employee-home.ts';
 import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { FolderField } from './folder-picker.tsx';
@@ -1878,6 +1879,7 @@ function Figure({ n, what }: { n: number; what: string }) {
  */
 function OverviewTab({ e, onTab }: { e: Employee; onTab: (tab: TabId) => void }) {
   const st = useOffice();
+  const can = useAccess();
   const me = st.me;
   const session = sessionOfEmployee(st.sessions, e.id);
   const live = isLive(session);
@@ -1924,6 +1926,7 @@ function OverviewTab({ e, onTab }: { e: Employee; onTab: (tab: TabId) => void })
                 </span>
               </div>
             )}
+            <GoalRow employee={e} canWork={can.work(e.hostId)} />
             <button type="button" className="k-row k-row-sm" onClick={() => onTab('session')} title="The session: start, stop, what it can do">
               <span className={`k-dot ${live ? '' : 'k-dot-off'}`} aria-hidden />
               <span className="k-main">

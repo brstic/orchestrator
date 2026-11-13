@@ -133,6 +133,7 @@ export function personViews(s: OfficeState, office?: OfficeWithRooms | null): Pe
       // Planning work, live, and not at the keyboard right now: they stand at the project board until they type again or the task ends.
       atBoard: live && task?.kind === 'planning' && AWAY_FROM_KEYBOARD.has(activity) && !meetingSeats.has(e.id),
       background: live && session?.background?.length ? { count: session.background.length, what: session.background[0]!.what } : null,
+      goal: e.goal?.status === 'active' ? e.goal.condition : null,
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));

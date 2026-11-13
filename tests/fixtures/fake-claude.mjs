@@ -17,7 +17,8 @@
  *   @@fake: write a.txt hello; commit add a; complete done@@
  * (`mcp <tool> <json>` calls any Orchestrator tool; `result <file>` then writes what that call returned into a
  * file, so a test can see what a tool call that was held open came back with, and that work went on after it.
- * `bg <command> => <what it is for>` runs a command in the background, as Claude Code's `run_in_background` does.)
+ * `bg <command> => <what it is for>` runs a command in the background, as Claude Code's `run_in_background` does;
+ * `iffile <file> <step>` takes the step only when that file is in the working folder.)
  *
  * Nothing in the application ever launches this file; tests point the agent's
  * `claudeBin` at it explicitly.
@@ -363,6 +364,12 @@ async function runDirectives(text) {
         case 'bash':
           await bash(rest);
           break;
+        case 'iffile': {
+          // `iffile <file> <step>`: the step, only when that file is in the working folder (a script that ends when its work is done).
+          const file = restParts[0];
+          if (file && fs.existsSync(path.join(cwd, file))) lastMessage = await runDirectives(`@@fake: ${rest.slice(file.length).trim()}@@`);
+          break;
+        }
         case 'bg': {
           const [command, what] = rest.split(' => ');
           await bashInBackground(command.trim(), (what ?? 'scripted by test').trim());

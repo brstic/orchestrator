@@ -41,6 +41,8 @@ export interface PersonView {
   atBoard: boolean;
   /** Commands of theirs running in the background (`AgentSession.background`): how many, and what the first is. Null: none. */
   background?: { count: number; what: string } | null;
+  /** What they keep working toward until it holds (their goal, while it stands). Null: none. */
+  goal?: string | null;
 }
 
 /** What is written on the meeting-room whiteboard: the meeting that is running, or the last decision. */
