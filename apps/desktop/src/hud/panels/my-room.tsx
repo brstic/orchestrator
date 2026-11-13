@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Employee, MemberRoomFurniture, MemberRoomPrefs } from '@orchestrator/contracts';
-import { ACTIVITY_LABEL, MEMBER_ROOM_FURNITURE, MEMBER_ROOM_LIMITS } from '@orchestrator/contracts';
-import { Avatar, Badge, Button, Empty, Field, Window } from '@orchestrator/ui';
+import { MEMBER_ROOM_FURNITURE, MEMBER_ROOM_LIMITS } from '@orchestrator/contracts';
+import { Avatar, Button, Field, Tabs, Window } from '@orchestrator/ui';
+import { employeeState } from '../../lib/my-work.ts';
+import { State } from './kit.tsx';
 import { api } from '../../lib/api.ts';
 import { sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { act } from '../core.tsx';
@@ -48,12 +50,10 @@ function RoomEditor({ current, minDesks, memberName }: { current: MemberRoomPref
   const extra = prefs.extraDepth ?? 0;
   const furniture = prefs.furniture ?? ['plant', 'bookshelf'];
   return (
-    <div className="card col room-editor" style={{ gap: 10 }}>
-      <div className="row">
-        <span className="section-title grow" style={{ margin: 0 }}>
-          Arrange my room
-        </span>
-        <span className="small faint">{saved === 'saving' ? 'saving…' : saved === 'error' ? 'not saved' : 'saved · everyone sees it'}</span>
+    <div className="k-stack room-editor">
+      <div className="k-head">
+        <div className="k-text">How your room looks to everybody in the office. It is saved as you change it, and grows away from the building, so nobody else's room moves.</div>
+        <span className="k-sub">{saved === 'saving' ? 'saving…' : saved === 'error' ? 'not saved' : 'saved'}</span>
       </div>
       <div className="grid2">
         <Field label="Name on the door" hint={`Empty: ${memberName.toUpperCase()}'S ROOM`}>
@@ -91,10 +91,9 @@ function RoomEditor({ current, minDesks, memberName }: { current: MemberRoomPref
           <span className="strong">Close my room.</span> Nobody but you — the owners of the office and the foreman included — can then open your employees' terminals, read what they say, talk to them, start or stop them, or walk in. Everyone still sees that they are there and whether they work. It covers your computer and the servers you keep to yourself, not a server you shared.
         </span>
       </label>
-      <div className="row">
-        <span className="small faint grow">The room grows away from the building, so nobody else's room moves. It is in the office while you are.</span>
+      <div className="k-actions">
         {/* How the room looks, not whether it is closed: that stays as it is. */}
-        <Button small variant="ghost" onClick={() => change({ title: null, color: null, desks: null, extraDepth: null, furniture: null })}>
+        <Button small variant="ghost" className="k-quiet" onClick={() => change({ title: null, color: null, desks: null, extraDepth: null, furniture: null })}>
           Back to how it came
         </Button>
       </div>
@@ -107,7 +106,9 @@ function RoomEditor({ current, minDesks, memberName }: { current: MemberRoomPref
  * here their computer is one of the office's machines and their employees sit in their room; when
  * they leave, the room goes with them and the sessions wait in tmux on their computer.
  */
-function MyRoomPanel({ onClose }: { arg: string | null; onClose: () => void }) {
+type RoomTab = 'people' | 'room' | 'servers';
+
+function MyRoomPanel({ arg, onClose }: { arg: string | null; onClose: () => void }) {
   const me = useOffice((s) => s.me);
   const hosts = useOffice((s) => s.hosts);
   const employees = useOffice((s) => s.employees);
@@ -132,97 +133,123 @@ function MyRoomPanel({ onClose }: { arg: string | null; onClose: () => void }) {
   );
   const elsewhere = people.filter((e) => e.hostId !== host?.id && computers.some((h) => h.id === e.hostId));
 
-  const status = online ? (
-    <Badge tone="good">this computer is in the office</Badge>
-  ) : myHost.state === 'starting' ? (
-    <Badge tone="info">connecting this computer…</Badge>
-  ) : (
-    <Badge tone="muted">this computer is not in the office</Badge>
-  );
   const start = (e: Employee) => act(() => api('POST', `/employees/${e.id}/start`, {}), `${e.name} is starting on ${hosts[e.hostId ?? '']?.ownerId ? hosts[e.hostId!]!.name : 'your computer'}`);
+  const [tab, setTab] = useState<RoomTab>(arg === 'room' || arg === 'servers' ? arg : 'people');
+  const member = !!me?.id && me.id !== 'owner' && me.role !== 'visitor';
+  const servers = mine.filter((h) => !!h.ownerId).length;
+  // The window's line: whether this computer is here — in the words everything else uses — and who is in the room.
+  const line = (
+    <span className="k-line">
+      <State word={online ? 'this computer is in the office' : myHost.state === 'starting' ? 'connecting this computer…' : 'this computer is not in the office'} dot={online ? 'on' : myHost.state === 'starting' ? 'busy' : 'off'} />
+      <span className="k-sub">
+        {people.length} employee{people.length === 1 ? '' : 's'}
+      </span>
+    </span>
+  );
 
   return (
-    <Window title="My room" subtitle="Employees that run on your own computer" onClose={onClose} width={adding ? 1040 : 760}>
-      <div className="col" style={{ gap: 14 }}>
-        <div className="card col" style={{ gap: 6 }}>
-          <div className="row">
-            <span className="strong grow">{host?.name ?? 'Your computer'}</span>
-            {status}
-          </div>
-          <div className="small muted">
-            What runs here is yours: your folders, your Claude account. Others see your employees and what state they are in; only you and the owners can open their terminals or talk to them. When you leave, your room is locked and the sessions wait on your computer.</div>
-          {!online && myHost.state === 'unavailable' && <div className="small bad">{myHost.reason}</div>}
-          {host && roomless.includes(host.id) && (
-            <div className="small bad">
-              There is no free wall on the office's shared floor for your room: rooms are attached only where their door opens into a hall, the open floor or reception. Your employees work as usual and are listed here, but have no desk in the office until a place is free.
-            </div>
-          )}
-          {!online && myHost.state === 'none' && <div className="small muted">Open this office with the Orchestrator desktop app to bring your computer in: a browser tab cannot run sessions.</div>}
-        </div>
-
-        {!adding && (host ?? mine[0]) && <RoomEditor current={(host ?? mine[0])!.room ?? null} minDesks={Math.max(2, Math.ceil(people.length / 2) * 2)} memberName={me?.name ?? 'My'} />}
-
-        {!adding && me?.id && me.id !== 'owner' && me.role !== 'visitor' && <MyServers memberId={me.id} />}
-
-        {adding && host && online ? (
-          <div className="card">
-            <div className="row" style={{ marginBottom: 8 }}>
-              <span className="section-title grow" style={{ margin: 0 }}>
-                Add folders from this computer
-              </span>
-              <Button small variant="ghost" onClick={() => setAdding(false)}>
-                Back
-              </Button>
-            </div>
-            <BulkHire onlyHostId={host.id} onDone={() => setAdding(false)} />
-          </div>
-        ) : (
-          <>
-            <div>
-              <div className="row" style={{ marginBottom: 6 }}>
-                <span className="section-title grow" style={{ margin: 0 }}>
-                  In my room ({people.length})
-                </span>
-                <Button small variant="primary" disabled={!online} title={online ? undefined : 'Your computer is not connected to the office right now'} onClick={() => setAdding(true)}>
-                  Add folders…
-                </Button>
-              </div>
-              {people.length === 0 && <Empty title="Nobody yet">Add a folder from this computer: one employee is hired for it and works there, on your machine.</Empty>}
-              <div className="list">
-                {people.map((e) => {
-                  const s = sessionOfEmployee(sessions, e.id);
-                  const live = s?.status === 'running';
-                  return (
-                    <div key={e.id} className="row my-room-row" style={{ padding: '6px 0', gap: 10 }}>
-                      <Avatar appearance={e.appearance} size={30} />
-                      <button className="pc-rowbtn grow" style={{ textAlign: 'left' }} onClick={() => useOffice.getState().openPanel('employee', e.id)}>
-                        <span className="strong">{e.name}</span> <span className="small muted">{e.title}</span>
-                        <div className="small faint mono truncate">{e.workingDir ?? 'no folder'}</div>
-                      </button>
-                      <Badge tone={live ? 'good' : 'muted'}>{live ? (ACTIVITY_LABEL[s!.activity] ?? s!.activity) : there(e) ? 'not started' : hosts[e.hostId ?? '']?.ownerId ? 'server not connected' : 'computer away'}</Badge>
-                      {live ? (
-                        <Button small onClick={() => useOffice.getState().openPanel('talk', e.id)}>
-                          Talk
-                        </Button>
-                      ) : (
-                        <Button small disabled={!there(e)} onClick={() => void start(e)}>
-                          Start
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              {elsewhere.length > 0 && host && <div className="small faint">{elsewhere.length} of these live on another computer of yours and wait for it.</div>}
-            </div>
-            {host && online && (
-              <div>
-                <div className="section-title">Claude sessions already running on this computer</div>
-                <OutsideTmux host={host} bare />
+    <Window
+      kit
+      title="My room"
+      subtitle={line}
+      onClose={onClose}
+      width={adding ? 1040 : 860}
+      flush
+      actions={
+        adding ? undefined : (
+          <Button variant="primary" disabled={!online} title={online ? 'Hire an employee for each folder you pick on this computer' : 'Your computer is not connected to the office right now'} onClick={() => { setTab('people'); setAdding(true); }}>
+            Add folders…
+          </Button>
+        )
+      }
+    >
+      <Tabs<RoomTab>
+        value={tab}
+        onChange={(t) => {
+          setTab(t);
+          setAdding(false);
+        }}
+        tabs={[
+          { id: 'people', label: 'Who is in it', count: people.length },
+          { id: 'room', label: 'The room' },
+          ...(member ? [{ id: 'servers' as const, label: 'My servers', count: servers }] : []),
+        ]}
+      />
+      <div className="k-body" data-my-room={tab}>
+        <div hidden={tab !== 'people'}>
+          <div className="k-stack">
+            {!online && myHost.state === 'unavailable' && <div className="k-note">{myHost.reason}</div>}
+            {!online && myHost.state === 'none' && <div className="k-note">Open this office with the Orchestrator desktop app to bring your computer in: a browser tab cannot run sessions.</div>}
+            {host && roomless.includes(host.id) && (
+              <div className="k-note">
+                There is no free wall on the office's shared floor for your room: rooms are attached only where their door opens into a hall, the open floor or reception. Your employees work as usual and are listed here, but have no desk in the office until a wall is free.
               </div>
             )}
-          </>
-        )}
+            {adding && host && online ? (
+              <section className="k-section">
+                <div className="k-head">
+                  <div className="k-label">Add folders from this computer</div>
+                  <Button small variant="ghost" className="k-quiet" onClick={() => setAdding(false)}>
+                    Back
+                  </Button>
+                </div>
+                <BulkHire onlyHostId={host.id} onDone={() => setAdding(false)} />
+              </section>
+            ) : (
+              <>
+                <div className="k-text">
+                  Your employees run on <b>{host?.name ?? 'your computer'}</b>, with your folders and your Claude account. Others see them and how they are; only you and the owners can open their terminals or talk to them. When you leave, the room goes with you and the sessions wait on your computer.
+                </div>
+                {people.length === 0 ? (
+                  <div className="k-empty">
+                    <div className="k-title">Nobody yet</div>
+                    <div className="k-text">Add a folder from this computer: one employee is hired for it and works there, on your machine.</div>
+                  </div>
+                ) : (
+                  <div className="k-group">
+                    {people.map((e) => {
+                      const s = sessionOfEmployee(sessions, e.id);
+                      const live = s?.status === 'running';
+                      const state = live ? employeeState(s!.activity) : { word: there(e) ? 'not started' : hosts[e.hostId ?? '']?.ownerId ? 'server not connected' : 'computer away', dot: 'off' as const, tone: 'calm' as const };
+                      return (
+                        <div key={e.id} className="k-row my-room-row">
+                          <Avatar appearance={e.appearance} size={32} offline={!live} />
+                          <button type="button" className="k-main my-room-who" onClick={() => useOffice.getState().openPanel('employee', e.id)} title="Open their profile">
+                            <span className="k-title">
+                              {e.name}
+                              <span className="k-title-note">{e.title}</span>
+                            </span>
+                            <span className="k-sub k-mono">{e.workingDir ?? 'no folder'}</span>
+                          </button>
+                          <State {...state} />
+                          {live ? (
+                            <Button small onClick={() => useOffice.getState().openPanel('talk', e.id)}>
+                              Talk
+                            </Button>
+                          ) : (
+                            <Button small disabled={!there(e)} onClick={() => void start(e)}>
+                              Start
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {elsewhere.length > 0 && host && <div className="k-sub">{elsewhere.length} of these live on another computer of yours and wait for it.</div>}
+                {host && online && (
+                  <section className="k-section">
+                    <div className="k-label">Claude Code already running on this computer, outside the office</div>
+                    <OutsideTmux host={host} bare />
+                  </section>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        {/* (Kept in the page while another tab is looked at: what is being changed in it is on its way to the office.) */}
+        <div hidden={tab !== 'room'}>{(host ?? mine[0]) ? <RoomEditor current={(host ?? mine[0])!.room ?? null} minDesks={Math.max(2, Math.ceil(people.length / 2) * 2)} memberName={me?.name ?? 'My'} /> : <div className="k-sub">Your room is there once a computer of yours has been in the office.</div>}</div>
+        {tab === 'servers' && member && me?.id && <MyServers memberId={me.id} />}
       </div>
     </Window>
   );

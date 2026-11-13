@@ -45,6 +45,15 @@ What must **not** be lost when a window is moved: anything a person could do the
 | `.k-sheet`, `.k-options` › `.k-option`, `.k-form` | What the main button opens, inside the window: first a choice between ways (each a title and a line), then that way's few fields |
 | `.k-code` | Something to copy and run, with its Copy button in the corner |
 | `<More>` | A line that opens (`<details>`), remembering how it was left |
+| `<Window kit lead={…}>` | A face (or a picture of the thing) before the window's name; the line under the name may be a `.k-line` |
+| `<Window kit flush>` + `<Tabs>` + `.k-body` | A window with tabs: the tabs under the head, and a body that keeps one size whatever the tab holds (540 px, less on a low screen) |
+| `.k-tools` › `.k-find`, `select` | Tools over a list: a box to find by, and what narrows the list |
+| `.k-pick` (`-on`) › `.k-pick-words`, `.k-pick-text`, `.k-pick-more` | A choice among a few, one line each (a radio); the chosen one says the rest under its line |
+| `.k-figures` › `.k-figure` | Figures: a number and what it counts, three to a row |
+| `.k-x` | A small cross at the end of a row: put this away |
+| `.k-split` › `.k-split-side` (`.k-split-tools`, `.k-split-list`), `.k-split-main` | A window that is a library: what there is on the left, one thing of it on the right; one size |
+| `.k-filters` › `button` (`.k-filter-on`) | What narrows a list: a few words to choose among, each with how many there are |
+| `.k-bar` (`-thin`) › `i.k-bar-done / -review / -doing / -blocked / -waiting`, `.k-legend` | How far something is: one bar in parts, and what the parts are |
 | `.k-note`, `.k-notice`, `.k-warn`, `.k-bad` | A warning in a sentence; a list that wants a decision; text in the warning and the error colour |
 | `.k-empty` | Nothing here yet: a title, a sentence, the main button |
 
@@ -66,7 +75,15 @@ Colours, fonts and the old classes (`.btn`, `.badge`, `.field`, `.avatar`) are t
 | Window | Moved | Notes |
 | --- | --- | --- |
 | Machines | 2026-11-12 | The first; see below |
-| My work | 2026-11-13 | See below |
+| My work | 2026-11-13 | See below (done twice) |
+| The menu | 2026-11-13 | See below |
+| Inbox | 2026-11-13 | See below |
+| Team | 2026-11-13 | See below |
+| An employee's window (Profile) | 2026-11-13 | See below; its Look, Session, Messages, History and Desk tabs are in the new frame with their old insides |
+| Projects | 2026-11-13 | See below; its Plan, Integration and Policy tabs are in the new frame with their old insides |
+| Reports | 2026-11-13 | See below |
+| Growth | 2026-11-13 | See below; what stands inside "Waiting for you", "Done by itself" and "Is it working?" is as it was |
+| My room | 2026-11-13 | See below; "My servers" is in the new frame with its old insides |
 | every other | — | As they were |
 
 ## Machines
@@ -108,3 +125,73 @@ The first version of this window in the new look (five lists one under the other
 **Roles.** Only somebody with a place of their own in the office has the window (a colleague or an owner who joined as a member); a visitor and the office's first owner do not — unchanged.
 
 **Checked:** unit `apps/desktop/test/my-work.test.ts` (the words, who is listed first, the grouping and its limit); the UI suite's step "My work (a member's own window)…", in a second window as the member: the line, the one main button, two columns side by side and a window under 620 px tall for three people, one word and one button per person, a line opening and closing (one at a time), tasks under their project with a face and no word, nothing about waiting while nothing waits, a lead hired in place, listed first, widened and narrowed, a question appearing across the top with its asker first among the people, *Talk*. Looked at in a development office as a member with eight people, ten tasks in two projects, a shared employee and a question waiting. **Not looked at:** a member with several machines or a server, more than twelve open tasks, somebody with nothing of their own yet, anything stuck (a blocked task, a dropped machine) across the top.
+
+## The menu
+
+`hud/menu.tsx` (the component and its small pictures), `lib/menu.ts` (what each window is for, and how one is found by a word). The button at the top left opens it.
+
+Every window the person may open is there with **a picture, its name and one line that says what it is for** ("Vault — Passwords and keys employees may use"), so nobody has to open a window to learn what it is. The groups are the old ones (Mine, Work, People, Office, Break room) in **two columns**; Settings and Help stand across the bottom. A number beside a window is grey, and red only when it counts things that are stuck or wait for somebody.
+
+**A box at the top has the keyboard** when the menu opens: a word of the window's name, of its line, or of what people call the thing ("password" → Vault and Access; "hire" → Team; "ssh" → Machines) narrows the list; ↑ ↓ move, Enter opens, Escape closes. Keys typed there do not reach the office (no walking while typing).
+
+**Checked:** unit `apps/desktop/test/menu.test.ts`; the UI suite's step "the menu opens from the top-left button…" (every window has a picture and a line, two columns, all of it on the screen, found by "passwords keys", Enter opens, a click opens, nothing found says so). **Not looked at:** as a visitor (the short menu); on a screen lower than 760 px (it scrolls).
+
+## Inbox
+
+`hud/panels/notifications.tsx`, `lib/inbox.ts`. Three tabs in a window that **keeps one size**: *Needs you*, *News* (was "Notifications"), *Answered*.
+
+- **Needs you** — whoever asks to be allowed something first (they stand still until told), then questions, then what is stuck. Each is one or two lines: a face, "David asks to be allowed · T-4", and under it what is asked in one line (for an approval, the command or the file); at the end how long ago and *Decide* / *Answer*. The whole line opens it. Headings ("To be allowed · 1") appear only when there is more than one kind.
+- **News** — one line each, under *Today*, *Yesterday*, *Earlier*: a dot that is coloured only for a warning, the title (bold while new) and the first line of its text, its kind and age, and a small ✕ to dismiss it. Forty lines, then "Show 40 more"; what was dismissed is one folded line at the bottom.
+- **Answered** — what was asked, "You: …", and one word for whether the answer got there ("arrived", "on its way", "did not arrive", "settled elsewhere"; the detail in its tooltip).
+
+**What is no longer printed:** the whole Markdown text of every question, the kind as a badge on every line, "via mcp tool", a card around every question with a blue button in each, the full text under every piece of news, dismissed news among the rest.
+
+**Checked:** unit `apps/desktop/test/inbox.test.ts`; the UI suite's "Inbox: Mark all read…" (the window's size is the same on all three tabs, a piece of news is one line, today's is under "Today"). **Not looked at:** fifty and more pieces of news; yesterday's and earlier ones (a development office is minutes old).
+
+## Team
+
+`hud/panels/team.tsx` (`TeamPanel`), `lib/team.ts`. It was a table of eight columns that scrolled sideways. Now: **people as cards under their projects**, three to a row — a face, the name (and whose they are, when not the office's), "● thinking · T-9 Notes, part 1", and *Talk*. Within a project whoever wants somebody comes first. **A card opens that person's window**, where everything else about them is. Above the cards: a box to find by name, title or skill, the two filters (project, machine) and *Mine / Everyone*; the foreman, when there is one, has a line of its own; archived employees are one folded line at the bottom. *Hire* is the one main button.
+
+**What is no longer printed for everybody:** level and XP bar, machine, autonomy, the task's key as a button, *Open terminal* and *Profile* on every row, *Mine / Not mine* on every row — all of it is in the person's window (the head's *Terminal*, the Overview's "What they are").
+
+## An employee's window
+
+`hud/panels/team.tsx` (`EmployeePanel`, `OverviewTab`, `ProfileTab`…). The owner on the old one: "awful — everything is crammed and bolted on, nothing is organised".
+
+- **The head** is the person: their face, their name, and under it the same line as in every list (how they are, and on what). To the right: *Terminal* (quiet) and the one main button — *Talk*, or *Answer their question* when they ask (then *Talk* is an ordinary button beside it).
+- **Overview** (new, and where the window opens): on the left **Right now** — what they ask, the task they are on (a click opens it), whether a session runs (a click goes to Session) — and **What they are**: role, project, machine, what they think with, how much they may do without asking, whose they are (with *List among mine* / *Not mine*), skills; *Change* leads to Settings. On the right **Delivered** — six figures counted by the office — and **Level**, with where the XP came from folded. Nothing on it is filled in.
+- **Settings** (was the whole "Profile" tab): who they are, where they work, what they think with, how much they may do without asking — **six lines, one per level, the chosen one saying the rest** (it was six tall boxes) — more settings folded, employment (archive, delete: two quiet buttons with a sentence, no longer two red ones). **The bar that saves is always at the bottom of the window**: it says "Nothing is changed" or names what is unsaved and what saving will do to their session, with *Discard* and *Save changes*.
+- **Look** (was "Appearance"), **Session**, **Messages**, **History**, **Desk and hours**: in the new frame, their insides as they were.
+- The window keeps one size from tab to tab. `openPanel('employee', '<id>:settings')` (or `:profile`) opens the settings; without a tab it opens Overview.
+
+**Roles.** A visitor gets the small card as before (role, project, task, skills, level, *Watch terminal*), now with the same head.
+
+**Checked:** unit `apps/desktop/test/team.test.ts`; the UI suite's "Team and an employee's window…" (cards under projects in columns, one button and one state per card, no table or badge; a card opens the profile on Overview with the face and state in its head, one main button, six figures and nothing to fill in; *Change* → Settings at the same window size; the save bar in sight and disabled, six autonomy lines with one explained, a change named in the bar and discarded) and the older Team steps (instructions saved, session stopped and started, appearance, schedule, archive, hiring). **Not looked at:** the profile of a member's own employee as that member; a visitor's card; the Look, Session, Messages, History and Desk tabs beyond that they open (their insides are still the old look).
+
+## Projects
+
+`hud/panels/projects.tsx`, `lib/project-view.ts`. The owner on the old one: "it makes no sense; it has to be good for something". It opened on a form of four text boxes.
+
+**On the left, the projects**, each with a thin bar of how far it is and "3 of 8 done". **On the right, one project**: its name and one line about it ("1 of 8 done · 4 in progress · 1 blocked"), *Pause project* / *Resume project* and *Delete project…* (quiet), and its tabs. *New project* is the one main button.
+
+- **Overview** (new, and where a project opens): **How far it is** — one bar in parts (done, in review, in progress, blocked, not started) with what the parts are; **Open now** — its open tasks with the face of whoever is on each (a click opens the task; *Its tasks* opens the board filtered to it) and under them what was **done lately**; **Who is on it** — its people with how each is (a click opens the person); **What it is** — the description, and the way to change it; *Show only this project in the office*.
+- **About** (was the Overview's form): description, goals, requirements, notes — "what employees on this project are told about it" — where it lives (folder, machine, branches), other repositories and what it builds on.
+- **Plan**, **Integration**, **Policy**: as they were.
+
+## Reports
+
+`hud/panels/reports.tsx`. The owner: "I do not know what it is for." It said "No document selected".
+
+It is **what employees wrote for you**, kept to be read: on the left the documents under *Today / Yesterday / Earlier*, each with its writer's face, its name, what kind it is and how old; a box finds one by a word in it or by who wrote it; when there is more than one kind, a row of them to narrow by ("Reports 4 · Plans 2 · Decisions 1"). On the right, one of them to read: its head (writer, when, project; the task or the meeting it belongs to; *Talk to <writer>*) and the text at a width one can read. **The one main button is *Ask for a report***: pick somebody, and their report appears here when they hand it in. With nothing written yet the window says what gets here and how — a report asked for, a plan or a review handed in with a task, what a meeting decided.
+
+## Growth
+
+`hud/panels/growth.tsx`. The owner: "it has to be like a library, so that I find my way and see what is going on." It was four tabs under a strip of three buttons.
+
+**The shelves are on the left:** *Waiting for you* (with how many); **the library** — *All lessons*, *For everyone*, then a shelf for each project and each person that has lessons, each with how many stand on it; and **the office** — *Done by itself*, *Is it working?*, *How it learns* (with how it is set: "apply what is safe"). **On the right, the shelf that was picked:** what it is and whose task prompts its lessons are added to, how many are in use, a box to find a lesson by a word, and the lessons as cards — the lesson, when it applies, where it came from and how often it was used, and *Retire* / *Edit* quietly at the end; on the shelf of everything each card says whose it is. *Add a lesson* is the one main button. The window opens on what waits for you when something does, and on the library otherwise. The dial (ask me first / apply what is safe / apply more on a clean record) is under *How it learns*, with a paragraph on what learning is here.
+
+## My room
+
+`hud/panels/my-room.tsx`, `my-servers.tsx`. It was four cards one under the other. Now the head says whether this computer is in the office and how many work in the room, *Add folders…* is the one main button, and three tabs keep one size: **Who is in it** (one line each: face, name, title, their folder, how they are, *Talk* or *Start*; what the room is, in three lines; Claude Code found running outside the office), **The room** (its name, colour, desks, floor, furniture, and *Close my room*; saved as it is changed), **My servers**. `openPanel('myroom', 'room' | 'servers')` opens on a tab.
+
+**Checked, for these four:** unit `apps/desktop/test/project-view.test.ts`; the UI suite's steps for Projects (created, paused, resumed; Integration; Policy; deleted), Reports (a document listed and shown), Growth (the new step "Growth is a library…": the shelves and their counts, one open at a time, the dial under *How it learns*; a lesson taught, found, retired, edited; a suggestion applied). Looked at in a development office with two projects, six lessons on four shelves and two reports, as owner; My room as a member with five employees. **Not looked at:** Projects' Plan, Integration and Policy tabs beyond that they work (old insides); a report long enough to scroll, and more than a handful of them; Growth with something waiting and with dozens of lessons; *My servers* (it needs the desktop app and a real server); none of the four as a visitor or a colleague.

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import type { AutonomyLevel, Employee, EvidenceRef, Improvement, ImprovementAction, Lesson, LessonSource, OrchestratorEvent, OutcomesReport, Project, SelfImprovementSettings, Task } from '@orchestrator/contracts';
-import { Avatar, Badge, Button, Empty, Field, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
+import { Avatar, Badge, Button, Empty, Field, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
 import { registerPanel } from './index.tsx';
@@ -458,7 +458,7 @@ function lessonNumbers(lesson: Lesson): { included: number; lastUsed: string | n
   return { included: lesson.appliedCount, lastUsed, verdict };
 }
 
-function LessonRow({ lesson }: { lesson: Lesson }) {
+function LessonRow({ lesson, whose }: { lesson: Lesson; whose?: string }) {
   const [busy, run] = useAction();
   const [editing, setEditing] = useState(false);
   const [body, setBody] = useState(lesson.text);
@@ -478,7 +478,8 @@ function LessonRow({ lesson }: { lesson: Lesson }) {
     if (res) setEditing(false);
   };
   return (
-    <div className={`card col ${lesson.status === 'retired' ? 'pw-dim' : ''}`}>
+    <div className={`lib-card ${lesson.status === 'retired' ? 'pw-dim' : ''}`} data-lesson={lesson.id}>
+      {whose && <div className="k-label">{whose}</div>}
       {editing ? (
         <form className="col" onSubmit={save}>
           <textarea value={body} onChange={(e) => setBody(e.target.value)} aria-label="Lesson" style={{ minHeight: 56 }} autoFocus />
@@ -495,11 +496,11 @@ function LessonRow({ lesson }: { lesson: Lesson }) {
         </form>
       ) : (
         <div>
-          <div className="pre">{lesson.text}</div>
-          {lesson.appliesWhen && <div className="small muted">Applies: {lesson.appliesWhen}</div>}
+          <div className="pre lib-text">{lesson.text}</div>
+          {lesson.appliesWhen && <div className="k-sub" style={{ whiteSpace: 'normal', marginTop: 4 }}>Applies {lesson.appliesWhen.replace(/^when\b/i, 'when')}</div>}
         </div>
       )}
-      <div className="row row-wrap small">
+      <div className="row row-wrap small lib-foot">
         {lesson.status !== 'active' && <Badge tone={lesson.status === 'proposed' ? 'warn' : 'muted'}>{lesson.status === 'proposed' ? 'waiting for you' : 'not used'}</Badge>}
         <Badge tone={source.tone} title={source.title}>
           {source.label}
@@ -647,93 +648,66 @@ function AddLesson({ onDone }: { onDone: () => void }) {
   );
 }
 
-function Group({ title, sub, lead, children }: { title: ReactNode; sub?: ReactNode; lead?: ReactNode; children: ReactNode }) {
-  return (
-    <div className="col" style={{ gap: 6 }}>
-      <div className="row">
-        {lead}
-        <div className="grow">
-          <div className="strong">{title}</div>
-          {sub && <div className="small muted">{sub}</div>}
-        </div>
-      </div>
-      {children}
-    </div>
-  );
-}
+/** A shelf of the library: every lesson, the company's, one project's, or one person's. */
+type Shelf = { kind: 'all' } | { kind: 'company' } | { kind: 'project'; id: string } | { kind: 'employee'; id: string };
+const onShelf = (l: Lesson, shelf: Shelf): boolean => shelf.kind === 'all' || (shelf.kind === 'company' ? l.scope === 'company' : shelf.kind === 'project' ? l.scope === 'project' && l.projectId === shelf.id : l.scope === 'employee' && l.employeeId === shelf.id);
 
-function TeamKnows() {
+/**
+ * One shelf, to be read: what it is and who is told what stands on it, a box to find a lesson by a word, and the
+ * lessons — the ones in use first.
+ */
+function ShelfView({ shelf, adding, onAdded }: { shelf: Shelf; adding: boolean; onAdded: () => void }) {
   const s = useOffice();
   const [query, setQuery] = useState('');
-  const [adding, setAdding] = useState(false);
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const owner = (l: Lesson) => (l.scope === 'employee' ? (s.employees[l.employeeId ?? '']?.name ?? '') : l.scope === 'project' ? (s.projects[l.projectId ?? '']?.name ?? '') : 'company');
-  const all = Object.values(s.lessons);
-  const lessons = all.filter((l) => words.every((w) => `${l.text} ${l.appliesWhen} ${owner(l)} ${l.authoredBy.name}`.toLowerCase().includes(w))).sort(lessonOrder);
-  const by = (scope: Lesson['scope'], key: (l: Lesson) => string | null) => {
-    const groups = new Map<string, Lesson[]>();
-    for (const l of lessons) if (l.scope === scope) groups.set(key(l) ?? '', [...(groups.get(key(l) ?? '') ?? []), l]);
-    return [...groups.entries()];
-  };
-  const people = by('employee', (l) => l.employeeId).sort((a, b) => (s.employees[a[0]]?.name ?? '').localeCompare(s.employees[b[0]]?.name ?? ''));
-  const projects = by('project', (l) => l.projectId).sort((a, b) => (s.projects[a[0]]?.name ?? '').localeCompare(s.projects[b[0]]?.name ?? ''));
-  const company = lessons.filter((l) => l.scope === 'company');
-  const used = (list: Lesson[]) => plural(list.filter((l) => l.status === 'active').length, 'lesson') + ' in use';
+  const here = Object.values(s.lessons).filter((l) => onShelf(l, shelf));
+  const lessons = here.filter((l) => words.every((w) => `${l.text} ${l.appliesWhen} ${owner(l)} ${l.authoredBy.name}`.toLowerCase().includes(w))).sort(lessonOrder);
+  const inUse = here.filter((l) => l.status === 'active').length;
+  const e = shelf.kind === 'employee' ? s.employees[shelf.id] : undefined;
+  const p = shelf.kind === 'project' ? s.projects[shelf.id] : undefined;
+  const title = shelf.kind === 'all' ? 'All lessons' : shelf.kind === 'company' ? 'For everyone' : shelf.kind === 'project' ? (p?.name ?? 'A project that no longer exists') : (e?.name ?? 'Someone who no longer works here');
+  const told =
+    shelf.kind === 'all'
+      ? "Everything the office knows. A lesson is added, as written, to the task prompts of whoever it is for: a person's own to theirs, a project's to everyone on it, the company's to everyone."
+      : shelf.kind === 'company'
+        ? 'Added to the task prompts of every employee in the office.'
+        : shelf.kind === 'project'
+          ? `Added to the task prompts of everyone who works on ${p?.name ?? 'this project'}.`
+          : `Added to ${e?.name ?? 'their'}'s own task prompts.`;
   return (
-    <div className="col" style={{ gap: 14 }}>
-      <div className="row">
-        <input className="grow" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search lessons" placeholder={`Search ${plural(all.length, 'lesson')}…`} />
-        <Button variant={adding ? 'default' : 'primary'} onClick={() => setAdding(!adding)}>
-          Add a lesson
-        </Button>
-      </div>
-      {adding && <AddLesson onDone={() => setAdding(false)} />}
-      <div className="small muted">Lessons are added to task prompts: a person's own to theirs, a project's to everyone on it, the company's to everyone. Each one cites where it came from.</div>
-      {all.length === 0 && <Empty title="Nothing learned yet">Lessons come from three places: an employee writes one after a task that went wrong, an answer you give to a question is kept, or you add one here.</Empty>}
-      {all.length > 0 && lessons.length === 0 && <Empty title="No lesson matches">Nothing mentions “{query}”.</Empty>}
-      {people.length > 0 && <div className="section-title">People</div>}
-      {people.map(([id, list]) => {
-        const e = s.employees[id];
-        return (
-          <Group
-            key={id}
-            title={e?.name ?? 'Someone who no longer works here'}
-            sub={
+    <div className="k-stack" data-growth-shelf={shelf.kind}>
+      <div className="k-row" style={{ padding: 0, minHeight: 0 }}>
+        {e && <Avatar appearance={e.appearance} size={36} />}
+        {p && <span className="k-dot" style={{ background: p.color, boxShadow: 'none', width: 10, height: 10 }} aria-hidden />}
+        <div className="k-main">
+          <div className="k-title" style={{ fontSize: 16 }}>
+            {title}
+          </div>
+          <div className="k-sub" style={{ whiteSpace: 'normal' }}>
+            {plural(inUse, 'lesson')} in use{here.length > inUse ? ` · ${here.length - inUse} not used` : ''}
+            {e && (
               <>
-                {e ? `${e.title} · ` : ''}
-                {used(list)}
-                {e && (
-                  <>
-                    {' · '}
-                    <BeforeAfter employeeId={id} lessons={list} />
-                  </>
-                )}
+                {' · '}
+                <BeforeAfter employeeId={e.id} lessons={here} />
               </>
-            }
-            lead={e && <Avatar appearance={e.appearance} size={32} />}
-          >
-            {list.map((l) => (
-              <LessonRow key={l.id} lesson={l} />
-            ))}
-          </Group>
-        );
-      })}
-      {projects.length > 0 && <div className="section-title">Projects</div>}
-      {projects.map(([id, list]) => (
-        <Group key={id} title={s.projects[id]?.name ?? 'A project that no longer exists'} sub={used(list)}>
-          {list.map((l) => (
-            <LessonRow key={l.id} lesson={l} />
-          ))}
-        </Group>
-      ))}
-      {company.length > 0 && <div className="section-title">Company</div>}
-      {company.length > 0 && (
-        <Group title="Everyone" sub={used(company)}>
-          {company.map((l) => (
-            <LessonRow key={l.id} lesson={l} />
-          ))}
-        </Group>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="k-text">{told}</div>
+      {adding && <AddLesson onDone={onAdded} />}
+      {here.length > 0 && <input className="lib-find" value={query} onChange={(ev) => setQuery(ev.target.value)} aria-label="Search lessons" placeholder={`Find among ${plural(here.length, 'lesson')} by a word…`} />}
+      {here.length === 0 && !adding && (
+        <div className="k-empty">
+          <div className="k-title">Nothing on this shelf yet</div>
+          <div className="k-text">Lessons come from three places: an employee writes one after a task that went wrong, an answer you give to a question is kept, or you add one yourself — Add a lesson, above.</div>
+        </div>
       )}
+      {here.length > 0 && lessons.length === 0 && <div className="k-sub">No lesson matches “{query}”.</div>}
+      {lessons.map((l) => (
+        <LessonRow key={l.id} lesson={l} whose={shelf.kind === 'all' ? whoseLesson(l, s.employees, s.projects) : undefined} />
+      ))}
     </div>
   );
 }
@@ -889,35 +863,107 @@ function Results() {
 
 // ─────────────────────────────── panel ───────────────────────────────
 
-const TABS = ['waiting', 'done', 'knowledge', 'results'] as const;
+const TABS = ['waiting', 'done', 'knowledge', 'results', 'how'] as const;
 type GrowthTab = (typeof TABS)[number];
 /** Names the tabs had before, so that anything that still opens Growth on one of them lands in the right place. */
 const OLD_TABS: Record<string, GrowthTab> = { suggestions: 'waiting', playbooks: 'knowledge', teach: 'knowledge', record: 'results' };
 
-/** arg: optionally the tab to open on. */
+/**
+ * Growth, as a library (docs/UI.md is the look). On the left the shelves: what waits for me, then the lessons — all
+ * of them, the company's, each project's, each person's, with how many stand on each — then what the office did by
+ * itself, whether it helps, and how it learns. On the right, the shelf that was picked.
+ *
+ * arg: optionally where to open — `waiting`, `done`, `knowledge`, `results`, `how`.
+ */
 function GrowthPanel({ arg, onClose }: PanelProps) {
   const s = useOffice();
-  const [tab, setTab] = useState<GrowthTab>(() => TABS.find((t) => t === arg) ?? OLD_TABS[arg ?? ''] ?? 'waiting');
+  const [tab, setTab] = useState<GrowthTab>(() => TABS.find((t) => t === arg) ?? OLD_TABS[arg ?? ''] ?? (Object.values(s.improvements).some((i) => i.status === 'proposed') || Object.values(s.lessons).some((l) => l.status === 'proposed') ? 'waiting' : 'knowledge'));
+  const [shelf, setShelf] = useState<Shelf>({ kind: 'all' });
+  const [adding, setAdding] = useState(false);
   const waiting = Object.values(s.improvements).filter((i) => i.status === 'proposed').length + Object.values(s.lessons).filter((l) => l.status === 'proposed').length;
+  const lessons = Object.values(s.lessons);
+  const count = (sh: Shelf) => lessons.filter((l) => onShelf(l, sh)).length;
+  const projects = [...new Set(lessons.filter((l) => l.scope === 'project' && l.projectId).map((l) => l.projectId!))].sort((x, y) => (s.projects[x]?.name ?? '~').localeCompare(s.projects[y]?.name ?? '~'));
+  const people = [...new Set(lessons.filter((l) => l.scope === 'employee' && l.employeeId).map((l) => l.employeeId!))].sort((x, y) => (s.employees[x]?.name ?? '~').localeCompare(s.employees[y]?.name ?? '~'));
+  const si = s.settings?.selfImprovement;
+  const mode = !si?.enabled ? 'switched off' : (DIAL.find((d) => d.value === si.autopilot)?.label ?? '').toLowerCase();
+  const isShelf = (sh: Shelf) => tab === 'knowledge' && sh.kind === shelf.kind && (sh.kind === 'all' || sh.kind === 'company' || (sh as { id: string }).id === (shelf as { id?: string }).id);
+  const pick = (sh: Shelf) => {
+    setShelf(sh);
+    setTab('knowledge');
+    setAdding(false);
+  };
+  const go = (t: GrowthTab) => {
+    setTab(t);
+    setAdding(false);
+  };
+  const nav = (on: boolean, onClick: () => void, label: ReactNode, n?: number | string, lead?: ReactNode, alert?: boolean) => (
+    <button type="button" className={`lib-shelf ${on ? 'lib-shelf-on' : ''}`} aria-current={on ? 'page' : undefined} onClick={onClick}>
+      {lead}
+      <span className="lib-shelf-name">{label}</span>
+      {n !== undefined && n !== 0 && <span className={`lib-shelf-n ${alert ? 'lib-shelf-n-alert' : ''}`}>{n}</span>}
+    </button>
+  );
   return (
-    <Window title="Growth" subtitle="What the office learns from its own work, and what it does with it" onClose={onClose} width={1120} flush>
-      <div className="pw-frame">
-        <AutopilotDial />
-        <Tabs<GrowthTab>
-          tabs={[
-            { id: 'waiting', label: 'Waiting for you', count: waiting },
-            { id: 'done', label: 'Done by itself' },
-            { id: 'knowledge', label: 'What the team knows' },
-            { id: 'results', label: 'Results' },
-          ]}
-          value={tab}
-          onChange={setTab}
-        />
-        <div className="pw-body">
-          {tab === 'waiting' && <WaitingForYou />}
-          {tab === 'done' && <DoneByItself />}
-          {tab === 'knowledge' && <TeamKnows />}
-          {tab === 'results' && <Results />}
+    <Window
+      kit
+      title="Growth"
+      subtitle="What the office has learned from its own work — its library"
+      onClose={onClose}
+      width={1160}
+      flush
+      actions={
+        <Button
+          variant="primary"
+          disabled={tab === 'knowledge' && adding}
+          onClick={() => {
+            setTab('knowledge');
+            setAdding(true);
+          }}
+          title="Tell your team something once; it is used in their task prompts from then on"
+        >
+          Add a lesson
+        </Button>
+      }
+    >
+      <div className="k-split" data-growth={tab}>
+        <aside className="k-split-side lib-side">
+          {nav(tab === 'waiting', () => go('waiting'), 'Waiting for you', waiting, undefined, true)}
+          <div className="k-label lib-label">The library</div>
+          {nav(isShelf({ kind: 'all' }), () => pick({ kind: 'all' }), 'All lessons', count({ kind: 'all' }))}
+          {nav(isShelf({ kind: 'company' }), () => pick({ kind: 'company' }), 'For everyone', count({ kind: 'company' }))}
+          {projects.length > 0 && <div className="k-label lib-label">Projects</div>}
+          {projects.map((id) => nav(isShelf({ kind: 'project', id }), () => pick({ kind: 'project', id }), s.projects[id]?.name ?? 'A project that is gone', count({ kind: 'project', id }), <span key="d" className="k-dot" style={{ background: s.projects[id]?.color ?? 'var(--faint)', boxShadow: 'none' }} aria-hidden />))}
+          {people.length > 0 && <div className="k-label lib-label">People</div>}
+          {people.map((id) => nav(isShelf({ kind: 'employee', id }), () => pick({ kind: 'employee', id }), s.employees[id]?.name ?? 'Somebody who left', count({ kind: 'employee', id }), s.employees[id] ? <Avatar key="a" appearance={s.employees[id]!.appearance} size={20} /> : undefined))}
+          <div className="k-label lib-label">The office</div>
+          {nav(tab === 'done', () => go('done'), 'Done by itself')}
+          {nav(tab === 'results', () => go('results'), 'Is it working?')}
+          {nav(tab === 'how', () => go('how'), 'How it learns', mode)}
+        </aside>
+        <div className="k-split-main">
+          <div className="pw-body pj-body" data-growth-view>
+            {tab === 'waiting' && <WaitingForYou />}
+            {tab === 'done' && <DoneByItself />}
+            {tab === 'knowledge' && <ShelfView key={`${shelf.kind}:${(shelf as { id?: string }).id ?? ''}`} shelf={shelf} adding={adding} onAdded={() => setAdding(false)} />}
+            {tab === 'results' && <Results />}
+            {tab === 'how' && (
+              <div className="k-stack">
+                <div>
+                  <div className="k-title" style={{ fontSize: 16 }}>
+                    How it learns
+                  </div>
+                  <div className="k-text">
+                    After a task the office looks at its own record: what went wrong, what you answered, what was sent back. From that come lessons, and proposals to change a rule or who gets which task. This is how much of it the office may do
+                    without asking you.
+                  </div>
+                </div>
+                <div className="lib-card" style={{ padding: 0 }}>
+                  <AutopilotDial />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </Window>

@@ -2,6 +2,17 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-13 — Eight windows in a day: what each is for comes first, and is said in the window
+The owner listed them — the menu, Inbox, Team, Profile, Projects, Reports, Growth, My room — with one complaint in common: crowded, unorganised, and "I do not know what this is for". `docs/UI.md` has each.
+- **A window opens on what it is for, not on its form.** An employee's window and a project used to open on a form (the thing done there least often). Both now open on an **Overview** that is only read — what is happening, how far it is, who is on what — and the form is a tab (*Settings*, *About*). Nothing was taken out of the forms.
+- **Every window says what it is, in the place a person looks first**: the menu has a line for each window; a window's own line under its title says what is in it ("What employees wrote for you"); an empty window says what gets there and how, with the button that starts it.
+- **Team is a gallery, not a table.** Eight columns were there so that everything about everybody could be compared at once; nobody compares autonomy levels across sixteen people. A card says who, how they are and on what; the rest is one click away in their window. The cost: level, machine and autonomy are no longer visible for all at once (the Company window still has such a table).
+- **Growth's four tabs became shelves** because the owner asked for a library, and because "what the team knows" was one long page of every lesson of every person. A shelf holds one person's, one project's or the company's; the count beside each shelf says where the knowledge is.
+- **Reports got a verb.** A window that only lists is not understood until something is in it; *Ask for a report* is what one does there, and it existed only as an entry in an employee's right-click menu.
+- **Tabs inside a new frame keep their old insides, and the page says which** (an employee's Look, Session, Messages, History, Desk; a project's Plan, Integration, Policy; Growth's Waiting, Done by itself, Is it working; My servers). Moving a frame is a day; moving thirty tabs of forms is not, and half-moved is better said than hidden.
+- **The menu finds by purpose.** People do not remember that passwords are under "Vault"; they type "password". Each window has, besides its name and its line, the words it is looked for by (`lib/menu.ts`).
+- **The suite must not be rebuilt under.** A run of the UI suite reads the built files while it goes; building again in the middle gave failures that were not there (two windows that would not open). Build, then run, then build.
+
 ## 2026-11-13 — My work, second attempt: the fault was the arrangement, not the paint
 The owner sent the first version (the entry below) back within the hour: "still ugly, still crowded, too tall, unorganised". Looked at with eight people and ten tasks it was a page and a half of rows that all looked alike, each ending in the same three buttons.
 - **Restyling a long page gives a long page.** The first attempt kept the old arrangement — five sections one under the other — and changed what a row looked like. What a window is *arranged as* is decided first: here, two things a member looks at together (who is doing what, and what is open), so two columns side by side. Written into `docs/UI.md`'s steps for moving a window: look at it with a real amount of content before designing.

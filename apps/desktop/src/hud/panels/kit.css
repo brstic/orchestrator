@@ -41,6 +41,44 @@
   max-height: calc(100vh - min(11vh, 96px) - 28px);
 }
 
+/* A window with tabs: the tabs under its head, and a body that keeps its size whatever the tab holds. */
+.win-kit > .win-body-flush {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+.win-kit .tabs {
+  padding: 0 14px;
+  gap: 0;
+}
+.win-kit .tabs .tab {
+  padding: 12px 10px 11px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.win-kit .tabs .tab-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.k-body {
+  flex: none;
+  height: min(540px, calc(100vh - 250px));
+  overflow: auto;
+  padding: 20px 14px 24px 24px;
+  scrollbar-gutter: stable;
+}
+
 /* What a window holds, top to bottom, with the same air between the parts. */
 .k-stack {
   display: flex;
@@ -290,6 +328,29 @@ button.k-row:focus-visible {
 .k-dot-bad {
   background: var(--bad);
   box-shadow: 0 0 0 3px rgba(255, 93, 115, 0.14);
+}
+
+/* A small cross at the end of a row: put this away. */
+.k-x {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--faint);
+  font-size: 11px;
+  cursor: pointer;
+}
+.k-x:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+.k-x:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* Opens and closes what is under a row. */
@@ -623,4 +684,691 @@ button.k-row:focus-visible {
   .k-meter {
     display: none;
   }
+}
+
+/* ───────────── the menu (hud/menu.tsx): every window, with a picture and a line about it ───────────── */
+.dock.mn {
+  width: min(720px, calc(100vw - 24px));
+  max-height: calc(100vh - 84px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  overflow: auto;
+  border-radius: 16px;
+  border-color: var(--line);
+  background: #11161f;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+.mn .mn-find {
+  flex: none;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 13.5px;
+}
+.mn .mn-find::placeholder {
+  color: var(--faint);
+}
+.mn-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 4px 12px;
+  align-items: start;
+}
+.mn-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.mn-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mn-title {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.mn-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.mn-item:hover,
+.mn-item-at {
+  background: rgba(255, 255, 255, 0.055);
+}
+.mn-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.mn-item-on {
+  background: rgba(110, 168, 255, 0.12);
+}
+.mn-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #b9c6dc;
+}
+.mn-item:hover .mn-icon,
+.mn-item-at .mn-icon,
+.mn-item-on .mn-icon {
+  background: rgba(110, 168, 255, 0.18);
+  color: #cfe2ff;
+}
+.mn-words {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mn-name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.mn-about {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.mn-count {
+  flex: none;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mn-count-bad {
+  background: var(--bad);
+  color: #fff;
+}
+.mn-foot {
+  display: flex;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.mn-item-sm {
+  width: auto;
+  flex: 1;
+  min-height: 40px;
+}
+.mn-item-sm .mn-icon {
+  width: 28px;
+  height: 28px;
+  background: none;
+}
+.mn-none {
+  padding: 18px 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ───────────── a window's head with a face before its name ───────────── */
+.win-kit > .win-head {
+  justify-content: flex-start;
+}
+.win-kit > .win-head > .win-titles {
+  flex: 1;
+  min-width: 0;
+}
+.win-lead {
+  flex: none;
+  display: flex;
+}
+.win-kit > .win-head p .k-line {
+  display: flex;
+}
+
+/* ───────────── tools over a list: a box to find by, and what narrows it ───────────── */
+.k-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.k-tools .k-find {
+  flex: 1;
+  min-width: 220px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+}
+.k-tools .k-find::placeholder {
+  color: var(--faint);
+}
+.k-tools select {
+  width: auto;
+  min-width: 150px;
+  max-width: 220px;
+  height: 36px;
+  border-radius: 10px;
+  border-color: var(--line);
+  background-color: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+}
+
+/* ───────────── a choice among a few, one line each; the chosen one says the rest ───────────── */
+.k-pick {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.k-pick:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.k-pick-on {
+  background: rgba(110, 168, 255, 0.07);
+}
+.k-pick input {
+  margin: 3px 0 0;
+  flex: none;
+  accent-color: var(--accent-strong);
+}
+.k-pick-words {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 13px;
+}
+.k-pick-text {
+  color: var(--muted);
+}
+.k-pick-more {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--faint);
+}
+
+/* ───────────── figures: a number and what it counts ───────────── */
+.k-figures {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.022);
+}
+.k-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin: 0 -1px -1px 0;
+}
+.k-figure b {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.k-figure span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.k-link-strong {
+  font-size: 13px;
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--faint);
+  text-underline-offset: 3px;
+}
+
+/* ───────────── Team: people as cards, under their projects ───────────── */
+.tm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 8px;
+}
+.tm-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 10px 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.022);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.tm-card:hover {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: var(--line-strong);
+}
+.tm-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.tm-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tm-project:disabled {
+  cursor: default;
+  color: var(--muted);
+}
+.tm-project:not(:disabled):hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.tm-count {
+  font-weight: 500;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ───────────── an employee's window: a form with its save bar always at the bottom ───────────── */
+.pf-body {
+  height: min(600px, calc(100vh - 250px));
+}
+.pf-form {
+  padding-bottom: 8px;
+}
+.pf-form > div:not(.pf-save) {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pf-form .field-label {
+  color: var(--muted);
+}
+.pf-save {
+  position: sticky;
+  bottom: -24px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -14px -24px -24px;
+  padding: 12px 14px 12px 24px;
+  border-top: 1px solid var(--line);
+  background: #131822;
+}
+.pf-save-note {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* ───────────── how far something is: one bar in parts, and what the parts are ───────────── */
+.k-bar {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+.k-bar > i {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+}
+.k-bar-thin {
+  height: 3px;
+  gap: 1px;
+  margin: 3px 0 1px;
+}
+.k-bar-done {
+  background: var(--good);
+}
+.k-bar-review {
+  background: var(--violet);
+}
+.k-bar-doing {
+  background: var(--accent);
+}
+.k-bar-blocked {
+  background: var(--bad);
+}
+.k-bar-waiting {
+  background: rgba(255, 255, 255, 0.16);
+}
+.k-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.k-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.k-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+/* ───────────── Projects: the list on the left, one project on the right ───────────── */
+.pj-frame {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  height: min(680px, calc(100vh - 200px));
+  min-height: 0;
+}
+.pj-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px;
+  overflow: auto;
+  border-right: 1px solid var(--line);
+}
+.pj-side > .scope-switch {
+  align-self: flex-start;
+  margin-bottom: 8px;
+}
+.pj-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.pj-item > .k-dot {
+  margin-top: 6px;
+}
+.pj-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.pj-item-on,
+.pj-item-on:hover {
+  background: rgba(110, 168, 255, 0.11);
+}
+.pj-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.pj-main,
+.pj-detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.pj-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px 10px 24px;
+}
+.pj-body,
+.pj-main > .pw-body {
+  padding: 20px 14px 24px 24px;
+  scrollbar-gutter: stable;
+}
+
+/* ───────────── a list on the left, one thing of it on the right (a window that is a library) ───────────── */
+.k-split {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  height: min(680px, calc(100vh - 200px));
+  min-height: 0;
+}
+.k-split-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+}
+.k-split-tools {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 12px 8px;
+}
+.k-split-tools .k-find {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+}
+.k-split-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 8px 12px;
+}
+.k-split-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+/* What narrows a list: a few words to choose among, each with how many there are. */
+.k-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.k-filters > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+}
+.k-filters > button:hover {
+  color: var(--text);
+}
+.k-filters > button > span {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.k-filters > .k-filter-on {
+  background: rgba(110, 168, 255, 0.18);
+  color: #cfe2ff;
+}
+.k-filters > button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Something to read: its head, then the text at a width one can read. */
+.win-kit .rp-head {
+  gap: 12px;
+  padding: 16px 20px 14px 24px;
+  font-size: inherit;
+}
+.win-kit .rp-body {
+  padding: 22px 28px 32px;
+}
+.win-kit .rp-body .md {
+  max-width: 76ch;
+  line-height: 1.6;
+}
+
+/* ───────────── Growth: the office's library — shelves on the left, lessons as cards ───────────── */
+.lib-side {
+  gap: 1px;
+  padding: 12px 8px;
+  overflow: auto;
+}
+.lib-label {
+  padding: 14px 12px 6px;
+}
+.lib-shelf {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  text-align: left;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.lib-shelf:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.lib-shelf-on,
+.lib-shelf-on:hover {
+  background: rgba(110, 168, 255, 0.12);
+}
+.lib-shelf:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.lib-shelf-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.lib-shelf-on .lib-shelf-name {
+  font-weight: 600;
+}
+.lib-shelf-n {
+  flex: none;
+  font-size: 12px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.lib-shelf-n-alert {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--warn);
+  color: #1b1300;
+  font-weight: 700;
+}
+.win-kit .lib-find {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+}
+.lib-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.022);
+}
+.lib-text {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.lib-foot {
+  gap: 6px 8px;
+  color: var(--muted);
+}
+.lib-card .gr-dial {
+  border-bottom: 0;
+}
+/* (A document's line in the library: a face, then its name and who wrote it — the old column layout does not apply.) */
+.k-split .pj-item.report-row {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  overflow: visible;
+}
+.k-split .pj-item.report-row > .avatar,
+.k-split .pj-item.report-row > .k-nobody {
+  margin-top: 2px;
+  flex: none;
+}
+
+/* ───────────── My room ───────────── */
+.my-room-who {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.my-room-who:hover .k-title {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--faint);
+}
+.my-room-who:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
 }

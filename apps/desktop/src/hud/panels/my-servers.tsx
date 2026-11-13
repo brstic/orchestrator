@@ -162,7 +162,7 @@ export function MyServers({ memberId }: { memberId: string }) {
   };
 
   return (
-    <div className="card col my-servers" style={{ gap: 8 }}>
+    <div className="k-stack my-servers">
       <div className="row">
         <span className="section-title grow" style={{ margin: 0 }}>
           My servers ({servers.length})

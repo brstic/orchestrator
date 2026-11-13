@@ -3,10 +3,13 @@ import type { Project, Task, TaskStatus } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field, Stat, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useAccess } from '../../lib/access.ts';
-import { sessionOfEmployee, useOffice } from '../../lib/store.ts';
+import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
+import { OPEN_ORDER, byAttention, employeeState, taskState } from '../../lib/my-work.ts';
+import { progressOf, projectsLine } from '../../lib/project-view.ts';
+import { State } from './kit.tsx';
 import { ask } from '../core.tsx';
 import { registerPanel } from './index.tsx';
-import { scoped, whoseProject } from '../../lib/mine.ts';
+import { scoped, whoseLabel, whoseProject } from '../../lib/mine.ts';
 import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { TaskChip, activeEmployees, plural, stamp, useAction } from './tasks.tsx';
 import './panels-work.css';
@@ -38,112 +41,153 @@ function workTasks(tasks: Record<string, Task>, projectId: string): Task[] {
 
 // ───────────────────────────── overview ──────────────────────────────
 
-function ProjectOverview({ project }: { project: Project }) {
+/**
+ * How a project stands, at a glance: how far it is, what is open in it and who is on each thing, who works on it,
+ * and what was finished lately. What the project is (its description, repository, rules) is the other tabs'.
+ */
+function ProjectOverview({ project, onTab }: { project: Project; onTab: (tab: ProjectTab) => void }) {
   const s = useOffice();
-  const can = useAccess();
+  const tasks = workTasks(s.tasks, project.id);
+  const progress = progressOf(tasks);
+  const open = tasks.filter((t) => OPEN_ORDER.includes(t.status)).sort((x, y) => OPEN_ORDER.indexOf(x.status) - OPEN_ORDER.indexOf(y.status) || y.updatedAt.localeCompare(x.updatedAt));
+  const done = tasks.filter((t) => t.status === 'DONE').sort((x, y) => y.updatedAt.localeCompare(x.updatedAt));
+  const team = activeEmployees(s.employees).filter((e) => e.projectId === project.id || !!e.alsoProjectIds?.includes(project.id));
+  const people = byAttention(team.map((e) => ({ name: e.name, e, state: employeeState(activityOf(sessionOfEmployee(s.sessions, e.id)), openQuestionsOf(s.questions, e.id).length > 0) })));
+  const filtered = s.filter.projectId === project.id;
+  const row = (t: Task, finished = false) => {
+    const who = t.assigneeId ? s.employees[t.assigneeId] : undefined;
+    const state = taskState(t.status);
+    return (
+      <button key={t.id} type="button" className="k-row k-row-sm" onClick={() => s.openPanel('task', t.id)} data-project-task={t.id} title={`${t.key} ${t.title} — ${who ? who.name : 'unassigned'}`}>
+        <span className="k-key">{t.key}</span>
+        <span className="k-main">
+          <span className="k-title k-title-sm">{t.title}</span>
+        </span>
+        {finished ? <span className="k-aside">{timeAgo(t.updatedAt)}</span> : t.status !== 'IN_PROGRESS' && <State word={state.word} tone={state.tone} />}
+        {who ? <Avatar appearance={who.appearance} size={22} /> : <span className="k-nobody" aria-label="unassigned" />}
+      </button>
+    );
+  };
+  return (
+    <div className="k-stack" data-project-overview>
+      {project.status === 'paused' && <div className="k-note">Paused: nobody is given any of its tasks until you resume it.</div>}
+      <section className="k-section">
+        <div className="k-label">How far it is</div>
+        {progress.total === 0 ? (
+          <div className="k-text">
+            Nothing has been asked for here yet. <b>Plan</b> turns what you want into tasks; a single task is made on the board.
+          </div>
+        ) : (
+          <>
+            <div className="k-bar" role="img" aria-label={progress.line}>
+              {progress.parts.map((part) => (
+                <i key={part.part} className={`k-bar-${part.part}`} style={{ width: `${part.percent}%` }} title={`${part.n} ${part.word}`} />
+              ))}
+            </div>
+            <div className="k-legend">
+              {progress.parts.map((part) => (
+                <span key={part.part}>
+                  <i className={`k-bar-${part.part}`} aria-hidden />
+                  {part.n} {part.word}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+
+      <div className="k-cols">
+        <section className="k-section">
+          <div className="k-head">
+            <div className="k-label">Open now</div>
+            <button
+              type="button"
+              className="k-link"
+              onClick={() => {
+                s.setFilter({ projectId: project.id });
+                s.openPanel('tasks');
+              }}
+            >
+              Its tasks
+            </button>
+          </div>
+          {open.length === 0 ? (
+            <div className="k-sub">{progress.total ? 'Nothing is open: everything asked for is done.' : 'No task yet.'}</div>
+          ) : (
+            <div className="k-group">{open.slice(0, 8).map((t) => row(t))}</div>
+          )}
+          {open.length > 8 && <div className="k-sub">…and {open.length - 8} more on the board.</div>}
+          {done.length > 0 && (
+            <>
+              <div className="k-label" style={{ marginTop: 12 }}>
+                Done lately
+              </div>
+              <div className="k-group">{done.slice(0, 4).map((t) => row(t, true))}</div>
+            </>
+          )}
+        </section>
+
+        <section className="k-section">
+          <div className="k-label">Who is on it · {team.length}</div>
+          {team.length === 0 ? (
+            <div className="k-text">
+              Nobody yet. Hire somebody for it (<b>Team → Hire</b>), or give somebody this project in their Settings.
+            </div>
+          ) : (
+            <div className="k-group">
+              {people.map(({ e, state }) => {
+                const task = currentTaskOf(s.tasks, e.id);
+                return (
+                  <button key={e.id} type="button" className="k-row k-row-sm" onClick={() => s.openPanel('employee', e.id)} title={`${e.title} — open their profile`}>
+                    <Avatar appearance={e.appearance} size={24} offline={sessionOfEmployee(s.sessions, e.id)?.status !== 'running'} />
+                    <span className="k-main">
+                      <span className="k-title k-title-sm">{e.name}</span>
+                    </span>
+                    <span className="k-aside">{task && task.projectId === project.id ? task.key : ''}</span>
+                    <State {...state} />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="k-label" style={{ marginTop: 12 }}>
+            What it is
+          </div>
+          <div className="k-text" style={{ whiteSpace: 'pre-wrap' }}>
+            {project.description.trim() || 'No description yet.'}
+          </div>
+          <div className="k-actions">
+            <button type="button" className="k-link" onClick={() => onTab('about')}>
+              Description, goals and repository
+            </button>
+          </div>
+          <label className="check small" style={{ alignItems: 'center', marginTop: 4 }} title="Dims everyone else in the office and filters the task board">
+            <input type="checkbox" style={{ margin: 0 }} checked={filtered} onChange={(e) => s.setFilter({ projectId: e.target.checked ? project.id : null })} />
+            <span className="k-sub">Show only this project in the office</span>
+          </label>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+/** What a project is: its description, goals, requirements and notes — what employees are told — and where it lives. */
+function ProjectAbout({ project }: { project: Project }) {
+  const s = useOffice();
   const [busy, run] = useAction();
   const [draft, setDraft, dirty] = useDraft({ description: project.description, goals: project.goals, requirements: project.requirements, docs: project.docs });
-  const tasks = workTasks(s.tasks, project.id);
-  const count = (status: TaskStatus) => tasks.filter((t) => t.status === status).length;
-  const inProgress = count('IN_PROGRESS');
-  const blocked = count('BLOCKED');
   const team = activeEmployees(s.employees).filter((e) => e.projectId === project.id || !!e.alsoProjectIds?.includes(project.id));
   const host = project.hostId ? s.hosts[project.hostId] : undefined;
   // Where this project's people actually work — derived, not configured.
   const machines = [...new Set([project.hostId, ...team.map((e) => e.hostId)].filter((x): x is string => !!x))].map((id) => s.hosts[id]).filter((h): h is NonNullable<typeof h> => !!h);
-  const filtered = s.filter.projectId === project.id;
   const text = (key: keyof typeof draft, label: string, hint: string, minHeight: number) => (
     <Field label={label} hint={hint} wide={key === 'requirements' || key === 'docs'}>
       <textarea value={draft[key]} style={{ minHeight }} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} />
     </Field>
   );
-  const pause = async () => {
-    // Stopping people mid-task is worth a question; pausing a project nobody is working on is not.
-    if (inProgress && !(await ask({ title: `Pause ${project.name}?`, body: `${plural(inProgress, 'task')} in progress will be stopped where they are and wait. Nothing new starts until you resume.`, ok: 'Pause project' }))) return;
-    const res = await run(() => api<{ interrupted: number }>('POST', `/projects/${project.id}/pause`, {}));
-    if (res) s.toast(`${project.name} paused${res.interrupted ? `: ${plural(res.interrupted, 'task')} stopped and waiting` : ''}`, 'success');
-  };
-
-  const remove = async () => {
-    const all = Object.values(s.tasks).filter((t) => t.projectId === project.id);
-    const running = all.filter((t) => t.status === 'IN_PROGRESS').length;
-    const staying = activeEmployees(s.employees).filter((e) => e.projectId === project.id).map((e) => e.name);
-    const body = [
-      all.length ? `Its ${plural(all.length, 'task')} ${all.length === 1 ? 'is' : 'are'} deleted with it${running ? ` — ${running} in progress ${running === 1 ? 'is' : 'are'} stopped first` : ''}.` : 'It has no tasks.',
-      staying.length ? `${staying.join(', ')} ${staying.length === 1 ? 'stays' : 'stay'} in the office, without a project.` : '',
-      `Nothing on disk is touched${project.repoPath ? `: ${project.repoPath} stays exactly as it is` : ''}.`,
-      'This cannot be undone.',
-    ]
-      .filter(Boolean)
-      .join(' ');
-    if (!(await ask({ title: `Delete ${project.name}?`, body, ok: 'Delete project', danger: true }))) return;
-    const res = await run(() => api<{ name: string }>('DELETE', `/projects/${project.id}`));
-    if (!res) return;
-    if (s.filter.projectId === project.id) s.setFilter({ projectId: null });
-    s.toast(`${res.name} deleted`, 'success');
-  };
-
   return (
-    <div className="col" style={{ gap: 14 }}>
-      {/* One line says how the project stands; what can be done with it sits beside it. */}
-      <div className="row row-wrap">
-        <Badge tone={STATUS_TONE[project.status]}>{project.status}</Badge>
-        {project.deliveredAt && (
-          <Badge tone="good" title={`Every released task was verified DONE on ${stamp(project.deliveredAt)}`}>
-            delivered {timeAgo(project.deliveredAt)}
-          </Badge>
-        )}
-        <span className="small muted">
-          {count('DONE')} of {tasks.length} tasks done{inProgress ? ` · ${inProgress} in progress` : ''}
-          {blocked ? <span className="bad"> · {blocked} blocked</span> : null}
-        </span>
-        <div className="grow" />
-        <label className="check small" title="Dims everyone else in the office and filters the task board">
-          <input type="checkbox" checked={filtered} onChange={(e) => s.setFilter({ projectId: e.target.checked ? project.id : null })} /> Show only this project in the office
-        </label>
-        <Button
-          small
-          onClick={() => {
-            s.setFilter({ projectId: project.id });
-            s.openPanel('tasks');
-          }}
-        >
-          Its tasks
-        </Button>
-        {project.status === 'active' && (
-          <Button small disabled={busy} onClick={pause} title="Everyone working on it stops where they are; their tasks wait, and nothing new starts until you resume">
-            Pause project
-          </Button>
-        )}
-        {project.status === 'paused' && (
-          <Button small variant="success" disabled={busy} onClick={() => run(() => api('POST', `/projects/${project.id}/resume`, {}), `${project.name} resumed`)}>
-            Resume project
-          </Button>
-        )}
-        {can.deleteProject(project.hostId) && (
-          <Button small variant="ghost" disabled={busy} onClick={remove} title="Remove the project and its tasks from the office. Its people stay; nothing on disk is touched">
-            Delete project…
-          </Button>
-        )}
-      </div>
-      {project.status === 'paused' && <div className="pc-note">Paused: nobody is given any of its tasks until you resume.</div>}
-
-      <div>
-        <div className="section-title">Team ({team.length})</div>
-        {team.length ? (
-          <div className="row row-wrap">
-            {team.map((e) => (
-              <button key={e.id} type="button" className="pw-chip" style={{ height: 30 }} title={`${e.title} — open profile`} onClick={() => s.openPanel('employee', e.id)}>
-                <Avatar appearance={e.appearance} size={22} offline={sessionOfEmployee(s.sessions, e.id)?.status !== 'running'} />
-                <span className="truncate">{e.name}</span>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="muted">Nobody is on this project yet.</div>
-        )}
-      </div>
-
+    <div className="k-stack" data-project-about>
+      <div className="k-text">What employees on this project are told about it. They read it through their project context, at the start of every session.</div>
       <form
         className="pw-form"
         onSubmit={(ev) => {
@@ -153,57 +197,52 @@ function ProjectOverview({ project }: { project: Project }) {
       >
         {text('description', 'Description', 'What this project is.', 70)}
         {text('goals', 'Goals', 'Objectives you plan are added here.', 70)}
-        {text('requirements', 'Requirements', 'Employees read this through their project context.', 110)}
+        {text('requirements', 'Requirements', 'What must hold when it is done.', 110)}
         {text('docs', 'Docs and notes', 'Conventions, links, anything the team should know.', 90)}
-        <div className="row field-wide">
+        <div className="k-actions field-wide">
           <Button variant="primary" type="submit" disabled={busy || !dirty}>
             Save changes
           </Button>
           {dirty && (
-            <Button variant="ghost" type="button" onClick={() => setDraft({ description: project.description, goals: project.goals, requirements: project.requirements, docs: project.docs })}>
+            <Button variant="ghost" className="k-quiet" type="button" onClick={() => setDraft({ description: project.description, goals: project.goals, requirements: project.requirements, docs: project.docs })}>
               Discard
             </Button>
           )}
         </div>
       </form>
 
-      <div>
-        <div className="section-title">Repository</div>
-        <dl className="kv small">
-          <dt>Path</dt>
-          <dd className="mono">{project.repoPath ?? <span className="muted">no repository set</span>}</dd>
-          <dt>Host</dt>
-          <dd className="row" style={{ gap: 6 }}>
-            {host ? (
-              <>
-                <span className="mono">{host.name}</span>
-                <Badge tone={host.status === 'online' ? 'good' : 'bad'}>{host.status}</Badge>
-              </>
-            ) : (
-              <span className="muted">{project.hostId ? 'unknown host' : 'none'}</span>
-            )}
-          </dd>
-          <dt>Base branch</dt>
-          <dd className="mono">{project.baseBranch}</dd>
-          <dt>Integration branch</dt>
-          <dd className="mono">{project.integrationBranch}</dd>
-          <dt>Created</dt>
-          <dd>{stamp(project.createdAt)}</dd>
-          <dt>Machines in use</dt>
-          <dd>
-            {machines.length ? (
-              machines.map((m) => (
-                <span key={m.id} className="row" style={{ gap: 6, display: 'inline-flex', marginRight: 10 }}>
-                  <span className="mono">{m.name}</span>
-                  <Badge tone={m.status === 'online' ? 'good' : 'bad'}>{m.status}</Badge>
-                </span>
-              ))
-            ) : (
-              <span className="muted">none yet — nobody on this project is assigned to a machine</span>
-            )}
-          </dd>
+      <section className="k-section">
+        <div className="k-label">Where it lives</div>
+        <dl className="k-spec">
+          <div style={{ gridColumn: '1 / -1' }}>
+            <dt>Folder</dt>
+            <dd className="k-mono">{project.repoPath ?? <span className="muted">no repository set</span>}</dd>
+          </div>
+          <div>
+            <dt>On</dt>
+            <dd>
+              {host ? host.name : <span className="muted">{project.hostId ? 'an unknown machine' : 'no machine'}</span>}
+              {host && host.status !== 'online' && <span className="k-warn"> · {host.status}</span>}
+            </dd>
+          </div>
+          <div>
+            <dt>Base branch</dt>
+            <dd className="k-mono">{project.baseBranch}</dd>
+          </div>
+          <div>
+            <dt>Integration branch</dt>
+            <dd className="k-mono">{project.integrationBranch}</dd>
+          </div>
+          <div>
+            <dt>Machines its people work on</dt>
+            <dd>{machines.length ? machines.map((m) => `${m.name}${m.status === 'online' ? '' : ` (${m.status})`}`).join(', ') : <span className="muted">none yet</span>}</dd>
+          </div>
+          <div>
+            <dt>Created</dt>
+            <dd>{stamp(project.createdAt)}</dd>
+          </div>
         </dl>
-      </div>
+      </section>
       <ProjectLinks project={project} />
     </div>
   );
@@ -519,7 +558,7 @@ function ProjectCreate({ onCreated }: { onCreated: (id: string) => void }) {
 
 // ─────────────────────────────── panel ───────────────────────────────
 
-type ProjectTab = 'overview' | 'integration' | 'policy' | 'plan';
+type ProjectTab = 'overview' | 'about' | 'integration' | 'policy' | 'plan';
 
 interface IntegrationView {
   base: string;
@@ -618,28 +657,84 @@ function ProjectIntegration({ project }: { project: Project }) {
   );
 }
 
+/** One project: its name and how it stands, what can be done with it as a whole, and its tabs. */
 function ProjectDetail({ project }: { project: Project }) {
+  const s = useOffice();
+  const can = useAccess();
+  const [busy, run] = useAction();
   const [tab, setTab] = useState<ProjectTab>('overview');
+  const tasks = workTasks(s.tasks, project.id);
+  const inProgress = tasks.filter((t) => t.status === 'IN_PROGRESS').length;
+  const pause = async () => {
+    // Stopping people mid-task is worth a question; pausing a project nobody is working on is not.
+    if (inProgress && !(await ask({ title: `Pause ${project.name}?`, body: `${plural(inProgress, 'task')} in progress will be stopped where they are and wait. Nothing new starts until you resume.`, ok: 'Pause project' }))) return;
+    const res = await run(() => api<{ interrupted: number }>('POST', `/projects/${project.id}/pause`, {}));
+    if (res) s.toast(`${project.name} paused${res.interrupted ? `: ${plural(res.interrupted, 'task')} stopped and waiting` : ''}`, 'success');
+  };
+
+  const remove = async () => {
+    const all = Object.values(s.tasks).filter((t) => t.projectId === project.id);
+    const running = all.filter((t) => t.status === 'IN_PROGRESS').length;
+    const staying = activeEmployees(s.employees).filter((e) => e.projectId === project.id).map((e) => e.name);
+    const body = [
+      all.length ? `Its ${plural(all.length, 'task')} ${all.length === 1 ? 'is' : 'are'} deleted with it${running ? ` — ${running} in progress ${running === 1 ? 'is' : 'are'} stopped first` : ''}.` : 'It has no tasks.',
+      staying.length ? `${staying.join(', ')} ${staying.length === 1 ? 'stays' : 'stay'} in the office, without a project.` : '',
+      `Nothing on disk is touched${project.repoPath ? `: ${project.repoPath} stays exactly as it is` : ''}.`,
+      'This cannot be undone.',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    if (!(await ask({ title: `Delete ${project.name}?`, body, ok: 'Delete project', danger: true }))) return;
+    const res = await run(() => api<{ name: string }>('DELETE', `/projects/${project.id}`));
+    if (!res) return;
+    if (s.filter.projectId === project.id) s.setFilter({ projectId: null });
+    s.toast(`${res.name} deleted`, 'success');
+  };
+
   return (
-    <div className="col" style={{ gap: 0, height: '100%', minHeight: 0 }}>
-      <div className="row" style={{ padding: '12px 18px 6px' }}>
-        <span className="dot" style={{ background: project.color, width: 12, height: 12 }} />
-        <div className="strong truncate" style={{ fontSize: 16 }}>
-          {project.name}
+    <div className="pj-detail">
+      <div className="pj-head" data-project-head>
+        <span className="k-dot" style={{ background: project.color, boxShadow: 'none', width: 10, height: 10 }} aria-hidden />
+        <div className="k-main">
+          <div className="k-title" style={{ fontSize: 16 }}>
+            {project.name}
+          </div>
+          <div className="k-sub">
+            {project.status === 'active' ? '' : `${project.status} · `}
+            {progressOf(tasks).line}
+            {project.deliveredAt ? ` · delivered ${timeAgo(project.deliveredAt)}` : ''}
+          </div>
         </div>
+        {project.status === 'active' && (
+          <Button small variant="ghost" className="k-quiet" disabled={busy} onClick={pause} title="Everyone working on it stops where they are; their tasks wait, and nothing new starts until you resume">
+            Pause project
+          </Button>
+        )}
+        {project.status === 'paused' && (
+          <Button small disabled={busy} onClick={() => run(() => api('POST', `/projects/${project.id}/resume`, {}), `${project.name} resumed`)}>
+            Resume project
+          </Button>
+        )}
+        {can.deleteProject(project.hostId) && (
+          <Button small variant="ghost" className="k-quiet" disabled={busy} onClick={remove} title="Remove the project and its tasks from the office. Its people stay; nothing on disk is touched">
+            Delete project…
+          </Button>
+        )}
       </div>
       <Tabs<ProjectTab>
         tabs={[
           { id: 'overview', label: 'Overview' },
+          { id: 'about', label: 'About' },
+          { id: 'plan', label: 'Plan' },
           { id: 'integration', label: 'Integration' },
           { id: 'policy', label: 'Policy' },
-          { id: 'plan', label: 'Plan' },
         ]}
         value={tab}
         onChange={setTab}
       />
-      <div className="pw-body">
-        {tab === 'overview' && <ProjectOverview project={project} />}
+      <div className="pw-body pj-body" data-project-tab={tab}>
+        {tab === 'overview' && <ProjectOverview project={project} onTab={setTab} />}
+        {tab === 'about' && <ProjectAbout project={project} />}
         {tab === 'integration' && <ProjectIntegration project={project} />}
         {tab === 'policy' && <ProjectPolicyTab project={project} />}
         {tab === 'plan' && <ProjectPlan project={project} />}
@@ -665,37 +760,63 @@ function ProjectsPanel({ arg, onClose }: PanelProps) {
     if (selected !== NEW && !s.projects[selected]) setSelected(projects[0]?.id ?? NEW);
   }, [selected, s.projects]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <Window title="Projects" subtitle="The folders your employees work in, and the rules for each" onClose={onClose} width={1120} flush>
-      <div className="pw-frame">
-        <div className="split">
-          <div className="split-side col">
-            <ScopeSwitch what="projects" />
-            <Button variant={selected === NEW ? 'primary' : 'default'} onClick={() => setSelected(NEW)}>
-              New project
-            </Button>
-            <div className="list">
-              {projects.map((p) => {
-                const tasks = workTasks(s.tasks, p.id);
-                return (
-                  <button key={p.id} type="button" className={`list-item pw-list-btn ${selected === p.id ? 'list-item-on' : ''}`} onClick={() => setSelected(p.id)}>
-                    <span className="dot" style={{ background: p.color }} />
-                    <span className="grow col" style={{ gap: 0 }}>
-                      <span className="strong truncate">{p.name}</span>
-                      <span className="small muted">
-                        {tasks.filter((t) => t.status === 'DONE').length}/{tasks.length} done
-                      </span>
-                    </span>
-                    {own && scope === 'all' && <WhoseBadge whose={whoseProject(s.hosts, s.me, p)} />}
-                    <Badge tone={STATUS_TONE[p.status]}>{p.status}</Badge>
-                  </button>
-                );
-              })}
-              {projects.length === 0 && <div className="small muted">No projects yet.</div>}
+    <Window
+      kit
+      title="Projects"
+      subtitle={`${projectsLine(Object.values(s.projects))} — what is being built, how far each is, and its rules`}
+      onClose={onClose}
+      width={1160}
+      flush
+      actions={
+        <Button variant={selected === NEW ? 'default' : 'primary'} disabled={selected === NEW} onClick={() => setSelected(NEW)}>
+          New project
+        </Button>
+      }
+    >
+      <div className="pj-frame">
+        <aside className="pj-side">
+          <ScopeSwitch what="projects" />
+          {projects.map((p) => {
+            const progress = progressOf(workTasks(s.tasks, p.id));
+            return (
+              <button key={p.id} type="button" className={`pj-item pw-list-btn ${selected === p.id ? 'pj-item-on' : ''} ${p.status === 'archived' ? 'k-dim' : ''}`} onClick={() => setSelected(p.id)} data-project={p.id}>
+                <span className="k-dot" style={{ background: p.color, boxShadow: 'none' }} aria-hidden />
+                <span className="k-main">
+                  <span className="k-title k-title-sm" style={{ fontWeight: 600 }}>
+                    {p.name}
+                    {own && scope === 'all' && whoseProject(s.hosts, s.me, p).kind !== 'shared' && <span className="k-title-note">{whoseLabel(whoseProject(s.hosts, s.me, p))}</span>}
+                  </span>
+                  <span className="k-bar k-bar-thin" aria-hidden>
+                    {progress.parts.map((part) => (
+                      <i key={part.part} className={`k-bar-${part.part}`} style={{ width: `${part.percent}%` }} />
+                    ))}
+                  </span>
+                  <span className="k-sub">
+                    {p.status === 'active' ? '' : `${p.status} · `}
+                    {progress.total ? `${progress.done} of ${progress.total} done` : 'no tasks yet'}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+          {projects.length === 0 && <div className="k-sub">No projects yet.</div>}
+        </aside>
+        <div className="pj-main">
+          {project ? (
+            <ProjectDetail key={project.id} project={project} />
+          ) : (
+            <div className="pw-body">
+              <div className="k-stack">
+                <div>
+                  <div className="k-title" style={{ fontSize: 16 }}>
+                    New project
+                  </div>
+                  <div className="k-text">A project is a folder your employees work in — usually a git repository — with what they are told about it and the rules they keep there.</div>
+                </div>
+                <ProjectCreate onCreated={setSelected} />
+              </div>
             </div>
-          </div>
-          <div className="split-main" style={project ? { padding: 0, overflow: 'hidden' } : undefined}>
-            {project ? <ProjectDetail key={project.id} project={project} /> : <ProjectCreate onCreated={setSelected} />}
-          </div>
+          )}
         </div>
       </div>
     </Window>

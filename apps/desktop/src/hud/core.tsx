@@ -5,6 +5,7 @@ import { ACTIVITY_LABEL } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Markdown, Progress, clock, timeAgo } from '@orchestrator/ui';
 import { api, connection } from '../lib/api.ts';
 import { usePrefs } from '../lib/prefs.ts';
+import { Menu, type MenuItem } from './menu.tsx';
 import { RadioPillButtons } from './radio-bits.tsx';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice, type Ask, type CameraMode, type PanelId } from '../lib/store.ts';
 import { may, memberOfEmployee, whyNot } from '../lib/access.ts';
@@ -94,7 +95,7 @@ export function TopBar() {
   const suggestions = Object.values(s.improvements).filter((i) => i.status === 'proposed').length + Object.values(s.lessons).filter((l) => l.status === 'proposed').length;
   const kb = usePrefs((p) => p.prefs.keybindings);
   const key = (id: string) => (kb[id] ?? '').replace(/^Key/, '');
-  type Item = { id: PanelId; label: string; k?: string; count?: number; bad?: boolean };
+  type Item = MenuItem;
   // A member's own computer in this office (not for the office's own machine, nor for a visitor).
   const hasRoom = !!s.me && s.me.role !== 'visitor' && !!s.me.id && s.me.id !== 'owner';
   const mineCount = hasRoom ? Object.values(s.employees).filter((e) => !e.archived && !!e.hostId && s.hosts[e.hostId]?.memberId === s.me!.id).length : 0;
@@ -194,30 +195,14 @@ export function TopBar() {
           </div>
         </button>
         {menu && (
-          <div className="glass dock" role="menu">
-            {shownGroups.map((g) => (
-              <div key={g.title || 'app'} className="dock-group" role="group" aria-label={g.title || undefined}>
-                {g.title && <div className="dock-title">{g.title}</div>}
-                {g.items.map((n) => (
-                  <button
-                    key={n.id}
-                    role="menuitem"
-                    className={`pill ${s.panel === n.id ? 'pill-on' : ''}`}
-                    onClick={() => {
-                      setMenu(false);
-                      s.openPanel(s.panel === n.id ? null : n.id);
-                    }}
-                  >
-                    <span className="grow" style={{ textAlign: 'left' }}>
-                      {n.label}
-                    </span>
-                    {!!n.count && <span className={`pill-count ${n.bad ? 'pill-count-bad' : ''}`}>{n.count}</span>}
-                    {n.k && <kbd>{n.k}</kbd>}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
+          <Menu
+            groups={shownGroups}
+            current={s.panel}
+            onPick={(id) => {
+              setMenu(false);
+              s.openPanel(s.panel === id ? null : id);
+            }}
+          />
         )}
       </div>
       <CameraMenu />

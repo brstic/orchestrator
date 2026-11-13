@@ -344,13 +344,42 @@ async function scenario() {
     return `hired ${names.filter((n) => n !== 'ClientNotes').join(', ')} and Scribe (renamed from ClientNotes); no session started`;
   });
 
-  await step('the menu opens from the top-left button and leads to a panel', async () => {
+  await step('the menu opens from the top-left button: every window with a picture and a line about it, found by a word of what it is for, and it leads to a window', async () => {
     if (await js(`!!document.querySelector('.dock')`)) throw new Error('the menu should be closed until asked for');
+    await click(`document.querySelector('.brand-btn')`, 'the menu button');
+    await waitFor(`!!document.querySelector('.dock')`, 3000);
+    const items = await js(`[...document.querySelectorAll('.dock [role=menuitem]')].map((b) => ({ id: b.getAttribute('data-menu-item'), name: b.querySelector('.mn-name').textContent, about: (b.querySelector('.mn-about') || { textContent: '' }).textContent, icon: !!b.querySelector('svg'), foot: !!b.closest('.mn-foot') }))`);
+    // Every window says what it is for (the two at the foot, Settings and Help, are known by their names).
+    const bare = items.filter((i) => !i.icon || (!i.foot && i.about.length < 12));
+    if (items.length < 15 || bare.length) throw new Error(`${items.length} windows in the menu; without a picture or a line about them: ${bare.map((i) => i.name).join(', ') || 'none'}`);
+    // Two columns: it is wide, not long, and all of it is on the screen.
+    const box = await js(`(() => { const d = document.querySelector('.dock').getBoundingClientRect(); const cols = [...document.querySelectorAll('.dock .mn-col')].map((c) => Math.round(c.getBoundingClientRect().left)); return { bottom: Math.round(d.bottom), height: innerHeight, cols, scrolls: document.querySelector('.dock').scrollHeight > document.querySelector('.dock').clientHeight + 2 }; })()`);
+    if (box.cols.length !== 2 || box.cols[1] <= box.cols[0] || box.bottom > box.height || box.scrolls) throw new Error(`the menu's shape: ${JSON.stringify(box)}`);
+    await shot('menu');
+    // The box at the top has the keyboard: a word of what one wants finds the window, and Enter opens it.
+    if (!(await js(`document.activeElement === document.querySelector('.dock .mn-find')`))) throw new Error('the box that finds a window does not have the keyboard when the menu opens');
+    await win.webContents.insertText('password');
+    await waitFor(`(() => { const l = [...document.querySelectorAll('.dock [role=menuitem]')].map((b) => b.querySelector('.mn-name').textContent); return l.length === 2 && l.includes('Vault') && l.includes('Access'); })()`, 4000);
+    // Typing here is not walking: the keys stay in the box.
+    await win.webContents.insertText('s keys');
+    await waitFor(`[...document.querySelectorAll('.dock [role=menuitem]')].map((b) => b.querySelector('.mn-name').textContent).join('|') === 'Vault'`, 4000);
+    await key('Enter');
+    await waitFor(`window.__t.store().panel === 'vault' && !document.querySelector('.dock')`, 5000);
+    await js(`window.__t.store().openPanel(null)`);
+    // Something nobody has: it says so, and how to look.
+    await click(`document.querySelector('.brand-btn')`, 'the menu button');
+    await waitFor(`!!document.querySelector('.dock')`, 3000);
+    await win.webContents.insertText('zzzz');
+    await waitFor(`!!document.querySelector('.dock .mn-none') && !document.querySelector('.dock [role=menuitem]')`, 4000);
+    await key('Escape');
+    await waitFor(`!document.querySelector('.dock')`, 3000);
+    // And a click on a window's line opens it.
     await click(`document.querySelector('.brand-btn')`, 'the menu button');
     await waitFor(`!!document.querySelector('.dock')`, 3000);
     await click(`window.__t.byText('Team', 'button', document.querySelector('.dock'))`, 'Team');
     await waitFor(`window.__t.store().panel === 'team' && !document.querySelector('.dock')`, 5000);
     await js(`window.__t.store().openPanel(null)`);
+    return `${items.length} windows, each with a line; "passwords keys" → Vault`;
   });
 
   await step("an employee's documents: the Markdown files in their folder are listed and shown formatted", async () => {
@@ -1114,7 +1143,7 @@ async function scenario() {
 
   await step('Growth: teaching a lesson through the form records it', async () => {
     await open('growth');
-    await clickText('What the team knows');
+    await clickText('All lessons');
     await clickText('Add a lesson');
     await type(`window.__t.field('Lesson')`, ctx.lesson);
     await type(`window.__t.field('Applies when')`, 'before a commit');
@@ -1131,8 +1160,20 @@ async function scenario() {
     await close();
   });
 
-  await step('Growth: the top line says what the office does with what it learns, and its three choices change it', async () => {
+  await step('Growth is a library: shelves on the left with how many lessons stand on each, one shelf to read on the right; "How it learns" says what the office does with what it learns, and its three choices change it', async () => {
     await open('growth');
+    // The shelves: what waits, the library (everything, the company's, each project's, each person's), and the office's own.
+    const shelves = await js(`[...window.__t.scope().querySelectorAll('.lib-shelf')].map((b) => ({ name: b.querySelector('.lib-shelf-name').textContent, n: (b.querySelector('.lib-shelf-n') || { textContent: '' }).textContent, on: b.classList.contains('lib-shelf-on') }))`);
+    const names = shelves.map((x) => x.name);
+    for (const want of ['Waiting for you', 'All lessons', 'For everyone', 'Done by itself', 'Is it working?', 'How it learns']) if (!names.includes(want)) throw new Error(`the shelf "${want}" is missing: ${names.join(', ')}`);
+    if (shelves.filter((x) => x.on).length !== 1) throw new Error(`${shelves.filter((x) => x.on).length} shelves are marked as the open one`);
+    const inStore = await js(`Object.values(window.__t.store().lessons).length`);
+    if (Number(shelves.find((x) => x.name === 'All lessons').n || 0) !== inStore) throw new Error(`"All lessons" says ${shelves.find((x) => x.name === 'All lessons').n || 0}, the office has ${inStore}`);
+    if (!(await js(`window.__t.scope().classList.contains('win-kit') && window.__t.scope().querySelectorAll('.tab').length === 0`))) throw new Error('Growth is not in the calm look, or still has its row of tabs');
+    await clickText('All lessons');
+    await waitFor(`!!window.__t.scope().querySelector('[data-growth-shelf="all"]') && /All lessons/.test(window.__t.scope().querySelector('[data-growth-view] .k-title').textContent)`, 5000);
+    await shot('growth-library');
+    await clickText('How it learns');
     const dial = `window.__t.store().settings.selfImprovement.autopilot`;
     const line = `window.__t.scope().querySelector('.gr-dial .strong').textContent`;
     const was = await js(dial);
@@ -1140,18 +1181,22 @@ async function scenario() {
     await waitFor(`/applies by itself what cannot give employees more freedom/.test(${line})`, 5000);
     await clickText('Ask me first');
     await waitFor(`${dial} === 'off' && /asks you before it changes anything/.test(${line})`, 8000);
+    // The shelf's own line says how it is set.
+    await waitFor(`[...window.__t.scope().querySelectorAll('.lib-shelf')].some((b) => /How it learns/.test(b.textContent) && /ask me first/.test(b.textContent))`, 5000);
     // With the dial at "ask", the log of what it did by itself says so instead of promising entries.
     await clickText('Done by itself');
     await waitFor(`/set to ask you first/.test(window.__t.scope().textContent)`, 5000);
     await shot('growth-done-by-itself');
+    await clickText('How it learns');
     await clickText('Apply more on a clean record');
     await waitFor(`${dial} === 'trusted' && /never for risky commands/.test(${line})`, 8000);
     await clickText('Apply what is safe');
     await waitFor(`${dial} === 'safe'`, 8000);
-    await clickText('Results');
+    await clickText('Is it working?');
     await waitFor(`/Who delivers what/.test(window.__t.scope().textContent)`, 5000);
     await shot('growth-results');
     // The same control is in Settings, and "More settings" leads there.
+    await clickText('How it learns');
     await clickText('More settings');
     await waitFor(`/Growth/.test(window.__t.scope().textContent) && !!window.__t.byText('Ask me first')`, 8000);
     await shot('settings-growth');
@@ -1183,8 +1228,58 @@ async function scenario() {
     return 'concluded; decision shown';
   });
 
+  await step('Team and an employee\'s window: people as cards under their projects; a card opens the profile — who they are and how they are in its head, what they are doing first, the settings behind a tab with its save bar always there', async () => {
+    await open('team');
+    await waitFor(`window.__t.scope().querySelectorAll('[data-team-employee]').length > 5`, 8000);
+    const team = await js(`(() => {
+      const w = window.__t.scope();
+      const cards = [...w.querySelectorAll('[data-team-employee]')];
+      const groups = [...w.querySelectorAll('[data-team-group]')].map((g) => ({ name: g.querySelector('.tm-project').textContent, people: g.querySelectorAll('[data-team-employee]').length }));
+      const one = cards[0];
+      const lefts = new Set(cards.map((c) => Math.round(c.getBoundingClientRect().left)));
+      return { kit: w.classList.contains('win-kit'), subtitle: w.querySelector('.win-head p').textContent, tables: w.querySelectorAll('table').length, badges: w.querySelectorAll('[data-team-group] .badge').length, groups, columns: lefts.size, buttons: [...one.querySelectorAll('button')].map((b) => b.textContent.trim()), states: one.querySelectorAll('.k-state').length, primary: [...w.querySelectorAll('.btn-primary')].filter((b) => window.__t.visible(b)).map((b) => b.textContent.trim()), wide: w.scrollWidth <= w.clientWidth + 1 };
+    })()`);
+    if (!team.kit || team.tables || team.badges) throw new Error(`Team: calm look ${team.kit}, ${team.tables} table(s), ${team.badges} badge(s) on the cards`);
+    if (!/^\d+ employees · \d+ working/.test(team.subtitle)) throw new Error(`Team says "${team.subtitle}"`);
+    if (team.primary.join('|') !== 'Hire') throw new Error(`Team's main buttons: ${team.primary.join(', ')}`);
+    if (!team.groups.length || !team.groups.some((g) => /^Customer Platform/.test(g.name) && g.people >= 5)) throw new Error(`the people are grouped as ${JSON.stringify(team.groups)}`);
+    if (team.columns < 2 || !team.wide) throw new Error(`the cards stand in ${team.columns} column(s)${team.wide ? '' : ', and the window scrolls sideways'}`);
+    if (team.buttons.join('|') !== 'Talk' || team.states !== 1) throw new Error(`a card has ${team.buttons.join(', ')} and ${team.states} state(s)`);
+    await shot('team');
+    // A word finds somebody by what they can do.
+    await type(`window.__t.scope().querySelector('input[aria-label="Search employees"]')`, 'Sarah');
+    await waitFor(`window.__t.scope().querySelectorAll('[data-team-employee]').length === 1`, 5000);
+    await click(`window.__t.scope().querySelector('[data-team-employee] .k-title')`, 'Sarah\'s card');
+    await waitFor(`window.__t.store().panel === 'employee' && window.__t.store().panelArg === window.__t.emp('Sarah').id && !!window.__t.scope().querySelector('[data-profile-overview]')`, 6000);
+    const prof = await js(`(() => {
+      const w = window.__t.scope();
+      return { name: w.querySelector('.win-head h2').textContent, face: !!w.querySelector('.win-head .win-lead .avatar'), state: w.querySelector('.win-head [data-profile-state] .k-state').textContent, tabs: [...w.querySelectorAll('.tab')].map((t) => t.textContent), on: w.querySelector('.tab-on').textContent, labels: [...w.querySelectorAll('[data-profile-overview] .k-label')].map((l) => l.textContent), figures: w.querySelectorAll('.k-figure').length, inputs: [...w.querySelectorAll('[data-profile-overview] input, [data-profile-overview] select, [data-profile-overview] textarea')].length, primary: [...w.querySelectorAll('.win-head .btn-primary')].map((b) => b.textContent.trim()), height: Math.round(w.getBoundingClientRect().height) };
+    })()`);
+    if (prof.name !== 'Sarah' || !prof.face || !prof.state) throw new Error(`the head of the profile: "${prof.name}", face ${prof.face}, state "${prof.state}"`);
+    if (prof.tabs.join('|') !== 'Overview|Settings|Look|Session|Messages|History|Desk and hours' || prof.on !== 'Overview') throw new Error(`the profile's tabs: ${prof.tabs.join(', ')} (open: ${prof.on})`);
+    if (prof.primary.length !== 1) throw new Error(`the profile's main buttons: ${prof.primary.join(', ') || 'none'}`);
+    // The first thing is what they are doing and what they have delivered — to be read, not filled in.
+    if (prof.labels.slice(0, 2).join('|') !== 'Right now|What they are' || !prof.labels.includes('Delivered') || prof.figures !== 6 || prof.inputs) throw new Error(`the overview: ${prof.labels.join(', ')}; ${prof.figures} figures; ${prof.inputs} field(s) to fill in`);
+    await shot('profile');
+    // "Change" leads to the settings; the window keeps its size, and the bar that saves is there before anything is changed.
+    await click(`window.__t.byText('Change')`, 'Change');
+    await waitFor(`window.__t.scope().querySelector('.tab-on').textContent === 'Settings' && window.__t.visible(window.__t.scope().querySelector('[data-profile-settings]'))`, 5000);
+    const set = await js(`(() => { const w = window.__t.scope(); const bar = w.querySelector('[data-profile-save]').getBoundingClientRect(); const body = w.querySelector('.pf-body').getBoundingClientRect(); return { height: Math.round(w.getBoundingClientRect().height), barIn: bar.bottom <= body.bottom + 1 && bar.top >= body.top, save: w.querySelector('[data-profile-save] .btn-primary').disabled, note: w.querySelector('.pf-save-note').textContent, picks: [...w.querySelectorAll('[role=radiogroup][aria-label="Autonomy"] label')].map((l) => Math.round(l.getBoundingClientRect().height)), more: [...w.querySelectorAll('[role=radiogroup][aria-label="Autonomy"] .k-pick-more')].length }; })()`);
+    if (set.height !== prof.height) throw new Error(`the window changes size between Overview and Settings: ${prof.height} → ${set.height}`);
+    if (!set.barIn || !set.save || !/^Nothing is changed/.test(set.note)) throw new Error(`the save bar: in sight ${set.barIn}, Save disabled ${set.save}, says "${set.note.slice(0, 60)}"`);
+    // Six levels of autonomy, a line each; only the chosen one says the rest.
+    if (set.picks.length !== 6 || set.more !== 1 || set.picks.filter((h) => h > 70).length > 1) throw new Error(`the autonomy levels take ${set.picks.join(', ')} px, ${set.more} of them explained`);
+    // A change is named in the bar, and Discard takes it back.
+    await type(`window.__t.field('Title')`, 'Principal Frontend Engineer');
+    await waitFor(`/^Unsaved: title/.test(window.__t.scope().querySelector('.pf-save-note').textContent) && !window.__t.scope().querySelector('[data-profile-save] .btn-primary').disabled`, 4000);
+    await clickText('Discard');
+    await waitFor(`/^Nothing is changed/.test(window.__t.scope().querySelector('.pf-save-note').textContent) && window.__t.field('Title').value === window.__t.emp('Sarah').title`, 4000);
+    await close();
+    return `${team.subtitle}; ${team.groups.map((g) => g.name).join(', ')}; ${team.columns} columns; Sarah: ${prof.state}`;
+  });
+
   await step('Team: editing a profile saves standing instructions', async () => {
-    await open('employee', `window.__t.emp('Ava').id`);
+    await open('employee', `window.__t.emp('Ava').id + ':profile'`);
     if (!(await js(`window.__t.scope().querySelector('details.pc-more').open`))) await click(`window.__t.scope().querySelector('details.pc-more > summary')`, 'More settings');
     await type(`window.__t.field('Standing instructions')`, ctx.instructions);
     await clickText('Save changes');
@@ -1265,11 +1360,32 @@ async function scenario() {
     await open('notifications');
     const unread = `Object.values(window.__t.store().notifications).filter((n) => !n.resolvedAt && !n.readAt).length`;
     const before = await js(unread);
+    // The window keeps its size from tab to tab, and each thing in it is one line.
+    const measure = () => js(`(() => { const b = window.__t.scope().getBoundingClientRect(); return Math.round(b.width) + 'x' + Math.round(b.height); })()`);
+    // (Measured once the window stands still: it arrives with a short movement.)
+    const size = async () => {
+      for (let last = await measure(), n = 0; n < 20; n++) {
+        await sleep(150);
+        const now = await measure();
+        if (now === last) return now;
+        last = now;
+      }
+      return measure();
+    };
+    const atNeeds = await size();
+    await clickText('News');
+    await waitFor(`window.__t.scope().querySelector('[data-inbox]').getAttribute('data-inbox') === 'all'`, 4000);
+    if ((await size()) !== atNeeds) throw new Error(`the Inbox changes size between its tabs: ${atNeeds} → ${await size()}`);
+    const rows = await js(`[...window.__t.scope().querySelectorAll('[data-news]')].map((r) => Math.round(r.getBoundingClientRect().height))`);
+    if (rows.length && Math.max(...rows) > 52) throw new Error(`a piece of news takes ${Math.max(...rows)} px: it is not one line`);
+    if (rows.length && !(await js(`[...window.__t.scope().querySelectorAll('.k-label')].some((l) => l.textContent === 'Today')`))) throw new Error('today\'s news is not under "Today"');
     if (before > 0) {
-      await clickText('Notifications');
       await clickText('Mark all read');
       await waitFor(`${unread} === 0`, 8000);
     }
+    await clickText('Answered');
+    await waitFor(`window.__t.scope().querySelector('[data-inbox]').getAttribute('data-inbox') === 'answered'`, 4000);
+    if ((await size()) !== atNeeds) throw new Error(`the Inbox changes size between its tabs: ${atNeeds} → ${await size()}`);
     await close();
     return `${before} unread → 0 at ${new Date().toISOString()}`;
   });
@@ -1277,7 +1393,7 @@ async function scenario() {
   await step('Growth: a lesson is retired and reactivated from its card', async () => {
     await open('growth');
     const status = `(Object.values(window.__t.store().lessons).find((l) => l.text === ${JSON.stringify(ctx.lesson)}) || {}).status`;
-    await clickText('What the team knows');
+    await clickText('All lessons');
     await waitFor(`!!window.__t.near(${JSON.stringify(ctx.lesson)}, 'Retire')`, 8000).catch(() => {
       throw new Error('the taught lesson is not listed with a Retire button under "What the team knows"');
     });
@@ -1291,7 +1407,7 @@ async function scenario() {
 
   await step('Team: changing an appearance is saved', async () => {
     await open('employee', `window.__t.emp('Ava').id`);
-    await clickText('Appearance');
+    await clickText('Look');
     await waitFor(`!!window.__t.field('Hair style')`, 5000);
     const next = await js(`(() => { const sel = window.__t.field('Hair style'); const o = [...sel.options].find((x) => x.value !== sel.value && !x.disabled); window.__t.setSelect(sel, o.value); return o.value; })()`);
     await shot('appearance');
@@ -1745,7 +1861,7 @@ async function scenario() {
 
   await step('Growth: a lesson is edited in place', async () => {
     await open('growth');
-    await clickText('What the team knows');
+    await clickText('All lessons');
     await click(`window.__t.near(${JSON.stringify(ctx.lesson)}, 'Edit')`, 'Edit');
     await type(`window.__t.scope().querySelector('input[aria-label="Applies when"]')`, ctx.lessonWhen);
     await click(`window.__t.scope().querySelector('form textarea[aria-label="Lesson"]').closest('form').querySelector('button[type=submit]')`, 'Save');
@@ -1895,7 +2011,7 @@ async function scenario() {
   });
 
   await step('Team: an employee without a session is archived after confirmation', async () => {
-    await open('employee', `window.__t.emp(${JSON.stringify(ctx.tempEmployee)}).id`);
+    await open('employee', `window.__t.emp(${JSON.stringify(ctx.tempEmployee)}).id + ':profile'`);
     await clickText('Archive employee…');
     await clickText('Archive employee');
     await waitFor(`window.__t.emp(${JSON.stringify(ctx.tempEmployee)}).archived === true`, 8000);
@@ -2226,7 +2342,7 @@ async function scenario() {
     // (The wall has a clock for each account of the office's own machines; a member's own account is on the list above and not on the wall.)
     const clocksBefore = await js(`(window.__orchScene.clocks || []).length`);
     await close();
-    await open('employee', `window.__t.emp('Ava').id`);
+    await open('employee', `window.__t.emp('Ava').id + ':profile'`);
     // Rarely changed settings are folded away: open them first.
     if (!(await js(`window.__t.scope().querySelector('details.pc-more').open`))) await click(`window.__t.scope().querySelector('details.pc-more > summary')`, 'More settings');
     await type(`window.__t.field('Claude account folder')`, '~/.claude-second');

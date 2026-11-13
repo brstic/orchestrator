@@ -269,7 +269,7 @@ function MinePanel({ onClose }: { arg: string | null; onClose: () => void }) {
             {hiringLead && !lead && <LeadForm machines={machines} onClose={() => setHiringLead(false)} />}
             {!lead && employees.length === 0 ? (
               <div className="k-text">
-                Nobody works for you alone yet. <b>Hire</b> puts someone onto your own computer or server, and they sit in your room. A shared employee you look after can be listed here too: <b>Team → Everyone</b>, then <b>Mine</b> on their row.
+                Nobody works for you alone yet. <b>Hire</b> puts someone onto your own computer or server, and they sit in your room. A shared employee you look after can be listed here too: open them from <b>Team</b> and choose <b>List among mine</b>.
               </div>
             ) : (
               <div className="k-group">

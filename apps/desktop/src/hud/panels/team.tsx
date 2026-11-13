@@ -8,7 +8,11 @@ import { api, connection } from '../../lib/api.ts';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { act } from '../core.tsx';
 import { useAccess } from '../../lib/access.ts';
-import { mayKeep, scoped, whoseEmployee } from '../../lib/mine.ts';
+import { mayKeep, scoped, whoseEmployee, whoseLabel } from '../../lib/mine.ts';
+import { byAttention, employeeState } from '../../lib/my-work.ts';
+import { byProject, levelLine, teamLine } from '../../lib/team.ts';
+import { oneLine } from '../../lib/inbox.ts';
+import { More, State } from './kit.tsx';
 import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { FolderField } from './folder-picker.tsx';
 import { registerPanel } from './index.tsx';
@@ -29,6 +33,7 @@ import {
   initials,
   isLive,
   isLoudEvent,
+  isWorking,
   levelInfo,
   occupantsByDesk,
   onActivate,
@@ -87,17 +92,22 @@ function AutonomyBadge({ level }: { level: AutonomyLevel }) {
   );
 }
 
+/**
+ * How much an employee may do without asking: six levels, one line each; the chosen one says the rest (what it is
+ * in Claude Code's own terms) under its line.
+ */
 function AutonomyPicker({ value, onChange, name }: { value: AutonomyLevel; onChange: (v: AutonomyLevel) => void; name: string }) {
   return (
-    <div className="grid2" style={{ gap: 6 }} role="radiogroup" aria-label="Autonomy">
+    <div className="k-group" role="radiogroup" aria-label="Autonomy">
       {AUTONOMY.map((a) => (
-        <label key={a.id} className={`pc-choice ${value === a.id ? 'pc-choice-on' : ''}`}>
+        <label key={a.id} className={`k-pick ${value === a.id ? 'k-pick-on' : ''}`}>
           <input type="radio" name={name} checked={value === a.id} onChange={() => onChange(a.id)} />
-          <span>
-            <span className="strong">{a.label}</span>
-            <span className="small muted"> — {a.text}</span>
-            <br />
-            <span className="small faint">{a.maps}</span>
+          <span className="k-pick-words">
+            <span>
+              <span className="strong">{a.label}</span>
+              <span className="k-pick-text"> — {a.text}</span>
+            </span>
+            {value === a.id && <span className="k-pick-more">{a.maps}</span>}
           </span>
         </label>
       ))}
@@ -506,194 +516,170 @@ function TeamPanel({ arg, onClose }: PanelProps) {
     );
   }
 
+  const working = active.filter((e) => isWorking(activityOf(sessionOfEmployee(sessions, e.id)))).length;
+  // Under their projects; within one, whoever wants somebody first.
+  const groups = byProject(byAttention(shown.map((e) => ({ name: e.name, projectId: e.projectId, e, state: employeeState(activityOf(sessionOfEmployee(sessions, e.id)), openQuestionsOf(questions, e.id).length > 0) }))), projects);
+
+  /** One of the team: a face, a name, how they are and on what. A click opens their profile; Talk is beside it. */
+  const card = (e: Employee, state: ReturnType<typeof employeeState>) => {
+    const session = sessionOfEmployee(sessions, e.id);
+    const task = currentTaskOf(tasks, e.id);
+    const whose = whoseEmployee(hosts, me, e);
+    const open = () => st.openPanel('employee', e.id);
+    return (
+      <div key={e.id} className="tm-card" role="button" tabIndex={0} onClick={open} onKeyDown={(ev) => ev.target === ev.currentTarget && onActivate(open)(ev)} data-team-employee={e.id} title={`${e.name} — ${e.title}. Open their profile`}>
+        <Avatar appearance={e.appearance} size={36} offline={!isLive(session)} />
+        <div className="k-main">
+          <div className="k-title">
+            {e.name}
+            {/* Whose they are is said where it is not the office's own: a member's, or one I look after. */}
+            {(whose.kind === 'member' || (whose.kind === 'mine' && own)) && <span className="k-title-note">{whoseLabel(whose)}</span>}
+          </div>
+          <div className="k-line">
+            <State {...state} />
+            <span className="k-sub">{task ? `${task.key} ${task.title}` : e.title}</span>
+          </div>
+        </div>
+        {!visitor && (
+          <Button
+            small
+            variant="ghost"
+            className="k-quiet"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              st.openPanel('talk', e.id);
+            }}
+          >
+            Talk
+          </Button>
+        )}
+      </div>
+    );
+  };
+
   return (
     <Window
+      kit
       title="Team"
-      subtitle={`${active.length} employee${active.length === 1 ? '' : 's'}${archived.length ? ` · ${archived.length} archived` : ''}`}
+      subtitle={teamLine({ employees: active.length, working, archived: archived.length })}
       onClose={onClose}
-      width={1240}
+      width={1120}
       actions={
-        <>
-          <Button variant="primary" small onClick={() => setHiring('one')} title="One employee, or one for each of several project folders">
+        visitor ? undefined : (
+          <Button variant="primary" onClick={() => setHiring('one')} title="One employee, or one for each of several project folders">
             Hire
           </Button>
-        </>
+        )
       }
     >
-      <div className="pc-toolbar">
-        <ScopeSwitch what="employees" />
-        <input className="pc-search" value={search} onChange={(ev) => setSearch(ev.target.value)} placeholder="Search by name, title or skill…" aria-label="Search employees" autoFocus />
-        <select value={projectId} onChange={(ev) => setProjectId(ev.target.value)} aria-label="Filter by project">
-          <option value="">All projects</option>
-          {Object.values(projects)
-            .sort(byName)
-            .map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-        </select>
-        <select value={hostId} onChange={(ev) => setHostId(ev.target.value)} aria-label="Filter by machine">
-          <option value="">All machines</option>
-          {Object.values(hosts)
-            .filter((h) => h.status !== 'revoked' || active.some((e) => e.hostId === h.id))
-            .sort(byName)
-            .map((h) => (
-              <option key={h.id} value={h.id}>
-                {h.name}
-              </option>
-            ))}
-        </select>
-      </div>
-
-      {foreman && scope === 'all' && (
-        <div className="card row team-foreman" data-foreman={foreman.id} style={{ gap: 12, marginBottom: 12, alignItems: 'center' }}>
-          <Avatar appearance={foreman.appearance} size={36} offline={!isLive(sessionOfEmployee(sessions, foreman.id))} />
-          <div className="grow">
-            <div>
-              <span className="strong">{foreman.name}</span> <Badge tone="warn">Foreman</Badge> <span className="small muted">no desk — walks the whole office: the shared floor and members' rooms</span>
-            </div>
-            <div className="small muted">
-              {foremanOn ? 'Rounds are on: it goes to whoever is waiting, blocked, stalled or idle, and keeps the work going.' : 'Rounds are paused (Settings → Foreman).'} Runs on <HostLabel host={foreman.hostId ? hosts[foreman.hostId] : undefined} />.
-            </div>
-          </div>
-          <ActivityBadge activity={activityOf(sessionOfEmployee(sessions, foreman.id))} needsYou={openQuestionsOf(questions, foreman.id).length > 0} />
-          <Button small onClick={() => st.openPanel('settings', 'foreman')}>
-            Rounds
-          </Button>
-          <Button small onClick={() => st.openPanel('employee', foreman.id)}>
-            Profile
-          </Button>
+      <div className="k-stack" data-team>
+        <div className="k-tools">
+          <input className="k-find" value={search} onChange={(ev) => setSearch(ev.target.value)} placeholder="Find somebody by name, title or skill…" aria-label="Search employees" autoFocus />
+          <select value={projectId} onChange={(ev) => setProjectId(ev.target.value)} aria-label="Filter by project">
+            <option value="">All projects</option>
+            {Object.values(projects)
+              .sort(byName)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+          </select>
+          <select value={hostId} onChange={(ev) => setHostId(ev.target.value)} aria-label="Filter by machine">
+            <option value="">All machines</option>
+            {Object.values(hosts)
+              .filter((h) => h.status !== 'revoked' || active.some((e) => e.hostId === h.id))
+              .sort(byName)
+              .map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.name}
+                </option>
+              ))}
+          </select>
+          <ScopeSwitch what="employees" />
         </div>
-      )}
-      {active.length === 0 ? (
-        <Empty title="Nobody works here yet">Hire your first employee, then give them a machine and a project.</Empty>
-      ) : shown.length === 0 ? (
-        <Empty title={own && scope === 'mine' && !needle && !projectId && !hostId ? 'Nobody works for you alone yet' : 'No employee matches'}>{own && scope === 'mine' ? 'Your own employees are the ones on your computer and servers. The rest of the office is under Everyone.' : 'Change the search or the filters.'}</Empty>
-      ) : (
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Employee</th>
-              {gamification && <th>Level</th>}
-              <th>Whose · machine</th>
-              <th>Project</th>
-              {!visitor && <th>Autonomy</th>}
-              <th>Activity</th>
-              <th>Task</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((e) => {
-              const session = sessionOfEmployee(sessions, e.id);
-              const activity = activityOf(session);
-              const task = currentTaskOf(tasks, e.id);
-              const project = e.projectId ? projects[e.projectId] : undefined;
-              const asking = openQuestionsOf(questions, e.id).length > 0;
-              return (
-                <tr key={e.id}>
-                  <td>
-                    <div className="row pc-cell-main">
-                      <Avatar appearance={e.appearance} size={32} offline={!isLive(session)} />
-                      <div className="grow">
-                        <div className="strong truncate">{e.name}</div>
-                        <div className="small muted truncate">
-                          {e.title} · {e.department}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  {gamification && (
-                    <td>
-                      <LevelCell e={e} />
-                    </td>
-                  )}
-                  <td>
-                    <span className="row" style={{ gap: 6 }}>
-                      <WhoseBadge whose={whoseEmployee(hosts, me, e)} />
-                      {!visitor && <HostLabel host={e.hostId ? hosts[e.hostId] : undefined} />}
-                    </span>
-                  </td>
-                  <td>
-                    {project ? (
-                      <span className="row" style={{ gap: 6 }}>
-                        <span className="pc-swatch" style={{ background: project.color }} />
-                        <span className="truncate">{project.name}</span>
-                      </span>
-                    ) : (
-                      <span className="faint">none</span>
-                    )}
-                  </td>
-                  {!visitor && (
-                    <td>
-                      <AutonomyBadge level={e.autonomy} />
-                    </td>
-                  )}
-                  <td>
-                    <ActivityBadge activity={activity} needsYou={asking} />
-                  </td>
-                  <td>
-                    {task ? (
-                      <button className="btn btn-ghost btn-sm mono" title={task.title} onClick={() => st.openPanel('task', task.id)}>
-                        {task.key}
-                      </button>
-                    ) : (
-                      <span className="faint">—</span>
-                    )}
-                  </td>
-                  <td className="pc-right pc-nowrap">
-                    {/* A shared employee: take them among one's own, or give them back. Whose they are to use does not change. */}
-                    {mayKeep(hosts, me, e) &&
-                      (e.keptBy?.id === me?.id ? (
-                        <>
-                          <Button small onClick={() => act(() => api('POST', `/employees/${e.id}/give-back`, {}), `${e.name} is no longer among yours`)} title="Stop listing them among your own. They stay in the office as they are.">
-                            Not mine
-                          </Button>{' '}
-                        </>
-                      ) : !e.keptBy || me?.kind === 'owner' ? (
-                        <>
-                          <Button small onClick={() => act(() => api('POST', `/employees/${e.id}/keep`, {}), `${e.name} is among yours now`)} title={e.keptBy ? `${e.keptBy.name} looks after them now. As an owner you can take them over.` : 'List them among your own: in My work, under Mine, and in your team lead\'s team. They stay shared with the office.'}>
-                            Mine
-                          </Button>{' '}
-                        </>
-                      ) : null)}
-                    <Button small onClick={() => st.enterWorkstation(e.id)} disabled={!session} title={session ? (visitor ? 'Watch what they are doing' : 'Sit at their real terminal') : 'No session yet'}>
-                      {visitor ? 'Watch terminal' : 'Open terminal'}
-                    </Button>{' '}
-                    <Button small onClick={() => st.openPanel('employee', e.id)}>
-                      Profile
-                    </Button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
 
-      {archived.length > 0 && (
-        <details className="pc-details" style={{ marginTop: 14 }}>
-          <summary>Archived employees ({archived.length})</summary>
-          <div className="list">
-            {archived.map((e) => (
-              <div key={e.id} className="row" style={{ padding: '4px 0', flexWrap: 'wrap' }}>
-                <Avatar appearance={e.appearance} size={26} offline />
-                <div className="grow">
-                  <span className="strong">{e.name}</span> <span className="muted small">{e.title}</span>
+        {foreman && scope === 'all' && (
+          <div className="k-group team-foreman" data-foreman={foreman.id}>
+            <div className="k-row">
+              <Avatar appearance={foreman.appearance} size={36} offline={!isLive(sessionOfEmployee(sessions, foreman.id))} />
+              <div className="k-main">
+                <div className="k-title">
+                  {foreman.name}
+                  <span className="k-title-note">the foreman — no desk: walks the whole office and keeps the work going</span>
                 </div>
-                <Button small onClick={() => st.openPanel('employee', e.id)}>
-                  Profile
-                </Button>
-                <Button small variant="success" onClick={() => act(() => api('PATCH', `/employees/${e.id}`, { archived: false }), `${e.name} is back on the team`)}>
-                  Restore
-                </Button>
-                <DeleteEmployee e={e} inline />
+                <div className="k-line">
+                  <State {...employeeState(activityOf(sessionOfEmployee(sessions, foreman.id)), openQuestionsOf(questions, foreman.id).length > 0)} />
+                  <span className="k-sub">
+                    {foremanOn ? 'rounds are on' : 'rounds are paused'} · on {foreman.hostId ? (hosts[foreman.hostId]?.name ?? 'no machine') : 'no machine'}
+                  </span>
+                </div>
               </div>
-            ))}
+              <Button small variant="ghost" className="k-quiet" onClick={() => st.openPanel('settings', 'foreman')} title="When it goes round, and to whom">
+                Rounds
+              </Button>
+              <Button small variant="ghost" className="k-quiet" onClick={() => st.openPanel('employee', foreman.id)}>
+                Profile
+              </Button>
+            </div>
           </div>
-        </details>
-      )}
+        )}
+
+        {active.length === 0 ? (
+          <div className="k-empty">
+            <div className="k-title">Nobody works here yet</div>
+            <div className="k-text">An employee is a Claude Code session with a name, a folder and a desk. Hire the first one, and give them a project.</div>
+            {!visitor && (
+              <Button variant="primary" onClick={() => setHiring('one')}>
+                Hire
+              </Button>
+            )}
+          </div>
+        ) : shown.length === 0 ? (
+          <div className="k-empty">
+            <div className="k-title">{own && scope === 'mine' && !needle && !projectId && !hostId ? 'Nobody works for you alone yet' : 'Nobody matches'}</div>
+            <div className="k-text">{own && scope === 'mine' ? 'Your own employees are the ones on your computer and servers. The rest of the office is under Everyone.' : 'Change what you typed or the filters.'}</div>
+          </div>
+        ) : (
+          groups.map((g) => (
+            <section key={g.project?.id ?? 'none'} className="k-section" data-team-group={g.project?.id ?? ''}>
+              <div className="k-head">
+                <button type="button" className="tm-project" disabled={!g.project} onClick={() => g.project && st.openPanel('projects', g.project.id)} title={g.project ? 'Open the project' : undefined}>
+                  <span className="k-dot" style={{ background: g.project?.color ?? 'var(--faint)', boxShadow: 'none' }} aria-hidden />
+                  {g.project?.name ?? 'No project'}
+                  <span className="tm-count">{g.people.length}</span>
+                </button>
+              </div>
+              <div className="tm-grid">{g.people.map((x) => card(x.e, x.state))}</div>
+            </section>
+          ))
+        )}
+
+        {archived.length > 0 && (
+          <More summary={`${archived.length} archived`}>
+            <div className="k-group" data-team-archived>
+              {archived.map((e) => (
+                <div key={e.id} className="k-row k-row-sm" style={{ flexWrap: 'wrap' }}>
+                  <Avatar appearance={e.appearance} size={24} offline />
+                  <div className="k-main">
+                    <div className="k-title k-title-sm">
+                      {e.name}
+                      <span className="k-title-note">{e.title}</span>
+                    </div>
+                  </div>
+                  <Button small variant="ghost" className="k-quiet" onClick={() => st.openPanel('employee', e.id)}>
+                    Profile
+                  </Button>
+                  <Button small onClick={() => act(() => api('PATCH', `/employees/${e.id}`, { archived: false }), `${e.name} is back on the team`)}>
+                    Restore
+                  </Button>
+                  <DeleteEmployee e={e} inline />
+                </div>
+              ))}
+            </div>
+          </More>
+        )}
+      </div>
     </Window>
   );
 }
@@ -701,8 +687,8 @@ registerPanel('team', TeamPanel);
 
 // ─────────────────────────── Employee ───────────────────────────
 
-type TabId = 'profile' | 'appearance' | 'session' | 'message' | 'history' | 'desk';
-const TAB_ARG: Record<string, TabId> = { profile: 'profile', appearance: 'appearance', session: 'session', message: 'message', history: 'history', desk: 'desk' };
+type TabId = 'overview' | 'profile' | 'appearance' | 'session' | 'message' | 'history' | 'desk';
+const TAB_ARG: Record<string, TabId> = { overview: 'overview', settings: 'profile', profile: 'profile', appearance: 'appearance', session: 'session', message: 'message', history: 'history', desk: 'desk' };
 
 interface Draft {
   name: string;
@@ -868,7 +854,7 @@ function DeleteEmployee({ e, onDone, inline }: { e: Employee; onDone?: () => voi
   };
   if (!asking)
     return (
-      <Button variant={inline ? 'ghost' : 'danger'} small style={inline ? undefined : { marginTop: 6 }} onClick={() => setAsking(true)} title="Remove this employee and what is theirs from the office for good. Nothing on disk is touched">
+      <Button variant="ghost" className="k-quiet" small onClick={() => setAsking(true)} title="Remove this employee and what is theirs from the office for good. Nothing on disk is touched">
         {inline ? 'Delete…' : 'Delete employee…'}
       </Button>
     );
@@ -894,7 +880,6 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
   const hostsById = useOffice((s) => s.hosts);
   const projectsById = useOffice((s) => s.projects);
   const sessions = useOffice((s) => s.sessions);
-  const gamification = useOffice((s) => s.settings?.gamification !== false);
   const [d, setD] = useState<Draft>(() => draftOf(e));
   const [busy, setBusy] = useState(false);
   const [archiving, setArchiving] = useState(false);
@@ -905,7 +890,6 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
   const session = sessionOfEmployee(sessions, e.id);
   const live = isLive(session);
   const role = roleByKey(d.roleKey);
-  const info = levelInfo(e.xp, e.level);
   const hosts = Object.values(hostsById)
     .filter((h) => h.status !== 'revoked' || h.id === e.hostId)
     .sort(byName);
@@ -938,40 +922,9 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
   const restartSensitive = live && ('instructions' in patch || 'allowedTools' in patch || 'disallowedTools' in patch || 'roleKey' in patch || 'executionMode' in patch);
 
   return (
-    <div className="col" style={{ gap: 14 }}>
-      <div className="row" style={{ gap: 14 }}>
-        <Avatar appearance={e.appearance} size={64} offline={!live} />
-        <div className="grow col" style={{ gap: 4 }}>
-          <div className="row row-wrap">
-            <span className="strong" style={{ fontSize: 16 }}>
-              {e.name}
-            </span>
-            <AutonomyBadge level={e.autonomy} />
-            {e.archived && <Badge tone="muted">archived</Badge>}
-            {e.badges.map((b) => (
-              <Badge key={b} tone="accent" title="Badge earned from verified work">
-                {humanize(b)}
-              </Badge>
-            ))}
-          </div>
-          {gamification ? (
-            <>
-              <div className="small muted">
-                Level {e.level} · {fmtInt(e.xp)} XP{info.next != null ? ` · ${fmtInt(info.next - e.xp)} XP to level ${e.level + 1}` : ' · top level'}
-              </div>
-              <div style={{ maxWidth: 320 }}>
-                <Progress value={info.pct} tone="accent" />
-              </div>
-              <div className="small faint">Level reflects verified, delivered work in this office — not the capability of the underlying model.</div>
-            </>
-          ) : (
-            <div className="small faint">XP and levels are switched off in Settings.</div>
-          )}
-        </div>
-      </div>
-
+    <div className="k-stack pf-form" data-profile-settings>
       <div>
-        <div className="section-title">Who they are</div>
+        <div className="k-label">Who they are</div>
         <div className="grid2">
         <Field label="Name">
           <input value={d.name} onChange={(ev) => set('name', ev.target.value)} />
@@ -995,7 +948,7 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
         </div>
       </div>
       <div>
-        <div className="section-title">Where they work</div>
+        <div className="k-label">Where they work</div>
         <div className="grid3">
         <Field label="Machine" hint={live ? 'Stop the running session before moving them to another machine.' : undefined}>
           <select value={d.hostId} onChange={(ev) => set('hostId', ev.target.value)}>
@@ -1037,17 +990,17 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
         </div>
       </div>
       <div>
-        <div className="section-title">What they think with</div>
+        <div className="k-label">What they think with</div>
         <div className="grid2">
           <ModelEffortFields model={d.model} effort={d.effort} onModel={(v) => set('model', v)} onEffort={(v) => set('effort', v)} host={d.hostId ? hostsById[d.hostId] : undefined} />
         </div>
       </div>
       <div>
-        <div className="section-title">How much they may do without asking</div>
+        <div className="k-label">How much they may do without asking</div>
         <AutonomyPicker name={`autonomy-${e.id}`} value={d.autonomy} onChange={(v) => set('autonomy', v)} />
       </div>
       {/* What is rarely changed stays folded away, unless something in it is set. */}
-      <details className="pc-more" open={more} onToggle={(ev) => setMore((ev.currentTarget as HTMLDetailsElement).open)}>
+      <details className="pc-more k-more" open={more} onToggle={(ev) => setMore((ev.currentTarget as HTMLDetailsElement).open)}>
         <summary>More settings: account, instructions, tools</summary>
         <div className="col" style={{ gap: 14, marginTop: 10 }}>
           <div className="grid3">
@@ -1094,42 +1047,8 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
           </div>
         </div>
       </details>
-      <div className={restartSensitive || restartsNow ? 'pc-note' : 'pc-info'}>
-        {!live
-          ? 'Changes take effect the next time their session is started.'
-          : restartsNow
-            ? `Saving this starts ${e.name}'s session again with the same conversation — now if they are between turns, otherwise when their turn ends.${restartSensitive ? ' Role, instructions and tools come with that start too.' : ''}`
-            : 'A change of autonomy, model or Claude account starts their session again by itself. Role, instructions and tools reach a session when it starts: stop and start theirs to apply those.'}
-      </div>
-      <div className="row">
-        <Button variant="primary" disabled={!dirty || !valid || busy} onClick={save}>
-          Save changes
-        </Button>
-        <Button variant="ghost" disabled={!dirty || busy} onClick={() => setD(draftOf(e))}>
-          Discard
-        </Button>
-        {dirty && <span className="small muted">Unsaved: {Object.keys(patch).join(', ')}</span>}
-      </div>
-
       <div>
-        <div className="section-title">Verified work</div>
-        <div className="pc-stats">
-          <Stat label="Tasks completed" value={fmtInt(e.stats.tasksCompleted)} />
-          <Stat label="Verifications passed" value={fmtInt(e.stats.testsPassed)} />
-          <Stat label="Bugs fixed" value={fmtInt(e.stats.bugsFixed)} />
-          <Stat label="Reviews completed" value={fmtInt(e.stats.reviewsCompleted)} />
-          <Stat label="Assists" value={fmtInt(e.stats.assists)} />
-          <Stat label="Deliverables accepted" value={fmtInt(e.stats.deliverablesAccepted)} />
-        </div>
-        <div className="small faint" style={{ marginTop: 6 }}>
-          Counted by Orchestrator from verified records, not reported by the agent. Joined {fmtDateTime(e.createdAt)}.
-        </div>
-      </div>
-
-      {gamification && <XpLedger e={e} />}
-
-      <div>
-        <div className="section-title">Employment</div>
+        <div className="k-label">Employment</div>
         {e.archived ? (
           <Button variant="success" small onClick={() => act(() => api('PATCH', `/employees/${e.id}`, { archived: false }), `${e.name} is back on the team`)}>
             Restore to the team
@@ -1145,14 +1064,39 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
             )}
           </ConfirmBox>
         ) : (
-          <div className="row" style={{ gap: 6 }}>
-            <Button variant="danger" small onClick={() => setArchiving(true)}>
+          <div className="k-text">Archiving takes them off the team and keeps everything of theirs; it can be undone. Deleting cannot.</div>
+        )}
+        <div className="k-actions">
+          {!e.archived && !archiving && (
+            <Button small onClick={() => setArchiving(true)}>
               Archive employee…
             </Button>
-          </div>
-        )}
-        {!archiving && <DeleteEmployee e={e} onDone={onClose} />}
+          )}
+          {!archiving && <DeleteEmployee e={e} onDone={onClose} />}
+        </div>
       </div>
+      <div className="pf-save" data-profile-save>
+        <div className={`pf-save-note ${restartSensitive || restartsNow ? 'k-warn' : ''}`}>
+          {!dirty
+            ? live
+              ? 'Nothing is changed. A change of autonomy, model or account starts their session again by itself; role, instructions and tools reach a session at its next start.'
+              : 'Nothing is changed. Changes take effect the next time their session is started.'
+            : !live
+              ? `Unsaved: ${Object.keys(patch).join(', ')}. Takes effect the next time their session is started.`
+              : restartsNow
+                ? `Unsaved: ${Object.keys(patch).join(', ')}. Saving starts ${e.name}'s session again with the same conversation — now if they are between turns, otherwise when their turn ends.${restartSensitive ? ' Role, instructions and tools come with that start too.' : ''}`
+                : restartSensitive
+                  ? `Unsaved: ${Object.keys(patch).join(', ')}. Role, instructions and tools reach a session when it starts: stop and start theirs to apply those.`
+                  : `Unsaved: ${Object.keys(patch).join(', ')}.`}
+        </div>
+        <Button variant="ghost" className="k-quiet" disabled={!dirty || busy} onClick={() => setD(draftOf(e))}>
+          Discard
+        </Button>
+        <Button variant="primary" disabled={!dirty || !valid || busy} onClick={save}>
+          Save changes
+        </Button>
+      </div>
+
     </div>
   );
 }
@@ -1755,15 +1699,206 @@ function VisitorCard({ e, session }: { e: Employee; session: AgentSession | unde
   );
 }
 
+/** One figure of somebody's verified work: the number, and what it counts. */
+function Figure({ n, what }: { n: number; what: string }) {
+  return (
+    <div className="k-figure">
+      <b>{fmtInt(n)}</b>
+      <span>{what}</span>
+    </div>
+  );
+}
+
+/**
+ * Somebody at a glance: what they are doing now and what waits on me, what they are (role, project, machine,
+ * model, how much they may do alone), and what they have delivered. Everything here is read; changing it is the
+ * Settings tab's.
+ */
+function OverviewTab({ e, onTab }: { e: Employee; onTab: (tab: TabId) => void }) {
+  const st = useOffice();
+  const me = st.me;
+  const session = sessionOfEmployee(st.sessions, e.id);
+  const live = isLive(session);
+  const task = currentTaskOf(st.tasks, e.id);
+  const asks = openQuestionsOf(st.questions, e.id);
+  const project = e.projectId ? st.projects[e.projectId] : undefined;
+  const also = (e.alsoProjectIds ?? []).map((id) => st.projects[id]).filter((p): p is NonNullable<typeof p> => !!p);
+  const host = e.hostId ? st.hosts[e.hostId] : undefined;
+  const gamification = st.settings?.gamification !== false;
+  const info = levelInfo(e.xp, e.level);
+  const autonomy = autonomyInfo(e.autonomy);
+  const waiting = Object.values(st.tasks).filter((t) => t.assigneeId === e.id && t.kind !== 'review' && (t.status === 'READY' || t.status === 'BACKLOG')).length;
+  const whose = whoseEmployee(st.hosts, me, e);
+  const kept = e.keptBy?.id === me?.id;
+  return (
+    <div className="k-cols" data-profile-overview>
+      <div className="k-stack">
+        <section className="k-section">
+          <div className="k-label">Right now</div>
+          <div className="k-group">
+            {asks.map((q) => (
+              <button key={q.id} type="button" className="k-row k-row-sm k-notice-row" onClick={() => st.openPanel('question', q.id)} title={q.text}>
+                <span className="k-dot k-dot-busy" aria-hidden />
+                <span className="k-main">
+                  <span className="k-title k-title-sm">{q.kind === 'permission' ? 'Asks to be allowed something' : 'Asks you something'}</span>
+                  <span className="k-sub">{oneLine(q.text, 110)}</span>
+                </span>
+                <State word={q.kind === 'permission' ? 'Decide' : 'Answer'} tone="warn" />
+              </button>
+            ))}
+            {task ? (
+              <button type="button" className="k-row k-row-sm" onClick={() => st.openPanel('task', task.id)} title="Open the task">
+                <span className="k-key">{task.key}</span>
+                <span className="k-main">
+                  <span className="k-title k-title-sm">{task.title}</span>
+                  <span className="k-sub">the task they are on{waiting ? ` · ${waiting} more waiting` : ''}</span>
+                </span>
+              </button>
+            ) : (
+              <div className="k-row k-row-sm">
+                <span className="k-main">
+                  <span className="k-title k-title-sm">No task right now</span>
+                  <span className="k-sub">{waiting ? `${waiting} waiting for them on the board` : 'Give them one from Tasks, or tell them what you want in Talk.'}</span>
+                </span>
+              </div>
+            )}
+            <button type="button" className="k-row k-row-sm" onClick={() => onTab('session')} title="The session: start, stop, what it can do">
+              <span className={`k-dot ${live ? '' : 'k-dot-off'}`} aria-hidden />
+              <span className="k-main">
+                <span className="k-title k-title-sm">{live ? `Session ${session!.status}` : 'No session running'}</span>
+                <span className="k-sub">{live ? `since ${timeAgo(session!.startedAt)}${host ? ` · on ${host.name}` : ''}` : 'Asleep at the desk: talking to them or giving them a task wakes them.'}</span>
+              </span>
+              <span className="k-aside">Session</span>
+            </button>
+          </div>
+        </section>
+
+        <section className="k-section">
+          <div className="k-head">
+            <div className="k-label">What they are</div>
+            <button type="button" className="k-link" onClick={() => onTab('profile')}>
+              Change
+            </button>
+          </div>
+          <dl className="k-spec">
+            <div>
+              <dt>Role</dt>
+              <dd>{e.title}</dd>
+            </div>
+            <div>
+              <dt>Project</dt>
+              <dd>
+                {project ? (
+                  <button type="button" className="k-link k-link-strong" onClick={() => st.openPanel('projects', project.id)}>
+                    {project.name}
+                  </button>
+                ) : (
+                  <span className="muted">none</span>
+                )}
+                {also.length > 0 && <span className="muted"> · also {also.map((p) => p.name).join(', ')}</span>}
+              </dd>
+            </div>
+            <div>
+              <dt>Machine</dt>
+              <dd>
+                {host ? host.name : <span className="muted">none</span>}
+                {host && host.status !== 'online' && <span className="k-warn"> · {host.status}</span>}
+              </dd>
+            </div>
+            <div>
+              <dt>Thinks with</dt>
+              <dd>
+                {e.model ?? 'the default model'}
+                {e.effort ? ` · ${e.effort} effort` : ''}
+              </dd>
+            </div>
+            <div title={`${autonomy.text}\n${autonomy.maps}`}>
+              <dt>May do without asking</dt>
+              <dd>
+                {autonomy.label} <span className="muted">— {autonomy.text}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Whose</dt>
+              <dd>
+                {whose.kind === 'mine' ? (kept ? 'Shared, looked after by you' : 'Yours') : whose.kind === 'shared' ? (whose.keeper ? `The office's · ${whose.keeper} looks after them` : "The office's") : `${whose.name}'s`}
+                {mayKeep(st.hosts, me, e) &&
+                  (kept ? (
+                    <button type="button" className="k-link" style={{ marginLeft: 8 }} onClick={() => act(() => api('POST', `/employees/${e.id}/give-back`, {}), `${e.name} is no longer among yours`)} title="Stop listing them among your own. They stay in the office as they are.">
+                      Not mine
+                    </button>
+                  ) : !e.keptBy || me?.kind === 'owner' ? (
+                    <button type="button" className="k-link" style={{ marginLeft: 8 }} onClick={() => act(() => api('POST', `/employees/${e.id}/keep`, {}), `${e.name} is among yours now`)} title={e.keptBy ? `${e.keptBy.name} looks after them now. As an owner you can take them over.` : 'List them among your own: in My work, under Mine, and in your team lead\'s team. They stay shared with the office.'}>
+                      List among mine
+                    </button>
+                  ) : null)}
+              </dd>
+            </div>
+            {e.skills.length > 0 && (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <dt>Skills</dt>
+                <dd>{e.skills.join(' · ')}</dd>
+              </div>
+            )}
+          </dl>
+        </section>
+      </div>
+
+      <div className="k-stack">
+        <section className="k-section">
+          <div className="k-label">Delivered</div>
+          <div className="k-figures">
+            <Figure n={e.stats.tasksCompleted} what="tasks completed" />
+            <Figure n={e.stats.testsPassed} what="verifications passed" />
+            <Figure n={e.stats.deliverablesAccepted} what="deliverables accepted" />
+            <Figure n={e.stats.reviewsCompleted} what="reviews completed" />
+            <Figure n={e.stats.bugsFixed} what="bugs fixed" />
+            <Figure n={e.stats.assists} what="assists" />
+          </div>
+          <div className="k-sub" style={{ whiteSpace: 'normal' }}>
+            Counted by the office from verified records, not reported by the employee. Joined {fmtDateTime(e.createdAt)}.
+          </div>
+        </section>
+        {gamification && (
+          <section className="k-section">
+            <div className="k-label">Level</div>
+            <div className="k-meter" style={{ width: '100%' }} title="Level reflects verified, delivered work in this office — not the capability of the underlying model">
+              <div className="k-meter-top">
+                <span>{levelLine(e.level, e.xp, info.next)}</span>
+              </div>
+              <div className="k-meter-bar">
+                <i style={{ width: `${info.pct}%` }} />
+              </div>
+            </div>
+            {e.badges.length > 0 && (
+              <div className="k-chips">
+                {e.badges.map((b) => (
+                  <span key={b} className="k-chip k-chip-dot" style={{ cursor: 'default' }} title="Earned from verified work">
+                    {humanize(b)}
+                  </span>
+                ))}
+              </div>
+            )}
+            <More summary="Where the XP came from">
+              <XpLedger e={e} />
+            </More>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function EmployeePanel({ arg, onClose }: PanelProps) {
   const [id, tabArg] = (arg ?? '').split(':');
   const visitor = useOffice((s) => s.me?.role === 'visitor');
   const e = useOffice((s) => (id ? s.employees[id] : undefined));
   const sessions = useOffice((s) => s.sessions);
   const questions = useOffice((s) => s.questions);
-  const [tab, setTab] = useState<TabId>(TAB_ARG[tabArg ?? ''] ?? 'profile');
+  const tasks = useOffice((s) => s.tasks);
+  const [tab, setTab] = useState<TabId>(TAB_ARG[tabArg ?? ''] ?? 'overview');
   useEffect(() => {
-    setTab(TAB_ARG[tabArg ?? ''] ?? 'profile');
+    setTab(TAB_ARG[tabArg ?? ''] ?? 'overview');
   }, [id, tabArg]);
   const body = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -1771,35 +1906,61 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
   }, [tab, id]);
   if (!e) {
     return (
-      <Window title="Employee" onClose={onClose} width={520}>
-        <Empty title="Employee not found">They may have been removed.</Empty>
+      <Window kit title="Employee" onClose={onClose} width={520}>
+        <div className="k-empty">
+          <div className="k-title">Employee not found</div>
+          <div className="k-text">They may have been removed.</div>
+        </div>
       </Window>
     );
   }
   const session = sessionOfEmployee(sessions, e.id);
   const open = openQuestionsOf(questions, e.id);
+  const state = employeeState(activityOf(session), open.length > 0);
+  const task = currentTaskOf(tasks, e.id);
+  const st = useOffice.getState();
+  // The head: who it is, and in the line under the name how they are and on what — the same line as in every list.
+  const lead = <Avatar appearance={e.appearance} size={44} offline={!isLive(session)} />;
+  const line = (
+    <span className="k-line" data-profile-state>
+      <State {...state} />
+      <span className="k-sub">{task ? `${task.key} ${task.title}` : `${e.title} · ${e.department}`}</span>
+    </span>
+  );
   if (visitor) {
     return (
-      <Window title={e.name} subtitle={`${e.title} · ${e.department}`} onClose={onClose} width={520} flush actions={<ActivityBadge activity={activityOf(session)} needsYou={false} />}>
+      <Window kit title={e.name} subtitle={line} lead={lead} onClose={onClose} width={520} flush>
         <VisitorCard e={e} session={session} />
       </Window>
     );
   }
   return (
     <Window
+      kit
       title={e.name}
-      subtitle={`${e.title} · ${e.department}`}
+      subtitle={line}
+      lead={lead}
       onClose={onClose}
-      width={920}
+      width={980}
       flush
       actions={
         <>
-          {open[0] && (
-            <Button variant="primary" small onClick={() => useOffice.getState().openPanel('question', open[0]!.id)}>
-              {open[0].kind === 'permission' ? 'Review approval request' : 'Answer their question'}
+          <Button variant="ghost" className="k-quiet" onClick={() => st.enterWorkstation(e.id)} disabled={!session} title={session ? 'Sit at their real terminal' : 'No session yet'}>
+            Terminal
+          </Button>
+          {/* One main button: answering them when they ask, talking to them otherwise. */}
+          {open[0] ? (
+            <>
+              <Button onClick={() => st.openPanel('talk', e.id)}>Talk</Button>
+              <Button variant="primary" onClick={() => st.openPanel('question', open[0]!.id)}>
+                {open[0].kind === 'permission' ? 'Review approval request' : 'Answer their question'}
+              </Button>
+            </>
+          ) : (
+            <Button variant="primary" onClick={() => st.openPanel('talk', e.id)}>
+              Talk
             </Button>
           )}
-          <ActivityBadge activity={activityOf(session)} needsYou={open.length > 0} />
         </>
       }
     >
@@ -1807,8 +1968,9 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: 'profile', label: 'Profile' },
-          { id: 'appearance', label: 'Appearance' },
+          { id: 'overview', label: 'Overview' },
+          { id: 'profile', label: 'Settings' },
+          { id: 'appearance', label: 'Look' },
           { id: 'session', label: 'Session' },
           { id: 'message', label: 'Messages' },
           { id: 'history', label: 'History' },
@@ -1816,7 +1978,8 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
           ...(e.roleKey === 'foreman' ? [] : [{ id: 'desk' as const, label: 'Desk and hours' }]),
         ]}
       />
-      <div className="pc-tabbody" key={e.id} ref={body}>
+      <div className="k-body pf-body" key={e.id} ref={body} data-profile-tab={tab}>
+        {tab === 'overview' && <OverviewTab e={e} onTab={setTab} />}
         {/* The two forms stay mounted so unsaved edits survive a look at another tab. */}
         <div hidden={tab !== 'profile'}>
           <ProfileTab e={e} onClose={onClose} />

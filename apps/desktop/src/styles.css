@@ -850,33 +850,6 @@ table.tbl {
   left: 0;
   top: calc(100% + 8px);
   z-index: 60;
-  width: 190px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 4px;
-}
-.dock .pill {
-  width: 100%;
-  justify-content: flex-start;
-}
-.dock-group {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.dock-group + .dock-group {
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid var(--line);
-}
-.dock-title {
-  padding: 4px 10px 2px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--faint, #6b7688);
 }
 .ws-details summary {
   cursor: pointer;

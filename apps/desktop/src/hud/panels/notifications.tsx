@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Notification, Question, QuestionStatus } from '@orchestrator/contracts';
-import { Avatar, Badge, Button, Empty, Markdown, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
+import { Avatar, Button, Tabs, Window, timeAgo } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
+import { approvalLine, byDay, deliveryWord, needLine, oneLine } from '../../lib/inbox.ts';
 import { useOffice } from '../../lib/store.ts';
 import { needsYou } from '../../lib/attention.ts';
 import { act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
-import { fmtDateTime, humanize, openNotificationTarget, severityDot, type PanelProps } from './company-shared.tsx';
+import { More, State } from './kit.tsx';
+import { fmtDateTime, humanize, openNotificationTarget, type PanelProps } from './company-shared.tsx';
+
+/**
+ * The Inbox (docs/UI.md is the look): what needs me, what the office told me, and what became of my answers — each
+ * a list of single lines in a window that keeps its size, however much there is. A click on a line goes to the
+ * thing itself; nothing is answered here.
+ */
 
 type TabId = 'needs' | 'all' | 'answered';
 
-const STATUS_TONE: Record<QuestionStatus, Tone> = { open: 'warn', answered: 'info', delivered: 'info', confirmed: 'good', failed: 'bad', superseded: 'muted' };
 const STATUS_TIP: Record<QuestionStatus, string> = {
   open: 'Waiting for you',
   answered: 'You replied; delivery to the session is in flight',
@@ -20,59 +27,66 @@ const STATUS_TIP: Record<QuestionStatus, string> = {
   superseded: 'Resolved elsewhere (for example answered directly in the terminal) or timed out',
 };
 
-function NotificationRow({ n, onClose }: { n: Notification; onClose: () => void }) {
+/** How many lines of news stand in the window before "show more". */
+const NEWS_STEP = 40;
+
+/** A piece of news: one line. A dot only when it is a warning; bold while it is new; a click goes to what it is about. */
+function News({ n, onClose }: { n: Notification; onClose: () => void }) {
+  const tone = n.severity === 'critical' ? 'bad' : n.severity === 'warning' ? 'busy' : null;
+  const body = oneLine(n.body, 120);
   return (
-    <div className={`row ${n.resolvedAt ? 'pc-dim' : ''}`} style={{ alignItems: 'flex-start', gap: 4 }}>
-      <button className="pc-rowbtn grow" style={{ alignItems: 'flex-start' }} onClick={() => openNotificationTarget(n) && onClose()}>
-        <span className={severityDot(n.severity)} style={{ marginTop: 6 }} title={n.severity} />
-        <span className="grow col" style={{ gap: 2 }}>
-          <span className="row" style={{ gap: 6 }}>
-            <span className={`truncate ${n.readAt ? '' : 'strong'}`}>{n.title}</span>
-            {!n.readAt && !n.resolvedAt && <Badge tone="accent">new</Badge>}
-          </span>
-          {n.body && <span className="small muted pre">{n.body}</span>}
-          <span className="small faint">
-            {humanize(n.kind)} · <span title={fmtDateTime(n.createdAt)}>{timeAgo(n.createdAt)}</span>
-            {n.resolvedAt ? ` · resolved ${timeAgo(n.resolvedAt)}` : ''}
-          </span>
+    <div className={`k-row k-row-sm k-row-click ${n.resolvedAt ? 'k-dim' : ''}`} role="button" tabIndex={0} onClick={() => openNotificationTarget(n) && onClose()} onKeyDown={(ev) => ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ') && openNotificationTarget(n) && onClose()} data-news={n.id} title={n.body || undefined}>
+      <span className={`k-dot ${tone ? `k-dot-${tone}` : 'k-dot-off'}`} title={n.severity} aria-hidden />
+      <span className="k-main">
+        <span className="k-title k-title-sm" style={n.readAt ? undefined : { fontWeight: 650 }}>
+          {n.title}
+          {body && <span className="k-title-note">{body}</span>}
         </span>
-      </button>
+      </span>
+      <span className="k-aside" title={fmtDateTime(n.createdAt)}>
+        {humanize(n.kind)} · {timeAgo(n.createdAt)}
+      </span>
       {!n.resolvedAt && (
-        <Button small variant="ghost" onClick={() => act(() => api('POST', `/notifications/${n.id}/resolve`, {}))} title="Mark as dealt with">
-          Dismiss
-        </Button>
+        <button
+          type="button"
+          className="k-x"
+          onClick={(ev) => {
+            ev.stopPropagation();
+            void act(() => api('POST', `/notifications/${n.id}/resolve`, {}));
+          }}
+          title="Dismiss: it is dealt with"
+          aria-label={`Dismiss: ${n.title}`}
+        >
+          ✕
+        </button>
       )}
     </div>
   );
 }
 
-function QuestionCard({ q }: { q: Question }) {
-  const employees = useOffice((s) => s.employees);
-  const tasks = useOffice((s) => s.tasks);
-  const e = q.employeeId ? employees[q.employeeId] : undefined;
-  const task = q.taskId ? tasks[q.taskId] : undefined;
+/** Somebody asks, or asks to be allowed: who, what in one line, for how long — and a click opens it to be answered. */
+function Asking({ q }: { q: Question }) {
+  const e = useOffice((s) => (q.employeeId ? s.employees[q.employeeId] : undefined));
+  const task = useOffice((s) => (q.taskId ? s.tasks[q.taskId] : undefined));
   const approval = q.kind === 'permission';
-  const command = approval && q.tool && typeof (q.tool.input as { command?: unknown } | null)?.command === 'string' ? ((q.tool.input as { command: string }).command) : null;
   return (
-    <div className="card row" style={{ alignItems: 'flex-start', gap: 12 }}>
-      {e ? <Avatar appearance={e.appearance} size={34} /> : <span className="dot dot-warn" style={{ marginTop: 6 }} />}
-      <div className="grow col" style={{ gap: 4 }}>
-        <div className="row row-wrap" style={{ gap: 6 }}>
-          <span className="strong">{e ? e.name : 'Orchestrator'}</span>
-          {e && <span className="small muted">{e.title}</span>}
-          <Badge tone="warn">{approval ? 'approval request' : humanize(q.kind)}</Badge>
-          {task && <span className="small mono muted">{task.key}</span>}
-          <span className="small faint" title={fmtDateTime(q.createdAt)}>
-            {timeAgo(q.createdAt)} · via {humanize(q.channel)}
+    <button type="button" className="k-row" onClick={() => useOffice.getState().openPanel('question', q.id)} data-asking={q.id} title={q.text}>
+      {e ? <Avatar appearance={e.appearance} size={32} /> : <span className="k-dot k-dot-busy" aria-hidden />}
+      <span className="k-main">
+        <span className="k-title">
+          {e ? e.name : 'The office'}
+          <span className="k-title-note">
+            {approval ? 'asks to be allowed' : 'asks'}
+            {task ? ` · ${task.key}` : ''}
           </span>
-        </div>
-        <Markdown text={q.text} />
-        {command && <div className="code">{command}</div>}
-      </div>
-      <Button variant="primary" small onClick={() => useOffice.getState().openPanel('question', q.id)}>
-        {approval ? 'Review' : 'Answer'}
-      </Button>
-    </div>
+        </span>
+        <span className={`k-sub ${approval ? 'k-mono' : ''}`}>{approval ? approvalLine(q.tool, q.text) : oneLine(q.text)}</span>
+      </span>
+      <span className="k-aside" title={`${fmtDateTime(q.createdAt)} · via ${humanize(q.channel)}`}>
+        {timeAgo(q.createdAt)}
+      </span>
+      <State word={approval ? 'Decide' : 'Answer'} tone="warn" />
+    </button>
   );
 }
 
@@ -82,6 +96,7 @@ function NotificationsPanel({ arg, onClose }: PanelProps) {
   const employees = useOffice((s) => s.employees);
   // `openPanel('notifications', 'all' | 'answered')` opens that tab.
   const [tab, setTab] = useState<TabId>(arg === 'all' || arg === 'answered' ? arg : 'needs');
+  const [newsShown, setNewsShown] = useState(NEWS_STEP);
 
   // Opening the inbox counts as reading it — but only once it has actually been looked at.
   useEffect(() => {
@@ -93,100 +108,154 @@ function NotificationsPanel({ arg, onClose }: PanelProps) {
   }, []);
 
   const questions = useMemo(() => Object.values(questionsById), [questionsById]);
-  const notifications = useMemo(() => Object.values(notificationsById).sort((a, b) => Number(!!a.resolvedAt) - Number(!!b.resolvedAt) || (a.createdAt < b.createdAt ? 1 : -1)), [notificationsById]);
-  const { questions: open, stuck: needs, count: needCount } = useMemo(() => needsYou(questionsById, notificationsById), [questionsById, notificationsById]);
+  const notifications = useMemo(() => Object.values(notificationsById).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)), [notificationsById]);
+  const { questions: open, stuck, count: needCount } = useMemo(() => needsYou(questionsById, notificationsById), [questionsById, notificationsById]);
+  // Whoever asks to be allowed something stands still until told: those first, then the questions.
+  const approvals = open.filter((q) => q.kind === 'permission');
+  const asked = open.filter((q) => q.kind !== 'permission');
   const answered = questions
     .filter((q) => q.status !== 'open')
     .sort((a, b) => ((a.answeredAt ?? a.createdAt) < (b.answeredAt ?? b.createdAt) ? 1 : -1))
     .slice(0, 60);
-  const unresolved = notifications.filter((n) => !n.resolvedAt);
+  const live = notifications.filter((n) => !n.resolvedAt);
+  const dismissed = notifications.filter((n) => !!n.resolvedAt);
   const unread = notifications.filter((n) => !n.readAt).length;
+  const kinds = [approvals.length > 0, asked.length > 0, stuck.length > 0].filter(Boolean).length;
 
   return (
-    <Window title="Inbox" subtitle={needCount ? `${needCount} need${needCount === 1 ? 's' : ''} you` : 'Nothing needs you'} onClose={onClose} width={860} flush>
+    <Window kit title="Inbox" subtitle={needLine(needCount)} onClose={onClose} width={820} flush>
       <Tabs<TabId>
         value={tab}
         onChange={setTab}
         tabs={[
           { id: 'needs', label: 'Needs you', count: needCount },
-          { id: 'all', label: 'Notifications', count: unread },
+          { id: 'all', label: 'News', count: unread },
           { id: 'answered', label: 'Answered' },
         ]}
       />
-      <div className="pc-tabbody">
+      <div className="k-body" data-inbox={tab}>
         {tab === 'needs' && (
-          <div className="col" style={{ gap: 10 }}>
-            {open.length === 0 && needs.length === 0 && <Empty title="Nothing needs you">No open questions or approvals, and nobody is blocked on you.</Empty>}
-            {open.map((q) => (
-              <QuestionCard key={q.id} q={q} />
-            ))}
-            {needs.length > 0 && (
-              <div>
-                <div className="section-title">Stuck until you act</div>
-                <div className="col" style={{ gap: 2 }}>
-                  {needs.map((n) => (
-                    <NotificationRow key={n.id} n={n} onClose={onClose} />
+          <div className="k-stack">
+            {needCount === 0 && (
+              <div className="k-empty">
+                <div className="k-title">Nothing needs you</div>
+                <div className="k-text">When an employee asks you something, asks to be allowed something, or is stuck until you act, it stands here — and on the Inbox button at the top of the office.</div>
+              </div>
+            )}
+            {approvals.length > 0 && (
+              <section className="k-section">
+                {kinds > 1 && <div className="k-label">To be allowed · {approvals.length}</div>}
+                <div className="k-group k-notice">
+                  {approvals.map((q) => (
+                    <Asking key={q.id} q={q} />
                   ))}
                 </div>
-              </div>
+              </section>
+            )}
+            {asked.length > 0 && (
+              <section className="k-section">
+                {kinds > 1 && <div className="k-label">Questions · {asked.length}</div>}
+                <div className="k-group k-notice">
+                  {asked.map((q) => (
+                    <Asking key={q.id} q={q} />
+                  ))}
+                </div>
+              </section>
+            )}
+            {stuck.length > 0 && (
+              <section className="k-section">
+                <div className="k-label">Stuck until you act · {stuck.length}</div>
+                <div className="k-group">
+                  {stuck.map((n) => (
+                    <News key={n.id} n={n} onClose={onClose} />
+                  ))}
+                </div>
+              </section>
             )}
           </div>
         )}
 
         {tab === 'all' && (
-          <div className="col" style={{ gap: 8 }}>
-            <div className="row">
-              <span className="small muted">
-                {unread} new · {unresolved.length} not dismissed · {notifications.length} in total
-              </span>
-              <span className="grow" />
-              <Button small disabled={unread === 0} onClick={() => act(() => api('POST', '/notifications/read', { ids: 'all' }), 'All notifications marked read')}>
-                Mark all read
-              </Button>
-            </div>
-            {notifications.length === 0 && <Empty title="No notifications">Events that deserve your attention appear here.</Empty>}
-            <div className="col" style={{ gap: 2 }}>
-              {notifications.map((n) => (
-                <NotificationRow key={n.id} n={n} onClose={onClose} />
-              ))}
-            </div>
+          <div className="k-stack">
+            {notifications.length === 0 ? (
+              <div className="k-empty">
+                <div className="k-title">No news yet</div>
+                <div className="k-text">What happens in the office and is worth knowing — a task finished, somebody blocked, a machine gone — is listed here, newest first.</div>
+              </div>
+            ) : (
+              <>
+                <div className="k-head">
+                  <div className="k-sub">
+                    {unread > 0 ? `${unread} new · ` : ''}
+                    {live.length} to look at{dismissed.length ? ` · ${dismissed.length} dismissed` : ''}
+                  </div>
+                  <Button small variant="ghost" className="k-quiet" disabled={unread === 0} onClick={() => act(() => api('POST', '/notifications/read', { ids: 'all' }), 'All notifications marked read')}>
+                    Mark all read
+                  </Button>
+                </div>
+                {live.length === 0 && <div className="k-sub">Everything has been dismissed.</div>}
+                {byDay(live.slice(0, newsShown)).map((g) => (
+                  <section key={g.day} className="k-section">
+                    <div className="k-label">{g.day}</div>
+                    <div className="k-group">
+                      {g.rows.map((n) => (
+                        <News key={n.id} n={n} onClose={onClose} />
+                      ))}
+                    </div>
+                  </section>
+                ))}
+                {live.length > newsShown && (
+                  <button type="button" className="k-link" style={{ alignSelf: 'flex-start' }} onClick={() => setNewsShown((n) => n + NEWS_STEP)}>
+                    Show {Math.min(NEWS_STEP, live.length - newsShown)} more
+                  </button>
+                )}
+                {dismissed.length > 0 && (
+                  <More summary={`${dismissed.length} dismissed`}>
+                    <div className="k-group">
+                      {dismissed.slice(0, NEWS_STEP).map((n) => (
+                        <News key={n.id} n={n} onClose={onClose} />
+                      ))}
+                    </div>
+                  </More>
+                )}
+              </>
+            )}
           </div>
         )}
 
         {tab === 'answered' && (
-          <div className="col" style={{ gap: 8 }}>
-            <div className="small muted">
-              The badge on each says whether your answer arrived: <b>confirmed</b> means the session acknowledged it; <b>failed</b> and <b>superseded</b> mean it did not get there this way. Point at a badge for the details.
-            </div>
-            {answered.length === 0 && <Empty title="No answered questions yet">Questions you have answered are kept here with their delivery state.</Empty>}
-            <div className="list">
-              {answered.map((q) => {
-                const e = q.employeeId ? employees[q.employeeId] : undefined;
-                const reply = q.kind === 'permission' ? (q.decision ? `${q.decision === 'allow' ? 'Allowed' : 'Denied'}${q.answer ? ` — ${q.answer}` : ''}` : null) : (q.answer ?? (q.answers ? Object.values(q.answers).join(' · ') : null));
-                return (
-                  <button key={q.id} className="card card-click pc-cardbtn" onClick={() => useOffice.getState().openPanel('question', q.id)}>
-                    <span className="row row-wrap" style={{ gap: 6 }}>
-                      <span className="strong">{e?.name ?? 'Orchestrator'}</span>
-                      <Badge tone="muted">{q.kind === 'permission' ? 'approval' : humanize(q.kind)}</Badge>
-                      <span className="grow" />
-                      <Badge tone={STATUS_TONE[q.status]} title={STATUS_TIP[q.status]}>
-                        {q.status}
-                      </Badge>
-                      <span className="small faint">{timeAgo(q.confirmedAt ?? q.deliveredAt ?? q.answeredAt ?? q.createdAt)}</span>
-                    </span>
-                    <span className="truncate" style={{ display: 'block', marginTop: 4 }}>
-                      {q.text}
-                    </span>
-                    <span className="small muted truncate" style={{ display: 'block' }}>
-                      {reply ? `Your reply: ${reply}` : 'No reply from you was recorded.'}
-                    </span>
-                    <span className="small faint" style={{ display: 'block' }}>
-                      {q.deliveryDetail ?? STATUS_TIP[q.status]}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+          <div className="k-stack">
+            {answered.length === 0 ? (
+              <div className="k-empty">
+                <div className="k-title">Nothing answered yet</div>
+                <div className="k-text">What you answered and decided is kept here, each with whether your answer reached the employee.</div>
+              </div>
+            ) : (
+              <>
+                <div className="k-text">Your answers, newest first. The word at the end says whether the answer reached the employee; point at it for how.</div>
+                <div className="k-group">
+                  {answered.map((q) => {
+                    const e = q.employeeId ? employees[q.employeeId] : undefined;
+                    const reply = q.kind === 'permission' ? (q.decision ? `${q.decision === 'allow' ? 'Allowed' : 'Denied'}${q.answer ? ` — ${q.answer}` : ''}` : null) : (q.answer ?? (q.answers ? Object.values(q.answers).join(' · ') : null));
+                    const fared = deliveryWord(q.status);
+                    return (
+                      <button key={q.id} type="button" className="k-row" onClick={() => useOffice.getState().openPanel('question', q.id)} data-answered={q.id} title={q.text}>
+                        {e ? <Avatar appearance={e.appearance} size={32} /> : <span className="k-dot k-dot-off" aria-hidden />}
+                        <span className="k-main">
+                          <span className="k-title k-title-sm">
+                            {e?.name ?? 'The office'}
+                            <span className="k-title-note">{q.kind === 'permission' ? approvalLine(q.tool, q.text) : oneLine(q.text, 90)}</span>
+                          </span>
+                          <span className="k-sub">{reply ? `You: ${oneLine(reply, 120)}` : 'No reply from you was recorded.'}</span>
+                        </span>
+                        <span className="k-aside">{timeAgo(q.confirmedAt ?? q.deliveredAt ?? q.answeredAt ?? q.createdAt)}</span>
+                        <State word={fared.word} tone={fared.tone} title={q.deliveryDetail ?? STATUS_TIP[q.status]} width={112} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
