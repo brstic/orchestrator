@@ -24,6 +24,7 @@ import {
   clamp,
   clamp01,
   doze,
+  handTurn,
   lashGeometry,
   lerp,
   newLoco,
@@ -99,7 +100,7 @@ const BLEND_HALF = 0.12;
 const SLEEP_LEAD = 0.17;
 const SLEEP_FOLLOW = 0.3;
 /** Pose values that belong to the arms (the rest is the trunk, the head and the legs). */
-const ARM_KEY = POSE_KEYS.map((k) => k === 'sLx' || k === 'sLz' || k === 'tL' || k === 'eL' || k === 'sRx' || k === 'sRz' || k === 'tR' || k === 'eR');
+const ARM_KEY = POSE_KEYS.map((k) => k === 'sLx' || k === 'sLz' || k === 'tL' || k === 'eL' || k === 'sRx' || k === 'sRz' || k === 'tR' || k === 'eR' || k === 'wrL' || k === 'wfL' || k === 'wrR' || k === 'wfR');
 const sleeping = (p: PoseName | null) => p === 'offline' || p === 'doze';
 const NO_RAYCAST = () => null;
 /** How many letters are in the air over a sleeper at once, how long each one lives (seconds) and how far it rises (metres). */
@@ -412,8 +413,9 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
     // Palms turn down as the elbow bends (keyboard, desk) and forward when the arm is raised.
     // A runner's bent arms keep the thumbs up.
     const desk = 1 - 0.75 * pumping;
-    if (handL.current) handL.current.rotation.y = -1.45 * Math.max(0.3, smooth(0.4, 1.1, -c.eL) * desk, smooth(1.9, 2.6, -c.sLx));
-    if (handR.current) handR.current.rotation.y = 1.45 * Math.max(0.3, smooth(0.4, 1.1, -c.eR) * desk, smooth(1.9, 2.6, -c.sRx));
+    // (On top of that, what a pose asks of the hands: a roll, and a bend at the wrist toward the palm.)
+    if (handL.current) handTurn(handL.current.rotation, c, true, desk);
+    if (handR.current) handTurn(handR.current.rotation, c, false, desk);
     hL.current?.rotation.set(c.hL, c.yL, c.aL, 'ZXY');
     hR.current?.rotation.set(c.hR, c.yR, c.aR, 'ZXY');
     if (kL.current) kL.current.rotation.x = c.kL;

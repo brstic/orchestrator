@@ -75,6 +75,14 @@ export interface Pose {
   sRz: number;
   tR: number;
   eR: number;
+  /**
+   * The hands, on top of how they turn by themselves (palms down as the elbow bends): roll about the forearm, and a
+   * bend of the wrist toward the palm (+) or the back of the hand (−). Zero in every pose that does not hold something.
+   */
+  wrL: number;
+  wfL: number;
+  wrR: number;
+  wfR: number;
   /** Legs: hip flexion, abduction, twist; knee; ankle. */
   hL: number;
   aL: number;
@@ -90,7 +98,7 @@ export interface Pose {
 
 export const POSE_KEYS: (keyof Pose)[] = [
   'hipX', 'hipY', 'hipZ', 'pelYaw', 'pelRoll', 'lean', 'twist', 'side', 'shrug', 'headPitch', 'headYaw', 'headRoll',
-  'sLx', 'sLz', 'tL', 'eL', 'sRx', 'sRz', 'tR', 'eR',
+  'sLx', 'sLz', 'tL', 'eL', 'sRx', 'sRz', 'tR', 'eR', 'wrL', 'wfL', 'wrR', 'wfR',
   'hL', 'aL', 'yL', 'kL', 'fL', 'hR', 'aR', 'yR', 'kR', 'fR',
 ];
 export const NKEYS = POSE_KEYS.length;
@@ -102,7 +110,7 @@ export const SEAT_TOP = 0.51;
 
 export const newPose = (): Pose => ({
   hipX: 0, hipY: SIT_Y, hipZ: 0, pelYaw: 0, pelRoll: 0, lean: 0, twist: 0, side: 0, shrug: 0, headPitch: 0, headYaw: 0, headRoll: 0,
-  sLx: 0, sLz: 0, tL: 0, eL: 0, sRx: 0, sRz: 0, tR: 0, eR: 0,
+  sLx: 0, sLz: 0, tL: 0, eL: 0, sRx: 0, sRz: 0, tR: 0, eR: 0, wrL: 0, wfL: 0, wrR: 0, wfR: 0,
   hL: 0, aL: 0, yL: 0, kL: 0, fL: 0, hR: 0, aR: 0, yR: 0, kR: 0, fR: 0,
 });
 
@@ -141,6 +149,7 @@ function setSit(o: Pose): void {
   o.sRz = -0.08;
   o.tR = 0;
   o.eR = -0.9;
+  o.wrL = o.wfL = o.wrR = o.wfR = 0;
   o.hL = -1.5;
   o.aL = 0.025;
   o.yL = 0;
@@ -172,10 +181,11 @@ export const SHOULDER_Y = 0.44;
 export const SLEEP_BREATH = TAU * 0.25;
 
 /**
- * Two-bone arm for a seated, leaning body: puts the wrist at (wx, wy, wz) and the elbow at height `ey`, on the outside.
- * Coordinates are relative to the hip centre, in the character's frame; the spine is pitched forward by `lean` and nothing else.
+ * Two-bone arm for a seated, leaning body: puts the wrist at (wx, wy, wz) and the elbow at height `ey`, on the outside
+ * — or, given `near`, as close to that point as the arm allows. Coordinates are relative to the hip centre, in the
+ * character's frame; the spine is pitched forward by `lean` and nothing else. Returns where the elbow is.
  */
-function restArm(o: Pose, left: boolean, lean: number, wx: number, wy: number, wz: number, ey: number): void {
+function restArm(o: Pose, left: boolean, lean: number, wx: number, wy: number, wz: number, ey: number, near?: readonly [number, number, number]): [number, number, number] {
   const side = left ? 1 : -1;
   const cl = Math.cos(lean);
   const sl = Math.sin(lean);
@@ -211,11 +221,29 @@ function restArm(o: Pose, left: boolean, lean: number, wx: number, wy: number, w
   vz /= vl;
   const ux = ny * vz - nz * vy;
   const uz = nx * vy - ny * vx;
-  const sp = clamp((ey - cy) / (r * vy || 1e-6), -1, 1);
-  const cp = Math.sqrt(1 - sp * sp) * (side * ux >= 0 ? 1 : -1);
-  const ex = cx + r * (cp * ux + sp * vx);
-  const eY = cy + r * sp * vy;
-  const ez = cz + r * (cp * uz + sp * vz);
+  let ex: number;
+  let eY: number;
+  let ez: number;
+  if (near) {
+    // The point of the circle nearest to the one asked for.
+    let hx = near[0] - cx;
+    let hy = near[1] - cy;
+    let hz = near[2] - cz;
+    const along = hx * nx + hy * ny + hz * nz;
+    hx -= along * nx;
+    hy -= along * ny;
+    hz -= along * nz;
+    const hl = Math.hypot(hx, hy, hz) || 1;
+    ex = cx + (r * hx) / hl;
+    eY = cy + (r * hy) / hl;
+    ez = cz + (r * hz) / hl;
+  } else {
+    const sp = clamp((ey - cy) / (r * vy || 1e-6), -1, 1);
+    const cp = Math.sqrt(1 - sp * sp) * (side * ux >= 0 ? 1 : -1);
+    ex = cx + r * (cp * ux + sp * vx);
+    eY = cy + r * sp * vy;
+    ez = cz + r * (cp * uz + sp * vz);
+  }
   // Directions of the two bones, turned into the frame of the spine.
   const ax = (ex - sx) / UPPER_ARM;
   const ay0 = (eY - sy) / UPPER_ARM;
@@ -251,6 +279,7 @@ function restArm(o: Pose, left: boolean, lean: number, wx: number, wy: number, w
     o.tR = tw;
     o.eR = bend;
   }
+  return [ex, eY, ez];
 }
 
 /**
@@ -291,6 +320,106 @@ function sleepAtDesk(o: Pose, t: number, ph: number, build: number): void {
   o.kR = 1.45 - 0.2 * (turn > 0 ? 0 : 1);
   o.fL = 1.5 - o.kL;
   o.fR = 1.5 - o.kR;
+}
+
+/**
+ * How a hand is turned at the end of its forearm: by itself, palm down as the elbow bends (keyboard, desk) and forward
+ * as the arm is raised — less so for a runner's pumping arms (`desk` 1 seated, toward 0.25 at a run) — and on top of
+ * that what the pose asks (`wrL`/`wfL`, `wrR`/`wfR`). Written into `r` (the hand's rotation).
+ */
+export function handTurn(r: THREE.Euler, o: Pose, left: boolean, desk = 1): void {
+  if (left) r.set(0, -1.45 * Math.max(0.3, smooth(0.4, 1.1, -o.eL) * desk, smooth(1.9, 2.6, -o.sLx)) + o.wrL, -o.wfL, 'YZX');
+  else r.set(0, 1.45 * Math.max(0.3, smooth(0.4, 1.1, -o.eR) * desk, smooth(1.9, 2.6, -o.sRx)) + o.wrR, o.wfR, 'YZX');
+}
+
+/** A number in [0, 1) that stays the same for the same arguments: which look, which way, for whom. */
+const hash01 = (a: number, b: number): number => {
+  const x = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+/**
+ * Where the underside of the chin is, relative to the hip centre, for a spine pitched by `lean` and a head turned by
+ * the pose's own angles (the order the rig applies them in: pitch, then yaw, then roll).
+ */
+function chinAt(o: Pose, lean: number): [number, number, number] {
+  // The underside of the chin in the head's own frame, from the joint at the top of the neck.
+  let x = 0;
+  let y = -0.012;
+  let z = 0.079;
+  // roll (z), yaw (y), pitch (x)
+  const cr = Math.cos(o.headRoll);
+  const sr = Math.sin(o.headRoll);
+  [x, y] = [x * cr - y * sr, x * sr + y * cr];
+  const cy = Math.cos(o.headYaw);
+  const sy = Math.sin(o.headYaw);
+  [x, z] = [x * cy + z * sy, -x * sy + z * cy];
+  const cp = Math.cos(o.headPitch);
+  const sp = Math.sin(o.headPitch);
+  [y, z] = [y * cp - z * sp, y * sp + z * cp];
+  // The neck joint on the spine, then the spine's pitch.
+  y += HEAD_Y;
+  z += -0.002;
+  const cl = Math.cos(lean);
+  const sl = Math.sin(lean);
+  return [x, y * cl - z * sl, y * sl + z * cl];
+}
+
+/** How long one look of somebody thinking lasts, on average (seconds), and how long the head takes to move to the next. */
+const THINK_LOOK = 5.5;
+const THINK_TURN = 1.6;
+
+/**
+ * Thinking it over: one forearm across the waist, the other elbow resting on that hand, the chin resting in the palm
+ * of the raised hand, leaning forward a little. The thoughts wander: every few seconds the head settles into another
+ * look — a few degrees to one side, a little up or down, as far as a head resting on a hand turns — and the hand goes
+ * with the chin, so it never lets go of it nor goes through it. Now and then the fingers rub the jaw. Which hand holds
+ * the chin is the person's own (some the left, some the right), and so is the rhythm.
+ */
+function thinkAt(o: Pose, t: number, ph: number): void {
+  const s = Math.sin;
+  /** −1: the right hand holds the chin; +1: the left. */
+  const side = hash01(ph, 3.1) < 0.5 ? -1 : 1;
+  // The look now and the one before it, eased from one to the other.
+  const at = t / THINK_LOOK + ph * 5.3;
+  const n = Math.floor(at);
+  const ease = smooth(0, THINK_TURN / THINK_LOOK, at - n);
+  // (A head resting on a hand turns only a little: a few degrees each way, a little up or down.)
+  const lookYaw = (k: number) => (hash01(k, ph) - 0.5) * 0.3 + side * 0.06;
+  const lookPitch = (k: number) => -0.12 + hash01(k + 17, ph) * 0.14;
+  const breath = s(t * 1.3 + ph * 1.9);
+  const lean = 0.13 + breath * 0.005 + s(t * 0.13 + ph * 4.1) * 0.012;
+  o.hipZ = 0.03;
+  o.lean = lean;
+  o.shrug = 0.012 + breath * 0.0025;
+  o.headYaw = lerp(lookYaw(n - 1), lookYaw(n), ease) + s(t * 0.41 + ph) * 0.02;
+  o.headPitch = lerp(lookPitch(n - 1), lookPitch(n), ease) + s(t * 0.33 + ph * 2.1) * 0.012 - breath * 0.004;
+  // The head leans into the hand.
+  o.headRoll = -side * (0.11 + s(t * 0.23 + ph * 1.4) * 0.025);
+  const [cx, cy, cz] = chinAt(o, lean);
+  // The chin rests in the palm: the wrist just under and in front of it, the forearm coming up from the elbow. Now and
+  // then (one look in three) the fingers rub the jaw for a moment.
+  const rubbing = hash01(n, ph + 9) < 0.34 ? smooth(0.25, 0.4, at - n) * (1 - smooth(0.62, 0.78, at - n)) : 0;
+  const rub = rubbing * s(t * 9.5) * 0.009;
+  const chinArm = side > 0;
+  // (Found by measuring the hand against the head for every look: the palm under the chin and turned up to it, the
+  // fingers level along the jaw, touching the face and never more than 7 mm into it — `test/thinking.test.ts`.)
+  const [ex, ey, ez] = restArm(o, chinArm, lean, cx + side * 0.01 + rub, cy - 0.037, cz + 0.051, 0, [side * 0.075, 0.23, 0.27]);
+  // The other forearm across the waist, its hand holding that elbow.
+  restArm(o, !chinArm, lean, ex - side * 0.06, ey - 0.05, ez - 0.04, 0, [-side * 0.17, ey - 0.07, 0.07]);
+  // The hand at the chin: the wrist bent well back, so that the palm is turned up under the chin and the fingers lie
+  // along the jaw; the supporting hand turns its palm up under the elbow.
+  if (chinArm) {
+    o.wrL = -1.2;
+    o.wfL = -1.3;
+    o.wrR = 1.6;
+    o.wfR = 0.25;
+  } else {
+    o.wrR = 1.2;
+    o.wfR = -1.3;
+    o.wrL = -1.6;
+    o.wfL = 0.25;
+  }
 }
 
 /** A seated pose as a function of time (seconds) and a per-character phase so nobody moves in sync. Writes into `o` (no allocation). `build` is the body scale, for poses that touch the desk. */
@@ -344,19 +473,9 @@ export function poseAt(name: PoseName, t: number, ph: number, o: Pose, build = 1
       o.eR = -1.5;
       break;
     case 'thinking':
-      // Chin resting on the right hand.
-      o.lean = -0.05;
-      o.headPitch = -0.1 + s(t * 0.6 + ph) * 0.05;
-      o.headRoll = 0.1;
-      o.sRx = -0.9;
-      o.sRz = -0.1;
-      o.tR = 0.9;
-      o.eR = -2.32;
-      o.sLx = -0.35;
-      o.sLz = 0.1;
-      o.tL = 1.05;
-      o.eL = -1.5;
-      break;
+      thinkAt(o, t, ph);
+      // (Its own breathing: the hand at the chin is placed for the head as it is.)
+      return;
     case 'planning':
       o.hipZ = 0.04;
       o.lean = 0.2;
@@ -924,6 +1043,7 @@ function legIK(o: Pose, left: boolean, tx: number, ty: number, tz: number, yaw: 
 /** The whole body of someone on their feet: standing (breathing, shifting weight, looking around) blending into walking and running. */
 export function upright(o: Pose, t: number, ph: number, L: Loco): void {
   const s = Math.sin;
+  o.wrL = o.wfL = o.wrR = o.wfR = 0;
   const amp = L.amp;
   const rest = 1 - amp;
   const run = L.run;
