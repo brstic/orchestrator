@@ -1,4 +1,4 @@
-import type { Artifact, Employee, FullState, OfficeLayout, Question } from '@orchestrator/contracts';
+import type { Artifact, Employee, FullState, OfficeLayout, Question, Project } from '@orchestrator/contracts';
 import { matchRole, newId, nowIso, roleByKey, directsOthers } from '@orchestrator/contracts';
 import type { McpServerOptions } from '@orchestrator/integrations';
 import { TerminalGateway, type GatewayDeps } from '@orchestrator/terminal';
@@ -272,6 +272,20 @@ export class Engine {
     if (!folder || input.projectId || input.ownFolderProject === false || foreman) return this.employees.create(input, actor, by);
     const hostId = input.hostId ?? this.core.hosts.find((h) => h.local && h.status !== 'revoked')?.id ?? this.core.hosts.find((h) => h.status === 'online')?.id ?? null;
     if (!hostId || !this.core.agents.isOnline(hostId)) return this.employees.create({ ...input, hostId }, actor, by);
+    const { project, root } = await this.projectOfFolder(hostId, folder, input.name.trim(), actor, input.verifyCommand ?? null);
+    const employee = this.employees.create({ ...input, hostId, projectId: project.id, workingDir: root }, actor, by);
+    if (project.workspace === 'in_place' && !project.ownerEmployeeId) {
+      project.ownerEmployeeId = employee.id;
+      this.core.put('project', project);
+    }
+    return employee;
+  }
+
+  /**
+   * The project of a folder on a machine: the one that already lives there, or a new one worked in place, named
+   * after the folder. The folder has to exist there (the machine is asked) — it is what a session is started in.
+   */
+  private async projectOfFolder(hostId: string, folder: string, whose: string, actor: string, verifyCommand: string | null = null): Promise<{ project: Project; root: string }> {
     const insp = await this.core.agents.rpc(hostId, { method: 'fs.inspect', params: { path: folder } }).catch((e) => {
       throw new EngineError(`the host rejected that folder: ${(e as Error).message}`);
     });
@@ -283,14 +297,35 @@ export class Engine {
       const baseName = root.split('/').filter(Boolean).pop() ?? 'project';
       let name = baseName;
       for (let i = 2; this.core.projects.find((p) => p.name.toLowerCase() === name.toLowerCase() && p.status !== 'archived'); i++) name = `${baseName} (${i})`;
-      project = await this.tasks.createProject({ name, repoPath: root, hostId, workspace: 'in_place', verifyCommand: input.verifyCommand ?? null, description: `${input.name.trim()}'s folder: ${root}` }, actor);
+      project = await this.tasks.createProject({ name, repoPath: root, hostId, workspace: 'in_place', verifyCommand, description: `${whose}'s folder: ${root}` }, actor);
     }
-    const employee = this.employees.create({ ...input, hostId, projectId: project.id, workingDir: root }, actor, by);
+    return { project, root };
+  }
+
+  /**
+   * Change an employee — and, when the change names a folder (`folder`), give them that folder to live in the way
+   * hiring does: the folder becomes their own project, worked in place (or they join the project that already
+   * lives there). A foreman's or a lead's folder is only where their session runs. The folder is on the machine
+   * they are on, or on the one the same change puts them on. It takes effect when their session next starts.
+   */
+  async updateEmployee(id: string, patch: Record<string, unknown>, actor = 'owner'): Promise<Employee> {
+    const { folder: named, ...rest } = patch;
+    if (typeof named !== 'string' || !named.trim()) return this.employees.update(id, rest as any, actor);
+    const e = this.core.employees.require(id);
+    const folder = named.trim();
+    const role = typeof rest.roleKey === 'string' ? rest.roleKey : e.roleKey;
+    if (directsOthers((roleByKey(role) ?? matchRole(role))?.key)) return this.employees.update(id, { ...rest, workingDir: folder } as any, actor);
+    const hostId = (typeof rest.hostId === 'string' && rest.hostId ? rest.hostId : e.hostId) ?? null;
+    const host = hostId ? this.core.hosts.get(hostId) : undefined;
+    if (!host) throw new EngineError('choose the machine first: a folder is on a machine');
+    if (!this.core.agents.isOnline(host.id)) throw new EngineError(`${host.name} is offline, so that folder cannot be looked at now`);
+    const { project, root } = await this.projectOfFolder(host.id, folder, e.name, actor);
+    const updated = this.employees.update(id, { ...rest, projectId: project.id, workingDir: root } as any, actor);
     if (project.workspace === 'in_place' && !project.ownerEmployeeId) {
-      project.ownerEmployeeId = employee.id;
+      project.ownerEmployeeId = updated.id;
       this.core.put('project', project);
     }
-    return employee;
+    return updated;
   }
 
   // ─────────────────────── cross-module helpers ────────────────────

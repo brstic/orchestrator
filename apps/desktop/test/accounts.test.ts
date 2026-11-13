@@ -23,7 +23,7 @@ test("an employee's account is chosen among those of their machine, by name; the
     { hostId: 'h2', configDir: '~/.claude-2', email: 'elsewhere@example.com' },
   ];
   assert.deepEqual(accountChoices(accounts, 'h1'), [
-    { value: '', label: "first@example.com — the machine's default" },
+    { value: '', label: 'first@example.com (default)' },
     { value: '~/.claude-2', label: 'second@example.com' },
     { value: '~/.claude-zai', label: 'Z.AI' },
   ]);

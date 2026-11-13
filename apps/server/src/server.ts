@@ -673,7 +673,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
     // employees
     api.post('/employees', async (req) => engine.hire(body(req) as any));
-    api.patch('/employees/:id', async (req) => engine.employees.update(param(req, 'id'), body(req)));
+    api.patch('/employees/:id', async (req) => engine.updateEmployee(param(req, 'id'), body(req), actorOf(req)));
     // For good, with what is theirs (see Engine.deleteEmployee). `?tasks=delete` takes their tasks too; otherwise they go back on the board.
     api.delete('/employees/:id', async (req) => engine.deleteEmployee(param(req, 'id'), { tasks: query(req).tasks === 'delete' ? 'delete' : 'keep' }, actorOf(req)));
     // A member takes a shared employee among their own, or gives them back. Listing only: who may use them does not change.

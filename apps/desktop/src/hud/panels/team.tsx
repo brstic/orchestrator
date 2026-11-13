@@ -1,7 +1,7 @@
 import { DeskPicker, WherePicker, useHirePlaces, type HirePlace } from './hire-where.tsx';
 import { BulkHire } from './bulk-hire.tsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AgentSession, Appearance, AutonomyLevel, CommunicationStyle, DeliveryStatus, Employee, ExecutionMode, Host, OrchestratorEvent, XpEntry } from '@orchestrator/contracts';
+import type { AgentSession, Appearance, AutonomyLevel, CommunicationStyle, DeliveryStatus, Employee, ExecutionMode, Host, OrchestratorEvent, Project, XpEntry } from '@orchestrator/contracts';
 import { DESK_SIZE, EFFORT_CHOICES, MODEL_CHOICES, ROLE_CATALOGUE, memberSeatOf, roleByKey } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field, Progress, Provenance, Stat, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api, connection } from '../../lib/api.ts';
@@ -14,6 +14,7 @@ import { byProject, levelLine, teamLine } from '../../lib/team.ts';
 import { byDay, oneLine } from '../../lib/inbox.ts';
 import { More, PickMany, State } from './kit.tsx';
 import { accountChoices } from '../../lib/accounts.ts';
+import { homeOf, homePatch } from '../../lib/employee-home.ts';
 import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { FolderField } from './folder-picker.tsx';
 import { registerPanel } from './index.tsx';
@@ -712,7 +713,9 @@ interface Draft {
   claudeConfigDir: string;
 }
 
-function draftOf(e: Employee): Draft {
+function draftOf(e: Employee, projects: Record<string, Project>): Draft {
+  // Where they live, as the hire form asks it: a folder of their own, or a shared project (`lib/employee-home.ts`).
+  const home = homeOf(e, projects);
   return {
     name: e.name,
     title: e.title,
@@ -728,10 +731,10 @@ function draftOf(e: Employee): Draft {
     disallowedTools: e.disallowedTools.join('\n'),
     autonomy: e.autonomy,
     executionMode: e.executionMode,
-    projectId: e.projectId ?? '',
+    projectId: home.shared,
     alsoProjectIds: e.alsoProjectIds ?? [],
     hostId: e.hostId ?? '',
-    workingDir: e.workingDir ?? '',
+    workingDir: home.folder,
     claudeConfigDir: e.claudeConfigDir ?? '',
   };
 }
@@ -742,7 +745,7 @@ function parseRules(text: string): string[] {
 }
 
 /** Only what actually changed is sent. A role change always carries the title fields so the result is what the form shows. */
-function patchOf(e: Employee, d: Draft): Record<string, unknown> {
+function patchOf(e: Employee, d: Draft, projects: Record<string, Project>): Record<string, unknown> {
   const p: Record<string, unknown> = {};
   const role = d.roleKey !== e.roleKey;
   const skills = parseSkills(d.skills);
@@ -760,10 +763,10 @@ function patchOf(e: Employee, d: Draft): Record<string, unknown> {
   if (parseRules(d.disallowedTools).join('\n') !== e.disallowedTools.join('\n')) p.disallowedTools = parseRules(d.disallowedTools);
   if (d.autonomy !== e.autonomy) p.autonomy = d.autonomy;
   if (d.executionMode !== e.executionMode) p.executionMode = d.executionMode;
-  if ((d.projectId || null) !== e.projectId) p.projectId = d.projectId || null;
   if ([...d.alsoProjectIds].sort().join() !== [...(e.alsoProjectIds ?? [])].sort().join()) p.alsoProjectIds = d.alsoProjectIds.filter((x) => x !== d.projectId);
   if ((d.hostId || null) !== e.hostId) p.hostId = d.hostId || null;
-  if ((d.workingDir.trim() || null) !== e.workingDir) p.workingDir = d.workingDir.trim() || null;
+  // Their folder, or the shared project they are on: asked for the way hiring asks (`folder`), or as a project.
+  Object.assign(p, homePatch(e, projects, { shared: d.projectId, folder: d.workingDir }));
   if ((d.claudeConfigDir.trim() || null) !== (e.claudeConfigDir ?? null)) p.claudeConfigDir = d.claudeConfigDir.trim() || null;
   return p;
 }
@@ -784,7 +787,7 @@ function AccountField({ hostId, host, value, onChange }: { hostId: string; host:
   const typing = other || !known;
   return (
     <div className="field">
-      <span className="field-label">Claude account</span>
+      <span className="field-label">Account</span>
       <select
         aria-label="Claude account"
         value={typing ? '\u0000other' : value}
@@ -802,15 +805,13 @@ function AccountField({ hostId, host, value, onChange }: { hostId: string; host:
         <option value={'\u0000other'}>Another folder…</option>
       </select>
       {typing && <input value={value} onChange={(ev) => onChange(ev.target.value)} className="mono" placeholder="~/.claude-work" spellCheck={false} aria-label="Claude account folder" style={{ marginTop: 6 }} />}
-      <span className="field-hint">
-        {typing ? 'The folder of a Claude login made by hand on that machine. ' : ''}Accounts are added and signed in to in Company → Claude. A running session is started again on the new account; when an account runs out, the office moves its employees to another one of the same kind by itself (Settings → Employees).
-      </span>
+      <span className="field-hint">{typing ? 'The folder of a Claude login made by hand on that machine.' : 'Accounts are added and signed in to in Company → Claude.'}</span>
     </div>
   );
 }
 
 /** What was changed, in the words of the form and not of the record. */
-const FIELD_WORD: Record<string, string> = { roleKey: 'role', specialization: 'specialisation', allowedTools: 'allowed tools', disallowedTools: 'denied tools', autonomy: 'level', executionMode: 'runtime', projectId: 'project', alsoProjectIds: 'other projects', hostId: 'machine', workingDir: 'folder', claudeConfigDir: 'Claude account' };
+const FIELD_WORD: Record<string, string> = { folder: 'folder', roleKey: 'role', specialization: 'specialisation', allowedTools: 'allowed tools', disallowedTools: 'denied tools', autonomy: 'level', executionMode: 'runtime', projectId: 'project', alsoProjectIds: 'other projects', hostId: 'machine', workingDir: 'folder', claudeConfigDir: 'Claude account' };
 const changedWords = (patch: object): string =>
   Object.keys(patch)
     .map((k) => FIELD_WORD[k] ?? k)
@@ -928,11 +929,11 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
   const hostsById = useOffice((s) => s.hosts);
   const projectsById = useOffice((s) => s.projects);
   const sessions = useOffice((s) => s.sessions);
-  const [d, setD] = useState<Draft>(() => draftOf(e));
+  const [d, setD] = useState<Draft>(() => draftOf(e, projectsById));
   const [busy, setBusy] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setD((cur) => ({ ...cur, [key]: value }));
-  const patch = patchOf(e, d);
+  const patch = patchOf(e, d, projectsById);
   const dirty = Object.keys(patch).length > 0;
   const valid = !!d.name.trim() && !!d.title.trim();
   const session = sessionOfEmployee(sessions, e.id);
@@ -948,6 +949,13 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
     .filter((p) => (p.status !== 'archived' && (onMembers ? p.hostId === d.hostId : !hostsById[p.hostId ?? '']?.memberId)) || p.id === e.projectId)
     .sort(byName);
 
+  const host = d.hostId ? hostsById[d.hostId] : undefined;
+  // The projects one can be put on as a shared project: not the one that is only their own folder.
+  const ownId = homeOf(e, projectsById).shared ? null : e.projectId;
+  const sharedProjects = projects.filter((p) => p.id !== ownId && !!p.repoPath);
+  const shared = d.projectId ? projectsById[d.projectId] : undefined;
+  const folderChanged = 'folder' in patch;
+
   const pickRole = (key: string) => {
     const r = roleByKey(key);
     setD((cur) => (r ? { ...cur, roleKey: key, title: r.title, department: r.department, specialization: r.specialization, skills: r.skills.join(', ') } : { ...cur, roleKey: 'custom' }));
@@ -956,7 +964,7 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
     setBusy(true);
     const res = await act(() => api<Employee>('PATCH', `/employees/${e.id}`, patch), 'Profile saved');
     setBusy(false);
-    if (res) setD(draftOf(res));
+    if (res) setD(draftOf(res, useOffice.getState().projects));
   };
   const archive = async () => {
     setBusy(true);
@@ -967,111 +975,128 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
     if (res) onClose();
   };
   // Open from the start when something in it is set, and then as the person leaves it.
-  const [more, setMore] = useState(() => !!(e.claudeConfigDir || e.instructions || e.allowedTools.length || e.disallowedTools.length || e.executionMode !== 'interactive_cli'));
+  const [more, setMore] = useState(() => !!(e.instructions || e.allowedTools.length || e.disallowedTools.length || e.executionMode !== 'interactive_cli'));
   // What the office starts their session again for by itself, and what waits for the next start.
   const restartsNow = live && ('autonomy' in patch || 'model' in patch || 'effort' in patch || 'claudeConfigDir' in patch);
   const restartSensitive = live && ('instructions' in patch || 'allowedTools' in patch || 'disallowedTools' in patch || 'roleKey' in patch || 'executionMode' in patch);
 
   return (
     <div className="k-stack pf-form" data-profile-settings>
-      <div>
+      <div data-settings-who>
         <div className="k-label">Who they are</div>
-        <div className="grid2">
-        <Field label="Name">
-          <input value={d.name} onChange={(ev) => set('name', ev.target.value)} />
-        </Field>
-        <Field label="Role">
-          <select value={role ? d.roleKey : 'custom'} onChange={(ev) => pickRole(ev.target.value)}>
-            {ROLE_CATALOGUE.map((r) => (
-              <option key={r.key} value={r.key}>
-                {r.title}
-              </option>
-            ))}
-            <option value="custom">Custom role</option>
-          </select>
-        </Field>
-        <Field label="Title">
-          <input value={d.title} onChange={(ev) => set('title', ev.target.value)} />
-        </Field>
-        <Field label="Skills" hint="Comma separated">
-          <input value={d.skills} onChange={(ev) => set('skills', ev.target.value)} />
-        </Field>
+        <div className="grid3">
+          <Field label="Name">
+            <input value={d.name} onChange={(ev) => set('name', ev.target.value)} />
+          </Field>
+          <Field label="Role">
+            <select value={role ? d.roleKey : 'custom'} onChange={(ev) => pickRole(ev.target.value)}>
+              {ROLE_CATALOGUE.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.title}
+                </option>
+              ))}
+              <option value="custom">Custom role</option>
+            </select>
+          </Field>
+          <Field label="Title">
+            <input value={d.title} onChange={(ev) => set('title', ev.target.value)} />
+          </Field>
         </div>
       </div>
-      <div>
-        <div className="k-label">Where they work</div>
-        <div className="grid3">
-        <Field label="Machine" hint={live ? 'Stop the running session before moving them to another machine.' : undefined}>
-          <select value={d.hostId} onChange={(ev) => set('hostId', ev.target.value)}>
-            <option value="">No machine</option>
-            {hosts.map((h) => (
-              <option key={h.id} value={h.id}>
-                {h.name} ({h.status})
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Project">
-          <select value={d.projectId} onChange={(ev) => set('projectId', ev.target.value)}>
-            <option value="">No project</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Working directory" hint="Used when there is no project repository.">
-          <input value={d.workingDir} onChange={(ev) => set('workingDir', ev.target.value)} className="mono" placeholder="none" />
-        </Field>
-        {projects.filter((p) => p.id !== d.projectId).length > 0 && (
-          <div className="field" style={{ gridColumn: '1 / -1' }}>
+
+      {/* Where they live — asked the way hiring asks it: the machine, then a folder of their own or a shared project. */}
+      <div data-settings-folder>
+        <div className="k-label">Their folder</div>
+        <div className="pf-home">
+          <Field label="On" hint={live && (d.hostId || '') !== (e.hostId ?? '') ? 'Stop their session first: a running session cannot be moved to another machine.' : undefined}>
+            <select value={d.hostId} onChange={(ev) => setD((cur) => ({ ...cur, hostId: ev.target.value, projectId: '', workingDir: ev.target.value === (e.hostId ?? '') ? draftOf(e, projectsById).workingDir : '' }))} aria-label="Machine">
+              <option value="">No machine</option>
+              {hosts.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.name}
+                  {h.status === 'online' ? '' : ` (${h.status})`}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <div className="field">
+            <span className="field-label">Folder they live in</span>
+            <FolderField value={shared ? (shared.repoPath ?? '') : d.workingDir} onChange={(v) => set('workingDir', v)} host={host} disabled={!!shared} placeholder={host ? `a folder on ${host.name}` : 'choose the machine first'} />
+            <span className="field-hint">
+              {shared
+                ? shared.workspace === 'in_place'
+                  ? `They are on the project "${shared.name}" and work in its folder, with whoever else is on it.`
+                  : `They are on the shared project "${shared.name}", so they work in a worktree of their own instead of a folder.`
+                : !d.workingDir.trim()
+                  ? 'Claude Code starts in this folder. Without one they cannot be started.'
+                  : folderChanged
+                    ? `It becomes their own project, worked in place${live ? '; it takes effect when their session next starts' : ''}.`
+                    : 'Claude Code starts here; the folder is their own project, worked in place.'}
+            </span>
+          </div>
+          <Field label="…or a shared project" hint="A project several employees work on, instead of a folder of their own.">
+            <select value={d.projectId} onChange={(ev) => set('projectId', ev.target.value)} aria-label="Shared project">
+              <option value="">None — they own the folder</option>
+              {sharedProjects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        {projects.filter((p) => p.id !== e.projectId && p.id !== d.projectId).length > 0 && (
+          <div className="field" style={{ marginTop: 14 }}>
             <span className="field-label">Also works on</span>
             <PickMany
               name="also-projects"
               add="Add a project"
-              none="Only their own project"
-              options={projects.filter((p) => p.id !== d.projectId).map((p) => ({ id: p.id, label: p.name, lead: <i className="k-swatch" style={{ background: p.color }} /> }))}
-              value={d.alsoProjectIds.filter((id) => id !== d.projectId)}
+              none="Only their own"
+              options={projects.filter((p) => p.id !== e.projectId && p.id !== d.projectId).map((p) => ({ id: p.id, label: p.name, lead: <i className="k-swatch" style={{ background: p.color }} /> }))}
+              value={d.alsoProjectIds.filter((id) => id !== d.projectId && id !== e.projectId)}
               onChange={(ids) => set('alsoProjectIds', ids)}
             />
             <span className="field-hint">Other projects they may be given tasks from.</span>
           </div>
         )}
+      </div>
+
+      <div data-settings-claude>
+        <div className="k-label">Claude</div>
+        <div className="grid3">
+          <AccountField hostId={d.hostId} host={host} value={d.claudeConfigDir} onChange={(v) => set('claudeConfigDir', v)} />
+          <ModelEffortFields model={d.model} effort={d.effort} onModel={(v) => set('model', v)} onEffort={(v) => set('effort', v)} host={host} />
         </div>
       </div>
-      <div>
-        <div className="k-label">What they think with</div>
-        <div className="grid2">
-          <ModelEffortFields model={d.model} effort={d.effort} onModel={(v) => set('model', v)} onEffort={(v) => set('effort', v)} host={d.hostId ? hostsById[d.hostId] : undefined} />
-        </div>
-      </div>
+
       <div>
         <div className="k-label">How much they may do without asking</div>
         <AutonomyPicker name={`autonomy-${e.id}`} value={d.autonomy} onChange={(v) => set('autonomy', v)} />
       </div>
       {/* What is rarely changed stays folded away, unless something in it is set. */}
       <details className="pc-more k-more" open={more} onToggle={(ev) => setMore((ev.currentTarget as HTMLDetailsElement).open)}>
-        <summary>More settings: account, instructions, tools</summary>
+        <summary>More settings: what they know, instructions, tools</summary>
         <div className="col" style={{ gap: 14, marginTop: 10 }}>
           <div className="grid3">
-        <Field label="Department">
-          <input value={d.department} onChange={(ev) => set('department', ev.target.value)} />
-        </Field>
-        <Field label="Specialisation">
-          <input value={d.specialization} onChange={(ev) => set('specialization', ev.target.value)} />
-        </Field>
-        <Field label="Communication style">
-          <select value={d.style} onChange={(ev) => set('style', ev.target.value as CommunicationStyle)}>
-            {STYLES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <RuntimeField value={d.executionMode} onChange={(v) => set('executionMode', v)} host={d.hostId ? hostsById[d.hostId] : undefined} />
-        <AccountField hostId={d.hostId} host={d.hostId ? hostsById[d.hostId] : undefined} value={d.claudeConfigDir} onChange={(v) => set('claudeConfigDir', v)} />
+            <Field label="Skills" hint="Comma separated">
+              <input value={d.skills} onChange={(ev) => set('skills', ev.target.value)} />
+            </Field>
+            <Field label="Department">
+              <input value={d.department} onChange={(ev) => set('department', ev.target.value)} />
+            </Field>
+            <Field label="Specialisation">
+              <input value={d.specialization} onChange={(ev) => set('specialization', ev.target.value)} />
+            </Field>
+            <Field label="Communication style">
+              <select value={d.style} onChange={(ev) => set('style', ev.target.value as CommunicationStyle)}>
+                {STYLES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <RuntimeField value={d.executionMode} onChange={(v) => set('executionMode', v)} host={host} />
           </div>
       {role && (
         <div className="small faint">
@@ -1133,7 +1158,7 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
                   ? `Unsaved: ${changedWords(patch)}. Role, instructions and tools reach a session when it starts: stop and start theirs to apply those.`
                   : `Unsaved: ${changedWords(patch)}.`}
         </div>
-        <Button variant="ghost" className="k-quiet" disabled={!dirty || busy} onClick={() => setD(draftOf(e))}>
+        <Button variant="ghost" className="k-quiet" disabled={!dirty || busy} onClick={() => setD(draftOf(e, projectsById))}>
           Discard
         </Button>
         <Button variant="primary" disabled={!dirty || !valid || busy} onClick={save}>

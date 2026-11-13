@@ -51,7 +51,7 @@ export function accountChoices<T extends NamedAccount & { hostId: string }>(acco
   for (const r of rows) count.set(r.name, (count.get(r.name) ?? 0) + 1);
   return rows
     .sort((x, y) => Number(y.value === '') - Number(x.value === '') || x.name.localeCompare(y.name))
-    .map((r) => ({ value: r.value, label: r.value === '' ? `${r.name}${r.name === 'Default login' ? '' : ' — the machine\'s default'}` : (count.get(r.name) ?? 0) > 1 || r.name === NOT_SIGNED_IN ? `${r.name} (${r.dir})` : r.name }));
+    .map((r) => ({ value: r.value, label: r.value === '' ? `${r.name}${r.name === 'Default login' ? '' : ' (default)'}` : (count.get(r.name) ?? 0) > 1 || r.name === NOT_SIGNED_IN ? `${r.name} (${r.dir})` : r.name }));
 }
 
 /**

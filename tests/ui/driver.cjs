@@ -1339,7 +1339,7 @@ async function scenario() {
     const also = `window.__t.scope().querySelector('[data-pick-many="also-projects"]')`;
     await js(`${also}.scrollIntoView({ block: 'center' })`);
     const alsoBefore = await js(`({ h: Math.round(${also}.getBoundingClientRect().height), boxes: window.__t.scope().querySelectorAll('[data-profile-settings] .field input[type=checkbox]').length, text: ${also}.textContent })`);
-    if (alsoBefore.h > 40 || alsoBefore.boxes || !/Only their own project/.test(alsoBefore.text)) throw new Error(`"Also works on" takes ${alsoBefore.h} px, ${alsoBefore.boxes} checkbox(es), says "${alsoBefore.text}"`);
+    if (alsoBefore.h > 40 || alsoBefore.boxes || !/Only their own/.test(alsoBefore.text)) throw new Error(`"Also works on" takes ${alsoBefore.h} px, ${alsoBefore.boxes} checkbox(es), says "${alsoBefore.text}"`);
     await click(`${also}.querySelector('[data-pick-add]')`, 'Add a project');
     await waitFor(`document.querySelectorAll('[data-pick-list="also-projects"] [data-pick-option]').length > 0`, 3000);
     const listed = await js(`(() => { const p = document.querySelector('[data-pick-list="also-projects"]').getBoundingClientRect(); return { names: [...document.querySelectorAll('[data-pick-list="also-projects"] .k-pop-name')].map((n) => n.textContent), on: p.top >= 0 && p.bottom <= innerHeight && p.left >= 0 && p.right <= innerWidth, own: window.__t.store().projects[window.__t.emp('Sarah').projectId].name }; })()`);
@@ -1354,6 +1354,44 @@ async function scenario() {
     await waitFor(`!${also}.querySelector('[data-picked]') && /^Nothing is changed/.test(window.__t.scope().querySelector('.pf-save-note').textContent)`, 4000);
     await close();
     return `${team.subtitle}; ${team.groups.map((g) => g.name).join(', ')}; ${team.columns} columns; Sarah: ${prof.state}`;
+  });
+
+  await step('An employee\'s settings: who they are, then their folder — chosen as when hiring — then Claude (account, model, effort), then the rest; another folder becomes their own project', async () => {
+    await open('employee', `window.__t.emp(${JSON.stringify(ctx.hireName)}).id + ':settings'`);
+    await waitFor(`!!window.__t.scope().querySelector('[data-settings-folder]')`, 6000);
+    const folder = `window.__t.scope().querySelector('[data-settings-folder] input.mono')`;
+    const lay = await js(`(() => { const w = window.__t.scope(); return {
+      order: [...w.querySelectorAll('[data-profile-settings] > div > .k-label')].map((l) => l.textContent),
+      who: [...w.querySelectorAll('[data-settings-who] .field-label')].map((l) => l.textContent),
+      home: [...w.querySelectorAll('[data-settings-folder] .pf-home .field-label')].map((l) => l.textContent),
+      claude: [...w.querySelectorAll('[data-settings-claude] .field-label')].map((l) => l.textContent),
+      folder: ${folder}.value, locked: ${folder}.disabled, browse: [...w.querySelectorAll('[data-settings-folder] button')].some((b) => /Browse/.test(b.textContent) && !b.disabled),
+      shared: w.querySelector('select[aria-label="Shared project"]').selectedOptions[0].textContent,
+    }; })()`);
+    if (lay.order.slice(0, 4).join('|') !== 'Who they are|Their folder|Claude|How much they may do without asking') throw new Error(`the order of the settings: ${lay.order.join(', ')}`);
+    if (lay.who.join('|') !== 'Name|Role|Title' || lay.home.join('|') !== 'On|Folder they live in|…or a shared project' || lay.claude.join('|') !== 'Account|Model|Effort') throw new Error(`the fields: ${lay.who.join(', ')} / ${lay.home.join(', ')} / ${lay.claude.join(', ')}`);
+    // Hired into a folder: it is shown as their folder (not as a project of that name), and can be browsed for.
+    if (lay.folder !== ctx.hireFolder || lay.locked || !lay.browse || !/^None/.test(lay.shared)) throw new Error(`their folder: "${lay.folder}" (locked ${lay.locked}, Browse ${lay.browse}), shared project "${lay.shared}"`);
+    await shot('profile-settings-folder');
+    // Another folder: it becomes their own project, worked in place — the way the hire form gives one.
+    const other = ctx.hireFolder.replace(/[^/]+$/, 'made-in-the-form');
+    const home = (dir) => `(() => { const s = window.__t.store(); const e = window.__t.emp(${JSON.stringify(ctx.hireName)}); const p = s.projects[e.projectId]; return e.workingDir === ${JSON.stringify(dir)} && !!p && p.repoPath === ${JSON.stringify(dir)} && p.workspace === 'in_place'; })()`;
+    await type(folder, other);
+    await waitFor(`/^Unsaved: folder/.test(window.__t.scope().querySelector('.pf-save-note').textContent)`, 4000);
+    await clickText('Save changes');
+    await waitFor(home(other), 10000);
+    await waitFor(`${folder}.value === ${JSON.stringify(other)} && /^Nothing is changed/.test(window.__t.scope().querySelector('.pf-save-note').textContent)`, 6000);
+    // A folder that is not there is refused, and nothing of theirs changes.
+    await type(folder, other + '-missing');
+    await clickText('Save changes');
+    await sleep(1500);
+    if (!(await js(home(other)))) throw new Error('a folder that does not exist was taken');
+    // And back to where they were hired.
+    await type(folder, ctx.hireFolder);
+    await clickText('Save changes');
+    await waitFor(home(ctx.hireFolder), 10000);
+    await close();
+    return `who → folder → Claude → the rest; ${ctx.hireName} moved to made-in-the-form and back`;
   });
 
   await step('Team: editing a profile saves standing instructions', async () => {
