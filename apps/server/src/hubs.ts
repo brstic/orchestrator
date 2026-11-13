@@ -742,6 +742,14 @@ export class ClientHub {
             if (!mayDrive(this.engine, who, msg.sessionId)) break;
             gateway.resize(id, msg.sessionId, msg.cols, msg.rows).catch((e) => fail(e, msg.sessionId));
             break;
+          case 'term.widen': {
+            // Whoever may work with the session may have its pane grow to their window (see the gateway's `widen`).
+            if (!mayDrive(this.engine, who, msg.sessionId)) break;
+            const s = this.engine.core.sessions.get(msg.sessionId);
+            if (!s || s.mode === 'managed_sdk') break;
+            gateway.widen(id, msg.sessionId, Number(msg.cols), Number(msg.rows), { cols: s.cols, rows: s.rows }).catch((e) => fail(e, msg.sessionId));
+            break;
+          }
           case 'control.acquire':
             if (!drive(msg.sessionId, 'take control of a terminal')) break;
             gateway.acquire(id, msg.sessionId, actor);

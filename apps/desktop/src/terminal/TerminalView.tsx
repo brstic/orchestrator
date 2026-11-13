@@ -13,6 +13,8 @@ interface Props {
   interactive?: boolean;
   /** While controlling, resize the real pane to fit this panel. */
   fitPane?: boolean;
+  /** Watching in a window wider than the pane: ask the office to make the pane as wide (the workstation view; not the small tiles of the wall). */
+  widen?: boolean;
   className?: string;
   onClosed?: (reason: string) => void;
 }
@@ -50,7 +52,10 @@ const THEME = {
  * Keystrokes are only sent while this client holds control — and the server
  * enforces that regardless of what this component does.
  */
-export function TerminalView({ sessionId, interactive = true, fitPane = false, className, onClosed }: Props) {
+/** The size of letter a watched terminal is widened for: what one reads comfortably for hours. */
+const WATCH_FONT = 15;
+
+export function TerminalView({ sessionId, interactive = true, fitPane = false, widen = false, className, onClosed }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -65,6 +70,10 @@ export function TerminalView({ sessionId, interactive = true, fitPane = false, c
   controllingRef.current = controlling;
   const fitPaneRef = useRef(fitPane);
   fitPaneRef.current = fitPane;
+  const widenRef = useRef(widen);
+  widenRef.current = widen;
+  /** `widenToPanel` of the terminal that is mounted (it is defined after what calls it). */
+  const widenRef2 = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     const host = hostRef.current!;
@@ -132,7 +141,8 @@ export function TerminalView({ sessionId, interactive = true, fitPane = false, c
         const better = fontToFit(panel, cols, rows, ratios);
         // Too large: down to what the measured cells say (or a step, if that says the same). Clearly too small: up.
         const next = Math.max(MIN_FONT, over ? Math.min(better, font - 0.5) : better - font > 0.5 ? better : font);
-        if (next === font || changes++ >= 8) return;
+        // Settled, and the cell's real size is known: now it can be said whether the pane fills the window.
+        if (next === font || changes++ >= 8) return void widenRef2.current();
         term.options.fontSize = next;
         wait = 2;
         last = null;
@@ -140,6 +150,28 @@ export function TerminalView({ sessionId, interactive = true, fitPane = false, c
       };
       requestAnimationFrame(check);
     };
+
+    /**
+     * Watching, with a window the pane does not fill at a size one reads comfortably: ask for a wider (and taller)
+     * pane. The office only ever grows it, so this is asked once per size and settles.
+     */
+    let asked = '';
+    const widenToPanel = () => {
+      if (!widenRef.current || controllingRef.current) return;
+      const panel = { width: host.clientWidth - 8, height: host.clientHeight - 4 };
+      if (panel.width <= 0 || panel.height <= 0) return;
+      const cols = Math.floor(panel.width / (WATCH_FONT * ratios.w));
+      const rows = Math.floor(panel.height / (WATCH_FONT * ratios.h));
+      const now = paneSize.current;
+      // (A few columns either way are not worth a redraw of somebody's terminal.)
+      if (cols < now.cols + 8 && rows < now.rows + 4) return;
+      const want = `${Math.max(cols, now.cols)}x${Math.max(rows, now.rows)}`;
+      if (want === asked) return;
+      asked = want;
+      connection.send({ t: 'term.widen', sessionId, cols: Math.max(cols, now.cols), rows: Math.max(rows, now.rows) });
+    };
+
+    widenRef2.current = widenToPanel;
 
     /** While the owner is in control they may prefer the pane to fill the panel. */
     const fitPaneToPanel = () => {
@@ -158,6 +190,8 @@ export function TerminalView({ sessionId, interactive = true, fitPane = false, c
         snapshotSeq = e.seq;
         term.reset();
         scaleToPane();
+        // (Asked again here in case nothing gets measured — a window that is not being drawn settles nothing.)
+        window.setTimeout(() => widenRef2.current(), 1500);
         term.write(e.data);
         for (const chunk of recent) if (chunk.seq > snapshotSeq) term.write(chunk.data);
         setLoading(false);
@@ -219,7 +253,10 @@ export function TerminalView({ sessionId, interactive = true, fitPane = false, c
       if (interactive && controllingRef.current) connection.send({ t: 'term.input', sessionId, data });
     });
 
-    const ro = new ResizeObserver(() => fitPaneToPanel());
+    const ro = new ResizeObserver(() => {
+      fitPaneToPanel();
+      widenToPanel();
+    });
     ro.observe(host);
     connection.send({ t: 'term.open', sessionId });
 

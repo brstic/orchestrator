@@ -103,7 +103,7 @@ function HelpPanel({ onClose }: PanelProps) {
             <dt>
               <Key>{k('whip')}</Key>
             </dt>
-            <dd>Crack the whip at the employee — or the person — next to you. At somebody asleep it gets them up (if you may start them); otherwise for show. An owner can make it approve what an employee is waiting for permission to do.</dd>
+            <dd>Crack the whip at the employee — or the person — next to you. At somebody asleep it gets them up (if you may start them); somebody who has left their chair runs back to it — some at the first crack, some after two or three. Otherwise for show. An owner can make it approve what an employee is waiting for permission to do.</dd>
             <dt>
               <Key>{k('voice')}</Key> (hold)
             </dt>

@@ -3,6 +3,8 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-13
+- **A terminal you watch fills the window.** Sitting at somebody's terminal in a window wider than their pane, the pane is made as wide (and as tall) as the window allows at letters of about 15 px — more columns, not bigger letters. A pane only ever grows this way: a second person watching from a smaller window sees smaller letters, and nobody's terminal is pulled back and forth. Not while somebody holds the keyboard, and not beyond 260 by 90. (The day's first try only stopped the letters growing, which left a 120-column pane narrow in the middle of a wide window.) Not deployed yet.
+- **Somebody who has left their chair runs back when the whip cracks** — from the break room, the board, a colleague's desk; not out of a meeting. Some go at the first crack, some need two or three, and who is which changes from day to day. They stay at the desk for four minutes. Only the character moves; nothing is sent to anybody's session. Not deployed yet.
 - **Eight things from a day in the office** (asked for by an owner; `DECISIONS.md`, "Eight things an owner asked for…"). Deployed as build `33d8f76` (10:51 UTC).
   - **The Inbox shows yours first**: the *Mine / Everyone* switch is in the Inbox too, and the number on the Inbox button follows it.
   - **The card in the corner is about whoever you are standing next to**: walking up to another employee drops the one you clicked before.

@@ -1381,7 +1381,7 @@ export function Workstation() {
           </Button>
         </div>
         {session ? (
-          <TerminalView key={session.id} sessionId={session.id} fitPane={fit} />
+          <TerminalView key={session.id} sessionId={session.id} fitPane={fit} widen />
         ) : (
           <div className="term">
             <div className="term-overlay">

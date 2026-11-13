@@ -1,4 +1,5 @@
 import { Html } from '@react-three/drei';
+import { crackAt, sentBack, type Told } from './whip-back.ts';
 import { useFrame, useThree } from '@react-three/fiber';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -14,6 +15,8 @@ interface Dest {
   rot: number;
   sit: boolean;
   place: 'desk' | 'meeting' | 'break' | 'visit' | 'lobby' | 'board';
+  /** Sent back with the whip: at a run. */
+  run?: boolean;
 }
 
 function hash(s: string): number {
@@ -97,6 +100,8 @@ const OUCH = ['JAO!', 'AU!', 'JOJ!', 'AJOJ!', 'OPA!', 'EJ!'];
  * squared), turning toward where they are going at up to this many radians per second.
  */
 const WALK_SPEED = 1.9;
+/** Sent back to the desk with the whip. */
+const RUN_SPEED = 4.6;
 const WALK_ACCEL = 5.5;
 const WALK_TURN = 5.5;
 
@@ -201,7 +206,8 @@ const Person = memo(function Person({
         const p0 = r.path[0]!;
         const p1 = r.path[1];
         const left = r.path.length > 2 ? Infinity : Math.hypot(p0[0] - r.x, p0[1] - r.z) + (p1 ? Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) : 0);
-        r.v = Math.min(WALK_SPEED, Math.sqrt(2 * WALK_ACCEL * left) + 0.3, r.v + WALK_ACCEL * dt);
+        const top = dest.run ? RUN_SPEED : WALK_SPEED;
+        r.v = Math.min(top, Math.sqrt(2 * WALK_ACCEL * (dest.run ? 2.5 : 1) * left) + 0.3, r.v + WALK_ACCEL * (dest.run ? 2.5 : 1) * dt);
         let step = r.v * dt;
         while (step > 0 && r.path.length) {
           const next = r.path[0]!;
@@ -400,6 +406,24 @@ export function People({
     return () => window.clearTimeout(timer);
   }, [people, boardSince, boardTick]);
 
+  // Whipped while away from their chair: after one crack, or two, or three (`whip-back.ts`), they run back and stay.
+  const told = useRef(new Map<string, Told>()).current;
+  const counted = useRef(new Map<string, number>()).current;
+  const awayRef = useRef(new Map<string, boolean>());
+  const [backTick, setBackTick] = useState(0);
+  useEffect(() => {
+    let changed = false;
+    for (const [id, at] of Object.entries(whips)) {
+      if (!at || counted.get(id) === at) continue;
+      counted.set(id, at);
+      // Only somebody who is away: at their desk a crack is a crack. (A meeting is work: nobody is whipped out of one.)
+      if (!awayRef.current.get(id)) continue;
+      told.set(id, crackAt(told.get(id), id, at));
+      changed = true;
+    }
+    if (changed) setBackTick((n) => n + 1);
+  }, [whips, told, counted]);
+
   const dests = useMemo(() => {
     const desks = new Map(world.layout.desks.map((d) => [d.id, d]));
     const out = new Map<string, Dest>();
@@ -442,11 +466,15 @@ export function People({
           }
         }
       }
+      // Away from the chair for something that can wait — a break, the board, a word with a colleague.
+      const away = !!desk && dest !== home && dest.place !== 'meeting';
+      awayRef.current.set(v.id, away || (sentBack(told.get(v.id), t) && !!desk));
+      if (away && sentBack(told.get(v.id), t)) dest = { ...home, run: true };
       out.set(v.id, dest);
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [people, world, walks, now, boardTick]);
+  }, [people, world, walks, now, boardTick, backTick]);
 
   // For the UI tests (see `window.__orchScene`): where each person is meant to be, and where they are right now.
   useEffect(() => {

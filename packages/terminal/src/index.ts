@@ -30,6 +30,9 @@ interface ClientState {
   screenTimers: Map<string, NodeJS.Timeout>;
 }
 
+/** The largest a pane is made for somebody who only watches. */
+export const WIDEN_MAX = { cols: 260, rows: 90 };
+
 /**
  * Server-side terminal gateway: fans a session's output out to viewers and
  * enforces input ownership.
@@ -256,6 +259,21 @@ export class TerminalGateway {
     const loc = this.deps.locate(sessionId);
     if (!loc?.online) return;
     await this.deps.rpc(loc.hostId, { method: 'term.resize', params: { sessionId, cols, rows } }, 10000);
+  }
+
+  /**
+   * Somebody who watches has a window the pane does not fill: the pane grows to it. Only grows — two people watching
+   * from windows of different sizes do not pull it back and forth; the smaller window draws smaller letters. Not while
+   * a person holds the keyboard (the size is theirs then), and never beyond a size a terminal program is drawn well at.
+   */
+  async widen(clientId: string, sessionId: string, cols: number, rows: number, now: { cols: number; rows: number }): Promise<void> {
+    const st = this.sessions.get(sessionId);
+    if (!st || !st.viewers.has(clientId) || (st.controllerId && st.controllerId !== clientId)) return;
+    const to = { cols: Math.min(WIDEN_MAX.cols, Math.max(now.cols, Math.floor(cols) || 0)), rows: Math.min(WIDEN_MAX.rows, Math.max(now.rows, Math.floor(rows) || 0)) };
+    if (to.cols === now.cols && to.rows === now.rows) return;
+    const loc = this.deps.locate(sessionId);
+    if (!loc?.online) return;
+    await this.deps.rpc(loc.hostId, { method: 'term.resize', params: { sessionId, cols: to.cols, rows: to.rows } }, 10000);
   }
 
   // ───────────── streams from hosts ─────────────

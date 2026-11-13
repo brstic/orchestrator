@@ -275,6 +275,8 @@ export type ClientToServer =
   | { t: 'term.close'; sessionId: ID }
   | { t: 'term.input'; sessionId: ID; data: string }
   | { t: 'term.resize'; sessionId: ID; cols: number; rows: number }
+  /** Somebody watching has a window wider than the pane: make the pane as wide (never narrower). */
+  | { t: 'term.widen'; sessionId: ID; cols: number; rows: number }
   | { t: 'control.observe'; sessionId: ID }
   | { t: 'control.acquire'; sessionId: ID }
   | { t: 'control.release'; sessionId: ID }
