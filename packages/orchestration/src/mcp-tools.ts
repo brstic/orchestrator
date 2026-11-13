@@ -229,6 +229,9 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
 
     submit_review: async (a, { employee }) => {
       if (employee.roleKey === FOREMAN_ROLE) return err('A foreman does not review work: a colleague who did not do it does, or the boss.');
+      // A verdict that comes after the task went on without it (a colleague was quicker) is kept as a second opinion.
+      const late = eng.tasks.secondOpinion(employee, String(a.task), a.verdict, String(a.comments ?? ''));
+      if (late) return late;
       const task = await eng.tasks.submitReview(employee, String(a.task), a.verdict, String(a.comments));
       return a.verdict === 'approve' ? `Approved. ${task.key} is now ${task.status}.` : `Changes requested. ${task.key} goes back to ${core.employees.get(task.assigneeId)?.name ?? 'its author'} with your comments.`;
     },

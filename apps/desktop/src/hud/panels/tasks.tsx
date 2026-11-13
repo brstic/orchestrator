@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { reviewFound } from '../../lib/reviews.ts';
 import type { Task, TaskPriority, TaskStatus } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Progress, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
@@ -140,7 +141,7 @@ function TasksPanel({ onClose }: PanelProps) {
   const needle = search.trim().toLowerCase();
   const shown = inProject.filter(
     (t) =>
-      (showReviews || t.kind !== 'review') &&
+      (showReviews || t.kind !== 'review' || reviewFound(t, needle)) &&
       (!onlyMine || mine.has(t.id)) &&
       (!assignee || (assignee === 'none' ? !t.assigneeId : t.assigneeId === assignee || (t.helperIds ?? []).includes(assignee))) &&
       (!needle || `${t.key} ${t.title} ${t.description} ${t.kind} ${t.branch ?? ''} ${s.employees[t.assigneeId ?? '']?.name ?? ''}`.toLowerCase().includes(needle)),

@@ -2,6 +2,14 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-13 — A review that is no longer needed closes itself
+What happened on the live office (reported by the employee it happened to, and passed on by an owner, Fenix): T-201 was in review, its review (T-206) with the reviewer who had been asked. With the board in the employees' hands any colleague may review finished work, and another one approved T-201 first. T-206 could then not be finished by anything its reviewer could call, so they reported a blocker — a "blocked" ticket in the Inbox that was, in truth, finished work with nothing waiting.
+- **The office closes it** (`TaskManager.closeStaleReviews`, after every verdict and at every pass of the scheduler). The rule is one sentence: a review is open only while the task it reviews still waits for a colleague's verdict (`waitsForPeer`). It is a sweep and not a call at each place a task can leave review, because there are many such places (a verdict, send back, stop, a move by hand) and the next one added would be forgotten.
+- **The reviewer whose verdict it was finishes their own ticket**, as before: their `complete_task` is where their summary of the review comes from.
+- **A late verdict is a second opinion, only from somebody who was asked** (`secondOpinion`). What a reviewer found after reading the work is worth keeping; it is a comment on the ticket and decides nothing. A colleague who was never asked is still refused once the task waits for the boss — otherwise "no colleague approves in the boss's place" would have a side door.
+- **Not chosen: stopping an unasked colleague from approving.** That is the owner's setting ("employees manage the board") working as meant; the fault was what it left behind.
+- **Finished as DONE, not deleted**, when somebody had started reading: the time is theirs and the record says why it ended. One nobody had started is removed, as the boss's own verdict always did.
+
 ## 2026-11-13 — Eight windows in a day: what each is for comes first, and is said in the window
 The owner listed them — the menu, Inbox, Team, Profile, Projects, Reports, Growth, My room — with one complaint in common: crowded, unorganised, and "I do not know what this is for". `docs/UI.md` has each.
 - **A window opens on what it is for, not on its form.** An employee's window and a project used to open on a form (the thing done there least often). Both now open on an **Overview** that is only read — what is happening, how far it is, who is on what — and the form is a tab (*Settings*, *About*). Nothing was taken out of the forms.

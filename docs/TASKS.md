@@ -29,6 +29,15 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
 - **Once**, at the first start with this code (`tasks.reviewByDefault` in the office's key-value store,
   `TaskManager.adoptReviewDefault`): every task that is not done, not already in review, and neither a review nor a
   part gets the default. Finished tasks are left as they are.
+- **A review is open only while the task still waits for a colleague's verdict** (`closeStaleReviews`, after every
+  verdict and at every scheduler pass). Approved by somebody else, by the boss, sent back, stopped: a review somebody
+  was reading is finished as "Not needed any more: …" and they are told in their session; one not yet started is
+  removed. The reviewer whose verdict it was completes their own. A verdict from an asked reviewer that comes after
+  that is kept on the ticket as a note beginning "Second opinion (would approve / would ask for changes)" and decides
+  nothing (`secondOpinion`).
+- **On the ticket**: "Reviews" in the side column lists the reviews asked for on it — key, who has it, how it stands
+  (`apps/desktop/src/lib/reviews.ts`). In Tasks, review tickets stay behind "Show review tasks", except one whose key
+  is what was searched for.
 - **`Task.reviewStage`** while a task is in REVIEW: `'peer'` — a colleague was asked (a review task exists for
   them) — or `'boss'`. `both` and `peer` start with a colleague when `pickReviewer` finds one, otherwise with the
   boss; `boss` never asks a colleague. A colleague's approval of a `both` task does not finish it: it is kept in

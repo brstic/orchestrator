@@ -807,6 +807,7 @@ export class TaskManager {
   }
 
   private runSchedule(): void {
+    this.closeStaleReviews();
     for (const project of this.core.projects.filter((p) => p.status === 'active')) {
       const tasks = this.core.tasks.filter((t) => t.projectId === project.id);
       for (const t of tasks) {
@@ -1259,7 +1260,8 @@ export class TaskManager {
       if (task.kind === 'review' && task.reviewOf) {
         const target = this.core.tasks.get(task.reviewOf);
         // (A verdict that sent the work on to the boss is a verdict: the reviewer's own task is finished by it.)
-        if (target && target.status === 'REVIEW' && !target.evidence.review && target.evidence.peerReview?.reviewerId !== employee.id) {
+        // And a task that has gone on without them — a colleague approved it first — waits for no verdict of theirs.
+        if (target && target.status === 'REVIEW' && !target.evidence.review && !target.evidence.peerReview && target.reviewStage !== 'boss') {
           return { text: `You have not submitted your verdict yet. Call submit_review for ${target.key} first, then complete_task.`, isError: true };
         }
       }
@@ -1795,10 +1797,6 @@ export class TaskManager {
     });
     this.eng.comms.resolveNotifications((n) => n.kind === 'review' && n.taskId === task.id);
     if (by !== 'owner') this.awardXp(xpForReview(by.id, task));
-    else {
-      // The owner reviewed it: an employee review still queued for it is no longer needed.
-      for (const r of this.core.tasks.filter((t) => t.reviewOf === task.id && (t.status === 'READY' || t.status === 'BACKLOG'))) this.core.remove('task', r.id);
-    }
     if (approved && by !== 'owner' && reviewByOf(task) === 'both') {
       // A colleague's approval is the first of two: the work goes on to the boss.
       task.evidence.peerReview = { reviewerId: by.id, comments, ts: nowIso() };
@@ -1808,6 +1806,7 @@ export class TaskManager {
       this.eng.talk.add(task, { from, body: comments.trim() || 'Approved.', kind: 'approved', mentions: [] }, { store: false, quiet: true });
       this.core.put('task', task);
       this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your review`, body: `${this.core.employees.get(task.authorId ?? task.assigneeId)?.name ?? 'An employee'} finished "${task.title}" and ${reviewerName} approved it${comments.trim() ? `: ${truncate(comments, 200)}` : '.'}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
+      this.closeStaleReviews();
       return task;
     }
     if (approved) {
@@ -1829,7 +1828,103 @@ export class TaskManager {
       if (by === 'owner') this.eng.improver.capture.onReviewRejected(task, comments);
       this.schedule();
     }
+    // Whoever else was asked to review it has nothing left to review.
+    this.closeStaleReviews();
     return task;
+  }
+
+  /** Does this task still wait for a colleague's verdict? (Not once one is given, or once it is the boss's turn.) */
+  private waitsForPeer(task: Task): boolean {
+    return task.status === 'REVIEW' && task.reviewStage !== 'boss' && !task.evidence.review && !task.evidence.peerReview;
+  }
+
+  /** In a sentence, where a task that no longer waits for a colleague's review has gone. */
+  private movedOn(task: Task): string {
+    const name = (id: string | null | undefined, by?: string) => (by === 'owner' ? 'the boss' : (this.core.employees.get(id)?.name ?? 'a colleague'));
+    const v = task.evidence.review;
+    if (v?.verdict === 'approved') return `${task.key} was approved by ${name(v.reviewerId, v.by)}`;
+    if (v) return `${name(v.reviewerId, v.by)} sent ${task.key} back with changes to make`;
+    if (task.evidence.peerReview) return `${task.key} was approved by ${name(task.evidence.peerReview.reviewerId)} and now waits for the boss`;
+    if (task.status === 'REVIEW') return `${task.key} now waits for the boss`;
+    return `${task.key} is no longer waiting for a review (it is ${task.status === 'DONE' ? 'done' : task.status === 'BLOCKED' ? 'blocked' : 'back with its author'})`;
+  }
+
+  /**
+   * Reviews nobody waits for any more are closed by the office. A task leaves a colleague's review by more roads than
+   * that colleague's own verdict: somebody who was not asked approves it first, the boss approves it or sends it back,
+   * it is stopped or moved by hand. The review a colleague was asked for is then a ticket with no way out —
+   * submit_review has nothing to decide, and it would sit open (or blocked, in the boss's Inbox) for good.
+   *
+   * One that had not been started is taken away. One somebody was reading is finished as "not needed any more" and
+   * its reviewer is told. The reviewer whose verdict it was finishes their own ticket, as always.
+   */
+  closeStaleReviews(): number {
+    let n = 0;
+    for (const r of this.core.tasks.filter((t) => t.kind === 'review' && !!t.reviewOf && t.status !== 'DONE')) {
+      const target = this.core.tasks.get(r.reviewOf);
+      if (!target || this.waitsForPeer(target) || this.verifying.has(r.id)) continue;
+      const theirs = !!r.assigneeId && (target.evidence.review?.reviewerId === r.assigneeId || target.evidence.peerReview?.reviewerId === r.assigneeId);
+      if (theirs && r.status === 'IN_PROGRESS') continue;
+      n++;
+      this.eng.comms.cancelFor({ kind: 'task', id: r.id });
+      if (!r.startedAt && (r.status === 'READY' || r.status === 'BACKLOG')) {
+        this.core.remove('task', r.id);
+        continue;
+      }
+      const why = this.movedOn(target);
+      const reviewer = this.core.employees.get(r.assigneeId);
+      const wasTheirs = r.status === 'IN_PROGRESS' || r.status === 'BLOCKED';
+      for (const q of this.core.questions.filter((x) => x.taskId === r.id && x.status === 'open' && x.channel !== 'system')) this.eng.comms.supersede(q.id, `${r.key} was closed: ${why}.`);
+      r.status = 'DONE';
+      r.blockedReason = null;
+      r.waitingFor = null;
+      r.completedAt = nowIso();
+      r.evidence.summary = `Not needed any more: ${why}${theirs ? '' : ' before this review was finished'}.`;
+      this.history(r, `Closed by the office: ${why}`, 'orchestrator');
+      this.core.put('task', r);
+      this.eng.comms.resolveNotifications((x) => x.taskId === r.id);
+      this.core.event({ type: 'task.updated', source: 'server', summary: `${r.key} was closed: ${why}`, taskId: r.id, projectId: r.projectId, employeeId: r.assigneeId, data: { key: r.key, status: 'DONE', reviewOf: target.id, closedByOffice: true } });
+      if (reviewer && wasTheirs && !theirs) {
+        this.eng.comms.sendMessage({
+          from: { kind: 'system', id: null, name: 'the office' },
+          toEmployeeId: reviewer.id,
+          kind: 'system',
+          taskId: r.id,
+          body: `Your review ${r.key} is closed: ${why} while you were on it. Nothing waits for you there — do not call submit_review, complete_task or report_blocker for it. If you found something that should still be said, write it on ${target.key} with comment_on_task. You are free for the next task.`,
+        });
+        this.afterEmployeeFreed(reviewer);
+      }
+    }
+    return n;
+  }
+
+  /**
+   * A verdict that comes after the task has gone on, from a reviewer who had been asked for one: nothing is decided
+   * by it any more, and what they found is not thrown away — it is written on the ticket as a second opinion.
+   * Returns what the reviewer is told, or null when this is an ordinary verdict (or nobody's to give).
+   */
+  secondOpinion(by: Employee, taskRef: string, verdict: 'approve' | 'request_changes', comments: string): string | null {
+    const task = this.taskByKey(taskRef, by.projectId);
+    if (!task || this.waitsForPeer(task) || by.id === task.assigneeId || by.id === task.authorId || !this.canSee(by, task)) return null;
+    const asked = this.core.tasks.filter((t) => t.reviewOf === task.id && t.assigneeId === by.id);
+    if (!asked.length) return null;
+    // (Their own verdict, given once, is not given again as an opinion.)
+    if (task.evidence.review?.reviewerId === by.id || task.evidence.peerReview?.reviewerId === by.id) return null;
+    const why = this.movedOn(task);
+    const said = comments.trim();
+    this.eng.talk.add(task, { from: { kind: 'employee', id: by.id, name: by.name }, body: `Second opinion (${verdict === 'approve' ? 'would approve' : 'would ask for changes'}), given after ${why}${said ? `: ${said}` : '.'}`, kind: 'note', mentions: [] }, { quiet: true });
+    this.closeStaleReviews();
+    // (A ticket of theirs that is still open — theirs to read, nobody's to wait for — ends here.)
+    for (const r of asked.filter((t) => t.status !== 'DONE')) {
+      r.status = 'DONE';
+      r.blockedReason = null;
+      r.completedAt = nowIso();
+      r.evidence.summary = `Not needed any more: ${why}. A second opinion was left on ${task.key}.`;
+      this.history(r, `Closed by the office: ${why}`, 'orchestrator');
+      this.core.put('task', r);
+      this.eng.comms.resolveNotifications((x) => x.taskId === r.id);
+    }
+    return `${why}, so your verdict decides nothing there. It is written on ${task.key} as a second opinion, where the boss and ${this.core.employees.get(task.assigneeId)?.name ?? 'its author'} read it. Your review is finished: do not call complete_task or report_blocker for it.`;
   }
 
   /**

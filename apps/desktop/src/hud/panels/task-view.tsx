@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { REVIEW_WORD, reviewsOf } from '../../lib/reviews.ts';
 import type { Employee, ReviewBy, Task, TaskAttachment, TaskComment, TaskPriority, TaskStatus } from '@orchestrator/contracts';
 import { reviewByOf } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Markdown, Progress, Tabs, timeAgo } from '@orchestrator/ui';
@@ -682,6 +683,8 @@ export function TicketView({ task, tab, onTab }: { task: Task; tab: TicketTab; o
   const need = needOf(task, s.employees, s.tasks);
   const parent = task.parentId ? s.tasks[task.parentId] : undefined;
   const reviewed = task.reviewOf ? s.tasks[task.reviewOf] : undefined;
+  // The reviews colleagues were asked for, the open ones first: who has each and how it stands.
+  const reviews = reviewsOf(task, s.tasks);
   const open = (id: string) => s.openPanel('task', id);
   return (
     <div className="tk-ticket" data-ticket={task.key} data-ticket-status={task.status}>
@@ -762,6 +765,21 @@ export function TicketView({ task, tab, onTab }: { task: Task; tab: TicketTab; o
                 <span className="mono">{reviewed.key}</span>
                 <span className="truncate">{reviewed.title}</span>
               </button>
+            </div>
+          )}
+          {reviews.length > 0 && (
+            <div className="tk-meta-item" data-reviews={reviews.map((r) => `${r.key}:${r.status}`).join(' ')}>
+              <span className="tk-meta-label">Reviews</span>
+              <span className="col" style={{ gap: 4, alignItems: 'flex-start' }}>
+                {reviews.map((r) => (
+                  <button key={r.id} type="button" className="pw-chip" onClick={() => open(r.id)} title={r.blockedReason ?? r.title}>
+                    <span className="mono">{r.key}</span>
+                    <span className="truncate">
+                      {s.employees[r.assigneeId ?? '']?.name ?? 'nobody yet'} · {REVIEW_WORD[r.status] ?? r.status.toLowerCase()}
+                    </span>
+                  </button>
+                ))}
+              </span>
             </div>
           )}
           <div className="tk-meta-item">
