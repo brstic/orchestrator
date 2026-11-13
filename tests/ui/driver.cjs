@@ -1132,6 +1132,34 @@ async function scenario() {
     return `${added.id} placed at ${added.x}, ${added.z}, ${turned}, removed; not offered yet: ${locked.length ? locked.join('; ') : 'nothing'}`;
   });
 
+  await step('Office: "Employee of the month" is a decoration like any other, and its frame shows whoever the office says has worked the most', async () => {
+    // The office counts by itself: after a minute or two of the scripted employees working, somebody leads.
+    const best = await waitFor(`(() => { const s = window.__t.store(); const b = s.company && s.company.employeeOfMonth; const e = b && s.employees[b.employeeId]; return e ? { id: e.id, name: e.name, role: e.roleKey, month: b.month } : null; })()`, 150000);
+    if (best.role === 'foreman' || best.role === 'lead' || !/^\d{4}-\d{2}$/.test(best.month)) throw new Error(`the employee of the month is ${best.name} (${best.role}) for "${best.month}"`);
+    await open('office', `'plan'`);
+    await waitFor(`!!window.__t.scope().querySelector('select[aria-label="Decoration to add"]')`, 8000);
+    const offered = await js(`[...window.__t.scope().querySelectorAll('select[aria-label="Decoration to add"] option')].filter((o) => o.value === 'employee_of_month').map((o) => [o.textContent, o.disabled])`);
+    if (offered.length !== 1 || offered[0][0] !== 'Employee of the month' || offered[0][1]) throw new Error(`offered as: ${JSON.stringify(offered)}`);
+    await js(`window.__t.setSelect(window.__t.scope().querySelector('select[aria-label="Decoration to add"]'), 'employee_of_month')`);
+    await clickText('Add decoration');
+    const added = await waitFor(`(() => { const d = window.__t.store().layout.decorations.find((x) => x.kind === 'employee_of_month'); return d ? { id: d.id, x: d.x, z: d.z } : null; })()`, 8000);
+    await close();
+    // It was put near where the owner stands, so it is drawn: the scene says whose picture is in the frame.
+    const shown = await waitFor(`(() => { const a = window.__orchScene && window.__orchScene.award; return a ? a : null; })()`, 15000);
+    const now = await js(`(() => { const s = window.__t.store(); const b = s.company.employeeOfMonth; return { id: b.employeeId, name: s.employees[b.employeeId].name }; })()`);
+    if (shown.employeeId !== now.id || shown.name !== now.name || !/^[A-Z][a-z]+ \d{4}$/.test(shown.month)) throw new Error(`the frame shows ${JSON.stringify(shown)}; the office says ${JSON.stringify(now)}`);
+    await sleep(600);
+    await shot('employee-of-the-month');
+    // Taken away again, so that the office is left as it was found.
+    await open('office', `'plan'`);
+    await waitFor(`!!window.__t.scope().querySelector('select[aria-label="Selected item"]')`, 8000);
+    await pick(`decoration:${added.id}`);
+    await clickText('Remove decoration');
+    await waitFor(`!window.__t.store().layout.decorations.some((x) => x.kind === 'employee_of_month')`, 8000);
+    await close();
+    return `${shown.name}, ${shown.month} (${shown.hours} h); placed at ${added.x}, ${added.z} and removed`;
+  });
+
   await step('Office: a room is renamed and the wall it shares with the next room is moved', async () => {
     await open('office', `'plan'`);
     await waitFor(`!!window.__t.scope().querySelector('select[aria-label="Selected item"]')`, 8000);

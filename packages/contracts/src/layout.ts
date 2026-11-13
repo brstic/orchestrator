@@ -84,6 +84,7 @@ export const DECORATION_KINDS: DecorationKind[] = [
   { kind: 'bookshelf', label: 'Bookshelf', w: 1.6, d: 0.4, solid: true },
   { kind: 'floor_lamp', label: 'Floor lamp', w: 0.4, d: 0.4, solid: true },
   { kind: 'sofa', label: 'Sofa', w: 2.0, d: 0.9, solid: true },
+  { kind: 'employee_of_month', label: 'Employee of the month', w: 1.0, d: 0.5, solid: true },
   { kind: 'arcade', label: 'Arcade cabinet', w: 0.9, d: 0.9, solid: true, unlock: 'ten_tasks' },
   { kind: 'trophy_case', label: 'Trophy case', w: 2.0, d: 0.5, solid: true, unlock: 'first_delivery' },
   { kind: 'neon_sign', label: 'Neon sign', w: 4.5, d: 0.1, solid: false, unlock: 'fifty_tests' },

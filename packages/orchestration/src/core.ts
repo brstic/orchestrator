@@ -98,6 +98,8 @@ export interface Timings {
   routineMinuteMs: number;
   /** How often the office looks for sessions that have sat idle long enough to be put to sleep. */
   sleepTickMs: number;
+  /** How often the time each employee works is added up (`WorkLog`). */
+  workTickMs: number;
   /** Overrides the owner's "asleep after … minutes" setting (tests run on faster clocks). */
   sleepIdleMs: number | null;
   /** After a session that would not start when it was needed: no further attempt for this long. */
@@ -128,6 +130,7 @@ export const DEFAULT_TIMINGS: Timings = {
   routineTickMs: 20_000,
   routineMinuteMs: 60_000,
   sleepTickMs: 30_000,
+  workTickMs: 30_000,
   sleepIdleMs: null,
   wakeRetryMs: 30_000,
 };

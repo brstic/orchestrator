@@ -281,6 +281,13 @@ export type ActivityState =
   | 'meeting'
   | 'paused';
 
+/**
+ * The states in which an employee is doing something — as opposed to being away, between turns, or waiting for
+ * somebody (an answer, an approval, a colleague). What "time worked" is counted from (`WorkLog`).
+ */
+export const WORKING_STATES: readonly ActivityState[] = ['thinking', 'reading', 'coding', 'testing', 'debugging', 'running_command', 'researching', 'planning', 'reviewing', 'delegating', 'meeting'];
+export const isWorking = (state: ActivityState | null | undefined): boolean => !!state && WORKING_STATES.includes(state);
+
 export type ControlState =
   | 'AGENT_CONTROLLED'
   | 'HUMAN_OBSERVING'
@@ -948,7 +955,22 @@ export interface XpEntry {
   ts: ISODate;
 }
 
+/**
+ * Who has worked the most in a calendar month (UTC), and for how long: the employee whose session spent the most
+ * time in a working state (`isWorking`). It is this month's leader as soon as anybody has worked this month, and
+ * last month's until then. Never a foreman or a team lead: they keep others working.
+ */
+export interface EmployeeOfMonth {
+  employeeId: ID;
+  /** "2026-11". */
+  month: string;
+  /** Time worked in that month, in milliseconds. */
+  ms: number;
+}
+
 export interface CompanyStats {
+  /** See `EmployeeOfMonth`; null until anybody has worked. */
+  employeeOfMonth?: EmployeeOfMonth | null;
   projectsDelivered: number;
   tasksCompleted: number;
   bugsResolved: number;

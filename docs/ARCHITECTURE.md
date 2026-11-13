@@ -73,6 +73,7 @@ One outbound WebSocket per host, authenticated by its first message. Non-blockin
 | Self-improvement | `improve.ts` | playbooks, project knowledge, routing, proposals |
 | Routines | `routines.ts` | standing instructions repeated for one employee: when a run is due, delivered, skipped or held |
 | Sleep | `sleep.ts`, `registry.ts` (`wake`), `comms.ts` (`pump`) | stopping sessions that have no work; starting them again for what they are needed for |
+| Work log | `work-log.ts` | how long each employee has worked this month, and who has worked the most (`CompanyStats.employeeOfMonth`; the "Employee of the month" decoration shows them) |
 | Waiting for a colleague | `waits.ts` | tool calls held open for a colleague's answer or the end of a task; what may be waited for, when a wait is cut short, what stands after the call |
 | Persistence & recovery | `core.ts`, `engine.ts` | everything is rebuilt from the database on start |
 
@@ -189,6 +190,9 @@ A held call ends in one of four ways:
 A wait that stands is settled by the same sweep: when its task ends the office sends the waiting employee a message; when its request is answered the ordinary reply message is on its way already. `Waits.restore` (on start) turns every `held` into `false` — the calls are gone — so `wait_for_colleague` with no arguments (`Waits.resume`) can continue from the record.
 
 Who reads `waitingOn`: the hook receiver (the caption at the end of a turn; no "you stopped" nudge), `Sleeper.keptAwake`, `Routines.busy`, `get_team`, the foreman's attention list (never `stalled` / `idle`; `waiting` when `Waits.idleTarget` says the awaited colleague is not at it), and the windows (`waitingForLines` in `apps/desktop/src/lib/views.ts`). A request that is waited for is delivered with `wake: true`, so `Comms.pump` starts the colleague's session if there is none.
+
+### The work log and the employee of the month (`work-log.ts`)
+Every half minute (`timings.workTickMs`) each running session that is in a working state (`isWorking` in contracts: thinking, reading, coding, testing, running a command, researching, planning, reviewing, delegating, in a meeting) and was heard from in the last quarter of an hour gets the time since the last look, added to its employee's count for the calendar month (UTC). Waiting — for an answer, an approval, a colleague — and being between turns count for nothing. The counts are kept in the store (`work.month`), so a restart loses half a minute at most. The leader — never a foreman, a team lead or somebody archived; a minute of work at least; a tie stays with whoever leads — is `company.employeeOfMonth` (`{ employeeId, month, ms }`), sent to the clients when somebody else leads or the leader's whole hours change. A new month starts everybody from nothing, and last month's stays up until somebody has worked. The first time an office runs this in a month, the month so far is estimated from the stored `session.activity` events (each stretch in a working state up to the next change, a quarter of an hour at most). On the client `lib/award.ts` turns the record into what the board shows; the board is the decoration `employee_of_month` (`models/decor.ts` `awardStand`, `Environment.tsx` `AwardBoard`/`drawAward`), placed from Floor plan like any other; a click on it opens the employee.
 
 ### Sleep and wake (`sleep.ts`, `registry.ts`, `comms.ts`)
 

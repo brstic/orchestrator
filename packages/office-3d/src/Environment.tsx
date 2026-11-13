@@ -4,14 +4,14 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { Desk, RoomDef, Surroundings, TerminalScreen } from '@orchestrator/contracts';
 import { drawScreen } from './terminal-texture.ts';
-import type { BoardView, CeoView, HostView, Quality, ScreenSubscribe, UsageClockView, WallView, WhiteboardView, ZoneView } from './types.ts';
+import type { AwardView, BoardView, CeoView, HostView, Quality, ScreenSubscribe, UsageClockView, WallView, WhiteboardView, ZoneView } from './types.ts';
 import { DESK_SIZE, WALL_T, deskBox, deskSeat, type Box, type World } from './world.ts';
 import { SMALL_RACK, memberRoomTitle, type MemberRoom } from './member-rooms.ts';
 import { ON_SURFACE } from './surface.ts';
 import { glazed, hasWindows, lookOf } from './surroundings/index.tsx';
 import { InstancedModel, Model } from './models/Model.tsx';
 import { DESK_TOP, desk as deskModel, divider as dividerModel, lampDome, taskChair } from './models/workplace.ts';
-import { arcade, bookshelf, coffeeTable, deskPlant, floorLamp, mug, neonBoard, notebook, plant, rug, sofa, trophyCase } from './models/decor.ts';
+import { arcade, awardStand, bookshelf, coffeeTable, deskPlant, floorLamp, mug, neonBoard, notebook, plant, rug, sofa, trophyCase } from './models/decor.ts';
 import { carpetMaterial, ceilingTexture, floorMaterial } from './models/surfaces.ts';
 import { executiveDesk, fridge, kitchen, mediaConsole, meetingTable, opsConsole, rack as rackModel, receptionDesk } from './models/rooms.ts';
 
@@ -1591,8 +1591,160 @@ function ArcadeScreen() {
   );
 }
 
+/**
+ * The picture in the frame of the "employee of the month": their face drawn large in the flat way the office draws
+ * faces everywhere else, their name, the month and how long they have worked. With nobody yet, an empty place.
+ */
+export function drawAward(ctx: CanvasRenderingContext2D, w: number, h: number, a: AwardView | null) {
+  const u = w / 100; // the picture is 100 units wide
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, '#1b2231');
+  bg.addColorStop(1, '#121722');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const sans = '"Inter", "SF Pro Text", -apple-system, "Segoe UI", system-ui, sans-serif';
+  const fit = (text: string, weight: number, size: number, max: number) => {
+    let px = size;
+    ctx.font = `${weight} ${px}px ${sans}`;
+    while (px > size * 0.5 && ctx.measureText(text).width > max) ctx.font = `${weight} ${(px *= 0.94)}px ${sans}`;
+  };
+  // The heading, in brass, letters apart.
+  ctx.fillStyle = '#d9b46a';
+  ctx.font = `600 ${5.4 * u}px ${sans}`;
+  ctx.fillText('E M P L O Y E E   O F   T H E   M O N T H', w / 2, 9.5 * u, 90 * u);
+  ctx.fillStyle = 'rgba(217,180,106,0.45)';
+  ctx.fillRect(w / 2 - 14 * u, 15 * u, 28 * u, 0.35 * u);
+  // The portrait: a round window, the shoulders, the head, the hair.
+  const cx = w / 2;
+  const cy = 51 * u;
+  const r = 28 * u;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.clip();
+  const back = ctx.createRadialGradient(cx, cy - r * 0.3, r * 0.1, cx, cy, r);
+  back.addColorStop(0, a ? '#3a4760' : '#273042');
+  back.addColorStop(1, a ? '#273042' : '#1c2331');
+  ctx.fillStyle = back;
+  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  const skin = a?.appearance.skin ?? '#3a4558';
+  const shirt = a?.appearance.shirt ?? '#323c4e';
+  const hair = a?.appearance.hair ?? '#3a4558';
+  const style = a?.appearance.hairStyle ?? 'bald';
+  // Long hair falls behind the shoulders.
+  if (style === 'long') {
+    ctx.fillStyle = hair;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + r * 0.05, r * 0.5, r * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = shirt;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + r * 1.08, r * 0.82, r * 0.62, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = skin;
+  ctx.fillRect(cx - r * 0.13, cy + r * 0.2, r * 0.26, r * 0.34);
+  ctx.beginPath();
+  ctx.arc(cx, cy - r * 0.08, r * 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  if (style !== 'bald') {
+    ctx.fillStyle = hair;
+    ctx.beginPath();
+    if (style === 'curly') {
+      for (const [dx, dy, k] of [[-0.3, -0.36, 0.2], [-0.1, -0.47, 0.22], [0.12, -0.47, 0.22], [0.31, -0.35, 0.2], [-0.4, -0.18, 0.15], [0.4, -0.18, 0.15]] as Array<[number, number, number]>) {
+        ctx.moveTo(cx + r * dx + r * k, cy + r * dy);
+        ctx.arc(cx + r * dx, cy + r * dy, r * k, 0, Math.PI * 2);
+      }
+    } else {
+      // A cap of hair over the top of the head, down to the temples.
+      ctx.arc(cx, cy - r * 0.1, r * 0.43, Math.PI * 1.02, Math.PI * 1.98);
+      ctx.quadraticCurveTo(cx, cy - r * 0.34, cx - r * 0.43, cy - r * 0.13);
+    }
+    ctx.fill();
+    if (style === 'bun') {
+      ctx.beginPath();
+      ctx.arc(cx, cy - r * 0.58, r * 0.15, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (a?.appearance.accessory === 'glasses') {
+    ctx.strokeStyle = '#1b1f27';
+    ctx.lineWidth = r * 0.03;
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(cx + sx * r * 0.16, cy - r * 0.08, r * 0.1, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(cx - r * 0.06, cy - r * 0.08);
+    ctx.lineTo(cx + r * 0.06, cy - r * 0.08);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.strokeStyle = a ? '#d9b46a' : 'rgba(217,180,106,0.35)';
+  ctx.lineWidth = 0.7 * u;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + 0.35 * u, 0, Math.PI * 2);
+  ctx.stroke();
+  // Who, what they are, and for which month.
+  if (a) {
+    ctx.fillStyle = '#f2f5fa';
+    fit(a.name, 700, 9.5 * u, 88 * u);
+    ctx.fillText(a.name, w / 2, 91 * u);
+    ctx.fillStyle = '#9aa6ba';
+    fit(a.title, 400, 4.6 * u, 88 * u);
+    ctx.fillText(a.title, w / 2, 100.5 * u);
+    ctx.fillStyle = '#d9b46a';
+    ctx.font = `500 ${4.6 * u}px ${sans}`;
+    ctx.fillText(`${a.month}${a.hours >= 1 ? `  ·  ${a.hours} h of work` : ''}`, w / 2, 115 * u, 88 * u);
+  } else {
+    ctx.fillStyle = '#9aa6ba';
+    ctx.font = `500 ${6 * u}px ${sans}`;
+    ctx.fillText('Nobody yet', w / 2, 92 * u);
+    ctx.fillStyle = '#66728a';
+    ctx.font = `400 ${4.2 * u}px ${sans}`;
+    ctx.fillText('Whoever works the most this month', w / 2, 102 * u, 88 * u);
+    ctx.fillText('gets their picture here.', w / 2, 108.5 * u, 88 * u);
+  }
+  ctx.textAlign = 'left';
+}
+
+/** The board of the employee of the month: its stand, and in the frame whoever it is now. A click opens them. */
+function AwardBoard({ d, award, onOpen }: { d: World['layout']['decorations'][number]; award: AwardView | null; onOpen?: (employeeId: string) => void }) {
+  const can = !!award && !!onOpen;
+  // For the UI tests (see `window.__orchScene`): who is on the board.
+  useEffect(() => {
+    const scene = ((window as unknown as { __orchScene?: Record<string, unknown> }).__orchScene ??= {});
+    scene.award = award ? { employeeId: award.employeeId, name: award.name, month: award.month, hours: award.hours } : null;
+  }, [award]);
+  return (
+    <group
+      position={[d.x, 0, d.z]}
+      rotation={[0, d.rot, 0]}
+      onClick={(e) => {
+        if (!can) return;
+        e.stopPropagation();
+        onOpen!(award!.employeeId);
+      }}
+      onPointerOver={(e) => {
+        if (!can) return;
+        e.stopPropagation();
+        document.body.style.cursor = 'pointer';
+      }}
+      onPointerOut={() => {
+        if (can) document.body.style.cursor = '';
+      }}
+    >
+      <Model model={awardStand()} />
+      <CanvasPanel width={0.78} height={1.0} px={1024} position={[0, 1.42, 0.0305]} deps={[JSON.stringify(award)]} draw={(ctx, w, h) => drawAward(ctx, w, h, award)} />
+    </group>
+  );
+}
+
 /** One decoration from the layout. Mounted only while someone is near it. */
-function Decoration({ d, player, overview, onOpenArcade }: { d: World['layout']['decorations'][number]; player: THREE.Vector3; overview: boolean; onOpenArcade?: () => void }) {
+function Decoration({ d, player, overview, onOpenArcade, award, onOpenAward }: { d: World['layout']['decorations'][number]; player: THREE.Vector3; overview: boolean; onOpenArcade?: () => void; award: AwardView | null; onOpenAward?: (employeeId: string) => void }) {
   const area = useMemo(() => ({ minX: d.x, maxX: d.x, minZ: d.z, maxZ: d.z }), [d.x, d.z]);
   if (!useNear(`decoration:${d.id}`, area, player, overview)) return null;
   if (d.kind === 'plant') return <Plant x={d.x} z={d.z} />;
@@ -1619,6 +1771,7 @@ function Decoration({ d, player, overview, onOpenArcade }: { d: World['layout'][
         <ArcadeScreen />
       </group>
     );
+  if (d.kind === 'employee_of_month') return <AwardBoard d={d} award={award} onOpen={onOpenAward} />;
   if (d.kind === 'trophy_case') return <Model model={trophyCase()} position={[d.x, 0, d.z]} rotation={[0, d.rot, 0]} />;
   if (d.kind === 'neon_sign')
     return (
@@ -1649,6 +1802,8 @@ export function Rooms({
   whiteboard,
   onOpenMeeting,
   onOpenArcade,
+  award,
+  onOpenAward,
   player,
   overview,
 }: {
@@ -1663,6 +1818,9 @@ export function Rooms({
   onOpenMeeting: (meetingId: string | null) => void;
   /** What a click on an arcade cabinet does. */
   onOpenArcade?: () => void;
+  /** The employee of the month, for the board of that name, and what a click on the board does. */
+  award: AwardView | null;
+  onOpenAward?: (employeeId: string) => void;
   player: THREE.Vector3;
   overview: boolean;
 }) {
@@ -1859,7 +2017,7 @@ export function Rooms({
         </group>
       )}
 
-      {world.layout.decorations.map((d) => (d.requires && !unlocked.has(d.requires) ? null : <Decoration key={d.id} d={d} player={player} overview={overview} onOpenArcade={onOpenArcade} />))}
+      {world.layout.decorations.map((d) => (d.requires && !unlocked.has(d.requires) ? null : <Decoration key={d.id} d={d} player={player} overview={overview} onOpenArcade={onOpenArcade} award={award} onOpenAward={onOpenAward} />))}
     </group>
   );
 }

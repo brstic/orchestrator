@@ -18,7 +18,7 @@ import { TV as TVPart, type TvFrames, type TvView } from './TV.tsx';
 import { Building as BuildingPart, Desks as DesksPart, Lights as LightsPart, Near, Rooms as RoomsPart, Zones as ZonesPart, sceneProbe } from './Environment.tsx';
 import { People as PeoplePart } from './People.tsx';
 import { Rig as RigPart, type Keymap } from './Rig.tsx';
-import type { UsageClockView, BoardView, CameraMode, CeoView, HostView, NearbyTarget, PersonView, Quality, RadioView, ScreenSubscribe, WalkRequest, WallView, WhiteboardView, ZoneView, ForemanView } from './types.ts';
+import type { AwardView, UsageClockView, BoardView, CameraMode, CeoView, HostView, NearbyTarget, PersonView, Quality, RadioView, ScreenSubscribe, WalkRequest, WallView, WhiteboardView, ZoneView, ForemanView } from './types.ts';
 import { buildWorld } from './world.ts';
 import { STUDIO, Surroundings as SurroundingsPart } from './surroundings/index.tsx';
 import { usePacedLoop } from './pace.ts';
@@ -100,6 +100,9 @@ export interface OfficeSceneProps {
   memberClocks?: Record<string, UsageClockView[]>;
   /** What the meeting-room whiteboard says (the running meeting or the last decision), and what a click on it opens. */
   whiteboard: WhiteboardView;
+  /** The employee of the month (the board of that name shows them), and what a click on the board does. */
+  award?: AwardView | null;
+  onOpenAward?: (employeeId: string) => void;
   onOpenMeeting: (meetingId: string | null) => void;
   /** Desk pods that belong to one project, and what a click on a zone's sign opens. */
   zones: ZoneView[];
@@ -218,7 +221,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       <Near id="hifi" area={breakArea} player={player} overview={overview}>
         <HiFi world={world} radio={props.radio} onOpen={props.onOpenRadio} />
       </Near>
-      <Rooms world={world} board={props.board} wall={props.wall} ceo={props.ceo} hosts={props.hosts} subscribe={props.subscribeScreen} unlocked={unlocked} whiteboard={props.whiteboard} onOpenMeeting={props.onOpenMeeting} onOpenArcade={props.onOpenArcade} player={player} overview={overview} />
+      <Rooms world={world} board={props.board} wall={props.wall} ceo={props.ceo} hosts={props.hosts} subscribe={props.subscribeScreen} unlocked={unlocked} whiteboard={props.whiteboard} onOpenMeeting={props.onOpenMeeting} onOpenArcade={props.onOpenArcade} award={props.award ?? null} onOpenAward={props.onOpenAward} player={player} overview={overview} />
       <SceneProbe zones={props.zones} surroundings={surroundings} />
       {props.talkMarks && props.talkMarks.length > 0 && props.cameraMode !== 'workstation' && <TalkMarks marks={props.talkMarks} positions={positions} onOpen={props.onOpenTalk ?? (() => undefined)} />}
       <People people={props.people} whips={props.whips} world={world} walks={props.walks} player={player} selectedId={props.selectedId} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />

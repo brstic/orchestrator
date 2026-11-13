@@ -18,6 +18,7 @@ import { buildMcpServer, type McpContext } from './mcp-tools.ts';
 import { EmployeeRegistry, HostRegistry, SessionRegistry, type EmployeeInput } from './registry.ts';
 import { Routines } from './routines.ts';
 import { Sleeper } from './sleep.ts';
+import { WorkLog } from './work-log.ts';
 import { TaskManager } from './tasks.ts';
 import { TaskTalk } from './task-talk.ts';
 import { Waits } from './waits.ts';
@@ -54,6 +55,7 @@ export class Engine {
   readonly lead: Lead;
   readonly routines: Routines;
   readonly sleeper: Sleeper;
+  readonly work: WorkLog;
   readonly waits: Waits;
   readonly vault: Vault;
   readonly memory: Memory;
@@ -78,6 +80,7 @@ export class Engine {
     this.lead = new Lead(this);
     this.routines = new Routines(this);
     this.sleeper = new Sleeper(this);
+    this.work = new WorkLog(this);
     this.waits = new Waits(this);
     this.vault = new Vault(this.core, opts.vaultKeyFile ?? null);
     this.vault.onCaptureFailed = (why) =>
@@ -209,6 +212,7 @@ export class Engine {
     this.foreman.start();
     this.routines.start();
     this.sleeper.start();
+    this.work.start();
     this.tasks.schedule();
   }
 
@@ -218,6 +222,7 @@ export class Engine {
     this.foreman.stop();
     this.routines.stop();
     this.sleeper.stop();
+    this.work.stop();
   }
 
   // ─────────────────────────── snapshots ───────────────────────────

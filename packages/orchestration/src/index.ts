@@ -16,6 +16,7 @@ export * from './said-files.ts';
 export * from './learning/outcomes.ts';
 export * from './routines.ts';
 export * from './sleep.ts';
+export * from './work-log.ts';
 export * from './waits.ts';
 export * from './vault.ts';
 export * from './memory.ts';

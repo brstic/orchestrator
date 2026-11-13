@@ -429,6 +429,31 @@ export const trophyCase = once((): Model => {
   return b.done();
 });
 
+/**
+ * The stand of the "employee of the month": a framed board at eye height on a slim post, with a small brass
+ * light over it. The picture in the frame (0.78 × 1.0 m, centred 1.42 m up) is drawn by the scene.
+ */
+export const awardStand = once((): Model => {
+  const b = new Build();
+  const steel = M.steel('#22262e', 0.4);
+  const walnut = M.wood('#5b4030');
+  const brass = M.metal('#c8a25a', 0.3);
+  b.add(steel, at(softBox(0.62, 0.035, 0.42, 0.01, { round: 2 }), 0, 0.018, 0), { cast: false });
+  b.add(steel, at(softBox(0.05, 0.9, 0.05, 0.008, { round: 1 }), 0, 0.47, -0.02));
+  // The frame, and the dark back the picture lies on.
+  b.add(walnut, at(softBox(0.9, 1.12, 0.05, 0.012, { round: 2 }), 0, 1.42, 0));
+  b.add(M.paint('#10141c', 0.8), at(softBox(0.8, 1.02, 0.01, 0.002, { round: 1 }), 0, 1.42, 0.024), { cast: false });
+  // A thin brass line inside the frame.
+  for (const sx of [-1, 1]) b.add(brass, at(softBox(0.008, 1.03, 0.008, 0.002, { round: 1 }), sx * 0.404, 1.42, 0.028), { cast: false });
+  for (const sy of [-1, 1]) b.add(brass, at(softBox(0.816, 0.008, 0.008, 0.002, { round: 1 }), 0, 1.42 + sy * 0.514, 0.028), { cast: false });
+  // The picture light: an arm from the top of the frame and a warm strip.
+  b.add(brass, at(softBox(0.014, 0.014, 0.12, 0.004, { round: 1 }), 0, 2.02, 0.05), { cast: false });
+  b.add(brass, at(softBox(0.014, 0.06, 0.014, 0.004, { round: 1 }), 0, 1.995, 0), { cast: false });
+  b.add(brass, at(softBox(0.42, 0.03, 0.04, 0.008, { round: 1 }), 0, 2.02, 0.11), { cast: false });
+  b.add(M.glow('#ffe9c4', 1.8), at(softBox(0.38, 0.006, 0.024, 0.002, { round: 1 }), 0, 2.003, 0.11), { cast: false });
+  return b.done();
+});
+
 /** The backing of the neon sign: a dark panel on stand-offs. The glowing tubes are drawn by the scene. */
 export const neonBoard = once((): Model => {
   const b = new Build();

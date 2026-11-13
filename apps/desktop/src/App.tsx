@@ -6,6 +6,7 @@ import { Button } from '@orchestrator/ui';
 import { api, connection, serverBase, setToken } from './lib/api.ts';
 import { askStateOf, loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
 import { loadPrefs, usePrefs } from './lib/prefs.ts';
+import { awardView } from './lib/award.ts';
 import { boardView, ceoView, foremanView, leadViews, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
 import { ChatBox, CommandBar, ConfirmDialog, DoorBell, Replies, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
 import { onTvFrame } from './lib/tv.ts';
@@ -160,6 +161,7 @@ export function App() {
     openTv: () => useOffice.getState().openPanel('tv'),
     openVault: () => useOffice.getState().openPanel('vault'),
     openArcade: () => useOffice.getState().openPanel('arcade'),
+    openAward: (employeeId: string) => useOffice.getState().openPanel('employee', employeeId),
     seated: (seatId: string | null) => useOffice.setState({ seatedAt: seatId }),
     // The others see the jump once it has really begun.
     jumped: () => connection.send({ t: 'jump' }),
@@ -290,6 +292,7 @@ export function App() {
   const board = useMemo(() => boardView(s), [s.tasks, s.projects, s.employees, s.filter]); // eslint-disable-line react-hooks/exhaustive-deps
   const wall = useMemo(() => wallView(s, people), [people, s.hosts, s.tasks, s.questions]); // eslint-disable-line react-hooks/exhaustive-deps
   const whiteboard = useMemo(() => whiteboardView(s), [s.meetings, s.employees]); // eslint-disable-line react-hooks/exhaustive-deps
+  const award = useMemo(() => awardView(s.company, s.employees), [s.company?.employeeOfMonth, s.employees]); // eslint-disable-line react-hooks/exhaustive-deps
   const zones = useMemo(() => zoneViews(s, office), [s.layout, s.employees, s.projects, s.tasks, office]); // eslint-disable-line react-hooks/exhaustive-deps
   const clocks = useMemo(() => memberClocks(s), [s.accounts, s.hosts]); // eslint-disable-line react-hooks/exhaustive-deps
   const ceo = useMemo(() => ceoView(s), [s.company, s.projects, s.tasks, s.questions, s.employees, s.accounts, s.hosts, s.settings?.companyName]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -391,6 +394,8 @@ export function App() {
           onOpenTv={on.openTv}
           onOpenVault={on.openVault}
           onOpenArcade={on.openArcade}
+          award={award}
+          onOpenAward={on.openAward}
           freeSeats={freeSeats}
           onPickSeat={on.pickSeat}
           whips={s.whips}

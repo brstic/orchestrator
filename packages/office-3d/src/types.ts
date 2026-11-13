@@ -53,6 +53,18 @@ export interface WhiteboardView {
   lines: string[];
 }
 
+/** The employee of the month, for the board of that name: who, since when, and how long they have worked. Null: nobody yet. */
+export interface AwardView {
+  employeeId: string;
+  name: string;
+  title: string;
+  appearance: Appearance;
+  /** "November 2026". */
+  month: string;
+  /** Whole hours worked in that month. */
+  hours: number;
+}
+
 /** A desk pod whose people (all or most of them) belong to one project. */
 export interface ZoneView {
   /** The pod's id (see `deskPods`). */

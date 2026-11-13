@@ -2380,6 +2380,9 @@ button.ops-row:hover {
 .plan-decor-neon_sign rect {
   fill: #ff5fa2;
 }
+.plan-decor-employee_of_month rect {
+  fill: #d9b46a;
+}
 .plan-decor:hover circle,
 .plan-decor:hover rect {
   stroke: rgba(255, 255, 255, 0.6);
