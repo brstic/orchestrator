@@ -75,6 +75,7 @@ One outbound WebSocket per host, authenticated by its first message. Non-blockin
 | Sleep | `sleep.ts`, `registry.ts` (`wake`), `comms.ts` (`pump`) | stopping sessions that have no work; starting them again for what they are needed for |
 | Work log | `work-log.ts` | how long each employee has worked this month, and who has worked the most (`CompanyStats.employeeOfMonth`; the "Employee of the month" decoration shows them) |
 | Waiting for a colleague | `waits.ts` | tool calls held open for a colleague's answer or the end of a task; what may be waited for, when a wait is cut short, what stands after the call |
+| Commands in the background | `background.ts`; `shells.ts` (execution) | which commands of a session run in the background (machine: the process table; office: the hooks), and the state `waiting_command` |
 | Persistence & recovery | `core.ts`, `engine.ts` | everything is rebuilt from the database on start |
 
 ### Activity state
@@ -82,6 +83,8 @@ One outbound WebSocket per host, authenticated by its first message. Non-blockin
 An employee's visible state is derived in exactly one place — `interpretHook`, a pure function over the real hook payload — plus MCP reports and process state. Tool → state: Read/Grep/Glob → `reading`; Edit/Write → `coding` (or `debugging` after a failed test run); a test command → `testing`; `ask_boss`/`AskUserQuestion` → `waiting_answer`; `PermissionRequest` → `needs_approval`; and so on. Unknown hook → no change. No hooks → `unknown`.
 
 One state is set by the office rather than read from a hook: while a tool call is held open for a colleague (`waits.ts`), and when a turn ends with that wait still standing, the session is `waiting_input` with the caption "Waiting for Sarah (T-12)". The hook of that call says `waiting_input` too, without knowing for whom; hooks of other tool calls that arrive while the call is held do not change it.
+
+Another is set from the process table (`background.ts`): the machine's agent reports, at each two-second look, the shells Claude Code started for the session's commands that are still alive (`toolShells` in `packages/execution/src/shells.ts`, sent as `shells` when the set changes and once after every reconnect). Those not belonging to a Bash call in front of the session — begun and not ended, by its hooks — run in the background; they are kept on the session as `background` (what each is, since when). Between turns, a session that would be `idle` or `waiting_input` (with a task, not for a colleague) is `waiting_command` while any run, and goes back to what it was when the last ends. `SessionRegistry.setActivity` asks `Background.instead` on every change, so no caller has to know.
 
 Separately, `session.inTurn` records whether Claude is mid-turn (`UserPromptSubmit` … `Stop`). It — not the display state — decides when Orchestrator may hand the session a prompt.
 

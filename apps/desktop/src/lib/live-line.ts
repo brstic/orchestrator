@@ -40,7 +40,7 @@ const TONES: Record<string, LiveTone> = {
   coding: 'write', debugging: 'write',
   running_command: 'run',
   testing: 'test',
-  waiting_answer: 'wait', waiting_input: 'wait', needs_approval: 'wait',
+  waiting_answer: 'wait', waiting_input: 'wait', needs_approval: 'wait', waiting_command: 'wait',
   blocked: 'bad',
 };
 /** The colour family of an activity: thinking, reading, writing, running, testing, waiting, in trouble, or nothing going on. */

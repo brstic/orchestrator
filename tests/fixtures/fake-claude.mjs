@@ -16,7 +16,8 @@
  * What it "does" is scripted by directives embedded in the prompt it receives:
  *   @@fake: write a.txt hello; commit add a; complete done@@
  * (`mcp <tool> <json>` calls any Orchestrator tool; `result <file>` then writes what that call returned into a
- * file, so a test can see what a tool call that was held open came back with, and that work went on after it.)
+ * file, so a test can see what a tool call that was held open came back with, and that work went on after it.
+ * `bg <command> => <what it is for>` runs a command in the background, as Claude Code's `run_in_background` does.)
  *
  * Nothing in the application ever launches this file; tests point the agent's
  * `claudeBin` at it explicitly.
@@ -270,11 +271,33 @@ async function useTool(tool, input, run) {
   }
 }
 
+/**
+ * A command as Claude Code gives it to a shell of its own (2.1.323): its shell setup first, then `eval '<command>'`,
+ * then the folder it ended in. So the shell of a command running now looks like Claude Code's to the machine's agent.
+ */
+const cwdFile = path.join(process.env.TMPDIR || '/tmp', `claude-fake-${process.pid}-cwd`);
+const likeClaudeCode = (command) => `true /fake/.claude/shell-snapshots/snapshot-sh-0.sh && eval '${command.replace(/'/g, `'"'"'`)}' < /dev/null && pwd -P >| ${cwdFile}`;
+/** Commands of this session running in the background (killed with it, as Claude Code's are). */
+const inBackground = new Set();
+let backgroundSeq = 0;
+
 function bash(command) {
   return useTool('Bash', { command, description: 'scripted by test' }, (input) => {
-    const stdout = execSync(input.command, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 'Fake Claude', GIT_AUTHOR_EMAIL: 'fake@example.test', GIT_COMMITTER_NAME: 'Fake Claude', GIT_COMMITTER_EMAIL: 'fake@example.test' } });
+    const stdout = execSync(likeClaudeCode(input.command), { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_AUTHOR_NAME: 'Fake Claude', GIT_AUTHOR_EMAIL: 'fake@example.test', GIT_COMMITTER_NAME: 'Fake Claude', GIT_COMMITTER_EMAIL: 'fake@example.test' } });
     if (stdout.trim()) say('  ⎿ ' + stdout.trim().split('\n').slice(-3).join('\r\n    '));
     return { stdout, stderr: '', interrupted: false };
+  });
+}
+
+/** `run_in_background`: the command goes on in a shell of its own; the call returns at once with the task's id. */
+function bashInBackground(command, description) {
+  return useTool('Bash', { command, description, run_in_background: true }, (input) => {
+    const id = `bash_${++backgroundSeq}`;
+    const child = spawn('/bin/sh', ['-c', likeClaudeCode(input.command)], { cwd, stdio: 'ignore', env: process.env });
+    inBackground.add(child);
+    child.on('exit', () => inBackground.delete(child));
+    say(`  ⎿ Command running in background with ID: ${id}`);
+    return { stdout: '', stderr: '', interrupted: false, isImage: false, backgroundTaskId: id };
   });
 }
 
@@ -340,6 +363,11 @@ async function runDirectives(text) {
         case 'bash':
           await bash(rest);
           break;
+        case 'bg': {
+          const [command, what] = rest.split(' => ');
+          await bashInBackground(command.trim(), (what ?? 'scripted by test').trim());
+          break;
+        }
         case 'commit':
           await bash(`git add -A && git commit -q -m ${JSON.stringify(rest || 'work')}`);
           break;
@@ -682,6 +710,7 @@ function onInput(chunk) {
 }
 
 async function shutdown(reason) {
+  for (const child of inBackground) child.kill();
   await fireHook('SessionEnd', { reason });
   out('\x1b[?2004l');
   process.exit(0);

@@ -29,6 +29,7 @@ Unauthenticated requests get `401`; a client WebSocket without the owner token i
 - **Input ownership is enforced on the server.** One controller per session; an observer's keystrokes are dropped by the gateway regardless of what the UI does. Control is released automatically when the controller disconnects.
 - Taking control, releasing it and interrupting are written to the audit log. Keystrokes are not logged.
 - Terminal streams and monitor frames are never persisted.
+- **Commands in the background.** The machine's agent reads its own user's process table (`ps -u <that user>`) every two seconds, and sends the office only the commands of the shells Claude Code started for a session the office tracks — the same commands its hooks send anyway (cut to 4,000 characters, at most 20 a session). The office keeps of them only what is shown: Claude Code's description of the command, or the command itself with secrets taken out (`redactSecrets`), and since when — on the session's record, which a visitor is sent as they are sent the activity line. A report about a session of another machine is ignored.
 
 ## Claude accounts: what passes through the office
 

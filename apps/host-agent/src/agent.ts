@@ -47,6 +47,8 @@ import {
   type ClaudeLaunchPlan,
   readMarkdown,
   readLastSaid, readTranscriptUsage,
+  readProcessTable,
+  toolShells,
   runVerify,
   startBranch,
   commitWip,
@@ -184,6 +186,8 @@ export class HostAgent {
   private info: HostInfo | null = null;
   private tickCount = 0;
   private ticking = false;
+  /** What was last told the office about each session's command shells (their pids), so that only changes are sent. */
+  private shellsSent = new Map<string, string>();
   private rejected: string | null = null;
   log: Logger;
   onWelcome: (() => void) | null = null;
@@ -473,6 +477,8 @@ export class HostAgent {
       case 'welcome': {
         this.connected = true;
         this.reconnectDelay = 500;
+        // The office is told about every session's commands again (at the next look), whatever it had before.
+        this.shellsSent.clear();
         if (msg.credential || msg.hostId !== this.cfg.hostId) {
           this.cfg.hostId = msg.hostId;
           if (msg.credential) this.cfg.credential = msg.credential;
@@ -1002,11 +1008,32 @@ export class HostAgent {
           this.saveState();
         }
       }
+      await this.watchShells();
     } catch (e) {
       this.log('warn', `monitor tick failed: ${(e as Error).message}`);
     } finally {
       this.ticking = false;
     }
+  }
+
+  /**
+   * The commands each session is running: the shells Claude Code started for them that are still alive (see
+   * `toolShells`). The office is told when the set changes — a command began or ended — and it tells the one in front
+   * of the session from those that run in the background. One look at the process table for all sessions.
+   */
+  private async watchShells(): Promise<void> {
+    if (!this.connected) return;
+    const sessions = [...this.tracked.values()].filter((t) => this.shellsSent.get(t.sessionId) !== '' || (!t.gone && t.alive && t.pid));
+    if (!sessions.length) return;
+    const rows = sessions.some((t) => !t.gone && t.alive && t.pid) ? await readProcessTable() : new Map();
+    for (const t of sessions) {
+      const shells = !t.gone && t.alive && t.pid ? toolShells(rows, t.pid) : [];
+      const seen = shells.map((x) => x.pid).join(',');
+      if (this.shellsSent.get(t.sessionId) === seen) continue;
+      this.shellsSent.set(t.sessionId, seen);
+      this.send({ t: 'shells', sessionId: t.sessionId, shells: shells.slice(0, 20).map((x) => ({ pid: x.pid, command: x.command.slice(0, 4000), seconds: x.seconds })) });
+    }
+    for (const id of this.shellsSent.keys()) if (!this.tracked.has(id)) this.shellsSent.delete(id);
   }
 
   private async reportResources(): Promise<void> {

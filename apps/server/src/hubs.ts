@@ -247,6 +247,9 @@ export class AgentHub implements AgentLink {
       case 'usage':
         eng.sessions.onUsage(c.hostId, msg.sessionId, msg.usage);
         break;
+      case 'shells':
+        eng.background.onShells(c.hostId, msg.sessionId, msg.shells);
+        break;
       case 'rpc.result': {
         const p = c.pending.get(msg.id);
         if (!p) break;

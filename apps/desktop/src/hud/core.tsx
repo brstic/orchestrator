@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { mayOpenPanel } from '../lib/visitor-panels.ts';
-import type { CommandPlan, CommandResult, OrchestratorEvent, Question } from '@orchestrator/contracts';
+import type { AgentSession, CommandPlan, CommandResult, OrchestratorEvent, Question } from '@orchestrator/contracts';
 import { ACTIVITY_LABEL } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Markdown, Progress, clock, timeAgo } from '@orchestrator/ui';
 import { api, connection } from '../lib/api.ts';
@@ -94,7 +94,7 @@ export function TopBar() {
   const blocked = Object.values(s.tasks).filter((t) => t.status === 'BLOCKED' && !t.waitingFor).length;
   const working = employees.filter((e) => {
     const a = activityOf(sessionOfEmployee(s.sessions, e.id));
-    return !['offline', 'unknown', 'idle', 'waiting_input', 'paused'].includes(a);
+    return !['offline', 'unknown', 'idle', 'waiting_input', 'waiting_command', 'paused'].includes(a);
   }).length;
   const suggestions = Object.values(s.improvements).filter((i) => i.status === 'proposed').length + Object.values(s.lessons).filter((l) => l.status === 'proposed').length;
   const kb = usePrefs((p) => p.prefs.keybindings);
@@ -695,7 +695,8 @@ export function EmployeeCard() {
         </div>
         <Badge tone={questions.length ? 'warn' : activity === 'blocked' ? 'bad' : live ? 'info' : 'muted'}>{ACTIVITY_LABEL[activity] ?? activity}</Badge>
       </div>
-      {session?.activityDetail && live && <div className="small muted truncate mono">{session.activityDetail}</div>}
+      {session?.activityDetail && live && activity !== 'waiting_command' && <div className="small muted truncate mono">{session.activityDetail}</div>}
+      {live && <InBackground session={session} />}
       {waitingForLines(s, e.id).map((line) => (
         <div key={line} className="small truncate">{line}</div>
       ))}
@@ -740,8 +741,27 @@ export function EmployeeCard() {
   );
 }
 
+/**
+ * Commands of a session that run in the background (`AgentSession.background`), one line each: what it is and for
+ * how long. Under any state — while the employee does something else too.
+ */
+export function InBackground({ session }: { session: AgentSession | undefined }) {
+  if (!session?.background?.length) return null;
+  return (
+    <div className="in-bg col" data-in-background>
+      {session.background.map((b) => (
+        <div key={`${b.since}:${b.what}`} className="small row in-bg-row" title={`Running in the background since ${new Date(b.since).toLocaleTimeString()}`}>
+          <span aria-hidden>⏳</span>
+          <span className="grow truncate mono">{b.what}</span>
+          <span className="faint">{timeAgo(b.since).replace(' ago', '')}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** First run: an empty office says what to do next instead of looking broken. */
-const NOT_WORKING_STATES = new Set(['offline', 'unknown', 'idle', 'waiting_input', 'paused']);
+const NOT_WORKING_STATES = new Set(['offline', 'unknown', 'idle', 'waiting_input', 'waiting_command', 'paused']);
 
 /**
  * Command center view: the whole company at a glance next to the top-down
@@ -1399,7 +1419,8 @@ export function Workstation() {
             <Badge tone={questions.length ? 'warn' : activity === 'blocked' ? 'bad' : live ? 'info' : 'muted'}>{ACTIVITY_LABEL[activity] ?? activity}</Badge>
             {session && <span className="small muted">for {timeAgo(session.activitySince).replace(' ago', '')}</span>}
           </div>
-          {session?.activityDetail && <div className="small mono muted pre" style={{ marginTop: 4 }}>{session.activityDetail}</div>}
+          {session?.activityDetail && activity !== 'waiting_command' && <div className="small mono muted pre" style={{ marginTop: 4 }}>{session.activityDetail}</div>}
+          {live && <InBackground session={session} />}
           {session && !session.capabilities.hooks && live && <div className="small" style={{ marginTop: 6, color: '#ffd27a' }}>This session has no hooks, so only its terminal can be observed — activity is not inferred.</div>}
         </div>
         {questions.map((q) => (

@@ -59,6 +59,8 @@ export class Sleeper {
     if (!core.agents.isOnline(s.hostId)) return 'its machine is offline';
     if (!s.capabilities.hooks || s.inTurn !== false) return 'it may be in the middle of a turn';
     if (!RESTING.has(s.activity)) return `it is ${s.activity}`;
+    // Stopping the session would stop that command too.
+    if (s.background?.length) return 'a command of theirs is running in the background';
     if (core.gateway.isPaused(s.id) || s.control === 'PAUSED') return 'the owner paused it';
     if (s.control === 'HUMAN_OBSERVING' || s.control === 'HUMAN_CONTROLLED' || core.gateway.isHumanControlled(s.id)) return 'someone is at its terminal';
     if (s.control !== 'AGENT_CONTROLLED') return 'its terminal cannot be reached';

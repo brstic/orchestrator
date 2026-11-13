@@ -18,7 +18,7 @@ export interface StateWord {
 /** How an employee is: the office's own word for it, in lower case and without the marks made for the name tags. */
 export function employeeState(activity: string, needsYou = false): StateWord {
   if (needsYou && activity !== 'needs_approval' && activity !== 'waiting_answer') return { word: 'needs you', dot: 'busy', tone: 'warn' };
-  const word = (ACTIVITY_LABEL[activity] ?? activity.replace(/_/g, ' ')).replace(/^[?!✓]\s*/, '').toLowerCase();
+  const word = (ACTIVITY_LABEL[activity] ?? activity.replace(/_/g, ' ')).replace(/^[?!✓⏳]\s*/, '').toLowerCase();
   if (activity === 'needs_approval' || activity === 'waiting_answer') return { word, dot: 'busy', tone: 'warn' };
   if (activity === 'blocked') return { word, dot: 'bad', tone: 'bad' };
   if (activity === 'offline' || activity === 'unknown') return { word, dot: 'off', tone: 'calm' };

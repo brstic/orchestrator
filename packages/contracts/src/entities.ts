@@ -279,7 +279,9 @@ export type ActivityState =
   | 'waiting_input'
   | 'task_complete'
   | 'meeting'
-  | 'paused';
+  | 'paused'
+  /** Between turns, while a command it started goes on running in the background (`AgentSession.background`). */
+  | 'waiting_command';
 
 /**
  * The states in which an employee is doing something — as opposed to being away, between turns, or waiting for
@@ -396,6 +398,21 @@ export interface AgentSession {
   resumed?: boolean;
   /** What this session is waiting for from a colleague, if anything (see `SessionWait`). */
   waitingOn?: SessionWait | null;
+  /**
+   * Commands this session started that are still running in the background — Claude Code's `run_in_background`, a
+   * command moved there after its time ran out, or one the person at the terminal sent there. Seen by its machine
+   * (the shell Claude Code started for the command is still alive); the one the session is running in front of it
+   * now is not among them. Null or absent: none (or a machine whose agent does not say).
+   */
+  background?: BackgroundCommand[] | null;
+}
+
+/** One command running in a session's background. */
+export interface BackgroundCommand {
+  /** What it is, in Claude Code's own words for it where it gave some ("Run the full test suite"), else the command. */
+  what: string;
+  /** Since when it has been running. */
+  since: ISODate;
 }
 
 /**

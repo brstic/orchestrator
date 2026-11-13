@@ -50,7 +50,7 @@ export function runtimeLabel(session: AgentSession): string {
   return session.mode === 'managed_sdk' ? 'SDK-managed — started by Orchestrator and driven through the Claude Agent SDK' : 'Interactive Claude Code — started by Orchestrator in tmux';
 }
 
-const NOT_WORKING = new Set(['offline', 'unknown', 'idle', 'waiting_input', 'paused']);
+const NOT_WORKING = new Set(['offline', 'unknown', 'idle', 'waiting_input', 'waiting_command', 'paused']);
 
 /** Same definition the top bar uses for "working". */
 export function isWorking(activity: string): boolean {
@@ -73,6 +73,7 @@ export function activityTone(activity: string, needsYou = false): Tone {
 const ACTIVITY_TIP: Record<string, string> = {
   offline: 'Asleep — no session is running; talking to them or giving them a task wakes them',
   unknown: 'Cannot be observed right now (no hooks in this session, or its machine is offline). Nothing is inferred.',
+  waiting_command: 'Their turn is over and a command they started goes on running in the background; Claude Code tells them when it ends',
 };
 
 /** The employee's real state. `unknown` and `offline` are shown as exactly that. */

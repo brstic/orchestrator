@@ -22,6 +22,7 @@ import { WorkLog } from './work-log.ts';
 import { TaskManager } from './tasks.ts';
 import { TaskTalk } from './task-talk.ts';
 import { Waits } from './waits.ts';
+import { Background } from './background.ts';
 
 /**
  * The orchestration engine: the single source of truth the 3D office renders.
@@ -57,6 +58,7 @@ export class Engine {
   readonly sleeper: Sleeper;
   readonly work: WorkLog;
   readonly waits: Waits;
+  readonly background: Background;
   readonly vault: Vault;
   readonly memory: Memory;
   readonly attachments: Attachments;
@@ -82,6 +84,7 @@ export class Engine {
     this.sleeper = new Sleeper(this);
     this.work = new WorkLog(this);
     this.waits = new Waits(this);
+    this.background = new Background(this);
     this.vault = new Vault(this.core, opts.vaultKeyFile ?? null);
     this.vault.onCaptureFailed = (why) =>
       void this.comms?.securityAlert({

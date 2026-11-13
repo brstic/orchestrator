@@ -1414,10 +1414,23 @@ function SessionTab({ e }: { e: Employee }) {
                   {humanize(session.status)}
                   {live && <span className="k-title-note">{state.word}{session.inTurn == null ? '' : session.inTurn ? ' · in a turn' : ' · between turns'}</span>}
                 </span>
-                {live && session.activityDetail && <span className="k-sub k-mono">{session.activityDetail}</span>}
+                {live && session.activityDetail && session.activity !== 'waiting_command' && <span className="k-sub k-mono">{session.activityDetail}</span>}
               </span>
               <span className="k-aside">{live ? `since ${timeAgo(session.startedAt)}` : session.endedAt ? `ended ${timeAgo(session.endedAt)}` : ''}</span>
             </div>
+            {live &&
+              (session.background ?? []).map((b) => (
+                <div key={`${b.since}:${b.what}`} className="k-row k-row-sm" data-in-background>
+                  <span className="k-dot k-dot-busy" aria-hidden />
+                  <span className="k-main">
+                    <span className="k-title k-title-sm">
+                      In the background<span className="k-title-note">Claude Code tells {e.name} when it ends</span>
+                    </span>
+                    <span className="k-sub k-mono">{b.what}</span>
+                  </span>
+                  <span className="k-aside">{timeAgo(b.since).replace(' ago', '')}</span>
+                </div>
+              ))}
             <div className="k-row k-row-sm" title={controlInfo?.text}>
               <span className={`k-dot ${controlMap[session.id]?.you ? 'k-dot-busy' : 'k-dot-off'}`} aria-hidden />
               <span className="k-main">

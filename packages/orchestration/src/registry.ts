@@ -764,7 +764,7 @@ function heardFromSinceStart(s: AgentSession): boolean {
 /** How long after losing sight of a session what it was doing is still taken as what it is doing. */
 const RESUME_KNOWN_MS = 3 * 60_000;
 /** States in which a session waits for something from outside and does nothing by itself. */
-const BETWEEN_TURNS = new Set<string>(['idle', 'waiting_input', 'waiting_answer', 'blocked', 'task_complete', 'paused']);
+const BETWEEN_TURNS = new Set<string>(['idle', 'waiting_input', 'waiting_answer', 'blocked', 'task_complete', 'paused', 'waiting_command']);
 
 /**
  * How large a session's terminal is when it starts. Wide (it was 120 by 34 until 2026-11-13): people watch these on
@@ -907,6 +907,8 @@ export class SessionRegistry {
         this.rememberActivity(s);
         s.activity = 'unknown';
         s.activityDetail = 'Waiting for the host to reconnect';
+        // (What runs in its background its machine says again when it is back.)
+        s.background = null;
         s.control = 'DISCONNECTED';
         s.controllerId = null;
         this.core.sessions.put(s);
@@ -915,6 +917,8 @@ export class SessionRegistry {
   }
 
   setActivity(session: AgentSession, state: ActivityState, detail: string | null, opts: { silent?: boolean } = {}): void {
+    // Between turns with nothing else going on while a command runs in the background: waiting for it (`Background`).
+    [state, detail] = this.eng.background.instead(session, state, detail);
     if (session.activity === state && session.activityDetail === detail) return;
     const changed = session.activity !== state;
     session.activity = state;
@@ -946,6 +950,8 @@ export class SessionRegistry {
     s.activity = 'unknown';
     s.activityDetail = 'Host is offline — the tmux session keeps running';
     s.activitySince = nowIso();
+    s.background = null;
+    this.eng.background.forget(s.id);
     this.core.put('session', s);
     this.core.gateway.refresh(s.id);
   }
@@ -1048,6 +1054,8 @@ export class SessionRegistry {
       s.endedAt = s.endedAt ?? nowIso();
       s.activity = 'offline';
       s.activityDetail = s.exitReason;
+      s.background = null;
+      this.eng.background.forget(s.id);
       if (wasRunning) this.sessionDied(s, employee, s.exitReason);
     }
     this.core.put('session', s);
@@ -1111,6 +1119,8 @@ export class SessionRegistry {
     s.activity = 'offline';
     s.activityDetail = reason;
     s.activitySince = nowIso();
+    s.background = null;
+    this.eng.background.forget(s.id);
     this.core.put('session', s);
     this.core.gateway.sessionClosed(sessionId, reason);
     if (wasRunning) this.sessionDied(s, this.core.employees.get(s.employeeId), reason, !!meant);
@@ -1127,6 +1137,8 @@ export class SessionRegistry {
     s.activityDetail = reason;
     s.activitySince = now;
     s.inTurn = null;
+    s.background = null;
+    this.eng.background.forget(s.id);
     this.resumeProbes.delete(s.id);
     this.core.put('session', s);
     this.core.gateway.sessionClosed(s.id, reason);

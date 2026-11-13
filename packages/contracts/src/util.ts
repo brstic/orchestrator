@@ -153,6 +153,7 @@ export const ACTIVITY_LABEL: Record<string, string> = {
   task_complete: '✓ TASK COMPLETED',
   meeting: 'IN MEETING',
   paused: 'PAUSED',
+  waiting_command: '⏳ COMMAND RUNNING',
 };
 
 /** The models an employee can be put on by name. Aliases, so "Opus" stays the newest Opus without anyone editing a profile. */

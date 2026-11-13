@@ -209,6 +209,12 @@ export type AgentToServer =
   | { t: 'term.screen'; sessionId: ID; screen: TerminalScreen }
   | { t: 'resources'; resources: HostResources }
   | { t: 'usage'; sessionId: ID; usage: SessionUsage }
+  /**
+   * The shells Claude Code started for commands of this session that are alive right now (the one running in front of
+   * it as well: the office tells them apart from its hooks). Sent when the set changes, and once for every session
+   * when the agent (re)connects. `seconds`: how long each has been running.
+   */
+  | { t: 'shells'; sessionId: ID; shells: Array<{ pid: number; command: string; seconds: number }> }
   /** What Claude Code's status line said about the account's rate limits, and whose account it is. */
   | { t: 'limits'; sessionId: ID; configDir: string | null; email: string | null; organization: string | null; fiveHour: { usedPercent: number; resetsAt: string | null } | null; sevenDay: { usedPercent: number; resetsAt: string | null } | null; /** Every other window Claude Code gave, under its own name (`seven_day_fable`…). */ windows?: Record<string, { usedPercent: number; resetsAt: string | null }> }
   | { t: 'rpc.result'; id: string; ok: boolean; result?: unknown; error?: string }

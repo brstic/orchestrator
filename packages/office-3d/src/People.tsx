@@ -41,6 +41,8 @@ function seatedPose(v: PersonView, place: Dest['place']): PoseName {
       return 'reading';
     case 'testing':
     case 'delegating':
+    // Their turn is over and a command of theirs runs on: they watch it.
+    case 'waiting_command':
       return 'watching';
     case 'thinking':
       return 'thinking';
@@ -82,6 +84,7 @@ const STATE_CLASS: Record<string, string> = {
   task_complete: 'good',
   idle: 'idle',
   waiting_input: 'wait',
+  waiting_command: 'cmd',
   paused: 'wait',
   unknown: 'unknown',
   offline: 'off',
@@ -330,6 +333,11 @@ const Person = memo(function Person({
               {v.controlled && <span className="tag-ctl">YOU</span>}
             </div>
             <div className="tag-state">{v.label}</div>
+            {v.background && (
+              <div className="tag-bg" title={v.background.what}>
+                ⏳ {v.background.count > 1 ? `${v.background.count} commands running` : v.background.what}
+              </div>
+            )}
             {v.taskKey && (
               <div className="tag-task">
                 {v.taskKey}

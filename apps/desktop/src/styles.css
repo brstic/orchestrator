@@ -1263,6 +1263,19 @@ table.tbl {
 .tag-wait .tag-state {
   color: #dab0ff;
 }
+/* Between turns, a command of theirs running on (⏳ COMMAND RUNNING) — and the line naming it, under any state. */
+.tag-cmd .tag-state,
+.tag-bg {
+  color: #7fe3d6;
+}
+.tag-bg {
+  max-width: 190px;
+  margin: 2px auto 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  font-family: var(--mono);
+}
 .tag-unknown .tag-state,
 .tag-off .tag-state {
   color: #7d8799;

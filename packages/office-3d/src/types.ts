@@ -39,6 +39,8 @@ export interface PersonView {
   workstation: 'standard' | 'specialized';
   /** Working on a planning task and currently thinking or reading rather than typing: they stand at the project board. */
   atBoard: boolean;
+  /** Commands of theirs running in the background (`AgentSession.background`): how many, and what the first is. Null: none. */
+  background?: { count: number; what: string } | null;
 }
 
 /** What is written on the meeting-room whiteboard: the meeting that is running, or the last decision. */

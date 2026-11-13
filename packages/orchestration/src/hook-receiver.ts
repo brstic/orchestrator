@@ -225,6 +225,8 @@ export class HookReceiver {
     if (this.eng.sessions.restartDue(session.id)) return null;
     // Stopped because a colleague has not answered or finished yet: there is nothing to be nudged on with.
     if (session.waitingOn) return null;
+    // Stopped to wait for a command of its own that runs in the background: Claude Code tells it when that ends.
+    if (this.eng.background.busy(session.id)) return null;
     if (this.core.questions.find((q) => q.employeeId === employee.id && (q.status === 'open' || q.status === 'answered') && q.channel !== 'system')) return null;
     const limit = NUDGE_LIMIT[employee.autonomy] ?? 0;
     if (task.nudges >= limit) return null;
@@ -300,6 +302,8 @@ export class HookReceiver {
         if (payload.notification_type === 'idle_prompt') session.inTurn = false;
         break;
     }
+    // A Bash call in front of the session began or ended, or a turn did: which of its commands run in the background.
+    this.eng.background.onHook(session, payload);
 
     interp.events.forEach((ev, i) => {
       this.core.event({

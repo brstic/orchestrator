@@ -199,6 +199,18 @@ Sessions that were not launched with the MCP server (attached sessions) simply l
 claude mcp add --transport http orchestrator https://<server>/mcp --header "Authorization: Bearer <session token>"
 ```
 
+### Commands in the background
+
+Claude Code runs a command of its Bash tool in a shell of its own, a child of its process — seen with 2.1.323 on macOS:
+
+```
+/bin/zsh -c source ~/.claude/shell-snapshots/snapshot-zsh-….sh 2>/dev/null || true && … && eval '<the command>' < /dev/null && pwd -P >| /tmp/claude-…-cwd
+```
+
+(a quote inside the command is written `'"'"'`; `ps` on macOS writes a line break as `\012`). The shell lives as long as the command — also when the command runs in the background: asked for with `run_in_background`, moved there after its time ran out, or sent there by the person at the terminal. In each case the call returns with `tool_response.backgroundTaskId` (and the text "Command running in background with ID: …"), and no hook says when the command ends; Claude Code tells the model itself.
+
+So the machine's agent looks for those shells below each session's process (`ps -ww -u <user> -o pid=,ppid=,etime=,args=`, every two seconds, one call for all sessions; the outermost shell that has `/shell-snapshots/snapshot-` in it, or `eval '…'` and `pwd -P >|`), and sends the office `{ t: 'shells', sessionId, shells: [{ pid, command, seconds }] }` when the set changes. The office tells the one in front of the session from the hooks and shows the rest (`ARCHITECTURE.md`, "Activity state"; `DECISIONS.md`). Found with the real Claude Code of this repository's development: the wrapper's form, and the shell of a command that was running at the time, read back with its command. **Not seen with real Claude Code**: a command in the background on a session the office runs, a Linux machine's `ps` (where a line break is written `?` — commands are compared without line breaks and spaces), what the session does when Claude Code tells it the command has ended, and the SDK-managed worker (its shells are below the runner and are looked for the same way; its hooks were not checked to carry `tool_use_id`).
+
 ## A member's team lead
 A second kind of employee that directs others, for one member, with seven tools of its own (`team_*`) and no rounds: `docs/TEAM-LEAD.md`.
 

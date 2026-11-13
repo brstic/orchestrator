@@ -2738,6 +2738,60 @@ async function scenario() {
     return `${a.name} waited for ${b.name}; shown on both cards and in Talk, gone after the answer`;
   });
 
+  await step('a command in the background: ⏳ COMMAND RUNNING over their head, the command on their card and in their profile, gone when it ends', async () => {
+    await close();
+    // Somebody on Auto (their Bash is not asked about) between turns, with nothing open.
+    const candidate = `(() => {
+      const st = window.__t.store();
+      const e = Object.values(st.employees).find((e) => !e.archived && e.autonomy !== 'standard' && e.roleKey !== 'foreman' && e.roleKey !== 'lead'
+        && Object.values(st.sessions).some((x) => x.employeeId === e.id && x.status === 'running' && x.inTurn === false && !x.waitingOn)
+        && !Object.values(st.questions).some((q) => q.employeeId === e.id && q.status === 'open'));
+      return e ? { id: e.id, name: e.name } : null;
+    })()`;
+    await waitFor(`!!${candidate}`, 30000).catch(() => undefined);
+    const who = await js(candidate);
+    if (!who) throw new Error('nobody on Auto between turns to run a command in the background');
+    const tell = (id, body) => js(`(async () => (await fetch('/api/employees/${id}/message', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + ((window.orchestrator && window.orchestrator.token) || localStorage.getItem('orch.token') || '') }, body: JSON.stringify({ body: ${JSON.stringify(body)} }) })).status)()`);
+    const sess = `Object.values(window.__t.store().sessions).find((x) => x.employeeId === ${JSON.stringify(who.id)} && x.status === 'running')`;
+    await tell(who.id, 'Run the suite. @@fake: bg sleep 16 => Run the full test suite; say The suite is running.@@');
+    await waitFor(`(() => { const x = ${sess}; return !!x && x.activity === 'waiting_command'; })()`, 20000);
+    // Over their head in the office: the state, and under it the command.
+    if ((await js(`window.__t.store().cameraMode`)) !== 'command') {
+      await camera('Command center');
+      await sleep(3500);
+    }
+    const tag = `[...document.querySelectorAll('.tag')].find((t) => t.querySelector('.tag-name') && t.querySelector('.tag-name').textContent.trim().startsWith(${JSON.stringify(who.name)}))`;
+    await waitFor(`!!(${tag}) && (${tag}).querySelector('.tag-state').textContent.trim() === '⏳ COMMAND RUNNING' && ((${tag}).querySelector('.tag-bg') || { textContent: '' }).textContent.includes('Run the full test suite')`, 10000);
+    const looks = await js(`(() => { const t = ${tag}; const bg = t.querySelector('.tag-bg'); return { state: getComputedStyle(t.querySelector('.tag-state')).color, line: getComputedStyle(bg).color, inside: bg.getBoundingClientRect().right <= t.getBoundingClientRect().right + 0.5 }; })()`);
+    if (looks.state !== 'rgb(127, 227, 214)' || looks.line !== 'rgb(127, 227, 214)') throw new Error(`the state and its line are not in the colour of a running command: ${JSON.stringify(looks)}`);
+    if (!looks.inside) throw new Error('the line naming the command sticks out of the tag');
+    await sleep(250);
+    await shot('background-command-office');
+    // On their card (the Command center view has its own list instead): the command once — the state's own detail
+    // line is not repeated — with how long it has run.
+    await camera('Management');
+    await waitFor(`window.__t.store().cameraMode === 'management'`, 4000);
+    await js(`window.__t.store().selectEmployee(${JSON.stringify(who.id)})`);
+    await waitFor(`!!document.querySelector('.near-card [data-in-background]') && document.querySelector('.near-card [data-in-background]').textContent.includes('Run the full test suite')`, 8000);
+    const times = await js(`[...document.querySelectorAll('.near-card *')].filter((d) => d.children.length === 0 && d.textContent.trim() === 'Run the full test suite').length`);
+    if (times !== 1) throw new Error(`the command is on the card ${times} times`);
+    await sleep(250);
+    await shot('background-command-card');
+    // In their profile, under the session.
+    await open('employee', `${JSON.stringify(who.id)} + ':session'`);
+    await waitFor(`!!window.__t.scope().querySelector('[data-in-background]') && window.__t.scope().querySelector('[data-in-background]').textContent.includes('Run the full test suite')`, 8000);
+    await sleep(250);
+    await shot('background-command-profile');
+    // It ends: the state, the line and the rows go.
+    await waitFor(`(() => { const x = ${sess}; return !!x && x.activity !== 'waiting_command' && !(x.background || []).length; })()`, 30000);
+    await waitFor(`!window.__t.scope().querySelector('[data-in-background]')`, 8000);
+    await close();
+    await waitFor(`!(${tag}).querySelector('.tag-bg') && (${tag}).querySelector('.tag-state').textContent.trim() !== '⏳ COMMAND RUNNING'`, 8000);
+    await waitFor(`!document.querySelector('.near-card [data-in-background]')`, 8000);
+    await js(`window.__t.store().selectEmployee(null)`);
+    return `${who.name}: shown over their head, on the card and in the profile; gone when it ended`;
+  });
+
   await step('Access: the address people come to, an invitation as a short link, the member listed as invited, and access taken away', async () => {
     await close();
     const port = await new Promise((resolve) => { const srv = require('node:net').createServer(); srv.listen(0, () => { const p = srv.address().port; srv.close(() => resolve(p)); }); });
