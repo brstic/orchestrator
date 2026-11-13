@@ -6,6 +6,7 @@ import { Avatar, Badge, Button, Markdown, Progress, clock, timeAgo } from '@orch
 import { api, connection } from '../lib/api.ts';
 import { usePrefs } from '../lib/prefs.ts';
 import { Menu, type MenuItem } from './menu.tsx';
+import { LABEL } from '../lib/menu.ts';
 import { RadioPillButtons } from './radio-bits.tsx';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice, type Ask, type CameraMode, type PanelId } from '../lib/store.ts';
 import { may, memberOfEmployee, whyNot } from '../lib/access.ts';
@@ -166,7 +167,8 @@ export function TopBar() {
   ];
   // Only what this person can open: a visitor's menu is the short one.
   const visitor = s.me?.role === 'visitor';
-  const shownGroups = groups.map((g) => ({ ...g, items: g.items.filter((n) => mayOpenPanel(s.me?.role, n.id)) })).filter((g) => g.items.length);
+  // (What a window is called is said in one place: `lib/menu.ts`.)
+  const shownGroups = groups.map((g) => ({ ...g, items: g.items.filter((n) => mayOpenPanel(s.me?.role, n.id)).map((n) => ({ ...n, label: LABEL[n.id] ?? n.label })) })).filter((g) => g.items.length);
   // The menu stays out of the way until asked for; it closes on a click elsewhere or once something is chosen.
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);

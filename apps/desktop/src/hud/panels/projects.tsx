@@ -559,6 +559,11 @@ function ProjectCreate({ onCreated }: { onCreated: (id: string) => void }) {
 // ─────────────────────────────── panel ───────────────────────────────
 
 type ProjectTab = 'overview' | 'about' | 'integration' | 'policy' | 'plan';
+/** What the tabs that are forms are for (the Overview, About and Plan say it themselves). */
+const TAB_ABOUT: Partial<Record<ProjectTab, string>> = {
+  integration: 'Where finished work comes together: every task that passes is merged into one branch, tested there, and promoted to the main branch when you say so.',
+  policy: 'The rules of this project: how a finished task is checked, whether tasks start and merge by themselves, and what employees may and may not run here.',
+};
 
 interface IntegrationView {
   base: string;
@@ -733,6 +738,12 @@ function ProjectDetail({ project }: { project: Project }) {
         onChange={setTab}
       />
       <div className="pw-body pj-body" data-project-tab={tab}>
+        {/* What a tab is for, said once at its top. */}
+        {TAB_ABOUT[tab] && (
+          <div className="k-text" style={{ marginBottom: 16 }}>
+            {TAB_ABOUT[tab]}
+          </div>
+        )}
         {tab === 'overview' && <ProjectOverview project={project} onTab={setTab} />}
         {tab === 'about' && <ProjectAbout project={project} />}
         {tab === 'integration' && <ProjectIntegration project={project} />}

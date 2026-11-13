@@ -11,7 +11,7 @@ import { useAccess } from '../../lib/access.ts';
 import { mayKeep, scoped, whoseEmployee, whoseLabel } from '../../lib/mine.ts';
 import { byAttention, employeeState } from '../../lib/my-work.ts';
 import { byProject, levelLine, teamLine } from '../../lib/team.ts';
-import { oneLine } from '../../lib/inbox.ts';
+import { byDay, oneLine } from '../../lib/inbox.ts';
 import { More, State } from './kit.tsx';
 import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { FolderField } from './folder-picker.tsx';
@@ -1257,13 +1257,17 @@ function SessionTab({ e }: { e: Employee }) {
     setBusy(false);
   };
 
+  const state = employeeState(activityOf(session), false);
   return (
-    <div className="col" style={{ gap: 14 }}>
-      <div className="row row-wrap">
+    <div className="k-stack" data-profile-session>
+      <div className="k-text">
+        A session is {e.name}'s Claude Code, running in a terminal on their machine. It starts by itself when they are given work or spoken to; here it is started, paused and stopped by hand.
+      </div>
+      <div className="k-actions">
         {live ? (
           <>
             {paused ? (
-              <Button variant="success" small disabled={busy} onClick={() => run(() => api('POST', `/employees/${e.id}/resume`, {}), `${e.name} resumed`)}>
+              <Button small disabled={busy} onClick={() => run(() => api('POST', `/employees/${e.id}/resume`, {}), `${e.name} resumed`)}>
                 Resume
               </Button>
             ) : (
@@ -1271,7 +1275,7 @@ function SessionTab({ e }: { e: Employee }) {
                 Pause
               </Button>
             )}
-            <Button variant="danger" small disabled={busy} onClick={() => setConfirmStop(true)}>
+            <Button small disabled={busy} onClick={() => setConfirmStop(true)}>
               {attached ? 'Detach…' : 'Stop session…'}
             </Button>
           </>
@@ -1283,8 +1287,8 @@ function SessionTab({ e }: { e: Employee }) {
         <Button small onClick={() => st.enterWorkstation(e.id)} disabled={!session}>
           Open terminal
         </Button>
-        {!live && host && host.status !== 'online' && <span className="small muted">{host.name} is {host.status}; a session cannot start there right now.</span>}
-        {!live && !e.hostId && <span className="small muted">No machine assigned.</span>}
+        {!live && host && host.status !== 'online' && <span className="k-sub">{host.name} is {host.status}; a session cannot start there right now.</span>}
+        {!live && !e.hostId && <span className="k-sub">No machine assigned.</span>}
       </div>
 
       {confirmStop && live && (
@@ -1305,120 +1309,143 @@ function SessionTab({ e }: { e: Employee }) {
       )}
 
       {!session ? (
-        <Empty title="No session yet">{e.name} has never had a session. Start one, or assign a task and Orchestrator starts it.</Empty>
+        <div className="k-empty">
+          <div className="k-title">No session yet</div>
+          <div className="k-text">{e.name} has never had one. Start it here, or give them a task and the office starts it.</div>
+        </div>
       ) : (
-        <div>
-          <div className="section-title">{live ? 'Current session' : 'Last session'}</div>
-          <dl className="kv">
-            <dt>Status</dt>
-            <dd className="row row-wrap">
-              <Badge tone={sessionStatusTone(session.status)}>{humanize(session.status)}</Badge>
-              <ActivityBadge activity={activityOf(session)} />
-              {live && session.activityDetail && <span className="small mono muted">{session.activityDetail}</span>}
-            </dd>
-            <dt>Runtime</dt>
-            <dd>
-              {runtimeLabel(session)}
-              {e.executionMode === 'managed_sdk' && session.mode !== 'managed_sdk' && live && (
-                <Badge tone="warn" title="This employee is configured for the SDK-managed runtime, but the machine does not provide it, so the session was started as an interactive worker.">
-                  fallback
-                </Badge>
-              )}
-            </dd>
-            <dt>Capabilities</dt>
-            <dd>
-              <CapabilityBadges capabilities={session.capabilities} />
-              {!session.capabilities.hooks && <div className="small faint">Without hooks only the terminal can be observed: activity stays UNKNOWN and nothing is inferred.</div>}
-            </dd>
-            <dt>Control</dt>
-            <dd>
-              <span className="strong">{humanize(control)}</span>
-              {controlMap[session.id]?.you && <Badge tone="warn">you are in control</Badge>}
-              {controlInfo && <div className="small faint">{controlInfo.text}</div>}
-            </dd>
-            <dt>In a turn</dt>
-            <dd>{session.inTurn == null ? <span className="muted">unknown (no hooks)</span> : session.inTurn ? 'yes — Claude is working' : 'no — between turns'}</dd>
-            <dt>tmux session</dt>
-            <dd className="mono">
-              {session.tmuxSession}
-              {session.tmuxPane ? ` · pane ${session.tmuxPane}` : ''} · {session.cols}×{session.rows}
-            </dd>
-            <dt>Machine</dt>
-            <dd>
-              <HostLabel host={hosts[session.hostId]} />
-            </dd>
-            <dt>Working directory</dt>
-            <dd className="mono">{session.cwd}</dd>
-            <dt>Branch</dt>
-            <dd className="mono">{session.branch ?? <span className="muted">none detected</span>}</dd>
-            <dt>Process id</dt>
-            <dd className="mono">{session.pid ?? <span className="muted">{NOT_AVAILABLE}</span>}</dd>
-            <dt>Permission mode</dt>
-            <dd className="mono">{session.permissionMode ?? <span className="muted">unknown</span>}</dd>
-            <dt>Model</dt>
-            <dd>
-              <span className="mono">{session.model ?? 'default'}</span> <span className="muted">· effort</span> <span className="mono">{session.effort ?? 'default'}</span>
-            </dd>
-            <dt>Token usage</dt>
-            <dd>
-              <UsageValue session={session} />
-            </dd>
-            <dt>Started</dt>
-            <dd>
-              {fmtDateTime(session.startedAt)} <span className="faint">({timeAgo(session.startedAt)})</span>
-            </dd>
-            <dt>Last signal</dt>
-            <dd>{session.lastEventAt ? timeAgo(session.lastEventAt) : <span className="muted">none received</span>}</dd>
-            {session.endedAt && (
-              <>
-                <dt>Ended</dt>
-                <dd>{fmtDateTime(session.endedAt)}</dd>
-              </>
-            )}
+        <section className="k-section">
+          <div className="k-label">{live ? 'The session now' : 'The last session'}</div>
+          <div className="k-group">
+            <div className="k-row k-row-sm">
+              <span className={`k-dot ${live ? '' : 'k-dot-off'}`} aria-hidden />
+              <span className="k-main">
+                <span className="k-title k-title-sm">
+                  {humanize(session.status)}
+                  {live && <span className="k-title-note">{state.word}{session.inTurn == null ? '' : session.inTurn ? ' · in a turn' : ' · between turns'}</span>}
+                </span>
+                {live && session.activityDetail && <span className="k-sub k-mono">{session.activityDetail}</span>}
+              </span>
+              <span className="k-aside">{live ? `since ${timeAgo(session.startedAt)}` : session.endedAt ? `ended ${timeAgo(session.endedAt)}` : ''}</span>
+            </div>
+            <div className="k-row k-row-sm" title={controlInfo?.text}>
+              <span className={`k-dot ${controlMap[session.id]?.you ? 'k-dot-busy' : 'k-dot-off'}`} aria-hidden />
+              <span className="k-main">
+                <span className="k-title k-title-sm">
+                  {controlInfo?.label ?? humanize(control)}
+                  {controlMap[session.id]?.you && <span className="k-title-note k-warn">you hold the keyboard</span>}
+                </span>
+                {controlInfo && <span className="k-sub" style={{ whiteSpace: 'normal' }}>{controlInfo.text}</span>}
+              </span>
+            </div>
+          </div>
+          <dl className="k-spec" style={{ marginTop: 8 }}>
+            <div>
+              <dt>Machine</dt>
+              <dd>
+                {hosts[session.hostId]?.name ?? 'unknown'}
+                {hosts[session.hostId] && hosts[session.hostId]!.status !== 'online' && <span className="k-warn"> · {hosts[session.hostId]!.status}</span>}
+              </dd>
+            </div>
+            <div>
+              <dt>Thinks with</dt>
+              <dd>
+                {session.model ?? 'the default model'}
+                {session.effort ? ` · ${session.effort} effort` : ''}
+              </dd>
+            </div>
+            <div>
+              <dt>Last heard from</dt>
+              <dd>{session.lastEventAt ? timeAgo(session.lastEventAt) : <span className="muted">never</span>}</dd>
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <dt>Folder</dt>
+              <dd className="k-mono">{session.cwd}</dd>
+            </div>
+            <div>
+              <dt>Branch</dt>
+              <dd className="k-mono">{session.branch ?? <span className="muted">none detected</span>}</dd>
+            </div>
+            <div style={{ gridColumn: 'span 2' }}>
+              <dt>Tokens used</dt>
+              <dd>
+                <UsageValue session={session} />
+              </dd>
+            </div>
             {session.exitReason && (
-              <>
-                <dt>Exit reason</dt>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <dt>Why it ended</dt>
                 <dd>{session.exitReason}</dd>
-              </>
+              </div>
             )}
           </dl>
-        </div>
+          <More summary="Technical details">
+            <dl className="k-spec">
+              <div style={{ gridColumn: '1 / -1' }}>
+                <dt>How it runs</dt>
+                <dd>
+                  {runtimeLabel(session)}
+                  {e.executionMode === 'managed_sdk' && session.mode !== 'managed_sdk' && live && <span className="k-warn" title="This employee is configured for the SDK-managed runtime, but the machine does not provide it, so the session was started as an interactive worker."> · fallback</span>}
+                </dd>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <dt>What the office can do with it</dt>
+                <dd>
+                  <CapabilityBadges capabilities={session.capabilities} />
+                  {!session.capabilities.hooks && <div className="k-sub" style={{ whiteSpace: 'normal' }}>Without hooks only the terminal can be observed: activity stays UNKNOWN and nothing is inferred.</div>}
+                </dd>
+              </div>
+              <div>
+                <dt>tmux session</dt>
+                <dd className="k-mono">
+                  {session.tmuxSession}
+                  {session.tmuxPane ? ` · pane ${session.tmuxPane}` : ''} · {session.cols}×{session.rows}
+                </dd>
+              </div>
+              <div>
+                <dt>Process id</dt>
+                <dd className="k-mono">{session.pid ?? <span className="muted">{NOT_AVAILABLE}</span>}</dd>
+              </div>
+              <div>
+                <dt>Permission mode</dt>
+                <dd className="k-mono">{session.permissionMode ?? <span className="muted">unknown</span>}</dd>
+              </div>
+              <div>
+                <dt>Started</dt>
+                <dd>{fmtDateTime(session.startedAt)}</dd>
+              </div>
+              {session.endedAt && (
+                <div>
+                  <dt>Ended</dt>
+                  <dd>{fmtDateTime(session.endedAt)}</dd>
+                </div>
+              )}
+            </dl>
+          </More>
+        </section>
       )}
 
       {previous.length > 0 && (
-        <div>
-          <div className="section-title">Previous sessions</div>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Status</th>
-                <th>Runtime</th>
-                <th>tmux</th>
-                <th>Started</th>
-                <th>Ended</th>
-                <th>Output tokens</th>
-                <th>Exit reason</th>
-              </tr>
-            </thead>
-            <tbody>
-              {previous.map((x) => (
-                <tr key={x.id}>
-                  <td>
-                    <Badge tone={sessionStatusTone(x.status)}>{humanize(x.status)}</Badge>
-                  </td>
-                  <td>{x.origin}</td>
-                  <td className="mono" title={x.cwd}>
-                    {x.tmuxSession}
-                  </td>
-                  <td className="small pc-nowrap">{fmtDateTime(x.startedAt)}</td>
-                  <td className="small pc-nowrap">{fmtDateTime(x.endedAt)}</td>
-                  <td className="small">{x.usage ? `${fmtInt(x.usage.outputTokens)} (measured)` : <span className="muted">{NOT_AVAILABLE}</span>}</td>
-                  <td className="small muted">{x.exitReason ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <More summary={`${previous.length} earlier session${previous.length === 1 ? '' : 's'}`}>
+          <div className="k-group">
+            {previous.map((x) => (
+              <div key={x.id} className="k-row k-row-sm" title={`${x.tmuxSession} · ${x.cwd}`}>
+                <span className="k-dot k-dot-off" aria-hidden />
+                <span className="k-main">
+                  <span className="k-title k-title-sm">
+                    {fmtDateTime(x.startedAt)}
+                    <span className="k-title-note">
+                      {humanize(x.status)}
+                      {x.endedAt ? ` · until ${fmtDateTime(x.endedAt)}` : ''}
+                    </span>
+                  </span>
+                  {x.exitReason && <span className="k-sub">{x.exitReason}</span>}
+                </span>
+                <span className="k-aside">{x.usage ? `${fmtInt(x.usage.outputTokens)} tokens out` : ''}</span>
+              </div>
+            ))}
+          </div>
+        </More>
       )}
     </div>
   );
@@ -1433,9 +1460,20 @@ const DELIVERY_TIP: Record<DeliveryStatus, string> = {
   failed: 'Could not be delivered',
 };
 
+/** How a message fared on its way into a session: a word, coloured only when it did not get there. */
+const DELIVERY_WORD: Record<DeliveryStatus, { word: string; tone: 'calm' | 'warn' | 'bad' }> = {
+  none: { word: 'not delivered', tone: 'calm' },
+  queued: { word: 'waiting', tone: 'calm' },
+  sent: { word: 'on its way', tone: 'calm' },
+  confirmed: { word: 'arrived', tone: 'calm' },
+  failed: { word: 'did not arrive', tone: 'bad' },
+};
+
 function MessageTab({ e }: { e: Employee }) {
   const messages = useOffice((s) => s.messages);
   const employees = useOffice((s) => s.employees);
+  const [shown, setShown] = useState(40);
+  const [open, setOpen] = useState<string | null>(null);
   const list = useMemo(
     () =>
       Object.values(messages)
@@ -1444,40 +1482,60 @@ function MessageTab({ e }: { e: Employee }) {
     [messages, e.id],
   );
   return (
-    <div className="col" style={{ gap: 12 }}>
-      <div className="row">
-        <span className="small muted grow">Everything said to and by {e.name}, newest first: by you, by other people and by other employees.</span>
-        <Button small variant="primary" onClick={() => useOffice.getState().openPanel('talk', e.id)}>
-          Talk to {e.name}
-        </Button>
-      </div>
-      <div>
-        {list.length === 0 && <div className="small muted">No messages yet.</div>}
-        <div className="list">
-          {list.map((m) => {
-            const outgoing = m.toEmployeeId !== e.id;
-            const other = outgoing ? (employees[m.toEmployeeId]?.name ?? 'someone') : m.from.name;
-            return (
-              <div key={m.id} className="card col" style={{ gap: 4, padding: 10 }}>
-                <div className="row row-wrap">
-                  <span className="strong small">{outgoing ? `${e.name} → ${other}` : `${other} → ${e.name}`}</span>
-                  <Badge tone="muted">{humanize(m.kind)}</Badge>
-                  <span className="grow" />
-                  <Badge tone={DELIVERY_TONE[m.delivery.status]} title={DELIVERY_TIP[m.delivery.status]}>
-                    {m.delivery.status === 'none' ? 'not delivered' : m.delivery.status}
-                  </Badge>
-                  {m.delivery.via && <span className="small faint">via {humanize(m.delivery.via)}</span>}
-                  <span className="small faint" title={fmtDateTime(m.createdAt)}>
-                    {timeAgo(m.createdAt)}
-                  </span>
-                </div>
-                <div className="small pre">{m.body}</div>
-                {m.delivery.detail && <div className="small faint">{m.delivery.detail}</div>}
-              </div>
-            );
-          })}
+    <div className="k-stack" data-profile-messages>
+      <div className="k-text">Everything said to and by {e.name}, newest first: by you, by other people and by other employees. To say something yourself, use Talk, above. A click on a line shows all of it.</div>
+      {list.length === 0 && (
+        <div className="k-empty">
+          <div className="k-title">Nothing said yet</div>
+          <div className="k-text">What you tell {e.name} in Talk, and what other employees tell them, is kept here.</div>
         </div>
-      </div>
+      )}
+      {byDay(list.slice(0, shown)).map((g) => (
+        <section key={g.day} className="k-section">
+          <div className="k-label">{g.day}</div>
+          <div className="k-group">
+            {g.rows.map((m) => {
+              const outgoing = m.toEmployeeId !== e.id;
+              const other = outgoing ? (employees[m.toEmployeeId]?.name ?? 'someone') : m.from.name;
+              const fared = DELIVERY_WORD[m.delivery.status];
+              const whole = open === m.id;
+              return (
+                <div key={m.id}>
+                  <div className="k-row k-row-sm k-row-click" role="button" tabIndex={0} aria-expanded={whole} onClick={() => setOpen(whole ? null : m.id)} onKeyDown={(ev) => ev.target === ev.currentTarget && onActivate(() => setOpen(whole ? null : m.id))(ev)}>
+                    <span className="k-main">
+                      <span className="k-title k-title-sm">
+                        {outgoing ? `To ${other}` : `From ${other}`}
+                        <span className="k-title-note">{oneLine(m.body, 120)}</span>
+                      </span>
+                    </span>
+                    <span className="k-aside" title={fmtDateTime(m.createdAt)}>
+                      {timeAgo(m.createdAt)}
+                    </span>
+                    <State word={fared.word} tone={fared.tone} title={`${DELIVERY_TIP[m.delivery.status]}${m.delivery.via ? ` — via ${humanize(m.delivery.via)}` : ''}`} width={96} />
+                    <span className="k-chev" aria-hidden />
+                  </div>
+                  {whole && (
+                    <div className="k-detail" style={{ paddingLeft: 16, paddingTop: 0, gap: 8 }}>
+                      <div className="pre" style={{ fontSize: 13 }}>
+                        {m.body}
+                      </div>
+                      <div className="k-sub" style={{ whiteSpace: 'normal' }}>
+                        {humanize(m.kind)} · {fmtDateTime(m.createdAt)}
+                        {m.delivery.detail ? ` · ${m.delivery.detail}` : ''}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+      {list.length > shown && (
+        <button type="button" className="k-link" style={{ alignSelf: 'flex-start' }} onClick={() => setShown((n) => n + 40)}>
+          Show {Math.min(40, list.length - shown)} more
+        </button>
+      )}
     </div>
   );
 }
@@ -1490,54 +1548,57 @@ function HistoryTab({ e }: { e: Employee }) {
     const st = useOffice.getState();
     if (x.taskId && st.tasks[x.taskId]) st.openPanel('task', x.taskId);
   };
+  const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return (
-    <div className="col" style={{ gap: 10 }}>
-      <div className="row">
-        <label className="check small">
-          <input type="checkbox" checked={all} onChange={(ev) => setAll(ev.target.checked)} /> Include quiet and activity events
-        </label>
-        <span className="grow" />
-        <span className="small faint">
-          {rows.length} recorded event{rows.length === 1 ? '' : 's'}, newest first (the last 300 are loaded)
-        </span>
-        <Button small onClick={load.reload} disabled={load.loading}>
+    <div className="k-stack" data-profile-history>
+      <div className="k-head">
+        <div className="k-text">What {e.name} did and what was done with them, as the office recorded it — newest first. A line about a task opens it.</div>
+        <Button small variant="ghost" className="k-quiet" onClick={load.reload} disabled={load.loading}>
           Refresh
         </Button>
       </div>
+      <label className="check small" style={{ alignItems: 'center' }}>
+        <input type="checkbox" style={{ margin: 0 }} checked={all} onChange={(ev) => setAll(ev.target.checked)} />
+        <span className="k-sub">Also every small step (each tool they used, each signal from their session)</span>
+      </label>
       <LoadState load={load} what="the history" />
-      {load.data && rows.length === 0 && <div className="small muted">Nothing recorded for {e.name} yet.</div>}
-      {rows.length > 0 && (
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>What happened</th>
-              <th>Source</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((x) => {
+      {load.data && rows.length === 0 && <div className="k-sub">Nothing recorded for {e.name} yet.</div>}
+      {byDay(rows.map((x) => ({ ...x, createdAt: x.ts }))).map((g) => (
+        <section key={g.day} className="k-section">
+          <div className="k-label">{g.day}</div>
+          <div className="k-group">
+            {g.rows.map((x) => {
               const clickable = !!x.taskId && !!useOffice.getState().tasks[x.taskId];
-              return (
-                <tr key={x.id} className={clickable ? 'tbl-click' : undefined} tabIndex={clickable ? 0 : undefined} onClick={clickable ? () => open(x) : undefined} onKeyDown={clickable ? onActivate(() => open(x)) : undefined}>
-                  <td className="small mono muted pc-nowrap" title={x.ts}>
-                    {fmtDateTime(x.ts)}
-                  </td>
-                  <td>
-                    <span className={eventTone(x)}>{x.summary}</span>
-                    <div className="small faint mono">{x.type}</div>
-                  </td>
-                  <td>
-                    <Badge tone="muted" title={x.source.detail ?? `Recorded from: ${x.source.kind}`}>
-                      {x.source.kind}
-                    </Badge>
-                  </td>
-                </tr>
+              const tone = eventTone(x);
+              const inner = (
+                <>
+                  <span className="k-key" title={fmtDateTime(x.ts)}>
+                    {g.day === 'Earlier' ? new Date(x.ts).toLocaleDateString([], { month: 'short', day: 'numeric' }) : clock(x.ts)}
+                  </span>
+                  <span className="k-main">
+                    <span className={`k-title k-title-sm ${tone}`} style={{ fontWeight: 500 }}>
+                      {x.summary}
+                    </span>
+                  </span>
+                  <span className="k-aside" title={`${x.type}${x.source.detail ? ` — ${x.source.detail}` : ''}`}>
+                    {x.source.kind === 'owner' ? 'by a person' : x.source.kind === 'hook' ? 'from their session' : x.source.kind === 'server' ? 'by the office' : `from ${humanize(x.source.kind)}`}
+                  </span>
+                </>
+              );
+              return clickable ? (
+                <button key={x.id} type="button" className="k-row k-row-sm tbl-click" onClick={() => open(x)}>
+                  {inner}
+                </button>
+              ) : (
+                <div key={x.id} className="k-row k-row-sm">
+                  {inner}
+                </div>
               );
             })}
-          </tbody>
-        </table>
-      )}
+          </div>
+        </section>
+      ))}
+      {rows.length >= 300 && <div className="k-sub">The last 300 are shown.</div>}
     </div>
   );
 }

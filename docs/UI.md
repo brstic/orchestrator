@@ -79,7 +79,7 @@ Colours, fonts and the old classes (`.btn`, `.badge`, `.field`, `.avatar`) are t
 | The menu | 2026-11-13 | See below |
 | Inbox | 2026-11-13 | See below |
 | Team | 2026-11-13 | See below |
-| An employee's window (Profile) | 2026-11-13 | See below; its Look, Session, Messages, History and Desk tabs are in the new frame with their old insides |
+| An employee's window (Profile) | 2026-11-13 | See below; all its tabs but Look and Desk and hours (in the new frame, their insides as they were) |
 | Projects | 2026-11-13 | See below; its Plan, Integration and Policy tabs are in the new frame with their old insides |
 | Reports | 2026-11-13 | See below |
 | Growth | 2026-11-13 | See below; what stands inside "Waiting for you", "Done by itself" and "Is it working?" is as it was |
@@ -132,6 +132,8 @@ The first version of this window in the new look (five lists one under the other
 
 Every window the person may open is there with **a picture, its name and one line that says what it is for** ("Vault — Passwords and keys employees may use"), so nobody has to open a window to learn what it is. The groups are the old ones (Mine, Work, People, Office, Break room) in **two columns**; Settings and Help stand across the bottom. A number beside a window is grey, and red only when it counts things that are stuck or wait for somebody.
 
+The same names and lines are in **Help**, under *What each window is for* (each opens its window); what a window is called is said in one place, `LABEL` in `lib/menu.ts`.
+
 **A box at the top has the keyboard** when the menu opens: a word of the window's name, of its line, or of what people call the thing ("password" → Vault and Access; "hire" → Team; "ssh" → Machines) narrows the list; ↑ ↓ move, Enter opens, Escape closes. Keys typed there do not reach the office (no walking while typing).
 
 **Checked:** unit `apps/desktop/test/menu.test.ts`; the UI suite's step "the menu opens from the top-left button…" (every window has a picture and a line, two columns, all of it on the screen, found by "passwords keys", Enter opens, a click opens, nothing found says so). **Not looked at:** as a visitor (the short menu); on a screen lower than 760 px (it scrolls).
@@ -161,12 +163,15 @@ Every window the person may open is there with **a picture, its name and one lin
 - **The head** is the person: their face, their name, and under it the same line as in every list (how they are, and on what). To the right: *Terminal* (quiet) and the one main button — *Talk*, or *Answer their question* when they ask (then *Talk* is an ordinary button beside it).
 - **Overview** (new, and where the window opens): on the left **Right now** — what they ask, the task they are on (a click opens it), whether a session runs (a click goes to Session) — and **What they are**: role, project, machine, what they think with, how much they may do without asking, whose they are (with *List among mine* / *Not mine*), skills; *Change* leads to Settings. On the right **Delivered** — six figures counted by the office — and **Level**, with where the XP came from folded. Nothing on it is filled in.
 - **Settings** (was the whole "Profile" tab): who they are, where they work, what they think with, how much they may do without asking — **six lines, one per level, the chosen one saying the rest** (it was six tall boxes) — more settings folded, employment (archive, delete: two quiet buttons with a sentence, no longer two red ones). **The bar that saves is always at the bottom of the window**: it says "Nothing is changed" or names what is unsaved and what saving will do to their session, with *Discard* and *Save changes*.
-- **Look** (was "Appearance"), **Session**, **Messages**, **History**, **Desk and hours**: in the new frame, their insides as they were.
+- **Session**: one sentence on what a session is; *Pause* / *Stop session…* / *Open terminal* (no red button: stopping asks first); the session now in two lines — how it is and since when, and who holds the keyboard — then six facts (machine, model, last heard from, folder, branch, tokens); the rest (how it runs, what the office can do with it, tmux, process, permission mode) under *Technical details*; earlier sessions folded.
+- **Messages**: everything said to and by them, one line each under *Today / Yesterday / Earlier* ("From Boss · …", how long ago, and one word for whether it got there); a click shows all of it.
+- **History**: what they did and what was done with them, one line each by day — the time, what happened, and who it came from in words ("by the office", "from their session", "by a person"); the event's code is in the tooltip; a line about a task opens it.
+- **Look** (was "Appearance") and **Desk and hours**: in the new frame, their insides as they were.
 - The window keeps one size from tab to tab. `openPanel('employee', '<id>:settings')` (or `:profile`) opens the settings; without a tab it opens Overview.
 
 **Roles.** A visitor gets the small card as before (role, project, task, skills, level, *Watch terminal*), now with the same head.
 
-**Checked:** unit `apps/desktop/test/team.test.ts`; the UI suite's "Team and an employee's window…" (cards under projects in columns, one button and one state per card, no table or badge; a card opens the profile on Overview with the face and state in its head, one main button, six figures and nothing to fill in; *Change* → Settings at the same window size; the save bar in sight and disabled, six autonomy lines with one explained, a change named in the bar and discarded) and the older Team steps (instructions saved, session stopped and started, appearance, schedule, archive, hiring). **Not looked at:** the profile of a member's own employee as that member; a visitor's card; the Look, Session, Messages, History and Desk tabs beyond that they open (their insides are still the old look).
+**Checked:** unit `apps/desktop/test/team.test.ts`; the UI suite's "Team and an employee's window…" (cards under projects in columns, one button and one state per card, no table or badge; a card opens the profile on Overview with the face and state in its head, one main button, six figures and nothing to fill in; *Change* → Settings at the same window size; the save bar in sight and disabled, six autonomy lines with one explained, a change named in the bar and discarded) and the older Team steps (instructions saved, session stopped and started, appearance, schedule, archive, hiring). **Not looked at:** the profile of a member's own employee as that member; somebody with dozens of messages or a history over several days; a session that is paused, lost or on a machine that dropped out. (A visitor's card and menu were looked at: the short card with the new head, and no button but *Watch terminal*.)
 
 ## Projects
 
@@ -176,7 +181,7 @@ Every window the person may open is there with **a picture, its name and one lin
 
 - **Overview** (new, and where a project opens): **How far it is** — one bar in parts (done, in review, in progress, blocked, not started) with what the parts are; **Open now** — its open tasks with the face of whoever is on each (a click opens the task; *Its tasks* opens the board filtered to it) and under them what was **done lately**; **Who is on it** — its people with how each is (a click opens the person); **What it is** — the description, and the way to change it; *Show only this project in the office*.
 - **About** (was the Overview's form): description, goals, requirements, notes — "what employees on this project are told about it" — where it lives (folder, machine, branches), other repositories and what it builds on.
-- **Plan**, **Integration**, **Policy**: as they were.
+- **Plan**, **Integration**, **Policy**: as they were, each beginning with a line that says what it is for.
 
 ## Reports
 

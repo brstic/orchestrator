@@ -23,3 +23,8 @@ test('a window is found by its name, by what it is for, and by what people call 
 test('every line about a window is short enough to be read at a glance', () => {
   for (const [id, line] of Object.entries(ABOUT)) assert.ok(line!.length <= 44, `${id}: "${line}" is ${line!.length} characters`);
 });
+
+test('every window that has a line about it has a name, and the other way round', async () => {
+  const { LABEL } = await import('../src/lib/menu.ts');
+  assert.deepEqual(Object.keys(ABOUT).sort(), Object.keys(LABEL).sort());
+});

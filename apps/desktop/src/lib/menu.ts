@@ -5,6 +5,30 @@ import type { PanelId } from './store.ts';
  * what somebody types. Nothing here touches the page.
  */
 
+/** What each window is called, wherever it is named: in the menu, and in Help's list of what is what. */
+export const LABEL: Partial<Record<PanelId, string>> = {
+  mine: 'My work',
+  myroom: 'My room',
+  overview: 'Company',
+  tasks: 'Tasks',
+  projects: 'Projects',
+  meetings: 'Meetings',
+  reports: 'Reports',
+  growth: 'Growth',
+  team: 'Team',
+  people: 'Access',
+  map: 'Map',
+  office: 'Floor plan',
+  hosts: 'Machines',
+  wall: 'Terminals',
+  vault: 'Vault',
+  radio: 'Hi-fi',
+  tv: 'TV',
+  arcade: 'Arcade',
+  settings: 'Settings',
+  help: 'Help',
+};
+
 /** What each window is for, in a line. A window without a line here is listed by its name alone. */
 export const ABOUT: Partial<Record<PanelId, string>> = {
   mine: 'Your people, your tasks, what waits',

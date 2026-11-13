@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react';
 import { Window } from '@orchestrator/ui';
+import { ABOUT, LABEL } from '../../lib/menu.ts';
 import { usePrefs } from '../../lib/prefs.ts';
+import { mayOpenPanel } from '../../lib/visitor-panels.ts';
+import type { PanelId } from '../../lib/store.ts';
+import { Icon } from '../menu.tsx';
 import { useOffice } from '../../lib/store.ts';
 import { registerPanel } from './index.tsx';
 import { keyLabel, type PanelProps } from './company-shared.tsx';
@@ -35,8 +39,10 @@ const BINDINGS: Array<{ id: string; label: string }> = [
 function HelpPanel({ onClose }: PanelProps) {
   const kb = usePrefs((p) => p.prefs.keybindings);
   const k = (id: string) => keyLabel(kb[id]);
+  const role = useOffice((s) => s.me?.role);
   return (
     <Window
+      kit
       title="Help"
       subtitle="The office in two minutes"
       onClose={onClose}
@@ -177,6 +183,28 @@ function HelpPanel({ onClose }: PanelProps) {
           <div className="small faint" style={{ marginTop: 6 }}>
             Desks and rooms are used in CEO and First person.
           </div>
+        </section>
+
+        <section style={{ gridColumn: '1 / -1' }} data-help-windows>
+          <h3>What each window is for</h3>
+          <div className="hp-windows">
+            {(Object.keys(ABOUT) as PanelId[])
+              .filter((id) => id !== 'help' && id !== 'mine' && id !== 'myroom' && mayOpenPanel(role, id))
+              .map((id) => (
+                <button key={id} type="button" className="mn-item" onClick={() => useOffice.getState().openPanel(id)} title={`Open ${LABEL[id] ?? id}`}>
+                  <span className="mn-icon">
+                    <Icon id={id} />
+                  </span>
+                  <span className="mn-words">
+                    <span className="mn-name">{LABEL[id] ?? id}</span>
+                    <span className="mn-about">{ABOUT[id]}</span>
+                  </span>
+                </button>
+              ))}
+          </div>
+          <p className="small muted" style={{ marginTop: 8 }}>
+            All of them are in the <b>Menu</b>, at the top left; its box finds one by a word of what you want — “password”, “hire”, “radio”.
+          </p>
         </section>
 
         <section>
