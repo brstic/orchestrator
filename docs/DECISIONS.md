@@ -1120,6 +1120,12 @@ The owner: "in the profile's settings, right after the name and what they are, I
 - **The project they leave is left alone.** It holds what was done in that folder; emptying or archiving it because its one employee moved would be a second decision nobody asked for.
 - **It waits for the next start.** A running session sits in the folder it was started in. Restarting it for a folder change — as is done for a level or an account — would cut work off for something that is not urgent; the save bar says when it takes effect.
 
+## The icon is the logo, made from it, and written into the Windows program with resedit (2026-11-13)
+The owner: "make the icon for Mac and Windows look like the one on GitHub."
+- **Made from `docs/assets/logo.svg`, not drawn again.** One source; `pnpm icons` renders it with Electron (Chromium draws the SVG from the vector at every size — nothing to install) and the results are committed, so packaging needs no renderer.
+- **Two layouts.** macOS icons sit on Apple's grid (the body 824 of 1024, centred, with a shadow): the logo filling the square looks a size too big in the Dock beside other apps. Windows icons fill their square: the logo as it is.
+- **`resedit` for `Orchestrator.exe`.** An exe's icon is a resource inside the program; the usual tool (`rcedit`) is a Windows program, and the bundle is assembled on macOS. `resedit` (pure JavaScript, a root dev dependency, 3.0.2) rewrites the resources anywhere; it also puts "Orchestrator" in the file's details. The exe it writes is checked to be a valid Windows program and to carry our 256 px image byte for byte — it has not been started on Windows.
+
 ## A model's limit: another model first, another organisation when no model can (2026-11-13)
 The owner, pasting a session stuck at Claude Code's menu after "You've hit your Fable limit · resets Nov 19, 1pm (UTC)": "this must not block — go through it: select another model, and if not even another model can, select another organisation."
 - **The account was not used up; Fable on it was.** The refusal names the model; reading it as the account's limit (as the office did until then, for an hour) moved people who did not think with Fable at all, and took the account out of use for everybody.

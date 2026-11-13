@@ -108,6 +108,8 @@ const ORANGE = ['#ff8a3d', '#b3204f', '#3b2bd9'];
 const BLUE = ['#3b82f6', '#1e1b6e', '#16c79a'];
 const PINK = ['#f0479b', '#5b1a8a', '#2563eb'];
 const GREEN = ['#22b573', '#0c4a55', '#f43f5e'];
+const INDIGO = ['#5b5bf0', '#1c1450', '#22d3c5'];
+const AMBER = ['#f59e0b', '#7c2d12', '#6366f1'];
 
 // What each picture shows is what the office does; the words around it are the README's own.
 const ASSETS = process.env.README_SHEET ? [] : JSON.parse(fs.readFileSync(path.join(root, 'docs/assets/readme-art.json'), 'utf8'));
@@ -137,13 +139,14 @@ app.whenReady().then(async () => {
     win.destroy();
     console.log(file2);
   };
-  const palettes = { PURPLE, TEAL, ORANGE, BLUE, PINK, GREEN };
+  const palettes = { PURPLE, TEAL, ORANGE, BLUE, PINK, GREEN, INDIGO, AMBER };
   try {
     if (process.env.README_SHEET) {
       const files = fs.readdirSync(shotsDir).filter((f) => /\.(png|jpg)$/.test(f) && (process.env.README_SHEET === '1' || new RegExp(process.env.README_SHEET).test(f))).sort();
       await render('contact-sheet', 1600, 0, sheet(files));
     }
-    for (const a of ASSETS) {
+    // README_ONLY=<pattern>: only the pictures whose name matches (the others' screenshots need not be at hand).
+    for (const a of ASSETS.filter((x) => !process.env.README_ONLY || new RegExp(process.env.README_ONLY).test(x.name))) {
       if (a.kind === 'banner') await render(a.name, 1600, 600, banner(a));
       else await render(a.name, 1400, 900, card({ ...a, colors: palettes[a.palette] || PURPLE }));
     }

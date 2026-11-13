@@ -73,6 +73,10 @@ const stamp = new Date().toISOString().slice(11, 16).replace(':', '');
 const kept = path.join(root, 'release-next', `Orchestrator.app.previous-${stamp}`);
 if (fs.existsSync(current)) fs.renameSync(current, kept);
 fs.renameSync(next, current);
+// macOS keeps an app's icon in its caches: tell it this one is new, so that Finder and the Dock show its own icon.
+const now = new Date();
+fs.utimesSync(current, now, now);
+spawnSync('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', ['-f', current], { stdio: 'ignore' });
 say(`Replaced. The build that was there is kept as ${path.relative(root, kept)}.`);
 if (!process.argv.includes('--no-open')) {
   execFileSync('open', [current]);

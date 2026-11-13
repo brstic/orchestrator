@@ -2575,6 +2575,10 @@ async function scenario() {
     const table = `window.__t.scope().querySelector('[data-who-uses]')`;
     const row = (name) => `${table}.querySelector('[data-use-employee=' + JSON.stringify(${JSON.stringify(name)}) + ']')`;
     await js(`${table}.scrollIntoView({ block: 'start' })`);
+    // Its heading stays one line also when the box to find somebody is there (more than eight people): the box was
+    // stretched to the whole width and the words beside it broke into a column, a word a line.
+    const head = await js(`(() => { const t = ${table}; const title = t.querySelector(':scope > .row > .strong'); const find = t.querySelector('input[aria-label="Find an employee"]'); return { lines: Math.round(title.getBoundingClientRect().height / parseFloat(getComputedStyle(title).lineHeight || '18')), find: find ? Math.round(find.getBoundingClientRect().width) : null, row: Math.round(title.parentElement.getBoundingClientRect().height) }; })()`);
+    if (head.lines > 1 || (head.find !== null && head.find > 260) || head.row > 60) throw new Error(`the table's heading: ${JSON.stringify(head)}`);
     const first = await js(`(() => { const t = ${table}; return { machines: [...t.querySelectorAll('[data-use-machine]')].map((g) => g.getAttribute('data-use-machine')), selects: t.querySelector('[data-use-employee]').querySelectorAll('select').length, bulk: !!t.querySelector('[data-use-bulk]'), note: t.querySelector('[data-use-save]').textContent, apply: t.querySelector('[data-use-apply]').disabled }; })()`);
     if (!first.machines.includes('dev-mac') || first.selects !== 3 || first.bulk || !/Nothing is changed/.test(first.note) || !first.apply) throw new Error(`the table at first: ${JSON.stringify(first)}`);
     // Two people are ticked; the bar above sets one thing for both. It is a draft: their records do not change.

@@ -97,8 +97,8 @@ export function WhoUsesWhat() {
   return (
     <div className="use" data-who-uses>
       <div className="row" style={{ gap: 10, marginBottom: 8 }}>
-        <span className="strong">Who is on what</span>
-        <span className="small faint grow">Put people on accounts and choose their model and effort — one by one, or tick several and set them together.</span>
+        <span className="strong use-title">Who is on what</span>
+        <span className="small faint use-about">Put people on accounts and choose their model and effort — one by one, or tick several and set them together.</span>
         {everyone.length > 8 && <input className="use-find" value={find} onChange={(ev) => setFind(ev.target.value)} placeholder="Find…" aria-label="Find an employee" spellCheck={false} />}
       </div>
 

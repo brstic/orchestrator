@@ -731,11 +731,21 @@ fieldset.pc-plain {
 .use {
   margin-top: 6px;
 }
-.use-find {
+/* (Written with the element: the app's own rule for inputs in a window comes later and would stretch it to the full width.) */
+.use input.use-find {
+  flex: none;
   width: 180px;
   height: 30px;
   padding: 0 10px;
   font-size: 12.5px;
+}
+.use-title {
+  flex: none;
+  white-space: nowrap;
+}
+.use-about {
+  flex: 1;
+  min-width: 0;
 }
 .use-group {
   border: 1px solid var(--line);

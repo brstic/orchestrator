@@ -49,12 +49,14 @@
     "serve": "node scripts/start-local.mjs --door",
     "office": "node scripts/office-admin.mjs",
     "test:central": "node tests/linux/central-office.mjs",
-    "deploy:server": "sh scripts/deploy-server.sh"
+    "deploy:server": "sh scripts/deploy-server.sh",
+    "icons": "apps/desktop/node_modules/.bin/electron scripts/make-icons.cjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "esbuild": "^0.25.0",
     "typescript": "^5.9.0",
+    "resedit": "3.0.2",
     "@orchestrator/contracts": "workspace:*",
     "@orchestrator/database": "workspace:*",
     "@orchestrator/execution": "workspace:*",

@@ -202,6 +202,14 @@ function askAsGuest(address, token, fingerprint) {
 // ───────────── this computer's place in someone else's office ─────────────
 
 const { startPersonalHost } = require('./personal-host.cjs');
+
+/**
+ * The app's icon — the logo the repository shows (scripts/make-icons.cjs makes these from docs/assets/logo.svg). On
+ * Windows and Linux the window carries it (taskbar, title bar, Alt-Tab); on macOS the bundle's icon.icns does
+ * (scripts/package.mjs), and while running from the repository the Dock is given it here.
+ */
+const ICONS = path.join(__dirname, 'icons');
+const WINDOW_ICON = process.platform === 'win32' ? path.join(ICONS, 'icon.ico') : process.platform === 'darwin' ? undefined : path.join(ICONS, 'icon.png');
 let myHost = null;
 let myHostState = { state: 'none', reason: null, hostId: null };
 
@@ -419,6 +427,7 @@ function openConnect(reason, url) {
     height: 780,
     backgroundColor: '#0d1118',
     title: 'ORCHESTRATOR',
+    ...(WINDOW_ICON && fs.existsSync(WINDOW_ICON) ? { icon: WINDOW_ICON } : {}),
     autoHideMenuBar: true,
     // ORCH_HIDDEN: tests drive the windows without putting them on the person's screen.
     show: !process.env.ORCH_SMOKE_SCREENSHOT && !process.env.ORCH_HIDDEN,
@@ -699,6 +708,7 @@ async function openOffice(target) {
     minHeight: 700,
     backgroundColor: '#0d1118',
     title: 'ORCHESTRATOR',
+    ...(WINDOW_ICON && fs.existsSync(WINDOW_ICON) ? { icon: WINDOW_ICON } : {}),
     autoHideMenuBar: true,
     // ORCH_HIDDEN: tests drive the windows without putting them on the person's screen.
     show: !process.env.ORCH_SMOKE_SCREENSHOT && !process.env.ORCH_HIDDEN,
@@ -978,6 +988,14 @@ Menu.setApplicationMenu(
     { role: 'windowMenu' },
   ]),
 );
+
+// Running from the repository on macOS, the Dock would show Electron's own icon: it is given the app's.
+if (process.platform === 'darwin' && !app.isPackaged) app.whenReady().then(() => {
+  const dockIcon = path.join(ICONS, 'icon-mac.png');
+  if (fs.existsSync(dockIcon) && app.dock) app.dock.setIcon(dockIcon);
+});
+// (Windows: the taskbar groups the app by this id, and shows the window's icon for it.)
+if (process.platform === 'win32') app.setAppUserModelId('local.orchestrator.desktop');
 
 app.whenReady().then(() =>
   start().catch((e) => {

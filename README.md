@@ -33,6 +33,10 @@ It is **not** a dashboard with mascots, and it is **not** a simulation: nothing 
     <td><img src="docs/assets/shot-whip.jpg" alt="Crack the whip: the owner's character next to an employee, with the keys F talk, Space open terminal, R whip"></td>
     <td><img src="docs/assets/shot-break.jpg" alt="Break room: a hi-fi, a television and a sofa"></td>
   </tr>
+  <tr>
+    <td><img src="docs/assets/shot-menu.jpg" alt="One menu: every window with one line that says what it is for, and a box to find one by a word"></td>
+    <td><img src="docs/assets/shot-claude.jpg" alt="Who is on what: every employee's Claude account, model and effort in one table, several set at once"></td>
+  </tr>
 </table>
 
 <sub>Every picture is the real app, taken from a demo office whose employees are scripted stand-ins (so no Claude usage was spent on looking good). Only the frames and the shouting were added — <code>scripts/readme-shots.cjs</code> and <code>scripts/readme-art.cjs</code> make them again.</sub>
@@ -41,7 +45,7 @@ It is **not** a dashboard with mascots, and it is **not** a simulation: nothing 
 
 | | |
 | --- | --- |
-| 🧑‍💻 **Hire** | A name, a role, a folder, a desk. Pick the **model** (Fable, Opus, Sonnet, Haiku) and the **effort** for each hire. |
+| 🧑‍💻 **Hire** | A name, a role, a folder, a desk. Pick the **Claude account**, the **model** (Fable, Opus, Sonnet, Haiku) and the **effort** for each hire — and change them later for one person or for a dozen at once. |
 | 🚶 **Walk** | `W` `A` `S` `D` through your company. `F` talks to whoever you stand next to, `Space` sits you at their real terminal. |
 | ✋ **Answer** | A raised hand is a real question or a real permission request, held open until you decide. |
 | 📋 **Quests** | Tasks get a worktree and a branch, and each one is a conversation: employees ask there (with answers to click), you answer, attach pictures, send work back. *Done* means the office ran your tests, a colleague and then you reviewed it, and it merged — not that somebody said so. |
@@ -54,6 +58,10 @@ It is **not** a dashboard with mascots, and it is **not** a simulation: nothing 
 | 🪢 **The whip** | `R`. A crack, a flinch, a "jao!". At somebody asleep it gets them up; otherwise it sends nothing to anybody's session. It stays in. |
 | 👥 **Multiplayer** | Invite people with a link. Owners, colleagues, visitors; each colleague's own computer becomes a room, with a team lead of their own if they want one. Talk with your voice (`V`), wave, dance. |
 | 🔐 **A vault** | A safe in the server room: passwords and keys the employees may use by name, without ever seeing them typed into a prompt. |
+| 🔋 **Claude accounts** | Several per machine, signed in to **from the office** (open a link, paste a code — no terminal, no SSH), each called by its e-mail address. Or **Z.AI's GLM Coding Plan** with an API key. When one runs out its people move on by themselves; when only **Fable's** limit is spent they go on with **Opus** on the same account. |
+| 🧠 **Agents that budget** | Employees can put themselves — or a colleague — on a lighter model or less effort when the work does not need more (`set_model`). Hire a project manager and it does that for the team, with every change and its reason on the record. |
+| 🏆 **Employee of the month** | A framed board for the office: the face of whoever has **worked** the longest this month — time really spent thinking, coding and testing, counted by the office, never waiting time. |
+| 🔁 **Routines** | “Every 30 minutes, look at the error log and tell me what is new.” An employee repeats it by itself; their profile lists what they repeat, to change, pause or remove. |
 
 ## 🧱 How it is built
 
@@ -97,7 +105,7 @@ Then in the office, either way of working is fine — they share the same state:
 
 **Talk to an employee directly (the "cubicle" model).** Every employee can live in a folder and own the project in it.
 
-1. **Menu → Team → Hire** — a name, a role and a **folder** (use *Browse…*; **New folder** makes one on that machine). That folder becomes their project, and they work in it in place. An owner's new hires are **Unrestricted** (Claude Code's bypass-permissions mode: nothing is asked; high-risk commands are still held for you unless you switch that off), a colleague's are on **Auto**; choose another level under *More options*.
+1. **Menu → Team → Hire** — a name, a role and a **folder** (use *Browse…*; **New folder** makes one on that machine). That folder becomes their project, and they work in it in place. There are three levels: **Standard** (edits and routine commands; everything else asks you), **Auto** (Claude Code's auto mode decides; you are asked only for decisions) and **Unrestricted** (Claude Code's bypass-permissions mode: nothing is asked; high-risk commands are still held for you unless you switch that off). An owner's new hires are Unrestricted, a colleague's are on Auto; choose under *More options*. Claude Code's own first questions — *trust this folder?*, the bypass warning — are answered by the office, on the record (Settings → Employees switches that off).
 2. Walk to their desk (`W`/`S` to walk, `A`/`D` to turn, `Q`/`E` to sidestep) and press `F` to **talk**: tell them what to do in plain words. Your message goes into their real Claude Code session; their reply comes back in the conversation. Paste a screenshot or drop a file into it and they get the file; ask them to show you something and the picture appears there, to look at or download. Tick *Track as a task* when you want the work verified before it counts as done.
 3. Press `Space` instead to sit at their terminal and watch it, and **Take control** if you want the keyboard. The folders on their desk are the Markdown files in their folder — click them to read.
 
@@ -148,7 +156,14 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Window
 | A security notification | Claude Code refused an action, a known credential format went through a session (it is redacted in the records), a machine was refused a connection, or someone presented wrong owner tokens |
 | The **Foreman** stands at someone's desk during a round | The foreman's own session looked at that employee (`look_at`: the last lines of their real terminal, their task, their open question), answered them, gave them work or told them what to do next. Between rounds it walks the office from desk to desk; that walk is only a walk — nothing is read or sent |
 | An employee's question is answered without you | The foreman's session called `answer_question`; the employee gets the answer as usual and the record says the foreman gave it. Approving or denying an action is never the foreman's |
-| Hire → **Model**, **Effort** | That employee's sessions are started with `claude --model … --effort …`. The effort levels offered are the ones the Claude Code on that machine says it has |
+| Hire → **Account**, **Model**, **Effort** | That employee's sessions are started with `CLAUDE_CONFIG_DIR=<that account's folder> claude --model … --effort …`. The effort levels offered are the ones the Claude Code on that machine says it has |
+| Company → Claude → **Add an account… → A Claude account** | The office makes a config folder on that machine and runs Claude Code's own sign-in (`claude auth login`) there, in a terminal of its own; the window shows its link and passes on the code you paste. The login token stays in that folder on that machine; the office keeps neither the code nor the token ([docs/ACCOUNTS.md](docs/ACCOUNTS.md)) |
+| Company → Claude → **Z.AI — GLM Coding Plan** | Your API key is written into that account's own `settings.json` on the machine (`ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`); Claude Code started there talks to Z.AI's models. The office does not keep the key, and never moves anybody onto that account or off it by itself |
+| Company → Claude → **Who is on what** → *Apply* | Each changed employee is updated; a running session is started again with `--resume` (the same conversation) on its new account, model or effort — at once when it is between turns, otherwise when its turn ends |
+| *“You've hit your Fable limit · resets Nov 19, 1pm”* | Read from Claude Code's `StopFailure` hook and from the screen: Fable counts as used up **on that account** until then, and everybody there who thinks with Fable is started again with `--model opus --resume`. Only when no model has room is anybody moved to another account. Claude Code's own menu after a refusal is answered *Stop and wait* — never *Switch to usage credits* |
+| An employee changes a colleague's model | Their session called `set_model` with a reason: the colleague's setting changes, their session is started again with the same conversation, and the change, the reason and who made it are in the feed and the audit log. The level and the account are not theirs to change |
+| The **Employee of the month** board | Every half minute the office adds the time each running session spends in a working state (thinking, reading, coding, testing, running a command…) for its employee; the board shows whoever has the most this calendar month. Waiting for you does not count |
+| Profile → **Routines** | A routine is an instruction the office types into that employee's session every *N* minutes, when they are between turns; a run that finds them busy is skipped |
 | An employee releases, unblocks, assigns or reviews a task, or wakes a colleague | Their session called `release_task`, `unblock_task`, `give_task`, `submit_review` or `wake_colleague`; it is on the record under their name. They cannot approve a permission request, mark work done unverified, or delete anything. Settings → Employees takes the board back |
 | The arcade → **Add games…** | The cartridge file goes to the office in pieces and is kept on its shelf; everyone in the office gets it from there. The emulator runs in a sandboxed frame of your own window that can reach nothing of the office |
 | A game at the arcade, and somebody else's **Join** | Your console keeps running the game; your window packs its picture and sound (the browser's own encoders) and the office passes them to whoever sat down. Their keys come back as the second pad — from the one who holds it and from nobody else. The office keeps nothing of the game |
@@ -164,8 +179,8 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Window
 - **Backend is the source of truth.** The 3D layer receives view models and callbacks; it cannot reach sessions or tasks.
 - **Unknown is shown as unknown.** A session without hooks, or on a host that is offline, is `UNKNOWN` — never “working”.
 - **Delivered ≠ confirmed.** Messages, tasks and answers move `queued → sent → confirmed`, and *confirmed* requires a signal from Claude Code.
-- **Measured, reported, unavailable.** Verification results are measured on the host; an agent's summary is “reported”; token usage is read from the real transcript or shown as “not available”. Cost is never invented. **How much Claude is left** on each account (5-hour and weekly percentages, exactly as Claude Code reports them) is shown at the CEO desk; employees can be put on different Claude accounts.
-- **Autonomy is Claude Code's own permission modes, chosen per employee.** The levels map to its modes and allow-rules; high-risk commands (pushes, `sudo`, deploys, broad deletions, reading credential files) go to the owner first. The top level, **Unrestricted**, is Claude Code's bypass-permissions mode — nothing is checked or asked there — and only an owner can give it; the owner can also switch the high-risk hold off for it. What stays in front of every level: a project's deny rules and the fence around the office's own files. `docs/SECURITY.md` says what that does and does not protect.
+- **Measured, reported, unavailable.** Verification results are measured on the host; an agent's summary is “reported”; token usage is read from the real transcript or shown as “not available”. Cost is never invented. **How much Claude is left** on each account (5-hour and weekly percentages, exactly as Claude Code reports them, and a model's own limit once Claude refused a turn for it) is shown in Company → Claude; employees can be put on different Claude accounts.
+- **Autonomy is Claude Code's own permission modes, chosen per employee.** The three levels — Standard, Auto, Unrestricted — map to its modes and allow-rules; high-risk commands (pushes, `sudo`, deploys, broad deletions, reading credential files) go to the owner first. The top level, **Unrestricted**, is Claude Code's bypass-permissions mode — nothing is checked or asked there — and only an owner can give it; the owner can also switch the high-risk hold off for it. What stays in front of every level: a project's deny rules and the fence around the office's own files. `docs/SECURITY.md` says what that does and does not protect.
 
 ## 🧢 The foreman
 
@@ -175,7 +190,7 @@ Hire the **Foreman** (Team → Hire, role *Foreman*; give it any folder — that
 - **The foreman acts through its own tools**: `office_overview`, `look_at` (an employee's real terminal screen, task and recent events), `answer_question`, `assign_task`, `create_task`, `tell_employee` (carry on, how a blocker is resolved, what to pick up), `escalate_to_owner`, `finish_round`. Everything it does is on the record under its name, and its character walks to whoever it is dealing with.
 - **Everyone is its business, members' own employees too** — while their member's computer is in the office. Work does not cross: a shared project's task never goes to someone's own computer, nor the other way round. Because the foreman sees what an owner sees, its own terminal is for owners only, and only owners can talk to it (see `docs/SECURITY.md`).
 - **You are asked only about direction.** The foreman answers operational questions itself and escalates what is yours: direction, product or policy, anything destructive or irreversible, anything it is not sure about. An escalated question stays open in your inbox. You can always answer first — whoever answers first counts.
-- **It never approves anything.** Permission requests stay with you and with each employee's autonomy level; the foreman has no tool that could decide one, and cannot edit files or type into anybody's terminal.
+- **It never approves anything.** Permission requests stay with you and with each employee's level; the foreman has no tool that could decide one, and cannot edit files or type into anybody's terminal.
 - **Cost.** Each round is a real turn in the foreman's Claude Code session and uses the Claude usage of the account that session runs on. An item the foreman has already seen does not start another round; an employee the foreman itself told to carry on, and who stops again, is left alone for twice as long each time. Optionally, with nothing waiting, it takes one look around every *N* minutes if tasks or sessions changed since its last round (default 15; 0 = never).
 
 *Settings → Foreman* shows who the foreman is, who it is with, the last round and its summary, and what currently needs attention (`GET /api/foreman`).
@@ -215,12 +230,12 @@ docs/            architecture, install, security, Claude Code integration, and a
 
 ```bash
 pnpm test                  # unit tests
-pnpm test:e2e              # about 340 end-to-end scenarios: real server, real agents, real tmux, real git; scripted worker
+pnpm test:e2e              # about 360 end-to-end scenarios: real server, real agents, real tmux, real git; scripted worker
 pnpm check:changed         # while working: typecheck and the tests beside what you touched (not instead of the above)
 pnpm test:ui               # the UI used for real in Electron (clicks, typing, keys) against a live development office
 pnpm package && pnpm package:smoke   # build the tarball and macOS app, then run them (incl. the connect screen)
 pnpm package:linux         # .deb and Linux desktop bundles;  pnpm test:linux:deb / test:linux:desktop run them (Docker)
-pnpm package:windows       # Windows desktop bundles (not runnable here)
+pnpm package:windows       # Windows desktop bundles, with the app's icon in Orchestrator.exe (not runnable here)
 pnpm package:notarize      # sign with your Developer ID and notarize the macOS app (--check lists what is missing)
 pnpm test:linux            # the agent on Debian in a container (needs Docker)
 pnpm test:ssh              # a server reachable only over SSH is linked, used, disconnected, reconnected and removed (needs Docker)
@@ -238,7 +253,7 @@ pnpm test:real:sdk         # an SDK-managed worker with the real Agent SDK (need
 
 ## 🚧 Status and limits
 
-Working and verified on macOS (Apple silicon) with Claude Code 2.1.321/2.1.322 and tmux 3.8; the host agent, the `.deb` and the desktop bundle are also verified on Linux (Debian 12, Ubuntu 24.04). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#status) for exactly what was and was not validated. In short: both worker runtimes; reviews, rework, meetings, retrospectives, merge conflicts, nudges and restarts with real sessions; three machines on three operating systems with a real network partition; PostgreSQL; and every package except the Windows one were run for real. Three things could not be done on the development machine: running anything on Windows itself, testing on physically separate computers, and notarizing the macOS app. What is in use and what is not yet verified, day by day, is in [docs/STATUS.md](docs/STATUS.md).
+Working and verified on macOS (Apple silicon) with Claude Code 2.1.321–2.1.323 and tmux 3.8; the host agent, the `.deb` and the desktop bundle are also verified on Linux (Debian 12, Ubuntu 24.04). It is in daily use as an always-on office on a Linux server (Ubuntu 22.04), with people coming in from macOS and Windows. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#status) for exactly what was and was not validated. In short: both worker runtimes; reviews, rework, meetings, retrospectives, merge conflicts, nudges and restarts with real sessions; three machines on three operating systems with a real network partition; PostgreSQL; and every package except the Windows one were run for real. Two things could not be done on the development machine: starting the packaged Windows app (the app from the repository is used on Windows every day; the bundle itself has never been started) and notarizing the macOS app. What is in use and what is not yet verified, day by day, is in [docs/STATUS.md](docs/STATUS.md).
 
 **Not ours:** the arcade runs RetroArch with the Genesis Plus GX core (in the repository, packed, with its source and checksums in `apps/desktop/src/arcade/core/NOTICE.md`). Genesis Plus GX may be used and passed on free of charge and **may not be sold or be part of something sold**. No game is in the repository, and none may be added: you bring your own.
 

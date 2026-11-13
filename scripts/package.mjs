@@ -45,6 +45,32 @@ for (const f of need) if (!fs.existsSync(path.join(root, f))) throw new Error(`$
  * serves the UI and the agent download) and the desktop shell find each other
  * the same way they do in a checkout.
  */
+/**
+ * Orchestrator.exe in place of Electron's: the icon (apps/desktop/electron/icons/icon.ico, made from the logo by
+ * scripts/make-icons.cjs) and the names in the file's details. `resedit` edits the program's resources without
+ * Windows; the result is not signed (neither is the rest of the zip).
+ */
+async function brandWindowsExe(exePath, version) {
+  const ResEdit = await import('resedit');
+  const exe = ResEdit.NtExecutable.from(fs.readFileSync(exePath), { ignoreCert: true });
+  const res = ResEdit.NtExecutableResource.from(exe);
+  const icons = ResEdit.Data.IconFile.from(fs.readFileSync(path.join(root, 'apps/desktop/electron/icons/icon.ico')));
+  const groups = ResEdit.Resource.IconGroupEntry.fromEntries(res.entries);
+  const group = groups[0] ?? { id: 1, lang: 1033 };
+  ResEdit.Resource.IconGroupEntry.replaceIconsForResource(res.entries, group.id, group.lang, icons.icons.map((i) => i.data));
+  const info = ResEdit.Resource.VersionInfo.fromEntries(res.entries)[0];
+  if (info) {
+    const names = { ProductName: 'Orchestrator', FileDescription: 'Orchestrator', CompanyName: 'Orchestrator', OriginalFilename: 'Orchestrator.exe', InternalName: 'Orchestrator' };
+    for (const lang of info.getAllLanguagesForStringValues()) info.setStringValues(lang, names);
+    const [a, b, c] = version.split('.').map((n) => Number(n) || 0);
+    info.setProductVersion(a, b, c, 0);
+    info.setFileVersion(a, b, c, 0);
+    info.outputToResourceEntries(res.entries);
+  }
+  res.outputResource(exe);
+  fs.writeFileSync(exePath, Buffer.from(exe.generate()));
+}
+
 function stagePayload(dest) {
   fs.rmSync(dest, { recursive: true, force: true });
   const copy = (from, to = from) => fs.cpSync(path.join(root, from), path.join(dest, to), { recursive: true });
@@ -209,6 +235,8 @@ if (args.has('--linux') || args.has('--windows')) {
       // Windows: the app is a client. Workers need tmux, so the office itself runs in WSL2 or on
       // another machine, and the app's connect screen points at it. Built here, never run here.
       fs.renameSync(path.join(dir, 'electron.exe'), path.join(dir, 'Orchestrator.exe'));
+      // The program's own icon (Explorer, the Start menu, a shortcut) and its name in the file's details.
+      await brandWindowsExe(path.join(dir, 'Orchestrator.exe'), version);
       fs.writeFileSync(
         path.join(dir, 'README-WINDOWS.txt'),
         `Orchestrator ${version} — Windows desktop app (${arch})\r\n\r\nNOT TESTED: this bundle was assembled on macOS from Electron's official Windows build and has\r\nnever been started on Windows.\r\n\r\nRun Orchestrator.exe. It shows a connect screen: enter the address of an Orchestrator server and\r\nits owner token.\r\n\r\n  - Server in WSL2 on this PC:  http://localhost:4600   (run the server and agent inside WSL2;\r\n    see docs/INSTALL.md in resources\\app\\docs)\r\n  - Server on another machine:  https://office.example.com\r\n\r\nClaude Code workers need tmux, so employees never run natively on Windows.\r\n`,
@@ -293,6 +321,8 @@ set('CFBundleDisplayName', 'Orchestrator');
 set('CFBundleIdentifier', 'local.orchestrator.desktop');
 set('CFBundleShortVersionString', version);
 set('CFBundleVersion', version);
+// The app's icon, the logo the repository shows (scripts/make-icons.cjs), in place of Electron's own.
+fs.copyFileSync(path.join(root, 'apps/desktop/electron/icons/icon.icns'), path.join(resources, 'electron.icns'));
 // Changing the bundle invalidates Electron's signature; Apple silicon refuses to run an invalid one.
 run('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: ['ignore', 'ignore', 'inherit'] });
 execFileSync('codesign', ['--verify', '--deep', '--strict', app], { stdio: 'inherit' });
