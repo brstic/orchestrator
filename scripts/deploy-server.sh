@@ -21,8 +21,8 @@ DIR="${ORCH_DEPLOY_DIR:-orchestrator-office}"
 UNIT="${ORCH_DEPLOY_UNIT:-orchestrator-office}"
 remote() { ssh -o BatchMode=yes -p "$PORT" "$HOST" "$@"; }
 # What the service reports, and the office's own view of itself (run on the server, with its own token).
-# After a restart: wait until the office answers (it takes a few seconds, more when the machine is busy), a minute at most.
-UP='n=0; until curl -s -o /dev/null -m 2 http://127.0.0.1:4600/; do n=$((n+1)); [ $n -ge 30 ] && break; sleep 2; done'
+# After a restart: wait until the office answers (it takes a few seconds, more when the machine is busy), three minutes at most.
+UP='n=0; until curl -s -o /dev/null -m 2 http://127.0.0.1:4600/; do n=$((n+1)); [ $n -ge 90 ] && break; sleep 2; done'
 STATUS='systemctl --user is-active '"$UNIT"'; cat ~/'"$DIR"'/app/VERSION ~/'"$DIR"'/app/BUILD 2>/dev/null | tr "\n" " "; echo; N=$(ls -d ~/.nvm/versions/node/v22*/bin/node 2>/dev/null | tail -1); ORCH_SERVER_HOME=~/.orchestrator-office/server ${N:-node} ~/'"$DIR"'/app/scripts/office-admin.mjs status'
 
 case "${1:-}" in
