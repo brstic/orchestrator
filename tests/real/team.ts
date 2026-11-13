@@ -121,7 +121,9 @@ try {
   const revSession = (await state()).sessions.find((x) => x.employeeId === rev.id)!;
   const revEvents = await api<any[]>('GET', `/events?employeeId=${rev.id}&limit=400`);
   check('the reviewer really looked at the change (tool activity in their session)', revEvents.some((e) => /^agent\.tool/.test(e.type)), revEvents.filter((e) => e.type === 'agent.tool_started').map((e) => e.summary).slice(0, 3).join(' | '));
-  check('the reviewer could not have changed the code', rev.autonomy === 'restricted' && revSession.permissionMode !== 'acceptEdits', `${rev.autonomy}, ${revSession.permissionMode}`);
+  // (Until 2026-11-13 a reviewer was hired read-only and this checked it. No level is read-only now: a reviewer is told
+  // not to change the code under review, and is on Standard like everyone hired without a level. Not run since.)
+  check('the reviewer is on Standard, like everyone hired without a level', rev.autonomy === 'standard', `${rev.autonomy}, ${revSession.permissionMode}`);
   const modes = (await state()).sessions.filter((x) => x.status === 'running').map((x) => x.mode);
   check(`both employees ran in the ${RUNTIME === 'managed_sdk' ? 'SDK-managed' : 'interactive'} runtime`, modes.length === 2 && modes.every((m) => m === RUNTIME), modes.join(', '));
   if (review?.verdict === 'approved') {

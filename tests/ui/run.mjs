@@ -119,7 +119,7 @@ try {
   const toReview = await post('/tasks', { projectId: E('Noor').projectId, title: 'Owner-reviewed change', assigneeId: E('Noor').id, requiresReview: true, reviewerId: E('Alex').id, description: '@@fake: write owner-review.txt please-look; commit owner reviewed change; complete ready for review@@' });
   await waitState('a task waiting for review', (s) => s.tasks.find((t) => t.id === toReview.id && t.status === 'REVIEW'));
   // Three approvals of the same kind of command: Orchestrator should suggest a rule.
-  const pia = await post('/employees', { name: 'Pia', roleKey: 'devops', projectId: E('Noor').projectId, hostId: E('Noor').hostId, autonomy: 'supervised' });
+  const pia = await post('/employees', { name: 'Pia', roleKey: 'devops', projectId: E('Noor').projectId, hostId: E('Noor').hostId, autonomy: 'standard' });
   await post(`/employees/${pia.id}/start`, {});
   const piaIdle = () => waitState('Pia idle', (s) => s.sessions.find((x) => x.employeeId === pia.id && x.status === 'running' && x.inTurn === false));
   await piaIdle();
@@ -249,7 +249,7 @@ try {
   const pipeline = davidTask?.worktree ? path.join(davidTask.worktree, 'pipeline.txt') : null;
   let wrote = false;
   for (let i = 0; i < 40 && pipeline && !(wrote = fs.existsSync(pipeline)); i++) await sleep(250);
-  check('the approval let the real write happen', !!perm && wrote, `${perm?.tool?.name ?? '?'} → ${pipeline ?? 'no worktree'}`);
+  check('the approval let the command really run', !!perm && wrote, `${perm?.tool?.name ?? '?'} → ${pipeline ?? 'no worktree'}`);
   check('the approval is in the audit log', audit.some((a) => a.action === 'approval.decide'));
   const routineRuns = s.messages.filter((m) => m.routineId && m.toEmployeeId === by('Ava').id);
   check('the routine made in the Talk window was a real one: created, run once into Ava\'s session, paused and removed, all on the record', routineRuns.length === 1 && routineRuns[0].delivery.status === 'confirmed' && /^Routine \(every 5 min\): Check the queue/.test(routineRuns[0].body) && (s.routines ?? []).length === 0 && ['routine.created', 'routine.updated', 'routine.removed'].every((x) => audit.some((a) => a.action === x)), `${routineRuns.length} run(s), ${routineRuns[0]?.delivery.status}; ${(s.routines ?? []).length} routines left`);

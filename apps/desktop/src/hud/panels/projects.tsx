@@ -6,7 +6,7 @@ import { useAccess } from '../../lib/access.ts';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { OPEN_ORDER, byAttention, employeeState, taskState } from '../../lib/my-work.ts';
 import { progressOf, projectsLine } from '../../lib/project-view.ts';
-import { State } from './kit.tsx';
+import { PickMany, State } from './kit.tsx';
 import { ask } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { scoped, whoseLabel, whoseProject } from '../../lib/mine.ts';
@@ -274,15 +274,14 @@ function ProjectLinks({ project }: { project: Project }) {
         {others.length === 0 ? (
           <div className="small faint">There are no other projects.</div>
         ) : (
-          <div className="row row-wrap" style={{ gap: 12 }}>
-            {others.map((o) => (
-              <label key={o.id} className="check small" style={{ alignItems: 'center' }}>
-                <input type="checkbox" checked={draft.dependsOn.includes(o.id)} onChange={(e) => setDraft({ ...draft, dependsOn: e.target.checked ? [...draft.dependsOn, o.id] : draft.dependsOn.filter((x) => x !== o.id) })} style={{ marginTop: 0 }} />
-                <span className="dot" style={{ background: o.color }} /> {o.name}
-                {o.deliveredAt ? <Badge tone="good">delivered</Badge> : <Badge tone="muted">not delivered</Badge>}
-              </label>
-            ))}
-          </div>
+          <PickMany
+            name="builds-on"
+            add="Add a project"
+            none="Nothing"
+            options={others.map((o) => ({ id: o.id, label: o.name, hint: o.deliveredAt ? 'delivered' : 'not delivered', lead: <i className="k-swatch" style={{ background: o.color }} /> }))}
+            value={draft.dependsOn}
+            onChange={(ids) => setDraft({ ...draft, dependsOn: ids })}
+          />
         )}
         <div className="field-hint">Employees are told which projects this one builds on, where they live and whether they are delivered. It does not hold tasks back.</div>
       </div>

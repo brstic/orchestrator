@@ -62,7 +62,7 @@ test('a lead is a member’s: on their own computer, one each, on the lightest m
   const projects = (await h.state()).projects.length;
   const lea = await h.api<any>('POST', '/employees', { name: 'Lea', roleKey: 'lead', hostId: mine.hostId, workingDir: mine.root });
   ids.Lea = lea.id;
-  assert.deepEqual([lea.title, lea.roleKey, lea.model, lea.effort, lea.autonomy, lea.leadScope, lea.hostId], ['Team Lead', 'lead', 'haiku', 'low', 'restricted', 'own', mine.hostId]);
+  assert.deepEqual([lea.title, lea.roleKey, lea.model, lea.effort, lea.autonomy, lea.leadScope, lea.hostId], ['Team Lead', 'lead', 'haiku', 'low', 'standard', 'own', mine.hostId]);
   assert.ok(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].every((t) => lea.disallowedTools.includes(t)));
   assert.equal((await h.state()).projects.length, projects, 'a lead’s folder is where its session runs, not a project');
   await assert.rejects(h.api('POST', '/employees', { name: 'Second', roleKey: 'lead', hostId: mine.hostId, workingDir: mine.root }), /400: Fenix already has a team lead \(Lea\)/);

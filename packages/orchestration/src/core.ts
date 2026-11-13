@@ -86,8 +86,6 @@ export interface Timings {
   autopilotAllowApprovals: number;
   /** autopilot (trusted): those approvals must span at least this long, unless they come from two different tasks. */
   autopilotAllowSpreadMs: number;
-  /** autopilot (trusted): the employee's last this-many completed tasks must all be clean before autonomy is raised by itself. */
-  autopilotAutonomyTasks: number;
   /** autopilot (trusted): the project's last this-many reviewed tasks must all have been approved first time before review is switched off by itself. */
   autopilotReviewOffTasks: number;
   /** autopilot: a change the office made by itself is on probation for this long… */
@@ -124,7 +122,6 @@ export const DEFAULT_TIMINGS: Timings = {
   foremanRoundTimeoutMs: 10 * 60_000,
   autopilotAllowApprovals: 5,
   autopilotAllowSpreadMs: 24 * 3600_000,
-  autopilotAutonomyTasks: 5,
   autopilotReviewOffTasks: 10,
   autopilotProbationMs: 7 * 86400_000,
   autopilotProbationTasks: 5,

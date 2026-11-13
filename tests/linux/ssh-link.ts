@@ -86,7 +86,7 @@ try {
   // 5. The one outside tmux cannot be taken over — the office says where it runs, and can continue its conversation.
   const procs = (await api<any>('GET', `/hosts/${host.id}/claude-processes`)).processes;
   check('a Claude Code running outside tmux is listed with its folder (and the tmux one is not)', procs.length === 1 && procs[0].cwd === '/home/dev/blog', JSON.stringify(procs.map((p: any) => `${p.pid} in ${p.cwd}`)));
-  const blogger = await api<any>('POST', '/employees', { name: 'Blogger', roleKey: 'docs', hostId: host.id, workingDir: '/home/dev/blog', autonomy: 'autonomous' });
+  const blogger = await api<any>('POST', '/employees', { name: 'Blogger', roleKey: 'docs', hostId: host.id, workingDir: '/home/dev/blog', autonomy: 'auto' });
   const started = await api<any>('POST', `/employees/${blogger.id}/start`, { continueLast: true });
   const running = await until('Blogger running', async () => (await state()).sessions.find((s) => s.id === started.id && s.status === 'running' && s.inTurn === false));
   check('an employee started in that folder continues its last conversation', /--continue/.test(onServer(`tmux display-message -p -t '${running.tmuxPane}' '#{pane_start_command}'`)) && running.cwd === '/home/dev/blog');

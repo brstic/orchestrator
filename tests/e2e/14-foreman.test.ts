@@ -38,11 +38,11 @@ before(async () => {
   const repo = h.makeRepo('shop');
   // Work is assigned by hand in this project, so ready tasks stay unassigned until somebody assigns them.
   projectId = (await h.project('Shop', repo, { verifyCommand: 'npm test --silent', policy: { autoAssign: false } })).id;
-  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend']] as const) ids[name] = (await h.employee(name, role, { projectId, autonomy: 'autonomous' })).id;
+  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend']] as const) ids[name] = (await h.employee(name, role, { projectId, autonomy: 'auto' })).id;
   const home = path.join(fs.realpathSync(h.tmp), 'foreman-home');
   fs.mkdirSync(home);
   const mira = await h.employee('Mira', 'foreman', { workingDir: home });
-  assert.deepEqual([mira.title, mira.department, mira.roleKey, mira.autonomy], ['Foreman', 'Management', 'foreman', 'restricted']);
+  assert.deepEqual([mira.title, mira.department, mira.roleKey, mira.autonomy], ['Foreman', 'Management', 'foreman', 'standard']);
   assert.ok(['Edit', 'Write'].every((t) => mira.disallowedTools.includes(t)), 'a foreman cannot edit files, whatever their autonomy');
   ids.Mira = mira.id;
   // No desk: it walks the floor. And there is one for the whole office.
@@ -123,7 +123,8 @@ test("an employee's question starts one round: the foreman looks, answers, and t
 });
 
 test('the foreman cannot decide a permission request', async () => {
-  await h.api('POST', `/employees/${ids.Alex}/message`, { body: 'Tag it. @@fake: bash git tag v9.9.9; say tagged@@' });
+  await h.api('POST', `/employees/${ids.Alex}/message`, { body: 'Tag it. @@fake: bash git push origin v9.9.9; say tagged@@' });
+  // (Alex is on Auto: what still waits for a person there is the high-risk list — a push is on it.)
   const q = await waitFor(() => h.openQuestion(ids.Alex!, 'permission'), { label: 'approval request', timeout: 40000 });
   const before = (await rounds('started')).length;
   await sleep(1500);

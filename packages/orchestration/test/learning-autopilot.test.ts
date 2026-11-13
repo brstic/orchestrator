@@ -21,7 +21,7 @@ async function office(mode: 'off' | 'safe' | 'trusted', timings: Partial<Timings
   // Each decision schedules an analysis a moment later; here the tests say when the record is read, so nothing depends on timing.
   eng.improver.scheduleAnalyze = () => undefined;
   const shop = await eng.tasks.createProject({ name: 'Shop', policy: { autoAssign: false } });
-  const alex = eng.employees.create({ name: 'Alex', roleKey: 'backend', projectId: shop.id, hostId: 'host-1', workingDir: '/tmp/x', autonomy: 'supervised' });
+  const alex = eng.employees.create({ name: 'Alex', roleKey: 'backend', projectId: shop.id, hostId: 'host-1', workingDir: '/tmp/x', autonomy: 'auto' });
   return { eng, shop, alex };
 }
 type Office = Awaited<ReturnType<typeof office>>;
@@ -79,9 +79,9 @@ test('the table: every kind and every action is classified, and anything unknown
   assert.equal(widening('verify_timeout', { type: 'project.verifyTimeout', projectId: p, seconds: 5 }).widening, true, 'only "longer" is known to be harmless');
   assert.equal(widening('verify_timeout', { type: 'project.verifyTimeout', projectId: 'gone', seconds: 9999 }).widening, true, 'an unknown project: direction cannot be told');
   // Autonomy: down is not widening; up, sideways and "whose?" are.
-  const levels: AutonomyLevel[] = ['restricted', 'supervised', 'standard', 'autonomous', 'auto', 'unrestricted'];
-  assert.deepEqual(levels.map((level) => widening('autonomy', { type: 'employee.autonomy', employeeId: o.alex.id, level }).widening), [false, true, true, true, true, true], 'Alex is supervised');
-  assert.equal(widening('autonomy', { type: 'employee.autonomy', employeeId: 'nobody', level: 'restricted' }).widening, true);
+  const levels: AutonomyLevel[] = ['standard', 'auto', 'unrestricted'];
+  assert.deepEqual(levels.map((level) => widening('autonomy', { type: 'employee.autonomy', employeeId: o.alex.id, level }).widening), [false, true, true], 'Alex is on Auto');
+  assert.equal(widening('autonomy', { type: 'employee.autonomy', employeeId: 'nobody', level: 'standard' }).widening, true);
   for (const kind of ['verify_command', 'sequencing', 'acceptance_criteria', 'routing']) assert.equal(widening(kind, { type: 'advice' }).widening, false);
 
   // Unknown: a new kind, a new action, a pairing nobody expected, and names that only look like rows.
@@ -400,57 +400,36 @@ test('probation ends after the set number of finished tasks, or the set time; af
   assert.equal(denyRule.autopilot!.probation!.status, 'passed');
 });
 
-test('"trusted" raises autonomy one step for a clean record, never past "standard", and takes it back on a denial or a failure', async () => {
+test('the office never raises a level by itself, whatever the record says, and proposes none', async () => {
   const o = await office('trusted');
   const auto = o.eng.improver.autopilot;
+  o.eng.employees.update(o.alex.id, { autonomy: 'standard' });
+  // A record as clean as one can be: everything asked was approved, everything done passed first time.
   for (let i = 0; i < 6; i++) await ask(o.eng, o.alex, o.shop.id, `tool${i} --check`, 'allow');
-  for (let i = 0; i < 4; i++) finished(o);
+  for (let i = 0; i < 8; i++) finished(o);
   o.eng.improver.analyze();
-  const up = imp(o.eng, (i) => i.kind === 'autonomy');
-  assert.equal(up.status, 'proposed');
-  assert.match((auto.verdict(up) as any).why, /4 of the 5 completed tasks needed/);
-  finished(o);
-  o.eng.improver.analyze();
-  assert.equal(up.status, 'applied');
-  assert.equal(o.eng.core.employees.require(o.alex.id).autonomy, 'standard');
-  assert.deepEqual(up.autopilot!.undo, { type: 'employee.autonomy', employeeId: o.alex.id, previous: 'supervised', applied: 'standard' });
-  // Further up is never the office's to give, whatever the record says.
-  const more = proposal(o.eng, 'autonomy', { type: 'employee.autonomy', employeeId: o.alex.id, level: 'autonomous' });
-  const skip = proposal(o.eng, 'autonomy', { type: 'employee.autonomy', employeeId: o.alex.id, level: 'auto' });
-  assert.match((auto.verdict(more) as any).why, /never gives more than "standard" by itself/);
-  assert.match((auto.verdict(skip) as any).why, /one level at a time/);
-  // A request of theirs is denied during probation: back to supervised, with the evidence.
-  const no = await ask(o.eng, o.alex, o.shop.id, 'rm build.log', 'deny');
-  assert.equal(o.eng.core.employees.require(o.alex.id).autonomy, 'supervised');
-  assert.deepEqual([up.status, up.autopilot!.noAuto, up.autopilot!.reverted!.evidence[0]!.id], ['proposed', true, no.id]);
-
-  // The other counter-signals: a failed verification (a timeout is not the employee's failure) and a review that sends work back.
-  for (const signal of ['verification', 'review'] as const) {
-    const x = await office('trusted');
-    for (let i = 0; i < 6; i++) await ask(x.eng, x.alex, x.shop.id, `tool${i} --check`, 'allow');
-    for (let i = 0; i < 5; i++) finished(x);
-    x.eng.improver.analyze();
-    const raised = imp(x.eng, (i) => i.kind === 'autonomy');
-    assert.equal(raised.status, 'applied', signal);
-    const t = x.eng.tasks.createTask({ projectId: x.shop.id, title: 'Next', assigneeId: x.alex.id, released: false });
-    if (signal === 'verification') {
-      x.eng.core.event({ type: 'task.verification_failed', source: 'server', summary: 'timeout', taskId: t.id, projectId: x.shop.id, employeeId: x.alex.id, data: { key: t.key, command: 'npm test', timedOut: true, outputTail: '' } });
-      assert.equal(raised.status, 'applied');
-      x.eng.core.event({ type: 'task.verification_failed', source: 'server', summary: 'exit 1', taskId: t.id, projectId: x.shop.id, employeeId: x.alex.id, data: { key: t.key, command: 'npm test', timedOut: false, exitCode: 1, outputTail: '1 failing' } });
-    } else {
-      x.eng.core.event({ type: 'task.review_completed', source: 'owner', summary: 'changes requested', taskId: t.id, projectId: x.shop.id, employeeId: x.alex.id, data: { key: t.key, verdict: 'changes_requested', comments: 'no' } });
-    }
-    assert.deepEqual([raised.status, x.eng.core.employees.require(x.alex.id).autonomy], ['proposed', 'supervised'], signal);
+  assert.equal(o.eng.core.improvements.find((i) => i.kind === 'autonomy'), undefined, 'nothing offers a higher level');
+  // A proposal that names one (an old record, or somebody's script) waits for a person.
+  for (const level of ['auto', 'unrestricted'] as const) {
+    const up = proposal(o.eng, 'autonomy', { type: 'employee.autonomy', employeeId: o.alex.id, level });
+    o.eng.improver.autopilot.run();
+    assert.equal(up.status, 'proposed', level);
+    assert.match((auto.verdict(up) as any).why, /a person's to give/, level);
   }
-  // A record that is not clean: one denial, ever.
-  const y = await office('trusted');
-  for (let i = 0; i < 6; i++) await ask(y.eng, y.alex, y.shop.id, `tool${i} --check`, 'allow');
-  for (let i = 0; i < 5; i++) finished(y);
-  await ask(y.eng, y.alex, y.shop.id, 'tool9 --force', 'deny');
-  const refused = proposal(y.eng, 'autonomy', { type: 'employee.autonomy', employeeId: y.alex.id, level: 'standard' });
-  y.eng.improver.analyze();
-  assert.equal(refused.status, 'proposed');
-  assert.match((y.eng.improver.autopilot.verdict(refused) as any).why, /1 of Alex's requests were denied/);
+  assert.equal(o.eng.core.employees.require(o.alex.id).autonomy, 'standard');
+});
+
+test('a change made when there were six levels is not put back onto a level that no longer exists', async () => {
+  const o = await office('off');
+  // Applied for real, then made to read as a record of that time: "was Supervised, put on Standard".
+  const old = proposal(o.eng, 'autonomy', { type: 'employee.autonomy', employeeId: o.alex.id, level: 'standard' });
+  o.eng.improver.apply(old.id);
+  (old.autopilot!.undo as any).previous = 'supervised';
+  o.eng.core.put('improvement', old);
+  const back = o.eng.improver.autopilot.revert(old.id);
+  assert.equal(back.autopilot!.reverted!.restored, false);
+  assert.match(back.autopilot!.reverted!.note, /a level that no longer exists \("supervised"\)/);
+  assert.equal(o.eng.core.employees.require(o.alex.id).autonomy, 'standard');
 });
 
 test('"trusted" switches review off only after a run of clean reviews, and back on when work needs rework', async () => {
@@ -480,7 +459,6 @@ test('the owner\'s undo restores exactly what was there, for every kind of actio
   const auto = o.eng.improver.autopilot;
   const p = o.shop.id;
   o.eng.tasks.updateProject(p, { policy: { allow: ['Bash(ls:*)', 'Bash(jq:*)'], deny: ['Bash(nc:*)'] }, verifyTimeoutSec: 90 });
-  o.eng.employees.update(o.alex.id, { autonomy: 'restricted' });
   const made = {
     allow: proposal(o.eng, 'allow_rule', { type: 'project.policy.allow', projectId: p, rule: 'Bash(docker build:*)' }),
     deny: proposal(o.eng, 'deny_rule', { type: 'project.policy.deny', projectId: p, rule: 'Bash(wget:*)' }),
@@ -530,14 +508,14 @@ test('undo only undoes its own change: a rule that was already there stays, a va
   o.eng.improver.apply(timeout.id);
   o.eng.improver.apply(level.id);
   o.eng.tasks.updateProject(p, { verifyTimeoutSec: 900 });
-  o.eng.employees.update(o.alex.id, { autonomy: 'autonomous' });
+  o.eng.employees.update(o.alex.id, { autonomy: 'unrestricted' });
   assert.match(auto.revert(timeout.id).autopilot!.reverted!.note, /changed by hand since/);
   assert.match(auto.revert(level.id).autopilot!.reverted!.note, /changed by hand since/);
-  assert.deepEqual([project(o).verifyTimeoutSec, o.eng.core.employees.require(o.alex.id).autonomy], [900, 'autonomous']);
+  assert.deepEqual([project(o).verifyTimeoutSec, o.eng.core.employees.require(o.alex.id).autonomy], [900, 'unrestricted']);
   // Applied before the office kept undo records: a rule can still be removed exactly; a value cannot be guessed.
   o.eng.tasks.updateProject(p, { policy: { allow: ['Bash(old:*)'] } });
   const oldRule = proposal(o.eng, 'allow_rule', { type: 'project.policy.allow', projectId: p, rule: 'Bash(old:*)' }, { status: 'applied' });
-  const oldLevel = proposal(o.eng, 'autonomy', { type: 'employee.autonomy', employeeId: o.alex.id, level: 'autonomous' }, { status: 'applied' });
+  const oldLevel = proposal(o.eng, 'autonomy', { type: 'employee.autonomy', employeeId: o.alex.id, level: 'auto' }, { status: 'applied' });
   assert.equal(auto.revert(oldRule.id).autopilot!.reverted!.restored, true);
   assert.deepEqual(project(o).policy.allow, []);
   assert.throws(() => auto.revert(oldLevel.id), /cannot be put back exactly/);
@@ -549,7 +527,7 @@ test("a member's own computer: permissions change only on that member's own deci
   const auto = o.eng.improver.autopilot;
   o.eng.core.put('host', hostOf({ id: 'pc', name: "Jovan's computer", local: false, memberId: 'm-jovan', memberName: 'Jovan' }));
   const notes = await o.eng.tasks.createProject({ name: 'Notes', hostId: 'pc', policy: { autoAssign: false, requireReview: true } });
-  const lola = o.eng.employees.create({ name: 'Lola', roleKey: 'fullstack', hostId: 'pc', projectId: notes.id, workingDir: '/tmp/notes', autonomy: 'supervised' });
+  const lola = o.eng.employees.create({ name: 'Lola', roleKey: 'fullstack', hostId: 'pc', projectId: notes.id, workingDir: '/tmp/notes', autonomy: 'auto' });
   const mine = { ...o, shop: notes, alex: lola };
   const policy = () => o.eng.core.projects.require(notes.id).policy;
 
@@ -573,7 +551,7 @@ test("a member's own computer: permissions change only on that member's own deci
   assert.deepEqual([policy().allow, policy().deny], [['Bash(docker build:*)'], ['Bash(wget:*)']]);
 
   // Lower autonomy and "review off" rest on nobody's decision: never automatic there. A longer timeout touches no permission.
-  const down = proposal(o.eng, 'autonomy', { type: 'employee.autonomy', employeeId: lola.id, level: 'restricted' });
+  const down = proposal(o.eng, 'autonomy', { type: 'employee.autonomy', employeeId: lola.id, level: 'standard' });
   const reviewOff = proposal(o.eng, 'review_policy', { type: 'project.requireReview', projectId: notes.id, value: false });
   const longer = proposal(o.eng, 'verify_timeout', { type: 'project.verifyTimeout', projectId: notes.id, seconds: 600 });
   timedOut(mine, notes.id);
@@ -586,7 +564,7 @@ test("a member's own computer: permissions change only on that member's own deci
 
   // The foreman is an owner's alone, in either direction.
   const mira = o.eng.employees.create({ name: 'Mira', roleKey: 'foreman', hostId: 'host-1', workingDir: '/tmp/x' });
-  const lower = proposal(o.eng, 'autonomy', { type: 'employee.autonomy', employeeId: mira.id, level: 'restricted' });
+  const lower = proposal(o.eng, 'autonomy', { type: 'employee.autonomy', employeeId: mira.id, level: 'standard' });
   o.eng.improver.autopilot.run();
   assert.equal(lower.status, 'proposed');
   assert.match((auto.verdict(lower) as any).why, /foreman is changed by an owner only/);

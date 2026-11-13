@@ -136,15 +136,20 @@ export function sanitizeMemberRoom(input: unknown): MemberRoomPrefs {
 // ─────────────────────────── Employees ───────────────────────────
 
 /**
- * How much an employee may do without asking. `auto` hands permission decisions to Claude Code's
- * own auto mode (its safety classifier), so the owner is asked for decisions and direction only.
+ * How much an employee may do without asking. Three levels, and no others (the owner's decision of 2026-11-13;
+ * see DECISIONS.md, "Three levels"):
+ *
+ *   `standard`      edits and routine commands by themselves; everything else is asked.
+ *   `auto`          Claude Code's own auto mode (its safety classifier) decides what may run, so the owner is asked
+ *                   for decisions and direction only.
+ *   `unrestricted`  Claude Code's bypass-permissions mode — nothing is checked or asked by Claude Code itself; what
+ *                   still holds is the project's deny rules and the office's own gate for high-risk commands. The
+ *                   owner's default since 2026-11-11 (their decision; see DECISIONS.md). Interactive sessions only.
  */
-/**
- * `unrestricted`: Claude Code's bypass-permissions mode — nothing is checked or asked by Claude Code itself; what
- * still holds is the project's deny rules and the office's own gate for high-risk commands. The owner's default
- * since 2026-11-11 (their decision; see DECISIONS.md). Interactive sessions only.
- */
-export type AutonomyLevel = 'restricted' | 'supervised' | 'standard' | 'autonomous' | 'auto' | 'unrestricted';
+export type AutonomyLevel = 'standard' | 'auto' | 'unrestricted';
+/** The levels, from the least to the most an employee does unasked. */
+export const AUTONOMY_LEVELS: readonly AutonomyLevel[] = ['standard', 'auto', 'unrestricted'];
+export const isAutonomyLevel = (value: unknown): value is AutonomyLevel => AUTONOMY_LEVELS.includes(value as AutonomyLevel);
 
 export type CommunicationStyle =
   | 'concise'

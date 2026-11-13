@@ -18,7 +18,7 @@ let id = '';
 before(async () => {
   h = await createHarness();
   const project = (await h.project('Shop', h.makeRepo('shop'))).id;
-  id = (await h.employee('Nika', 'backend', { projectId: project, autonomy: 'autonomous' })).id;
+  id = (await h.employee('Nika', 'backend', { projectId: project, autonomy: 'auto' })).id;
 });
 after(async () => {
   await h?.cleanup();

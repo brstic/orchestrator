@@ -163,24 +163,25 @@ test('completion is refused while work is uncommitted', async () => {
   boss.send({ t: 'term.close', sessionId: session.id });
 });
 
-test('a supervised employee needs approval for every edit; decisions travel through the real permission hook', async () => {
+test('on Standard a command that is not routine needs approval; decisions travel through the real permission hook', async () => {
+  // Whoever is hired without a level is on Standard, whatever their role.
   const dana = await h.employee('Dana', 'devops', { projectId });
-  assert.equal(dana.autonomy, 'supervised');
-  const task = await h.task({ projectId, title: 'Edit pipeline', assigneeId: dana.id, kind: 'ops', verifyCommand: 'true', description: '@@fake: write ci.txt pipeline; write nope.txt denied; say after-permissions@@' });
+  assert.equal(dana.autonomy, 'standard');
+  const task = await h.task({ projectId, title: 'Edit pipeline', assigneeId: dana.id, kind: 'ops', verifyCommand: 'true', description: '@@fake: bash touch ci.txt; bash touch nope.txt; say after-permissions@@' });
   const q1 = await waitFor(() => h.openQuestion(dana.id, 'permission'), { label: 'permission request' });
   assert.equal(q1.channel, 'permission_hook');
-  assert.equal(q1.tool!.name, 'Write');
-  assert.match(String((q1.tool!.input as any).file_path), /ci\.txt$/);
+  assert.equal(q1.tool!.name, 'Bash');
+  assert.equal(String((q1.tool!.input as any).command), 'touch ci.txt');
   const session = (await h.session(dana.id))!;
   assert.equal(session.activity, 'needs_approval');
-  assert.notEqual(session.permissionMode, 'acceptEdits');
+  assert.equal(session.permissionMode, 'acceptEdits');
   const wt = (await h.getTask(task.id)).worktree!;
   assert.ok(!fs.existsSync(path.join(wt, 'ci.txt')), 'nothing is written before approval');
 
   // A permission request cannot be "answered" with free text.
   assert.equal((await h.apiRaw('POST', `/questions/${q1.id}/answer`, { answer: 'sure' })).status, 400);
   await h.api('POST', `/questions/${q1.id}/answer`, { decision: 'allow' });
-  await waitFor(() => fs.existsSync(path.join(wt, 'ci.txt')), { label: 'approved write happened' });
+  await waitFor(() => fs.existsSync(path.join(wt, 'ci.txt')), { label: 'the approved command ran' });
   await waitFor(async () => (await h.state()).questions.find((x) => x.id === q1.id)?.status === 'confirmed', { label: 'approval confirmed by PostToolUse' });
 
   const q2 = await waitFor(() => h.openQuestion(dana.id, 'permission'), { label: 'second permission request' });
@@ -188,15 +189,15 @@ test('a supervised employee needs approval for every edit; decisions travel thro
   boss.send({ t: 'term.open', sessionId: session.id });
   await waitFor(() => /denied: Not that file\./.test(boss.terminal(session.id)) && /after-permissions/.test(boss.terminal(session.id)), { label: 'denial reached the agent, which continued' });
   boss.send({ t: 'term.close', sessionId: session.id });
-  assert.ok(!fs.existsSync(path.join(wt, 'nope.txt')), 'denied write never happened');
+  assert.ok(!fs.existsSync(path.join(wt, 'nope.txt')), 'the denied command never ran');
   const decided = await events('agent.permission_decided');
   assert.ok(decided.length >= 2);
   const audit = await h.api('GET', '/audit');
   assert.equal(audit.filter((a: any) => a.action === 'approval.decide').length, 2);
 });
 
-test('high-risk commands are escalated even for an autonomous employee', async () => {
-  const otto = await h.employee('Otto', 'fullstack', { projectId, autonomy: 'autonomous' });
+test('high-risk commands are escalated even for an employee on Auto', async () => {
+  const otto = await h.employee('Otto', 'fullstack', { projectId, autonomy: 'auto' });
   const task = await h.task({ projectId, title: 'Ship it', assigneeId: otto.id, verifyCommand: 'true', description: '@@fake: bash git status; bash git push origin main; say pushed-or-not@@' });
   const q = await waitFor(() => h.openQuestion(otto.id, 'permission'), { label: 'high-risk escalation' });
   assert.equal(q.tool!.name, 'Bash');
@@ -227,9 +228,10 @@ test("Claude Code's AskUserQuestion is answered from the office through the hook
   await waitFor(async () => (await h.state()).questions.find((x) => x.id === q.id)?.status === 'confirmed', { label: 'confirmed' });
 });
 
-test('a restricted employee cannot modify files at all', async () => {
-  const rita = await h.employee('Rita', 'researcher', { projectId });
-  assert.equal(rita.autonomy, 'restricted');
+test('an employee whose tools deny writing cannot modify files at all', async () => {
+  // No level is read-only: what somebody may not touch is said in their own denied tools (or their role's, or the project's).
+  const rita = await h.employee('Rita', 'researcher', { projectId, disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] });
+  assert.equal(rita.autonomy, 'standard');
   const task = await h.task({ projectId, title: 'Investigate login', assigneeId: rita.id, kind: 'research', description: '@@fake: read README.md; write hack.txt nope; mcp submit_result {"title":"Findings","content":"Login is fine."}; complete-nocode findings submitted@@' });
   const done = await waitFor(async () => {
     const x = await h.getTask(task.id);
@@ -245,7 +247,7 @@ test('a restricted employee cannot modify files at all', async () => {
   assert.ok(states.includes('idle'));
 });
 
-test('an autonomous employee who stops mid-task is nudged a bounded number of times, then shown as waiting', async () => {
+test('an employee on Auto who stops mid-task is nudged a bounded number of times, then shown as waiting', async () => {
   const otto = (await h.state()).employees.find((e) => e.name === 'Otto')!;
   const prev = (await h.state()).tasks.find((t) => t.title === 'Ship it')!;
   await h.api('PATCH', `/tasks/${prev.id}`, { status: 'BLOCKED' });

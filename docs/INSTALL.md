@@ -188,6 +188,8 @@ orchestrator-agent service install|uninstall
 orchestrator-agent stop | logout | version
 ```
 
+`--autonomy` is `standard` (the default) or `auto`; Unrestricted is an owner's to give, in the office (the employee's profile).
+
 - `attach` connects a tmux session that is **already running** (for example a Claude Code session you started by hand) to an employee. Nothing is restarted. Such a session is terminal-only — observe and take control — unless hooks are installed for its project.
 - `hooks install --project <dir>` adds Orchestrator's hooks to `<dir>/.claude/settings.local.json` so Claude Code sessions started there (inside an attached tmux session) report real activity. `uninstall` removes exactly those entries.
 - `create` makes an employee and starts a managed worker in `<dir>`.

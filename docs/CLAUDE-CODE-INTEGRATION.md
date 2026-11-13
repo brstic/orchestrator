@@ -59,7 +59,7 @@ The runner talks to the agent over the same private unix socket as the hooks, au
 Observed with Agent SDK 0.3.321 and Claude Code 2.1.321 (`pnpm test:real:sdk`):
 
 - A message from the office arrived as SDK input and was confirmed by the `UserPromptSubmit` callback; the reply came back through the `Stop` callback (`last_assistant_message`).
-- With supervised autonomy, a `Write` reached `canUseTool`; the file did not exist until "Allow" was clicked in the office.
+- A tool call that nothing pre-approved reached `canUseTool`; nothing happened until "Allow" was clicked in the office. (Observed with a `Write` at the level that was then called Supervised; since 2026-11-13 the lowest level is Standard, where edits are accepted and it is a command outside the routine list that asks.)
 - With nobody answering in the office, the runner asked `Allow this? [y/N]` in the pane after the host's approval wait; `y` typed there let the write happen.
 - An interrupt from the office reached the SDK's `interrupt()` in the middle of a long answer; the turn ended, the process (same PID) stayed up.
 - After stop and start, `resume` continued the same conversation: the worker recalled a fact from before the restart without reading any file.
@@ -270,7 +270,7 @@ The agent keeps only the two windows. It adds who is logged in — `oauthAccount
 
 ## Routines and permissions
 
-A routine's run is an ordinary prompt typed into the employee's session (`[ORCH:MSG:…] Routine (every 5 min): …` followed by what to do with what is found). Nothing about permissions is different for it: the session runs with the permission mode and rules its employee's autonomy and project policy give it. Fetching a web page (`WebFetch`, or `curl` through `Bash`) is not on any pre-approved list below **Auto**, so on Supervised, Standard and Autonomous such a run stops at a permission request to the owner — each run, until the tool is allowed (Projects → Policy → Allow rules, e.g. `WebFetch(domain:support.example.com)`, or the employee's own allowed tools; both apply to sessions started afterwards). While that request is open, further runs are skipped. On Auto, Claude Code's own auto mode decides. This is from reading the launch code and from the scripted worker, which asks for `Bash` the same way; a real `WebFetch` from a routine has not been run.
+A routine's run is an ordinary prompt typed into the employee's session (`[ORCH:MSG:…] Routine (every 5 min): …` followed by what to do with what is found). Nothing about permissions is different for it: the session runs with the permission mode and rules its employee's autonomy and project policy give it. Fetching a web page (`WebFetch`, or `curl` through `Bash`) is not on any pre-approved list below **Auto**, so on Standard such a run stops at a permission request to the owner — each run, until the tool is allowed (Projects → Policy → Allow rules, e.g. `WebFetch(domain:support.example.com)`, or the employee's own allowed tools; both apply to sessions started afterwards). While that request is open, further runs are skipped. On Auto, Claude Code's own auto mode decides. This is from reading the launch code and from the scripted worker, which asks for `Bash` the same way; a real `WebFetch` from a routine has not been run.
 
 ## Sleep and resume
 

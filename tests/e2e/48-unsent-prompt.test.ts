@@ -34,7 +34,7 @@ function spoilNextPaste(how: 'no-enter' | 'lost'): { done: () => boolean } {
 before(async () => {
   h = await createHarness({ timings: { deliveryConfirmMs: 1500 } });
   project = (await h.project('Shop', h.makeRepo('shop'), { verifyCommand: null })).id;
-  alex = (await h.employee('Alex', 'backend', { projectId: project, autonomy: 'autonomous' })).id;
+  alex = (await h.employee('Alex', 'backend', { projectId: project, autonomy: 'auto' })).id;
   await h.api('POST', `/employees/${alex}/start`, {});
   await idle();
 });

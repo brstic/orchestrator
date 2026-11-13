@@ -278,7 +278,7 @@ test('a member’s own computer joins through the door; what is on it is theirs'
   // He adds a folder on his computer as an employee there. No desk in the shared office: his room is where they sit.
   const folder = path.join(jovanHost.root, 'side-project');
   fs.mkdirSync(folder);
-  const hired = await door(jovan, 'POST', '/api/employees', { name: 'Lola', roleKey: 'backend', hostId: jovanHost.hostId, workingDir: folder, autonomy: 'autonomous' });
+  const hired = await door(jovan, 'POST', '/api/employees', { name: 'Lola', roleKey: 'backend', hostId: jovanHost.hostId, workingDir: folder, autonomy: 'auto' });
   assert.equal(hired.status, 200);
   lola = hired.body.id;
   assert.equal(hired.body.deskId, null);

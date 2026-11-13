@@ -59,7 +59,7 @@ test('on a host without the SDK the employee falls back to the interactive CLI, 
 });
 
 test('an SDK-managed employee starts in a real tmux pane running the runner, with structured capabilities', async () => {
-  mira = await h.api('POST', '/employees', { name: 'Mira', roleKey: 'backend', hostId: box.hostId, workingDir: repo, executionMode: 'managed_sdk', autonomy: 'supervised' });
+  mira = await h.api('POST', '/employees', { name: 'Mira', roleKey: 'backend', hostId: box.hostId, workingDir: repo, executionMode: 'managed_sdk', autonomy: 'standard' });
   const s = await h.api('POST', `/employees/${mira.id}/start`, {});
   sessionId = s.id;
   assert.equal(s.mode, 'managed_sdk');
@@ -100,25 +100,25 @@ test('usage is measured and the SDK cost estimate is recorded as an estimate', a
 
 test('approvals go through the SDK permission callback: allow runs the tool, deny is reported to the agent', async () => {
   await idle(mira.id);
-  await h.api('POST', `/employees/${mira.id}/message`, { body: 'Record two entries. @@fake: write a.txt first; write b.txt second; say after-approvals@@' });
+  await h.api('POST', `/employees/${mira.id}/message`, { body: 'Record two entries. @@fake: bash touch a.txt; bash touch b.txt; say after-approvals@@' });
   const q1 = await waitFor(() => h.openQuestion(mira.id, 'permission'), { label: 'permission request' });
   assert.equal(q1.channel, 'permission_hook');
-  assert.equal(q1.tool!.name, 'Write');
+  assert.equal(q1.tool!.name, 'Bash');
   assert.equal((await h.session(mira.id))!.activity, 'needs_approval');
-  assert.ok(!fs.existsSync(path.join(repo, 'a.txt')), 'nothing is written before approval');
+  assert.ok(!fs.existsSync(path.join(repo, 'a.txt')), 'nothing runs before approval');
   await h.api('POST', `/questions/${q1.id}/answer`, { decision: 'allow' });
-  await waitFor(() => fs.existsSync(path.join(repo, 'a.txt')), { label: 'approved write happened' });
+  await waitFor(() => fs.existsSync(path.join(repo, 'a.txt')), { label: 'the approved command ran' });
   await waitFor(async () => (await h.state()).questions.find((x) => x.id === q1.id)?.status === 'confirmed', { label: 'approval confirmed by PostToolUse' });
   const q2 = await waitFor(() => h.openQuestion(mira.id, 'permission'), { label: 'second permission request' });
   await h.api('POST', `/questions/${q2.id}/answer`, { decision: 'deny', answer: 'Not that file.' });
   const live = (await h.session(mira.id))!;
   await waitFor(() => /denied from the office: Not that file\./.test(screen(live)) && /after-approvals/.test(screen(live)), { label: 'denial reached the agent, which continued' });
-  assert.ok(!fs.existsSync(path.join(repo, 'b.txt')), 'denied write never happened');
+  assert.ok(!fs.existsSync(path.join(repo, 'b.txt')), 'the denied command never ran');
 });
 
 test('when nobody answers in the office, the approval falls back to the workstation keyboard', async () => {
   await idle(mira.id);
-  await h.api('POST', `/employees/${mira.id}/message`, { body: 'One more. @@fake: write c.txt third; say after-keyboard@@' });
+  await h.api('POST', `/employees/${mira.id}/message`, { body: 'One more. @@fake: bash touch c.txt; say after-keyboard@@' });
   await waitFor(() => h.openQuestion(mira.id, 'permission'), { label: 'permission request' });
   const live = (await h.session(mira.id))!;
   // Nobody answers: after the host's approval wait, the runner asks in the pane.

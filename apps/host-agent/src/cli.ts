@@ -50,7 +50,7 @@ ENVIRONMENT
 
 ROLES     backend, frontend, fullstack, architect, devops, security, qa, database,
           performance, reverse, researcher, docs, pm, reviewer
-AUTONOMY  restricted | supervised | standard | autonomous
+AUTONOMY  standard | auto
 `;
 
 function die(msg: string): never {

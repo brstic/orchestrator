@@ -26,7 +26,7 @@ let danId = '';
 before(async () => {
   h = await createHarness();
   projectId = (await h.project('Quiet', h.makeRepo('quiet'), { verifyCommand: null, policy: { autoAssign: false } })).id;
-  danId = (await h.employee('Dan', 'backend', { projectId, autonomy: 'autonomous' })).id;
+  danId = (await h.employee('Dan', 'backend', { projectId, autonomy: 'auto' })).id;
   await h.api('POST', `/employees/${danId}/start`, {});
   await waitFor(async () => (await h.session(danId))?.inTurn === false, { label: 'Dan is up', timeout: 40000 });
 });

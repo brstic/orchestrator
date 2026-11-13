@@ -72,7 +72,7 @@ before(async () => {
   laptop = await h.addHost('jovans-laptop', {}, { serverUrl: doorUrl, enrollToken: (await door('Jovan', 'POST', '/api/me/host', {})).body.token });
   const folder = path.join(laptop.root, 'side-project');
   fs.mkdirSync(folder);
-  lola = (await door('Jovan', 'POST', '/api/employees', { name: 'Lola', roleKey: 'backend', hostId: laptop.hostId, workingDir: folder, autonomy: 'autonomous' })).body.id;
+  lola = (await door('Jovan', 'POST', '/api/employees', { name: 'Lola', roleKey: 'backend', hostId: laptop.hostId, workingDir: folder, autonomy: 'auto' })).body.id;
 });
 after(async () => {
   await h.cleanup();
@@ -94,7 +94,7 @@ test('a member brings a server into the office: it is theirs, by name, and priva
   // He hires onto it; nobody else can — it is his alone, like his computer.
   const folder = path.join(server.root, 'service');
   fs.mkdirSync(folder);
-  const hired = await door('Jovan', 'POST', '/api/employees', { name: 'Rex', roleKey: 'backend', hostId: server.hostId, workingDir: folder, autonomy: 'autonomous' });
+  const hired = await door('Jovan', 'POST', '/api/employees', { name: 'Rex', roleKey: 'backend', hostId: server.hostId, workingDir: folder, autonomy: 'auto' });
   assert.equal(hired.status, 200, JSON.stringify(hired.body));
   rex = hired.body.id;
   assert.equal((await door('Ana', 'POST', '/api/employees', { name: 'Planted', hostId: server.hostId })).status, 403);

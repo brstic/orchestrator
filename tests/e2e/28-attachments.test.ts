@@ -53,7 +53,7 @@ before(async () => {
   h = await createHarness();
   repo = h.makeRepo('shop');
   project = (await h.project('Shop', repo)).id;
-  for (const [name, role] of [['Alex', 'frontend'], ['Sarah', 'backend']] as const) ids[name] = (await h.employee(name, role, { projectId: project, autonomy: 'autonomous' })).id;
+  for (const [name, role] of [['Alex', 'frontend'], ['Sarah', 'backend']] as const) ids[name] = (await h.employee(name, role, { projectId: project, autonomy: 'auto' })).id;
 });
 after(async () => {
   await h?.cleanup();

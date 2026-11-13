@@ -26,7 +26,7 @@ before(async () => {
   const p = await h.project('Shop', repo, { verifyCommand: null, policy: { requireReview: true, autoMerge: true } });
   project = p.id;
   integration = p.integrationBranch;
-  for (const name of ['Alex', 'Bea']) ids[name] = (await h.employee(name, 'backend', { projectId: project, autonomy: 'autonomous' })).id;
+  for (const name of ['Alex', 'Bea']) ids[name] = (await h.employee(name, 'backend', { projectId: project, autonomy: 'auto' })).id;
 });
 after(async () => {
   await h?.cleanup();
@@ -71,7 +71,7 @@ test('an approval is for the work as it stood: back with its author, what comes 
 
 test('approved while its author\'s machine is away: it waits to be merged, and is done when it is', async () => {
   // (Somebody with nothing else in hand: the colleagues above may still be looking at each other's work.)
-  ids.Cy = (await h.employee('Cy', 'backend', { projectId: project, autonomy: 'autonomous' })).id;
+  ids.Cy = (await h.employee('Cy', 'backend', { projectId: project, autonomy: 'auto' })).id;
   const t = await h.task({ projectId: project, title: 'Add the sidebar', assigneeId: ids.Cy, requiresReview: true, description: '@@fake: write sidebar.txt ok; commit the sidebar; complete sidebar added@@' });
   await settled(t.id, 'REVIEW', 'waiting for its review');
   const depends = await h.task({ projectId: project, title: 'Style the sidebar', assigneeId: ids.Alex, dependsOn: [t.id], description: '@@fake: say alex-started-the-styling@@' });

@@ -140,7 +140,7 @@ try {
   check('the server’s own machine is the shared one, and it is Linux', shared.length === 1 && shared[0][1] === 'online' && shared[0][2] === 'linux', JSON.stringify(shared));
   // A shared employee on the server: its folder is on the server, its work happens there.
   onServer('mkdir -p ~/projects/shop && cd ~/projects/shop && git init -q && echo shop > README.md && git add -A && git commit -q -m init');
-  const hiredShared = await owner.call('POST', '/employees', { name: 'Serverina', roleKey: 'backend', workingDir: '/home/office/projects/shop', autonomy: 'autonomous' });
+  const hiredShared = await owner.call('POST', '/employees', { name: 'Serverina', roleKey: 'backend', workingDir: '/home/office/projects/shop', autonomy: 'auto' });
   await owner.call('POST', `/employees/${hiredShared.body.id}/start`, {});
   await owner.call('POST', `/employees/${hiredShared.body.id}/message`, { body: 'Leave a note. @@fake: write note.txt from-the-server; say done@@' });
   let note = '';

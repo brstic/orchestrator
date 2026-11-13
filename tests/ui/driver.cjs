@@ -1224,10 +1224,20 @@ async function scenario() {
     await open('meetings');
     await clickText('New meeting');
     await type(`window.__t.field('Topic')`, ctx.meetingTopic);
+    // Participants are picked from a list that opens on "Add someone" and stand as tags on one line: no row per employee.
+    const picker = `window.__t.scope().querySelector('[data-pick-many="participants"]')`;
+    const before = await js(`Math.round(${picker}.getBoundingClientRect().height)`);
     for (const name of ['Ava', 'Rev']) {
-      await click(`window.__t.checkbox(${JSON.stringify(name)})`, `${name}'s checkbox`);
-      await waitFor(`window.__t.checkbox(${JSON.stringify(name)}).checked`, 3000);
+      if (!(await js(`!!document.querySelector('[data-pick-list="participants"]')`))) await click(`${picker}.querySelector('[data-pick-add]')`, 'Add someone');
+      await waitFor(`!!document.querySelector('[data-pick-list="participants"] [data-pick-option]')`, 3000);
+      await click(`[...document.querySelectorAll('[data-pick-list="participants"] [data-pick-option]')].find((b) => b.querySelector('.k-pop-name').textContent === ${JSON.stringify(name)})`, `${name} in the list`);
+      await waitFor(`[...${picker}.querySelectorAll('[data-picked]')].some((t) => t.textContent.includes(${JSON.stringify(name)}))`, 3000);
     }
+    // Escape puts the list away and leaves the window (and what was typed) where it is.
+    await key('Escape');
+    await waitFor(`!document.querySelector('[data-pick-list]') && !!window.__t.field('Topic') && window.__t.field('Topic').value === ${JSON.stringify(ctx.meetingTopic)}`, 3000);
+    const after = await js(`Math.round(${picker}.getBoundingClientRect().height)`);
+    if (before > 40 || after > 40) throw new Error(`the participants take ${before} px with nobody picked and ${after} px with two: it is to be one line`);
     await shot('meeting-form');
     await click(`window.__t.submit('Start meeting')`, 'Start meeting');
     await waitFor(`Object.values(window.__t.store().meetings).some((m) => m.topic === ${JSON.stringify(ctx.meetingTopic)} && m.status === 'concluded')`, 60000);
@@ -1277,13 +1287,30 @@ async function scenario() {
     // (To the pixel a measurement is rounded to: the body's height is a part of the screen's.)
     if (Math.abs(set.height - prof.height) > 1) throw new Error(`the window changes size between Overview and Settings: ${prof.height} → ${set.height}`);
     if (!set.barIn || !set.save || !/^Nothing is changed/.test(set.note)) throw new Error(`the save bar: in sight ${set.barIn}, Save disabled ${set.save}, says "${set.note.slice(0, 60)}"`);
-    // Six levels of autonomy, a line each; only the chosen one says the rest.
-    if (set.picks.length !== 6 || set.more !== 1 || set.picks.filter((h) => h > 70).length > 1) throw new Error(`the autonomy levels take ${set.picks.join(', ')} px, ${set.more} of them explained`);
+    // Three levels — Standard, Auto, Unrestricted — a line each; only the chosen one says the rest.
+    if (set.picks.length !== 3 || set.more !== 1 || set.picks.filter((h) => h > 70).length > 1) throw new Error(`the autonomy levels take ${set.picks.join(', ')} px, ${set.more} of them explained`);
     // A change is named in the bar, and Discard takes it back.
     await type(`window.__t.field('Title')`, 'Principal Frontend Engineer');
     await waitFor(`/^Unsaved: title/.test(window.__t.scope().querySelector('.pf-save-note').textContent) && !window.__t.scope().querySelector('[data-profile-save] .btn-primary').disabled`, 4000);
     await clickText('Discard');
     await waitFor(`/^Nothing is changed/.test(window.__t.scope().querySelector('.pf-save-note').textContent) && window.__t.field('Title').value === window.__t.emp('Sarah').title`, 4000);
+    // "Also works on": the other projects are one line of tags with "Add a project", however many projects there are.
+    const also = `window.__t.scope().querySelector('[data-pick-many="also-projects"]')`;
+    await js(`${also}.scrollIntoView({ block: 'center' })`);
+    const alsoBefore = await js(`({ h: Math.round(${also}.getBoundingClientRect().height), boxes: window.__t.scope().querySelectorAll('[data-profile-settings] .field input[type=checkbox]').length, text: ${also}.textContent })`);
+    if (alsoBefore.h > 40 || alsoBefore.boxes || !/Only their own project/.test(alsoBefore.text)) throw new Error(`"Also works on" takes ${alsoBefore.h} px, ${alsoBefore.boxes} checkbox(es), says "${alsoBefore.text}"`);
+    await click(`${also}.querySelector('[data-pick-add]')`, 'Add a project');
+    await waitFor(`document.querySelectorAll('[data-pick-list="also-projects"] [data-pick-option]').length > 0`, 3000);
+    const listed = await js(`(() => { const p = document.querySelector('[data-pick-list="also-projects"]').getBoundingClientRect(); return { names: [...document.querySelectorAll('[data-pick-list="also-projects"] .k-pop-name')].map((n) => n.textContent), on: p.top >= 0 && p.bottom <= innerHeight && p.left >= 0 && p.right <= innerWidth, own: window.__t.store().projects[window.__t.emp('Sarah').projectId].name }; })()`);
+    if (!listed.on || !listed.names.length || listed.names.includes(listed.own)) throw new Error(`the list of other projects: on the screen ${listed.on}; ${listed.names.join(', ')} (their own is ${listed.own})`);
+    await click(`document.querySelector('[data-pick-list="also-projects"] [data-pick-option]')`, listed.names[0]);
+    await waitFor(`[...${also}.querySelectorAll('[data-picked]')].some((t) => t.textContent.includes(${JSON.stringify(listed.names[0])})) && /^Unsaved: /.test(window.__t.scope().querySelector('.pf-save-note').textContent)`, 4000);
+    await key('Escape');
+    await waitFor(`!document.querySelector('[data-pick-list]') && !!window.__t.scope().querySelector('[data-profile-settings]')`, 3000);
+    await shot('profile-also-works-on');
+    // The ✕ of a tag takes it off again.
+    await click(`${also}.querySelector('[data-picked] .k-tag-off')`, 'the ✕ of the tag');
+    await waitFor(`!${also}.querySelector('[data-picked]') && /^Nothing is changed/.test(window.__t.scope().querySelector('.pf-save-note').textContent)`, 4000);
     await close();
     return `${team.subtitle}; ${team.groups.map((g) => g.name).join(', ')}; ${team.columns} columns; Sarah: ${prof.state}`;
   });

@@ -32,7 +32,7 @@ const task = async (id: string) => (await h.state()).tasks.find((t) => t.id === 
 before(async () => {
   h = await createHarness();
   shared = (await h.project('Shop', h.makeRepo('shop'), { verifyCommand: null, policy: { autoAssign: true } })).id;
-  for (const name of ['Alex', 'Bea', 'Cy']) ids[name] = (await h.employee(name, 'backend', { projectId: shared, autonomy: 'autonomous' })).id;
+  for (const name of ['Alex', 'Bea', 'Cy']) ids[name] = (await h.employee(name, 'backend', { projectId: shared, autonomy: 'auto' })).id;
   const home = path.join(fs.realpathSync(h.tmp), 'foreman-home');
   fs.mkdirSync(home);
   ids.Mira = (await h.employee('Mira', 'foreman', { workingDir: home })).id;
@@ -45,7 +45,7 @@ before(async () => {
   h.server.engine.core.put('host', host);
   const folder = path.join(other.root, 'side');
   fs.mkdirSync(folder);
-  ids.Lola = (await h.api<any>('POST', '/employees', { name: 'Lola', roleKey: 'backend', hostId: laptop, workingDir: folder, autonomy: 'autonomous' })).id;
+  ids.Lola = (await h.api<any>('POST', '/employees', { name: 'Lola', roleKey: 'backend', hostId: laptop, workingDir: folder, autonomy: 'auto' })).id;
   personal = (await h.state()).employees.find((e) => e.id === ids.Lola)!.projectId!;
   assert.ok(personal && personal !== shared);
 });
@@ -206,7 +206,7 @@ test('the office\'s own files on a machine are not for the sessions that run the
   // An employee with nothing else to do, and a colleague whose session runs beside theirs.
   // (In a project of his own where nothing is handed out, so that no task of the tests above comes to him meanwhile.)
   const quiet = (await h.project('Quiet', h.makeRepo('quiet'), { verifyCommand: null, policy: { autoAssign: false } })).id;
-  ids.Dan = (await h.employee('Dan', 'backend', { projectId: quiet, autonomy: 'autonomous' })).id;
+  ids.Dan = (await h.employee('Dan', 'backend', { projectId: quiet, autonomy: 'auto' })).id;
   for (const name of ['Dan', 'Bea']) await h.api('POST', `/employees/${ids[name]}/start`, {}).catch(() => undefined);
   await waitFor(async () => (await h.session(ids.Dan!))?.inTurn === false && (await h.session(ids.Bea!))?.status === 'running', { label: 'Dan and Bea are up', timeout: 40000 });
   const sBea = (await h.session(ids.Bea!))!;

@@ -31,7 +31,7 @@ before(async () => {
   h.git(repo, 'add', '-A');
   h.git(repo, 'commit', '-q', '-m', 'scripts');
   projectId = (await h.project('Shop', repo, { verifyCommand: 'npm test --silent' })).id;
-  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend']] as const) ids[name] = (await h.employee(name, role, { projectId, autonomy: 'autonomous' })).id;
+  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend']] as const) ids[name] = (await h.employee(name, role, { projectId, autonomy: 'auto' })).id;
 });
 after(async () => {
   await h.cleanup();
@@ -74,14 +74,11 @@ test('a technical handoff: committed work and notes go to a teammate, who finish
 test('deployments and releases seen in a terminal are recorded with their real outcome', async () => {
   const before = (await h.state()).company;
   await h.api('POST', `/employees/${ids.Alex}/message`, { body: 'Ship it. @@fake: bash npm run deploy; bash npm run release; bash git tag v1.2.0; bash echo "npm publish is only mentioned here"; say shipped@@' });
-  // Tagging a version is high-risk, so it waits for the owner even on an autonomous employee.
-  const q = await waitFor(() => h.openQuestion(ids.Alex!, 'permission'), { label: 'approval for the tag' });
-  assert.match(String((q.tool!.input as any).command), /git tag v1\.2\.0/);
+  // On Auto nothing waits for the owner but what is on the high-risk list: the scripts and the tag run. The list is
+  // deliberately stricter than the record: a command that merely mentions a publish is held.
+  const q = await waitFor(() => h.openQuestion(ids.Alex!, 'permission'), { label: 'approval for the echo' });
+  assert.match(String((q.tool!.input as any).command), /^echo /);
   await h.api('POST', `/questions/${q.id}/answer`, { decision: 'allow' });
-  // The approval rule is deliberately stricter than the record: a command that merely mentions a publish still asks.
-  const q2 = await waitFor(async () => { const x = await h.openQuestion(ids.Alex!, 'permission'); return x && x.id !== q.id ? x : null; }, { label: 'approval for the echo' });
-  assert.match(String((q2.tool!.input as any).command), /^echo /);
-  await h.api('POST', `/questions/${q2.id}/answer`, { decision: 'allow' });
   await waitFor(async () => (await events(`employeeId=${ids.Alex}`)).some((e) => e.type === 'agent.turn_finished' && /shipped/.test(e.data.lastMessage ?? '')), { label: 'turn finished' });
   const seen = (await events(`employeeId=${ids.Alex}`)).filter((e) => e.type === 'ops.deployment').map((e) => `${e.data.kind}:${e.data.what}:${e.data.ok}`).sort();
   assert.deepEqual(seen, ['deploy:deploy script:false', 'deploy:deploy script:true', 'release:version tag:true'], 'the echo that only mentions a publish is not a deployment');
@@ -202,8 +199,8 @@ test('integration testing and promotion: work that passes alone but breaks toget
   const combo = h.makeRepo('combo');
   const check = `sh -c '! (grep -qs ON a.txt && grep -qs ON b.txt)'`;
   const project = await h.project('Combo', combo, { verifyCommand: check });
-  const dana = (await h.employee('Dana', 'backend', { projectId: project.id, autonomy: 'autonomous' })).id;
-  const eli = (await h.employee('Eli', 'frontend', { projectId: project.id, autonomy: 'autonomous' })).id;
+  const dana = (await h.employee('Dana', 'backend', { projectId: project.id, autonomy: 'auto' })).id;
+  const eli = (await h.employee('Eli', 'frontend', { projectId: project.id, autonomy: 'auto' })).id;
   const integration = () => h.api<any>('GET', `/projects/${project.id}/integration`);
   const lastTest = async () => (await h.state()).projects.find((p) => p.id === project.id)!.integration?.lastTest ?? null;
 
@@ -270,9 +267,9 @@ test('integration testing and promotion: work that passes alone but breaks toget
 test('the planning phase: an objective becomes proposed tasks with roles and dependencies, released by the owner and done in order', async () => {
   const repo2 = h.makeRepo('crm');
   const project = await h.project('CRM', repo2, { verifyCommand: 'test -f README.md', policy: { autoAssign: false } });
-  const ava = (await h.employee('Ava', 'architect', { projectId: project.id, autonomy: 'autonomous' })).id;
-  const ben = (await h.employee('Ben', 'backend', { projectId: project.id, autonomy: 'autonomous' })).id;
-  const quin = (await h.employee('Quin', 'qa', { projectId: project.id, autonomy: 'autonomous' })).id;
+  const ava = (await h.employee('Ava', 'architect', { projectId: project.id, autonomy: 'auto' })).id;
+  const ben = (await h.employee('Ben', 'backend', { projectId: project.id, autonomy: 'auto' })).id;
+  const quin = (await h.employee('Quin', 'qa', { projectId: project.id, autonomy: 'auto' })).id;
   const proposal = {
     rationale: 'API first, then the tests that exercise it.',
     tasks: [

@@ -14,7 +14,7 @@ interface SessionRuntime {
   failures?: { taskId: string | null; counts: Map<string, number> };
 }
 
-const NUDGE_LIMIT: Record<string, number> = { restricted: 0, supervised: 0, standard: 1, autonomous: 3, auto: 3, unrestricted: 3 };
+const NUDGE_LIMIT: Record<string, number> = { standard: 1, auto: 3, unrestricted: 3 };
 
 /**
  * Receives raw Claude Code hook invocations forwarded by host agents and turns

@@ -28,7 +28,7 @@ const inProgress = (id: string) => waitFor(async () => {
 before(async () => {
   h = await createHarness();
   project = (await h.project('Shop', h.makeRepo('shop'), { verifyCommand: null })).id;
-  for (const name of ['Alex', 'Sarah', 'Noor']) ids[name] = (await h.employee(name, 'backend', { projectId: project, autonomy: 'autonomous' })).id;
+  for (const name of ['Alex', 'Sarah', 'Noor']) ids[name] = (await h.employee(name, 'backend', { projectId: project, autonomy: 'auto' })).id;
 });
 after(async () => {
   await h?.cleanup();

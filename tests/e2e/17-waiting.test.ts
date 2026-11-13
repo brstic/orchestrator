@@ -44,7 +44,7 @@ before(async () => {
   h = await createHarness({ timings: { colleagueWaitMs: 30000, waitGoneGraceMs: 1500 } });
   q = await createHarness({ timings: { colleagueWaitMs: 2500, waitGoneGraceMs: 1500 } });
   projectId = (await h.project('Shop', h.makeRepo('shop'), { verifyCommand: 'npm test --silent' })).id;
-  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend']] as const) ids[name] = (await h.employee(name, role, { projectId, autonomy: 'autonomous' })).id;
+  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend']] as const) ids[name] = (await h.employee(name, role, { projectId, autonomy: 'auto' })).id;
 });
 
 after(async () => {
@@ -118,7 +118,7 @@ test('the bound passes: "not yet", the wait stands and is shown, and the late an
   const repo = q.makeRepo('desk');
   const project = (await q.project('Desk', repo)).id;
   for (const [name, role] of [['Ava', 'backend'], ['Ben', 'frontend']] as const) {
-    ids[name] = (await q.employee(name, role, { projectId: project, autonomy: 'autonomous' })).id;
+    ids[name] = (await q.employee(name, role, { projectId: project, autonomy: 'auto' })).id;
     await q.api('POST', `/employees/${ids[name]}/start`, {});
     await atPrompt(q, ids[name]!, `${name} started`);
   }

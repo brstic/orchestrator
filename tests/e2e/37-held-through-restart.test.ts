@@ -38,7 +38,7 @@ after(async () => {
 });
 
 test('a permission request waits through a restart of the office: the same request, answered from the office, no prompt in the terminal', async () => {
-  const task = await h.task({ projectId: project, title: 'Write the pipeline', assigneeId: ids.Dana, kind: 'ops', description: '@@fake: write ci.txt pipeline; say after-the-restart@@' });
+  const task = await h.task({ projectId: project, title: 'Write the pipeline', assigneeId: ids.Dana, kind: 'ops', description: '@@fake: bash touch ci.txt; say after-the-restart@@' });
   const first = await waitFor(() => one('Dana', 'permission_hook'), { label: 'asked through the hook', timeout: 30000 });
   await h.restartServer();
   // What the machine still holds comes right behind its report; give the office longer than it waits for that.
@@ -72,7 +72,7 @@ test('a question Claude Code asks waits through a restart too, and through two; 
   await waitFor(async () => /omar-went-on/.test(await pane('Omar')), { label: 'Omar went on', timeout: 15000 });
 
   await idle('Omar');
-  const task = await h.task({ projectId: project, title: 'Write the other pipeline', assigneeId: ids.Omar, kind: 'ops', description: '@@fake: write deploy.txt go; say after-the-denial@@' });
+  const task = await h.task({ projectId: project, title: 'Write the other pipeline', assigneeId: ids.Omar, kind: 'ops', description: '@@fake: bash touch deploy.txt; say after-the-denial@@' });
   const p = await waitFor(() => one('Omar', 'permission_hook'), { label: 'asked through the hook', timeout: 30000 });
   await h.restartServer();
   await sleep(2500);
@@ -82,7 +82,7 @@ test('a question Claude Code asks waits through a restart too, and through two; 
 });
 
 test('the connection to the machine drops for a moment: the request stays, and an answer given meanwhile is delivered when it is back', async () => {
-  const task = await h.task({ projectId: project, title: 'Write notes', assigneeId: ids.Lena, kind: 'ops', description: '@@fake: write notes.txt hello; say lena-done@@' });
+  const task = await h.task({ projectId: project, title: 'Write notes', assigneeId: ids.Lena, kind: 'ops', description: '@@fake: bash touch notes.txt; say lena-done@@' });
   const q = await waitFor(() => one('Lena', 'permission_hook'), { label: 'asked through the hook', timeout: 30000 });
   // The agent's side of the link is cut; it connects again by itself in half a second.
   (h.agent as unknown as { ws: { close(): void } }).ws.close();
@@ -97,7 +97,7 @@ test('the connection to the machine drops for a moment: the request stays, and a
 });
 
 test('a request made while the office is away for a moment waits for it instead of dropping to the terminal', async () => {
-  const task = await h.task({ projectId: project, title: 'Write the readme', assigneeId: ids.Ivo, kind: 'ops', description: '@@fake: say ivo-started; sleep 2500; write readme.txt hi; say ivo-done@@' });
+  const task = await h.task({ projectId: project, title: 'Write the readme', assigneeId: ids.Ivo, kind: 'ops', description: '@@fake: say ivo-started; sleep 2500; bash touch readme.txt; say ivo-done@@' });
   await waitFor(async () => /ivo-started/.test(await pane('Ivo')), { label: 'Ivo is at work', timeout: 30000 });
   // The office goes down while Ivo is busy; his request for permission comes while it is away.
   await h.server.close();
@@ -133,7 +133,7 @@ test('the office stays away longer than the agent waits for it: Claude Code asks
   // This machine's agent waits two seconds for the office.
   h.agentCfg.linkGraceSeconds = 2;
   await h.restartAgent();
-  const task = await h.task({ projectId: project, title: 'Write the changelog', assigneeId: ids.Nela, kind: 'ops', description: '@@fake: write changes.txt one; say nela-done@@' });
+  const task = await h.task({ projectId: project, title: 'Write the changelog', assigneeId: ids.Nela, kind: 'ops', description: '@@fake: bash touch changes.txt; say nela-done@@' });
   const first = await waitFor(() => one('Nela', 'permission_hook'), { label: 'asked through the hook', timeout: 30000 });
   await pane('Nela');
   await h.server.close();
@@ -149,7 +149,7 @@ test('the office stays away longer than the agent waits for it: Claude Code asks
 
 test('answered while its machine is away, then the office restarts and the machine no longer holds it: the request is not left "answered" for ever', async () => {
   ids.Tara = (await h.employee('Tara', 'devops', { projectId: project })).id;
-  const task = await h.task({ projectId: project, title: 'Write the manifest', assigneeId: ids.Tara, kind: 'ops', description: '@@fake: write manifest.txt one; say tara-done@@' });
+  const task = await h.task({ projectId: project, title: 'Write the manifest', assigneeId: ids.Tara, kind: 'ops', description: '@@fake: bash touch manifest.txt; say tara-done@@' });
   const first = await waitFor(() => one('Tara', 'permission_hook'), { label: 'asked through the hook', timeout: 30000 });
   await pane('Tara');
   // The machine's agent goes away for longer than the hook waits for it: Claude Code asks in the terminal.

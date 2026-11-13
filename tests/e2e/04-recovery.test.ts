@@ -21,7 +21,7 @@ before(async () => {
   repo = h.makeRepo('ledger');
   projectId = (await h.project('Ledger', repo, { verifyCommand: 'npm test --silent' })).id;
   alexId = (await h.employee('Alex', 'backend', { projectId, autonomy: 'standard' })).id;
-  danaId = (await h.employee('Dana', 'devops', { projectId })).id; // supervised
+  danaId = (await h.employee('Dana', 'devops', { projectId })).id; // on Standard: a command outside the routine list asks
 });
 after(async () => {
   await h.cleanup();
@@ -83,7 +83,7 @@ test('work done while the server is down is reported afterwards, exactly once', 
 });
 
 test('an approval pending during a server restart is still pending afterwards; when the machine\'s agent stays away, it falls back to the real terminal prompt', async () => {
-  const task = await h.task({ projectId, title: 'Rotate logs', assigneeId: danaId, kind: 'ops', verifyCommand: 'true', description: '@@fake: write rotate.txt weekly; say rotation-configured@@' });
+  const task = await h.task({ projectId, title: 'Rotate logs', assigneeId: danaId, kind: 'ops', verifyCommand: 'true', description: '@@fake: bash touch rotate.txt; say rotation-configured@@' });
   const q = await waitFor(() => h.openQuestion(danaId, 'permission'), { label: 'permission pending' });
   const wt = (await h.getTask(task.id)).worktree!;
 

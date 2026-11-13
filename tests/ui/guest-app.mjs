@@ -346,7 +346,7 @@ try {
   const folder = path.join(tmp, 'milas-project');
   fs.mkdirSync(folder, { recursive: true });
   const call = (method, route, body) => p2.js(`fetch(${JSON.stringify('/api' + route)}, { method: ${JSON.stringify(method)}, headers: { 'content-type': 'application/json', authorization: 'Bearer ' + window.orchestrator.token }, body: ${body ? `JSON.stringify(${JSON.stringify(body)})` : 'undefined'} }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }))`);
-  const hired = await call('POST', '/employees', { name: 'Nina', roleKey: 'backend', hostId: mineHost.id, workingDir: fs.realpathSync(folder), autonomy: 'autonomous' });
+  const hired = await call('POST', '/employees', { name: 'Nina', roleKey: 'backend', hostId: mineHost.id, workingDir: fs.realpathSync(folder), autonomy: 'auto' });
   check('an employee hired on it sits in the member’s room, not at a desk of the shared office', hired.status === 200 && hired.body.deskId === null, JSON.stringify(hired.body).slice(0, 160));
   await p2.until('Nina in the room panel', `[...document.querySelectorAll('.win .my-room-row')].some((r) => /Nina/.test(r.textContent))`, 10000);
   await call('POST', `/employees/${hired.body.id}/start`, {});

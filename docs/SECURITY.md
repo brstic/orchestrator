@@ -32,18 +32,17 @@ Unauthenticated requests get `401`; a client WebSocket without the owner token i
 
 ## Agent permissions
 
-Autonomy is expressed in Claude Code's own permission system and nothing else:
+How much an employee may do without asking is one of **three levels** — Standard, Auto, Unrestricted — and each is expressed in Claude Code's own permission system and nothing else. (Until 2026-11-13 there were six; Restricted, Supervised and Autonomous were removed on the owner's word — `DECISIONS.md`, "Three levels". Whoever was on one of them was put on Standard when the office next started, on the record as `autonomy.three_levels`; nobody can be put on one again: `POST`/`PATCH /employees` and the host agent's `create` refuse a level that is not one of the three.)
 
 | Level | Permission mode | Pre-approved | Denied |
 | --- | --- | --- | --- |
-| restricted | manual (default) | read-only git, `ls`, `wc` | Edit, Write, MultiEdit, NotebookEdit |
-| supervised | manual (default) | — (every edit and command asks) | — |
 | standard | acceptEdits | read-only git, `git add/commit/merge`, common test commands | — |
-| autonomous | acceptEdits | the above plus package managers, interpreters, build tools | — |
+
+Whoever is hired without a level being named is on Standard, whatever their role. **No level is read-only.** What somebody may not touch is said in their own denied tools (the profile, "Always denied tools"), in their role's — a foreman and a team lead cannot edit files at any level — or in the project's deny rules.
 
 Plus project `policy.allow` / `policy.deny`, plus the employee's own lists. `bypassPermissions` is used for one level only — *unrestricted*, below — and never for any other.
 
-| auto | auto | the same allow-list as autonomous | — (Claude Code's auto mode decides) |
+| auto | auto | the above plus package managers, interpreters, build tools | — (Claude Code's auto mode decides) |
 
 **Auto.** An employee on *auto* runs in Claude Code's own auto permission mode: its safety classifier decides what may run, so you are not asked for permission — only for decisions (`ask_boss`). New hires from the short hire form default to it. Two things follow from "do not ask me": the workspace-trust prompt for the folder you put them in is answered for you (recorded in the audit log as `trust.auto_accepted`), and nothing is surfaced as an approval unless it matches the high-risk list below. That last safeguard can be switched off in *Settings → Employees* ("On Auto, still ask me before high-risk commands"); the change is audited. The bypass mode is still never used.
 
@@ -72,7 +71,7 @@ What is gone in this mode: every permission prompt; auto mode's safety check (so
 - **safe** (the default) — the office applies only changes that cannot let agents do more without asking: deny rules, required review, a longer verification timeout, a lower autonomy level, a lesson for one employee. (Text for a project's notes is suggested, never applied: every employee reads the notes as the project's own word.) It never adds an allow rule, raises autonomy or switches review off. "Safe" is about permissions only: a deny rule or a review gate applied this way can still get in the way of work until you undo it.
 - **trusted** — the office also applies widening changes, each under a fixed evidence rule (for an allow rule: at least five approvals of exactly that command shape in that project, across two tasks or a day, not one denial ever, nothing of that shape on the high-risk list, never a shape that runs arbitrary other commands; for autonomy: one level at a time, never beyond *standard*, on a clean record), and each on probation: a denial, a high-risk request of that shape or a failure in that time takes it back, and it is not applied automatically again. On shared machines a colleague's approvals count as evidence like yours.
 
-Whatever the dial says, the office **never answers a permission request**, never pre-approves anything that matches the high-risk list, never gives *autonomous* or *auto*, and never changes the foreman. On a member's own computer it changes permissions only on that member's own decisions. Every automatic change is written to the audit log as `autopilot`, recorded as a `learning.applied` event with its evidence, and can be undone (`POST /api/improvements/:id/revert`, owners only). Like any rule change, an automatic one — and its undoing — reaches a session when that session is next started: a rule that is taken back stays in sessions already running until they restart.
+Whatever the dial says, the office **never answers a permission request**, never pre-approves anything that matches the high-risk list, never raises anybody's level (Auto and Unrestricted are a person's to give), and never changes the foreman. On a member's own computer it changes permissions only on that member's own decisions. Every automatic change is written to the audit log as `autopilot`, recorded as a `learning.applied` event with its evidence, and can be undone (`POST /api/improvements/:id/revert`, owners only). Like any rule change, an automatic one — and its undoing — reaches a session when that session is next started: a rule that is taken back stays in sessions already running until they restart.
 
 ## The foreman
 

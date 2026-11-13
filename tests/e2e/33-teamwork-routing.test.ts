@@ -39,7 +39,7 @@ before(async () => {
   shop = (await h.project('Shop', h.makeRepo('shop'), { verifyCommand: null })).id;
   studio = (await h.project('Studio', h.makeRepo('studio'), { verifyCommand: null })).id;
   // Everyone has the same trade; what tells them apart is what each one keeps.
-  for (const [name, projectId] of [['Shop Marketplace', shop], ['Shop Panel', shop], ['Shop Manager', shop], ['Studio Designer', studio]] as const) ids[name] = (await h.employee(name, 'fullstack', { projectId, autonomy: 'autonomous' })).id;
+  for (const [name, projectId] of [['Shop Marketplace', shop], ['Shop Panel', shop], ['Shop Manager', shop], ['Studio Designer', studio]] as const) ids[name] = (await h.employee(name, 'fullstack', { projectId, autonomy: 'auto' })).id;
 });
 after(async () => {
   await h?.cleanup();

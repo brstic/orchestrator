@@ -4,7 +4,7 @@ Area "detect" of the Growth work. Code: `packages/orchestration/src/learning/det
 
 ## Part A — detectors
 
-`Improver.analyze()` already proposed eight things (allow rule, deny rule, autonomy, review policy, missing verify command, verify timeout, sequencing per file, acceptance criteria). It now also runs the detectors below. Each one:
+`Improver.analyze()` already proposed eight things (allow rule, deny rule, autonomy — no longer, since there are three levels —, review policy, missing verify command, verify timeout, sequencing per file, acceptance criteria). It now also runs the detectors below. Each one:
 
 - reads **recorded history only** (task records and their histories, questions, the event log, host records). Nothing is delivered to a session, so none of it costs Claude usage. It runs where `analyze()` already ran: shortly after every finished task, and on "Look again now".
 - hands its finding to the existing `propose` path, so the result is an ordinary `Improvement` with evidence refs, a stable `dedupeKey`, an `improvement.proposed` event and a notification.

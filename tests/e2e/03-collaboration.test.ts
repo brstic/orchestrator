@@ -161,7 +161,6 @@ test('review workflow: changes requested, fixed, approved by a reviewing employe
   assert.equal(state.tasks.filter((t) => t.reviewOf === task.id).length, 2, 'one review per round');
   const rev = state.employees.find((e) => e.id === ids.Rev)!;
   assert.equal(rev.stats.reviewsCompleted, 2);
-  assert.equal(rev.autonomy, 'restricted', 'the reviewer could not have modified the code');
   const alex = state.employees.find((e) => e.id === ids.Alex)!;
   assert.ok(alex.stats.deliverablesAccepted >= 1);
 });

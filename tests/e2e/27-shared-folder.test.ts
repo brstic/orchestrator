@@ -25,9 +25,9 @@ before(async () => {
   const web = h.makeRepo('suite/web');
   root = path.dirname(api);
   project = (await h.project('Suite', root, { verifyCommand: null, workspace: 'in_place' })).id;
-  ids.Ana = (await h.employee('Ana', 'backend', { projectId: project, workingDir: api, autonomy: 'autonomous' })).id;
-  ids.Ben = (await h.employee('Ben', 'frontend', { projectId: project, workingDir: web, autonomy: 'autonomous' })).id;
-  ids.Cy = (await h.employee('Cy', 'fullstack', { projectId: project, autonomy: 'autonomous' })).id;
+  ids.Ana = (await h.employee('Ana', 'backend', { projectId: project, workingDir: api, autonomy: 'auto' })).id;
+  ids.Ben = (await h.employee('Ben', 'frontend', { projectId: project, workingDir: web, autonomy: 'auto' })).id;
+  ids.Cy = (await h.employee('Cy', 'fullstack', { projectId: project, autonomy: 'auto' })).id;
 });
 after(async () => {
   await h?.cleanup();

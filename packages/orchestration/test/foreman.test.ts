@@ -62,7 +62,7 @@ test('the foreman role: supervises, cannot edit files, and is never given work b
   // Hiring a foreman is asking for its rounds: they are on from then. (Paused again here, for the tests that start from "off".)
   assert.equal(eng.core.settings.foreman.enabled, true);
   eng.core.updateSettings({ foreman: { enabled: false } } as any);
-  assert.deepEqual([mira.title, mira.department, mira.autonomy], ['Foreman', 'Management', 'restricted']);
+  assert.deepEqual([mira.title, mira.department, mira.autonomy], ['Foreman', 'Management', 'standard']);
   assert.deepEqual(mira.disallowedTools, ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
   const prompt = systemPromptFor({ ...mira, autonomy: 'auto' }, undefined, 'Acme', true);
   assert.match(prompt, /You never approve permission requests/);

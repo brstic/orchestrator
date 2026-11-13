@@ -5,7 +5,7 @@ import { eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, mayReadRo
 import { VOICE_FRAMES_PER_SECOND, hears, validFrame } from './voice.ts';
 import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, OrchestratorEvent, PersonPresence, RadioNow, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
 import { hueOf, type Who } from './guests.ts';
-import { PROTOCOL_VERSION, ROLE_CATALOGUE, isEmote, matchRole, nowIso, roleByKey } from '@orchestrator/contracts';
+import { AUTONOMY_LEVELS, PROTOCOL_VERSION, ROLE_CATALOGUE, isAutonomyLevel, isEmote, matchRole, nowIso, roleByKey } from '@orchestrator/contracts';
 import { EngineError, FOREMAN_ROLE, type AgentLink, type Engine } from '@orchestrator/orchestration';
 
 interface AgentConn {
@@ -298,7 +298,7 @@ export class AgentHub implements AgentLink {
         case 'create': {
           // `orchestrator-agent create --name X --project <dir>`: X lives in that folder and owns the project in it.
           const actor = `host:${c.hostId}`;
-          if (req.params.autonomy && !['restricted', 'supervised', 'standard', 'autonomous', 'auto', 'unrestricted'].includes(req.params.autonomy)) throw new Error(`unknown autonomy level "${req.params.autonomy}"`);
+          if (req.params.autonomy && !isAutonomyLevel(req.params.autonomy)) throw new Error(`unknown level "${req.params.autonomy}": it is one of ${AUTONOMY_LEVELS.join(', ')}`);
           const role = req.params.role ? (roleByKey(req.params.role) ?? matchRole(req.params.role)) : undefined;
           if (req.params.role && !role) throw new Error(`unknown role "${req.params.role}". Known roles: ${ROLE_CATALOGUE.map((r) => r.key).join(', ')}`);
           mine(req.params.name);

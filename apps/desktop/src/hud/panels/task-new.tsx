@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import type { ReviewBy, Task, TaskKind, TaskPriority } from '@orchestrator/contracts';
 import { ROLE_CATALOGUE, reviewDefaultOf } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field } from '@orchestrator/ui';
+import { PickMany } from './kit.tsx';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
 import { PendingFiles, uploadFile } from './task-files.tsx';
@@ -210,20 +211,18 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
               </Field>
             )}
             <div className="field field-wide">
-              <span className="field-label">Depends on{dependsOn.length ? ` (${dependsOn.length})` : ''}</span>
+              <span className="field-label">Depends on</span>
               {candidates.length === 0 ? (
                 <span className="field-hint">{projectId ? 'This project has no other tasks yet.' : 'Choose a project to pick what it depends on.'}</span>
               ) : (
-                <div className="pw-picklist">
-                  {candidates.map((t) => (
-                    <label key={t.id} className="check small">
-                      <input type="checkbox" checked={dependsOn.includes(t.id)} onChange={(e) => setDependsOn(e.target.checked ? [...dependsOn, t.id] : dependsOn.filter((d) => d !== t.id))} />
-                      <span className="mono muted">{t.key}</span>
-                      <span className="grow truncate">{t.title}</span>
-                      <Badge tone={STATUS_META[t.status].tone}>{STATUS_META[t.status].label}</Badge>
-                    </label>
-                  ))}
-                </div>
+                <PickMany
+                  name="depends-on"
+                  add="Add a task"
+                  none="Nothing: it can start at once"
+                  options={candidates.map((t) => ({ id: t.id, label: t.title, hint: STATUS_META[t.status].label, also: t.key, lead: <span className="k-lead-key">{t.key}</span> }))}
+                  value={dependsOn}
+                  onChange={setDependsOn}
+                />
               )}
               <span className="field-hint">It starts only when all of these are done.</span>
             </div>

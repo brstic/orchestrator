@@ -40,7 +40,7 @@ before(async () => {
   h = await createHarness({ memoryBin: bin, timings: { memoryMineDelayMs: 300, memoryRecallMs: 5000 } });
   palace = path.join(h.tmp, 'server', 'palace', 'palace');
   projectId = (await h.project('Shop', h.makeRepo('shop'), { verifyCommand: 'npm test --silent' })).id;
-  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend']] as const) ids[name] = (await h.employee(name, role, { projectId, autonomy: 'autonomous' })).id;
+  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend']] as const) ids[name] = (await h.employee(name, role, { projectId, autonomy: 'auto' })).id;
 });
 after(async () => {
   await h?.cleanup();

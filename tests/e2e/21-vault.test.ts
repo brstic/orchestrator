@@ -43,7 +43,7 @@ const everything = async () => JSON.stringify([await h.state(), await events('')
 before(async () => {
   h = await createHarness();
   const project = await h.project('Shop', h.makeRepo('shop'));
-  alex = (await h.employee('Alex', 'backend', { projectId: project.id, autonomy: 'autonomous' })).id;
+  alex = (await h.employee('Alex', 'backend', { projectId: project.id, autonomy: 'auto' })).id;
   await h.api('POST', `/employees/${alex}/start`, {});
   cwd = (await atPrompt()).cwd;
 });

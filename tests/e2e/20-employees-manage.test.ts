@@ -42,7 +42,7 @@ before(async () => {
   h = await createHarness();
   repo = h.makeRepo('shop');
   projectId = (await h.project('Shop', repo, { verifyCommand: 'npm test --silent' })).id;
-  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend'], ['Noor', 'qa'], ['Mila', 'docs']] as const) ids[name] = (await h.employee(name, role, { projectId, autonomy: 'autonomous' })).id;
+  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend'], ['Noor', 'qa'], ['Mila', 'docs']] as const) ids[name] = (await h.employee(name, role, { projectId, autonomy: 'auto' })).id;
   // Mila is never started here: she is the one who gets woken.
   for (const who of ['Alex', 'Sarah', 'Noor']) {
     await h.api('POST', `/employees/${ids[who]}/start`, {});

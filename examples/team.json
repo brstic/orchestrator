@@ -14,8 +14,8 @@
     { "name": "Sarah", "role": "frontend", "autonomy": "standard", "style": "detail-oriented" },
     { "name": "Mike", "role": "qa", "autonomy": "standard", "style": "analytical" },
     { "name": "Emma", "role": "security", "autonomy": "standard", "style": "cautious" },
-    { "name": "Rev", "role": "reviewer", "autonomy": "restricted", "style": "review-focused" },
-    { "name": "David", "role": "devops", "autonomy": "supervised", "style": "cautious" }
+    { "name": "Rev", "role": "reviewer", "autonomy": "standard", "style": "review-focused" },
+    { "name": "David", "role": "devops", "autonomy": "standard", "style": "cautious" }
   ],
   "objective": "Build the customer authentication and management system. Split the work between backend, frontend, QA, and security. Ask me only when necessary."
 }

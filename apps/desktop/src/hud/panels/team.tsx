@@ -12,7 +12,7 @@ import { mayKeep, scoped, whoseEmployee, whoseLabel } from '../../lib/mine.ts';
 import { byAttention, employeeState } from '../../lib/my-work.ts';
 import { byProject, levelLine, teamLine } from '../../lib/team.ts';
 import { byDay, oneLine } from '../../lib/inbox.ts';
-import { More, State } from './kit.tsx';
+import { More, PickMany, State } from './kit.tsx';
 import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { FolderField } from './folder-picker.tsx';
 import { registerPanel } from './index.tsx';
@@ -65,12 +65,9 @@ function RuntimeField({ value, onChange, host }: { value: ExecutionMode; onChang
   );
 }
 
-/** What each autonomy level really becomes when a session is launched. */
+/** The three levels, and what each really becomes when a session is launched. */
 const AUTONOMY: Array<{ id: AutonomyLevel; label: string; text: string; maps: string; tone: Tone }> = [
-  { id: 'restricted', label: 'Restricted', text: 'Read-only: can inspect and research; file edits are denied.', maps: 'Manual permission mode, edit tools denied, read-only commands pre-approved', tone: 'muted' },
-  { id: 'supervised', label: 'Supervised', text: 'Every edit and every command needs your approval.', maps: 'Manual permission mode, nothing pre-approved', tone: 'info' },
   { id: 'standard', label: 'Standard', text: 'Edits and routine commands are allowed; everything else asks you.', maps: 'acceptEdits permission mode plus an allow-list of routine commands', tone: 'neutral' },
-  { id: 'autonomous', label: 'Autonomous', text: 'Works end to end on its task; risky commands still ask you.', maps: 'acceptEdits permission mode plus a wider allow-list; high-risk commands always escalate', tone: 'accent' },
   { id: 'auto', label: 'Auto', text: 'Works on their own and asks you only for decisions and direction, not for permission.', maps: "Claude Code's auto permission mode: its own safety check decides what may run. High-risk commands (push, sudo, deploy…) still ask you unless you turn that off in Settings → Employees", tone: 'good' },
   { id: 'unrestricted', label: 'Unrestricted', text: 'Nothing is checked or asked by Claude Code: what they run, runs. Only the high-risk list (push, sudo, deploy, broad deletions…) and the project\'s deny rules still stand.', maps: "Claude Code's bypass-permissions mode. It protects against nothing — not a mistaken command, not an instruction hidden in a page or a ticket they read. The office still holds high-risk commands for your answer (Settings → Employees), and deny rules still apply. The first start on a Claude account asks you once to accept Claude Code's own warning. Owners only.", tone: 'bad' },
 ];
@@ -80,7 +77,8 @@ const HIRE_NAMES = ['Alex', 'Sarah', 'Mike', 'Emma', 'David', 'Ava', 'Noah', 'Mi
 const STYLES: CommunicationStyle[] = ['concise', 'analytical', 'cautious', 'experimental', 'detail-oriented', 'architecture-focused', 'highly-independent', 'review-focused'];
 
 function autonomyInfo(level: AutonomyLevel) {
-  return AUTONOMY.find((a) => a.id === level)!;
+  // (An office that has not been updated yet may still name a level that is gone: it reads as the least one.)
+  return AUTONOMY.find((a) => a.id === level) ?? AUTONOMY[0]!;
 }
 
 function AutonomyBadge({ level }: { level: AutonomyLevel }) {
@@ -93,7 +91,7 @@ function AutonomyBadge({ level }: { level: AutonomyLevel }) {
 }
 
 /**
- * How much an employee may do without asking: six levels, one line each; the chosen one says the rest (what it is
+ * How much an employee may do without asking: three levels, one line each; the chosen one says the rest (what it is
  * in Claude Code's own terms) under its line.
  */
 function AutonomyPicker({ value, onChange, name }: { value: AutonomyLevel; onChange: (v: AutonomyLevel) => void; name: string }) {
@@ -769,6 +767,13 @@ function patchOf(e: Employee, d: Draft): Record<string, unknown> {
   return p;
 }
 
+/** What was changed, in the words of the form and not of the record. */
+const FIELD_WORD: Record<string, string> = { roleKey: 'role', specialization: 'specialisation', allowedTools: 'allowed tools', disallowedTools: 'denied tools', autonomy: 'level', executionMode: 'runtime', projectId: 'project', alsoProjectIds: 'other projects', hostId: 'machine', workingDir: 'folder', claudeConfigDir: 'Claude account' };
+const changedWords = (patch: object): string =>
+  Object.keys(patch)
+    .map((k) => FIELD_WORD[k] ?? k)
+    .join(', ');
+
 const XP_REASON: Record<string, string> = {
   task_completed: 'Task verified done',
   tests_passed: 'Verification passed',
@@ -894,8 +899,11 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
   const hosts = Object.values(hostsById)
     .filter((h) => h.status !== 'revoked' || h.id === e.hostId)
     .sort(byName);
+  // An employee works on projects of the computer they are on: a member's own computer has its own projects, and
+  // the office's machines share the rest (the office refuses anything else, so it is not offered).
+  const onMembers = !!hostsById[d.hostId ?? '']?.memberId;
   const projects = Object.values(projectsById)
-    .filter((p) => p.status !== 'archived' || p.id === e.projectId)
+    .filter((p) => (p.status !== 'archived' && (onMembers ? p.hostId === d.hostId : !hostsById[p.hostId ?? '']?.memberId)) || p.id === e.projectId)
     .sort(byName);
 
   const pickRole = (key: string) => {
@@ -975,18 +983,18 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
           <input value={d.workingDir} onChange={(ev) => set('workingDir', ev.target.value)} className="mono" placeholder="none" />
         </Field>
         {projects.filter((p) => p.id !== d.projectId).length > 0 && (
-          <Field label="Also works on" hint="Other projects this employee may be given tasks from. Their own project stays the one above.">
-            <div className="row row-wrap" style={{ gap: 10 }}>
-              {projects
-                .filter((p) => p.id !== d.projectId)
-                .map((p) => (
-                  <label key={p.id} className="check small" style={{ alignItems: 'center' }}>
-                    <input type="checkbox" checked={d.alsoProjectIds.includes(p.id)} onChange={(ev) => set('alsoProjectIds', ev.target.checked ? [...d.alsoProjectIds, p.id] : d.alsoProjectIds.filter((x) => x !== p.id))} style={{ marginTop: 0 }} />
-                    {p.name}
-                  </label>
-                ))}
-            </div>
-          </Field>
+          <div className="field" style={{ gridColumn: '1 / -1' }}>
+            <span className="field-label">Also works on</span>
+            <PickMany
+              name="also-projects"
+              add="Add a project"
+              none="Only their own project"
+              options={projects.filter((p) => p.id !== d.projectId).map((p) => ({ id: p.id, label: p.name, lead: <i className="k-swatch" style={{ background: p.color }} /> }))}
+              value={d.alsoProjectIds.filter((id) => id !== d.projectId)}
+              onChange={(ids) => set('alsoProjectIds', ids)}
+            />
+            <span className="field-hint">Other projects they may be given tasks from.</span>
+          </div>
         )}
         </div>
       </div>
@@ -1080,15 +1088,15 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
         <div className={`pf-save-note ${restartSensitive || restartsNow ? 'k-warn' : ''}`}>
           {!dirty
             ? live
-              ? 'Nothing is changed. A change of autonomy, model or account starts their session again by itself; role, instructions and tools reach a session at its next start.'
+              ? 'Nothing is changed. A change of level, model or account starts their session again by itself; role, instructions and tools reach a session at its next start.'
               : 'Nothing is changed. Changes take effect the next time their session is started.'
             : !live
-              ? `Unsaved: ${Object.keys(patch).join(', ')}. Takes effect the next time their session is started.`
+              ? `Unsaved: ${changedWords(patch)}. Takes effect the next time their session is started.`
               : restartsNow
-                ? `Unsaved: ${Object.keys(patch).join(', ')}. Saving starts ${e.name}'s session again with the same conversation — now if they are between turns, otherwise when their turn ends.${restartSensitive ? ' Role, instructions and tools come with that start too.' : ''}`
+                ? `Unsaved: ${changedWords(patch)}. Saving starts ${e.name}'s session again with the same conversation — now if they are between turns, otherwise when their turn ends.${restartSensitive ? ' Role, instructions and tools come with that start too.' : ''}`
                 : restartSensitive
-                  ? `Unsaved: ${Object.keys(patch).join(', ')}. Role, instructions and tools reach a session when it starts: stop and start theirs to apply those.`
-                  : `Unsaved: ${Object.keys(patch).join(', ')}.`}
+                  ? `Unsaved: ${changedWords(patch)}. Role, instructions and tools reach a session when it starts: stop and start theirs to apply those.`
+                  : `Unsaved: ${changedWords(patch)}.`}
         </div>
         <Button variant="ghost" className="k-quiet" disabled={!dirty || busy} onClick={() => setD(draftOf(e))}>
           Discard

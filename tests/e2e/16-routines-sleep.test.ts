@@ -51,7 +51,7 @@ after(async () => {
 test('a routine is handed over again and again; what it finds is put on the task board once', async () => {
   const repo = h.makeRepo('desk');
   ids.desk = (await h.project('Desk', repo, { verifyCommand: 'npm test --silent' })).id;
-  ids.Ava = (await h.employee('Ava', 'backend', { projectId: ids.desk, autonomy: 'autonomous' })).id;
+  ids.Ava = (await h.employee('Ava', 'backend', { projectId: ids.desk, autonomy: 'auto' })).id;
   // What is typed is validated like anything else the owner types.
   await assert.rejects(h.api('POST', '/routines', { employeeId: ids.Ava, instruction: 'x', everyMinutes: 0 }), /400: how often/);
   await assert.rejects(h.api('POST', '/routines', { employeeId: ids.Ava, instruction: '   ' }), /400: say what they should do each time/);
@@ -147,7 +147,7 @@ test('routines outlive a restart of the office, and still add nothing twice', as
 test('a session with no work is put to sleep: the process and its tmux session end, the conversation is kept', async () => {
   const repo = z.makeRepo('shop');
   ids.shop = (await z.project('Shop', repo, { verifyCommand: 'npm test --silent' })).id;
-  ids.Bo = (await z.employee('Bo', 'backend', { projectId: ids.shop, autonomy: 'autonomous' })).id;
+  ids.Bo = (await z.employee('Bo', 'backend', { projectId: ids.shop, autonomy: 'auto' })).id;
   // Bo does a task: he works in a folder of his own (a git worktree), on the task's branch.
   const task = await z.task({ projectId: ids.shop, title: 'Add a marker', assigneeId: ids.Bo, description: '@@fake: write marker.txt here; commit add marker; complete marker added@@', acceptance: 'Checks pass.' });
   await waitFor(async () => ((await z.getTask(task.id)).status === 'DONE' ? true : null), { label: 'task done', timeout: 40000 });

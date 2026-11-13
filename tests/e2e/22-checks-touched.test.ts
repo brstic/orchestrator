@@ -16,7 +16,7 @@ before(async () => {
   h = await createHarness();
   // No review is asked for in this project: only what the office itself notices sends work to one.
   projectId = (await h.project('Shop', h.makeRepo('shop'), { verifyCommand: 'npm test --silent', policy: { requireReview: false } })).id;
-  alex = (await h.employee('Alex', 'backend', { projectId, autonomy: 'autonomous' })).id;
+  alex = (await h.employee('Alex', 'backend', { projectId, autonomy: 'auto' })).id;
 });
 after(async () => {
   await h?.cleanup();

@@ -103,11 +103,13 @@ try {
   const folder = path.join(real, 'scratch');
   fs.mkdirSync(folder);
   fs.writeFileSync(path.join(folder, 'README.md'), '# scratch\nPurple elephants dance quietly.\n');
-  const dana = await api('POST', '/employees', { name: 'Dana', roleKey: 'fullstack', hostId: en.hostId, workingDir: folder, model: MODEL, autonomy: 'supervised' });
+  // (Adapted on 2026-11-13, when the levels became three, and NOT run since: on Standard an edit is accepted, so what
+  // asks is a command outside the routine list — a file written by `node -e`. Run it before relying on it.)
+  const dana = await api('POST', '/employees', { name: 'Dana', roleKey: 'fullstack', hostId: en.hostId, workingDir: folder, model: MODEL, autonomy: 'standard' });
   const danaSession = await api('POST', `/employees/${dana.id}/start`, {});
   await idle(dana.id, 120000);
   holdApprovals = true;
-  await api('POST', `/employees/${dana.id}/message`, { body: 'Create a file named t.txt in your folder containing exactly the word x. Use the Write tool. Then say done.' });
+  await api('POST', `/employees/${dana.id}/message`, { body: `Run exactly this one shell command with the Bash tool, as it is written, and no other tool: node -e "require('fs').writeFileSync('t.txt','x')"   Then say done.` });
   const pending = await until('permission request', (s) => s.questions.find((x) => x.employeeId === dana.id && x.kind === 'permission' && x.status === 'open'), 120000);
   handled.add(pending.id);
   log('a permission request is open; nobody answers it');

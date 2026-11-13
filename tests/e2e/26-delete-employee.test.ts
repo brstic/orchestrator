@@ -22,7 +22,7 @@ const done = (id: string) => waitFor(async () => ((await h.getTask(id)).status =
 before(async () => {
   h = await createHarness();
   project = (await h.project('Shop', h.makeRepo('shop'))).id;
-  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend'], ['Noor', 'qa'], ['Omar', 'backend']] as const) ids[name] = (await h.employee(name, role, { projectId: project, autonomy: 'autonomous' })).id;
+  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend'], ['Noor', 'qa'], ['Omar', 'backend']] as const) ids[name] = (await h.employee(name, role, { projectId: project, autonomy: 'auto' })).id;
 });
 after(async () => {
   await h?.cleanup();

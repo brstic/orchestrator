@@ -1,5 +1,5 @@
 import type { AutonomyLevel, AutopilotMode, AutopilotUndo, Employee, EvidenceRef, Improvement, ImprovementAction, ImprovementKind, OrchestratorEvent, Project, Question, Task } from '@orchestrator/contracts';
-import { nowIso, truncate } from '@orchestrator/contracts';
+import { AUTONOMY_LEVELS, isAutonomyLevel, nowIso, truncate } from '@orchestrator/contracts';
 import { EngineError } from '../core.ts';
 import type { Engine } from '../engine.ts';
 import { DEFAULT_HIGH_RISK_PATTERNS } from '../prompts.ts';
@@ -26,11 +26,8 @@ export const AUTOPILOT_AREA = 'autopilot';
 /** The name automatic changes carry in the audit log and on the improvement. */
 export const AUTOPILOT_ACTOR = 'autopilot';
 
-export const AUTONOMY_ORDER: AutonomyLevel[] = ['restricted', 'supervised', 'standard', 'autonomous', 'auto', 'unrestricted'];
-const rank = (level: AutonomyLevel | undefined): number => (level ? AUTONOMY_ORDER.indexOf(level) : -1);
+const rank = (level: AutonomyLevel | undefined): number => (level ? AUTONOMY_LEVELS.indexOf(level) : -1);
 
-/** The highest autonomy the office gives by itself. "autonomous" and "auto" are always a person's decision. */
-export const AUTOPILOT_AUTONOMY_CEILING: AutonomyLevel = 'standard';
 /** Denials of one command shape (and no approval) a deny rule rests on: the analyser's own threshold, checked again when applying. */
 export const AUTOPILOT_DENIALS_FOR_DENY_RULE = 3;
 
@@ -312,7 +309,10 @@ export class Autopilot {
       case 'project.policy.allow':
         return this.allowRule(a.rule, project!, personal, cls);
       case 'employee.autonomy':
-        return this.autonomyUp(employee!, a.level, personal, cls);
+        // Above Standard there are Auto and Unrestricted, and each is a person's to give (the owner's, for
+        // Unrestricted). Until 2026-11-13 the office could take somebody from Supervised to Standard on a clean
+        // record; there is no level under Standard any more.
+        return no('A higher level is a person\'s to give; the office never raises one by itself.');
       case 'project.requireReview':
         return this.reviewOff(project!, personal, cls);
       default:
@@ -376,36 +376,6 @@ export class Autopilot {
       widening: true,
       why: `${approved.length} "${shape}" commands were approved in ${project.name}${tasks.size >= 2 ? ` across ${tasks.size} tasks` : ''}, none was ever denied, and none matches the high-risk list.`,
       evidence: approved.slice(-12).map((q) => ({ kind: 'approval' as const, id: q.id, note: truncate(commandOf(q), 100) })),
-    };
-  }
-
-  /** trusted: one step up, to "standard" at most, for an employee with a clean record. */
-  private autonomyUp(e: Employee, level: AutonomyLevel, personal: { actor: string | null } | null, cls: Judgement): Verdict {
-    const no = (why: string): Verdict => ({ apply: false, widening: true, why });
-    const t = this.core.timings;
-    if (rank(level) !== rank(e.autonomy) + 1) return no('The office raises autonomy one level at a time.');
-    if (rank(level) > rank(AUTOPILOT_AUTONOMY_CEILING)) return no(`The office never gives more than "${AUTOPILOT_AUTONOMY_CEILING}" by itself.`);
-    const decided = this.core.questions.filter((q) => q.kind === 'permission' && q.employeeId === e.id && !!q.decision);
-    const denied = decided.filter((q) => q.decision === 'deny');
-    if (denied.length) return no(`${denied.length} of ${e.name}'s requests were denied.`);
-    const approved = decided.filter((q) => !personal || (!!personal.actor && q.autopilotDecidedBy === personal.actor));
-    const needApprovals = Math.max(1, t.autopilotAllowApprovals);
-    if (approved.length < needApprovals) return no(personal ? `${e.name} is on a member's own computer: ${approved.length} of the ${needApprovals} approvals needed are that member's own.` : `${approved.length} of the ${needApprovals} approvals needed are on record.`);
-    const need = Math.max(1, t.autopilotAutonomyTasks);
-    const last = this.core.tasks
-      // (Work that somebody else asked for and that is of a kind that gets checked: a task they proposed for
-      // themselves, or research and planning — which are done when they say so — say nothing about how far they can be trusted.)
-      .filter((x) => x.assigneeId === e.id && x.status === 'DONE' && x.kind !== 'review' && !!x.evidence.summary && x.createdBy !== `employee:${e.name}` && x.kind !== 'research' && x.kind !== 'planning' && x.evidence.verification?.passed !== false)
-      .sort((x, y) => (x.completedAt ?? '').localeCompare(y.completedAt ?? ''))
-      .slice(-need);
-    if (last.length < need) return no(`${last.length} of the ${need} completed tasks needed are on record.`);
-    const unclean = last.filter((x) => x.friction.failedVerifications + x.friction.reviewRejections + x.friction.denials > 0);
-    if (unclean.length) return no(`${unclean.length} of ${e.name}'s last ${need} tasks failed verification, were sent back by review or had a request denied.`);
-    return {
-      apply: true,
-      widening: true,
-      why: `All ${approved.length} of ${e.name}'s requests were approved and their last ${need} tasks passed first time with nothing denied.`,
-      evidence: last.map((x) => ({ kind: 'task' as const, id: x.id, note: `${x.key} ${x.title}` })),
     };
   }
 
@@ -575,8 +545,6 @@ export class Autopilot {
           if (undo?.type === 'project.policy.allow' && undo.projectId === q.projectId) {
             const shape = shapeOfRule(undo.rule);
             if (shape && command && touchesShape(command, shape)) this.rollback(imp.id, `A "${shape}" command was denied while the rule was on probation.`, [{ kind: 'approval', id: q.id, note: truncate(command, 100) }]);
-          } else if (undo?.type === 'employee.autonomy' && imp.autopilot!.widening && undo.employeeId === q.employeeId) {
-            this.rollback(imp.id, `A request of ${this.core.employees.get(q.employeeId)?.name ?? 'the employee'} was denied while the higher autonomy was on probation.`, [{ kind: 'approval', id: q.id, note: truncate(q.text, 100) }]);
           }
         }
         return;
@@ -589,8 +557,6 @@ export class Autopilot {
             // "Names it": the failure's own output contains the command shape. A plain text match, nothing cleverer.
             const shape = shapeOfRule(undo.rule);
             if (shape && output.includes(shape)) this.rollback(imp.id, `${String(e.data.key ?? 'A task')} failed verification and the output names "${shape}".`, [{ kind: 'event', id: e.id, note: e.summary }]);
-          } else if (undo?.type === 'employee.autonomy' && imp.autopilot!.widening && undo.employeeId === e.employeeId && e.data.timedOut !== true) {
-            this.rollback(imp.id, `${String(e.data.key ?? 'A task')} failed verification while the higher autonomy was on probation.`, [{ kind: 'event', id: e.id, note: e.summary }]);
           }
         }
         return;
@@ -601,8 +567,7 @@ export class Autopilot {
         if (!task) return;
         for (const imp of this.onProbation()) {
           const undo = imp.autopilot!.undo;
-          if (undo?.type === 'employee.autonomy' && imp.autopilot!.widening && undo.employeeId === task.assigneeId) this.rollback(imp.id, `${task.key} was sent back by review while the higher autonomy was on probation.`, [{ kind: 'task', id: task.id, note: `${task.key} ${task.title}` }]);
-          else if (undo?.type === 'project.requireReview' && imp.autopilot!.widening && undo.projectId === task.projectId) this.rollback(imp.id, `${task.key} needed rework after review had been switched off.`, [{ kind: 'task', id: task.id, note: `${task.key} ${task.title}` }]);
+          if (undo?.type === 'project.requireReview' && imp.autopilot!.widening && undo.projectId === task.projectId) this.rollback(imp.id, `${task.key} needed rework after review had been switched off.`, [{ kind: 'task', id: task.id, note: `${task.key} ${task.title}` }]);
         }
         return;
       }
@@ -679,8 +644,10 @@ export class Autopilot {
         if (!e) return { restored: false, note: 'The employee no longer exists.' };
         if (e.autonomy !== undo.applied) return { restored: false, note: `${e.name}'s autonomy has been changed by hand since; it was left as it is.` };
         if (undo.previous === undo.applied) return { restored: false, note: 'It was already set that way before; nothing to put back.' };
+        // A change made before 2026-11-13 may name a level that no longer exists (Restricted, Supervised, Autonomous).
+        if (!isAutonomyLevel(undo.previous)) return { restored: false, note: `${e.name} was on a level that no longer exists ("${String(undo.previous)}"); it was left as it is.` };
         this.eng.employees.update(e.id, { autonomy: undo.previous }, actor);
-        return { restored: true, note: `${e.name} is back on ${undo.previous} autonomy. It takes effect when their session is next started.` };
+        return { restored: true, note: `${e.name} is back on ${undo.previous}. It takes effect when their session is next started.` };
       }
       case 'advice':
         return { restored: false, note: 'Advice changed nothing, so there was nothing to put back.' };

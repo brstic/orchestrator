@@ -156,6 +156,8 @@ export class Engine {
     if (reseated) this.core.log('info', `${reseated} seat${reseated === 1 ? '' : 's'} that stood in a neighbouring table ${reseated === 1 ? 'was' : 'were'} moved to its own table`);
     const requeued = this.tasks.requeueFolderWaits();
     if (requeued) this.core.log('info', `${requeued} task${requeued === 1 ? '' : 's'} that waited for a shared folder ${requeued === 1 ? 'is' : 'are'} back in the queue`);
+    const levelled = this.sessions.adoptThreeLevels();
+    if (levelled) this.core.log('info', `${levelled} employee${levelled === 1 ? '' : 's'} on a level that no longer exists ${levelled === 1 ? 'is' : 'are'} on Standard now (there are three levels: Standard, Auto, Unrestricted)`);
     this.sessions.adoptUnrestrictedDefault();
     const toReview = this.tasks.adoptReviewDefault();
     if (toReview) this.core.log('info', `${toReview} open task${toReview === 1 ? '' : 's'} will be reviewed when finished (every task is, from now on, unless chosen otherwise)`);

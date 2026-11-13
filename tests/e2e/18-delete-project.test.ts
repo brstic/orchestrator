@@ -25,9 +25,9 @@ before(async () => {
   repo = h.makeRepo('scratch');
   scratch = (await h.project('Scratch', repo)).id;
   keep = (await h.project('Keep', h.makeRepo('keep'))).id;
-  ids.Alex = (await h.employee('Alex', 'backend', { projectId: scratch, autonomy: 'autonomous' })).id;
-  ids.Sarah = (await h.employee('Sarah', 'frontend', { projectId: scratch, autonomy: 'autonomous' })).id;
-  ids.Noor = (await h.employee('Noor', 'backend', { projectId: keep, autonomy: 'autonomous' })).id;
+  ids.Alex = (await h.employee('Alex', 'backend', { projectId: scratch, autonomy: 'auto' })).id;
+  ids.Sarah = (await h.employee('Sarah', 'frontend', { projectId: scratch, autonomy: 'auto' })).id;
+  ids.Noor = (await h.employee('Noor', 'backend', { projectId: keep, autonomy: 'auto' })).id;
 });
 
 after(async () => {

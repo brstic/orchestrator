@@ -14,7 +14,7 @@ import type {
   TerminalScreen,
   ActivityState,
 } from '@orchestrator/contracts';
-import { EFFORT_CHOICES, HOOKS_VERSION, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, directsOthers, LEAD_ROLE, LEAD_MODEL, LEAD_EFFORT, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd } from '@orchestrator/contracts';
+import { AUTONOMY_LEVELS, EFFORT_CHOICES, HOOKS_VERSION, isAutonomyLevel, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, directsOthers, LEAD_ROLE, LEAD_MODEL, LEAD_EFFORT, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
 import { permissionPrompt, trustPromptKeys } from './comms.ts';
 import { EngineError, within } from './core.ts';
@@ -61,6 +61,9 @@ const TERMINAL_OUTPUT_EVERY_MS = 60_000;
 
 /** The pod a desk belongs to: desks are named `<pod>-a` … `<pod>-d`. */
 const podOf = (deskId: string): string => deskId.replace(/-[a-z]$/, '');
+
+/** What somebody who names a level that is not one is told. */
+const notALevel = (value: unknown): string => `"${truncate(String(value), 40)}" is not a level: it is one of ${AUTONOMY_LEVELS.join(', ')}`;
 
 export class HostRegistry {
   private eng: Engine;
@@ -527,6 +530,7 @@ export class EmployeeRegistry {
     if (!name) throw new EngineError('an employee needs a name');
     if (this.core.employees.find((e) => !e.archived && e.name.toLowerCase() === name.toLowerCase())) throw new EngineError(`an employee named "${name}" already exists`);
     const role = input.roleKey ? (roleByKey(input.roleKey) ?? matchRole(input.roleKey)) : undefined;
+    if (input.autonomy != null && !isAutonomyLevel(input.autonomy)) throw new EngineError(notALevel(input.autonomy));
     if (input.hostId && !this.core.hosts.get(input.hostId)) throw new EngineError('unknown host');
     if (input.projectId && !this.core.projects.get(input.projectId)) throw new EngineError('unknown project');
     // On a member's own computer: they sit in that member's room (at a seat of their choice there, or the next free
@@ -564,7 +568,7 @@ export class EmployeeRegistry {
       instructions: input.instructions ?? '',
       allowedTools: input.allowedTools ?? [],
       disallowedTools: input.disallowedTools ?? role?.disallowedTools ?? [],
-      autonomy: input.autonomy ?? role?.defaultAutonomy ?? 'standard',
+      autonomy: input.autonomy ?? 'standard',
       executionMode: input.executionMode ?? 'interactive_cli',
       schedule: input.schedule ?? { available: true },
       alsoProjectIds: [...new Set((input.alsoProjectIds ?? []).map(String))].filter((p) => p !== input.projectId && !!this.core.projects.get(p)),
@@ -638,6 +642,7 @@ export class EmployeeRegistry {
     }
     if (patch.model !== undefined) patch = { ...patch, model: cleanModel(patch.model) };
     if (patch.effort !== undefined) e.effort = cleanEffort(patch.effort);
+    if (patch.autonomy !== undefined && !isAutonomyLevel(patch.autonomy)) throw new EngineError(notALevel(patch.autonomy));
     for (const key of ['title', 'department', 'specialization', 'skills', 'style', 'model', 'workingDir', 'instructions', 'allowedTools', 'disallowedTools', 'autonomy', 'executionMode', 'schedule'] as const) {
       if (patch[key] !== undefined) (e as any)[key] = patch[key];
     }
@@ -683,7 +688,7 @@ export class EmployeeRegistry {
     // account it uses, which model and effort. A change of any of them starts the session again — at once if it is
     // idle, at the end of its turn if not — so that nobody goes on working "on the old one".
     const was = this.core.employees.require(id);
-    const LEVEL: Record<string, string> = { restricted: 'Restricted', supervised: 'Supervised', standard: 'Standard', autonomous: 'Autonomous', auto: 'Auto', unrestricted: 'Unrestricted' };
+    const LEVEL: Record<string, string> = { standard: 'Standard', auto: 'Auto', unrestricted: 'Unrestricted' };
     const changed = [
       was.autonomy !== e.autonomy ? `your level is now ${LEVEL[e.autonomy] ?? e.autonomy}` : '',
       (was.claudeConfigDir ?? null) !== (e.claudeConfigDir ?? null) ? 'you were put on another Claude account' : '',
@@ -1249,6 +1254,27 @@ export class SessionRegistry {
       this.core.log('info', `granting a refused call once: ${(e as Error).message}`);
       return false;
     }
+  }
+
+  /**
+   * The owner's decision of 2026-11-13: there are three levels — Standard, Auto, Unrestricted. Whoever is recorded
+   * with anything else (Restricted, Supervised and Autonomous existed until then) is on Standard from now on: the
+   * least of the three, so that nobody is given more than a person gave them where that can be avoided. A session
+   * that is running goes on as it was started; the level takes effect at its next start. Run at every start: it
+   * finds nothing once it has been done.
+   */
+  adoptThreeLevels(): number {
+    const moved = this.core.employees.filter((e) => !isAutonomyLevel(e.autonomy));
+    for (const e of moved) {
+      e.autonomy = 'standard';
+      this.core.put('employee', e);
+    }
+    if (moved.length) {
+      this.core.audit('office', 'autonomy.three_levels', 'employees', { count: moved.length, employees: moved.map((e) => e.name) });
+      const here = moved.filter((e) => !e.archived);
+      if (here.length) this.core.event({ type: 'employee.updated', source: 'server', summary: `${here.map((e) => e.name).join(', ')} ${here.length === 1 ? 'was' : 'were'} on a level that no longer exists and ${here.length === 1 ? 'is' : 'are'} on Standard now; it takes effect when their session next starts`, data: { count: here.length } });
+    }
+    return moved.length;
   }
 
   /**

@@ -66,7 +66,9 @@ try {
   git('add', '-A');
   git('commit', '-q', '-m', 'initial commit');
   while (!agent.isConnected) await sleep(100);
-  const mira =await api('POST', '/employees', { name: 'Mira', roleKey: 'fullstack', hostId: en.hostId, workingDir: folder, model: process.env.REAL_MODEL ?? 'haiku', executionMode: 'managed_sdk', autonomy: 'supervised' });
+  const mira =await api('POST', '/employees', { name: 'Mira', roleKey: 'fullstack', hostId: en.hostId, workingDir: folder, model: process.env.REAL_MODEL ?? 'haiku', executionMode: 'managed_sdk', autonomy: 'standard' });
+  // (Adapted on 2026-11-13, when the levels became three, and NOT run since: on Standard an edit is accepted, so what
+  // asks is a command outside the routine list — a file written by `node -e`. Run it before relying on it.)
   const session = await api('POST', `/employees/${mira.id}/start`, {});
   paneId = session.tmuxPane;
   check('she runs as an SDK-managed worker, with no fallback', session.mode === 'managed_sdk' && !(await api<FullState>('GET', '/state')).notifications.some((n) => /runtime fallback/.test(n.title)), `mode ${session.mode}, pane ${session.tmuxPane}`);
@@ -83,7 +85,7 @@ try {
   const toolEvents = events.filter((e) => /^agent\.tool/.test(e.type));
   check('real tool activity was reported by SDK hooks', toolEvents.length > 0, toolEvents.map((e) => e.summary).slice(0, 3).join(' | '));
 
-  await api('POST', `/employees/${mira.id}/message`, { body: 'Create a file named hello.txt in your folder containing exactly the word hello. Use the Write tool. Then say done.' });
+  await api('POST', `/employees/${mira.id}/message`, { body: `Run exactly this one shell command with the Bash tool, as it is written, and no other tool: node -e "require('fs').writeFileSync('hello.txt','hello')"   Then say done.` });
   const q = await until('permission request', (s) => s.questions.find((x) => x.employeeId === mira.id && x.kind === 'permission' && x.status === 'open'), 180000);
   check('the SDK permission callback raised a real approval in the office', q.channel === 'permission_hook', `${q.tool?.name} ${JSON.stringify(q.tool?.input).slice(0, 100)}`);
   check('nothing is written before the approval', !fs.existsSync(path.join(folder, 'hello.txt')));
@@ -96,7 +98,7 @@ try {
   check('usage is measured, and the SDK cost estimate is recorded', usage.outputTokens > 0 && typeof usage.costUsdEstimate === 'number', `${usage.inputTokens + usage.cacheReadTokens + usage.cacheCreationTokens} in / ${usage.outputTokens} out, estimate $${usage.costUsdEstimate?.toFixed(4)}`);
 
   // Nobody answers in the office: after the host's approval wait the runner asks in the pane.
-  await api('POST', `/employees/${mira.id}/message`, { body: 'Create a file named second.txt in your folder containing exactly the word second. Use the Write tool. Then say done.' });
+  await api('POST', `/employees/${mira.id}/message`, { body: `Run exactly this one shell command with the Bash tool, as it is written, and no other tool: node -e "require('fs').writeFileSync('second.txt','second')"   Then say done.` });
   await until('second permission request', (s) => s.questions.find((x) => x.employeeId === mira.id && x.kind === 'permission' && x.status === 'open'), 180000);
   let asked = false;
   for (let i = 0; i < 120 && !(asked = /Allow this\? \[y\/N\]/.test(pane(paneId))); i++) await sleep(300);

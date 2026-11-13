@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { Employee, Meeting, MeetingContribution, MeetingStatus } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field, Markdown, Window, timeAgo, type Tone } from '@orchestrator/ui';
+import { PickMany } from './kit.tsx';
 import { api } from '../../lib/api.ts';
 import { sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { ask } from '../core.tsx';
@@ -53,9 +54,9 @@ function MeetingCreate({ onCreated }: { onCreated: (id: string) => void }) {
   const present = picked.filter(live);
   const facilitators = employees.filter((e) => present.includes(e.id));
   const problem = picked.length < 2 ? 'Pick at least two participants.' : present.length === 0 ? 'None of the people you picked can take part: start at least one of them first.' : null;
-  const toggle = (id: string, on: boolean) => {
-    setPicked(on ? [...picked, id] : picked.filter((x) => x !== id));
-    if (!on && facilitatorId === id) setFacilitatorId('');
+  const pick = (ids: string[]) => {
+    setPicked(ids);
+    if (facilitatorId && !ids.includes(facilitatorId)) setFacilitatorId('');
   };
 
   const submit = async (ev: FormEvent) => {
@@ -87,29 +88,28 @@ function MeetingCreate({ onCreated }: { onCreated: (id: string) => void }) {
           <span className="field-label">
             Participants ({picked.length} picked, {present.length} who can take part)
           </span>
-          <Button small type="button" variant="ghost" onClick={() => setPicked(employees.filter((e) => live(e.id)).map((e) => e.id))}>
+          <Button small type="button" variant="ghost" onClick={() => pick(employees.filter((e) => live(e.id)).map((e) => e.id))}>
             Pick everyone who can take part
           </Button>
         </span>
         {employees.length === 0 ? (
           <span className="field-hint">There are no employees yet.</span>
         ) : (
-          <div className="pw-picklist" style={{ maxHeight: 260 }}>
-            {employees.map((e) => (
-              <label key={e.id} className="check" style={{ alignItems: 'center' }}>
-                <input type="checkbox" style={{ margin: 0 }} checked={picked.includes(e.id)} onChange={(ev) => toggle(e.id, ev.target.checked)} />
-                <Avatar appearance={e.appearance} size={24} offline={!live(e.id)} />
-                <span className="grow truncate">
-                  {e.name} <span className="muted small">{e.title}</span>
-                </span>
-                {!live(e.id) && (
-                  <Badge tone="warn" title="They were never started, or someone stopped them. Invited anyway, they are recorded as absent. Start them first to have them take part.">
-                    not started — would be absent
-                  </Badge>
-                )}
-              </label>
-            ))}
-          </div>
+          <PickMany
+            name="participants"
+            add="Add someone"
+            none="Nobody yet"
+            options={employees.map((e) => ({
+              id: e.id,
+              label: e.name,
+              hint: live(e.id) ? e.title : 'not started',
+              also: e.title,
+              lead: <Avatar appearance={e.appearance} size={20} offline={!live(e.id)} />,
+              warn: live(e.id) ? undefined : 'They were never started, or someone stopped them. Invited anyway, they are recorded as absent. Start them first to have them take part.',
+            }))}
+            value={picked}
+            onChange={pick}
+          />
         )}
       </div>
       {/* Both have a sensible answer by themselves, so they stay folded until wanted. */}

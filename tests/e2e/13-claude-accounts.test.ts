@@ -37,7 +37,7 @@ before(async () => {
   h = await createHarness();
   const repo = h.makeRepo('shop');
   const projectId = (await h.project('Shop', repo)).id;
-  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend'], ['Noor', 'qa']] as const) ids[name] = (await h.employee(name, role, { projectId, autonomy: 'autonomous' })).id;
+  for (const [name, role] of [['Alex', 'backend'], ['Sarah', 'frontend'], ['Noor', 'qa']] as const) ids[name] = (await h.employee(name, role, { projectId, autonomy: 'auto' })).id;
   ids.project = projectId;
 });
 after(async () => {

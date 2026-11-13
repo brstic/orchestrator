@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import type { AutonomyLevel, Employee, EvidenceRef, Improvement, ImprovementAction, Lesson, LessonSource, OrchestratorEvent, OutcomesReport, Project, SelfImprovementSettings, Task } from '@orchestrator/contracts';
+import { AUTONOMY_LEVELS } from '@orchestrator/contracts';
+import type { Employee, EvidenceRef, Improvement, ImprovementAction, Lesson, LessonSource, OrchestratorEvent, OutcomesReport, Project, SelfImprovementSettings, Task } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
@@ -118,7 +119,6 @@ function Evidence({ evidence }: { evidence: EvidenceRef[] }) {
 
 // ──────────────────────────── waiting for you ────────────────────────────
 
-const AUTONOMY: AutonomyLevel[] = ['restricted', 'supervised', 'standard', 'autonomous', 'auto', 'unrestricted'];
 
 /** What saying yes really does, in plain words, and whether it lets agents do more without asking. */
 function describeAction(a: ImprovementAction, projects: Record<string, Project>, employees: Record<string, Employee>, tasks: Record<string, Task>): { text: string; widens: boolean } {
@@ -139,7 +139,7 @@ function describeAction(a: ImprovementAction, projects: Record<string, Project>,
     }
     case 'employee.autonomy': {
       const e = employees[a.employeeId];
-      return { text: `${person(a.employeeId)}'s autonomy changes${e && e.autonomy !== a.level ? ` from ${e.autonomy}` : ''} to ${a.level}.`, widens: !e || AUTONOMY.indexOf(a.level) > AUTONOMY.indexOf(e.autonomy) };
+      return { text: `${person(a.employeeId)}'s level changes${e && e.autonomy !== a.level ? ` from ${e.autonomy}` : ''} to ${a.level}.`, widens: !e || AUTONOMY_LEVELS.indexOf(a.level) > AUTONOMY_LEVELS.indexOf(e.autonomy) };
     }
     case 'task.dependsOn': {
       const [task, first] = [tasks[a.taskId], tasks[a.dependsOnTaskId]];

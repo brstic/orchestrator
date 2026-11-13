@@ -112,10 +112,8 @@ test('judging a command takes time in step with its length: one built to be slow
   assert.equal(highRisk(`echo ${'a'.repeat(n)}`), false);
 });
 
-test('who is asked before a high-risk command: always below Auto; on Auto and on Unrestricted the owner\'s switch, one each', () => {
-  for (const level of ['restricted', 'standard', 'autonomous'] as const) {
-    assert.equal(asksHighRisk({ autoAsksHighRisk: false, unrestrictedAsksHighRisk: false }, level), true, level);
-  }
+test('who is asked before a high-risk command: always on Standard; on Auto and on Unrestricted the owner\'s switch, one each', () => {
+  assert.equal(asksHighRisk({ autoAsksHighRisk: false, unrestrictedAsksHighRisk: false }, 'standard'), true);
   assert.equal(asksHighRisk({ autoAsksHighRisk: true }, 'auto'), true);
   assert.equal(asksHighRisk({ autoAsksHighRisk: false }, 'auto'), false);
   assert.equal(asksHighRisk({ autoAsksHighRisk: false, unrestrictedAsksHighRisk: true }, 'auto'), false);

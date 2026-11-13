@@ -234,7 +234,7 @@ test('the meeting room keeps what is said in it: heard inside, not outside — a
 
 test('the whip is for show — unless the owners switch it on: then it approves what an employee waits for permission to do, for whoever may decide it', async () => {
   const dana = await h.employee('Dana', 'devops', { projectId });
-  const task = await h.task({ projectId, title: 'Edit pipeline', assigneeId: dana.id, kind: 'ops', verifyCommand: 'true', description: '@@fake: write ci.txt pipeline; write more.txt second; say after-permissions@@' });
+  const task = await h.task({ projectId, title: 'Edit pipeline', assigneeId: dana.id, kind: 'ops', verifyCommand: 'true', description: '@@fake: bash touch ci.txt; bash touch more.txt; say after-permissions@@' });
   const q1 = await waitFor(() => h.openQuestion(dana.id, 'permission'), { label: 'a permission request' });
   const wt = (await h.getTask(task.id)).worktree!;
   const [ana, mila] = await Promise.all([join('Ana'), join('Mila')]);

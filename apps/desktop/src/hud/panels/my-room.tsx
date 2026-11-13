@@ -3,7 +3,7 @@ import type { Employee, MemberRoomFurniture, MemberRoomPrefs } from '@orchestrat
 import { MEMBER_ROOM_FURNITURE, MEMBER_ROOM_LIMITS } from '@orchestrator/contracts';
 import { Avatar, Button, Field, Tabs, Window } from '@orchestrator/ui';
 import { employeeState } from '../../lib/my-work.ts';
-import { State } from './kit.tsx';
+import { State, Toggles } from './kit.tsx';
 import { api } from '../../lib/api.ts';
 import { sessionOfEmployee, useOffice } from '../../lib/store.ts';
 import { act } from '../core.tsx';
@@ -74,17 +74,11 @@ function RoomEditor({ current, minDesks, memberName }: { current: MemberRoomPref
           <input type="range" min={0} max={MEMBER_ROOM_LIMITS.extraDepth} step={0.5} value={extra} onChange={(ev) => change({ extraDepth: Number(ev.target.value) })} aria-label="Open floor" />
         </Field>
       </div>
-      <Field label="In the room">
-        <div className="row row-wrap" style={{ gap: 12 }}>
-          {MEMBER_ROOM_FURNITURE.map((k) => (
-            <label key={k} className="check small" style={{ alignItems: 'center' }}>
-              <input type="checkbox" checked={furniture.includes(k)} onChange={(ev) => change({ furniture: MEMBER_ROOM_FURNITURE.filter((x) => (x === k ? ev.target.checked : furniture.includes(x))) })} style={{ marginTop: 0 }} />
-              {FURNITURE[k]}
-              {k === 'sofa' && extra < 2 && furniture.includes('sofa') ? <span className="faint"> (needs 2 m of open floor)</span> : null}
-            </label>
-          ))}
-        </div>
-      </Field>
+      <div className="field">
+        <span className="field-label">In the room</span>
+        <Toggles name="furniture" options={MEMBER_ROOM_FURNITURE.map((k) => ({ id: k, label: FURNITURE[k] }))} value={furniture} onChange={(ids) => change({ furniture: ids as MemberRoomFurniture[] })} />
+        {extra < 2 && furniture.includes('sofa') && <span className="field-hint">The sofa needs 2 m of open floor behind the desks.</span>}
+      </div>
       <label className="check small room-lock" style={{ alignItems: 'flex-start' }}>
         <input type="checkbox" checked={prefs.locked === true} onChange={(ev) => change({ locked: ev.target.checked })} aria-label="Close my room" />
         <span>

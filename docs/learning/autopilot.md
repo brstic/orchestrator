@@ -80,11 +80,7 @@ The numbers are `Timings` (so tests can lower them); the defaults:
 - **never broader than what was observed**: approvals of `docker build …` carry `Bash(docker build:*)` and nothing else — not `Bash(docker:*)`;
 - never for a word that runs other things or reaches anywhere when it stands alone (`sh`, `bash`, `env`, `xargs`, `sudo`, `ssh`, `rm`, `curl`, `node`, `python`, `git`, `npm`, `docker`, `make`, … : `NEVER_ALLOW_ALONE`), nor for a shape whose next argument names what to run (`npm run`, `npx`, `docker run`, `go run`, `git config`, … : `NEVER_ALLOW_SHAPES`).
 
-**Autonomy up** (`autopilotAutonomyTasks: 5`) — all of:
-- one level at a time, and never beyond **`standard`**: `autonomous` and `auto` are always a person's decision;
-- none of the employee's permission requests was ever denied, and at least 5 were approved;
-- their last 5 completed tasks all passed verification first time, were never sent back by review and had nothing denied;
-- never the foreman.
+**A higher level** — never. There are three levels since 2026-11-13 (Standard, Auto, Unrestricted); Auto and Unrestricted are a person's to give, and there is nothing under Standard to be raised from. (Until then the office could take an employee from Supervised to Standard after five clean tasks, `autopilotAutonomyTasks`; that rule, its threshold and its counter-signals are gone, and nothing proposes a level any more.) A proposal that names a higher level — an old record — waits for a person.
 
 **Review off** (`autopilotReviewOffTasks: 10`) — the project's last 10 reviewed tasks were all approved first time. (Nothing proposes this today; the rule exists so that the table has no widening action without one.)
 
@@ -109,9 +105,8 @@ During probation these counter-signals take the change back at once:
 | Change | Counter-signal |
 | --- | --- |
 | allow rule | a command containing that shape is **denied** in that project · a command of that shape that matches the **high-risk list** is requested (asked is enough) · a task of that project **fails verification and the output names the shape** |
-| autonomy up | one of that employee's requests is **denied** · their task **fails verification** (a timeout does not count) · a **review sends their work back** |
 | review off | a review **requests changes** on a task of that project · the **integration tests fail** after a merge |
-| deny rule, review on, longer timeout, lower autonomy | none defined here. They are on probation for the record and the undo list; measuring whether they helped is the "outcomes" area. |
+| deny rule, review on, longer timeout, a lower level | none defined here. They are on probation for the record and the undo list; measuring whether they helped is the "outcomes" area. |
 
 A rollback restores what was there (see *Undo*), records `learning.reverted` with the evidence (`data.auto: true`, `data.undo` = how to apply it again), writes `improvement.reverted` to the audit log under `autopilot`, and puts the improvement **back to `proposed`** with `autopilot.noAuto: true`: it waits for the owner, with its history, and is **never applied automatically again**. The owner gets an ordinary (unresolved) notification "Taken back: …".
 
@@ -139,7 +134,7 @@ A lesson the office switched on is undone with the lesson's own switch (`PATCH /
 
 - **It never answers a permission request.** There is no call to `comms.answer` in the module; a pending request stays the owner's (tested).
 - Nothing that matches the high-risk list gets an allow rule; a high-risk request of a shape on probation ends the probation.
-- It never gives `autonomous` or `auto`, never touches the foreman, never applies advice, never applies anything the table does not know.
+- It never raises a level, never touches the foreman, never applies advice, never applies anything the table does not know.
 - It never re-applies what was taken back once.
 
 ### Members' own computers
@@ -189,7 +184,7 @@ And **`trusted` is a real delegation**:
 ## Not verified
 
 - Nothing was run against the real `claude` CLI. That an allow rule written by the autopilot reaches a real session is the same path as the owner's click, which `05-self-improvement` covers with the scripted worker; it was not re-proven for the automatic case beyond the policy change.
-- Autonomy up, review off, the high-risk and verification counter-signals, probation by task count and by time, the daily allowance, members' own computers and lesson activation are unit-tested against recorded questions, tasks and events — not end to end. The e2e test covers: default `safe`; `trusted` allow rule after three approvals (thresholds lowered); rollback on a denial; no automatic re-apply; the revert route (twice, and 404).
+- That no level is raised or proposed, that a change from the time of six levels is not put back onto a level that is gone, review off, the high-risk and verification counter-signals, probation by task count and by time, the daily allowance, members' own computers and lesson activation are unit-tested against recorded questions, tasks and events — not end to end. The e2e test covers: default `safe`; `trusted` allow rule after three approvals (thresholds lowered); rollback on a denial; no automatic re-apply; the revert route (twice, and 404).
 - PostgreSQL: the module uses only `Storage` calls both stores implement (`queryEvents` with `since`/`types`, `recentAudit`), but the tests ran on SQLite only.
 - The revert route was not exercised as a colleague over HTTP; `access.test.ts` asserts the rule (`mayCall`) instead.
 - Behaviour across a server restart was not tested. Nothing is held in memory (probation, undo and history are on the improvement; the allowance is counted from events), so none is expected.

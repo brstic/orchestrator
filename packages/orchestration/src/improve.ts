@@ -407,25 +407,11 @@ export class Improver {
       }
     }
 
-    // 2. A supervised employee whose edits are always approved and whose work passes → suggest more autonomy.
+    // (Nothing here offers anybody a higher level: Auto and Unrestricted are a person's to give.)
     for (const e of this.core.employees.filter((x) => !x.archived)) {
-      const mine = decided.filter((q) => q.employeeId === e.id);
       const perf = this.performance().filter((r) => r.employeeId === e.id);
       const completed = perf.reduce((n, r) => n + r.completed, 0);
       const firstPass = perf.reduce((n, r) => n + r.firstPass, 0);
-      if (e.autonomy === 'supervised' && mine.length >= 6 && mine.every((q) => q.decision === 'allow') && completed >= 2 && firstPass === completed) {
-        add(
-          this.propose({
-            kind: 'autonomy',
-            key: `autonomy-up:${e.id}:standard`,
-            title: `Give ${e.name} standard autonomy`,
-            rationale: `${e.name} is supervised. You approved all ${mine.length} of their requests, and all ${completed} of their completed tasks passed verification first time. Standard autonomy lets them edit files and run routine commands without asking; risky commands still come to you.`,
-            evidence: mine.slice(-8).map((q) => ({ kind: 'approval' as const, id: q.id, note: truncate(q.text, 100) })),
-            employeeId: e.id,
-            action: { type: 'employee.autonomy', employeeId: e.id, level: 'standard' },
-          }),
-        );
-      }
       // 3. Work that keeps failing first time → suggest a review gate (tightening, but still the owner's call).
       if (completed >= 4 && firstPass / completed < 0.5 && e.projectId) {
         const project = this.core.projects.get(e.projectId);

@@ -28,7 +28,7 @@ after(async () => {
 });
 
 test('the wait for an answer runs out: the prompt is in the terminal, the office asks again, and "Allow" is given there', async () => {
-  const task = await h.task({ projectId: project, title: 'Write the pipeline', assigneeId: ids.Dana, kind: 'ops', description: '@@fake: write ci.txt pipeline; say after-the-prompt@@' });
+  const task = await h.task({ projectId: project, title: 'Write the pipeline', assigneeId: ids.Dana, kind: 'ops', description: '@@fake: bash touch ci.txt; say after-the-prompt@@' });
   const first = await waitFor(() => question('Dana', 'permission_hook'), { label: 'asked through the hook', timeout: 30000 });
   // Nobody answers. The hook gives up; the request through it is over…
   await waitFor(async () => (await status(first.id)).status === 'superseded', { label: 'the hook gave up', timeout: 15000 });
@@ -55,7 +55,7 @@ test('the wait for an answer runs out: the prompt is in the terminal, the office
 });
 
 test('the office is restarted and the hook\'s wait runs out meanwhile: the prompt is found on the screen again, and "Deny" is given there', async () => {
-  const task = await h.task({ projectId: project, title: 'Write the other pipeline', assigneeId: ids.Omar, kind: 'ops', description: '@@fake: write deploy.txt go; say after-the-denial@@' });
+  const task = await h.task({ projectId: project, title: 'Write the other pipeline', assigneeId: ids.Omar, kind: 'ops', description: '@@fake: bash touch deploy.txt; say after-the-denial@@' });
   const first = await waitFor(() => question('Omar', 'permission_hook'), { label: 'asked through the hook', timeout: 30000 });
   await h.restartServer();
   // (A hook that is still waiting when the office is back goes on as if nothing happened: 37-held-through-restart.
@@ -74,7 +74,7 @@ test('the office is restarted and the hook\'s wait runs out meanwhile: the promp
 });
 
 test('answered at the terminal by a person: the office stops asking; and it never presses keys at a prompt that is gone', async () => {
-  const task = await h.task({ projectId: project, title: 'Write notes', assigneeId: ids.Lena, kind: 'ops', description: '@@fake: write notes.txt hello; say lena-done@@' });
+  const task = await h.task({ projectId: project, title: 'Write notes', assigneeId: ids.Lena, kind: 'ops', description: '@@fake: bash touch notes.txt; say lena-done@@' });
   const asked = await waitFor(() => question('Lena', 'terminal'), { label: 'asked through the terminal', timeout: 40000 });
   const session = (await h.session(ids.Lena!))!;
   // Somebody at the workstation presses "1".

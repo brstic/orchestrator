@@ -107,8 +107,8 @@ test('bypass mode: the agent stays away — a command is refused, not run unchec
 });
 
 test('other modes: a permission request and a question are held through a restart of the agent, too', async () => {
-  const s = await hire('Dana', 'supervised');
-  await say('Dana', 'write ci.txt pipeline; say dana-wrote');
+  const s = await hire('Dana', 'standard');
+  await say('Dana', 'bash touch ci.txt; say dana-wrote');
   const q = await waitFor(() => h.openQuestion(ids.Dana!, 'permission'), { label: 'asked through the hook', timeout: 30000 });
   await h.restartAgent();
   await sleep(2500);
@@ -127,7 +127,7 @@ test('other modes: a permission request and a question are held through a restar
 });
 
 test('other modes: with the agent away for good nothing is refused — Claude Code asks in the terminal, as it always did', async () => {
-  await say('Dana', 'say dana-at-work; sleep 2500; write notes.txt hello; say dana-done');
+  await say('Dana', 'say dana-at-work; sleep 2500; bash touch notes.txt; say dana-done');
   await waitFor(() => /dana-at-work/.test(paneOf('Dana')), { label: 'Dana is at work', timeout: 30000 });
   await h.stopAgent();
   await waitFor(() => /Do you want to proceed\?/.test(paneOf('Dana')), { label: 'the prompt is in the terminal', timeout: 30000 });

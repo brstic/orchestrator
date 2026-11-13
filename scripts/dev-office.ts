@@ -85,7 +85,7 @@ git(repo, 'commit', '-q', '-m', 'initial commit');
 await api('PATCH', '/settings', { companyName: 'Northwind Labs', ownerName: 'Boss' });
 const project = await api('POST', '/projects', { name: 'Customer Platform', repoPath: repo, hostId: en.hostId, verifyCommand: 'npm test --silent', description: 'Customer authentication and management.', requirements: 'Customers can sign up, log in and manage their profile.' });
 const team: Record<string, any> = {};
-for (const [name, role, autonomy] of [['Alex', 'backend', 'standard'], ['Sarah', 'frontend', 'standard'], ['Mike', 'qa', 'standard'], ['David', 'devops', 'supervised'], ['Emma', 'security', 'standard'], ['Ava', 'architect', 'standard'], ['Rev', 'reviewer', 'restricted'], ['Noor', 'fullstack', 'autonomous']] as const) {
+for (const [name, role, autonomy] of [['Alex', 'backend', 'standard'], ['Sarah', 'frontend', 'standard'], ['Mike', 'qa', 'standard'], ['David', 'devops', 'standard'], ['Emma', 'security', 'standard'], ['Ava', 'architect', 'standard'], ['Rev', 'reviewer', 'standard'], ['Noor', 'fullstack', 'auto']] as const) {
   team[name] = await api('POST', '/employees', { name, roleKey: role, projectId: project.id, hostId: en.hostId, autonomy });
 }
 await api('POST', '/employees', { name: 'Zed', roleKey: 'docs', projectId: project.id, hostId: en.hostId }); // never started: offline
@@ -95,7 +95,8 @@ const t = (title: string, who: string, script: string, extra: Record<string, unk
 await t('Implement authentication API', 'Alex', `progress routes scaffolded; write auth.txt login-v1; commit auth routes; read package.json; bash git status; write session.txt tokens; progress sessions done; ${long}`);
 await t('Build the login screen', 'Sarah', `write login.txt form; commit login form; ask Should the login form remember the user's email?; ${long}`);
 await t('Integration tests for auth', 'Mike', `read package.json; bash npm test --silent; progress suite is green; ${long}`, { kind: 'test' });
-await t('Set up the deployment pipeline', 'David', `write pipeline.txt stages; ${long}`, { kind: 'ops' });
+// (David is on Standard: an edit would be accepted there, so what waits for the owner is a command outside the routine list.)
+await t('Set up the deployment pipeline', 'David', `bash touch pipeline.txt; ${long}`, { kind: 'ops' });
 await t('Review authentication for vulnerabilities', 'Emma', `read package.json; mcp report_status {"status":"Auditing token handling"}; block Need access to the staging credentials vault`, { kind: 'security' });
 const done = await t('Add health endpoint', 'Noor', 'write health.txt ok; commit health; complete health endpoint added');
 await api('POST', '/tasks', { projectId: project.id, title: 'Password reset flow', roleHint: 'backend', description: 'Email-based reset.', priority: 'high', dependsOn: [done.id], released: false });

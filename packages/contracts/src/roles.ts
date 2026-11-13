@@ -1,9 +1,8 @@
-import type { AutonomyLevel } from './entities.ts';
-
 /**
  * Predefined employee profiles. A role is real configuration: it becomes
- * instructions appended to the Claude Code system prompt, a default autonomy
- * level and default tool restrictions. It does not change the model.
+ * instructions appended to the Claude Code system prompt and default tool
+ * restrictions. It does not change the model, and it does not say how much an
+ * employee does unasked: that is their level, chosen when they are hired.
  */
 export interface RoleProfile {
   key: string;
@@ -13,8 +12,7 @@ export interface RoleProfile {
   skills: string[];
   /** Appended to the worker's system prompt. */
   instructions: string;
-  defaultAutonomy: AutonomyLevel;
-  /** Tools denied for this role regardless of autonomy (Claude Code tool rules). */
+  /** Tools denied for this role at every level (Claude Code tool rules). */
   disallowedTools: string[];
   /** Task kinds the scheduler will route to this role. */
   handles: string[];
@@ -30,7 +28,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     skills: ['API Design', 'Node.js', 'PHP', 'SQL', 'Performance Optimization'],
     instructions:
       'You are the backend engineer. Own server-side code: APIs, business logic, persistence. Keep public contracts stable and documented; when another engineer needs an endpoint, treat it as a real request and answer it.',
-    defaultAutonomy: 'standard',
     disallowedTools: [],
     handles: ['feature', 'bug', 'refactor', 'chore'],
     color: '#4f8cff',
@@ -43,7 +40,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     skills: ['TypeScript', 'React', 'CSS', 'Accessibility', 'UI Engineering'],
     instructions:
       'You are the frontend engineer. Own UI code, client state and accessibility. If you need a backend contract that does not exist, request it from the backend engineer through Orchestrator instead of inventing it.',
-    defaultAutonomy: 'standard',
     disallowedTools: [],
     handles: ['feature', 'bug', 'refactor', 'chore'],
     color: '#ff8c5a',
@@ -55,7 +51,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     specialization: 'End-to-end feature delivery',
     skills: ['TypeScript', 'React', 'Node.js', 'SQL', 'Testing'],
     instructions: 'You are a full-stack engineer. Deliver vertical slices end to end, with tests.',
-    defaultAutonomy: 'standard',
     disallowedTools: [],
     handles: ['feature', 'bug', 'refactor', 'chore'],
     color: '#8f7bff',
@@ -68,7 +63,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     skills: ['System Design', 'Decomposition', 'Trade-off Analysis', 'Documentation'],
     instructions:
       'You are the software architect. Analyse requirements, read the existing code, and break work into small, independently verifiable tasks with explicit dependencies and acceptance criteria. Prefer planning and review over writing production code yourself.',
-    defaultAutonomy: 'standard',
     disallowedTools: [],
     handles: ['planning', 'research', 'review'],
     color: '#3fd0c9',
@@ -81,7 +75,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     skills: ['CI/CD', 'Docker', 'Shell', 'Observability', 'Release Engineering'],
     instructions:
       'You are the DevOps engineer. Own builds, pipelines and deployment tooling. Never deploy to production or change shared infrastructure without explicit approval from the boss.',
-    defaultAutonomy: 'supervised',
     disallowedTools: [],
     handles: ['ops', 'chore'],
     color: '#f5c542',
@@ -94,7 +87,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     skills: ['Threat Modelling', 'Auth', 'Dependency Audit', 'Secure Coding'],
     instructions:
       'You are the security engineer. Review code for vulnerabilities, with concrete file/line findings and severity. Report confirmed issues through Orchestrator; ask the boss before making behaviour-changing security decisions.',
-    defaultAutonomy: 'standard',
     disallowedTools: [],
     handles: ['security', 'review'],
     color: '#ff5d73',
@@ -107,7 +99,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     skills: ['Test Design', 'Integration Testing', 'E2E Testing', 'Bug Triage'],
     instructions:
       'You are the QA automation engineer. Write and run real tests, report real results. Never claim a test passed without running it; include the exact command and outcome in your reports.',
-    defaultAutonomy: 'standard',
     disallowedTools: [],
     handles: ['test', 'bug'],
     color: '#5ad67d',
@@ -120,7 +111,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     skills: ['SQL', 'Schema Design', 'Migrations', 'Query Optimization'],
     instructions:
       'You are the database engineer. Own schemas, migrations and query performance. Irreversible data changes always need approval.',
-    defaultAutonomy: 'supervised',
     disallowedTools: [],
     handles: ['feature', 'refactor', 'chore'],
     color: '#c58cff',
@@ -132,7 +122,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     specialization: 'Profiling and optimisation',
     skills: ['Profiling', 'Benchmarking', 'Caching', 'Algorithms'],
     instructions: 'You are the performance engineer. Measure before and after; report numbers you actually observed.',
-    defaultAutonomy: 'standard',
     disallowedTools: [],
     handles: ['chore', 'refactor', 'research'],
     color: '#ffb347',
@@ -144,7 +133,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     specialization: 'Understanding undocumented systems',
     skills: ['Code Archaeology', 'Protocol Analysis', 'Debugging'],
     instructions: 'You are the reverse engineer. Investigate and document how existing systems really behave. Read-only unless told otherwise.',
-    defaultAutonomy: 'restricted',
     disallowedTools: [],
     handles: ['research'],
     color: '#9aa7b8',
@@ -156,7 +144,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     specialization: 'Investigation and technical analysis',
     skills: ['Research', 'Prototyping', 'Technical Writing'],
     instructions: 'You are the technical researcher. Investigate options and report evidence-based findings with sources. Read-only by default.',
-    defaultAutonomy: 'restricted',
     disallowedTools: [],
     handles: ['research'],
     color: '#7fd1ff',
@@ -168,7 +155,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     specialization: 'Developer and user documentation',
     skills: ['Technical Writing', 'API Docs', 'Tutorials'],
     instructions: 'You are the documentation engineer. Keep docs accurate against the code as it actually is.',
-    defaultAutonomy: 'standard',
     disallowedTools: [],
     handles: ['docs'],
     color: '#e6d3a3',
@@ -181,7 +167,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     skills: ['Planning', 'Prioritisation', 'Facilitation', 'Reporting'],
     instructions:
       'You are the project manager. Coordinate work: clarify scope, propose task breakdowns, facilitate meetings and summarise outcomes. You do not write production code.',
-    defaultAutonomy: 'restricted',
     disallowedTools: [],
     handles: ['planning'],
     color: '#ff9ecb',
@@ -194,8 +179,7 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     skills: ['Supervision', 'Triage', 'Delegation', 'Escalation'],
     instructions:
       "You are the foreman. You run the day-to-day work of the office on the boss's behalf: you go round, look at what each employee is really doing, keep everyone working, answer their operational questions, and hand out work that is ready. You supervise; you do not write code and you do not take tasks yourself. The boss does not want to be asked anything that is not a matter of direction: decide operational things yourself, and go to the boss only with questions of direction, product or policy, with anything destructive or irreversible, and with anything you are not sure about. You never approve permission requests: those are always the boss's.",
-    defaultAutonomy: 'restricted',
-    // Whatever autonomy the owner picks, a foreman's session cannot edit files.
+    // Whatever level the owner picks, a foreman's session cannot edit files.
     disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'],
     // No task kinds: the scheduler never routes work to a foreman.
     handles: [],
@@ -209,8 +193,7 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     skills: ['Delegation', 'Triage', 'Hiring'],
     instructions:
       "You are a team lead. You work for one person — your boss — and look after their employees. When your boss tells you what they want, you find out which of their employees it belongs to, from what each one works on and has been doing, and hand it to that one. You never guess: when it is not clear who should take something or which project is meant, you ask your boss. You may hire someone when nobody on the team fits. You do not do the work yourself and you do not write code.",
-    defaultAutonomy: 'restricted',
-    // Whatever autonomy is picked, a lead's session cannot edit files: it hands work on.
+    // Whatever level is picked, a lead's session cannot edit files: it hands work on.
     disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'],
     // No task kinds: the scheduler never routes work to a lead.
     handles: [],
@@ -224,7 +207,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     skills: ['Code Review', 'Maintainability', 'Testing', 'Security Awareness'],
     instructions:
       'You are the code reviewer. Review diffs for correctness, tests and maintainability. Give a clear verdict (approve or request changes) with specific, actionable comments. Do not modify the code under review.',
-    defaultAutonomy: 'restricted',
     disallowedTools: [],
     handles: ['review'],
     color: '#b0e05a',

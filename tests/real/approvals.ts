@@ -61,8 +61,9 @@ try {
   const dir = path.join(fs.realpathSync(base), 'sandbox');
   fs.mkdirSync(dir);
   while (!agent.isConnected) await sleep(100);
-  // Supervised = Claude Code's manual permission mode: every edit asks.
-  const dana = await api('POST', '/employees', { name: 'Dana', roleKey: 'devops', hostId: en.hostId, workingDir: dir, model: MODEL, autonomy: 'supervised' });
+  // (Adapted on 2026-11-13, when the levels became three, and NOT run since: on Standard an edit is accepted, so what
+  // asks is a command outside the routine list — a file written by `node -e`. Run it before relying on it.)
+  const dana = await api('POST', '/employees', { name: 'Dana', roleKey: 'devops', hostId: en.hostId, workingDir: dir, model: MODEL, autonomy: 'standard' });
   const session = await api('POST', `/employees/${dana.id}/start`, {});
   sessionId = session.id;
   const first = await until('trust prompt or start', (s) => s.questions.find((q) => q.kind === 'trust_prompt' && q.status === 'open') ?? (s.sessions.find((x) => x.id === session.id)?.lastEventAt ? 'started' : null), 60000);
@@ -75,10 +76,10 @@ try {
   const nextQuestion = (kind: string) => until(`${kind} question`, (s) => s.questions.find((q) => q.employeeId === dana.id && q.status === 'open' && q.kind === kind && !seen.has(q.id)), 180000);
 
   // 1. Allow
-  await api('POST', `/employees/${dana.id}/message`, { body: 'Use the Write tool to create a file named hello.txt containing exactly the text: hi   — then reply with the single word DONE. Do not use any other tool.' });
+  await api('POST', `/employees/${dana.id}/message`, { body: `Run exactly this one shell command with the Bash tool, as it is written, and no other tool: node -e "require('fs').writeFileSync('hello.txt','hi')"   — then reply with the single word DONE.` });
   const q1 = await nextQuestion('permission');
   seen.add(q1.id);
-  check('a real PermissionRequest was surfaced as an approval', q1.channel === 'permission_hook' && q1.tool?.name === 'Write', `${q1.text}`);
+  check('a real PermissionRequest was surfaced as an approval', q1.channel === 'permission_hook' && q1.tool?.name === 'Bash', `${q1.text}`);
   check('nothing was written before the decision', !fs.existsSync(path.join(dir, 'hello.txt')));
   const during = (await state()).sessions.find((x) => x.id === session.id)!;
   check('the employee is shown as needing approval', during.activity === 'needs_approval', during.activity);
@@ -90,7 +91,7 @@ try {
   await idle();
 
   // 2. Deny
-  await api('POST', `/employees/${dana.id}/message`, { body: 'Use the Write tool to create a file named secret.txt containing the text: nope. If you are not allowed to, do not try again or use another tool; just reply with the single word REFUSED.' });
+  await api('POST', `/employees/${dana.id}/message`, { body: `Run exactly this one shell command with the Bash tool, as it is written: node -e "require('fs').writeFileSync('secret.txt','nope')"   If you are not allowed to, do not try again or use another tool; just reply with the single word REFUSED.` });
   const q2 = await nextQuestion('permission');
   seen.add(q2.id);
   await api('POST', `/questions/${q2.id}/answer`, { decision: 'deny', answer: 'Not allowed by the boss.' });

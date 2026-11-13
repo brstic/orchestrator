@@ -48,10 +48,10 @@ before(async () => {
   // The office as it really starts: reviewed by a colleague, then the boss.
   h = await createHarness({ reviewDefault: 'both' });
   shop = (await h.project('Shop', h.makeRepo('shop'), { verifyCommand: null })).id;
-  ids.Alex = (await h.employee('Alex', 'backend', { projectId: shop, autonomy: 'autonomous' })).id;
-  ids.Sarah = (await h.employee('Sarah', 'frontend', { projectId: shop, autonomy: 'autonomous' })).id;
-  ids.Rita = (await h.employee('Rita', 'reviewer', { projectId: shop, autonomy: 'autonomous' })).id;
-  ids['Shop Panel Dev'] = (await h.employee('Shop Panel Dev', 'frontend', { projectId: shop, autonomy: 'autonomous' })).id;
+  ids.Alex = (await h.employee('Alex', 'backend', { projectId: shop, autonomy: 'auto' })).id;
+  ids.Sarah = (await h.employee('Sarah', 'frontend', { projectId: shop, autonomy: 'auto' })).id;
+  ids.Rita = (await h.employee('Rita', 'reviewer', { projectId: shop, autonomy: 'auto' })).id;
+  ids['Shop Panel Dev'] = (await h.employee('Shop Panel Dev', 'frontend', { projectId: shop, autonomy: 'auto' })).id;
 });
 after(async () => {
   await h?.cleanup();
