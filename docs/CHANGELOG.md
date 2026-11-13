@@ -3,7 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-13
-- **Eight things from a day in the office** (asked for by an owner; `DECISIONS.md`, "Eight things an owner asked for…"). Not deployed yet.
+- **Eight things from a day in the office** (asked for by an owner; `DECISIONS.md`, "Eight things an owner asked for…"). Deployed as build `33d8f76` (10:51 UTC).
   - **The Inbox shows yours first**: the *Mine / Everyone* switch is in the Inbox too, and the number on the Inbox button follows it.
   - **The card in the corner is about whoever you are standing next to**: walking up to another employee drops the one you clicked before.
   - **Somebody who got up is met where they are** — at the board, in the meeting room, at a colleague's desk — not at their empty chair. The foreman and team leads can be walked up to and talked to (F).
