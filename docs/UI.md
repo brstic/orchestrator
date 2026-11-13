@@ -152,11 +152,13 @@ The same names and lines are in **Help**, under *What each window is for* (each 
 
 **What is no longer printed:** the whole Markdown text of every question, the kind as a badge on every line, "via mcp tool", a card around every question with a blue button in each, the full text under every piece of news, dismissed news among the rest.
 
-**Checked:** unit `apps/desktop/test/inbox.test.ts`; the UI suite's "Inbox: Mark all read…" (the window's size is the same on all three tabs, a piece of news is one line, today's is under "Today"). **Not looked at:** fifty and more pieces of news; yesterday's and earlier ones (a development office is minutes old).
+**Checked:** unit `apps/desktop/test/inbox.test.ts`; the UI suite's "Inbox: Mark all read…" (the window's size is the same on all three tabs, a piece of news is one line, today's is under "Today"). Looked at with thirteen things needing the owner at once (one approval, eight questions, four blocked): the window keeps its size and the list scrolls inside it. **Not looked at:** fifty and more pieces of news; yesterday's and earlier ones (a development office is minutes old).
 
 ## Team
 
 `hud/panels/team.tsx` (`TeamPanel`), `lib/team.ts`. It was a table of eight columns that scrolled sideways. Now: **people as cards under their projects**, three to a row — a face, the name (and whose they are, when not the office's), "● thinking · T-9 Notes, part 1", and *Talk*. Within a project whoever wants somebody comes first. **A card opens that person's window**, where everything else about them is. Above the cards: a box to find by name, title or skill, the two filters (project, machine) and *Mine / Everyone*; the foreman, when there is one, has a line of its own; archived employees are one folded line at the bottom. *Hire* is the one main button.
+
+Looked at with thirty-three employees in four projects (a development office with three members' rooms): three cards to a row, the groups one under the other, the window scrolling inside itself.
 
 **What is no longer printed for everybody:** level and XP bar, machine, autonomy, the task's key as a button, *Open terminal* and *Profile* on every row, *Mine / Not mine* on every row — all of it is in the person's window (the head's *Terminal*, the Overview's "What they are").
 
