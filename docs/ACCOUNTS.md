@@ -104,6 +104,29 @@ Claude Code keeps conversations in `<config folder>/projects/<folder name>/<sess
 - `tests/e2e/51-account-sign-in.test.ts` — the name known as soon as the machine is in the office; a new account signed in to from the office (the folder, the whole address in one line, a refused code, the right one, nothing left running, nothing typed or shown on the record); the default login signed in to again; owners only; a Z.AI account (the file, its mode, the key nowhere in the office, models added later with the rest of the settings kept, refusals); nobody moved to Z.AI by the office, and an employee put there by hand started with that folder. The scripted worker has `auth --help` and `auth login` (the "code" is the name the account gets).
 - The scripted worker (`tests/fixtures/fake-claude.mjs`): an account's figures are `fake-limits.json` in its config folder; the step `limit` ends a turn the way a refused turn ends (`StopFailure`, error `rate_limit`, no `Stop`).
 
+## The week of one model (Fable's)
+
+A subscription limits its strongest model by the week apart from the week for all models. An account can have room "this week" and still refuse every turn of an employee who thinks with Fable.
+
+**What the office can know.** Claude Code gives a session two windows — five hours and the week for all models (`rate_limits.five_hour`, `rate_limits.seven_day`; its status line documentation lists only these and a gateway's spend limit). The week of one model is shown on Claude's own usage screen, which is read with the account's login token; the office does not touch those. So it learns a model's week in two ways:
+
+| | Where from | What is kept |
+| --- | --- | --- |
+| **Reported** | Any other window Claude Code gives a session. The machine's agent passes on every window under its own name (`windows` in the `limits` message) and logs once which names it saw ("Claude Code reports these limit windows: …" in the service log — look there to see what a real account gives). A window named `seven_day_<model>` (also `weekly_…`, `week_…`) is that model's week | the percentage and when it resets, as given |
+| **Refused** | A turn Claude refuses (`StopFailure`) whose words name a model and the week ("weekly limit … Fable") | used up — until the time the refusal names when it names one the office can read (an ISO time, or seconds after "reset"), else until the week for all models turns, else for a day, after which it is tried again |
+
+It is `AccountUsage.modelWeeks` (by the model's family: `fable`, `opus`…; `from: "reported" | "refused"`), kept with the account's record. In **Company → Claude** it stands under the week for all models: "Fable week — 64 % · resets in 3 d", or "used up".
+
+**What happens when it is used up.** The account is not used up, that model on it is: **those who think with that model** are moved to another account of the same machine and service where that model's week has room — the same move as for a used-up account, with its rules (nobody twice in ten minutes, nobody moved back). The others stay. Who thinks with what: the employee's own model; else the model their session runs; else — for "whatever the account uses" — what a refused turn said it was. So an employee on the account's default model is moved after their own first refused turn, not before. Nobody is moved onto an account where the same model's week is used up too; then they wait.
+
+`SessionRegistry.onLimits` / `onLimitHit` / `failover`; `weekFull`, `resetNamedIn`, `modelFamily`. Tests: `packages/orchestration/test/model-week.test.ts`, `tests/e2e/53-model-week.test.ts`.
+
+## Who is on what (one table, and many at once)
+
+**Company → Claude → Who is on what** (owners): every employee on a machine is a line — **Account** (by name), **Model**, **Effort**. Change one line, or tick several (the box in a machine's heading ticks everybody on it) and choose in the bar above to set the same for all of them; an account can be set for many only when they are on one machine. The table edits a draft: **Apply to N** sends it (`PATCH /employees/:id` for each one that differs), and the bar says first how many people and what. A change of account, model or effort starts a running session again with the same conversation — at once if they are between turns, otherwise when their turn ends. `apps/desktop/src/hud/panels/claude-use.tsx`, `lib/who-uses.ts`.
+
+**Hiring** asks for the account too, beside the model and the effort (`POST /employees { claudeConfigDir }`); not named, it is the machine's default login.
+
 ## Limits, plainly
 
 - **The same machine only.** An employee is not moved to another machine; accounts of two machines are two pools.
@@ -120,3 +143,4 @@ Claude Code keeps conversations in `<config folder>/projects/<folder name>/<sess
 - That a turn cut off mid-way and resumed goes on sensibly after "go on with T-…".
 - **Signing in from the office has never met the real sign-in.** It was built against Claude Code 2.1.323's `claude auth login --help` (which exists, takes `--claudeai`, `--console`, `--email`, `--sso`) and tried with the scripted worker, whose sign-in prints an address and waits for a code. What the real one prints, whether it asks anything before the address (the window has ↑ ↓ Enter Esc for that), whether the code it wants is exactly what the page shows, and whether it exits by itself when done, have not been seen. The first real sign-in is the test; if the window cannot finish it, the old way still works (the command is in the account's record as before).
 - **A Z.AI account has never run a session.** What is written is what Z.AI's instructions say; that Claude Code started in such a folder goes straight to work — no first-run screen, no question about the key — and that the office's hooks, status line and `--resume` behave there as with a Claude login, has not been seen. Nor has a model name been tried: the three fields are passed on as typed.
+- **What a real account's refusal for a model's week says, and whether Claude Code gives a session any window for it.** The office reads "week" and a model's name out of the refusal, whatever else it says, and an ISO time or epoch seconds for when it lifts; the real words have not been seen. After the next deploy the service log names the windows a real Claude Code reports — if `seven_day_fable` (or the like) is among them, the percentage shows by itself; if not, the office knows of Fable's week only once a turn was refused.

@@ -22,6 +22,8 @@ const trustQuestion = async () => (await h.state()).questions.find((x) => x.empl
 
 before(async () => {
   h = await createHarness({ timings: { deliverySettleMs: 300 } });
+  // (The trust question is asked of the owner here, as it was before the office answered it by itself: 54-start-prompts.)
+  await h.api('PATCH', '/settings', { acceptStartPrompts: false });
   project = (await h.project('Shop', h.makeRepo('shop'), { verifyCommand: null })).id;
   stan = (await h.employee('Stan', 'backend', { projectId: project, autonomy: 'standard' })).id;
 });

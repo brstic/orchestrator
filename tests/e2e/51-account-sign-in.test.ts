@@ -139,3 +139,13 @@ test('an employee put on the Z.AI account runs with that folder; nobody is moved
   assert.match(h.started().split('\n').filter((l) => l.startsWith(s.tmuxSession!)).pop() ?? '', new RegExp(`CLAUDE_CONFIG_DIR=${home}/\\.claude-zai`));
   assert.deepEqual((await account('~/.claude-zai')).employeeIds, [ids.Alex]);
 });
+
+test('somebody is hired straight onto an account: the hire names it, beside the model and the effort', async () => {
+  const zed = await h.api<any>('POST', '/employees', { name: 'Zed', roleKey: 'backend', hostId: h.hostId, projectId: ids.project, autonomy: 'auto', model: 'sonnet', effort: 'low', claudeConfigDir: '~/.claude-zai/' });
+  assert.deepEqual([zed.claudeConfigDir, zed.model, zed.effort], ['~/.claude-zai', 'sonnet', 'low']);
+  assert.ok((await account('~/.claude-zai')).employeeIds.includes(zed.id));
+  // Not named: the machine's default login, as before.
+  const ivy = await h.api<any>('POST', '/employees', { name: 'Ivy', roleKey: 'backend', hostId: h.hostId, projectId: ids.project });
+  assert.equal(ivy.claudeConfigDir ?? null, null);
+  for (const bad of ['../etc', '~/x/../../y', '$(id)']) assert.equal((await h.apiRaw('POST', '/employees', { name: `Bad ${bad.length}`, roleKey: 'backend', hostId: h.hostId, claudeConfigDir: bad })).status, 400, bad);
+});

@@ -263,6 +263,11 @@ async function scenario() {
     await sleep(300);
     const form = await js(`(() => { const b = document.querySelector('.win').getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), h: innerHeight }; })()`);
     if (form.top < 0 || form.bottom > form.h) throw new Error(`the hire form leaves the screen: ${JSON.stringify(form)}`);
+    // What they think with is asked in one line: which Claude account of that machine, which model, how hard.
+    const claude = await js(`[...window.__t.scope().querySelectorAll('[data-hire-claude] .field-label')].map((l) => l.textContent)`);
+    if (claude.join('|') !== 'Account|Model|Effort') throw new Error(`the hire form asks: ${claude.join(', ')}`);
+    const offered = await js(`[...window.__t.scope().querySelector('[data-hire-claude] select[aria-label="Claude account"]').options].map((o) => o.textContent)`);
+    if (!/^dev@example\.test/.test(offered[0]) || offered[offered.length - 1] !== 'Another folder…') throw new Error(`the accounts offered when hiring: ${offered.join(' | ')}`);
     await type(`window.__t.field('Name')`, ctx.hireName);
     // No path typing: browse the machine's folders and choose one.
     await clickText('Browse…');
@@ -1316,7 +1321,7 @@ async function scenario() {
       return { name: w.querySelector('.win-head h2').textContent, face: !!w.querySelector('.win-head .win-lead .avatar'), state: w.querySelector('.win-head [data-profile-state] .k-state').textContent, tabs: [...w.querySelectorAll('.tab')].map((t) => t.textContent), on: w.querySelector('.tab-on').textContent, labels: [...w.querySelectorAll('[data-profile-overview] .k-label')].map((l) => l.textContent), figures: w.querySelectorAll('.k-figure').length, inputs: [...w.querySelectorAll('[data-profile-overview] input, [data-profile-overview] select, [data-profile-overview] textarea')].length, primary: [...w.querySelectorAll('.win-head .btn-primary')].map((b) => b.textContent.trim()), height: Math.round(w.getBoundingClientRect().height) };
     })()`);
     if (prof.name !== 'Sarah' || !prof.face || !prof.state) throw new Error(`the head of the profile: "${prof.name}", face ${prof.face}, state "${prof.state}"`);
-    if (prof.tabs.join('|') !== 'Overview|Settings|Look|Session|Messages|History|Desk and hours' || prof.on !== 'Overview') throw new Error(`the profile's tabs: ${prof.tabs.join(', ')} (open: ${prof.on})`);
+    if (prof.tabs.join('|') !== 'Overview|Settings|Look|Session|Routines|Messages|History|Desk and hours' || prof.on !== 'Overview') throw new Error(`the profile's tabs: ${prof.tabs.join(', ')} (open: ${prof.on})`);
     if (prof.primary.length !== 1) throw new Error(`the profile's main buttons: ${prof.primary.join(', ') || 'none'}`);
     // The first thing is what they are doing and what they have delivered — to be read, not filled in.
     if (prof.labels.slice(0, 2).join('|') !== 'Right now|What they are' || !prof.labels.includes('Delivered') || prof.figures !== 6 || prof.inputs) throw new Error(`the overview: ${prof.labels.join(', ')}; ${prof.figures} figures; ${prof.inputs} field(s) to fill in`);
@@ -1392,6 +1397,39 @@ async function scenario() {
     await waitFor(home(ctx.hireFolder), 10000);
     await close();
     return `who → folder → Claude → the rest; ${ctx.hireName} moved to made-in-the-form and back`;
+  });
+
+  await step('An employee\'s window → Routines: what they repeat is listed there, and one is added, reworded, paused and removed', async () => {
+    const mine = `Object.values(window.__t.store().routines).filter((r) => r.employeeId === window.__t.emp('Sarah').id)`;
+    await open('employee', `window.__t.emp('Sarah').id + ':routines'`);
+    await waitFor(`!!window.__t.scope().querySelector('[data-profile-routines]')`, 6000);
+    const tab = `window.__t.scope().querySelector('[data-profile-routines]')`;
+    const before = await js(`${mine}.length`);
+    if (before === 0 && !(await js(`/Nothing repeats yet/.test(${tab}.textContent)`))) throw new Error('with no routine the tab does not say so');
+    await click(`${tab}.querySelector('[data-add-routine-open]')`, 'Add a routine');
+    await waitFor(`!!${tab}.querySelector('[data-add-routine] textarea')`, 4000);
+    await type(`${tab}.querySelector('[data-add-routine] textarea')`, 'Look at the build and say whether it is green.');
+    await type(`${tab}.querySelector('[data-add-routine] input[type=number]')`, '45');
+    // (Not "once right now": no turn of hers is spent on the test.)
+    await click(`${tab}.querySelector('[data-add-routine] input[type=checkbox]')`, 'and once right now');
+    await click(`[...${tab}.querySelectorAll('[data-add-routine] button')].find((b) => /Add the routine/.test(b.textContent))`, 'Add the routine');
+    const made = await waitFor(`(() => { const r = ${mine}.find((x) => /Look at the build/.test(x.instruction)); return r ? { id: r.id, every: r.everyMinutes, on: r.enabled, runs: r.runs } : null; })()`, 8000);
+    if (made.every !== 45 || !made.on || made.runs !== 0) throw new Error(`the routine that was added: ${JSON.stringify(made)}`);
+    const row = `${tab}.querySelector('[data-routine="${made.id}"]')`;
+    await waitFor(`!!${row} && !${tab}.querySelector('[data-add-routine]') && /Routines\\s*${before + 1}/.test(window.__t.scope().querySelector('.tab-on').textContent)`, 6000);
+    await shot('profile-routines');
+    // Its words are changed in place.
+    await click(`[...${row}.querySelectorAll('button')].find((b) => /Change the words/.test(b.textContent))`, 'Change the words');
+    await type(`${tab}.querySelector('[data-edit-routine] textarea')`, 'Look at the build and the deploy, and say whether both are green.');
+    await click(`[...${tab}.querySelectorAll('[data-edit-routine] button')].find((b) => b.textContent.trim() === 'Save')`, 'Save');
+    await waitFor(`/the build and the deploy/.test(window.__t.store().routines[${JSON.stringify(made.id)}].instruction) && !${tab}.querySelector('[data-edit-routine]')`, 8000);
+    // Paused, and removed.
+    await click(`[...${row}.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Pause')`, 'Pause');
+    await waitFor(`window.__t.store().routines[${JSON.stringify(made.id)}].enabled === false && /1 paused/.test(${tab}.textContent)`, 8000);
+    await click(`[...${row}.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Remove')`, 'Remove');
+    await waitFor(`!window.__t.store().routines[${JSON.stringify(made.id)}] && ${mine}.length === ${before}`, 8000);
+    await close();
+    return `added (every 45 min, not run), reworded, paused, removed; Sarah has ${before} routine(s) again`;
   });
 
   await step('Team: editing a profile saves standing instructions', async () => {
@@ -2529,6 +2567,45 @@ async function scenario() {
     if (hers.value !== '~/.claude-second' || hers.typing) throw new Error(`Ava's account in her settings: ${JSON.stringify(hers)}`);
     await close();
     return `signed in as uitest@example.test from the window (a link of ${link.length} characters); Z.AI offered`;
+  });
+
+  await step('Company → Claude: who is on what — a line per employee with account, model and effort; several are ticked and set together; nothing changes before Apply', async () => {
+    await open('overview', `'usage'`);
+    await waitFor(`document.querySelectorAll('[data-who-uses] [data-use-employee]').length >= 5`, 15000);
+    const table = `window.__t.scope().querySelector('[data-who-uses]')`;
+    const row = (name) => `${table}.querySelector('[data-use-employee=' + JSON.stringify(${JSON.stringify(name)}) + ']')`;
+    await js(`${table}.scrollIntoView({ block: 'start' })`);
+    const first = await js(`(() => { const t = ${table}; return { machines: [...t.querySelectorAll('[data-use-machine]')].map((g) => g.getAttribute('data-use-machine')), selects: t.querySelector('[data-use-employee]').querySelectorAll('select').length, bulk: !!t.querySelector('[data-use-bulk]'), note: t.querySelector('[data-use-save]').textContent, apply: t.querySelector('[data-use-apply]').disabled }; })()`);
+    if (!first.machines.includes('dev-mac') || first.selects !== 3 || first.bulk || !/Nothing is changed/.test(first.note) || !first.apply) throw new Error(`the table at first: ${JSON.stringify(first)}`);
+    // Two people are ticked; the bar above sets one thing for both. It is a draft: their records do not change.
+    const two = await js(`[...${table}.querySelectorAll('[data-use-machine="dev-mac"] [data-use-employee]')].slice(0, 2).map((r) => r.getAttribute('data-use-employee'))`);
+    const was = await js(`${JSON.stringify(two)}.map((n) => window.__t.emp(n).model)`);
+    for (const name of two) await click(`${row(name)}.querySelector('input[type=checkbox]')`, `${name}'s box`);
+    await waitFor(`!!${table}.querySelector('[data-use-bulk]') && /2\\s*chosen/.test(${table}.querySelector('[data-use-bulk]').textContent)`, 4000);
+    await js(`window.__t.setSelect(${table}.querySelector('select[aria-label="Model for the chosen"]'), 'haiku')`);
+    await waitFor(`${JSON.stringify(two)}.every((n) => ${table}.querySelector('[data-use-employee=' + JSON.stringify(n) + '] select[aria-label$="model"]').value === 'haiku')`, 4000);
+    const draft = await js(`({ note: ${table}.querySelector('[data-use-save]').textContent, apply: ${table}.querySelector('[data-use-apply]').textContent.trim(), now: ${JSON.stringify(two)}.map((n) => window.__t.emp(n).model) })`);
+    const moved = two.filter((_, i) => was[i] !== 'haiku').length;
+    if (!new RegExp(`Unsaved — ${moved} employee`).test(draft.note) || !/model/.test(draft.note) || draft.apply !== `Apply to ${moved}` || JSON.stringify(draft.now) !== JSON.stringify(was)) throw new Error(`the draft: ${JSON.stringify(draft)} (they had ${JSON.stringify(was)})`);
+    await shot('claude-who-is-on-what');
+    await click(`[...${table}.querySelectorAll('[data-use-save] button')].find((b) => b.textContent.trim() === 'Discard')`, 'Discard');
+    await waitFor(`/Nothing is changed/.test(${table}.querySelector('[data-use-save]').textContent)`, 4000);
+    // Applied for somebody who is not at work, so that nobody's turn is cut for the test: their effort, and back.
+    const idle = await js(`(() => { const s = window.__t.store(); const busy = new Set(Object.values(s.sessions).filter((x) => x.status === 'running' || x.status === 'starting').map((x) => x.employeeId)); const e = Object.values(s.employees).find((x) => !x.archived && x.hostId && s.hosts[x.hostId] && s.hosts[x.hostId].name === 'dev-mac' && !busy.has(x.id)); return e ? { name: e.name, effort: e.effort || '' } : null; })()`);
+    let applied = 'nobody was free to apply it to';
+    if (idle) {
+      const want = idle.effort === 'low' ? 'medium' : 'low';
+      await js(`window.__t.setSelect(${row(idle.name)}.querySelector('select[aria-label$="effort"]'), ${JSON.stringify(want)})`);
+      await waitFor(`${table}.querySelector('[data-use-apply]').textContent.trim() === 'Apply to 1'`, 4000);
+      await click(`${table}.querySelector('[data-use-apply]')`, 'Apply to 1');
+      await waitFor(`window.__t.emp(${JSON.stringify(idle.name)}).effort === ${JSON.stringify(want)} && /Nothing is changed/.test(${table}.querySelector('[data-use-save]').textContent)`, 10000);
+      await js(`window.__t.setSelect(${row(idle.name)}.querySelector('select[aria-label$="effort"]'), ${JSON.stringify(idle.effort)})`);
+      await click(`${table}.querySelector('[data-use-apply]')`, 'Apply to 1');
+      await waitFor(`(window.__t.emp(${JSON.stringify(idle.name)}).effort || '') === ${JSON.stringify(idle.effort)}`, 10000);
+      applied = `${idle.name}'s effort set to ${want} and back`;
+    }
+    await close();
+    return `${first.machines.join(', ')}; ${two.join(' and ')} set to Haiku together as a draft, discarded; ${applied}`;
   });
 
   await step('Hi-fi: a station is switched on for the office and says what is on air; it is quieter far from the hi-fi; volume and mute are this computer\'s; the top bar stops it for everyone', async () => {

@@ -457,7 +457,11 @@ export class HookReceiver {
     // that — the office is away for some seconds at every update, and a call made just then fails on its own.
     if (payload.hook_event_name === 'PostToolUseFailure' && /^mcp__orchestrator__/.test(String(payload.tool_name ?? '')) && /not connected/i.test(String(payload.error ?? ''))) this.eng.sessions.onOfficeUnreachable(session);
     // Claude refused the turn for the account's limit: its people go to another account, if the machine has one.
-    if (payload.hook_event_name === 'StopFailure' && /rate.?limit|usage.?limit|billing/i.test(String(payload.error ?? payload.error_details ?? payload.message ?? ''))) this.eng.sessions.onLimitHit(session, String(payload.error ?? payload.message ?? 'rate_limit'));
+    if (payload.hook_event_name === 'StopFailure') {
+      // Everything the refusal says: which limit it was (the account's, or one model's week) is read from its words.
+      const said = [payload.error, payload.error_details, payload.message].filter((x) => typeof x === 'string' && x).join(' — ');
+      if (/rate.?limit|usage.?limit|weekly.?limit|billing/i.test(said)) this.eng.sessions.onLimitHit(session, said || 'rate_limit');
+    }
     // A Stop that arrived through the non-blocking path (host had no server link at the time).
     if (interp.turnFinished && payload.hook_event_name === 'Stop' && !this.isRequest(raw)) this.afterTurn(session, employee, payload);
     return { session, employee, payload };

@@ -36,6 +36,9 @@ const say = async (name: string, script: string) => {
 before(async () => {
   // The machine waits three seconds for an answer to a held command.
   h = await createHarness({ approvalWaitSeconds: 3 });
+  // This file is about the owner being asked: the office's answering Claude Code's start-up questions by itself
+  // (on since 2026-11-13; tests/e2e/54-start-prompts.test.ts) is switched off, which is how things were before.
+  await h.api('PATCH', '/settings', { acceptStartPrompts: false });
   project = (await h.project('Shop', h.makeRepo('shop'), { verifyCommand: null, policy: { deny: ['WebFetch'] } })).id;
   ids.Una = (await h.employee('Una', 'devops', { projectId: project, autonomy: 'unrestricted' })).id;
 });

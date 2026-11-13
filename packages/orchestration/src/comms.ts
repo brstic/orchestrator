@@ -29,7 +29,8 @@ function optionKeys(lines: string[], wanted: (label: string) => boolean): string
   const plain = plainScreen(lines);
   const options: Array<{ selected: boolean; label: string }> = [];
   for (const line of plain) {
-    const m = /^\s*(❯|>|›)?\s*(?:\d+\.\s*)?((?:Yes|No)\b.*)$/.exec(line);
+    // (A dialog may be drawn in a box: its border stands before and after the option.)
+    const m = /^[\s│┃|]*(❯|>|›)?\s*(?:\d+\.\s*)?((?:Yes|No)\b.*?)[\s│┃|]*$/.exec(line);
     if (!m) continue;
     options.push({ selected: !!m[1], label: m[2]!.trim() });
   }

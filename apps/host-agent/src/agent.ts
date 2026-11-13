@@ -1494,6 +1494,7 @@ export class HostAgent {
   }
 
   private lastLimits = new Map<string, string>();
+  private limitNames = '';
 
   /**
    * Claude Code's status line input for one of our sessions. Only the account's rate limits are
@@ -1515,11 +1516,25 @@ export class HostAgent {
     const win = (w: any) => (w && typeof w.used_percentage === 'number' ? { usedPercent: Math.max(0, Math.min(100, w.used_percentage)), resetsAt: typeof w.resets_at === 'number' ? new Date(w.resets_at * 1000).toISOString() : null } : null);
     const fiveHour = win(input?.rate_limits?.five_hour);
     const sevenDay = win(input?.rate_limits?.seven_day);
-    if (!fiveHour && !sevenDay) return; // not a subscription account, or no answer yet in this session
+    // Whatever other windows it gives — a model's own week, where Claude Code reports one — are passed on under
+    // their own names: the office knows what to make of `seven_day_<model>`, and keeps the rest out of the way.
+    const windows: Record<string, { usedPercent: number; resetsAt: string | null }> = {};
+    for (const [name, value] of Object.entries(input?.rate_limits && typeof input.rate_limits === 'object' ? (input.rate_limits as Record<string, unknown>) : {})) {
+      if (name === 'five_hour' || name === 'seven_day' || !/^[a-z0-9_]{1,40}$/.test(name)) continue;
+      const w = win(value);
+      if (w) windows[name] = w;
+    }
+    const names = Object.keys(input?.rate_limits && typeof input.rate_limits === 'object' ? input.rate_limits : {}).sort().join(', ');
+    if (names && names !== this.limitNames) {
+      // Said once (and again when it changes): which windows this Claude Code reports at all.
+      this.limitNames = names;
+      this.log('info', `Claude Code reports these limit windows: ${names}`);
+    }
+    if (!fiveHour && !sevenDay && !Object.keys(windows).length) return; // not a subscription account, or no answer yet in this session
     const who = this.claudeAccount(tracked.spec?.env?.CLAUDE_CONFIG_DIR || null);
-    const msg = { t: 'limits' as const, sessionId: tracked.sessionId, configDir: tracked.spec?.env?.ORCH_CLAUDE_ACCOUNT || null, email: who.email, organization: who.organization, fiveHour, sevenDay };
+    const msg = { t: 'limits' as const, sessionId: tracked.sessionId, configDir: tracked.spec?.env?.ORCH_CLAUDE_ACCOUNT || null, email: who.email, organization: who.organization, fiveHour, sevenDay, ...(Object.keys(windows).length ? { windows } : {}) };
     // The same figures again are not news.
-    const key = JSON.stringify([msg.fiveHour, msg.sevenDay, msg.email]);
+    const key = JSON.stringify([msg.fiveHour, msg.sevenDay, msg.email, windows]);
     if (this.lastLimits.get(tracked.sessionId) === key) return;
     this.lastLimits.set(tracked.sessionId, key);
     this.send(msg);

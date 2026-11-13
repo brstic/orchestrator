@@ -1645,3 +1645,35 @@ button.k-row:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+/* An employee's routines, in their own window: each with the way to change its words under it. */
+.routine-list-own {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.routine-own {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 4px 10px 6px;
+}
+.routine-own .routine-row {
+  border: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+.routine-own .routine-text {
+  white-space: normal;
+}
+.routine-change {
+  font-size: 12px;
+}
+.routine-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(110, 168, 255, 0.28);
+  border-radius: 10px;
+  background: rgba(110, 168, 255, 0.045);
+}

@@ -14,6 +14,7 @@ import { byProject, levelLine, teamLine } from '../../lib/team.ts';
 import { byDay, oneLine } from '../../lib/inbox.ts';
 import { More, PickMany, State } from './kit.tsx';
 import { accountChoices } from '../../lib/accounts.ts';
+import { RoutinesOf } from './routines.tsx';
 import { homeOf, homePatch } from '../../lib/employee-home.ts';
 import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { FolderField } from './folder-picker.tsx';
@@ -213,6 +214,8 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
   const [style, setStyle] = useState<CommunicationStyle>('concise');
   const [model, setModel] = useState('');
   const [effort, setEffort] = useState('');
+  // '' = the machine's default login.
+  const [claudeConfigDir, setClaudeConfigDir] = useState('');
   const [executionMode, setExecutionMode] = useState<ExecutionMode>('interactive_cli');
   const [instructions, setInstructions] = useState('');
   // Hiring gives someone a desk; their session starts when you first talk to them, give them a task, or press Start.
@@ -248,6 +251,7 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
         style,
         model: model.trim() || null,
         effort: effort || null,
+        ...(claudeConfigDir.trim() ? { claudeConfigDir: claudeConfigDir.trim() } : {}),
         executionMode,
         instructions,
         ...(self ? { selfDriven: true } : {}),
@@ -290,7 +294,9 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
           </Field>
         )}
       </div>
-      <div className="grid2">
+      {/* What they think with: which Claude account of that machine, which model, how hard. */}
+      <div className="grid3" data-hire-claude>
+        <AccountField hostId={hostId} host={host} value={claudeConfigDir} onChange={setClaudeConfigDir} />
         <ModelEffortFields model={model} effort={effort} onModel={setModel} onEffort={setEffort} host={host} />
       </div>
       {custom && (
@@ -688,8 +694,8 @@ registerPanel('team', TeamPanel);
 
 // ─────────────────────────── Employee ───────────────────────────
 
-type TabId = 'overview' | 'profile' | 'appearance' | 'session' | 'message' | 'history' | 'desk';
-const TAB_ARG: Record<string, TabId> = { overview: 'overview', settings: 'profile', profile: 'profile', appearance: 'appearance', session: 'session', message: 'message', history: 'history', desk: 'desk' };
+type TabId = 'overview' | 'profile' | 'appearance' | 'session' | 'routines' | 'message' | 'history' | 'desk';
+const TAB_ARG: Record<string, TabId> = { overview: 'overview', settings: 'profile', profile: 'profile', appearance: 'appearance', session: 'session', routines: 'routines', message: 'message', history: 'history', desk: 'desk' };
 
 interface Draft {
   name: string;
@@ -2039,6 +2045,8 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
   const sessions = useOffice((s) => s.sessions);
   const questions = useOffice((s) => s.questions);
   const tasks = useOffice((s) => s.tasks);
+  const routineCount = useOffice((s) => (id ? Object.values(s.routines).filter((r) => r.employeeId === id).length : 0));
+  const can = useAccess();
   const [tab, setTab] = useState<TabId>(TAB_ARG[tabArg ?? ''] ?? 'overview');
   useEffect(() => {
     setTab(TAB_ARG[tabArg ?? ''] ?? 'overview');
@@ -2115,6 +2123,8 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
           { id: 'profile', label: 'Settings' },
           { id: 'appearance', label: 'Look' },
           { id: 'session', label: 'Session' },
+          // What they repeat by themselves: seen, added to and managed here.
+          { id: 'routines', label: 'Routines', count: routineCount || undefined },
           { id: 'message', label: 'Messages' },
           { id: 'history', label: 'History' },
           // The foreman has no desk to choose.
@@ -2131,6 +2141,7 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
           <AppearanceTab e={e} />
         </div>
         {tab === 'session' && <SessionTab e={e} />}
+        {tab === 'routines' && <RoutinesOf employeeId={e.id} name={e.name} canWork={can.work(e.hostId)} />}
         {tab === 'message' && <MessageTab e={e} />}
         {tab === 'history' && <HistoryTab e={e} />}
         {tab === 'desk' && e.roleKey !== 'foreman' && <DeskTab e={e} />}

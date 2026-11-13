@@ -210,7 +210,7 @@ export type AgentToServer =
   | { t: 'resources'; resources: HostResources }
   | { t: 'usage'; sessionId: ID; usage: SessionUsage }
   /** What Claude Code's status line said about the account's rate limits, and whose account it is. */
-  | { t: 'limits'; sessionId: ID; configDir: string | null; email: string | null; organization: string | null; fiveHour: { usedPercent: number; resetsAt: string | null } | null; sevenDay: { usedPercent: number; resetsAt: string | null } | null }
+  | { t: 'limits'; sessionId: ID; configDir: string | null; email: string | null; organization: string | null; fiveHour: { usedPercent: number; resetsAt: string | null } | null; sevenDay: { usedPercent: number; resetsAt: string | null } | null; /** Every other window Claude Code gave, under its own name (`seven_day_fable`…). */ windows?: Record<string, { usedPercent: number; resetsAt: string | null }> }
   | { t: 'rpc.result'; id: string; ok: boolean; result?: unknown; error?: string }
   | ({ t: 'request'; id: string } & AgentRequest)
   | { t: 'pong' };

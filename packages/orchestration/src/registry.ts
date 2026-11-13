@@ -16,9 +16,9 @@ import type {
   TerminalScreen,
   ActivityState,
 } from '@orchestrator/contracts';
-import { AUTONOMY_LEVELS, EFFORT_CHOICES, HOOKS_VERSION, isAutonomyLevel, memberSeatOf, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, directsOthers, LEAD_ROLE, LEAD_MODEL, LEAD_EFFORT, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd } from '@orchestrator/contracts';
+import { AUTONOMY_LEVELS, EFFORT_CHOICES, HOOKS_VERSION, isAutonomyLevel, memberSeatOf, modelFamily, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, directsOthers, LEAD_ROLE, LEAD_MODEL, LEAD_EFFORT, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
-import { permissionPrompt, trustPromptKeys } from './comms.ts';
+import { inputBox, permissionPrompt, trustPromptKeys } from './comms.ts';
 import { EngineError, within } from './core.ts';
 import type { Engine } from './engine.ts';
 import { DEFAULT_HIGH_RISK_PATTERNS, asksHighRisk, permissionsFor, systemPromptFor } from './prompts.ts';
@@ -63,6 +63,13 @@ const TERMINAL_OUTPUT_EVERY_MS = 60_000;
 
 /** The pod a desk belongs to: desks are named `<pod>-a` … `<pod>-d`. */
 const podOf = (deskId: string): string => deskId.replace(/-[a-z]$/, '');
+
+/** The folder of a Claude account as an employee's record keeps it: null for the machine's default login; refused when it is not a path. */
+function accountDirOf(raw: unknown): string | null {
+  const dir = stripEnd(String(raw ?? '').trim(), '/');
+  if (dir && (!/^(~\/|\/)[A-Za-z0-9._ \/@+-]+$/.test(dir) || dir.includes('..'))) throw new EngineError('the Claude account folder must be a path like ~/.claude-work');
+  return dir || null;
+}
 
 /** What somebody who names a level that is not one is told. */
 const notALevel = (value: unknown): string => `"${truncate(String(value), 40)}" is not a level: it is one of ${AUTONOMY_LEVELS.join(', ')}`;
@@ -595,6 +602,8 @@ export class EmployeeRegistry {
       ...(by.hiredBy ? { hiredBy: by.hiredBy } : {}),
       ...(lead ? { leadScope: input.leadScope === 'office' ? ('office' as const) : ('own' as const) } : {}),
       ...(input.selfDriven ? { selfDriven: true } : {}),
+      // Which Claude account of their machine they run on, when the hire names one (else the machine's default login).
+      ...(accountDirOf(input.claudeConfigDir) ? { claudeConfigDir: accountDirOf(input.claudeConfigDir) } : {}),
     };
     this.core.put('employee', employee);
     this.core.audit(actor, 'employee.created', employee.id, { name, role: employee.roleKey });
@@ -660,8 +669,7 @@ export class EmployeeRegistry {
       if (patch[key] !== undefined) (e as any)[key] = patch[key];
     }
     if (patch.claudeConfigDir !== undefined) {
-      const dir = stripEnd(String(patch.claudeConfigDir ?? '').trim(), '/');
-      if (dir && (!/^(~\/|\/)[A-Za-z0-9._ \/@+-]+$/.test(dir) || dir.includes('..'))) throw new EngineError('the Claude account folder must be a path like ~/.claude-work');
+      const dir = accountDirOf(patch.claudeConfigDir) ?? '';
       const other = (dir || null) !== (e.claudeConfigDir ?? null);
       e.claudeConfigDir = dir || null;
       // A folder the office may not have asked about yet: asked now, so that the account has its name at once.
@@ -736,6 +744,18 @@ export class EmployeeRegistry {
  * working (trust this folder, the bypass warning) come before any; a session that continues an earlier conversation
  * still carries the time of its last sign from the run before, which must not be mistaken for one.
  */
+/**
+ * Is this screen one of Claude Code's own questions at the start of a session? Before anything has been heard from
+ * the session it may be (it used to be that no hook fires before them; a newer Claude Code may run one first).
+ * Afterwards only when Claude Code's input box is not on the screen and a list of answers is — a session that is at
+ * work shows the box, and words of such a question in its conversation are not the question.
+ */
+function atStartDialog(s: AgentSession, screen: TerminalScreen): boolean {
+  if (!heardFromSinceStart(s)) return true;
+  // Later: the box is not there, and a list of answers with "Yes" among them is — the shape of the question itself.
+  return !inputBox(screen.lines) && !!trustPromptKeys(screen.lines);
+}
+
 function heardFromSinceStart(s: AgentSession): boolean {
   if (!s.lastEventAt) return false;
   return !s.startedAt || Date.parse(s.lastEventAt) >= Date.parse(s.startedAt);
@@ -756,7 +776,7 @@ export const SESSION_ROWS = 44;
 
 /** Claude Code's warning at the first start in bypass mode (its wording, as in the installed program). */
 const BYPASS_WARNING = /Bypass Permissions mode/i;
-const TRUST_PROMPT = /(do you trust the files in this folder|trust this folder|is this a project you (created|trust))/i;
+const TRUST_PROMPT = /(do you trust the files in this folder|trust this folder|is this a project you (created|trust)|accessing workspace)/i;
 
 export class SessionRegistry {
   private eng: Engine;
@@ -767,17 +787,35 @@ export class SessionRegistry {
    * The first time a Claude account is used in bypass mode, Claude Code shows a warning and asks whoever is at the
    * keyboard to accept responsibility for what runs without checks ("Yes, I accept" / "No, exit"). Nobody is at the
    * keyboard: the owner is asked in the office, once — Claude Code remembers the answer for that account. It is the
-   * owner's to accept, never the office's by itself, whatever the employee's level.
+   * owner's to accept — and since 2026-11-13 the owner has accepted it once for all (`acceptStartPrompts`): on the
+   * office's own machines the office answers "Yes, I accept" for an Unrestricted employee itself. Asked as before
+   * when that is switched off, on a member's own computer, or when the warning's options cannot be read.
    */
   private bypassWarningOnScreen(sessionId: string, screen: TerminalScreen): void {
     if (this.bypassAsked.has(sessionId)) return;
     const s = this.core.sessions.get(sessionId);
-    if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || heardFromSinceStart(s)) return;
+    if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || !atStartDialog(s, screen)) return;
     const text = screen.lines.join('\n').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
     if (!BYPASS_WARNING.test(text) || !/Yes, I accept/.test(text)) return;
     this.bypassAsked.add(sessionId);
     const employee = this.core.employees.get(s.employeeId) ?? null;
     const host = this.core.hosts.get(s.hostId);
+    // The owner's standing word (Settings → Employees, on unless switched off): for somebody an owner put on
+    // Unrestricted, on one of the office's own machines, the office chooses "Yes, I accept" itself — on the record.
+    // On a member's own computer the warning is about that member's machine and is never accepted for them.
+    if (this.core.settings.acceptStartPrompts !== false && employee?.autonomy === 'unrestricted' && !this.eng.hosts.memberOfHost(s.hostId)) {
+      const keys = trustPromptKeys(screen.lines);
+      if (keys) {
+        void this.core.agents
+          .rpc(s.hostId, { method: 'session.keys', params: { sessionId: s.id, keys } })
+          .then(() => {
+            this.core.audit('system', 'bypass.auto_accepted', s.id, { employee: employee.name, host: host?.name ?? s.hostId, account: employee.claudeConfigDir ?? 'default' });
+            this.core.event({ type: 'session.started', source: 'server', summary: `${employee.name} is on Unrestricted: Claude Code's warning about running without permission checks was accepted for them on ${host?.name ?? 'that machine'}, as the owner asked (Settings → Employees)`, sessionId: s.id, employeeId: employee.id, hostId: s.hostId, data: { bypassWarning: 'auto' } });
+          })
+          .catch(() => this.bypassAsked.delete(sessionId));
+        return;
+      }
+    }
     this.setActivity(s, 'needs_approval', 'Claude Code asks you to accept running without permission checks');
     this.eng.comms.createQuestion({
       kind: 'trust_prompt',
@@ -1183,6 +1221,8 @@ export class SessionRegistry {
 
   /** Claude accounts and what Claude Code last said about their limits, by `<host>|<config folder>`. */
   private accounts = new Map<string, AccountUsage>();
+  /** Which model a refused turn said an employee thinks with, when their own setting does not say ("the account's default"). */
+  private refusedFamily = new Map<string, string>();
   private accountsLoaded = false;
 
   private loadAccounts(): void {
@@ -1192,15 +1232,25 @@ export class SessionRegistry {
   }
 
   /** A session's status line reported its account's rate limits. */
-  onLimits(hostId: string, msg: { sessionId: string; configDir: string | null; email: string | null; organization: string | null; fiveHour: AccountUsage['fiveHour']; sevenDay: AccountUsage['sevenDay'] }): void {
+  onLimits(hostId: string, msg: { sessionId: string; configDir: string | null; email: string | null; organization: string | null; fiveHour: AccountUsage['fiveHour']; sevenDay: AccountUsage['sevenDay']; windows?: Record<string, { usedPercent: number; resetsAt: string | null }> }): void {
     const s = this.core.sessions.get(msg.sessionId);
     if (!s || s.hostId !== hostId) return;
     this.loadAccounts();
     const key = `${hostId}|${msg.configDir ?? 'default'}`;
-    this.accounts.set(key, { key, hostId, configDir: msg.configDir, email: msg.email, organization: msg.organization, fiveHour: msg.fiveHour, sevenDay: msg.sevenDay, reportedAt: nowIso(), reportedBy: s.employeeId ?? null, employeeIds: [], spentUntil: this.accounts.get(key)?.spentUntil ?? null, provider: this.accounts.get(key)?.provider ?? null, endpoint: this.accounts.get(key)?.endpoint ?? null });
+    const had = this.accounts.get(key);
+    // A model's own week: what a refused turn taught stands until its time; what Claude Code reports itself
+    // (`seven_day_<model>`, where it gives one) is the figure from then on.
+    const weeks: NonNullable<AccountUsage['modelWeeks']> = {};
+    for (const [family, w] of Object.entries(had?.modelWeeks ?? {})) if (w.from === 'refused' && weekFull(w)) weeks[family] = w;
+    for (const [name, w] of Object.entries(msg.windows ?? {})) {
+      const m = /^(?:seven_day|weekly|week)_([a-z0-9_]+)$/.exec(name);
+      const family = m ? modelFamily(m[1]) || m[1]!.replace(/_/g, '-') : '';
+      if (family && w && typeof w.usedPercent === 'number') weeks[family] = { usedPercent: w.usedPercent, resetsAt: w.resetsAt ?? null, from: 'reported' };
+    }
+    this.accounts.set(key, { key, hostId, configDir: msg.configDir, email: msg.email, organization: msg.organization, fiveHour: msg.fiveHour ?? had?.fiveHour ?? null, sevenDay: msg.sevenDay ?? had?.sevenDay ?? null, ...(Object.keys(weeks).length ? { modelWeeks: weeks } : {}), reportedAt: nowIso(), reportedBy: s.employeeId ?? null, employeeIds: [], spentUntil: had?.spentUntil ?? null, provider: had?.provider ?? null, endpoint: had?.endpoint ?? null });
     this.core.store.kvSet('accounts', [...this.accounts.values()]);
-    // An account that has just run out: its people go to another one, if the machine has one with room.
-    if (exhausted({ fiveHour: msg.fiveHour, sevenDay: msg.sevenDay })) void this.failover();
+    // An account that has just run out — or a model's week on it: its people go to another one, if the machine has one with room.
+    if (exhausted({ fiveHour: msg.fiveHour, sevenDay: msg.sevenDay }) || Object.values(weeks).some(weekFull)) void this.failover();
   }
 
   /**
@@ -1217,11 +1267,28 @@ export class SessionRegistry {
     const dir = session.claudeConfigDir !== undefined ? session.claudeConfigDir : (e.claudeConfigDir ?? null);
     const key = `${e.hostId}|${dir ?? 'default'}`;
     const a = this.accounts.get(key) ?? { key, hostId: e.hostId, configDir: dir, email: null, organization: null, fiveHour: null, sevenDay: null, reportedAt: null, reportedBy: null, employeeIds: [] };
+    // The week of one model ("weekly limit … Fable"): the account is not used up, that model on it is. Whoever
+    // thinks with it goes to an account where it has room; the others stay.
+    const family = /week/i.test(error) ? modelFamily(error) : '';
+    if (family) {
+      const named = resetNamedIn(error);
+      const week = a.sevenDay?.resetsAt && Date.parse(a.sevenDay.resetsAt) > Date.now() ? a.sevenDay.resetsAt : null;
+      // (Until the time it names; else until the week for all models turns; else for a day, and then it is tried again.)
+      const until = named ?? week ?? new Date(Date.now() + 24 * 3600_000).toISOString();
+      a.modelWeeks = { ...(a.modelWeeks ?? {}), [family]: { usedPercent: 100, resetsAt: until, from: 'refused' } };
+      // Their own model may be "whatever the account uses": the refusal says which that is.
+      this.refusedFamily.set(e.id, family);
+      this.accounts.set(key, a);
+      this.core.store.kvSet('accounts', [...this.accounts.values()]);
+      this.core.log('info', `${e.name}'s turn was refused for the weekly limit of ${family} (${truncate(error, 160)}); on ${a.email ?? a.configDir ?? 'the default account'} ${family} counts as used up until ${until}`);
+      void this.failover();
+      return;
+    }
     const resets = [a.fiveHour, a.sevenDay].filter((w) => !!w && w.usedPercent >= 90 && !!w.resetsAt && Date.parse(w.resetsAt) > Date.now()).map((w) => w!.resetsAt!).sort();
     a.spentUntil = resets[0] ?? new Date(Date.now() + 60 * 60_000).toISOString();
     this.accounts.set(key, a);
     this.core.store.kvSet('accounts', [...this.accounts.values()]);
-    this.core.log('info', `${e.name}'s turn was refused for the account's limit (${error}); ${a.email ?? a.configDir ?? 'the default account'} counts as used up until ${a.spentUntil}`);
+    this.core.log('info', `${e.name}'s turn was refused for the account's limit (${truncate(error, 160)}); ${a.email ?? a.configDir ?? 'the default account'} counts as used up until ${a.spentUntil}`);
     void this.failover();
   }
 
@@ -1260,6 +1327,11 @@ export class SessionRegistry {
     const now = Date.now();
     for (const row of out.values()) {
       for (const k of ['fiveHour', 'sevenDay'] as const) if (row[k]?.resetsAt && Date.parse(row[k]!.resetsAt!) < now) row[k] = { usedPercent: 0, resetsAt: null };
+      if (row.modelWeeks) {
+        const still = Object.fromEntries(Object.entries(row.modelWeeks).filter(([, w]) => !w.resetsAt || Date.parse(w.resetsAt) > now));
+        if (Object.keys(still).length) row.modelWeeks = still;
+        else delete row.modelWeeks;
+      }
       row.exhausted = exhausted(row);
       const login = this.logins.get(row.key);
       row.loggedIn = login ? login.loggedIn : row.email ? true : null;
@@ -1640,7 +1712,9 @@ export class SessionRegistry {
     try {
       const accounts = this.accountUsage();
       // Asked for by an owner ("move them now"): that one account, whatever its figures say.
-      const spent = accounts.filter((a) => (force ? a.key === force.key : a.exhausted) && a.employeeIds.length > 0);
+      // (Also an account on which only one model's week is used up: those who think with that model move, the rest stay.)
+      const fullFor = (a: AccountUsage, family: string) => !!family && !!a.modelWeeks?.[family] && weekFull(a.modelWeeks[family]!);
+      const spent = accounts.filter((a) => (force ? a.key === force.key : a.exhausted || Object.values(a.modelWeeks ?? {}).some(weekFull)) && a.employeeIds.length > 0);
       for (const from of spent) {
         if (!this.core.agents.isOnline(from.hostId)) continue;
         // The same service only: nobody is taken from Claude to another service's models (or back) by the office itself.
@@ -1659,14 +1733,21 @@ export class SessionRegistry {
           // second Claude is started beside it. (The same for an employee the office gives no work of its own accord.)
           const theirs = this.core.runningSessionOf(id);
           if ((theirs && theirs.origin !== 'managed') || e.selfDriven) continue;
+          // What they think with: their own setting, what their session runs, or what a refused turn said it was.
+          const family = modelFamily(e.model) || modelFamily(theirs?.model) || this.refusedFamily.get(id) || '';
+          // Only a model's week is used up here, and it is not theirs: they stay.
+          if (!force && !from.exhausted && !fullFor(from, family)) continue;
+          // Not onto an account where the same model's week is used up too.
+          const fit = ready.filter((a) => !fullFor(a, family));
+          if (!fit.length) continue;
           // The account with the most room, counting whom this round already put there.
-          const to = [...ready].sort((a, b) => used(a) + (load.get(a.key) ?? 0) * 3 - (used(b) + (load.get(b.key) ?? 0) * 3))[0]!;
+          const to = [...fit].sort((a, b) => used(a) + (load.get(a.key) ?? 0) * 3 - (used(b) + (load.get(b.key) ?? 0) * 3))[0]!;
           load.set(to.key, (load.get(to.key) ?? 0) + 1);
           this.movedAt.set(id, Date.now());
           e.claudeConfigDir = to.configDir;
           this.core.put('employee', e);
           const name = (a: AccountUsage) => a.email ?? a.configDir ?? 'the default account';
-          const until = [from.fiveHour, from.sevenDay].filter((w) => w && w.usedPercent >= 99 && w.resetsAt).map((w) => w!.resetsAt!).sort().pop() ?? (from.spentUntil && Date.parse(from.spentUntil) > Date.now() ? from.spentUntil : undefined);
+          const until = [from.fiveHour, from.sevenDay, fullFor(from, family) ? from.modelWeeks![family]! : null].filter((w) => w && w.usedPercent >= 99 && w.resetsAt).map((w) => w!.resetsAt!).sort().pop() ?? (from.spentUntil && Date.parse(from.spentUntil) > Date.now() ? from.spentUntil : undefined);
           this.core.audit(force?.actor ?? 'office', 'account.switched', id, { from: from.configDir, to: to.configDir });
           this.core.event({ type: 'account.switched', source: force ? 'owner' : 'server', summary: force ? `${e.name} was put on another Claude account (${name(to)}) by ${force.actor === 'owner' ? 'the boss' : force.actor}` : `${e.name} was put on another Claude account (${name(to)}): ${name(from)} has used up its allowance${until ? ` until ${until.slice(11, 16)} UTC` : ''}`, employeeId: id, hostId: from.hostId, data: { from: from.configDir, to: to.configDir, resetsAt: until ?? null } });
           moved++;
@@ -1712,20 +1793,22 @@ export class SessionRegistry {
     // Only the interactive CLI shows a trust prompt; an SDK-managed worker's pane is a transcript.
     // (Also a session that continues an earlier conversation: started in another folder than before — its own
     // subfolder, say — Claude Code asks about that folder too, before anything else happens.)
-    if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || heardFromSinceStart(s)) return;
+    if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || !atStartDialog(s, screen)) return;
     const text = screen.lines.join('\n').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
     if (!TRUST_PROMPT.test(text)) return;
     this.trustAsked.add(sessionId);
     const employee = this.core.employees.get(s.employeeId) ?? null;
-    if (employee?.autonomy === 'auto' || employee?.autonomy === 'unrestricted') {
-      // The owner put this employee in this folder and asked not to be asked: answer "yes" for them, on the record.
+    // Whoever put this employee in this folder chose the folder: the office answers "yes" for them, on the record —
+    // at every level since 2026-11-13 (the owner: "say yes and trust the folder by itself, instead of getting stuck");
+    // with that switched off, only for those on Auto and Unrestricted, as before.
+    if (employee && (this.core.settings.acceptStartPrompts !== false || employee.autonomy === 'auto' || employee.autonomy === 'unrestricted')) {
       const keys = trustPromptKeys(screen.lines);
       if (keys) {
         void this.core.agents
           .rpc(s.hostId, { method: 'session.keys', params: { sessionId: s.id, keys } })
           .then(() => {
             this.core.audit('system', 'trust.auto_accepted', s.id, { employee: employee.name, cwd: s.cwd });
-            this.core.event({ type: 'session.started', source: 'server', summary: `${employee.name} is on auto: the folder ${s.cwd} was trusted for Claude Code without asking you`, sessionId: s.id, employeeId: employee.id, hostId: s.hostId, data: { trust: 'auto', cwd: s.cwd } });
+            this.core.event({ type: 'session.started', source: 'server', summary: `The folder ${s.cwd} was trusted for Claude Code without asking you (${employee.name} was put there)`, sessionId: s.id, employeeId: employee.id, hostId: s.hostId, data: { trust: 'auto', cwd: s.cwd } });
           })
           .catch(() => this.trustAsked.delete(sessionId));
         return;
@@ -2122,6 +2205,16 @@ export class SessionRegistry {
 }
 
 /** Used up for now: one of the two windows is at its limit and has not reset yet. */
+/** A model's week is used up: at its limit, and its time has not come (one that names no time is believed while it stands). */
+export const weekFull = (w: { usedPercent: number; resetsAt: string | null }): boolean => w.usedPercent >= 99 && (!w.resetsAt || Date.parse(w.resetsAt) > Date.now());
+
+/** The time a refusal names for when the limit lifts, if it names one the office can read: an ISO time, or seconds since 1970 after "reset". */
+export function resetNamedIn(text: string): string | null {
+  const iso = /\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)\b/.exec(text)?.[1];
+  const at = iso ? Date.parse(iso) : Number(/reset[a-z_ ]*[^0-9]{0,12}(\d{10})\b/i.exec(text)?.[1] ?? NaN) * 1000;
+  return Number.isFinite(at) && at > Date.now() && at < Date.now() + 14 * 86_400_000 ? new Date(at).toISOString() : null;
+}
+
 export function exhausted(a: Pick<AccountUsage, 'fiveHour' | 'sevenDay'> & { spentUntil?: string | null; reportedAt?: string | null }): boolean {
   // A figure that names no reset time is believed for as long as its window is (five hours, a week) from when it was
   // reported — not for ever: once everybody has been moved off an account, nobody reports a newer figure for it.

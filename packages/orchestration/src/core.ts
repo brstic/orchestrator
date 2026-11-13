@@ -486,6 +486,7 @@ export class Core {
       sleepAfterMinutes: patch.sleepAfterMinutes === undefined ? this._settings.sleepAfterMinutes : sanitizeSleep(patch.sleepAfterMinutes, this._settings.sleepAfterMinutes),
       // A switch is on or off (anything that is not a plain "off" keeps the hold).
       ...(patch.unrestrictedAsksHighRisk === undefined ? {} : { unrestrictedAsksHighRisk: patch.unrestrictedAsksHighRisk !== false }),
+      ...(patch.acceptStartPrompts === undefined ? {} : { acceptStartPrompts: patch.acceptStartPrompts !== false }),
       // A place the office knows, or the one it had.
       ...(patch.surroundings === undefined ? {} : { surroundings: (SURROUNDINGS as readonly unknown[]).includes(patch.surroundings) ? patch.surroundings : this._settings.surroundings }),
       // Who reviews a finished task when nobody chose: one of the four, or what it was.

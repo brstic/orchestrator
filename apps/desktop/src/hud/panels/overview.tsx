@@ -6,6 +6,7 @@ import { activityOf, currentTaskOf, sessionOfEmployee, useOffice } from '../../l
 import { api } from '../../lib/api.ts';
 import { act } from '../core.tsx';
 import { ClaudeAccounts, Portfolio, Timeline, Usage } from './ceo.tsx';
+import { WhoUsesWhat } from './claude-use.tsx';
 import { registerPanel } from './index.tsx';
 import { ActivityBadge, HostLabel, NOT_AVAILABLE, attentionOf, byName, fmtDateTime, fmtInt, humanize, isLive, isWorking, onActivate, openNotificationTarget, useTick, type PanelProps } from './company-shared.tsx';
 import { needsYou } from '../../lib/attention.ts';
@@ -268,6 +269,7 @@ function OverviewPanel({ arg, onClose }: PanelProps) {
         {tab === 'usage' && (
           <div className="col" style={{ gap: 14 }}>
             <ClaudeAccounts />
+            <WhoUsesWhat />
             <details className="pc-details">
               <summary>Tokens used by the sessions</summary>
               <Usage untitled />

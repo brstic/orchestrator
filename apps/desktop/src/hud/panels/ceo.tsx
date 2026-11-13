@@ -279,7 +279,17 @@ export function ClaudeAccounts() {
                     {a.reportedAt ? (
                       <>
                         <Meter w={a.fiveHour} label="of 5 hours" />
-                        <Meter w={a.sevenDay} label="of the week" />
+                        <div className="col" style={{ gap: 4, minWidth: 0 }}>
+                          <Meter w={a.sevenDay} label="of the week" />
+                          {/* A model's own week (Fable's): beside the week for all models, when anything is known of it. */}
+                          {Object.entries(a.modelWeeks ?? {}).map(([family, w]) => (
+                            <div key={family} className={`cl-model-week${w.usedPercent >= 99 ? ' bad' : w.usedPercent >= 80 ? ' warn' : ''}`} data-model-week={family} title={`${w.from === 'refused' ? `Claude refused a turn for the weekly limit of ${family}; the office counts it as used up until then.` : `The week of ${family} alone, as Claude Code reports it.`}${w.resetsAt ? ` Resets ${new Date(w.resetsAt).toLocaleString()}.` : ''}`}>
+                              <span className="cl-model-name">{family[0]!.toUpperCase() + family.slice(1)} week</span>
+                              <span className="mono">{w.usedPercent >= 99 ? 'used up' : `${Math.round(w.usedPercent)}%`}</span>
+                              <span className="faint">{(limitText(w) ?? '').split('·')[1]?.trim() ?? ''}</span>
+                            </div>
+                          ))}
+                        </div>
                       </>
                     ) : (
                       <span className="small muted cl-span2" title="The figures come from Claude Code in a running session; they appear the next time an employee on this account starts one.">

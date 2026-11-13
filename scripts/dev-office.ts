@@ -110,7 +110,7 @@ const members: Array<{ name: string; url: string; hostId: string; socket: string
 const tokenOfInvite = (invite: string): string => JSON.parse(Buffer.from(invite.replace(/^orch-invite-v1\./, ''), 'base64url').toString('utf8')).t;
 const memberArgs = process.argv.flatMap((a, i) => (a === '--member-room' && process.argv[i + 1] ? [process.argv[i + 1]!] : []));
 // Members are invited, and an office invites only while its door is open: open it, on a port of its own.
-if (memberArgs.length || process.argv.includes('--visitor')) await api('POST', '/sharing', { open: true, port: port + 1000 });
+if (memberArgs.length || process.argv.includes('--visitor')) await api('POST', '/sharing', { open: true, port: port + 1000 <= 65535 ? port + 1000 : port - 1000 }); // (an office that was given one of the last thousand ports has its door a thousand below)
 for (const [n, arg] of memberArgs.entries()) {
   const [name = `Member ${n + 1}`, count = '2'] = arg.split(':');
   const root = path.join(fs.realpathSync(base), `member-${n}`);

@@ -1571,6 +1571,11 @@ export interface RadioNow {
 }
 
 /** One rate-limit window as Claude Code reports it for a subscription account. */
+/** The model families a subscription may limit by the week on their own, strongest first; how a model's name is read. */
+export const MODEL_FAMILIES = ['fable', 'mythos', 'opus', 'sonnet', 'haiku'] as const;
+/** "claude-fable-5-2", "Fable", "fable[1m]" → "fable"; a name that is none of the families → ''. */
+export const modelFamily = (model: string | null | undefined): string => MODEL_FAMILIES.find((f) => new RegExp(`(^|[^a-z])${f}([^a-z]|$)`, 'i').test(String(model ?? ''))) ?? '';
+
 export interface LimitWindow {
   /** Percentage of the window used, 0–100. */
   usedPercent: number;
@@ -1633,6 +1638,13 @@ export interface AccountUsage {
   endpoint?: string | null;
   fiveHour: LimitWindow | null;
   sevenDay: LimitWindow | null;
+  /**
+   * The week of one model — the allowance a subscription has for its strongest model apart from the week for all
+   * models — by the model's family ("fable", "opus"…). From Claude Code's own report where it gives one
+   * (`reported`), or from a turn it refused for that limit (`refused`: used up, until the time it named or the
+   * office's best guess). Absent: nothing is known about any.
+   */
+  modelWeeks?: Record<string, LimitWindow & { from: 'reported' | 'refused' }>;
   /** When these figures were reported, and by whose session. Null: no session on this account has reported yet. */
   reportedAt: ISODate | null;
   reportedBy: ID | null;
@@ -1728,6 +1740,17 @@ export interface OwnerSettings {
    * stay fenced off either way.
    */
   unrestrictedAsksHighRisk?: boolean;
+  /**
+   * Claude Code's own questions at the start of a session are answered "yes" by the office itself — the owner's
+   * decision of 2026-11-13 ("make it say yes and trust the folder by itself instead of getting stuck", and of the
+   * warning about running without permission checks: "this too should pass by itself"):
+   *  - **the workspace-trust question** for the folder an employee was put in, whatever their level;
+   *  - **the Bypass Permissions warning** for an employee an owner put on Unrestricted, on the office's own machines.
+   * Each is on the record (audit and feed). Not set or true: answered by the office. false: as before this switch —
+   * the trust question is answered only for employees on Auto and Unrestricted, and the warning is the owner's to
+   * accept in the office.
+   */
+  acceptStartPrompts?: boolean;
   /**
    * Where the office stands: what is seen around the building, from above and through its windows. The office's own
    * (the same for everybody in it), chosen by an owner. Not set: `studio`, the building by itself in the dark, as it
