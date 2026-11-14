@@ -9,6 +9,7 @@ https://github.com/user-attachments/assets/6e5bbd27-3d4d-46e3-a719-cef76400f557
 <p align="center">
   <a href="#-two-minutes-to-your-first-hire"><b>Quick start</b></a> ·
   <a href="#-why-not-just-open-more-terminals"><b>Why</b></a> ·
+  <a href="#️-what-the-office-built-in-one-day"><b>Built in a day</b></a> ·
   <a href="#-screenshots-yes-it-really-looks-like-this"><b>Screenshots</b></a> ·
   <a href="#-what-you-press-and-what-really-happens"><b>What really happens</b></a> ·
   <a href="#-the-foreman"><b>The foreman</b></a> ·
@@ -35,6 +36,34 @@ The 3D office is the interface, not the point. It is **not** a dashboard with ma
 | You carry context from one agent to another by hand | They ask each other, wait for each other, hand work over and review each other, through the office's own tools — on the record |
 | One Claude account runs out and the work stops | Several accounts per machine; when one is spent its people move on by themselves |
 | Keeping everyone busy is your job | The foreman answers the operational questions and keeps people moving; a `/goal` keeps one going until it holds; routines repeat the checks |
+
+## 🏗️ What the office built in one day
+
+Twenty-one interactive 3D previews of websites for real businesses — each with its own idea, not a template — built by the office's employees (Claude Code agents) in a single day, while the owner walked the floor. They are live; open any of them.
+
+| # | For | Preview | The idea |
+| --- | --- | --- | --- |
+| 1 | vanas.rs | [vanas-preview.sparkcan.com](https://vanas-preview.sparkcan.com) | Real tiles from the catalogue on the floor and walls of a 3D bathroom |
+| 2 | energoglobal.com | [energoglobal-preview.sparkcan.com](https://energoglobal-preview.sparkcan.com) | A generator that takes itself apart as you scroll |
+| 3 | josipovic.rs | [josipovic-preview.sparkcan.com](https://josipovic-preview.sparkcan.com) | A camera lens, and focusing |
+| 4 | mocbilja.rs | [mocbilja-preview.sparkcan.com](https://mocbilja-preview.sparkcan.com) | Herbs that grow, and a map of the body |
+| 5 | sax.rs | [sax-preview.sparkcan.com](https://sax-preview.sparkcan.com) | Fabric in the wind |
+| 6 | casagrande.rs | [casagrande-preview.sparkcan.com](https://casagrande-preview.sparkcan.com) | A furniture configurator |
+| 7 | dar.rs | [dar-preview.sparkcan.com](https://dar-preview.sparkcan.com) | An X-ray of a tractor; its parts lead to the categories |
+| 8 | skuteribeograd.com | [skuteri-preview.sparkcan.com](https://skuteri-preview.sparkcan.com) | Riding a scooter as you scroll |
+| 9 | tehnoalat.com | [tehnoalat-preview.sparkcan.com](https://tehnoalat-preview.sparkcan.com) | A wall of hanging tools that swing |
+| 10 | borikplus.rs | [borikplus-preview.sparkcan.com](https://borikplus-preview.sparkcan.com) | A UPS and solar calculator with live gauges |
+| 11 | kupidobro.rs | [kupidobro-preview.sparkcan.com](https://kupidobro-preview.sparkcan.com) | A metal shelving unit; every shelf is a category |
+| 12 | astyle.rs | [astyle-preview.sparkcan.com](https://astyle-preview.sparkcan.com) | An order pallet and a B2B price list |
+| 13 | demkatrade.com | [demkatrade-preview.sparkcan.com](https://demkatrade-preview.sparkcan.com) | From log to pallet: the whole production line |
+| 14 | bioline.rs | [bioline-preview.sparkcan.com](https://bioline-preview.sparkcan.com) | A scale for loose tea |
+| 15 | cfsport.rs | [cfsport-preview.sparkcan.com](https://cfsport-preview.sparkcan.com) | A shaker that fills with supplements |
+| 16 | beautydoo.rs | [beautydoo-preview.sparkcan.com](https://beautydoo-preview.sparkcan.com) | A pipeline with valves that open |
+| 17 | vodoterm.co.rs | [vodoterm-preview.sparkcan.com](https://vodoterm-preview.sparkcan.com) | A house in thermal vision, and choosing a boiler |
+| 18 | agrosanmitrovic.rs | [agrosan-preview.sparkcan.com](https://agrosan-preview.sparkcan.com) | A greenhouse through the seasons |
+| 19 | europaint.rs | [europaint-preview.sparkcan.com](https://europaint-preview.sparkcan.com) | Repairing a car door in a paint booth |
+| 20 | bajkolino.rs | [bajkolino-preview.sparkcan.com](https://bajkolino-preview.sparkcan.com) | A toy town with a little car |
+| 21 | fravero-prophoto.com | [fravero-preview.sparkcan.com](https://fravero-preview.sparkcan.com) | Atelier: a 3D photo album with real materials and gold foil |
 
 ## 📸 Screenshots (yes, it really looks like this)
 
