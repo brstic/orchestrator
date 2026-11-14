@@ -36,7 +36,7 @@ There is one office and it lives on the server. Desktop apps are clients; the pa
 | Not ours | `~/.orchestrator-mac-link-backup-2026-11-10` — the agent of the old Mac office, stopped and set aside. Safe to delete |
 
 ### The domain
-`office.sparkcan.com` → DNS record in Cloudflare (`office`, A, `<server-public-ip>`, **DNS only** — not proxied) → the server's public address, port 443 → nginx (CloudPanel site `office.sparkcan.com`, type *reverse proxy*) → `https://127.0.0.1:4610`, the office's door.
+`office.sparkcan.com` → DNS record in Cloudflare (`office`, A, **DNS only** — not proxied; it pointed at `<server-public-ip>` when made and at `<server-public-ip>` — the server's public address — on 2026-11-14) → the server's public address, port 443 → nginx (CloudPanel site `office.sparkcan.com`, type *reverse proxy*) → `https://127.0.0.1:4610`, the office's door.
 
 - **Certificate:** Let's Encrypt, installed and renewed by CloudPanel (`sudo clpctl lets-encrypt:install:certificate --domainName=office.sparkcan.com` to do it by hand). The desktop app trusts an office when its certificate is the one named in the invitation (addresses with a port: the door's own certificate) **or** one the system trusts for that name (the domain) — so renewals need nothing. If the DNS record is ever switched to proxied, Cloudflare's certificate is trusted the same way.
 - **The proxy must point at the door (4610), never at the office's own port (4600):** the door is what marks a request as coming from outside, and only that keeps the office's own owner token from being usable over the network. Checked after setup: the owner token gets 401 through the domain.
@@ -212,3 +212,7 @@ Install there (`INSTALL.md` section 0), stop both services, copy `~/.orchestrato
 | Linux / Windows desktop bundles, `.deb` | `node scripts/package.mjs --linux --windows --deb` | other platforms — **currently stale and untested on real machines** |
 
 The version number is `version` in the root `package.json`; `app/BUILD` on the server records the commit and time of the deploy.
+
+## The public demo office
+
+A second, separate office on the same server — `orchestrator-demo` (user service), `office-demo.sparkcan.com`, fresh at every start and every night at 04:00 UTC; `pnpm deploy:server` restarts it with the real one. Everything about it: [DEMO.md](DEMO.md).

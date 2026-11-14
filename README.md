@@ -6,7 +6,10 @@ https://github.com/user-attachments/assets/6e5bbd27-3d4d-46e3-a719-cef76400f557
 
 <p align="center"><sub>▶ The office in 50 seconds (sound on). The real app, recorded in a demo office whose employees are scripted stand-ins, so no Claude usage was spent.<br>Music: “Funkorama” by Kevin MacLeod (<a href="https://incompetech.com">incompetech.com</a>), licensed under <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons: By Attribution 4.0</a>.</sub></p>
 
+<p align="center"><b>👀 Walk in and watch: <a href="https://office-demo.sparkcan.com">office-demo.sparkcan.com</a></b><br><sub>A live demo office, open to anybody, no sign-up: you are in at once as a visitor. Its employees are scripted stand-ins, not Claude — so it costs nothing to keep open — but the office around them (sessions, hooks, worktrees, tests, commits, questions, approvals) is the real one. Use a computer: phones are turned away.</sub></p>
+
 <p align="center">
+  <a href="https://office-demo.sparkcan.com"><b>Live demo</b></a> ·
   <a href="#-two-minutes-to-your-first-hire"><b>Quick start</b></a> ·
   <a href="#-why-not-just-open-more-terminals"><b>Why</b></a> ·
   <a href="#️-what-the-office-built-in-one-day"><b>Built in a day</b></a> ·
