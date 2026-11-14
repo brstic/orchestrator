@@ -47,7 +47,7 @@ person in the office: GET /api/tasks/:id/attachments/:aid  → the picture, or a
 
 Asked for by an owner (Fenix, 2026-11-12): "when I talk to an employee I want to paste a picture — I grab a screenshot and say 'look at this'. They are temporary, we need not remember them long. And a way to give them files. But most of all: Ctrl+V."
 
-In the conversation window (Talk): **Ctrl+V** with a picture on the clipboard, a file **dropped** on the box, or **Attach…**. What was added waits above the text box as a small picture or a name, with a × to take it out; it is sent to the office at once, so *Send* does not wait for it. A picture can be the whole message (the office writes "Look at this." for the words).
+In the conversation window (Talk): **Ctrl+V** with a picture on the clipboard, a file **dropped** on the box, or the **paperclip** at the box's left. What was added waits at the top of the box as a small picture or a name, with a × to take it out; it is sent to the office at once, so *Send* does not wait for it. A picture can be the whole message (the office writes "Look at this." for the words).
 
 ```
 window ──(pieces of ≤ 384 KB)──▶ office: <data folder>/files-said/<employee id>/<file id>      held for whoever sent it
@@ -59,7 +59,7 @@ window ──(pieces of ≤ 384 KB)──▶ office: <data folder>/files-said/<e
                          Claude Code: Read <path>   → an image is seen, a document is read
 ```
 
-- **Not a task's files.** Nothing is tracked and nothing is evidence. With *Track as a task* ticked, the same files are attached to the new task instead (the part above), and are kept with it.
+- **Not a task's files.** Nothing is tracked and nothing is evidence. With *Track as a task* on (the clipboard icon), the same files are attached to the new task instead (the part above), and are kept with it.
 - **The message keeps two texts**: `said` — what the person wrote, which the conversation shows with the pictures over it — and `body`, the same with the paths added for the employee. `Message.files` lists what went along.
 - **Nothing is sent without its file.** A file that has not arrived whole, or a machine that is not in the office, refuses the message: "look at this" does not arrive alone.
 - **How long.** The office keeps its copy **seven days** (`SAID_KEEP_MS`) so the conversation can show the picture, then drops it and the conversation says "no longer kept here". A file that was uploaded and never said is given up after an hour, or at a restart. **The copy on the employee's machine is not removed by anything**: there is no call for it yet, and a member's own computer runs the agent of their desktop app.

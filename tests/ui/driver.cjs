@@ -794,7 +794,10 @@ async function scenario() {
     const ava = await js(`window.__t.emp('Ava').id`);
     await js(`window.__t.store().openPanel('talk', ${JSON.stringify(ava)})`);
     await type(`window.__t.scope().querySelector('textarea')`, 'Check the queue and say what is new @@fake: say routine-check-7781@@');
-    await click(`window.__t.checkbox('Repeat every')`, 'the "Repeat every" checkbox');
+    await click(`window.__t.scope().querySelector('.talk-compose [data-talk-tool="repeat"]')`, 'the Repeat tool of the message box');
+    // The choice stands over the words as a pill, with its minutes.
+    await waitFor(`!!window.__t.scope().querySelector('[data-talk-mode="repeat"] input.routine-minutes')`, 3000);
+    await shot('talk-repeat-on');
     // The cost is said where the choice is made, and the button says what it will do.
     await waitFor(`/Each run is a real Claude turn on Ava's account/.test(window.__t.scope().textContent) && !!window.__t.byText('Repeat')`, 4000);
     await clickText('Repeat');
@@ -804,7 +807,7 @@ async function scenario() {
     await waitFor(`[...window.__t.scope().querySelectorAll('.talk-them')].some((b) => /routine-check-7781/.test(b.textContent))`, 25000);
     await waitFor(`Object.values(window.__t.store().routines).some((r) => r.employeeId === ${JSON.stringify(ava)} && r.runs === 1 && r.lastOutcome === 'delivered')`, 5000);
     // The box is back to saying things once.
-    const reset = await js(`!window.__t.checkbox('Repeat every').checked && [...window.__t.scope().querySelectorAll('.talk-compose button')].some((b) => b.textContent.trim() === 'Send') && window.__t.scope().querySelector('textarea').value === ''`);
+    const reset = await js(`window.__t.scope().querySelector('[data-talk-tool="repeat"]').getAttribute('aria-pressed') === 'false' && !window.__t.scope().querySelector('[data-talk-mode]') && [...window.__t.scope().querySelectorAll('.talk-compose button')].some((b) => b.textContent.trim() === 'Send') && window.__t.scope().querySelector('textarea').value === ''`);
     await shot('routine');
     // Pause it, then remove it: both from its row.
     await click(`window.__t.byText('Pause', 'button', window.__t.scope().querySelector('.routine-row'))`, 'Pause');

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { OrchestratorEvent, SaidFile } from '@orchestrator/contracts';
-import { ACTIVITY_LABEL } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, ROUTINE_LIMITS } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Markdown, Window, clock } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { activityOf, currentTaskOf, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
@@ -9,7 +9,7 @@ import { NO_TRAIL, stepInto, toneOf, took, withKeys } from '../../lib/live-line.
 import { waitingForLines } from '../../lib/views.ts';
 import { QuestionBody, act } from '../core.tsx';
 import { registerPanel } from './index.tsx';
-import { RepeatChoice, RepeatHint, RoutineList, createRoutine } from './routines.tsx';
+import { RepeatHint, RoutineList, createRoutine } from './routines.tsx';
 import { GoalStrip, clearGoal, goalNow, setGoal } from './goal.tsx';
 import { goalCommand } from '../../lib/goal.ts';
 import { GivenFile, PendingStrip, SaidFilesOf, usePendingFiles } from './said-files.tsx';
@@ -34,6 +34,37 @@ function TaskFileGiven({ taskId, file, caption }: { taskId: string; file: SaidFi
     </div>
   );
 }
+
+const G = { viewBox: '0 0 24 24', width: 18, height: 18, fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const;
+const ClipGlyph = () => (
+  <svg {...G}>
+    <path d="M21 11.5 12.6 19.9a5.2 5.2 0 0 1-7.4-7.4l8.5-8.5a3.5 3.5 0 0 1 4.9 4.9l-8.5 8.5a1.7 1.7 0 0 1-2.5-2.5l7.8-7.8" />
+  </svg>
+);
+const TaskGlyph = () => (
+  <svg {...G}>
+    <rect x="4.5" y="4" width="15" height="17" rx="2.5" />
+    <path d="M9 3v2.5h6V3M8.5 13l2.5 2.5 4.5-5" />
+  </svg>
+);
+const RepeatGlyph = () => (
+  <svg {...G}>
+    <path d="M17 2.5 20.5 6 17 9.5" />
+    <path d="M3.5 12V10a4 4 0 0 1 4-4h13" />
+    <path d="M7 21.5 3.5 18 7 14.5" />
+    <path d="M20.5 12v2a4 4 0 0 1-4 4h-13" />
+  </svg>
+);
+const SendGlyph = () => (
+  <svg {...G} strokeWidth={2.2}>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </svg>
+);
+const StopGlyph = () => (
+  <svg {...G} fill="currentColor" stroke="none">
+    <rect x="7" y="7" width="10" height="10" rx="1.8" />
+  </svg>
+);
 
 const WORKING = new Set(['thinking', 'reading', 'coding', 'testing', 'debugging', 'running_command', 'researching', 'planning', 'reviewing', 'delegating']);
 
@@ -143,6 +174,13 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
   useEffect(() => {
     setTimeout(() => input.current?.focus(), 30);
   }, [arg]);
+  // The box grows with what is written, up to a few lines, then scrolls.
+  useEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+  }, [text]);
 
   if (!e) return null;
   const session = sessionOfEmployee(s.sessions, e.id);
@@ -153,6 +191,8 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
   const questions = openQuestionsOf(s.questions, e.id);
   const folder = project?.workspace === 'in_place' ? project.repoPath : (session?.cwd ?? e.workingDir ?? project?.repoPath ?? null);
   const hooks = !session || session.capabilities.hooks;
+  // While they are at something, an empty box offers to stop them where Send stands (as a chat's stop button).
+  const working = live && (session?.inTurn === true || WORKING.has(activity));
 
   const send = async () => {
     const body = text.trim();
@@ -208,12 +248,12 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
     <Window
       kit
       title={
-        <span className="row">
+        <button type="button" className="talk-who" onClick={() => s.openPanel('employee', e.id)} title={`Open ${e.name}'s profile`}>
           <Avatar appearance={e.appearance} size={30} offline={!live} />
           <span>
             {e.name} <span className="muted" style={{ fontWeight: 500 }}>· {e.title}</span>
           </span>
-        </span>
+        </button>
       }
       subtitle={folder ? <span className="mono">{folder}</span> : 'No folder yet — give them a project or a working directory in their profile.'}
       onClose={onClose}
@@ -227,6 +267,9 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
               Documents ({docCount})
             </Button>
           )}
+          <Button small onClick={() => s.openPanel('employee', e.id)} title={`${e.name}'s profile: what they are, their sessions, routines, skills and memory`}>
+            Profile
+          </Button>
           <Button small onClick={() => s.enterWorkstation(e.id)} disabled={!session}>
             Open terminal
           </Button>
@@ -306,41 +349,90 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
         onDragLeave={(ev) => !ev.currentTarget.contains(ev.relatedTarget as Node | null) && setOver(false)}
         onDrop={(ev) => (setOver(false), pending.onDrop(ev))}
       >
-        <PendingStrip files={pending.files} onRemove={pending.remove} />
-        <textarea
-          ref={input}
-          value={text}
-          rows={3}
-          placeholder={live ? `Tell ${e.name} what to do… (paste a screenshot with Ctrl+V; /goal … to keep them at it until it holds)` : `${e.name} is not at their desk. Sending a message starts their session.`}
-          onChange={(ev) => setText(ev.target.value)}
-          onPaste={pending.onPaste}
-          onKeyDown={(ev) => {
-            if (ev.key === 'Enter' && !ev.shiftKey) {
-              ev.preventDefault();
-              void send();
-            }
-          }}
-        />
-        <div className="row spread">
-          <label className="check small" title={e.projectId ? 'A task is tracked on the board and only counts as done after Orchestrator verifies it' : 'Needs a project or folder'}>
-            <input type="checkbox" checked={asTask && !repeat.on} disabled={!e.projectId || repeat.on} onChange={(ev) => setAsTask(ev.target.checked)} />
-            Track as a task{task ? ` (after ${task.key})` : ''} — verified when done
-          </label>
-          <RepeatChoice on={repeat.on} minutes={repeat.minutes} name={e.name} onChange={(on, minutes) => setRepeat({ on, minutes })} />
-          <div className="row">
+        {/* One box, as in a chat: what goes with the message on top, the words, and under them the few things a message can be. */}
+        <div className="talk-box" onMouseDown={(ev) => ev.target === ev.currentTarget && (ev.preventDefault(), input.current?.focus())}>
+          <PendingStrip files={pending.files} onRemove={pending.remove} />
+          {(asTask || repeat.on) && (
+            <div className="talk-modes">
+              {asTask && !repeat.on && (
+                <span className="talk-mode" data-talk-mode="task" title="A task is tracked on the board and only counts as done after Orchestrator verifies it">
+                  <TaskGlyph />
+                  Task{task ? ` after ${task.key}` : ''} · verified when done
+                  <button type="button" className="talk-mode-x" aria-label="Send it as a message instead" onClick={() => setAsTask(false)}>
+                    ×
+                  </button>
+                </span>
+              )}
+              {repeat.on && (
+                <span className="talk-mode" data-talk-mode="repeat" title={`The office hands this to ${e.name} again and again, each time they are between turns. A run that finds them busy is skipped.`}>
+                  <RepeatGlyph />
+                  Repeat every
+                  <input
+                    className="routine-minutes"
+                    type="number"
+                    min={ROUTINE_LIMITS.minMinutes}
+                    max={ROUTINE_LIMITS.maxMinutes}
+                    step={1}
+                    value={repeat.minutes}
+                    aria-label="Minutes between runs"
+                    onChange={(ev) => setRepeat({ on: true, minutes: Math.max(ROUTINE_LIMITS.minMinutes, Math.min(ROUTINE_LIMITS.maxMinutes, Math.round(Number(ev.target.value)) || ROUTINE_LIMITS.defaultMinutes)) })}
+                  />
+                  min
+                  <button type="button" className="talk-mode-x" aria-label="Say it once instead" onClick={() => setRepeat({ on: false, minutes: repeat.minutes })}>
+                    ×
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
+          <textarea
+            ref={input}
+            value={text}
+            rows={1}
+            aria-label={`Message ${e.name}`}
+            title="Enter sends · Shift+Enter for a new line · paste a screenshot with Ctrl+V · /goal … keeps them at it until it holds"
+            placeholder={live ? `Message ${e.name}…` : `${e.name} is not at their desk — a message starts their session`}
+            onChange={(ev) => setText(ev.target.value)}
+            onPaste={pending.onPaste}
+            onKeyDown={(ev) => {
+              if (ev.key === 'Enter' && !ev.shiftKey) {
+                ev.preventDefault();
+                void send();
+              }
+            }}
+          />
+          <div className="talk-tools">
             <input ref={picker} type="file" multiple hidden onChange={(ev) => (pending.add([...(ev.target.files ?? [])]), (ev.target.value = ''))} />
-            <Button small onClick={() => picker.current?.click()} title="A picture or a document that goes with what you say. A screenshot can simply be pasted (Ctrl+V), and files dropped here.">
-              Attach…
-            </Button>
-            <span className="small faint">Enter to send · Shift+Enter for a new line</span>
-            {session && live && (
-              <Button small onClick={() => act(() => api('POST', `/employees/${e.id}/pause`, {}), `${e.name} paused`)} title="Stops what they are doing right now. They do nothing more until you resume them.">
-                Pause {e.name}
-              </Button>
+            <button type="button" className="talk-tool" data-talk-tool="attach" aria-label="Attach files" title="Attach a picture or a document. A screenshot can simply be pasted (Ctrl+V), and files dropped here." onClick={() => picker.current?.click()}>
+              <ClipGlyph />
+            </button>
+            <button
+              type="button"
+              className="talk-tool"
+              data-talk-tool="task"
+              aria-pressed={asTask && !repeat.on}
+              aria-label="Track as a task"
+              disabled={!e.projectId || repeat.on}
+              title={e.projectId ? `Track as a task${task ? ` (after ${task.key})` : ''}: on the board, and only done after Orchestrator verifies it` : 'A task needs a project: give them one in their profile'}
+              onClick={() => setAsTask(!asTask)}
+            >
+              <TaskGlyph />
+            </button>
+            <button type="button" className="talk-tool" data-talk-tool="repeat" aria-pressed={repeat.on} aria-label="Repeat every few minutes" title={`Repeat: the office hands this to ${e.name} every few minutes (a routine)`} onClick={() => setRepeat({ on: !repeat.on, minutes: repeat.minutes })}>
+              <RepeatGlyph />
+            </button>
+            <span className="talk-tools-gap" />
+            {working && !text.trim() && !pending.files.length ? (
+              <button type="button" className="talk-send talk-stop" data-talk-tool="pause" title="Stops what they are doing right now. They do nothing more until you resume them." onClick={() => act(() => api('POST', `/employees/${e.id}/pause`, {}), `${e.name} paused`)}>
+                <StopGlyph />
+                <span className="talk-sr">Pause {e.name}</span>
+              </button>
+            ) : (
+              <button type="button" className="talk-send" data-talk-tool="send" disabled={(!text.trim() && !pending.files.length) || busy || (!live && !e.hostId)} title={repeat.on ? 'Make it a routine (Enter)' : asTask ? 'Create the task (Enter)' : 'Send (Enter)'} onClick={send}>
+                <SendGlyph />
+                <span className="talk-sr">{repeat.on ? 'Repeat' : asTask ? 'Assign' : 'Send'}</span>
+              </button>
             )}
-            <Button variant="primary" small disabled={(!text.trim() && !pending.files.length) || busy || (!live && !e.hostId)} onClick={send}>
-              {repeat.on ? 'Repeat' : asTask ? 'Assign' : 'Send'}
-            </Button>
           </div>
         </div>
         {repeat.on && <RepeatHint name={e.name} />}

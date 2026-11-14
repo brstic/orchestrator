@@ -104,33 +104,6 @@ export function RoutineList({ employeeId, canWork = true }: { employeeId: string
   );
 }
 
-/**
- * The choice under the message box: say it once, or have the office repeat it. With it ticked, what is typed becomes
- * a routine (its first run is now) instead of a one-off message.
- */
-export function RepeatChoice({ on, minutes, name, onChange }: { on: boolean; minutes: number; name: string; onChange: (on: boolean, minutes: number) => void }) {
-  return (
-    <span className="routine-choice">
-      <label className="check small" title={`The office hands this to ${name} again and again, each time they are between turns. A run that finds them busy is skipped.`}>
-        <input type="checkbox" checked={on} onChange={(ev) => onChange(ev.target.checked, minutes)} />
-        Repeat every
-      </label>
-      <input
-        className="routine-minutes"
-        type="number"
-        min={ROUTINE_LIMITS.minMinutes}
-        max={ROUTINE_LIMITS.maxMinutes}
-        step={1}
-        value={minutes}
-        aria-label="Minutes between runs"
-        onFocus={() => !on && onChange(true, minutes)}
-        onChange={(ev) => onChange(on, Math.max(ROUTINE_LIMITS.minMinutes, Math.min(ROUTINE_LIMITS.maxMinutes, Math.round(Number(ev.target.value)) || ROUTINE_LIMITS.defaultMinutes)))}
-      />
-      <span className="small">minutes</span>
-    </span>
-  );
-}
-
 /** What repeating costs and may ask of the owner, said where the choice is made. */
 export function RepeatHint({ name }: { name: string }) {
   return (

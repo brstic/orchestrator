@@ -1745,16 +1745,166 @@ table.tbl {
     opacity: 1;
   }
 }
+/* The message box, as in a chat: one rounded box — the words, and under them the tools at the left and Send at the right. */
 .talk-compose {
   flex: none;
-  border-top: 1px solid var(--line);
-  padding: 10px 14px 12px;
+  padding: 8px 16px 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
-.talk-compose textarea {
-  min-height: 72px;
+.talk-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 8px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 22px;
+  background: var(--panel-2);
+  cursor: text;
+}
+.talk-box:focus-within {
+  border-color: rgba(110, 168, 255, 0.45);
+}
+.talk-box textarea {
+  border: 0;
+  background: transparent;
+  padding: 4px 2px;
+  min-height: 0;
+  max-height: 220px;
+  resize: none;
+  font-size: 14px;
+  line-height: 1.5;
+  box-shadow: none;
+  outline: none;
+}
+.talk-box textarea:focus {
+  box-shadow: none;
+  outline: none;
+}
+.talk-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  cursor: default;
+}
+.talk-tools-gap {
+  flex: 1;
+}
+.talk-tool {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.talk-tool:hover:not(:disabled) {
+  background: var(--panel-3);
+  color: var(--text);
+}
+.talk-tool[aria-pressed='true'] {
+  background: rgba(110, 168, 255, 0.16);
+  color: var(--accent);
+}
+.talk-tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.talk-tool:focus-visible,
+.talk-send:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.talk-send {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--panel-solid);
+  cursor: pointer;
+}
+.talk-send:disabled {
+  background: var(--panel-3);
+  color: var(--faint);
+  cursor: default;
+}
+.talk-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* What the message is besides words (a task, a routine): a small pill over the text, with its ×. */
+.talk-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.talk-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 9px;
+  border-radius: 999px;
+  background: rgba(110, 168, 255, 0.14);
+  color: var(--accent);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: default;
+}
+.talk-mode svg {
+  width: 14px;
+  height: 14px;
+}
+.talk-mode .routine-minutes {
+  width: 52px;
+  min-height: 0;
+  height: 22px;
+  padding: 1px 4px;
+  font-size: 12px;
+}
+.talk-mode-x {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 1;
+}
+.talk-mode-x:hover {
+  background: rgba(110, 168, 255, 0.2);
+}
+.talk-compose .routine-hint {
+  padding: 0 14px;
+}
+/* The name in the head is the way to their profile. */
+.talk-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 2px 8px 2px 2px;
+  margin-left: -2px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.talk-who:hover {
+  background: var(--panel-3);
 }
 /* Files that go with what is said: waiting above the text box, and in the conversation once sent. */
 .talk-compose-over {
@@ -3613,23 +3763,6 @@ button.ops-row:hover {
   padding: 3px 6px;
   text-align: right;
 }
-.routine-choice {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-.routine-choice .check {
-  margin: 0;
-}
 .routine-hint {
   line-height: 1.45;
-}
-.talk-compose .row.spread {
-  flex-wrap: wrap;
-  row-gap: 6px;
-}
-/* When the two choices take a line of their own, the send controls stay at the right. */
-.talk-compose .row.spread > .row {
-  margin-left: auto;
 }

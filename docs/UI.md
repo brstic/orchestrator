@@ -109,7 +109,22 @@ Where it is: an employee's **Also works on** (Settings), a project's **Builds on
 | My room | 2026-11-13 | See below; every tab |
 | Company | 2026-11-13 | Its frame, and the *Now* tab: what needs you as lines, and "Everyone" with a word and a dot instead of a badge (it stays a table: this is where everybody is compared). Projects, Claude, History and Record: the new frame, their insides as they were |
 | Help | 2026-11-13 | The new frame, and a list of what each window is for |
-| Tasks, a task, New task, Meetings, Access, Vault, Settings, Map, Floor plan, Terminals, Hi-fi, TV, Arcade, Talk, a question, a desk | 2026-11-13 | **The new frame only** (the window's head, its air, hanging from the top): their insides are as they were. Tasks keeps the board the owner knows (`add-to-a-layout-do-not-replace-it`) |
+| Talk (its message box and its head) | 2026-11-14 | See below. The conversation itself is as it was |
+| Tasks, a task, New task, Meetings, Access, Vault, Settings, Map, Floor plan, Terminals, Hi-fi, TV, Arcade, a question, a desk | 2026-11-13 | **The new frame only** (the window's head, its air, hanging from the top): their insides are as they were. Tasks keeps the board the owner knows (`add-to-a-layout-do-not-replace-it`) |
+
+## Talk
+
+`hud/panels/talk.tsx`. The owner, 2026-11-14: "when I open a chat with an agent (F) I need a quick link to their profile up top; and the chat box down there — redesign it, everything is thrown together; make it like ChatGPT, icons on the left, the send icon on the right, that's it — clean it up".
+
+- **The head:** the face and the name are one button to **their profile** (it says so when pointed at), and **Profile** stands among the head's buttons, before *Open terminal*.
+- **The message box** is one rounded box, as in a chat: the words (one line that grows with what is written, up to about ten lines, then scrolls; *Message Ava…*), and under them, inside the box, **three icons at the left** — *Attach* (a paperclip), *Track as a task* (a clipboard), *Repeat* (two arrows) — and **one round button at the right**: Send (an arrow up). Enter sends, Shift+Enter is a new line, Ctrl+V pastes a screenshot, `/goal …` sets a goal: said when the box is pointed at, no longer printed under it.
+- **A task, a routine:** the icon lights up and a small pill stands over the words — "Task after T-9 · verified when done", or "Repeat every [5] min" with its minutes — each with its ×. The send button then makes the task or the routine (it says so when pointed at). What a routine costs is said under the box while *Repeat* is on, as before. *Track as a task* is dimmed for somebody without a project, and while *Repeat* is on.
+- **Pause** is no longer a button of its own: while they are at something and the box is empty, the send button is a **stop square** that pauses them (as a chat's stop button). With words in the box it sends; between turns, pausing is in their profile (*Session*).
+- Files that go with the message wait at the top of the box, as before; a drop on the box adds them.
+
+**What is no longer printed:** the "Track as a task — verified when done" checkbox and its sentence, "Repeat every [ ] minutes", *Attach…*, "Enter to send · Shift+Enter for a new line", *Pause Ava*, and the long placeholder. All of it is in an icon's tooltip, a pill, or the send button.
+
+**Checked:** the UI suite's steps that talk (the first word to a new hire, a reply in Markdown, an answer after I walked away, a file from an employee, a routine — now made with the Repeat icon, its pill and minutes seen, and the box back to *Send* after). Looked at in the development office (`talk-repeat-on.png`, `routine.png`). **Not looked at:** the stop square while somebody works, by hand; a browser tab (the window is the same component); a member's own employee.
 
 ## Machines
 
