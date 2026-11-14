@@ -70,7 +70,9 @@ if (pids.length) {
 if (running().length) throw new Error('the app started again while it was being replaced; nothing was changed');
 
 const stamp = new Date().toISOString().slice(11, 16).replace(':', '');
-const kept = path.join(root, 'release-next', `Orchestrator.app.previous-${stamp}`);
+// (The time of day repeats from one day to the next: a copy kept at the same minute yesterday is not overwritten.)
+let kept = path.join(root, 'release-next', `Orchestrator.app.previous-${stamp}`);
+for (let n = 2; fs.existsSync(kept); n++) kept = path.join(root, 'release-next', `Orchestrator.app.previous-${stamp}-${n}`);
 if (fs.existsSync(current)) fs.renameSync(current, kept);
 fs.renameSync(next, current);
 // macOS keeps an app's icon in its caches: tell it this one is new, so that Finder and the Dock show its own icon.
