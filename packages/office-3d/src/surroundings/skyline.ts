@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { Box } from '../world.ts';
 import { FOG, GLSL_NOISE, Kept, OUTPUT, at, grain, instanced, merged, painted, rng } from './kit.ts';
-import { AMBER, CYCLE, GREEN, Z_OFFSET, LENGTH, TRAFFIC_GLSL, crossingsOf, spanOf, traffic, type StreetGrid, type Vehicle } from './traffic.ts';
+import { AMBER, CYCLE, GREEN, Z_OFFSET, LENGTH, TRAFFIC_GLSL, acrossOf, spanOf, traffic, type StreetGrid, type Vehicle } from './traffic.ts';
+import { DROP, FRONT, KERB, PITCH, PLAIN, SEED_STEPS, STREET, STREET_Y, blockAt, blockIndex, onGrid, streetTrees } from '../city/blocks.ts';
 import type { Place, PlaceInput } from './place.ts';
 
 /**
@@ -12,12 +13,7 @@ import type { Place, PlaceInput } from './place.ts';
  * graphics card from the time alone — nothing here is worked out per frame on the processor.
  */
 
-/** How far the street is under the office floor. */
-const DROP = 150;
-/** From the middle of one street to the middle of the next, and how wide a street is. */
-const PITCH = 116;
-const STREET = 20;
-/** Blocks from the middle to the edge of the city, in each direction. */
+/** Blocks from the middle to the edge of the traffic's pattern, in each direction (it repeats beyond). */
 const REACH = 6;
 const FLOOR_H = 3.5;
 const BAY = 2.4;
@@ -118,18 +114,6 @@ function streetTile(ctx: CanvasRenderingContext2D, s: number): void {
   }
   grain(ctx, s, 6, r);
 }
-
-/**
- * What a building is told about itself (`aLook`) is kept on a grid of this many steps: exact in a float, and far
- * enough from the next step that the hair an interpolated value is off by never crosses one.
- */
-const SEED_STEPS = 4096;
-const onGrid = (v: number): number => Math.round(v * SEED_STEPS) / SEED_STEPS;
-
-/** What a front is made of (`aLook.z`). */
-const FRONT = { masonry: 0, ribbon: 1, glass: 2, piers: 3, plain: 4 } as const;
-/** For `plain` things, what they are (`aLook.w`): concrete, metal, the wood of a water tank, leaves. */
-const PLAIN = { concrete: 0.3, metal: 0.7, wood: 0.9, leaves: 0.97 } as const;
 
 /**
  * One material for every building and for what stands on the roofs. A front is worked out per pixel from where on the
@@ -335,6 +319,8 @@ function vehicleMaterial(grid: StreetGrid): THREE.ShaderMaterial {
       ...FOG.uniforms(),
       uTime: { value: 0 },
       uSpan: { value: spanOf(grid) },
+      uAcross: { value: acrossOf(grid) },
+      uOrigin: { value: new THREE.Vector2() },
       uPitch: { value: grid.pitch },
       uCycle: { value: CYCLE },
       uZOff: { value: Z_OFFSET },
@@ -348,7 +334,8 @@ function vehicleMaterial(grid: StreetGrid): THREE.ShaderMaterial {
       attribute vec3 aPaint;
       attribute vec3 aScale; // its width, height and length against the shape's
       attribute vec3 aPart; // body, glass, wheels
-      uniform float uTime, uSpan, uPitch, uCycle, uZOff;
+      uniform float uTime, uSpan, uAcross, uPitch, uCycle, uZOff;
+      uniform vec2 uOrigin;
       varying vec3 vPaint;
       varying vec3 vPart;
       varying vec3 vAt;
@@ -373,12 +360,17 @@ function vehicleMaterial(grid: StreetGrid): THREE.ShaderMaterial {
         float d = aLane.z;
         vNormal = aLane.x > 0.5 ? vec3(normal.z * d, normal.y, -normal.x * d) : vec3(normal.x * d, normal.y, normal.z * d);
         // The shape is drawn heading along +z; turn it to its street and its direction.
+        // Laid round where one looks from: the pattern repeats along the street and across the streets.
+        float a = aLane.x > 0.5 ? nearTo(along * d, uOrigin.x, uSpan) : nearTo(along * d, uOrigin.y, uSpan);
+        float b = aLane.x > 0.5 ? nearTo(aLane.y, uOrigin.y, uAcross) : nearTo(aLane.y, uOrigin.x, uAcross);
         vec3 world = aLane.x > 0.5
-          ? vec3(along * d + p.z * d, p.y, aLane.y - p.x * d)
-          : vec3(aLane.y + p.x * d, p.y, along * d + p.z * d);
+          ? vec3(a + p.z * d, p.y, b - p.x * d)
+          : vec3(b + p.x * d, p.y, a + p.z * d);
         world.y += ${(-DROP).toFixed(1)};
         vec4 mvPosition = viewMatrix * vec4(world, 1.0);
         gl_Position = projectionMatrix * mvPosition;
+        // Taken out of the traffic: somebody is driving it.
+        if (aCar.w < -0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         ${FOG.vertex}
       }
     `,
@@ -423,11 +415,12 @@ function poolMaterial(grid: StreetGrid): THREE.ShaderMaterial {
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    uniforms: { ...FOG.uniforms(), uTime: { value: 0 }, uSpan: { value: spanOf(grid) }, uPitch: { value: grid.pitch }, uCycle: { value: CYCLE }, uZOff: { value: Z_OFFSET } },
+    uniforms: { ...FOG.uniforms(), uTime: { value: 0 }, uSpan: { value: spanOf(grid) }, uAcross: { value: acrossOf(grid) }, uOrigin: { value: new THREE.Vector2() }, uPitch: { value: grid.pitch }, uCycle: { value: CYCLE }, uZOff: { value: Z_OFFSET } },
     vertexShader: /* glsl */ `
       attribute vec4 aLane;
       attribute vec4 aCar;
-      uniform float uTime, uSpan, uPitch, uCycle, uZOff;
+      uniform float uTime, uSpan, uAcross, uPitch, uCycle, uZOff;
+      uniform vec2 uOrigin;
       varying vec3 vAt;
       varying float vBrake;
       ${TRAFFIC_GLSL}
@@ -443,12 +436,17 @@ function poolMaterial(grid: StreetGrid): THREE.ShaderMaterial {
         p.z += p.z > 0.0 ? grow : -grow;
         vAt = vec3(position.x, position.y, p.z - (p.z > 0.0 ? grow : -grow));
         float d = aLane.z;
+        // Laid round where one looks from: the pattern repeats along the street and across the streets.
+        float a = aLane.x > 0.5 ? nearTo(along * d, uOrigin.x, uSpan) : nearTo(along * d, uOrigin.y, uSpan);
+        float b = aLane.x > 0.5 ? nearTo(aLane.y, uOrigin.y, uAcross) : nearTo(aLane.y, uOrigin.x, uAcross);
         vec3 world = aLane.x > 0.5
-          ? vec3(along * d + p.z * d, p.y, aLane.y - p.x * d)
-          : vec3(aLane.y + p.x * d, p.y, along * d + p.z * d);
+          ? vec3(a + p.z * d, p.y, b - p.x * d)
+          : vec3(b + p.x * d, p.y, a + p.z * d);
         world.y += ${(-DROP).toFixed(1)};
         vec4 mvPosition = viewMatrix * vec4(world, 1.0);
         gl_Position = projectionMatrix * mvPosition;
+        // Taken out of the traffic: somebody is driving it.
+        if (aCar.w < -0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         ${FOG.vertex}
       }
     `,
@@ -593,199 +591,233 @@ export function beaconMaterial(): THREE.ShaderMaterial {
   });
 }
 
+/** People on the pavements: one shape, each moved round its block by the time, legs and arms swinging as they go. */
+function walkerMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    fog: true,
+    uniforms: { ...FOG.uniforms(), uTime: { value: 0 }, uOrigin: { value: new THREE.Vector2() }, uGlow: { value: new THREE.Color('#ff8c5a') }, uSky: { value: new THREE.Color('#8f86c4') } },
+    vertexShader: /* glsl */ `
+      attribute vec4 aWalk; // where round the block they started, speed (its sign: which way round), how far out from the block's middle, stride
+      attribute vec2 aBlock; // which block, from the pattern's middle
+      attribute vec3 aShirt;
+      attribute vec3 aPants;
+      attribute vec3 aSkin;
+      attribute vec3 aPart; // shirt, trousers, skin
+      uniform float uTime;
+      uniform vec2 uOrigin;
+      varying vec3 vColor;
+      varying vec3 vNormal;
+      ${FOG.parsVertex}
+      vec3 swing(vec3 p, float pivot, float a) {
+        float y = p.y - pivot;
+        return vec3(p.x, pivot + y * cos(a) - p.z * sin(a), y * sin(a) + p.z * cos(a));
+      }
+      void main() {
+        float r = aWalk.z;
+        float len = 8.0 * r;
+        float s = mod(aWalk.x + aWalk.y * uTime, len);
+        float side = floor(s / (2.0 * r));
+        float u = s - side * 2.0 * r - r;
+        vec2 at = side < 0.5 ? vec2(u, -r) : side < 1.5 ? vec2(r, u) : side < 2.5 ? vec2(-u, r) : vec2(-r, -u);
+        float heading = side < 0.5 ? 1.5708 : side < 1.5 ? 0.0 : side < 2.5 ? -1.5708 : 3.14159;
+        if (aWalk.y < 0.0) heading += 3.14159;
+        float phase = s / aWalk.w * 6.2832;
+        vec3 p = position;
+        vec3 nn = normal;
+        float left = p.x < 0.0 ? 1.0 : -1.0;
+        if (aPart.y > 0.5) p = swing(p, 0.88, sin(phase) * 0.5 * left);
+        else if (aPart.x > 0.5 && abs(p.x) > 0.24) p = swing(p, 1.42, -sin(phase) * 0.4 * left);
+        float c = cos(heading);
+        float sn = sin(heading);
+        vec3 turned = vec3(p.x * c + p.z * sn, p.y + abs(sin(phase)) * 0.03, -p.x * sn + p.z * c);
+        vNormal = vec3(nn.x * c + nn.z * sn, nn.y, -nn.x * sn + nn.z * c);
+        vec2 block = vec2(${(9 * PITCH).toFixed(1)});
+        vec2 middle = uOrigin + mod(aBlock * ${PITCH.toFixed(1)} - uOrigin + block * 0.5, block) - block * 0.5;
+        vec3 world = vec3(middle.x + at.x, ${STREET_Y.toFixed(1)} + 0.15, middle.y + at.y) + turned;
+        vColor = aPart.x > 0.5 ? aShirt : aPart.y > 0.5 ? aPants : aSkin;
+        vec4 mvPosition = viewMatrix * vec4(world, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        ${FOG.vertex}
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      precision highp float;
+      varying vec3 vColor;
+      varying vec3 vNormal;
+      uniform vec3 uGlow, uSky;
+      ${FOG.parsFragment}
+      void main() {
+        vec3 n = normalize(vNormal);
+        vec3 light = mix(vec3(0.12, 0.09, 0.08), uSky * 0.5, n.y * 0.5 + 0.5) + vec3(0.42, 0.32, 0.22) * 0.55;
+        gl_FragColor = vec4(pow(vColor, vec3(2.2)) * light, 1.0);
+        ${OUTPUT}
+        ${FOG.fragment}
+      }
+    `,
+  });
+}
+
+/** A person: legs, a body with arms, a head — parts by `aPart` (shirt, trousers, skin). */
+function walkerShape(): THREE.BufferGeometry {
+  const shirt = new THREE.Color(1, 0, 0);
+  const pants = new THREE.Color(0, 1, 0);
+  const skin = new THREE.Color(0, 0, 1);
+  const t = (x: number, y: number, z: number) => new THREE.Matrix4().makeTranslation(x, y, z);
+  const g = merged([
+    { geometry: new THREE.BoxGeometry(0.16, 0.86, 0.18), color: pants, matrix: t(-0.1, 0.45, 0) },
+    { geometry: new THREE.BoxGeometry(0.16, 0.86, 0.18), color: pants, matrix: t(0.1, 0.45, 0) },
+    { geometry: new THREE.BoxGeometry(0.42, 0.62, 0.24), color: shirt, matrix: t(0, 1.18, 0) },
+    { geometry: new THREE.BoxGeometry(0.1, 0.58, 0.12), color: shirt, matrix: t(-0.27, 1.14, 0) },
+    { geometry: new THREE.BoxGeometry(0.1, 0.58, 0.12), color: shirt, matrix: t(0.27, 1.14, 0) },
+    { geometry: new THREE.BoxGeometry(0.2, 0.24, 0.22), color: skin, matrix: t(0, 1.64, 0) },
+  ]);
+  g.setAttribute('aPart', g.getAttribute('color'));
+  g.deleteAttribute('color');
+  return g;
+}
+
+const SHIRTS: Array<[number, number, number]> = [[0.15, 0.18, 0.25], [0.55, 0.12, 0.12], [0.85, 0.85, 0.82], [0.2, 0.35, 0.55], [0.35, 0.3, 0.22], [0.1, 0.1, 0.1], [0.6, 0.5, 0.2], [0.25, 0.45, 0.3]];
+const TROUSERS: Array<[number, number, number]> = [[0.08, 0.08, 0.1], [0.18, 0.22, 0.35], [0.35, 0.3, 0.25], [0.12, 0.12, 0.12]];
+const SKINS: Array<[number, number, number]> = [[0.93, 0.76, 0.62], [0.78, 0.57, 0.42], [0.55, 0.38, 0.26], [0.36, 0.24, 0.17]];
+
+/** How many blocks round the camera are drawn, each way. */
+const SHOWN = 6;
+
+/** The traffic of the city: the same list for the picture and for the person who takes a car out of it. */
+export const CITY_GRID: StreetGrid = { pitch: PITCH, street: STREET, reach: REACH };
+const fleets = new Map<string, Vehicle[]>();
+export function cityTraffic(quality: PlaceInput['quality']): Vehicle[] {
+  const key = quality === 'low' ? 'low' : 'high';
+  let list = fleets.get(key);
+  if (!list) fleets.set(key, (list = traffic(CITY_GRID, rng(77001), quality === 'low' ? 0.55 : 1)));
+  return list;
+}
+
+/** What the city shows that somebody outside changes: the vehicle they took out of the traffic (its index), or -1. */
+export const cityLive = { taken: -1, quality: 'high' as PlaceInput['quality'] };
+
 export function buildSkyline({ quality }: PlaceInput): Place {
   const kept = new Kept();
   const group = new THREE.Group();
   const random = rng(20261112);
-  const grid: StreetGrid = { pitch: PITCH, street: STREET, reach: REACH };
+  const grid = CITY_GRID;
+  cityLive.quality = quality;
 
-  // ── the streets ──
-  const tile = kept.add(painted(quality === 'low' ? 512 : 1024, streetTile, [2 * REACH + 5, 2 * REACH + 5]));
-  const groundSize = (2 * REACH + 5) * PITCH;
+  // ── the streets: one picture that repeats, kept under the camera ──
+  const tile = kept.add(painted(quality === 'low' ? 512 : 1024, streetTile, [2 * SHOWN + 5, 2 * SHOWN + 5]));
+  const groundSize = (2 * SHOWN + 5) * PITCH;
   const ground = new THREE.Mesh(kept.add(new THREE.PlaneGeometry(groundSize, groundSize)), kept.add(new THREE.MeshBasicMaterial({ map: tile, color: '#b8b0c8' })));
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -DROP;
   group.add(ground);
 
-  // ── the buildings ──
-  const boxes: THREE.Matrix4[] = [];
-  const boxLooks: number[] = [];
-  const rounds: THREE.Matrix4[] = [];
-  const roundLooks: number[] = [];
-  const tanks: THREE.Matrix4[] = [];
-  const tankLooks: number[] = [];
-  const beacons: number[] = [];
-  const beaconLooks: number[] = [];
-  const plain = (x: number, y: number, z: number, w: number, h: number, d: number, what: number) => {
-    boxes.push(at(x, y - DROP, z, 0, w, h, d));
-    boxLooks.push(onGrid(random()), 0, FRONT.plain, what);
-  };
-  /** What stands on a roof: the lift's machine room, air handlers, on an older building a water tank on legs. */
-  const roofOf = (x: number, top: number, z: number, w: number, d: number, front: number, round: boolean, tall: boolean) => {
-    if (round) {
-      plain(x, top, z, w * 0.4, 3 + random() * 3, d * 0.4, PLAIN.concrete);
-      return;
-    }
-    const pw = w * (0.3 + random() * 0.25);
-    const pd = d * (0.3 + random() * 0.25);
-    const px = x + (random() - 0.5) * (w - pw) * 0.6;
-    const pz = z + (random() - 0.5) * (d - pd) * 0.6;
-    plain(px, top, pz, pw, 3 + random() * 3.5, pd, PLAIN.concrete);
-    const units = Math.floor(random() * 4);
-    for (let k = 0; k < units; k++) {
-      const ux = x + (random() - 0.5) * (w - 6);
-      const uz = z + (random() - 0.5) * (d - 6);
-      if (Math.abs(ux - px) < pw / 2 + 2 && Math.abs(uz - pz) < pd / 2 + 2) continue;
-      plain(ux, top, uz, 2 + random() * 2.5, 1.4 + random() * 1.2, 2 + random() * 3, PLAIN.metal);
-    }
-    if (front === FRONT.masonry && !tall && random() < 0.6 && w > 14 && d > 14) {
-      const r = 2 + random() * 1.2;
-      const tx = x + (random() < 0.5 ? -1 : 1) * (w / 2 - r - 2);
-      const tz = z + (random() < 0.5 ? -1 : 1) * (d / 2 - r - 2);
-      tanks.push(at(tx, top - DROP, tz, random() * 6, r, r * (1 + random() * 0.3), r));
-      tankLooks.push(onGrid(random()), 0, FRONT.plain, PLAIN.wood);
-    }
-  };
-  const frontFor = (h: number): number => {
-    const r = random();
-    if (h < 45) return r < 0.7 ? FRONT.masonry : FRONT.ribbon;
-    if (h < 110) return r < 0.4 ? FRONT.masonry : r < 0.68 ? FRONT.ribbon : r < 0.84 ? FRONT.piers : FRONT.glass;
-    return r < 0.58 ? FRONT.glass : r < 0.84 ? FRONT.piers : FRONT.ribbon;
-  };
-  const tower = (x: number, z: number, w: number, d: number, h: number) => {
-    const seed = onGrid(random());
-    const share = onGrid(0.05 + random() * random() * 0.42);
-    const front = frontFor(h);
-    const tintOf = onGrid(random());
-    const round = front === FRONT.glass && h > 110 && random() < 0.28;
-    const push = (bx: number, by: number, bz: number, bw: number, bh: number, bd: number, r = round, look = front) => {
-      (r ? rounds : boxes).push(at(bx, by - DROP, bz, 0, bw, bh, r ? bw : bd));
-      (r ? roundLooks : boxLooks).push(seed, share, look, tintOf);
-    };
-    let base = 0;
-    let bw = w;
-    let bd = d;
-    // A tall tower stands on a podium of shops and offices that fills its lot.
-    if (h > 110) {
-      const ph = 12 + random() * 14;
-      const podium = random() < 0.5 ? FRONT.masonry : FRONT.ribbon;
-      boxes.push(at(x, -DROP, z, 0, w, ph, d));
-      boxLooks.push(onGrid(random()), share, podium, onGrid(random()));
-      base = ph;
-      bw = w * (0.62 + random() * 0.15);
-      bd = round ? bw : d * (0.62 + random() * 0.15);
-    }
-    // It steps back as it rises (the older ones in many steps), and may end in a mast.
-    const rest = h - base;
-    const tiers = h > 150 ? 2 + Math.floor(random() * 2) : h > 70 && random() < (front === FRONT.masonry ? 0.7 : 0.35) ? 2 : 1;
-    for (let t = 0; t < tiers; t++) {
-      const th = tiers === 1 ? rest : t === 0 ? rest * (0.55 + random() * 0.15) : (h - base) * (t === tiers - 1 ? 1 : 0.6);
-      push(x, base, z, bw, th, bd);
-      base += th;
-      if (t < tiers - 1) {
-        bw *= 0.68 + random() * 0.14;
-        bd = round ? bw : bd * (0.68 + random() * 0.14);
-      }
-    }
-    roofOf(x, base, z, bw, bd, front, round, h > 110);
-    let top = base + 4;
-    if (h > 170 && random() < 0.7) {
-      const mast = 18 + random() * 34;
-      plain(x, base, z, 1.4, mast, 1.4, PLAIN.metal);
-      top = base + mast;
-    }
-    if (h > 120) {
-      beacons.push(x, top - DROP + 1.2, z);
-      beaconLooks.push(1, 0.12, 0.08, random());
-    }
-  };
-  for (let i = -REACH; i <= REACH; i++) {
-    for (let j = -REACH; j <= REACH; j++) {
-      if (i === 0 && j === 0) continue; // this tower's own block
-      const cx = i * PITCH;
-      const cz = j * PITCH;
-      const block = PITCH - STREET - 8;
-      const ring = Math.max(Math.abs(i), Math.abs(j));
-      // A cluster of the tallest stands to the north-west, against the last light.
-      const downtown = Math.hypot(i + 3.2, j + 2.4) < 2.3;
-      const cols = random() < 0.3 ? 1 : random() < 0.6 ? 2 : 3;
-      const rows = random() < 0.4 ? 1 : 2;
-      for (let a = 0; a < cols; a++) {
-        for (let b = 0; b < rows; b++) {
-          const lotW = block / cols;
-          const lotD = block / rows;
-          const r = random();
-          let h = 22 + 150 * Math.pow(r, 2.1);
-          if (downtown) h = 150 + random() * 170;
-          else if (random() < 0.09 && ring >= 1 && ring <= 4) h = 165 + random() * 110;
-          if (ring >= 5) h = Math.min(h, 40 + random() * 70);
-          // Next door, nothing stands taller than the eye: the view is kept open.
-          if (ring === 1 && !downtown) h = Math.min(h, 60 + random() * 70);
-          // Lots are built up to the pavement and to each other, as in a real city: the gaps are narrow.
-          const w = lotW - 1.5 - random() * (h > 110 ? 6 : 2.5);
-          const d = lotD - 1.5 - random() * (h > 110 ? 6 : 2.5);
-          tower(cx - block / 2 + lotW * (a + 0.5), cz - block / 2 + lotD * (b + 0.5), Math.min(w, h > 150 ? 46 : 80), Math.min(d, h > 150 ? 46 : 80), h);
-        }
-      }
-    }
-  }
-  // Trees along the pavements of the nearer blocks: dark crowns, seen from above.
-  const trees: THREE.Matrix4[] = [];
-  const treeLooks: number[] = [];
-  const near = quality === 'low' ? 2 : 4;
-  for (let i = -near; i <= near; i++) {
-    for (let j = -near; j <= near; j++) {
-      if (i === 0 && j === 0) continue;
-      const cx = i * PITCH;
-      const cz = j * PITCH;
-      const inner = (PITCH - STREET) / 2 - 1.6;
-      for (let p = -inner + 6; p < inner - 6; p += 8 + random() * 5) {
-        for (const [x, z] of [[cx + p, cz - inner], [cx + p, cz + inner], [cx - inner, cz + p], [cx + inner, cz + p]] as const) {
-          if (random() < 0.3) continue;
-          const r = 1.8 + random() * 1.3;
-          trees.push(at(x, -DROP + 3.4 + r * 0.5, z, random() * 6, r, r * 0.85, r));
-          treeLooks.push(onGrid(random()), 0, FRONT.plain, PLAIN.leaves);
-        }
-      }
-    }
-  }
-  const withLooks = (g: THREE.BufferGeometry, looks: number[]) => {
-    g.setAttribute('aLook', new THREE.InstancedBufferAttribute(new Float32Array(looks), 4));
-    return g;
-  };
+  // ── the buildings: those of the blocks round the camera, made again when the camera reaches another block ──
   const material = kept.add(buildingMaterial());
   const roundMaterial = kept.add(buildingMaterial(true));
-  const city = instanced(withLooks(kept.add(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)), boxLooks), material, boxes);
-  const roundCity = instanced(withLooks(kept.add(new THREE.CylinderGeometry(0.5, 0.5, 1, 40, 1).translate(0, 0.5, 0)), roundLooks), roundMaterial, rounds);
-  // A water tank: a barrel of staves with a pointed hat, on four legs.
   const tankShape = merged([
     { geometry: new THREE.CylinderGeometry(1, 1, 1.5, 14), color: '#000', matrix: new THREE.Matrix4().makeTranslation(0, 2.35, 0) },
     { geometry: new THREE.ConeGeometry(1.08, 0.7, 14), color: '#000', matrix: new THREE.Matrix4().makeTranslation(0, 3.45, 0) },
     ...[[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]].map(([x, z]) => ({ geometry: new THREE.BoxGeometry(0.12, 1.6, 0.12), color: '#000', matrix: new THREE.Matrix4().makeTranslation(x!, 0.8, z!) })),
   ]);
-  const tankMesh = instanced(withLooks(kept.add(tankShape), tankLooks), material, tanks);
-  const treeMesh = instanced(withLooks(kept.add(new THREE.IcosahedronGeometry(1, 1)), treeLooks), material, trees);
-  for (const m of [city, roundCity, tankMesh, treeMesh]) {
-    m.frustumCulled = false;
-    group.add(m);
-  }
+  const blocksAcross = 2 * SHOWN + 1;
+  const kinds: Record<'box' | 'round' | 'tank' | 'tree' | 'lawn', { geometry: THREE.BufferGeometry; material: THREE.ShaderMaterial; capacity: number }> = {
+    box: { geometry: new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), material, capacity: blocksAcross ** 2 * 26 + 81 * 40 },
+    round: { geometry: new THREE.CylinderGeometry(0.5, 0.5, 1, 40, 1).translate(0, 0.5, 0), material: roundMaterial, capacity: blocksAcross ** 2 * 2 },
+    tank: { geometry: tankShape, material, capacity: blocksAcross ** 2 * 4 },
+    tree: { geometry: new THREE.IcosahedronGeometry(1, 1), material, capacity: blocksAcross ** 2 * 60 },
+    lawn: { geometry: new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), material, capacity: blocksAcross ** 2 },
+  };
+  const meshes = Object.fromEntries(
+    Object.entries(kinds).map(([k, v]) => {
+      const g = kept.add(v.geometry);
+      const looks = new THREE.InstancedBufferAttribute(new Float32Array(v.capacity * 4), 4);
+      looks.setUsage(THREE.DynamicDrawUsage);
+      g.setAttribute('aLook', looks);
+      const mesh = new THREE.InstancedMesh(g, v.material, v.capacity);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.count = 0;
+      mesh.frustumCulled = false;
+      group.add(mesh);
+      return [k, { mesh, looks, capacity: v.capacity }];
+    }),
+  ) as Record<keyof typeof kinds, { mesh: THREE.InstancedMesh; looks: THREE.InstancedBufferAttribute; capacity: number }>;
+  const tmp = new THREE.Matrix4();
+  const beaconSpots: number[] = [];
+  let shownAt = '';
+  const nearTrees = quality === 'low' ? 2 : 4;
+  /** Lay out the blocks round block (bi, bj). */
+  const showAround = (bi: number, bj: number) => {
+    const fill = { box: 0, round: 0, tank: 0, tree: 0, lawn: 0 };
+    const put = (shape: keyof typeof fill, x: number, y: number, z: number, w: number, h: number, d: number, rot: number, look: readonly number[]) => {
+      const m = meshes[shape];
+      const n = fill[shape];
+      if (n >= m.capacity) return;
+      m.mesh.setMatrixAt(n, tmp.copy(at(x, y, z, rot, w, h, d)));
+      m.looks.setXYZW(n, look[0]!, look[1]!, look[2]!, look[3]!);
+      fill[shape] = n + 1;
+    };
+    beaconSpots.length = 0;
+    for (let i = bi - SHOWN; i <= bi + SHOWN; i++) {
+      for (let j = bj - SHOWN; j <= bj + SHOWN; j++) {
+        const b = blockAt(i, j);
+        for (const p of b.parts) put(p.shape, p.x, p.y, p.z, p.w, p.h, p.d, p.rot, p.look);
+        for (const [x, y, z] of b.beacons) beaconSpots.push(x, y, z);
+        if (Math.abs(i - bi) <= nearTrees && Math.abs(j - bj) <= nearTrees) {
+          // A street tree: a trunk, and its crown high enough to walk under.
+          for (const [x, z, r] of streetTrees(i, j)) {
+            put('box', x, -DROP, z, 0.24, 5.4, 0.24, 0, [0.5, 0, FRONT.plain, PLAIN.wood]);
+            put('tree', x, -DROP + 5.3 + r * 0.45, z, r, r * 0.8, r, 0, [onGrid(((x * 7 + z * 13) % 1 + 1) % 1), 0, FRONT.plain, PLAIN.leaves]);
+          }
+        }
+      }
+    }
+    for (const [k, m] of Object.entries(meshes)) {
+      m.mesh.count = fill[k as keyof typeof fill];
+      m.mesh.instanceMatrix.needsUpdate = true;
+      m.looks.needsUpdate = true;
+    }
+    // The red lights on the tall roofs (the first of the beacons; what flies comes after them).
+    const n = Math.min(beaconSpots.length / 3, MAX_BEACONS);
+    beaconAt.fill(0, 0, MAX_BEACONS * 3);
+    beaconAt.set(beaconSpots.slice(0, n * 3));
+    for (let k = 0; k < MAX_BEACONS; k++) beaconLook.set(k < n ? [1, 0.12, 0.08, ((k * 0.618) % 1)] : [0, 0, 0, 0], k * 4);
+    beaconLookAttr.needsUpdate = true;
+    beaconPos.needsUpdate = true;
+  };
 
   // ── traffic, and the lights it stops at ──
-  const vehicles = traffic(grid, random, quality === 'low' ? 0.55 : 1);
+  const vehicles = cityTraffic(quality);
   const carMat = kept.add(vehicleMaterial(grid));
   const poolMat = kept.add(poolMaterial(grid));
-  const carsOnly = vehicles.filter((v) => v.kind !== 'bus');
-  const buses = vehicles.filter((v) => v.kind === 'bus');
+  const carIndex: number[] = [];
+  const busIndex: number[] = [];
+  vehicles.forEach((v, i) => (v.kind === 'bus' ? busIndex : carIndex).push(i));
   const carScale = (v: Vehicle): [number, number, number] => (v.kind === 'suv' ? [1.05, 1.18, v.length / LENGTH.car] : [1, 1, v.length / LENGTH.car]);
-  const carMesh = fleet(kept, carShape(), carMat, carsOnly, carScale);
-  const busMesh = fleet(kept, busShape(), carMat, buses, () => [1, 1, 1]);
+  const carMesh = fleet(kept, carShape(), carMat, carIndex.map((i) => vehicles[i]!), carScale);
+  const busMesh = fleet(kept, busShape(), carMat, busIndex.map((i) => vehicles[i]!), () => [1, 1, 1]);
   const pools = fleet(kept, new THREE.PlaneGeometry(9.5, 24).rotateX(-Math.PI / 2).translate(0, 0.12, 5.6), poolMat, vehicles, () => [1, 1, 1]);
   pools.renderOrder = 2;
   group.add(carMesh, busMesh, pools);
+  /** Take a vehicle out of the traffic (somebody is driving it now), or put it back. */
+  let hidden = -1;
+  const hide = (index: number, gone: boolean) => {
+    if (index < 0 || index >= vehicles.length) return;
+    const v = vehicles[index]!;
+    const kind = gone ? -1 : v.kind === 'bus' ? 1 : 0;
+    const own = v.kind === 'bus' ? busMesh : carMesh;
+    const at_ = (v.kind === 'bus' ? busIndex : carIndex).indexOf(index);
+    for (const [mesh, k] of [[own, at_], [pools, index]] as const) {
+      const attr = mesh.geometry.getAttribute('aCar') as THREE.InstancedBufferAttribute;
+      attr.setW(k, kind);
+      attr.needsUpdate = true;
+    }
+  };
   const signalAt: number[] = [];
   const signalAxis: number[] = [];
-  for (const x of crossingsOf(grid)) {
-    for (const z of crossingsOf(grid)) {
+  for (let a = -SHOWN - 1; a <= SHOWN; a++) {
+    for (let b = -SHOWN - 1; b <= SHOWN; b++) {
+      const x = (a + 0.5) * PITCH;
+      const z = (b + 0.5) * PITCH;
       for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
         const ox = x + sx * (STREET / 2 + 0.8);
         const oz = z + sz * (STREET / 2 + 0.8);
@@ -803,18 +835,43 @@ export function buildSkyline({ quality }: PlaceInput): Place {
   signals.renderOrder = 3;
   group.add(signals);
 
+  // ── people on the pavements ──
+  const walkers: Array<{ walk: number[]; block: [number, number]; shirt: [number, number, number]; pants: [number, number, number]; skin: [number, number, number] }> = [];
+  const perSide = quality === 'low' ? 4 : 9;
+  for (let a = -4; a <= 4; a++) {
+    for (let b = -4; b <= 4; b++) {
+      for (const [ring, way] of [[KERB - 2.6, 1], [KERB - 1.6, -1]] as const) {
+        for (let k = 0; k < perSide; k++) {
+          const speed = (1.15 + random() * 0.5) * way;
+          walkers.push({ walk: [random() * 8 * ring, speed, ring, 1.35 + random() * 0.25], block: [a, b], shirt: SHIRTS[Math.floor(random() * SHIRTS.length)]!, pants: TROUSERS[Math.floor(random() * TROUSERS.length)]!, skin: SKINS[Math.floor(random() * SKINS.length)]! });
+        }
+      }
+    }
+  }
+  const walkerGeo = kept.add(walkerShape());
+  const attr = (n: number, f: (w: (typeof walkers)[number]) => readonly number[]) => new THREE.InstancedBufferAttribute(new Float32Array(walkers.flatMap((w) => [...f(w)])), n);
+  walkerGeo.setAttribute('aWalk', attr(4, (w) => w.walk));
+  walkerGeo.setAttribute('aBlock', attr(2, (w) => w.block));
+  walkerGeo.setAttribute('aShirt', attr(3, (w) => w.shirt));
+  walkerGeo.setAttribute('aPants', attr(3, (w) => w.pants));
+  walkerGeo.setAttribute('aSkin', attr(3, (w) => w.skin));
+  const walkerMat = kept.add(walkerMaterial());
+  const people = instanced(walkerGeo, walkerMat, walkers.map(() => new THREE.Matrix4()));
+  people.frustumCulled = false;
+  group.add(people);
+
   // ── lights on the tall roofs, and what flies ──
+  const MAX_BEACONS = 1200;
   const flying = 3; // the helicopter's two, and an aeroplane high up
-  const beaconAt = new Float32Array(beacons.length + flying * 3);
-  beaconAt.set(beacons);
-  const beaconLook = new Float32Array(beaconLooks.length + flying * 4);
-  beaconLook.set(beaconLooks);
-  beaconLook.set([1, 0.15, 0.1, 0.0, 0.6, 1, 0.7, -1, 1, 1, 1, 0.4], beaconLooks.length);
+  const beaconAt = new Float32Array((MAX_BEACONS + flying) * 3);
+  const beaconLook = new Float32Array((MAX_BEACONS + flying) * 4);
+  beaconLook.set([1, 0.15, 0.1, 0.0, 0.6, 1, 0.7, -1, 1, 1, 1, 0.4], MAX_BEACONS * 4);
   const beaconGeo = kept.add(new THREE.BufferGeometry());
   const beaconPos = new THREE.BufferAttribute(beaconAt, 3);
   beaconPos.setUsage(THREE.DynamicDrawUsage);
   beaconGeo.setAttribute('position', beaconPos);
-  beaconGeo.setAttribute('aBeacon', new THREE.BufferAttribute(beaconLook, 4));
+  const beaconLookAttr = new THREE.BufferAttribute(beaconLook, 4);
+  beaconGeo.setAttribute('aBeacon', beaconLookAttr);
   const beaconMat = kept.add(beaconMaterial());
   const points = new THREE.Points(beaconGeo, beaconMat);
   points.frustumCulled = false;
@@ -832,12 +889,34 @@ export function buildSkyline({ quality }: PlaceInput): Place {
   heli.add(cabin, tail, fin, rotor, glass);
   group.add(heli);
 
+  const origin = new THREE.Vector2();
   return {
     group,
-    update(time) {
+    update(time, camera) {
+      // Everything is laid round where the camera is: the blocks round it, the street picture under it, the traffic
+      // and the people repeating round it.
+      origin.set(camera.position.x, camera.position.z);
+      const bi = blockIndex(origin.x);
+      const bj = blockIndex(origin.y);
+      if (`${bi},${bj}` !== shownAt) {
+        shownAt = `${bi},${bj}`;
+        showAround(bi, bj);
+        ground.position.set(bi * PITCH, -DROP, bj * PITCH);
+        signals.position.set(bi * PITCH, 0, bj * PITCH);
+      }
+      if (cityLive.taken !== hidden) {
+        hide(hidden, false);
+        hide(cityLive.taken, true);
+        hidden = cityLive.taken;
+      }
       material.uniforms.uTime!.value = time;
-      carMat.uniforms.uTime!.value = time;
-      poolMat.uniforms.uTime!.value = time;
+      roundMaterial.uniforms.uTime!.value = time;
+      for (const m of [carMat, poolMat]) {
+        m.uniforms.uTime!.value = time;
+        (m.uniforms.uOrigin!.value as THREE.Vector2).copy(origin);
+      }
+      walkerMat.uniforms.uTime!.value = time;
+      (walkerMat.uniforms.uOrigin!.value as THREE.Vector2).copy(origin);
       signalMat.uniforms.uTime!.value = time;
       beaconMat.uniforms.uTime!.value = time;
       // The helicopter: a wide slow round a little under the floor, rising and sinking.
@@ -848,14 +927,15 @@ export function buildSkyline({ quality }: PlaceInput): Place {
       const y = -26 + Math.sin(a * 2.3) * 14;
       heli.position.set(x, y, z);
       heli.rotation.set(0.1, -a, -0.14, 'YXZ');
-      const n = beacons.length;
-      beaconAt.set([x, y - 1.3, z, x - Math.sin(-a) * 6.5, y + 1.2, z - Math.cos(-a) * 6.5], n);
+      const n = MAX_BEACONS;
+      beaconAt.set([x, y - 1.3, z, x - Math.sin(-a) * 6.5, y + 1.2, z - Math.cos(-a) * 6.5], n * 3);
       // The aeroplane: far off and high, across the sky in a few minutes.
       const p = ((time * 0.004) % 1) * 2 - 1;
-      beaconAt.set([p * 1300, 330, -900 + p * 240], n + 6);
+      beaconAt.set([p * 1300, 330, -900 + p * 240], (n + 2) * 3);
       beaconPos.needsUpdate = true;
     },
     dispose() {
+      if (hidden >= 0) cityLive.taken = -1;
       kept.dispose();
     },
   };

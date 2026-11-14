@@ -89,6 +89,12 @@ export interface OfficeSceneProps {
   /** Sit down on a seat (`id`) or get up (`id: null`), each time `n` changes; and jump, each time `jumpAsk` changes. */
   seatAsk?: { id: string | null; n: number } | null;
   jumpAsk?: number;
+  /** Out in the city under the Skyline (`on`), or back in the office; acted on each time `n` changes. */
+  outside?: { on: boolean; n: number } | null;
+  /** The owner came back by themselves (landed on the office's own terrace). */
+  onOutside?: (on: boolean) => void;
+  /** What the keys do out in the city just now, or null. */
+  onOutsideHint?: (hint: string | null) => void;
   onSeated?: (seatId: string | null) => void;
   onJumped?: () => void;
   walks: WalkRequest[];
@@ -232,7 +238,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       {(props.leads ?? []).map((lead) => (
         <Foreman key={lead.id} foreman={lead} people={props.people} world={world} selected={props.selectedId === lead.id} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />
       ))}
-      <Rig positions={positions} walkers={walkers} moving={!!props.freeSeats} whipAt={props.whipAt} ouchAt={props.ouchAt} emote={props.emote} approachZoom={props.approachZoom} seatAsk={props.seatAsk} jumpAsk={props.jumpAsk} onSeated={props.onSeated} onJumped={props.onJumped} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} />
+      <Rig positions={positions} walkers={walkers} moving={!!props.freeSeats} whipAt={props.whipAt} ouchAt={props.ouchAt} emote={props.emote} approachZoom={props.approachZoom} seatAsk={props.seatAsk} jumpAsk={props.jumpAsk} onSeated={props.onSeated} onJumped={props.onJumped} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} city={surroundings === 'skyline'} outside={props.outside} onOutside={props.onOutside} onOutsideHint={props.onOutsideHint} />
     </Canvas>
   );
 });

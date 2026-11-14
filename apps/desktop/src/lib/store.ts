@@ -184,6 +184,14 @@ export interface OfficeState {
   seatedAt: string | null;
   sit: (seatId: string | null) => void;
   jump: () => void;
+  /** Out in the city under the Skyline (jumped out of a window), and what the keys do there just now. `n` counts the asks. */
+  outside: { on: boolean; n: number };
+  outsideHint: string | null;
+  goOutside: () => void;
+  backToOffice: () => void;
+  /** Told by the scene: the owner came back by themselves (landed on the office's terrace), or what the keys do now. */
+  setOutside: (on: boolean) => void;
+  setOutsideHint: (hint: string | null) => void;
   doEmote: (name: EmoteName) => void;
   /** Push to talk: this window is sending its microphone; how loud it is (0…1); and who is being heard here right now. */
   talking: boolean;
@@ -480,6 +488,13 @@ export const useOffice = create<OfficeState>((set, get) => ({
   seatedAt: null,
   sit: (seatId) => set((s) => ({ seatAsk: { id: seatId, n: (s.seatAsk?.n ?? 0) + 1 } })),
   jump: () => set((s) => ({ jumpAsk: s.jumpAsk + 1 })),
+  outside: { on: false, n: 0 },
+  outsideHint: null,
+  // Out there one sees oneself from behind: the camera that follows the character.
+  goOutside: () => set((s) => (s.outside.on ? s : { outside: { on: true, n: s.outside.n + 1 }, cameraMode: 'ceo', workstationId: null, panel: null, nearby: null })),
+  backToOffice: () => set((s) => (s.outside.on ? { outside: { on: false, n: s.outside.n + 1 }, outsideHint: null } : s)),
+  setOutside: (on) => set((s) => (s.outside.on === on ? s : { outside: { on, n: s.outside.n }, outsideHint: on ? s.outsideHint : null })),
+  setOutsideHint: (hint) => set((s) => (s.outsideHint === hint ? s : { outsideHint: hint })),
   doEmote: (name) => {
     set({ emote: { name, at: Date.now() } });
     connection.send({ t: 'emote', name });

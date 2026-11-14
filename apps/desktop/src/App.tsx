@@ -165,6 +165,8 @@ export function App() {
     seated: (seatId: string | null) => useOffice.setState({ seatedAt: seatId }),
     // The others see the jump once it has really begun.
     jumped: () => connection.send({ t: 'jump' }),
+    outside: (on: boolean) => useOffice.getState().setOutside(on),
+    outsideHint: (hint: string | null) => useOffice.getState().setOutsideHint(hint),
     pickSeat: (deskId: string) => {
       const moving = useOffice.getState().movingEmployeeId;
       if (moving) void seatAt(moving, deskId);
@@ -223,6 +225,13 @@ export function App() {
         return;
       }
       if (st.commandOpen) return;
+      // Out in the city the keys are the character's (walk, jump, the parachute, F for a car): the office's own
+      // meanings of Space, F, R and C wait until they are back.
+      if (st.outside.on && !st.panel && [kb.interact ?? 'Space', kb.talk ?? 'KeyF', kb.whip ?? 'KeyR', kb.camera ?? 'KeyC', 'KeyF', 'Space'].includes(e.code)) {
+        e.preventDefault();
+        (document.activeElement as HTMLElement | null)?.blur?.();
+        return;
+      }
       if (e.code === (kb.interact ?? 'Space') && !st.panel && st.cameraMode !== 'free') {
         // Space would otherwise also "click" whatever HUD button was used last.
         e.preventDefault();
@@ -406,6 +415,9 @@ export function App() {
           jumpAsk={s.jumpAsk}
           onSeated={on.seated}
           onJumped={on.jumped}
+          outside={s.outside}
+          onOutside={on.outside}
+          onOutsideHint={on.outsideHint}
           walks={walks}
           hosts={hosts}
           board={board}

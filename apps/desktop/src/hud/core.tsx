@@ -383,7 +383,10 @@ const ROOM_PANEL: Record<string, PanelId> = { tv: 'tv', hifi: 'radio', vault: 'v
 export function interact(): void {
   const s = useOffice.getState();
   if (s.cameraMode === 'workstation') return;
+  if (s.outside.on) return;
   const n = s.nearby;
+  // An outer window over the city: out through it, with a parachute.
+  if (n?.kind === 'window') return s.goOutside();
   // Nothing to act on in front of them: the key is a jump.
   if (!n) return s.jump();
   // A place to sit: down, or up again.
@@ -614,6 +617,18 @@ export function Prompt() {
   const talkKey = usePrefs((p) => (p.prefs.keybindings.talk ?? 'KeyF').replace(/^Key/, ''));
   const whipKey = usePrefs((p) => (p.prefs.keybindings.whip ?? 'KeyR').replace(/^Key/, ''));
   const moving = useOffice((s) => (s.movingEmployeeId ? s.employees[s.movingEmployeeId] : undefined));
+  const outside = useOffice((s) => s.outside.on);
+  const outsideHint = useOffice((s) => s.outsideHint);
+  if (outside && !panel)
+    // Out in the city: what the keys do just now, and the way back.
+    return (
+      <div className="glass prompt prompt-outside" data-outside>
+        {outsideHint && <span>{outsideHint}</span>}
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => useOffice.getState().backToOffice()} title="Back to where you stood in the office">
+          Back to Office
+        </button>
+      </div>
+    );
   if (panel || mode === 'workstation') return null;
   if (moving) {
     // Carrying someone to another desk: say what the interact key will do here, and how to stop.

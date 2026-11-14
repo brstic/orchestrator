@@ -25,6 +25,73 @@ const check = (name, ok, detail = '') => {
 };
 
 const PLACES = { skyline: 'Skyline', park: 'Park', island: 'Island', north: 'Northern lights', orbit: 'Orbit' };
+
+/**
+ * Over the Skyline: out of a window with a parachute, down onto the street, into a car of the traffic and away —
+ * a city that goes on wherever one drives — and back to the office with the button.
+ */
+async function theCity(owner, other) {
+  await owner.js(`window.__office.getState().openPanel(null); true`);
+  // (Where the owner stood before: put back there at the end, so that what is measured after is measured from the same view.)
+  const start = await owner.js(`({ x: window.__orchPlayer.x, z: window.__orchPlayer.z, rot: window.__orchPlayer.rot, yaw: window.__orchPlayer.yaw, pitch: window.__orchPlayer.pitch })`);
+  const city = `window.__orchPlayer.city`;
+  const windows = await owner.js(`window.__orchPlayer.windows`);
+  const w = windows.find((x) => Math.abs(x.z1 - x.z2) < 1e-6 && Math.abs(x.x2 - x.x1) > 3) ?? windows[0];
+  const [mx, mz] = [(w.x1 + w.x2) / 2, w.z1];
+  await owner.js(`window.__orchPlayer.goto = { x: ${mx}, z: ${mz + (mz > 0 ? -0.7 : 0.7)}, rot: ${mz > 0 ? 0 : Math.PI} }; true`);
+  await owner.until('the window prompt', `(window.__office.getState().nearby || {}).kind === 'window'`, 6000);
+  const home = await owner.js(`({ x: window.__orchPlayer.x, z: window.__orchPlayer.z })`);
+  const me = await owner.js(`window.__office.getState().clientId`);
+  const othersSee = () => other.js(`(() => { const p = window.__office.getState().people.find((x) => x.id === ${JSON.stringify(me)}); return p ? { x: p.x, z: p.z } : null; })()`);
+  check('Skyline: standing at an outer window, the key says "jump out of the window"', (await owner.js(`window.__office.getState().nearby.label`)) === 'JUMP OUT OF THE WINDOW');
+  await owner.press('Space');
+  await owner.until('the jump out', `window.__office.getState().outside.on && ${city} && ${city}.phase === 'fall'`, 4000);
+  check('Skyline: out of the window, falling — and "Back to Office" is there at once', await owner.js(`[...document.querySelectorAll('[data-outside] button')].some((b) => b.textContent.trim() === 'Back to Office')`));
+  await owner.until('the parachute', `${city}.phase === 'chute'`, 4000);
+  await owner.hold('KeyW', true);
+  await owner.until('the parachute open', `${city}.chute >= 1`, 3000);
+  const sink = await owner.js(`(async () => { const a = ${city}.y; await new Promise((r) => setTimeout(r, 2000)); return (a - ${city}.y) / 2; })()`);
+  check('Skyline: the parachute opens by itself and one comes down slowly', sink > 3 && sink < 7, `${sink.toFixed(1)} m a second`);
+  await owner.until('the landing', `${city}.phase === 'foot'`, 60000);
+  await owner.hold('KeyW', false);
+  const landed = await owner.js(city);
+  check('Skyline: down on the street or on a roof, on foot', landed.phase === 'foot' && landed.y < -60, JSON.stringify(landed));
+  // Beside a queue that waits at a crossing (a lane of a street along z, the stretch before its stop line).
+  await owner.js(`(() => { const P = 116; const k = Math.round(${city}.x / P - 0.5) + 0.5; window.__orchPlayer.cityGoto = { x: k * P + 9.6, y: -150, z: Math.round(${city}.z / P) * P - 36, phase: 'foot', rot: Math.PI }; return true; })()`);
+  await owner.until('a car within reach', `${city}.near !== null && ${city}.phase === 'foot'`, 40000);
+  check('Skyline: next to a car of the traffic the key says "F — drive this car"', (await owner.js(`window.__office.getState().outsideHint`)) === 'F — DRIVE THIS CAR');
+  const taken = await owner.js(`${city}.near`);
+  await owner.press('KeyF');
+  await owner.until('at the wheel', `${city}.phase === 'car'`, 3000);
+  check('Skyline: F takes that car out of the traffic', (await owner.js(`${city}.taken`)) === taken);
+  const from = await owner.js(city);
+  await owner.hold('KeyW', true);
+  await sleep(3000);
+  await owner.hold('KeyW', false);
+  const went = await owner.js(city);
+  check('Skyline: it drives', Math.hypot(went.x - from.x, went.z - from.z) > 15 || went.speed > 8, `${Math.hypot(went.x - from.x, went.z - from.z).toFixed(0)} m, ${went.speed.toFixed(1)} m/s`);
+  await owner.until('stopping', `Math.abs(${city}.speed) < 0.5`, 15000).catch(() => {});
+  await owner.press('KeyF');
+  await owner.until('out of the car', `${city}.phase === 'foot'`, 3000);
+  check('Skyline: F again gets out, and the car stays where it was left', (await owner.js(`${city}.near`)) === taken);
+  // Far away the city goes on: a few kilometres off there are buildings round, and traffic.
+  await owner.js(`window.__orchPlayer.cityGoto = { x: 4700, y: -150, z: -3300, phase: 'foot' }; true`);
+  await sleep(1500);
+  const far = await owner.js(`(() => { let boxes = 0; window.__orchScene.three.scene.traverse((o) => { if (o.isInstancedMesh && o.geometry.getAttribute('aLook') && o.count > boxes) boxes = o.count; }); const c = window.__orchScene.three.camera.position; return { boxes, x: c.x, z: c.z }; })()`);
+  check('Skyline: the city has no end — kilometres away it is built up all round', far.boxes > 1500 && Math.hypot(far.x - 4700, far.z + 3300) < 40, JSON.stringify(far));
+  const seen = await othersSee();
+  check('Skyline: meanwhile the others see the owner where they jumped from', !!seen && Math.hypot(seen.x - home.x, seen.z - home.z) < 1.5, JSON.stringify(seen));
+  await owner.click('[data-outside] button');
+  await owner.until('back in the office', `!window.__office.getState().outside.on && !document.querySelector('[data-outside]')`, 4000);
+  await sleep(500);
+  const back = await owner.js(`({ x: window.__orchPlayer.x, z: window.__orchPlayer.z, cam: window.__orchScene.three.camera.position.y })`);
+  check('Skyline: "Back to Office" — back where one stood, and the camera with them', Math.hypot(back.x - home.x, back.z - home.z) < 0.5 && back.cam > 0, JSON.stringify(back));
+  await owner.js(`window.__orchPlayer.goto = ${JSON.stringify(start)}; true`);
+  await sleep(1500);
+  await owner.js(`window.__office.getState().openPanel('settings', 'surroundings'); true`);
+  await owner.until('the Surroundings page again', `document.querySelectorAll('[data-surroundings]').length === 6`, 8000);
+}
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-surroundings-'));
 const office = spawn(process.execPath, [path.join(root, 'scripts/dev-office.ts'), '--port', String(4900 + Math.floor(Math.random() * 200))], { stdio: ['ignore', 'pipe', 'ignore'], cwd: root });
 let app = null;
@@ -84,6 +151,17 @@ try {
       // What the scene says about itself.
       scene: () =>
         js(`(() => { const p = window.__orchScene; const t = p.three; return { ...p.surroundings, windows: p.outerWindows, sky: t.scene.children.some((c) => c.renderOrder === 900), camFar: t.camera.far, background: '#' + t.scene.background.getHexString(), calls: (window.__orchPerf || {}).calls, fps: (window.__orchPerf || {}).fps, age: Date.now() - ((window.__orchPerf || {}).at || 0), geometries: t.gl.info.memory.geometries, textures: t.gl.info.memory.textures }; })()`),
+      /** A real key press (down, held for `ms`, up). */
+      press: async (code, ms = 90) => {
+        const key = code === 'Space' ? ' ' : code.startsWith('Key') ? code.slice(3).toLowerCase() : code.replace(/Left|Right/, '');
+        await send('Input.dispatchKeyEvent', { type: 'keyDown', code, key });
+        await sleep(ms);
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', code, key });
+      },
+      hold: (code, down) => {
+        const key = code === 'Space' ? ' ' : code.startsWith('Key') ? code.slice(3).toLowerCase() : code.replace(/Left|Right/, '');
+        return send('Input.dispatchKeyEvent', { type: down ? 'keyDown' : 'keyUp', code, key });
+      },
       close: () => ws.close(),
     };
   };
@@ -135,6 +213,7 @@ try {
     most = Math.max(most, a.calls);
     const errs = [...(await owner.js(`window.__errs`)), ...(await other.js(`window.__errs`))];
     check(`${name}: nothing it is drawn with failed to build`, errs.length === 0, errs.slice(0, 3).join(' | '));
+    if (id === 'skyline') await theCity(owner, other);
   }
 
   // ── the place is the office's, not a window's ──

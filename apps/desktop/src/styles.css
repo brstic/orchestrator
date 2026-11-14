@@ -2964,6 +2964,12 @@ button.ops-row:hover {
   padding: 20px;
 }
 
+.prompt-outside {
+  border-color: rgba(110, 168, 255, 0.45);
+}
+.prompt-outside .btn {
+  letter-spacing: 0;
+}
 .prompt-moving {
   border-color: rgba(61, 220, 132, 0.55);
 }

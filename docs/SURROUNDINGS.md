@@ -52,6 +52,8 @@ OfficeScene
 
 ### The Skyline's city
 
+**Since 2026-11-14 the city has no end and one can go down into it** — jump out of a window, a parachute, a car out of the traffic: `CITY.md`. Blocks are made from their own numbers (`city/blocks.ts`) and only those round the camera are drawn; traffic and walkers are laid round the camera.
+
 Redone on 2026-11-14 (the owner: "redesign the buildings so they look more realistic, and the traffic too"). `skyline.ts`, `traffic.ts`.
 
 - **Buildings.** One material (`buildingMaterial`; `buildingMaterial(true)` for round towers, where the way round is the way along the wall) draws four kinds of front, chosen by height: **stone or brick** with windows set in it (most low ones), **bands of windows** with mullions, **a wall of glass** whose panes each mirror the sky a shade differently (most tall ones), and **piers** with tall windows between, one side of each pier in shade. A tall tower stands on a **podium** of shops filling its lot, steps back as it rises (an older one in more steps), and may be **round**. A pane mirrors what it faces — the last light low in the west, dark blue overhead, the warm city below — more of it the flatter one looks at it (Fresnel). A lit window shows **a room**: brighter under the ceiling, a blind half down here and there. The ground floor is **shop fronts** under a band of awnings and signs; a third of the tall towers have their **crown lit**; the street between towers is darker than the tops (`above`). Light comes from the sky, from the street's glow and from the west, more of it higher up.
@@ -126,7 +128,8 @@ On the owner's Mac (the development office, the usual view, 1500×940): the plai
 - **Snow does not fall "inside"**: inside is one rectangle round the building and every member's room together, so in the notch between a deep member's room and the building no snow falls either.
 - **Traffic goes straight on**: nobody turns at a crossing, and all the lights of the city change together. Vehicles come round again at the city's edge (in the fog).
 - **The island's sea is striped from high above** (a free camera far up): its waves are a few regular trains. From the office and the beach it is not.
-- **Nothing outside can be walked on.** The floor to walk on ends where it always did; the terrace, the lawn and the beach are to look at.
+- **Nothing outside can be walked on — except the Skyline's city, by jumping out of a window** (`CITY.md`). The floor of the office ends where it always did; the terrace, the lawn and the beach are to look at.
+- **Changing the place leaves about a dozen shapes behind each time** (`gl.info.memory.geometries` grows by 11–13 per change; seen on 2026-11-14 in the build before the city as well, so not the city's). The last check of `tests/ui/surroundings.mjs` ("everything a place was made of is let go of") fails on it now; not found yet.
 - **Phones** get the office's phone page, which has no 3D office; nothing changes there.
 - The entrance page (`ENTRANCE-PAGE.md`) draws its own small office and is not moved by this setting.
 

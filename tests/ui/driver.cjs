@@ -2837,7 +2837,8 @@ async function scenario() {
     await clickText('Send');
     await waitFor(`(() => { const g = ${goal}; return !!g && g.status === 'active'; })()`, 8000);
     await waitFor(`!!window.__t.scope().querySelector('.goal-strip[data-goal="active"]') && window.__t.scope().querySelector('.goal-strip').textContent.includes('The notes are complete.')`, 8000);
-    if ((await js(`window.__t.scope().querySelector('textarea').value`)) !== '') throw new Error('the box still holds the /goal line');
+    // (The strip can come with the office's update a moment before the box is emptied: the answer to the request.)
+    if (!(await waitFor(`window.__t.scope().querySelector('textarea').value === ''`, 4000).then(() => true, () => false))) throw new Error('the box still holds the /goal line');
     const sent = await js(`Object.values(window.__t.store().messages).filter((m) => m.toEmployeeId === ${JSON.stringify(who.id)} && m.from.kind === 'owner').length`);
     if (sent !== messagesBefore) throw new Error('/goal went to them as a message of mine as well');
     // Sent on: the count of turns goes up while nobody types anything.

@@ -13,6 +13,10 @@
  * different times, and the last of a queue is through the crossing before the other direction's first starts. Both
  * are measured by `packages/office-3d/test/traffic.test.ts`.
  *
+ * The city has no end (`city/blocks.ts`), and neither has its traffic: what drives is a pattern that repeats every
+ * `spanOf` along a street and every `acrossOf` across the streets, laid round wherever one looks from (`origin`).
+ * A lane comes round again far away, in the fog; near by, every street has its traffic.
+ *
  * Pure: no three.js here.
  */
 
@@ -88,6 +92,20 @@ export const dirOf = (alongX: boolean, lane: number): 1 | -1 => ((lane > 0) === 
 /** The length of a lane before it comes round again. */
 export const spanOf = (g: StreetGrid): number => (2 * g.reach + 1) * g.pitch;
 
+/** How far the pattern of streets repeats across them: `2 · reach + 2` streets. */
+export const acrossOf = (g: StreetGrid): number => (2 * g.reach + 2) * g.pitch;
+
+/** `v` brought to within half a `period` of `origin`. */
+export const near = (v: number, origin: number, period: number): number => origin + ((((v - origin + period / 2) % period) + period) % period) - period / 2;
+
+/** Where a vehicle is in the world at `t`, seen from `origin`, and which way it faces (radians about y; 0 is +z). */
+export function vehicleAt(v: Vehicle, t: number, g: StreetGrid, origin: { x: number; z: number }): { x: number; z: number; heading: number } {
+  const along = centerAt(v, t, g) * v.dir;
+  const across = v.across;
+  if (v.alongX) return { x: near(along, origin.x, spanOf(g)), z: near(across, origin.z, acrossOf(g)), heading: v.dir > 0 ? Math.PI / 2 : -Math.PI / 2 };
+  return { x: near(across, origin.x, acrossOf(g)), z: near(along, origin.z, spanOf(g)), heading: v.dir > 0 ? 0 : Math.PI };
+}
+
 /** Where the streets cross along a lane (the same numbers for both directions). */
 export function crossingsOf(g: StreetGrid): number[] {
   const out: number[] = [];
@@ -108,8 +126,11 @@ export function centerAt(v: Pick<Vehicle, 'alongX' | 'stop' | 'delay' | 'travel'
   return ((((c + span / 2) % span) + span) % span) - span / 2;
 }
 
-/** The same as `centerAt`, for the graphics card. Expects `uTime`, `uSpan`, `uPitch`, `uCycle`, `uZOff`. */
+/** The same as `centerAt` and `near`, for the graphics card. Expects `uTime`, `uSpan`, `uAcross`, `uPitch`, `uCycle`, `uZOff`. */
 export const TRAFFIC_GLSL = /* glsl */ `
+float nearTo(float v, float origin, float period) {
+  return origin + mod(v - origin + period * 0.5, period) - period * 0.5;
+}
 float trafficF(float alongX, float delay, float travel, out float n) {
   float tau = uTime - (alongX > 0.5 ? 0.0 : uZOff) - delay;
   n = floor(tau / uCycle);

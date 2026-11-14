@@ -7,7 +7,14 @@ import { useActs } from './character/acts.ts';
 import { JUMP_HEIGHT, JUMP_SECONDS, JUMP_TOUCH, jumpSink, jumpY } from './character/motion.ts';
 import { sceneProbe } from './Environment.tsx';
 import type { CameraMode, NearbyTarget, PersonView } from './types.ts';
-import { deskSeat, moveWithCollision, type Seat, type World } from './world.ts';
+import { deskSeat, moveWithCollision, type Seat, type Wall, type World } from './world.ts';
+import { JUMP_AIR, JUMP_OFF } from './character/motion.ts';
+import { STREET_Y, blocked, solidsNear, type Solid } from './city/blocks.ts';
+import { alight, board, leap, step as cityStep, type Explorer, type Keys as CityKeys } from './city/explorer.ts';
+import { CityGear, type Gear } from './city/gear.tsx';
+import { CITY_GRID, cityLive, cityTraffic } from './surroundings/skyline.ts';
+import { vehicleAt } from './surroundings/traffic.ts';
+import { glazed, plateOf } from './surroundings/windows.ts';
 
 /** The owner: a navy two-piece suit, burgundy tie, dark brown oxfords. */
 const CEO_LOOK: Appearance = { skin: '#e0ac69', hair: '#241c17', hairStyle: 'short', shirt: '#2b3c66', pants: '#2b3c66', accessory: 'none', build: 1.03 };
@@ -138,6 +145,10 @@ export function Rig({
   jumpAsk = 0,
   onSeated,
   onJumped,
+  city = false,
+  outside,
+  onOutside,
+  onOutsideHint,
 }: {
   world: World;
   mode: CameraMode;
@@ -170,6 +181,14 @@ export function Rig({
   onSeated?: (seatId: string | null) => void;
   /** A jump really began (so the others can be told). */
   onJumped?: () => void;
+  /** The office stands over the city (the Skyline): one can jump out of a window into it. */
+  city?: boolean;
+  /** Out in the city (`on`), or back in the office; acted on each time `n` changes. */
+  outside?: { on: boolean; n: number } | null;
+  /** The owner came back by themselves (landed on the office's own terrace). */
+  onOutside?: (on: boolean) => void;
+  /** What the keys do out there just now, for the HUD ("F — drive this car"), or null. */
+  onOutsideHint?: (hint: string | null) => void;
 }) {
   const { camera, gl } = useThree();
   const avatar = useRef<THREE.Group>(null);
@@ -212,6 +231,8 @@ export function Rig({
     air: -1,
     off: new THREE.Vector3(),
     offLook: new THREE.Vector3(),
+    /** When the mouse last turned the view (ms): out in the city the camera comes round behind only after a moment. */
+    lookAt: 0,
   });
   const camPos = useMemo(() => new THREE.Vector3(), []);
   const camLook = useMemo(() => new THREE.Vector3(), []);
@@ -284,6 +305,241 @@ export function Rig({
     s.air = 0;
     jumpedRef.current?.();
   }, [jumpAsk]);
+
+  // ── out in the city ──
+  const out = useRef({
+    on: false,
+    e: null as Explorer | null,
+    /** Where the owner stood in the office when they jumped: where they come back to. */
+    home: { x: 0, z: 0, rot: 0 },
+    prevF: false,
+    prevJump: false,
+    /** The car they left standing, and which vehicle of the traffic it was. */
+    parked: null as { x: number; z: number; rot: number; paint: [number, number, number]; index: number } | null,
+    hint: null as string | null,
+    zoom: 1,
+  });
+  const gear = useRef<Gear>({ chute: null, car: null, parked: null });
+  const outsideRef = useRef(onOutside);
+  outsideRef.current = onOutside;
+  const hintRef = useRef(onOutsideHint);
+  hintRef.current = onOutsideHint;
+  /** The outer windows one can jump out of (only where the office stands over the city). */
+  const windows = useMemo<Wall[]>(() => (city ? glazed(world).filter((w) => w.outer && w.glass) : []), [city, world]);
+  /** The office's own tower, as something solid: its floor is at 0, its terrace all round. */
+  const tower = useMemo<Solid>(() => {
+    const p = plateOf(world);
+    return { minX: p.minX, maxX: p.maxX, minZ: p.minZ, maxZ: p.maxZ, top: 0 };
+  }, [world]);
+  const towerRef = useRef(tower);
+  towerRef.current = tower;
+  const comeBack = () => {
+    const o = out.current;
+    if (!o.on) return;
+    o.on = false;
+    o.e = null;
+    o.parked = null;
+    cityLive.taken = -1;
+    gear.current = { chute: null, car: null, parked: null };
+    player.set(o.home.x, 0, o.home.z);
+    const s = st.current;
+    // Back in, turned away from the window: facing into the office.
+    s.playerRot = wrapPi(o.home.rot + Math.PI);
+    s.yaw = s.playerRot + Math.PI;
+    s.pitch = 0.5;
+    s.jump = true;
+    s.vf = s.vs = s.af = s.as = 0;
+    air.current = -1;
+    o.hint = null;
+    hintRef.current?.(null);
+  };
+  useEffect(() => {
+    if (!outside) return;
+    const o = out.current;
+    if (outside.on && !o.on) {
+      // Out through the window nearest to where they stand, over the balustrade at the terrace's edge.
+      const plate = plateOf(world);
+      const b = world.base.bounds;
+      let best: Wall | null = null;
+      let bestD = Infinity;
+      for (const w of windows) {
+        const d = segmentDistance(player.x, player.z, w);
+        if (d < bestD) {
+          bestD = d;
+          best = w;
+        }
+      }
+      let x = player.x;
+      let z = player.z;
+      let rot = st.current.playerRot;
+      if (best) {
+        const alongX = Math.abs(best.z2 - best.z1) < 1e-6;
+        if (alongX) {
+          const south = best.z1 > (b.minZ + b.maxZ) / 2;
+          z = south ? plate.maxZ + 0.6 : plate.minZ - 0.6;
+          x = THREE.MathUtils.clamp(player.x, Math.min(best.x1, best.x2), Math.max(best.x1, best.x2));
+          rot = south ? 0 : Math.PI;
+        } else {
+          const east = best.x1 > (b.minX + b.maxX) / 2;
+          x = east ? plate.maxX + 0.6 : plate.minX - 0.6;
+          z = THREE.MathUtils.clamp(player.z, Math.min(best.z1, best.z2), Math.max(best.z1, best.z2));
+          rot = east ? Math.PI / 2 : -Math.PI / 2;
+        }
+      }
+      o.home = { x: player.x, z: player.z, rot: st.current.playerRot };
+      if (st.current.seat) standUp();
+      o.e = leap(x, z, rot);
+      o.on = true;
+      o.zoom = 1;
+      const s = st.current;
+      s.yaw = rot + Math.PI;
+      s.pitch = 0.32;
+      s.lookAt = 0;
+      onNearby(null);
+    } else if (!outside.on && o.on) comeBack();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outside?.n]);
+  useEffect(() => () => void (cityLive.taken = -1), []);
+  // For the UI tests: the windows one can jump out of.
+  useEffect(() => {
+    const probe = ((window as any).__orchPlayer ??= { x: 0, z: 0, rot: 0 });
+    probe.windows = windows.map((w) => ({ x1: w.x1, z1: w.z1, x2: w.x2, z2: w.z2 }));
+  }, [windows]);
+
+  /** One frame out in the city: the step, getting in and out of a car, the camera behind, the body, the gear. */
+  const cityFrame = (dt: number, time: number) => {
+    const o = out.current;
+    const e = o.e!;
+    const s = st.current;
+    const k = keys.current;
+    const f = k.has('KeyF');
+    const fNow = f && !o.prevF;
+    o.prevF = f;
+    const space = k.has('Space');
+    const jumpNow = space && !o.prevJump;
+    o.prevJump = space;
+    const keysNow: CityKeys = {
+      fwd: (k.has(keymap.forward) || k.has('ArrowUp') ? 1 : 0) - (k.has(keymap.back) || k.has('ArrowDown') ? 1 : 0),
+      turn: (k.has(keymap.right) || k.has('ArrowRight') ? 1 : 0) - (k.has(keymap.left) || k.has('ArrowLeft') ? 1 : 0),
+      strafe: (k.has(keymap.strafeRight) ? 1 : 0) - (k.has(keymap.strafeLeft) ? 1 : 0),
+      run: k.has('ShiftLeft') || k.has('ShiftRight'),
+      jump: jumpNow,
+    };
+    const solids = solidsNear(e.x, e.z, [towerRef.current]);
+    const x0 = e.x;
+    const z0 = e.z;
+    const rot0 = e.rot;
+    cityStep(e, keysNow, dt, solids);
+    // Into a car (the one they left, or one of the traffic standing near), and out again.
+    let nearCar: { x: number; z: number; heading: number; paint: [number, number, number]; index: number } | null = null;
+    if (e.phase === 'foot') {
+      if (o.parked && Math.hypot(o.parked.x - e.x, o.parked.z - e.z) < 4) nearCar = { x: o.parked.x, z: o.parked.z, heading: o.parked.rot, paint: o.parked.paint, index: o.parked.index };
+      else if (e.y < STREET_Y + 0.5) {
+        const list = cityTraffic(cityLive.quality);
+        let bestD = 4.5;
+        for (let i = 0; i < list.length; i++) {
+          const v = list[i]!;
+          if (v.kind === 'bus' || i === cityLive.taken) continue;
+          const at = vehicleAt(v, time, CITY_GRID, { x: camera.position.x, z: camera.position.z });
+          const d = Math.hypot(at.x - e.x, at.z - e.z);
+          if (d < bestD) {
+            bestD = d;
+            nearCar = { x: at.x, z: at.z, heading: at.heading, paint: v.paint, index: i };
+          }
+        }
+      }
+    }
+    if (fNow) {
+      if (e.phase === 'car') o.parked = { ...alight(e, solids), paint: e.paint, index: e.vehicle };
+      else if (nearCar) {
+        if (o.parked && o.parked.index !== nearCar.index) o.parked = null;
+        if (o.parked) o.parked = null;
+        board(e, nearCar);
+        cityLive.taken = nearCar.index;
+      }
+    }
+    // Back on the office's own terrace: home.
+    if (e.phase === 'foot' && e.y > STREET_Y + DROP_HOME) {
+      comeBack();
+      outsideRef.current?.(false);
+      return;
+    }
+    // What the keys do now.
+    const hint =
+      e.phase === 'fall' ? 'SPACE — OPEN THE PARACHUTE' : e.phase === 'chute' ? 'W / S — FASTER, SLOWER · A / D — STEER' : e.phase === 'car' ? 'F — GET OUT · SHIFT — FASTER' : nearCar ? 'F — DRIVE THIS CAR' : 'WALK WITH W A S D · SHIFT TO RUN · SPACE TO JUMP';
+    if (hint !== o.hint) {
+      o.hint = hint;
+      hintRef.current?.(hint);
+    }
+
+    // ── the camera, behind ──
+    const moved = Math.hypot(e.x - x0, e.z - z0) / Math.max(dt, 1e-4);
+    if ((moved > 0.6 || e.phase !== 'foot') && Date.now() - s.lookAt > 1500) s.yaw += wrapPi(e.rot + Math.PI - s.yaw) * (1 - Math.exp(-dt * (e.phase === 'car' ? 4 : 2.2)));
+    else if (e.rot !== rot0) s.yaw -= rot0 - e.rot;
+    const dist = (e.phase === 'car' ? 10 + Math.abs(e.vf) * 0.08 : e.phase === 'foot' ? 6 : e.phase === 'chute' ? 12 : 9) * o.zoom;
+    // On the street the camera keeps under the trees' crowns (unless the mouse put it higher).
+    if (e.phase === 'foot' && e.y < STREET_Y + 0.5 && Date.now() - s.lookAt > 1500) s.pitch += (0.16 - s.pitch) * (1 - Math.exp(-dt * 2));
+    camLook.set(e.x, e.y + (e.phase === 'car' ? 1.3 : e.phase === 'chute' ? 2.2 : 1.5), e.z);
+    const cp = Math.cos(s.pitch);
+    camPos.set(camLook.x + Math.sin(s.yaw) * cp * dist, camLook.y + Math.sin(s.pitch) * dist, camLook.z + Math.cos(s.yaw) * cp * dist);
+    // Never inside a building: the camera comes in front of what is between it and the body.
+    for (let i = 1; i <= 12; i++) {
+      const t = i / 12;
+      const px = camLook.x + (camPos.x - camLook.x) * t;
+      const py = camLook.y + (camPos.y - camLook.y) * t;
+      const pz = camLook.z + (camPos.z - camLook.z) * t;
+      if (blocked(solids, px, pz, py, 0.4, 0) || py < STREET_Y + 0.4) {
+        const keep = Math.max(0.12, (i - 1) / 12);
+        camPos.set(camLook.x + (camPos.x - camLook.x) * keep, Math.max(STREET_Y + 0.5, camLook.y + (camPos.y - camLook.y) * keep), camLook.z + (camPos.z - camLook.z) * keep);
+        break;
+      }
+    }
+    const a = s.jump ? 1 : 1 - Math.exp(-dt * 9);
+    s.jump = false;
+    camera.position.lerp(camPos, a);
+    curLook.current.lerp(camLook, a);
+    camera.lookAt(curLook.current);
+    camera.updateMatrixWorld();
+    const pc = camera as THREE.PerspectiveCamera;
+    const fov = e.phase === 'car' ? 58 + Math.min(14, Math.abs(e.vf) * 0.35) : e.phase === 'fall' ? 64 : 55;
+    if (Math.abs(pc.fov - fov) > 0.05) {
+      pc.fov += (fov - pc.fov) * (1 - Math.exp(-dt * 4));
+      pc.updateProjectionMatrix();
+    }
+
+    // ── the body, and what it has with it ──
+    const m = motion.current;
+    const per = dt > 1e-4 ? 1 / dt : 0;
+    const wx = (e.x - x0) * per;
+    const wz = (e.z - z0) * per;
+    const sr = Math.sin(e.rot);
+    const cr = Math.cos(e.rot);
+    const onFoot = e.phase === 'foot';
+    m.vx = onFoot ? wx * cr - wz * sr : 0;
+    m.vz = onFoot ? wx * sr + wz * cr : 0;
+    m.turn = onFoot ? (e.rot - rot0) * per : 0;
+    m.run = onFoot && (Math.abs(m.vz) > 0.3 || Math.abs(m.vx) > 0.3);
+    air.current = e.phase === 'fall' ? JUMP_OFF + JUMP_AIR * 0.5 : -1;
+    if (avatar.current) {
+      avatar.current.position.set(e.x, e.y, e.z);
+      avatar.current.rotation.y = e.rot;
+      avatar.current.visible = e.phase !== 'car';
+    }
+    if (ring.current) ring.current.visible = false;
+    gear.current = {
+      chute: e.phase === 'chute' ? { x: e.x, y: e.y, z: e.z, rot: e.rot, open: e.chute } : null,
+      car: e.phase === 'car' ? { x: e.x, y: e.y, z: e.z, rot: e.rot, paint: e.paint, speed: e.vf } : null,
+      parked: o.parked ? { x: o.parked.x, y: STREET_Y, z: o.parked.z, rot: o.parked.rot, paint: o.parked.paint, speed: 0 } : null,
+    };
+    const probe = ((window as any).__orchPlayer ??= { x: 0, z: 0, rot: 0 });
+    probe.city = { phase: e.phase, x: e.x, y: e.y, z: e.z, rot: e.rot, chute: e.chute, speed: e.vf, near: nearCar ? nearCar.index : null, taken: cityLive.taken };
+    // (Tests may put the body somewhere out there: `__orchPlayer.cityGoto = { x, y, z, rot }`.)
+    if (probe.cityGoto) {
+      Object.assign(e, { vx: 0, vy: 0, vz: 0, vf: 0, vs: 0 }, probe.cityGoto);
+      if (probe.cityGoto.phase === undefined && e.phase !== 'car') e.phase = e.y <= STREET_Y + 0.01 ? 'foot' : 'fall';
+      probe.cityGoto = null;
+    }
+  };
 
   // The interactable spots, for the UI tests; they move when the floor plan is edited.
   useEffect(() => {
@@ -370,13 +626,15 @@ export function Rig({
       last = [e.clientX, e.clientY];
       if (modeRef.current === 'workstation' || modeRef.current === 'command') return;
       s.yaw -= dx * 0.005;
-      s.pitch = THREE.MathUtils.clamp(s.pitch + dy * 0.004, modeRef.current === 'free' ? -1.3 : 0.12, 1.35);
+      s.pitch = THREE.MathUtils.clamp(s.pitch + dy * 0.004, modeRef.current === 'free' ? -1.3 : out.current.on ? -0.25 : 0.12, 1.35);
+      if (s.dragging) s.lookAt = Date.now();
     };
     const pup = () => (last = null);
     const wheel = (e: WheelEvent) => {
       const s = st.current;
       const f = Math.exp(e.deltaY * 0.0012);
-      if (modeRef.current === 'management') s.mgmtH = THREE.MathUtils.clamp(s.mgmtH * f, 7, 48);
+      if (out.current.on) out.current.zoom = THREE.MathUtils.clamp(out.current.zoom * f, 0.4, 3);
+      else if (modeRef.current === 'management') s.mgmtH = THREE.MathUtils.clamp(s.mgmtH * f, 7, 48);
       else if (modeRef.current === 'ceo') s.dist = THREE.MathUtils.clamp(s.dist * f, 2.6, 22);
     };
     const ctx = (e: Event) => e.preventDefault();
@@ -404,9 +662,15 @@ export function Rig({
     if (mode !== 'first' && document.pointerLockElement) document.exitPointerLock();
   }, [mode]);
 
-  useFrame((_state, rawDt) => {
+  useFrame((state, rawDt) => {
     const dt = Math.min(rawDt, 0.05);
     const s = st.current;
+    if (out.current.on && out.current.e) {
+      s.lastMode = mode;
+      cityFrame(dt, state.clock.elapsedTime);
+      return;
+    }
+    if (ring.current) ring.current.visible = true;
     if (s.lastMode !== mode) {
       s.lastMode = mode;
       s.blend = 0;
@@ -539,6 +803,9 @@ export function Rig({
         s.playerRot = probe.goto.rot;
         s.yaw = probe.goto.rot + Math.PI;
       }
+      // (And the camera's angle, when a test puts back a view it took earlier.)
+      if (typeof probe.goto.yaw === 'number') s.yaw = probe.goto.yaw;
+      if (typeof probe.goto.pitch === 'number') s.pitch = probe.goto.pitch;
       probe.goto = null;
       s.jump = true;
       s.vf = s.vs = s.af = s.as = 0;
@@ -546,6 +813,8 @@ export function Rig({
     probe.x = ownerPosition.x = player.x;
     probe.z = ownerPosition.z = player.z;
     probe.rot = ownerPosition.rot = s.playerRot;
+    probe.yaw = s.yaw;
+    probe.pitch = s.pitch;
     probe.sit = s.seat?.id ?? null;
     ownerPosition.sit = !!s.seat;
     probe.y = lift;
@@ -762,6 +1031,15 @@ export function Rig({
       // A place to sit. Standing right at a seat means the seat even inside a room's own wide circle (the meeting
       // room's chairs are all inside its circle); a thing one walks up to on purpose — the TV, the hi-fi, the vault,
       // the arcade — keeps its meaning. Seated, the only thing in reach is getting up.
+      // Standing at an outer window over the city: a way out.
+      if (!best && windows.length && !s.seat) {
+        for (const w of windows) {
+          if (segmentDistance(player.x, player.z, w) < 1.15) {
+            best = { kind: 'window', id: 'window', label: 'JUMP OUT OF THE WINDOW' };
+            break;
+          }
+        }
+      }
       if (s.seat) best = { kind: 'seat', id: s.seat.id, label: 'STAND UP' };
       else if (!best || ROOM_SPOTS.has(best.kind)) {
         let near = best ? SEAT_AT : SEAT_NEAR;
@@ -779,6 +1057,8 @@ export function Rig({
   }, -1);
 
   return (
+    <>
+    <CityGear gear={gear} />
     <group ref={avatar}>
       <PlayerBody motion={motion} jump={air} whipAt={whipAt} ouchAt={ouchAt} emote={emote} seated={seated} />
       <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
@@ -786,7 +1066,20 @@ export function Rig({
         <meshBasicMaterial color="#ffd166" transparent opacity={0.85} toneMapped={false} />
       </mesh>
     </group>
+    </>
   );
+}
+
+/** Back on the office's own terrace (its floor is at 0) once one stands this high over the street. */
+const DROP_HOME = 140;
+
+/** How far a point is from a wall (a segment on the floor). */
+function segmentDistance(x: number, z: number, w: Wall): number {
+  const dx = w.x2 - w.x1;
+  const dz = w.z2 - w.z1;
+  const len = dx * dx + dz * dz;
+  const t = len > 0 ? THREE.MathUtils.clamp(((x - w.x1) * dx + (z - w.z1) * dz) / len, 0, 1) : 0;
+  return Math.hypot(x - (w.x1 + dx * t), z - (w.z1 + dz * t));
 }
 
 function PlayerBody({ motion, jump, whipAt, ouchAt, emote, seated }: { motion: { current: Motion }; jump: { current: number }; whipAt?: number; ouchAt?: number; emote?: { name: string; at: number } | null; seated: boolean }) {
