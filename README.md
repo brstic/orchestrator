@@ -2,6 +2,10 @@
   <img src="docs/assets/banner.jpg" alt="ORCHESTRATOR — Your code. Your company. Your world. A 3D office where real Claude Code sessions sit at desks and work as your employees." width="100%">
 </p>
 
+https://github.com/user-attachments/assets/6e5bbd27-3d4d-46e3-a719-cef76400f557
+
+<p align="center"><sub>▶ The office in 50 seconds (sound on). The real app, recorded in a demo office whose employees are scripted stand-ins, so no Claude usage was spent.<br>Music: “Funkorama” by Kevin MacLeod (<a href="https://incompetech.com">incompetech.com</a>), licensed under <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons: By Attribution 4.0</a>.</sub></p>
+
 <p align="center">
   <a href="#-two-minutes-to-your-first-hire"><b>Quick start</b></a> ·
   <a href="#-why-not-just-open-more-terminals"><b>Why</b></a> ·

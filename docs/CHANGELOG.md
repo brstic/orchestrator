@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-14
+- **A 50-second video at the top of the README** (the owner: "put it at the top of the GitHub README, as a preview of the project"): the promo cut for the README — 720p, under GitHub's 10 MB, opening on the title card so the player shows it before it is started — uploaded through GitHub as an attachment. It is the real app in a demo office with scripted employees (said under it); the music is Kevin MacLeod's "Funkorama", CC BY 4.0, credited under the video and on its last card.
 - **The README leads with the work, and shows all of it** (the owner: "update the README with everything, so it really shows what we have", with an outside assessment: build it as a serious multi-agent development environment, not first of all a 3D game). It opens with what it does — a team of Claude Code agents on several machines, from one place, without switching terminals — and a new section, *Why not just open more terminals?*; the features are split into *What it does for the work* and *And because it is an office*. New in it: goals, background commands, people acting out what their session is doing, sleep and wake, the long memory, files and a browser for employees, the entrance page with sign-in and knocking. Nothing in it is a plan: no pull requests or GitHub issues, which the office does not do.
 
 ## 2026-11-13
