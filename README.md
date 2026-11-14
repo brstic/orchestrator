@@ -4,19 +4,33 @@
 
 <p align="center">
   <a href="#-two-minutes-to-your-first-hire"><b>Quick start</b></a> ·
+  <a href="#-why-not-just-open-more-terminals"><b>Why</b></a> ·
   <a href="#-screenshots-yes-it-really-looks-like-this"><b>Screenshots</b></a> ·
   <a href="#-what-you-press-and-what-really-happens"><b>What really happens</b></a> ·
   <a href="#-the-foreman"><b>The foreman</b></a> ·
   <a href="docs/README.md"><b>Docs</b></a>
 </p>
 
-<h3 align="center">You hire. They code. You walk around and look important.</h3>
+<h3 align="center">Claude Code, run as a real software company — in 3D.</h3>
+<p align="center"><i>You hire. They code. You walk around and look important.</i></p>
 
-**Orchestrator is a 3D office in which real Claude Code sessions work as employees.** Every person at a desk is a persistent identity backed by a real `claude` process in a real tmux session, in a real git worktree. You walk the floor, look over shoulders, sit down at somebody's terminal, hand out tasks, hold meetings, and answer the hand that goes up when somebody needs a decision.
+**Orchestrator runs a whole team of Claude Code agents — on your laptop, on a Linux server and on your colleagues' computers — from one place, without switching between terminals.** Every person at a desk is a persistent identity backed by a real `claude` process in a real tmux session, in a real git worktree. You walk the floor, look over shoulders, sit down at somebody's terminal, hand out tasks, hold meetings, and answer the hand that goes up when somebody needs a decision.
 
-It is **not** a dashboard with mascots, and it is **not** a simulation: nothing in the office moves unless a hook, an MCP call, a tmux observation or something you did says it happened. If the office does not know what somebody is doing, their tag says `UNKNOWN` — not "working".
+The 3D office is the interface, not the point. It is **not** a dashboard with mascots, and it is **not** a simulation: nothing in the office moves unless a hook, an MCP call, a tmux observation or something you did says it happened. If the office does not know what somebody is doing, their tag says `UNKNOWN` — not "working".
 
 **How it is meant to be used:** the office runs on a server (ideally Linux) and stays open; people walk in with the desktop app. What is on the server — sessions, folders, projects — is shared by the people invited to it. A colleague's own computer gets a room of its own while they are in, and what runs there stays theirs.
+
+## 🧰 Why not just open more terminals?
+
+| With a terminal per agent | In the office |
+| --- | --- |
+| You tab through a dozen terminals to find out who is stuck | Every tag says what that session is really doing; the **Inbox** and the **Command center** list who needs you, across every machine |
+| A permission prompt waits unseen in a tab you are not looking at | A hand goes up. The request is held open — through a restart of the office or of the machine's agent — until you answer it |
+| "Done" means the agent says so | *Done* means a worktree and a branch for the task, your test command run on the host, a review by a colleague and then by you, and a merge without conflict |
+| An agent on another machine means SSH and `tmux attach` | Each machine runs a small agent and its sessions sit in the same office; `Space` puts you at any of their terminals, **Take control** gives you the keyboard |
+| You carry context from one agent to another by hand | They ask each other, wait for each other, hand work over and review each other, through the office's own tools — on the record |
+| One Claude account runs out and the work stops | Several accounts per machine; when one is spent its people move on by themselves |
+| Keeping everyone busy is your job | The foreman answers the operational questions and keeps people moving; a `/goal` keeps one going until it holds; routines repeat the checks |
 
 ## 📸 Screenshots (yes, it really looks like this)
 
@@ -41,27 +55,39 @@ It is **not** a dashboard with mascots, and it is **not** a simulation: nothing 
 
 <sub>Every picture is the real app, taken from a demo office whose employees are scripted stand-ins (so no Claude usage was spent on looking good). Only the frames and the shouting were added — <code>scripts/readme-shots.cjs</code> and <code>scripts/readme-art.cjs</code> make them again.</sub>
 
-## 🎮 The game, if it were one
+## 🛠️ What it does for the work
 
 | | |
 | --- | --- |
 | 🧑‍💻 **Hire** | A name, a role, a folder, a desk. Pick the **Claude account**, the **model** (Fable, Opus, Sonnet, Haiku) and the **effort** for each hire — and change them later for one person or for a dozen at once. |
-| 🚶 **Walk** | `W` `A` `S` `D` through your company. `F` talks to whoever you stand next to, `Space` sits you at their real terminal. |
 | ✋ **Answer** | A raised hand is a real question or a real permission request, held open until you decide. |
 | 📋 **Quests** | Tasks get a worktree and a branch, and each one is a conversation: employees ask there (with answers to click), you answer, attach pictures, send work back. *Done* means the office ran your tests, a colleague and then you reviewed it, and it merged — not that somebody said so. |
 | 🤝 **Teamwork** | Employees ask each other, wait for each other, hand work over, review each other, release and unblock tasks, and wake a colleague who is needed. |
+| 🎯 **Goals** | Type `/goal every test in packages/api passes` in Talk — like Claude Code's own `/goal` — and that employee keeps going, turn after turn, until it holds. Give a check command and it decides. Three turns that do nothing, or a hundred turns, and the goal stops by itself and tells you. |
+| ⏳ **Background commands** | An `npm install`, a dev server or a long test run left going in the background shows on the tag — **⏳ COMMAND RUNNING**, with the command under the name — and nobody nudges them or puts them to sleep while it runs. |
 | 🧢 **The foreman** | One supervisor walks the floor, answers the operational questions and keeps people moving, so you are asked only about direction. |
-| 🛋️ **Break room** | A hi-fi with internet radio for the whole office, a TV with a real browser in it, and sofas you can actually sit on. |
-| 🕹️ **Arcade** | A Mega Drive in the corner. Bring your own cartridge files; they go on the office's shelf for everybody. Play alone — or with a colleague: they walk up, press **Join**, and play from their own computer as player 2. Nothing to set up: the keys are the same for both of you (W A S D, J K L, U I O, Enter), and a plugged-in gamepad just works; everybody else can watch. |
-| 🦘 **Space** | Sits you down where there is a seat, opens whatever you stand at — and where there is nothing at all, you jump: a crouch, arms up, knees tucked, a proper landing (a leap, if you are running). Everybody sees it. |
-| 🌆 **A view** | Put the office on the top floor of a tower over a city at dusk, in a park, on an island at sunset, under the northern lights or in orbit — for everybody in it, with one click. |
-| 🪢 **The whip** | `R`. A crack, a flinch, a "jao!". At somebody asleep it gets them up; otherwise it sends nothing to anybody's session. It stays in. |
-| 👥 **Multiplayer** | Invite people with a link. Owners, colleagues, visitors; each colleague's own computer becomes a room, with a team lead of their own if they want one. Talk with your voice (`V`), wave, dance. |
-| 🔐 **A vault** | A safe in the server room: passwords and keys the employees may use by name, without ever seeing them typed into a prompt. |
 | 🔋 **Claude accounts** | Several per machine, signed in to **from the office** (open a link, paste a code — no terminal, no SSH), each called by its e-mail address. Or **Z.AI's GLM Coding Plan** with an API key. When one runs out its people move on by themselves; when only **Fable's** limit is spent they go on with **Opus** on the same account. |
 | 🧠 **Agents that budget** | Employees can put themselves — or a colleague — on a lighter model or less effort when the work does not need more (`set_model`). Hire a project manager and it does that for the team, with every change and its reason on the record. |
-| 🏆 **Employee of the month** | A framed board for the office: the face of whoever has **worked** the longest this month — time really spent thinking, coding and testing, counted by the office, never waiting time. |
 | 🔁 **Routines** | “Every 30 minutes, look at the error log and tell me what is new.” An employee repeats it by itself; their profile lists what they repeat, to change, pause or remove. |
+| 🧠 **Long memory** | The office keeps the record word for word ([MemPalace](docs/MEMORY.md)). Employees look things up in it in plain words (`recall`) and write down what should outlive their session (`remember`), so a compacted session does not forget why. |
+| 📎 **Files and eyes** | Attach pictures and files to a task or a message; employees see pictures, leave a screenshot of what they did as evidence, and have a browser of their own on their machine ([docs/ATTACHMENTS.md](docs/ATTACHMENTS.md)). |
+| 🔐 **A vault** | A safe in the server room: passwords and keys the employees may use by name, without ever seeing them typed into a prompt. |
+| 😴 **Sleep and wake** | A session with no work for 30 minutes is stopped to free the machine; the employee dozes at the desk. The next message, task or meeting — or the whip — starts it again, in the same conversation. |
+| 👥 **People and machines** | Invite people with a link; link servers over SSH. Owners, colleagues, visitors; each colleague's own computer becomes a room, with a team lead of their own if they want one. Talk with your voice (`V`), wave, dance. |
+
+## 🎮 And because it is an office
+
+| | |
+| --- | --- |
+| 🚶 **Walk** | `W` `A` `S` `D` through your company. `F` talks to whoever you stand next to, `Space` sits you at their real terminal. |
+| 🎭 **Zero NPCs** | Everybody acts out what their session is really doing: chin in the palm while it thinks, typing while it codes, arms crossed watching the tests run, a hand up for a decision, both arms up when a task is done, head on the desk when no session is running. The tag over them says the same in words. |
+| 🦘 **Space** | Sits you down where there is a seat, opens whatever you stand at — and where there is nothing at all, you jump: a crouch, arms up, knees tucked, a proper landing (a leap, if you are running). Everybody sees it. |
+| 🛋️ **Break room** | A hi-fi with internet radio for the whole office, a TV with a real browser in it, and sofas you can actually sit on. |
+| 🕹️ **Arcade** | A Mega Drive in the corner. Bring your own cartridge files; they go on the office's shelf for everybody. Play alone — or with a colleague: they walk up, press **Join**, and play from their own computer as player 2. Nothing to set up: the keys are the same for both of you (W A S D, J K L, U I O, Enter), and a plugged-in gamepad just works; everybody else can watch. |
+| 🌆 **A view** | Put the office on the top floor of a tower over a city at dusk, in a park, on an island at sunset, under the northern lights or in orbit — for everybody in it, with one click. |
+| 🪢 **The whip** | `R`. A crack, a flinch, a "jao!". At somebody asleep it gets them up; otherwise it sends nothing to anybody's session. It stays in. |
+| 🏆 **Employee of the month** | A framed board for the office: the face of whoever has **worked** the longest this month — time really spent thinking, coding and testing, counted by the office, never waiting time. |
+| 🚪 **The front door** | The office's address has an entrance page. Members sign in there with a name and a password; anyone else can knock, and somebody inside opens (or not). |
 
 ## 🧱 How it is built
 
@@ -164,6 +190,11 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Window
 | An employee changes a colleague's model | Their session called `set_model` with a reason: the colleague's setting changes, their session is started again with the same conversation, and the change, the reason and who made it are in the feed and the audit log. The level and the account are not theirs to change |
 | The **Employee of the month** board | Every half minute the office adds the time each running session spends in a working state (thinking, reading, coding, testing, running a command…) for its employee; the board shows whoever has the most this calendar month. Waiting for you does not count |
 | Profile → **Routines** | A routine is an instruction the office types into that employee's session every *N* minutes, when they are between turns; a run that finds them busy is skipped |
+| `/goal <what has to be true>` in Talk (or Profile → **Goal**) | The goal is typed into their session with its rules. Each time their turn ends and it does not hold, the office's `Stop` hook sends them on with it. It ends when their session calls `goal_met` with its evidence — and your check command passes, if you gave one — or when three turns in a row used no tool, or after a hundred. It waits while they wait for you, for a colleague or for a background command. Only a person can give a check command ([docs/CLAUDE-CODE-INTEGRATION.md](docs/CLAUDE-CODE-INTEGRATION.md)) |
+| **⏳ COMMAND RUNNING** over someone, the command under their name | Every two seconds their machine's agent reads the process table for the shells Claude Code started under that session; the hooks tell the office which Bash call is in front, so the others are the background ones. Their description (or the command, credentials redacted) is what the tag says |
+| Somebody asleep at their desk | No session is running: none was ever started, or it was stopped after 30 minutes without work (Settings → Employees). A message, a task, a meeting or the whip starts it — after a sleep with `--resume`: the same conversation, in the same folder |
+| Signing in at the office's address | The name and password belong to a member; signing in gives that member a credential for 30 days, the same kind an invitation gives. Guessing is slowed down per name and per address; the office's own owner token is never accepted from the network ([docs/SIGN-IN.md](docs/SIGN-IN.md)) |
+| An employee recalls something from last month | Its session called `recall`; the office searched MemPalace on its own machine, by meaning, in what was said and done, and returned what bears on it ([docs/MEMORY.md](docs/MEMORY.md)) |
 | An employee releases, unblocks, assigns or reviews a task, or wakes a colleague | Their session called `release_task`, `unblock_task`, `give_task`, `submit_review` or `wake_colleague`; it is on the record under their name. They cannot approve a permission request, mark work done unverified, or delete anything. Settings → Employees takes the board back |
 | The arcade → **Add games…** | The cartridge file goes to the office in pieces and is kept on its shelf; everyone in the office gets it from there. The emulator runs in a sandboxed frame of your own window that can reach nothing of the office |
 | A game at the arcade, and somebody else's **Join** | Your console keeps running the game; your window packs its picture and sound (the browser's own encoders) and the office passes them to whoever sat down. Their keys come back as the second pad — from the one who holds it and from nobody else. The office keeps nothing of the game |
@@ -230,7 +261,7 @@ docs/            architecture, install, security, Claude Code integration, and a
 
 ```bash
 pnpm test                  # unit tests
-pnpm test:e2e              # about 360 end-to-end scenarios: real server, real agents, real tmux, real git; scripted worker
+pnpm test:e2e              # about 370 end-to-end scenarios: real server, real agents, real tmux, real git; scripted worker
 pnpm check:changed         # while working: typecheck and the tests beside what you touched (not instead of the above)
 pnpm test:ui               # the UI used for real in Electron (clicks, typing, keys) against a live development office
 pnpm package && pnpm package:smoke   # build the tarball and macOS app, then run them (incl. the connect screen)
