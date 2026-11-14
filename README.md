@@ -1,84 +1,143 @@
-<p align="center">
-  <img src="docs/assets/banner.jpg" alt="ORCHESTRATOR — Your code. Your company. Your world. A 3D office where real Claude Code sessions sit at desks and work as your employees." width="100%">
-</p>
-
-<p align="center">
-  <a href="https://www.facebook.com/groups/orchestrator"><img height="64" src="https://img.shields.io/badge/Join%20the%20community-Facebook%20group-1877F2?style=for-the-badge&logo=facebook&logoColor=white" alt="Join the Orchestrator community on Facebook"></a>
-</p>
-<p align="center"><b>Questions, ideas, what you built with your office, help with setting one up — it all happens in the <a href="https://www.facebook.com/groups/orchestrator">Orchestrator community on Facebook</a>. Come in and say hello.</b></p>
-
-<p align="center">
-  <a href="https://office-demo.sparkcan.com"><img src="https://img.shields.io/badge/Live%20demo-office--demo.sparkcan.com-22C55E?style=flat-square&logo=googlechrome&logoColor=white" alt="Live demo"></a> <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-agents-D97757?style=flat-square&logo=claude&logoColor=white" alt="Built for Claude Code"></a> <a href="#-how-it-is-built"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"></a> <a href="#-two-minutes-to-your-first-hire"><img src="https://img.shields.io/badge/Node.js-%E2%89%A5%2022.18-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22.18 or newer"></a> <a href="#-how-it-is-built"><img src="https://img.shields.io/badge/React-19-20232A?style=flat-square&logo=react&logoColor=white" alt="React 19"></a> <a href="#-how-it-is-built"><img src="https://img.shields.io/badge/three.js-r172-000000?style=flat-square&logo=threedotjs&logoColor=white" alt="three.js"></a> <a href="#-two-minutes-to-your-first-hire"><img src="https://img.shields.io/badge/Electron-33-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron 33"></a> <a href="#-what-you-press-and-what-really-happens"><img src="https://img.shields.io/badge/tmux-sessions-1BB91F?style=flat-square&logo=tmux&logoColor=white" alt="tmux"></a> <a href="#-status-and-limits"><img src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-desktop-555555?style=flat-square&logo=apple&logoColor=white" alt="macOS, Linux, Windows"></a> <a href="docs/CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.0-6EA8FF?style=flat-square&logo=semver&logoColor=white" alt="Version 0.1.0"></a>
-</p>
-
 https://github.com/user-attachments/assets/6e5bbd27-3d4d-46e3-a719-cef76400f557
 
-<p align="center"><sub>▶ The office in 50 seconds (sound on). The real app, recorded in a demo office whose employees are scripted stand-ins, so no Claude usage was spent.<br>Music: “Funkorama” by Kevin MacLeod (<a href="https://incompetech.com">incompetech.com</a>), licensed under <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons: By Attribution 4.0</a>.</sub></p>
+<p align="center"><sub>▶ The office in 50 seconds (sound on). The real app, recorded in a demo office whose employees are scripted stand-ins, so no Claude usage was spent. Music: “Funkorama” by Kevin MacLeod (<a href="https://incompetech.com">incompetech.com</a>), licensed under <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons: By Attribution 4.0</a>.</sub></p>
 
-<p align="center"><b>👀 Walk in and try it: <a href="https://office-demo.sparkcan.com">office-demo.sparkcan.com</a></b><br><sub>A live demo office, open to anybody, no sign-up: you are the boss there for the day — talk to the team (<code>F</code>), hand out tasks, answer their questions, look at the machines and the colleagues' rooms, chat with whoever else walked in. Its employees are scripted stand-ins, not Claude — so it costs nothing to keep open — but the office around them (sessions, hooks, worktrees, tests, commits, questions, approvals) is the real one. Use a computer: phones are turned away.</sub></p>
+<h1 align="center">Your AI dev team, in an office you can walk around.</h1>
+
+<p align="center"><b>Real Claude Code agents. Real colleagues. One server. Played like a game — shipped like a company.</b></p>
 
 <p align="center">
-  <a href="https://office-demo.sparkcan.com"><b>Live demo</b></a> ·
-  <a href="https://www.facebook.com/groups/orchestrator"><b>Community</b></a> ·
-  <a href="#-two-minutes-to-your-first-hire"><b>Quick start</b></a> ·
-  <a href="#-why-not-just-open-more-terminals"><b>Why</b></a> ·
-  <a href="#️-what-the-office-built-in-one-day"><b>Built in a day</b></a> ·
-  <a href="#-screenshots-yes-it-really-looks-like-this"><b>Screenshots</b></a> ·
-  <a href="#-what-you-press-and-what-really-happens"><b>What really happens</b></a> ·
-  <a href="#-the-foreman"><b>The foreman</b></a> ·
+  <a href="https://office-demo.sparkcan.com"><img height="44" src="https://img.shields.io/badge/%E2%96%B6%20Try%20it-live%20demo-22C55E?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Try the live demo"></a> &nbsp; <a href="https://www.facebook.com/groups/orchestrator"><img height="44" src="https://img.shields.io/badge/Join%20the-community-1877F2?style=for-the-badge&logo=facebook&logoColor=white" alt="Join the community on Facebook"></a> &nbsp; <a href="#-quick-start"><img height="44" src="https://img.shields.io/badge/Quick-start-6E56CF?style=for-the-badge&logo=rocket&logoColor=white" alt="Quick start"></a>
+</p>
+
+<p align="center">
+  <a href="https://office-demo.sparkcan.com"><img src="https://img.shields.io/badge/Live%20demo-office--demo.sparkcan.com-22C55E?style=flat-square&logo=googlechrome&logoColor=white" alt="Live demo"></a> <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-agents-D97757?style=flat-square&logo=claude&logoColor=white" alt="Built for Claude Code"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"></a> <a href="#-quick-start"><img src="https://img.shields.io/badge/Node.js-%E2%89%A5%2022.18-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22.18 or newer"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/React-19-20232A?style=flat-square&logo=react&logoColor=white" alt="React 19"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/three.js-r172-000000?style=flat-square&logo=threedotjs&logoColor=white" alt="three.js"></a> <a href="#-quick-start"><img src="https://img.shields.io/badge/Electron-33-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron 33"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/tmux-sessions-1BB91F?style=flat-square&logo=tmux&logoColor=white" alt="tmux"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-desktop-555555?style=flat-square&logo=apple&logoColor=white" alt="macOS, Linux, Windows"></a> <a href="docs/CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.0-6EA8FF?style=flat-square&logo=semver&logoColor=white" alt="Version 0.1.0"></a>
+</p>
+
+<p align="center">
+  <a href="#-in-30-seconds"><b>In 30 seconds</b></a> ·
+  <a href="#-how-it-fits-together"><b>How it fits together</b></a> ·
+  <a href="#-built-in-one-day"><b>Built in one day</b></a> ·
+  <a href="#-screenshots"><b>Screenshots</b></a> ·
+  <a href="#-everything-it-does"><b>Features</b></a> ·
+  <a href="#-quick-start"><b>Quick start</b></a> ·
+  <a href="#-faq"><b>FAQ</b></a> ·
   <a href="docs/README.md"><b>Docs</b></a>
 </p>
 
-<h3 align="center">Claude Code, run as a real software company — in 3D.</h3>
-<p align="center"><i>You hire. They code. You walk around and look important.</i></p>
+## ⚡ In 30 seconds
 
-**Orchestrator runs a whole team of Claude Code agents — on your laptop, on a Linux server and on your colleagues' computers — from one place, without switching between terminals.** Every person at a desk is a persistent identity backed by a real `claude` process in a real tmux session, in a real git worktree. You walk the floor, look over shoulders, sit down at somebody's terminal, hand out tasks, hold meetings, and answer the hand that goes up when somebody needs a decision.
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h3>🔧 Real work</h3>
+      Every person at a desk is a <b>real <code>claude</code> process</b> in a real tmux session, in a real git worktree, on a real machine.<br><br>
+      <b>Done</b> means your tests ran, a colleague and you reviewed it, and it merged — not that an agent said so.<br><br>
+      Nothing moves unless a hook, a tool call or the terminal says it happened. Unknown is shown as <code>UNKNOWN</code>.
+    </td>
+    <td width="33%" valign="top">
+      <h3>🎮 Played like a game</h3>
+      Walk the floor with <code>W A S D</code>. <code>F</code> talks to whoever you stand next to; <code>Space</code> sits you at their terminal.<br><br>
+      They act out what their session is doing: chin in hand while it thinks, typing while it codes, <b>a hand up</b> when it needs you.<br><br>
+      Quests, XP, employee of the month, an arcade, a city to parachute into — and a whip for the sleepers.
+    </td>
+    <td width="33%" valign="top">
+      <h3>👥 Multiplayer, for real</h3>
+      The office runs on <b>one server</b> and stays open. Your colleagues walk in with the desktop app, from their own computers.<br><br>
+      Shared agents work on the server; a colleague's own computer becomes <b>a room</b> on the floor, and what runs there stays theirs.<br><br>
+      Owners, colleagues, visitors. Chat, voice, two-player arcade.
+    </td>
+  </tr>
+</table>
 
-The 3D office is the interface, not the point. It is **not** a dashboard with mascots, and it is **not** a simulation: nothing in the office moves unless a hook, an MCP call, a tmux observation or something you did says it happened. If the office does not know what somebody is doing, their tag says `UNKNOWN` — not "working".
+<p align="center"><b>👀 Don't take our word for it — <a href="https://office-demo.sparkcan.com">walk into the live demo</a>.</b> No sign-up: you're the boss for the day. Talk to the team (<code>F</code>), hand out tasks, answer their questions, look at the machines and the colleagues' rooms, chat with whoever else is there. <sub>(Its employees are scripted stand-ins, so it costs nothing to keep open; the office around them is the real one. Use a computer.)</sub></p>
 
-**How it is meant to be used:** the office runs on a server (ideally Linux) and stays open; people walk in with the desktop app. What is on the server — sessions, folders, projects — is shared by the people invited to it. A colleague's own computer gets a room of its own while they are in, and what runs there stays theirs.
+## 🗺 How it fits together
 
-## 🧰 Why not just open more terminals?
+**One server, the whole team.** Agents on the server are shared by everyone invited; a colleague's own computer joins while they are in.
 
-| With a terminal per agent | In the office |
-| --- | --- |
-| You tab through a dozen terminals to find out who is stuck | Every tag says what that session is really doing; the **Inbox** and the **Command center** list who needs you, across every machine |
-| A permission prompt waits unseen in a tab you are not looking at | A hand goes up. The request is held open — through a restart of the office or of the machine's agent — until you answer it |
-| "Done" means the agent says so | *Done* means a worktree and a branch for the task, your test command run on the host, a review by a colleague and then by you, and a merge without conflict |
-| An agent on another machine means SSH and `tmux attach` | Each machine runs a small agent and its sessions sit in the same office; `Space` puts you at any of their terminals, **Take control** gives you the keyboard |
-| You carry context from one agent to another by hand | They ask each other, wait for each other, hand work over and review each other, through the office's own tools — on the record |
-| One Claude account runs out and the work stops | Several accounts per machine; when one is spent its people move on by themselves |
-| Keeping everyone busy is your job | The foreman answers the operational questions and keeps people moving; a `/goal` keeps one going until it holds; routines repeat the checks |
+```mermaid
+flowchart LR
+  subgraph People["👥 People — desktop app or browser"]
+    you["🧑‍💼 You (owner)"]
+    mila["👩‍💻 Mila (colleague)"]
+    guest["👀 A visitor"]
+  end
+  subgraph Server["🖥️ One server — the office, always on"]
+    office["🏢 Orchestrator<br/>tasks · approvals · reviews · merges<br/>events · memory · audit"]
+    subgraph Shared["Shared machine"]
+      a1["🤖 claude · Alex<br/>tmux + worktree"]
+      a2["🤖 claude · Sarah<br/>tmux + worktree"]
+      a3["🤖 claude · Mike<br/>tmux + worktree"]
+    end
+  end
+  subgraph Laptop["💻 Mila's own computer — a room on the floor"]
+    m1["🤖 claude · Mi-1"]
+    m2["🤖 claude · Mi-2"]
+  end
+  you & mila & guest <-->|"TLS · one office"| office
+  office <--> a1 & a2 & a3
+  office <-->|"while Mila is in"| m1 & m2
+```
 
-## 🏗️ What the office built in one day
+**What "done" really means.** Every step below is measured by the office, not reported by the agent.
 
-Twenty-one interactive 3D previews of websites for real businesses — each with its own idea, not a template — built by the office's employees (Claude Code agents) in a single day, while the owner walked the floor. They are live; open any of them.
+```mermaid
+flowchart LR
+  T["📋 You hand out a task"] --> W["🌿 Worktree + branch<br/>made for it"]
+  W --> C["🤖 The agent works<br/>in its real Claude Code"]
+  C -->|"needs a decision"| H["✋ A hand goes up<br/>held until you answer"]
+  H --> C
+  C --> V["🧪 Your tests run<br/>on the machine"]
+  V -->|"fail"| C
+  V -->|"pass"| R["👀 A colleague reviews,<br/>then you"]
+  R -->|"send back"| C
+  R -->|"approve"| M["✅ Merged without conflict<br/>= DONE"]
+```
 
-| # | For | Preview | The idea |
-| --- | --- | --- | --- |
-| 1 | vanas.rs | [vanas-preview.sparkcan.com](https://vanas-preview.sparkcan.com) | Real tiles from the catalogue on the floor and walls of a 3D bathroom |
-| 2 | energoglobal.com | [energoglobal-preview.sparkcan.com](https://energoglobal-preview.sparkcan.com) | A generator that takes itself apart as you scroll |
-| 3 | josipovic.rs | [josipovic-preview.sparkcan.com](https://josipovic-preview.sparkcan.com) | A camera lens, and focusing |
-| 4 | mocbilja.rs | [mocbilja-preview.sparkcan.com](https://mocbilja-preview.sparkcan.com) | Herbs that grow, and a map of the body |
-| 5 | sax.rs | [sax-preview.sparkcan.com](https://sax-preview.sparkcan.com) | Fabric in the wind |
-| 6 | casagrande.rs | [casagrande-preview.sparkcan.com](https://casagrande-preview.sparkcan.com) | A furniture configurator |
-| 7 | dar.rs | [dar-preview.sparkcan.com](https://dar-preview.sparkcan.com) | An X-ray of a tractor; its parts lead to the categories |
-| 8 | skuteribeograd.com | [skuteri-preview.sparkcan.com](https://skuteri-preview.sparkcan.com) | Riding a scooter as you scroll |
-| 9 | tehnoalat.com | [tehnoalat-preview.sparkcan.com](https://tehnoalat-preview.sparkcan.com) | A wall of hanging tools that swing |
-| 10 | borikplus.rs | [borikplus-preview.sparkcan.com](https://borikplus-preview.sparkcan.com) | A UPS and solar calculator with live gauges |
-| 11 | kupidobro.rs | [kupidobro-preview.sparkcan.com](https://kupidobro-preview.sparkcan.com) | A metal shelving unit; every shelf is a category |
-| 12 | astyle.rs | [astyle-preview.sparkcan.com](https://astyle-preview.sparkcan.com) | An order pallet and a B2B price list |
-| 13 | demkatrade.com | [demkatrade-preview.sparkcan.com](https://demkatrade-preview.sparkcan.com) | From log to pallet: the whole production line |
-| 14 | bioline.rs | [bioline-preview.sparkcan.com](https://bioline-preview.sparkcan.com) | A scale for loose tea |
-| 15 | cfsport.rs | [cfsport-preview.sparkcan.com](https://cfsport-preview.sparkcan.com) | A shaker that fills with supplements |
-| 16 | beautydoo.rs | [beautydoo-preview.sparkcan.com](https://beautydoo-preview.sparkcan.com) | A pipeline with valves that open |
-| 17 | vodoterm.co.rs | [vodoterm-preview.sparkcan.com](https://vodoterm-preview.sparkcan.com) | A house in thermal vision, and choosing a boiler |
-| 18 | agrosanmitrovic.rs | [agrosan-preview.sparkcan.com](https://agrosan-preview.sparkcan.com) | A greenhouse through the seasons |
-| 19 | europaint.rs | [europaint-preview.sparkcan.com](https://europaint-preview.sparkcan.com) | Repairing a car door in a paint booth |
-| 20 | bajkolino.rs | [bajkolino-preview.sparkcan.com](https://bajkolino-preview.sparkcan.com) | A toy town with a little car |
-| 21 | fravero-prophoto.com | [fravero-preview.sparkcan.com](https://fravero-preview.sparkcan.com) | Atelier: a 3D photo album with real materials and gold foil |
+## 🏆 Built in one day
 
-## 📸 Screenshots (yes, it really looks like this)
+**Twenty-one interactive 3D website previews for real businesses — each its own idea, not a template — built by the office's employees in a single day**, while the owner walked the floor. All live; open any of them.
+
+<table>
+  <tr>
+    <td width="33%"><a href="https://vanas-preview.sparkcan.com"><b>vanas.rs</b></a><br><sub>Real catalogue tiles in a 3D bathroom</sub></td>
+    <td width="33%"><a href="https://energoglobal-preview.sparkcan.com"><b>energoglobal.com</b></a><br><sub>A generator that comes apart as you scroll</sub></td>
+    <td width="33%"><a href="https://josipovic-preview.sparkcan.com"><b>josipovic.rs</b></a><br><sub>A camera lens, and focusing</sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><a href="https://mocbilja-preview.sparkcan.com"><b>mocbilja.rs</b></a><br><sub>Herbs that grow, and a map of the body</sub></td>
+    <td width="33%"><a href="https://sax-preview.sparkcan.com"><b>sax.rs</b></a><br><sub>Fabric in the wind</sub></td>
+    <td width="33%"><a href="https://casagrande-preview.sparkcan.com"><b>casagrande.rs</b></a><br><sub>A furniture configurator</sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><a href="https://dar-preview.sparkcan.com"><b>dar.rs</b></a><br><sub>An X-ray of a tractor</sub></td>
+    <td width="33%"><a href="https://skuteri-preview.sparkcan.com"><b>skuteribeograd.com</b></a><br><sub>Ride a scooter as you scroll</sub></td>
+    <td width="33%"><a href="https://tehnoalat-preview.sparkcan.com"><b>tehnoalat.com</b></a><br><sub>A wall of swinging tools</sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><a href="https://borikplus-preview.sparkcan.com"><b>borikplus.rs</b></a><br><sub>UPS & solar calculator, live gauges</sub></td>
+    <td width="33%"><a href="https://kupidobro-preview.sparkcan.com"><b>kupidobro.rs</b></a><br><sub>Shelving where every shelf is a category</sub></td>
+    <td width="33%"><a href="https://astyle-preview.sparkcan.com"><b>astyle.rs</b></a><br><sub>An order pallet and a B2B price list</sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><a href="https://demkatrade-preview.sparkcan.com"><b>demkatrade.com</b></a><br><sub>From log to pallet: a production line</sub></td>
+    <td width="33%"><a href="https://bioline-preview.sparkcan.com"><b>bioline.rs</b></a><br><sub>A scale for loose tea</sub></td>
+    <td width="33%"><a href="https://cfsport-preview.sparkcan.com"><b>cfsport.rs</b></a><br><sub>A shaker that fills with supplements</sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><a href="https://beautydoo-preview.sparkcan.com"><b>beautydoo.rs</b></a><br><sub>A pipeline with valves that open</sub></td>
+    <td width="33%"><a href="https://vodoterm-preview.sparkcan.com"><b>vodoterm.co.rs</b></a><br><sub>A house in thermal vision</sub></td>
+    <td width="33%"><a href="https://agrosan-preview.sparkcan.com"><b>agrosanmitrovic.rs</b></a><br><sub>A greenhouse through the seasons</sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><a href="https://europaint-preview.sparkcan.com"><b>europaint.rs</b></a><br><sub>A car door repaired in a paint booth</sub></td>
+    <td width="33%"><a href="https://bajkolino-preview.sparkcan.com"><b>bajkolino.rs</b></a><br><sub>A toy town with a little car</sub></td>
+    <td width="33%"><a href="https://fravero-preview.sparkcan.com"><b>fravero-prophoto.com</b></a><br><sub>A 3D photo album with gold foil</sub></td>
+  </tr>
+</table>
+
+## 📸 Screenshots
 
 <table>
   <tr>
@@ -101,68 +160,54 @@ Twenty-one interactive 3D previews of websites for real businesses — each with
 
 <sub>Every picture is the real app, taken from a demo office whose employees are scripted stand-ins (so no Claude usage was spent on looking good). Only the frames and the shouting were added — <code>scripts/readme-shots.cjs</code> and <code>scripts/readme-art.cjs</code> make them again.</sub>
 
-## 🛠️ What it does for the work
+## 🧰 Why not just open more terminals?
+
+| With a terminal per agent | In the office |
+| --- | --- |
+| You tab through a dozen terminals to find out who is stuck | Every tag says what that session is really doing; the **Inbox** and the **Command center** list who needs you, across every machine |
+| A permission prompt waits unseen in a tab you are not looking at | A hand goes up. The request is held open — through restarts — until you answer it |
+| "Done" means the agent says so | *Done* means a worktree and a branch, your tests run on the machine, a review by a colleague and then by you, and a clean merge |
+| An agent on another machine means SSH and `tmux attach` | Every machine's sessions sit in the same office; `Space` puts you at any terminal, **Take control** gives you the keyboard |
+| You carry context between agents by hand | They ask each other, wait for each other, hand work over and review each other — on the record |
+| One Claude account runs out and the work stops | Several accounts per machine; when one is spent its people move on by themselves |
+| Keeping everyone busy is your job | The foreman answers operational questions; a `/goal` keeps one going until it holds; routines repeat the checks |
+| You work alone | Your colleagues are in the same office, on the same server, with their own agents in their own rooms |
+
+## 🧩 Everything it does
+
+**For the work**
 
 | | |
 | --- | --- |
-| 🧑‍💻 **Hire** | A name, a role, a folder, a desk. Pick the **Claude account**, the **model** (Fable, Opus, Sonnet, Haiku) and the **effort** for each hire — and change them later for one person or for a dozen at once. |
-| ✋ **Answer** | A raised hand is a real question or a real permission request, held open until you decide. |
-| 📋 **Quests** | Tasks get a worktree and a branch, and each one is a conversation: employees ask there (with answers to click), you answer, attach pictures, send work back. *Done* means the office ran your tests, a colleague and then you reviewed it, and it merged — not that somebody said so. |
-| 🤝 **Teamwork** | Employees ask each other, wait for each other, hand work over, review each other, release and unblock tasks, and wake a colleague who is needed. |
-| 🎯 **Goals** | Type `/goal every test in packages/api passes` in Talk — like Claude Code's own `/goal` — and that employee keeps going, turn after turn, until it holds. Give a check command and it decides. Three turns that do nothing, or a hundred turns, and the goal stops by itself and tells you. |
-| ⏳ **Background commands** | An `npm install`, a dev server or a long test run left going in the background shows on the tag — **⏳ COMMAND RUNNING**, with the command under the name — and nobody nudges them or puts them to sleep while it runs. |
-| 🧢 **The foreman** | One supervisor walks the floor, answers the operational questions and keeps people moving, so you are asked only about direction. |
-| 🔋 **Claude accounts** | Several per machine, signed in to **from the office** (open a link, paste a code — no terminal, no SSH), each called by its e-mail address. Or **Z.AI's GLM Coding Plan** with an API key. When one runs out its people move on by themselves; when only **Fable's** limit is spent they go on with **Opus** on the same account. |
-| 🧠 **Agents that budget** | Employees can put themselves — or a colleague — on a lighter model or less effort when the work does not need more (`set_model`). Hire a project manager and it does that for the team, with every change and its reason on the record. |
-| 🔁 **Routines** | “Every 30 minutes, look at the error log and tell me what is new.” An employee repeats it by itself; their profile lists what they repeat, to change, pause or remove. |
-| 🧠 **Long memory** | The office keeps the record word for word ([MemPalace](docs/MEMORY.md)). Employees look things up in it in plain words (`recall`) and write down what should outlive their session (`remember`), so a compacted session does not forget why. |
-| 📎 **Files and eyes** | Attach pictures and files to a task or a message; employees see pictures, leave a screenshot of what they did as evidence, and have a browser of their own on their machine ([docs/ATTACHMENTS.md](docs/ATTACHMENTS.md)). |
-| 🔐 **A vault** | A safe in the server room: passwords and keys the employees may use by name, without ever seeing them typed into a prompt. |
-| 😴 **Sleep and wake** | A session with no work for 30 minutes is stopped to free the machine; the employee dozes at the desk. The next message, task or meeting — or the whip — starts it again, in the same conversation. |
-| 👥 **People and machines** | Invite people with a link; link servers over SSH. Owners, colleagues, visitors; each colleague's own computer becomes a room, with a team lead of their own if they want one. Talk with your voice (`V`), wave, dance. |
+| 🧑‍💻 **Hire** | A name, a role, a folder, a desk — and the **Claude account**, **model** (Fable, Opus, Sonnet, Haiku) and **effort** for each; change them for one or a dozen at once |
+| ✋ **Answer** | A raised hand is a real question or permission request, held open until you decide |
+| 📋 **Quests** | Tasks with worktrees and branches; each a conversation (questions with answers to click, pictures, send back). Done = tested, reviewed, merged |
+| 🤝 **Teamwork** | Agents ask, wait for, hand over to, review, unblock and wake each other |
+| 🎯 **Goals** | `/goal every test in packages/api passes` — they keep going, turn after turn, until it holds |
+| 🧢 **The foreman** | A supervisor that walks the floor, answers operational questions and keeps people moving — you are asked only about direction |
+| 🔋 **Claude accounts** | Several per machine, signed in **from the office**; Z.AI's GLM plan too. Out of quota → people move on; out of Fable → they go on with Opus |
+| 🧠 **Long memory** | The record kept word for word ([MemPalace](docs/MEMORY.md)); agents `recall` and `remember` across sessions |
+| 🔁 **Routines** | "Every 30 minutes, check the error log" — repeated by itself |
+| ⏳ **Background commands** | A long test run or a dev server shows as **⏳ COMMAND RUNNING**; nobody nudges them meanwhile |
+| 📎 **Files & eyes** | Pictures and files on tasks and messages; screenshots as evidence; a browser of their own ([docs/ATTACHMENTS.md](docs/ATTACHMENTS.md)) |
+| 🔐 **A vault** | Keys and passwords used by name, never typed into a prompt |
+| 😴 **Sleep & wake** | Idle sessions sleep after 30 minutes; a message, a task or the whip wakes them — same conversation |
 
-## 🎮 And because it is an office
+**Because it is an office**
 
 | | |
 | --- | --- |
-| 🚶 **Walk** | `W` `A` `S` `D` through your company. `F` talks to whoever you stand next to, `Space` sits you at their real terminal. |
-| 🎭 **Zero NPCs** | Everybody acts out what their session is really doing: chin in the palm while it thinks, typing while it codes, arms crossed watching the tests run, a hand up for a decision, both arms up when a task is done, head on the desk when no session is running. The tag over them says the same in words. |
-| 🦘 **Space** | Sits you down where there is a seat, opens whatever you stand at — and where there is nothing at all, you jump: a crouch, arms up, knees tucked, a proper landing (a leap, if you are running). Everybody sees it. |
-| 🛋️ **Break room** | A hi-fi with internet radio for the whole office, a TV with a real browser in it, and sofas you can actually sit on. |
-| 🕹️ **Arcade** | A Mega Drive in the corner. Bring your own cartridge files; they go on the office's shelf for everybody. Play alone — or with a colleague: they walk up, press **Join**, and play from their own computer as player 2. Nothing to set up: the keys are the same for both of you (W A S D, J K L, U I O, Enter), and a plugged-in gamepad just works; everybody else can watch. |
-| 🌆 **A view** | Put the office on the top floor of a tower over a city at dusk, in a park, on an island at sunset, under the northern lights or in orbit — for everybody in it, with one click. |
-| 🪂 **The city below** | Over the city, jump out of a window: a parachute opens, you drift down onto the street (or a roof), take a car out of the traffic and drive through a city without end — traffic lights, queues, people on the pavements. *Back to Office* brings you back. |
-| 🪢 **The whip** | `R`. A crack, a flinch, a "jao!". At somebody asleep it gets them up; otherwise it sends nothing to anybody's session. It stays in. |
-| 🏆 **Employee of the month** | A framed board for the office: the face of whoever has **worked** the longest this month — time really spent thinking, coding and testing, counted by the office, never waiting time. |
-| 🚪 **The front door** | The office's address has an entrance page. Members sign in there with a name and a password; anyone else can knock, and somebody inside opens (or not). |
+| 🎭 **Zero NPCs** | Everybody acts out what their session is really doing, and the tag says it in words |
+| 👥 **People** | Invite with a link; owners, colleagues, visitors; a room per colleague's computer; chat, voice (`V`), gestures |
+| 🕹️ **Arcade** | A Mega Drive in the corner — bring your own cartridges; a colleague presses **Join** and plays player 2 from their own computer |
+| 🛋️ **Break room** | Internet radio for the whole office, a TV with a real browser, sofas you can sit on |
+| 🌆 **A view** | The top floor of a tower at dusk, a park, an island, the northern lights or orbit — one click, for everybody |
+| 🪂 **The city below** | Walk out on the terrace, jump off the edge, parachute down, take a car out of the traffic and drive a city without end |
+| 🏆 **Employee of the month** | Whoever really **worked** the longest this month, counted by the office |
+| 🪢 **The whip** | `R`. A crack, a flinch, a "jao!". It wakes the sleepers; it sends nothing to anybody's session |
+| 🚪 **The front door** | The office's address has an entrance page: members sign in, anyone else knocks |
 
-## 🧱 How it is built
-
-```
- ┌──────────────── 3D office (Electron / browser) ────────────────┐
- │  React Three Fiber scene · HUD panels · xterm.js terminals     │
- └───────────────▲───────────────────────────────▲────────────────┘
-        entities, events, monitor frames      terminal stream + input
-                 │            WebSocket + REST  │
- ┌───────────────┴────────── Orchestrator server ─────────────────┐
- │ hosts · sessions · employees · terminal gateway (ownership)    │
- │ hook receiver · tasks/scheduler · approvals · collaboration    │
- │ meetings · progression · self-improvement · MCP endpoint       │
- │ SQLite or PostgreSQL: entities, events, credentials, audit     │
- └───────────────▲────────────────────────────────────────────────┘
-                 │ one outbound, authenticated WebSocket per machine
- ┌───────────────┴──── orchestrator-agent (per machine) ───────────┐
- │ tmux control mode · Claude Code launcher · hook socket          │
- │ git worktrees · verification runner · resource sampling         │
- └───────────────▲─────────────────────────────────────────────────┘
-                 │ tmux panes
-        claude   claude   claude   …   (real interactive sessions,
-                                        or SDK-managed workers)
-```
-
-## 🚀 Two minutes to your first hire
-
-One machine, nothing leaves localhost.
+## 🚀 Quick start
 
 Requirements: **Node.js 22.18+**, **tmux**, **git**, the **Claude Code CLI** (`claude`) logged in, and pnpm.
 
@@ -172,9 +217,12 @@ pnpm build          # bundles the server + agent and builds the office UI
 pnpm start --open   # server + local host agent; opens the office in your browser
 ```
 
-or, as a desktop app: `pnpm desktop`. To get something you can hand to another machine, `pnpm package` builds a portable tarball (macOS/Linux) and a macOS `.app`/`.dmg` in `release/`.
+or as a desktop app: `pnpm desktop`. Then **Menu → Team → Hire**, walk to the desk and press `F`.
 
-Then in the office, either way of working is fine — they share the same state:
+**For the team:** run the office on a server (ideally Linux) so it stays open, and invite people from **Menu → Access** — they paste the link into the desktop app. `pnpm package` builds a portable tarball and a macOS app; [docs/INSTALL.md](docs/INSTALL.md) covers servers, TLS, services and Windows/WSL.
+
+<details>
+<summary><b>Step by step: your first hire, and a whole team</b></summary>
 
 **Talk to an employee directly (the "cubicle" model).** Every employee can live in a folder and own the project in it.
 
@@ -196,9 +244,49 @@ To set up a whole example team in one go:
 pnpm apply-config examples/team.json --repo ~/code/your-repo --plan
 ```
 
-More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Windows/WSL).
+</details>
 
-## 🔍 What you press, and what really happens
+## ❓ FAQ
+
+<details>
+<summary><b>Is this a game?</b></summary>
+
+It is a real development environment that you operate like a game. Everything that moves stands for something that really happened in a real Claude Code session; the 3D office is the interface, not the point.
+
+</details>
+
+<details>
+<summary><b>Does it spend my Claude usage?</b></summary>
+
+Your employees are your Claude Code sessions, on your accounts — they use what Claude Code would use. Walking around, the whip, the arcade and the city spend nothing. The live demo spends nothing at all: its employees are scripted stand-ins.
+
+</details>
+
+<details>
+<summary><b>Do my colleagues need their own server?</b></summary>
+
+No. One server runs the office; everybody walks in with the desktop app. Agents on the server are shared by the people invited; a colleague who wants agents of their own runs them on their own computer, which becomes their room while they are in.
+
+</details>
+
+<details>
+<summary><b>How much may an agent do on its own?</b></summary>
+
+Three levels per employee — Standard, Auto, Unrestricted — mapped to Claude Code's own permission modes. High-risk commands are held for the owner, and a project's deny rules and the fence around the office's own files stand in front of every level. [docs/SECURITY.md](docs/SECURITY.md) says what that does and does not protect.
+
+</details>
+
+<details>
+<summary><b>Which systems?</b></summary>
+
+Verified on macOS (Apple silicon) and Linux; in daily use as an always-on office on Ubuntu, with people coming in from macOS and Windows. Details below, under <i>Status and limits</i>.
+
+</details>
+
+## 🔬 Under the hood
+
+<details>
+<summary><b>What you press, and what really happens</b></summary>
 
 | In the office | What really happens |
 | --- | --- |
@@ -252,7 +340,10 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Window
 | Meeting room | Each participant's session writes a proposal and a response; the facilitator's session writes the decision document and follow-up tasks |
 | Growth | Workers record lessons after real friction; Orchestrator proposes policy and process changes from its own history |
 
-## 🤞 Honesty rules the code enforces
+</details>
+
+<details>
+<summary><b>Honesty rules the code enforces</b></summary>
 
 - **Backend is the source of truth.** The 3D layer receives view models and callbacks; it cannot reach sessions or tasks.
 - **Unknown is shown as unknown.** A session without hooks, or on a host that is offline, is `UNKNOWN` — never “working”.
@@ -260,7 +351,10 @@ More: [docs/INSTALL.md](docs/INSTALL.md) (remote machines, TLS, services, Window
 - **Measured, reported, unavailable.** Verification results are measured on the host; an agent's summary is “reported”; token usage is read from the real transcript or shown as “not available”. Cost is never invented. **How much Claude is left** on each account (5-hour and weekly percentages, exactly as Claude Code reports them, and a model's own limit once Claude refused a turn for it) is shown in Company → Claude; employees can be put on different Claude accounts.
 - **Autonomy is Claude Code's own permission modes, chosen per employee.** The three levels — Standard, Auto, Unrestricted — map to its modes and allow-rules; high-risk commands (pushes, `sudo`, deploys, broad deletions, reading credential files) go to the owner first. The top level, **Unrestricted**, is Claude Code's bypass-permissions mode — nothing is checked or asked there — and only an owner can give it; the owner can also switch the high-risk hold off for it. What stays in front of every level: a project's deny rules and the fence around the office's own files. `docs/SECURITY.md` says what that does and does not protect.
 
-## 🧢 The foreman
+</details>
+
+<details>
+<summary><b>The foreman</b></summary>
 
 Hire the **Foreman** (Team → Hire, role *Foreman*; give it any folder — that is only where its Claude Code session runs). There is one for the whole office, it runs on the office's own machine, and it has **no desk**: it walks the office — the shared floor and every member's room that is open — and keeps the work going. Hiring it switches its rounds on; **Settings → Foreman** pauses them.
 
@@ -273,12 +367,45 @@ Hire the **Foreman** (Team → Hire, role *Foreman*; give it any folder — that
 
 *Settings → Foreman* shows who the foreman is, who it is with, the last round and its summary, and what currently needs attention (`GET /api/foreman`).
 
-## 🌱 Self-improvement
+</details>
+
+<details>
+<summary><b>Self-improvement</b></summary>
 
 - **Workers**: after a task that hit real friction (failed verification, rejected review, merge conflict, a question, a denial), the employee's own session is shown the recorded facts and asked what it would do differently. Lessons are stored with their evidence, fed back into that employee's future prompts, and counted. Your answers to questions become project knowledge so nobody asks twice.
 - **Orchestrator**: routes unassigned work using measured first-pass rates per employee and task kind, and proposes changes from its record — pre-approve a command you keep approving, require review where work keeps failing, sequence tasks that keep colliding. Anything that widens what agents may do waits for you.
 
-## 🗂️ Repository
+</details>
+
+<details>
+<summary><b>How it is built</b></summary>
+
+```
+ ┌──────────────── 3D office (Electron / browser) ────────────────┐
+ │  React Three Fiber scene · HUD panels · xterm.js terminals     │
+ └───────────────▲───────────────────────────────▲────────────────┘
+        entities, events, monitor frames      terminal stream + input
+                 │            WebSocket + REST  │
+ ┌───────────────┴────────── Orchestrator server ─────────────────┐
+ │ hosts · sessions · employees · terminal gateway (ownership)    │
+ │ hook receiver · tasks/scheduler · approvals · collaboration    │
+ │ meetings · progression · self-improvement · MCP endpoint       │
+ │ SQLite or PostgreSQL: entities, events, credentials, audit     │
+ └───────────────▲────────────────────────────────────────────────┘
+                 │ one outbound, authenticated WebSocket per machine
+ ┌───────────────┴──── orchestrator-agent (per machine) ───────────┐
+ │ tmux control mode · Claude Code launcher · hook socket          │
+ │ git worktrees · verification runner · resource sampling         │
+ └───────────────▲─────────────────────────────────────────────────┘
+                 │ tmux panes
+        claude   claude   claude   …   (real interactive sessions,
+                                        or SDK-managed workers)
+```
+
+</details>
+
+<details>
+<summary><b>Repository</b></summary>
 
 ```
 apps/
@@ -304,7 +431,10 @@ tests/
 docs/            architecture, install, security, Claude Code integration, and a page per larger feature (docs/README.md is the map)
 ```
 
-## 🧪 Tests
+</details>
+
+<details>
+<summary><b>Tests</b></summary>
 
 ```bash
 pnpm test                  # unit tests
@@ -329,17 +459,26 @@ pnpm test:real:sdk         # an SDK-managed worker with the real Agent SDK (need
 
 `tests/fixtures/fake-claude.mjs` behaves like Claude Code at the protocol level (runs the configured hooks, calls the MCP endpoint, edits files, commits) and `tests/fixtures/fake-agent-sdk` does the same for the Agent SDK's `query()`, so the whole system can be tested deterministically without tokens. Neither is ever used by the product.
 
-## 🚧 Status and limits
+</details>
+
+<details>
+<summary><b>Status and limits</b></summary>
 
 Working and verified on macOS (Apple silicon) with Claude Code 2.1.321–2.1.323 and tmux 3.8; the host agent, the `.deb` and the desktop bundle are also verified on Linux (Debian 12, Ubuntu 24.04). It is in daily use as an always-on office on a Linux server (Ubuntu 22.04), with people coming in from macOS and Windows. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#status) for exactly what was and was not validated. In short: both worker runtimes; reviews, rework, meetings, retrospectives, merge conflicts, nudges and restarts with real sessions; three machines on three operating systems with a real network partition; PostgreSQL; and every package except the Windows one were run for real. Two things could not be done on the development machine: starting the packaged Windows app (the app from the repository is used on Windows every day; the bundle itself has never been started) and notarizing the macOS app. What is in use and what is not yet verified, day by day, is in [docs/STATUS.md](docs/STATUS.md).
 
 **Not ours:** the arcade runs RetroArch with the Genesis Plus GX core (in the repository, packed, with its source and checksums in `apps/desktop/src/arcade/core/NOTICE.md`). Genesis Plus GX may be used and passed on free of charge and **may not be sold or be part of something sold**. No game is in the repository, and none may be added: you bring your own.
 
+</details>
+
 ---
+
+<p align="center">
+  <a href="https://www.facebook.com/groups/orchestrator"><img height="64" src="https://img.shields.io/badge/Join%20the%20community-Facebook%20group-1877F2?style=for-the-badge&logo=facebook&logoColor=white" alt="Join the Orchestrator community on Facebook"></a>
+</p>
+<p align="center"><b>Questions, ideas, what your office built, help with setting one up — it all happens in the <a href="https://www.facebook.com/groups/orchestrator">Orchestrator community</a>.</b><br>Come in and say hello.</p>
 
 <p align="center">
   <img src="docs/assets/logo.svg" width="72" alt="The Orchestrator logo: a conductor's baton over a terminal prompt"><br>
   <sub><b>ORCHESTRATOR</b> — the baton conducts, the prompt plays.<br>No employees were harmed by the whip. It only wakes the sleepers.</sub>
 </p>
-<p align="center"><b>Join the community: <a href="https://www.facebook.com/groups/orchestrator">facebook.com/groups/orchestrator</a></b><br><sub>Ask, share what your office built, and hear first what is coming.</sub></p>
 <p align="center"><sub>Made by Branko · <a href="https://www.linkedin.com/in/bste/">LinkedIn</a></sub></p>
