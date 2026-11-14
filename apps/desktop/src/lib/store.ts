@@ -84,7 +84,7 @@ export type PanelId =
 export type CameraMode = 'ceo' | 'first' | 'management' | 'free' | 'workstation' | 'command';
 
 export interface Nearby {
-  kind: 'employee' | 'desk' | 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv' | 'vault' | 'arcade' | 'seat';
+  kind: 'employee' | 'desk' | 'board' | 'meeting' | 'server' | 'ops' | 'ceo' | 'break' | 'reception' | 'hifi' | 'tv' | 'vault' | 'arcade' | 'seat' | 'edge';
   id: string;
   label: string;
 }

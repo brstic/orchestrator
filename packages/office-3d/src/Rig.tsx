@@ -7,14 +7,14 @@ import { useActs } from './character/acts.ts';
 import { JUMP_HEIGHT, JUMP_SECONDS, JUMP_TOUCH, jumpSink, jumpY } from './character/motion.ts';
 import { sceneProbe } from './Environment.tsx';
 import type { CameraMode, NearbyTarget, PersonView } from './types.ts';
-import { deskSeat, moveWithCollision, type Seat, type Wall, type World } from './world.ts';
+import { deskSeat, moveWithCollision, type Box, type Seat, type World } from './world.ts';
 import { JUMP_AIR, JUMP_OFF } from './character/motion.ts';
 import { STREET_Y, blocked, solidsNear, type Solid } from './city/blocks.ts';
 import { alight, board, leap, step as cityStep, type Explorer, type Keys as CityKeys } from './city/explorer.ts';
-import { CityGear, type Gear } from './city/gear.tsx';
+import { CityGear, type CarAt, type Gear } from './city/gear.tsx';
 import { CITY_GRID, cityLive, cityTraffic } from './surroundings/skyline.ts';
 import { vehicleAt } from './surroundings/traffic.ts';
-import { glazed, plateOf } from './surroundings/windows.ts';
+import { plateOf } from './surroundings/windows.ts';
 
 /** The owner: a navy two-piece suit, burgundy tie, dark brown oxfords. */
 const CEO_LOOK: Appearance = { skin: '#e0ac69', hair: '#241c17', hairStyle: 'short', shirt: '#2b3c66', pants: '#2b3c66', accessory: 'none', build: 1.03 };
@@ -324,8 +324,14 @@ export function Rig({
   outsideRef.current = onOutside;
   const hintRef = useRef(onOutsideHint);
   hintRef.current = onOutsideHint;
-  /** The outer windows one can jump out of (only where the office stands over the city). */
-  const windows = useMemo<Wall[]>(() => (city ? glazed(world).filter((w) => w.outer && w.glass) : []), [city, world]);
+  /** Over the city the terrace round the office is walked on, up to its balustrade (only where the office stands over the city). */
+  const terrace = useMemo<Box | null>(() => {
+    if (!city) return null;
+    const p = plateOf(world);
+    return { minX: p.minX + 0.25, maxX: p.maxX - 0.25, minZ: p.minZ + 0.25, maxZ: p.maxZ - 0.25 };
+  }, [city, world]);
+  const terraceRef = useRef(terrace);
+  terraceRef.current = terrace;
   /** The office's own tower, as something solid: its floor is at 0, its terrace all round. */
   const tower = useMemo<Solid>(() => {
     const p = plateOf(world);
@@ -357,35 +363,18 @@ export function Rig({
     if (!outside) return;
     const o = out.current;
     if (outside.on && !o.on) {
-      // Out through the window nearest to where they stand, over the balustrade at the terrace's edge.
+      // Over the balustrade at the nearest edge of the terrace, facing away from the building.
       const plate = plateOf(world);
-      const b = world.base.bounds;
-      let best: Wall | null = null;
-      let bestD = Infinity;
-      for (const w of windows) {
-        const d = segmentDistance(player.x, player.z, w);
-        if (d < bestD) {
-          bestD = d;
-          best = w;
-        }
-      }
-      let x = player.x;
-      let z = player.z;
-      let rot = st.current.playerRot;
-      if (best) {
-        const alongX = Math.abs(best.z2 - best.z1) < 1e-6;
-        if (alongX) {
-          const south = best.z1 > (b.minZ + b.maxZ) / 2;
-          z = south ? plate.maxZ + 0.6 : plate.minZ - 0.6;
-          x = THREE.MathUtils.clamp(player.x, Math.min(best.x1, best.x2), Math.max(best.x1, best.x2));
-          rot = south ? 0 : Math.PI;
-        } else {
-          const east = best.x1 > (b.minX + b.maxX) / 2;
-          x = east ? plate.maxX + 0.6 : plate.minX - 0.6;
-          z = THREE.MathUtils.clamp(player.z, Math.min(best.z1, best.z2), Math.max(best.z1, best.z2));
-          rot = east ? Math.PI / 2 : -Math.PI / 2;
-        }
-      }
+      const edges: Array<[number, 'w' | 'e' | 'n' | 's']> = [
+        [player.x - plate.minX, 'w'],
+        [plate.maxX - player.x, 'e'],
+        [player.z - plate.minZ, 'n'],
+        [plate.maxZ - player.z, 's'],
+      ];
+      const side = edges.sort((a, b) => a[0] - b[0])[0]![1];
+      const x = side === 'w' ? plate.minX - 0.6 : side === 'e' ? plate.maxX + 0.6 : player.x;
+      const z = side === 'n' ? plate.minZ - 0.6 : side === 's' ? plate.maxZ + 0.6 : player.z;
+      const rot = side === 'w' ? -Math.PI / 2 : side === 'e' ? Math.PI / 2 : side === 'n' ? Math.PI : 0;
       o.home = { x: player.x, z: player.z, rot: st.current.playerRot };
       if (st.current.seat) standUp();
       o.e = leap(x, z, rot);
@@ -400,11 +389,11 @@ export function Rig({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outside?.n]);
   useEffect(() => () => void (cityLive.taken = -1), []);
-  // For the UI tests: the windows one can jump out of.
+  // For the UI tests: the terrace one may walk round the office (null where there is none).
   useEffect(() => {
     const probe = ((window as any).__orchPlayer ??= { x: 0, z: 0, rot: 0 });
-    probe.windows = windows.map((w) => ({ x1: w.x1, z1: w.z1, x2: w.x2, z2: w.z2 }));
-  }, [windows]);
+    probe.terrace = terrace;
+  }, [terrace]);
 
   /** One frame out in the city: the step, getting in and out of a car, the camera behind, the body, the gear. */
   const cityFrame = (dt: number, time: number) => {
@@ -499,9 +488,15 @@ export function Rig({
     camera.position.lerp(camPos, a);
     curLook.current.lerp(camLook, a);
     camera.lookAt(curLook.current);
+    // (For captures, as in the office: `window.__orchScene.cam = { pos, look, fov? }` holds the camera there.)
+    const held = sceneProbe().cam as { pos: [number, number, number]; look: [number, number, number]; fov?: number } | undefined;
+    if (held) {
+      camera.position.set(...held.pos);
+      camera.lookAt(...held.look);
+    }
     camera.updateMatrixWorld();
     const pc = camera as THREE.PerspectiveCamera;
-    const fov = e.phase === 'car' ? 58 + Math.min(14, Math.abs(e.vf) * 0.35) : e.phase === 'fall' ? 64 : 55;
+    const fov = held?.fov ? held.fov : e.phase === 'car' ? 58 + Math.min(14, Math.abs(e.vf) * 0.35) : e.phase === 'fall' ? 64 : 55;
     if (Math.abs(pc.fov - fov) > 0.05) {
       pc.fov += (fov - pc.fov) * (1 - Math.exp(-dt * 4));
       pc.updateProjectionMatrix();
@@ -526,10 +521,14 @@ export function Rig({
       avatar.current.visible = e.phase !== 'car';
     }
     if (ring.current) ring.current.visible = false;
+    const bodyOf = (index: number): CarAt['kind'] => {
+      const k = cityTraffic(cityLive.quality)[index]?.kind;
+      return k === 'suv' ? 'suv' : k === 'taxi' ? 'taxi' : 'sedan';
+    };
     gear.current = {
-      chute: e.phase === 'chute' ? { x: e.x, y: e.y, z: e.z, rot: e.rot, open: e.chute } : null,
-      car: e.phase === 'car' ? { x: e.x, y: e.y, z: e.z, rot: e.rot, paint: e.paint, speed: e.vf } : null,
-      parked: o.parked ? { x: o.parked.x, y: STREET_Y, z: o.parked.z, rot: o.parked.rot, paint: o.parked.paint, speed: 0 } : null,
+      chute: e.phase === 'chute' ? { x: e.x, y: e.y, z: e.z, rot: e.rot, open: e.chute, bank: THREE.MathUtils.clamp((rot0 - e.rot) / Math.max(dt, 1e-4), -1.5, 1.5) } : null,
+      car: e.phase === 'car' ? { x: e.x, y: e.y, z: e.z, rot: e.rot, paint: e.paint, speed: e.vf, steer: keysNow.turn, kind: bodyOf(e.vehicle) } : null,
+      parked: o.parked ? { x: o.parked.x, y: STREET_Y, z: o.parked.z, rot: o.parked.rot, paint: o.parked.paint, speed: 0, steer: 0, kind: bodyOf(o.parked.index) } : null,
     };
     const probe = ((window as any).__orchPlayer ??= { x: 0, z: 0, rot: 0 });
     probe.city = { phase: e.phase, x: e.x, y: e.y, z: e.z, rot: e.rot, chute: e.chute, speed: e.vf, near: nearCar ? nearCar.index : null, taken: cityLive.taken };
@@ -564,6 +563,8 @@ export function Rig({
     const c = world.base.bounds;
     if (player.x > c.minX && player.x < c.maxX && player.z > c.minZ && player.z < c.maxZ + 6) return;
     if (world.memberRooms.some((r) => !r.locked && !r.closed && player.x > r.reach.minX && player.x < r.reach.maxX && player.z > r.reach.minZ && player.z < r.reach.maxZ)) return;
+    const t = terraceRef.current;
+    if (t && player.x > t.minX && player.x < t.maxX && player.z > t.minZ && player.z < t.maxZ) return;
     const back = world.nav.nearestWalkable(THREE.MathUtils.clamp(player.x, c.minX + 0.8, c.maxX - 0.8), THREE.MathUtils.clamp(player.z, c.minZ + 0.8, c.maxZ - 0.8));
     if (!back) return;
     player.set(back[0], 0, back[1]);
@@ -733,7 +734,7 @@ export function Rig({
       if (s.vf || s.vs) {
         const dx = (fx * s.vf + rx * s.vs) * dt;
         const dz = (fz * s.vf + rz * s.vs) * dt;
-        const [nx, nz] = moveWithCollision(world, player.x, player.z, dx, dz);
+        const [nx, nz] = moveWithCollision(world, player.x, player.z, dx, dz, 0.3, terraceRef.current);
         moved = nx !== player.x || nz !== player.z;
         if (nx !== player.x + dx || nz !== player.z + dz) {
           // Something is in the way: the pace is what the body actually managed (it slides along a wall, and stops at one).
@@ -797,7 +798,7 @@ export function Rig({
     const probe = ((window as any).__orchPlayer ??= { x: 0, z: 0, rot: 0 });
     // Tests may also place the character somewhere (`goto`), instead of steering there key by key.
     if (probe.goto) {
-      const [gx, gz] = moveWithCollision(world, probe.goto.x, probe.goto.z, 0, 0);
+      const [gx, gz] = moveWithCollision(world, probe.goto.x, probe.goto.z, 0, 0, 0.3, terraceRef.current);
       player.set(gx, 0, gz);
       if (typeof probe.goto.rot === 'number') {
         s.playerRot = probe.goto.rot;
@@ -1031,14 +1032,13 @@ export function Rig({
       // A place to sit. Standing right at a seat means the seat even inside a room's own wide circle (the meeting
       // room's chairs are all inside its circle); a thing one walks up to on purpose — the TV, the hi-fi, the vault,
       // the arcade — keeps its meaning. Seated, the only thing in reach is getting up.
-      // Standing at an outer window over the city: a way out.
-      if (!best && windows.length && !s.seat) {
-        for (const w of windows) {
-          if (segmentDistance(player.x, player.z, w) < 1.15) {
-            best = { kind: 'window', id: 'window', label: 'JUMP OUT OF THE WINDOW' };
-            break;
-          }
-        }
+      // At the balustrade of the terrace over the city: a way down.
+      const t = terraceRef.current;
+      if (!best && t && !s.seat) {
+        const core = world.base.bounds;
+        const outsideTheBuilding = player.x < core.minX || player.x > core.maxX || player.z < core.minZ || player.z > core.maxZ;
+        const toEdge = Math.min(player.x - t.minX, t.maxX - player.x, player.z - t.minZ, t.maxZ - player.z);
+        if (outsideTheBuilding && toEdge < 1.1) best = { kind: 'edge', id: 'edge', label: 'JUMP OFF THE EDGE' };
       }
       if (s.seat) best = { kind: 'seat', id: s.seat.id, label: 'STAND UP' };
       else if (!best || ROOM_SPOTS.has(best.kind)) {
@@ -1072,15 +1072,6 @@ export function Rig({
 
 /** Back on the office's own terrace (its floor is at 0) once one stands this high over the street. */
 const DROP_HOME = 140;
-
-/** How far a point is from a wall (a segment on the floor). */
-function segmentDistance(x: number, z: number, w: Wall): number {
-  const dx = w.x2 - w.x1;
-  const dz = w.z2 - w.z1;
-  const len = dx * dx + dz * dz;
-  const t = len > 0 ? THREE.MathUtils.clamp(((x - w.x1) * dx + (z - w.z1) * dz) / len, 0, 1) : 0;
-  return Math.hypot(x - (w.x1 + dx * t), z - (w.z1 + dz * t));
-}
 
 function PlayerBody({ motion, jump, whipAt, ouchAt, emote, seated }: { motion: { current: Motion }; jump: { current: number }; whipAt?: number; ouchAt?: number; emote?: { name: string; at: number } | null; seated: boolean }) {
   // The gait reads `motion` every frame, so walking never re-renders; only a whip crack, a flinch or a gesture does (twice: start and end).

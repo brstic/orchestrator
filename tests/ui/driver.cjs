@@ -532,6 +532,30 @@ async function scenario() {
     return 'a video from her: "▶ Play", played in the window (64×48, no error), Escape closed only the player';
   });
 
+  await step('an employee gives me a sound (an mp3): it says Play, and it plays in the window', async () => {
+    const ava = await js(`window.__t.emp('Ava').id`);
+    const cwd = await waitFor(`(Object.values(window.__t.store().sessions).find((x) => x.employeeId === ${JSON.stringify(ava)} && x.status === 'running' && x.inTurn === false) || {}).cwd`, 15000);
+    // (A real 0.6 s tone: tests/fixtures/tiny.mp3.)
+    const file = path.join(cwd, 'voice-note.mp3');
+    fs.copyFileSync(path.join(__dirname, '..', 'fixtures', 'tiny.mp3'), file);
+    try {
+      await js(`window.__t.store().openPanel('talk', ${JSON.stringify(ava)})`);
+      await type(`window.__t.scope().querySelector('textarea')`, 'Send me the voice note. @@fake: mcp attach_file {"path":"voice-note.mp3","caption":"What I said in the standup"}; say here-is-the-sound-6630@@');
+      await clickText('Send');
+      const chip = `window.__t.scope().querySelector('[data-talk-file="voice-note.mp3"] [data-file="voice-note.mp3"]')`;
+      await waitFor(`!!${chip} && ${chip}.dataset.fileReads === 'audio' && /Play/.test(${chip}.textContent)`, 30000);
+      await click(chip, 'the sound\'s chip');
+      await waitFor(`(() => { const a = document.querySelector('[data-sound="voice-note.mp3"] audio'); return !!a && !a.error && a.readyState >= 2 && a.duration > 0.4; })()`, 10000);
+      await shot('talk-sound');
+      await key('Escape');
+      await waitFor(`!document.querySelector('[data-sound]') && window.__t.store().panel === 'talk'`, 4000);
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+    await js(`window.__t.store().openPanel(null)`);
+    return 'a sound from her: "▶ Play", played in the window (0.6 s, no error), Escape closed only the player';
+  });
+
   await step('the arcade: a cartridge of my own runs on the office\'s Mega Drive, the keys are the same for everybody and nothing is chosen, the office does not hear them, a second window joins with the second pad, and where I stopped is kept', async () => {
     // A cartridge written for this (tests/fixtures/md-test-rom.mjs): the colour of its screen says what both pads hold.
     const { buildTestRom, padsOf } = await import(require('node:url').pathToFileURL(path.join(__dirname, '..', 'fixtures', 'md-test-rom.mjs')).href);

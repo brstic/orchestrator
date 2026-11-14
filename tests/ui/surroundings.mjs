@@ -35,18 +35,23 @@ async function theCity(owner, other) {
   // (Where the owner stood before: put back there at the end, so that what is measured after is measured from the same view.)
   const start = await owner.js(`({ x: window.__orchPlayer.x, z: window.__orchPlayer.z, rot: window.__orchPlayer.rot, yaw: window.__orchPlayer.yaw, pitch: window.__orchPlayer.pitch })`);
   const city = `window.__orchPlayer.city`;
-  const windows = await owner.js(`window.__orchPlayer.windows`);
-  const w = windows.find((x) => Math.abs(x.z1 - x.z2) < 1e-6 && Math.abs(x.x2 - x.x1) > 3) ?? windows[0];
-  const [mx, mz] = [(w.x1 + w.x2) / 2, w.z1];
-  await owner.js(`window.__orchPlayer.goto = { x: ${mx}, z: ${mz + (mz > 0 ? -0.7 : 0.7)}, rot: ${mz > 0 ? 0 : Math.PI} }; true`);
-  await owner.until('the window prompt', `(window.__office.getState().nearby || {}).kind === 'window'`, 6000);
-  const home = await owner.js(`({ x: window.__orchPlayer.x, z: window.__orchPlayer.z })`);
+  // Out of the office onto the terrace: it is floor now, all the way round to the balustrade.
+  const t = await owner.js(`window.__orchPlayer.terrace`);
+  check('Skyline: the terrace round the office can be walked on', !!t && t.maxX > 25, JSON.stringify(t));
+  await owner.js(`window.__orchPlayer.goto = { x: ${t.maxX - 3}, z: ${(t.minZ + t.maxZ) / 2}, rot: ${Math.PI / 2} }; true`);
+  await sleep(600);
+  const before = await owner.js(`({ x: window.__orchPlayer.x, z: window.__orchPlayer.z })`);
+  await owner.hold('KeyW', true);
+  await sleep(1200);
+  await owner.hold('KeyW', false);
+  const after = await owner.js(`({ x: window.__orchPlayer.x, z: window.__orchPlayer.z, near: window.__office.getState().nearby })`);
+  const home = { x: after.x, z: after.z };
   const me = await owner.js(`window.__office.getState().clientId`);
   const othersSee = () => other.js(`(() => { const p = window.__office.getState().people.find((x) => x.id === ${JSON.stringify(me)}); return p ? { x: p.x, z: p.z } : null; })()`);
-  check('Skyline: standing at an outer window, the key says "jump out of the window"', (await owner.js(`window.__office.getState().nearby.label`)) === 'JUMP OUT OF THE WINDOW');
+  check('Skyline: walking out to the balustrade, the key says "jump off the edge" — and the balustrade stops the walk', before.x < after.x && after.x <= t.maxX - 0.25 && after.near?.kind === 'edge' && after.near?.label === 'JUMP OFF THE EDGE', JSON.stringify({ before, after }));
   await owner.press('Space');
   await owner.until('the jump out', `window.__office.getState().outside.on && ${city} && ${city}.phase === 'fall'`, 4000);
-  check('Skyline: out of the window, falling — and "Back to Office" is there at once', await owner.js(`[...document.querySelectorAll('[data-outside] button')].some((b) => b.textContent.trim() === 'Back to Office')`));
+  check('Skyline: over the balustrade, falling — and "Back to Office" is there at once', await owner.js(`[...document.querySelectorAll('[data-outside] button')].some((b) => b.textContent.trim() === 'Back to Office')`));
   await owner.until('the parachute', `${city}.phase === 'chute'`, 4000);
   await owner.hold('KeyW', true);
   await owner.until('the parachute open', `${city}.chute >= 1`, 3000);
@@ -74,6 +79,8 @@ async function theCity(owner, other) {
   await owner.press('KeyF');
   await owner.until('out of the car', `${city}.phase === 'foot'`, 3000);
   check('Skyline: F again gets out, and the car stays where it was left', (await owner.js(`${city}.near`)) === taken);
+  const near = await owner.js(`(() => { let skinned = 0; window.__orchScene.three.scene.traverse((o) => { if (o.isSkinnedMesh && o.visible) skinned++; }); return skinned; })()`);
+  check('Skyline: down in the street the people near by are the office\'s own characters', near > 12, `${near} limbs of characters (four a person)`);
   // Far away the city goes on: a few kilometres off there are buildings round, and traffic.
   await owner.js(`window.__orchPlayer.cityGoto = { x: 4700, y: -150, z: -3300, phase: 'foot' }; true`);
   await sleep(1500);

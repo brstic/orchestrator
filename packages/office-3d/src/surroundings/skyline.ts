@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import type { Box } from '../world.ts';
 import { FOG, GLSL_NOISE, Kept, OUTPUT, at, grain, instanced, merged, painted, rng } from './kit.ts';
-import { AMBER, CYCLE, GREEN, Z_OFFSET, LENGTH, TRAFFIC_GLSL, acrossOf, spanOf, traffic, type StreetGrid, type Vehicle } from './traffic.ts';
-import { DROP, FRONT, KERB, PITCH, PLAIN, SEED_STEPS, STREET, STREET_Y, blockAt, blockIndex, onGrid, streetTrees } from '../city/blocks.ts';
+import { AMBER, CYCLE, GREEN, Z_OFFSET, LENGTH, TRAFFIC_GLSL, acrossOf, spanOf, traffic, vehicleAt, type StreetGrid, type Vehicle } from './traffic.ts';
+import { cityWalkers, type Walker } from '../city/walkers.ts';
+import { PART, vehicleShape, type Body } from '../city/vehicles.ts';
+import { DROP, FRONT, PITCH, PLAIN, SEED_STEPS, STREET, STREET_Y, blockAt, blockIndex, onGrid, streetTrees } from '../city/blocks.ts';
 import type { Place, PlaceInput } from './place.ts';
 
 /**
@@ -321,6 +323,7 @@ function vehicleMaterial(grid: StreetGrid): THREE.ShaderMaterial {
       uSpan: { value: spanOf(grid) },
       uAcross: { value: acrossOf(grid) },
       uOrigin: { value: new THREE.Vector2() },
+      uBand: { value: new THREE.Vector2(0, 1e9) },
       uPitch: { value: grid.pitch },
       uCycle: { value: CYCLE },
       uZOff: { value: Z_OFFSET },
@@ -333,11 +336,11 @@ function vehicleMaterial(grid: StreetGrid): THREE.ShaderMaterial {
       attribute vec4 aCar; // nose at its first wait, delay after green, length, kind (0 car, 1 bus)
       attribute vec3 aPaint;
       attribute vec3 aScale; // its width, height and length against the shape's
-      attribute vec3 aPart; // body, glass, wheels
+      attribute float aPart; // which part (city/vehicles.ts, PART)
       uniform float uTime, uSpan, uAcross, uPitch, uCycle, uZOff;
-      uniform vec2 uOrigin;
+      uniform vec2 uOrigin, uBand;
       varying vec3 vPaint;
-      varying vec3 vPart;
+      varying float vPart;
       varying vec3 vAt;
       varying vec3 vNormal;
       varying float vBrake;
@@ -369,15 +372,17 @@ function vehicleMaterial(grid: StreetGrid): THREE.ShaderMaterial {
         world.y += ${(-DROP).toFixed(1)};
         vec4 mvPosition = viewMatrix * vec4(world, 1.0);
         gl_Position = projectionMatrix * mvPosition;
-        // Taken out of the traffic: somebody is driving it.
-        if (aCar.w < -0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        // Taken out of the traffic: somebody is driving it. And each shape only within its band of distance: the
+        // full one near the camera, the simple one further off.
+        float away = length(world.xz - uOrigin);
+        if (aCar.w < -0.5 || away < uBand.x || away >= uBand.y) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         ${FOG.vertex}
       }
     `,
     fragmentShader: /* glsl */ `
       precision highp float;
       varying vec3 vPaint;
-      varying vec3 vPart;
+      varying float vPart;
       varying vec3 vAt;
       varying vec3 vNormal;
       varying float vBrake;
@@ -389,17 +394,17 @@ function vehicleMaterial(grid: StreetGrid): THREE.ShaderMaterial {
         vec3 n = normalize(vNormal);
         vec3 light = mix(vec3(0.05, 0.04, 0.05), uSky * 0.45, n.y * 0.5 + 0.5) + uGlow * 0.12 + vec3(0.25, 0.2, 0.14) * 0.6;
         vec3 paint = pow(vPaint, vec3(2.2));
-        // The paint shines a little on top: the sky in it.
-        vec3 col = paint * light + uHorizon * 0.12 * max(n.y, 0.0);
-        if (vPart.y > 0.5) col = vec3(0.02, 0.025, 0.035) + uHorizon * 0.18 * max(n.y, 0.2);
-        if (vPart.z > 0.5) col = vec3(0.015);
-        // A bus: a band of windows, lit inside.
-        if (vKind > 0.5 && vAt.y > 1.45 && vAt.y < 2.55 && abs(vAt.z) < vHalf - 1.2 && abs(n.y) < 0.5) col = vec3(1.0, 0.82, 0.55) * 0.55 * (0.7 + 0.3 * step(0.15, fract(vAt.z / 1.6)));
-        // Lamps: white ahead, red behind — brighter when braking.
-        float low = step(0.45, vAt.y) * step(vAt.y, 0.95);
-        float side = step(abs(abs(vAt.x) - 0.62), 0.24);
-        if (vAt.z > vHalf - 0.06 && low * side > 0.5) col = vec3(3.0, 2.7, 2.1);
-        if (vAt.z < -vHalf + 0.06 && low * side > 0.5) col = vec3(1.0, 0.05, 0.03) * (vBrake > 0.5 ? 3.2 : 1.3);
+        float part = floor(vPart + 0.5);
+        // Paint: its colour in the light, and the sky in its lacquer on top.
+        vec3 col = paint * light + uHorizon * 0.16 * pow(max(n.y, 0.0), 2.0) + uSky * 0.04;
+        if (part == ${PART.glass.toFixed(1)}) col = vec3(0.018, 0.022, 0.032) + mix(uHorizon * 0.22, uSky * 0.16, max(n.y, 0.0));
+        else if (part == ${PART.tyre.toFixed(1)}) col = vec3(0.012);
+        else if (part == ${PART.rim.toFixed(1)}) col = vec3(0.32, 0.33, 0.35) * light;
+        else if (part == ${PART.trim.toFixed(1)}) col = vec3(0.025, 0.026, 0.03) * (0.6 + light);
+        else if (part == ${PART.headlamp.toFixed(1)}) col = vec3(3.0, 2.7, 2.1);
+        else if (part == ${PART.taillamp.toFixed(1)}) col = vec3(1.0, 0.05, 0.03) * (vBrake > 0.5 ? 3.2 : 1.3);
+        else if (part == ${PART.sign.toFixed(1)}) col = vec3(2.0, 1.75, 1.1);
+        else if (part == ${PART.cabin.toFixed(1)}) col = vec3(1.0, 0.82, 0.55) * 0.6 * (0.75 + 0.25 * step(0.12, fract(vAt.z / 1.6)));
         gl_FragColor = vec4(col, 1.0);
         ${OUTPUT}
         ${FOG.fragment}
@@ -501,39 +506,6 @@ function signalMaterial(): THREE.ShaderMaterial {
   });
 }
 
-/** A car seen from above and from the side: a body, a cabin of glass on it, four wheels. Parts by `aPart`. */
-function carShape(): THREE.BufferGeometry {
-  const body = new THREE.Color(1, 0, 0);
-  const glassPart = new THREE.Color(0, 1, 0);
-  const wheel = new THREE.Color(0, 0, 1);
-  const wheelGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.26, 10).rotateZ(Math.PI / 2);
-  const parts = [
-    { geometry: new THREE.BoxGeometry(1.84, 0.62, 4.6), color: body, matrix: new THREE.Matrix4().makeTranslation(0, 0.6, 0) },
-    // The cabin: glass all round, a roof of paint.
-    { geometry: new THREE.BoxGeometry(1.6, 0.5, 2.3), color: glassPart, matrix: new THREE.Matrix4().makeTranslation(0, 1.16, -0.2) },
-    { geometry: new THREE.BoxGeometry(1.5, 0.06, 2.0), color: body, matrix: new THREE.Matrix4().makeTranslation(0, 1.43, -0.25) },
-    ...[-1.45, 1.4].flatMap((z) => [-0.82, 0.82].map((x) => ({ geometry: wheelGeo, color: wheel, matrix: new THREE.Matrix4().makeTranslation(x, 0.34, z) }))),
-  ];
-  const g = merged(parts);
-  g.setAttribute('aPart', g.getAttribute('color'));
-  g.deleteAttribute('color');
-  return g;
-}
-
-/** A bus: a long box with its band of windows (drawn by the material), and wheels. */
-function busShape(): THREE.BufferGeometry {
-  const body = new THREE.Color(1, 0, 0);
-  const wheel = new THREE.Color(0, 0, 1);
-  const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.3, 10).rotateZ(Math.PI / 2);
-  const g = merged([
-    { geometry: new THREE.BoxGeometry(2.55, 2.8, 12), color: body, matrix: new THREE.Matrix4().makeTranslation(0, 1.75, 0) },
-    ...[-3.8, 4].flatMap((z) => [-1.1, 1.1].map((x) => ({ geometry: wheelGeo, color: wheel, matrix: new THREE.Matrix4().makeTranslation(x, 0.5, z) }))),
-  ]);
-  g.setAttribute('aPart', g.getAttribute('color'));
-  g.deleteAttribute('color');
-  return g;
-}
-
 /** Many vehicles of one shape as one thing to draw, each told its lane, its place in the queue and its paint. */
 function fleet(kept: Kept, shape: THREE.BufferGeometry, material: THREE.Material, list: Vehicle[], scaleOf: (v: Vehicle) => [number, number, number]): THREE.InstancedMesh {
   const lanes = new Float32Array(list.length * 4);
@@ -595,7 +567,7 @@ export function beaconMaterial(): THREE.ShaderMaterial {
 function walkerMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     fog: true,
-    uniforms: { ...FOG.uniforms(), uTime: { value: 0 }, uOrigin: { value: new THREE.Vector2() }, uGlow: { value: new THREE.Color('#ff8c5a') }, uSky: { value: new THREE.Color('#8f86c4') } },
+    uniforms: { ...FOG.uniforms(), uTime: { value: 0 }, uOrigin: { value: new THREE.Vector2() }, uHide: { value: 0 }, uGlow: { value: new THREE.Color('#ff8c5a') }, uSky: { value: new THREE.Color('#8f86c4') } },
     vertexShader: /* glsl */ `
       attribute vec4 aWalk; // where round the block they started, speed (its sign: which way round), how far out from the block's middle, stride
       attribute vec2 aBlock; // which block, from the pattern's middle
@@ -603,7 +575,7 @@ function walkerMaterial(): THREE.ShaderMaterial {
       attribute vec3 aPants;
       attribute vec3 aSkin;
       attribute vec3 aPart; // shirt, trousers, skin
-      uniform float uTime;
+      uniform float uTime, uHide;
       uniform vec2 uOrigin;
       varying vec3 vColor;
       varying vec3 vNormal;
@@ -637,6 +609,8 @@ function walkerMaterial(): THREE.ShaderMaterial {
         vColor = aPart.x > 0.5 ? aShirt : aPart.y > 0.5 ? aPants : aSkin;
         vec4 mvPosition = viewMatrix * vec4(world, 1.0);
         gl_Position = projectionMatrix * mvPosition;
+        // Near the camera they are drawn as characters of their own (CityWalkers): not twice.
+        if (length(vec2(middle.x + at.x, middle.y + at.y) - uOrigin) < uHide) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
         ${FOG.vertex}
       }
     `,
@@ -649,7 +623,7 @@ function walkerMaterial(): THREE.ShaderMaterial {
       void main() {
         vec3 n = normalize(vNormal);
         vec3 light = mix(vec3(0.12, 0.09, 0.08), uSky * 0.5, n.y * 0.5 + 0.5) + vec3(0.42, 0.32, 0.22) * 0.55;
-        gl_FragColor = vec4(pow(vColor, vec3(2.2)) * light, 1.0);
+        gl_FragColor = vec4(vColor * light, 1.0);
         ${OUTPUT}
         ${FOG.fragment}
       }
@@ -676,9 +650,8 @@ function walkerShape(): THREE.BufferGeometry {
   return g;
 }
 
-const SHIRTS: Array<[number, number, number]> = [[0.15, 0.18, 0.25], [0.55, 0.12, 0.12], [0.85, 0.85, 0.82], [0.2, 0.35, 0.55], [0.35, 0.3, 0.22], [0.1, 0.1, 0.1], [0.6, 0.5, 0.2], [0.25, 0.45, 0.3]];
-const TROUSERS: Array<[number, number, number]> = [[0.08, 0.08, 0.1], [0.18, 0.22, 0.35], [0.35, 0.3, 0.25], [0.12, 0.12, 0.12]];
-const SKINS: Array<[number, number, number]> = [[0.93, 0.76, 0.62], [0.78, 0.57, 0.42], [0.55, 0.38, 0.26], [0.36, 0.24, 0.17]];
+/** Nearer than this to the camera, a vehicle is drawn in its full shape. */
+const NEAR_CARS = 160;
 
 /** How many blocks round the camera are drawn, each way. */
 const SHOWN = 6;
@@ -694,7 +667,16 @@ export function cityTraffic(quality: PlaceInput['quality']): Vehicle[] {
 }
 
 /** What the city shows that somebody outside changes: the vehicle they took out of the traffic (its index), or -1. */
-export const cityLive = { taken: -1, quality: 'high' as PlaceInput['quality'] };
+export const cityLive = { taken: -1, quality: 'high' as PlaceInput['quality'], walkersNear: 0 };
+
+/** The people of the pavements: the same list for the picture far away and for the characters near by. */
+const crowds = new Map<string, Walker[]>();
+export function cityWalkersFor(quality: PlaceInput['quality']): Walker[] {
+  const key = quality === 'low' ? 'low' : 'high';
+  let list = crowds.get(key);
+  if (!list) crowds.set(key, (list = cityWalkers(quality === 'low' ? 4 : 9)));
+  return list;
+}
 
 export function buildSkyline({ quality }: PlaceInput): Place {
   const kept = new Kept();
@@ -740,7 +722,7 @@ export function buildSkyline({ quality }: PlaceInput): Place {
       group.add(mesh);
       return [k, { mesh, looks, capacity: v.capacity }];
     }),
-  ) as Record<keyof typeof kinds, { mesh: THREE.InstancedMesh; looks: THREE.InstancedBufferAttribute; capacity: number }>;
+  ) as unknown as Record<keyof typeof kinds, { mesh: THREE.InstancedMesh; looks: THREE.InstancedBufferAttribute; capacity: number }>;
   const tmp = new THREE.Matrix4();
   const beaconSpots: number[] = [];
   let shownAt = '';
@@ -789,23 +771,70 @@ export function buildSkyline({ quality }: PlaceInput): Place {
   const vehicles = cityTraffic(quality);
   const carMat = kept.add(vehicleMaterial(grid));
   const poolMat = kept.add(poolMaterial(grid));
-  const carIndex: number[] = [];
-  const busIndex: number[] = [];
-  vehicles.forEach((v, i) => (v.kind === 'bus' ? busIndex : carIndex).push(i));
-  const carScale = (v: Vehicle): [number, number, number] => (v.kind === 'suv' ? [1.05, 1.18, v.length / LENGTH.car] : [1, 1, v.length / LENGTH.car]);
-  const carMesh = fleet(kept, carShape(), carMat, carIndex.map((i) => vehicles[i]!), carScale);
-  const busMesh = fleet(kept, busShape(), carMat, busIndex.map((i) => vehicles[i]!), () => [1, 1, 1]);
+  // One shape for each kind (a saloon, an SUV, a taxi, a bus), each drawn at once for all of its kind.
+  const byKind: Record<Vehicle['kind'], number[]> = { car: [], suv: [], taxi: [], bus: [] };
+  vehicles.forEach((v, i) => byKind[v.kind].push(i));
+  const shapes: Record<Vehicle['kind'], Body> = { car: 'sedan', suv: 'suv', taxi: 'taxi', bus: 'bus' };
+  // Two of each: everyone in a simple shape (drawn further than NEAR_CARS from the camera), and the few near the
+  // camera in the full one — chosen again every few tenths of a second (`pickNear`), wider than they are drawn, so that
+  // nobody near is missing between two choices.
+  const fleetOf = Object.fromEntries((Object.keys(byKind) as Array<Vehicle['kind']>).map((k) => [k, fleet(kept, vehicleShape(shapes[k], true, true), carMat, byKind[k].map((i) => vehicles[i]!), () => [1, 1, 1])])) as Record<Vehicle['kind'], THREE.InstancedMesh>;
+  (carMat.uniforms.uBand!.value as THREE.Vector2).set(NEAR_CARS, 1e9);
+  const nearMat = kept.add(carMat.clone());
+  (nearMat.uniforms.uBand!.value as THREE.Vector2).set(0, NEAR_CARS);
+  const NEAR_CAP = 400;
+  const nearOf = Object.fromEntries(
+    (Object.keys(byKind) as Array<Vehicle['kind']>).map((k) => {
+      const g = kept.add(vehicleShape(shapes[k]));
+      const attr = (n: number) => {
+        const a = new THREE.InstancedBufferAttribute(new Float32Array(NEAR_CAP * n), n);
+        a.setUsage(THREE.DynamicDrawUsage);
+        return a;
+      };
+      const parts = { aLane: attr(4), aCar: attr(4), aPaint: attr(3), aScale: attr(3) };
+      for (const [name, a] of Object.entries(parts)) g.setAttribute(name, a);
+      const mesh = new THREE.InstancedMesh(g, nearMat, NEAR_CAP);
+      mesh.count = 0;
+      mesh.frustumCulled = false;
+      return [k, { mesh, ...parts }];
+    }),
+  ) as unknown as Record<Vehicle['kind'], { mesh: THREE.InstancedMesh; aLane: THREE.InstancedBufferAttribute; aCar: THREE.InstancedBufferAttribute; aPaint: THREE.InstancedBufferAttribute; aScale: THREE.InstancedBufferAttribute }>;
+  let pickedAt = -1;
+  let pickedTaken = -1;
+  const pickNear = (time: number, at: { x: number; z: number }) => {
+    const fill = { car: 0, suv: 0, taxi: 0, bus: 0 } as Record<Vehicle['kind'], number>;
+    for (let i = 0; i < vehicles.length; i++) {
+      if (i === cityLive.taken) continue;
+      const v = vehicles[i]!;
+      const p = vehicleAt(v, time, grid, at);
+      if (Math.hypot(p.x - at.x, p.z - at.z) > NEAR_CARS + 45) continue;
+      const n = nearOf[v.kind];
+      const k = fill[v.kind];
+      if (k >= NEAR_CAP) continue;
+      n.aLane.setXYZW(k, v.alongX ? 1 : 0, v.across, v.dir, v.travel);
+      n.aCar.setXYZW(k, v.stop, v.delay, v.length, v.kind === 'bus' ? 1 : 0);
+      n.aPaint.setXYZ(k, v.paint[0], v.paint[1], v.paint[2]);
+      n.aScale.setXYZ(k, 1, 1, 1);
+      fill[v.kind] = k + 1;
+    }
+    for (const k of Object.keys(nearOf) as Array<Vehicle['kind']>) {
+      const n = nearOf[k];
+      n.mesh.count = fill[k];
+      for (const a of [n.aLane, n.aCar, n.aPaint, n.aScale]) a.needsUpdate = true;
+    }
+  };
+  group.add(...Object.values(nearOf).map((n) => n.mesh));
   const pools = fleet(kept, new THREE.PlaneGeometry(9.5, 24).rotateX(-Math.PI / 2).translate(0, 0.12, 5.6), poolMat, vehicles, () => [1, 1, 1]);
   pools.renderOrder = 2;
-  group.add(carMesh, busMesh, pools);
+  group.add(...Object.values(fleetOf), pools);
   /** Take a vehicle out of the traffic (somebody is driving it now), or put it back. */
   let hidden = -1;
   const hide = (index: number, gone: boolean) => {
     if (index < 0 || index >= vehicles.length) return;
     const v = vehicles[index]!;
     const kind = gone ? -1 : v.kind === 'bus' ? 1 : 0;
-    const own = v.kind === 'bus' ? busMesh : carMesh;
-    const at_ = (v.kind === 'bus' ? busIndex : carIndex).indexOf(index);
+    const own = fleetOf[v.kind];
+    const at_ = byKind[v.kind].indexOf(index);
     for (const [mesh, k] of [[own, at_], [pools, index]] as const) {
       const attr = mesh.geometry.getAttribute('aCar') as THREE.InstancedBufferAttribute;
       attr.setW(k, kind);
@@ -835,26 +864,19 @@ export function buildSkyline({ quality }: PlaceInput): Place {
   signals.renderOrder = 3;
   group.add(signals);
 
-  // ── people on the pavements ──
-  const walkers: Array<{ walk: number[]; block: [number, number]; shirt: [number, number, number]; pants: [number, number, number]; skin: [number, number, number] }> = [];
-  const perSide = quality === 'low' ? 4 : 9;
-  for (let a = -4; a <= 4; a++) {
-    for (let b = -4; b <= 4; b++) {
-      for (const [ring, way] of [[KERB - 2.6, 1], [KERB - 1.6, -1]] as const) {
-        for (let k = 0; k < perSide; k++) {
-          const speed = (1.15 + random() * 0.5) * way;
-          walkers.push({ walk: [random() * 8 * ring, speed, ring, 1.35 + random() * 0.25], block: [a, b], shirt: SHIRTS[Math.floor(random() * SHIRTS.length)]!, pants: TROUSERS[Math.floor(random() * TROUSERS.length)]!, skin: SKINS[Math.floor(random() * SKINS.length)]! });
-        }
-      }
-    }
-  }
+  // ── people on the pavements: far away one simple shape each; near the camera the office's own characters (CityWalkers) ──
+  const walkers = cityWalkersFor(quality);
+  const rgb = (hex: string) => {
+    const c = new THREE.Color(hex);
+    return [c.r, c.g, c.b];
+  };
   const walkerGeo = kept.add(walkerShape());
-  const attr = (n: number, f: (w: (typeof walkers)[number]) => readonly number[]) => new THREE.InstancedBufferAttribute(new Float32Array(walkers.flatMap((w) => [...f(w)])), n);
+  const attr = (n: number, f: (w: Walker) => readonly number[]) => new THREE.InstancedBufferAttribute(new Float32Array(walkers.flatMap((w) => [...f(w)])), n);
   walkerGeo.setAttribute('aWalk', attr(4, (w) => w.walk));
   walkerGeo.setAttribute('aBlock', attr(2, (w) => w.block));
-  walkerGeo.setAttribute('aShirt', attr(3, (w) => w.shirt));
-  walkerGeo.setAttribute('aPants', attr(3, (w) => w.pants));
-  walkerGeo.setAttribute('aSkin', attr(3, (w) => w.skin));
+  walkerGeo.setAttribute('aShirt', attr(3, (w) => rgb(w.look.shirt)));
+  walkerGeo.setAttribute('aPants', attr(3, (w) => rgb(w.look.pants)));
+  walkerGeo.setAttribute('aSkin', attr(3, (w) => rgb(w.look.skin)));
   const walkerMat = kept.add(walkerMaterial());
   const people = instanced(walkerGeo, walkerMat, walkers.map(() => new THREE.Matrix4()));
   people.frustumCulled = false;
@@ -911,11 +933,17 @@ export function buildSkyline({ quality }: PlaceInput): Place {
       }
       material.uniforms.uTime!.value = time;
       roundMaterial.uniforms.uTime!.value = time;
-      for (const m of [carMat, poolMat]) {
+      if (time - pickedAt > 0.3 || time < pickedAt || cityLive.taken !== pickedTaken) {
+        pickedAt = time;
+        pickedTaken = cityLive.taken;
+        pickNear(time, { x: origin.x, z: origin.y });
+      }
+      for (const m of [carMat, nearMat, poolMat]) {
         m.uniforms.uTime!.value = time;
         (m.uniforms.uOrigin!.value as THREE.Vector2).copy(origin);
       }
       walkerMat.uniforms.uTime!.value = time;
+      walkerMat.uniforms.uHide!.value = cityLive.walkersNear;
       (walkerMat.uniforms.uOrigin!.value as THREE.Vector2).copy(origin);
       signalMat.uniforms.uTime!.value = time;
       beaconMat.uniforms.uTime!.value = time;
@@ -975,7 +1003,8 @@ export function buildTower(plate: Box): { group: THREE.Group; dispose(): void } 
     }, [w / 3.6, d / 3.6]),
   );
   const deck = new THREE.Mesh(kept.add(new THREE.BoxGeometry(w, 0.3, d)), kept.add(new THREE.MeshStandardMaterial({ map: paving, roughness: 0.85 })));
-  deck.position.set(cx, -0.36, cz);
+  // Its top 1 cm under the office's floor: one walks out of the door onto it without a step.
+  deck.position.set(cx, -0.162, cz);
   deck.receiveShadow = true;
   group.add(deck);
 
@@ -990,7 +1019,7 @@ export function buildTower(plate: Box): { group: THREE.Group; dispose(): void } 
     const rail = new THREE.Mesh(kept.add(new THREE.BoxGeometry(lx ? lx + 0.1 : 0.07, 0.05, lz ? lz + 0.1 : 0.07)), railMat);
     rail.position.set(x, 0.88, z);
     const led = new THREE.Mesh(kept.add(new THREE.BoxGeometry(lx ? lx - 0.6 : 0.05, 0.03, lz ? lz - 0.6 : 0.05)), ledMat);
-    led.position.set(x + (lx ? 0 : x < cx ? 0.12 : -0.12), -0.19, z + (lz ? 0 : z < cz ? 0.12 : -0.12));
+    led.position.set(x + (lx ? 0 : x < cx ? 0.12 : -0.12), 0.0, z + (lz ? 0 : z < cz ? 0.12 : -0.12));
     group.add(pane, rail, led);
   }
   return { group, dispose: () => kept.dispose() };

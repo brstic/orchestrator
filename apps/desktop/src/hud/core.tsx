@@ -385,8 +385,8 @@ export function interact(): void {
   if (s.cameraMode === 'workstation') return;
   if (s.outside.on) return;
   const n = s.nearby;
-  // An outer window over the city: out through it, with a parachute.
-  if (n?.kind === 'window') return s.goOutside();
+  // The terrace's edge over the city: over the balustrade, with a parachute.
+  if (n?.kind === 'edge') return s.goOutside();
   // Nothing to act on in front of them: the key is a jump.
   if (!n) return s.jump();
   // A place to sit: down, or up again.

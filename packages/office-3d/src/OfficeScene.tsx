@@ -21,6 +21,7 @@ import { Rig as RigPart, type Keymap } from './Rig.tsx';
 import type { AwardView, UsageClockView, BoardView, CameraMode, CeoView, HostView, NearbyTarget, PersonView, Quality, RadioView, ScreenSubscribe, WalkRequest, WallView, WhiteboardView, ZoneView, ForemanView } from './types.ts';
 import { buildWorld } from './world.ts';
 import { STUDIO, Surroundings as SurroundingsPart } from './surroundings/index.tsx';
+import { CityWalkers } from './city/CityWalkers.tsx';
 import { usePacedLoop } from './pace.ts';
 
 // Each part of the office is gone through by React again only when what it shows has changed. The office's state
@@ -214,6 +215,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       <Reflections />
       <PerfProbe />
       <Surroundings kind={surroundings} world={world} quality={props.quality} />
+      {surroundings === 'skyline' && <CityWalkers quality={props.quality} />}
       <Lights quality={props.quality} world={world} surroundings={surroundings} />
       <Building world={world} cutaway={cutaway} quality={props.quality} memberClocks={props.memberClocks} surroundings={surroundings} />
       <Desks desks={core.layout.desks} seats={seats} subscribe={props.subscribeScreen} />

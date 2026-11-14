@@ -400,12 +400,13 @@ export class NavGrid {
 }
 
 /** Resolve a circle against the obstacle boxes, sliding along them. */
-export function moveWithCollision(world: World, x: number, z: number, dx: number, dz: number, radius = 0.3): [number, number] {
+export function moveWithCollision(world: World, x: number, z: number, dx: number, dz: number, radius = 0.3, outdoor: Box | null = null): [number, number] {
   const core = world.base.bounds;
   const hits = (px: number, pz: number) => {
-    // Outside the building there is floor only in the member rooms (and in front of the entrance).
+    // Outside the building there is floor only in the member rooms (and in front of the entrance) — and, where the
+    // office stands on a terrace one may walk (`outdoor`), all the way round to its balustrade.
     if (px < core.minX + radius || px > core.maxX - radius || pz < core.minZ + radius || pz > core.maxZ + 6) {
-      let inRoom = false;
+      let inRoom = !!outdoor && px > outdoor.minX + radius && px < outdoor.maxX - radius && pz > outdoor.minZ + radius && pz < outdoor.maxZ - radius;
       for (const r of world.memberRooms) if (!r.locked && !r.closed && px > r.reach.minX && px < r.reach.maxX && pz > r.reach.minZ && pz < r.reach.maxZ) inRoom = true;
       if (!inRoom) return true;
     }
