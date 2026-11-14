@@ -76,8 +76,8 @@ flowchart LR
     m2["🤖 claude · Mi-2"]
   end
   you & mila & guest <-->|"TLS · one office"| office
-  office <--> a1 & a2 & a3
-  office <-->|"while Mila is in"| m1 & m2
+  office <--> Shared
+  office <-->|"while Mila is in"| Laptop
 ```
 
 **What "done" really means.** Every step below is measured by the office, not reported by the agent.
