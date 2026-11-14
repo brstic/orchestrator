@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import type { SaidFile } from '@orchestrator/contracts';
 import { api, apiBlob } from '../../lib/api.ts';
-import { familyOf, playableVideo, readableAs } from '../../lib/readable.ts';
+import { familyOf, playableAs, readableAs } from '../../lib/readable.ts';
 import { TextViewer, VideoViewer } from './file-view.tsx';
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -247,7 +247,8 @@ async function saveSaid(employeeId: string, file: SaidFile): Promise<void> {
 export function GivenFile({ employeeId, file, caption, onError }: { employeeId: string; file: SaidFile; caption: string | null; onError: (why: string) => void }) {
   const [open, setOpen] = useState(false);
   const reading = readableAs(file.name, file.mime, file.size);
-  const video = playableVideo(file.name, file.mime);
+  const media = playableAs(file.name, file.mime);
+  const video = !!media;
   const save = () => void saveSaid(employeeId, file).catch(() => onError('The office no longer keeps this file (a file given in a conversation is kept for a few days).'));
   return (
     <div className="said-given" data-given-file={file.name}>
@@ -257,7 +258,7 @@ export function GivenFile({ employeeId, file, caption, onError }: { employeeId: 
         </div>
       )}
       <div className="said-given-row">
-        <button type="button" className={`tp-doc tp-doc-${familyOf(file.name, file.mime)}`} title={`${file.name} · ${fileSize(file.size)} — ${video ? 'play it here' : reading ? 'open it here' : 'download'}`} onClick={() => (reading || video ? setOpen(true) : save())} data-file={file.name} data-file-reads={reading ? 'yes' : video ? 'video' : 'no'}>
+        <button type="button" className={`tp-doc tp-doc-${familyOf(file.name, file.mime)}`} title={`${file.name} · ${fileSize(file.size)} — ${video ? 'play it here' : reading ? 'open it here' : 'download'}`} onClick={() => (reading || video ? setOpen(true) : save())} data-file={file.name} data-file-reads={reading ? 'yes' : media ?? 'no'}>
           <span className="tf-ext">{(file.name.split('.').pop() ?? 'file').slice(0, 5)}</span>
           <span className="truncate">{file.name}</span>
           <span className="faint">{fileSize(file.size)}</span>
@@ -270,7 +271,7 @@ export function GivenFile({ employeeId, file, caption, onError }: { employeeId: 
         )}
       </div>
       {open && reading && <TextViewer name={file.name} note={caption} as={reading} load={() => apiBlob(`/employees/${employeeId}/files/${file.id}`)} onDownload={save} onClose={() => setOpen(false)} />}
-      {open && video && <VideoViewer name={file.name} note={caption} size={fileSize(file.size)} load={() => apiBlob(`/employees/${employeeId}/files/${file.id}`)} onDownload={save} onClose={() => setOpen(false)} />}
+      {open && video && <VideoViewer name={file.name} note={caption} size={fileSize(file.size)} audio={media === 'audio'} load={() => apiBlob(`/employees/${employeeId}/files/${file.id}`)} onDownload={save} onClose={() => setOpen(false)} />}
       {caption && <div className="small">{caption}</div>}
     </div>
   );

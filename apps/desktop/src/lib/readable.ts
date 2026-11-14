@@ -16,6 +16,7 @@ const TEXT = new Set(['txt', 'text', 'log', 'out', 'err', 'rst', 'adoc', 'srt', 
 const DOC = new Set(['pdf', 'doc', 'docx', 'odt', 'rtf', 'xls', 'xlsx', 'ods', 'ppt', 'pptx', 'odp', 'pages', 'numbers', 'key']);
 const ARCHIVE = new Set(['zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar']);
 const VIDEO = new Set(['mp4', 'm4v', 'mov', 'webm', 'ogv']);
+const AUDIO = new Set(['mp3', 'wav', 'm4a', 'ogg', 'oga', 'flac', 'aac', 'opus']);
 
 export const extOf = (name: string): string => {
   const base = name.split(/[\\/]/).pop() ?? '';
@@ -29,7 +30,7 @@ export type Reading = 'markdown' | 'text';
 export function readableAs(name: string, mime: string | null | undefined, size: number | null | undefined): Reading | null {
   if (typeof size === 'number' && size > READ_MAX_BYTES) return null;
   const ext = extOf(name);
-  if (DOC.has(ext) || ARCHIVE.has(ext) || VIDEO.has(ext)) return null;
+  if (DOC.has(ext) || ARCHIVE.has(ext) || VIDEO.has(ext) || AUDIO.has(ext)) return null;
   if (MARKDOWN.has(ext) || mime === 'text/markdown') return 'markdown';
   if (DATA.has(ext) || CODE.has(ext) || TEXT.has(ext)) return 'text';
   const m = (mime ?? '').toLowerCase();
@@ -42,7 +43,15 @@ export function playableVideo(name: string, mime?: string | null): boolean {
   return VIDEO.has(extOf(name)) || (mime ?? '').toLowerCase().startsWith('video/');
 }
 
-export type FileFamily = 'text' | 'data' | 'code' | 'doc' | 'picture' | 'video' | 'archive' | 'other';
+/** Is this a sound the window plays (the same viewer, without a picture) instead of downloading it? */
+export function playableAudio(name: string, mime?: string | null): boolean {
+  return AUDIO.has(extOf(name)) || (mime ?? '').toLowerCase().startsWith('audio/');
+}
+
+/** A video or a sound: what the window plays, and as which. */
+export const playableAs = (name: string, mime?: string | null): 'video' | 'audio' | null => (playableVideo(name, mime) ? 'video' : playableAudio(name, mime) ? 'audio' : null);
+
+export type FileFamily = 'text' | 'data' | 'code' | 'doc' | 'picture' | 'video' | 'audio' | 'archive' | 'other';
 
 /** The colour family of a file's chip. */
 export function familyOf(name: string, mime?: string | null): FileFamily {
@@ -53,6 +62,7 @@ export function familyOf(name: string, mime?: string | null): FileFamily {
   if (DOC.has(ext)) return 'doc';
   if (ARCHIVE.has(ext)) return 'archive';
   if (playableVideo(name, mime)) return 'video';
+  if (playableAudio(name, mime)) return 'audio';
   const m = (mime ?? '').toLowerCase();
   if (m.startsWith('image/')) return 'picture';
   if (m.startsWith('text/')) return 'text';

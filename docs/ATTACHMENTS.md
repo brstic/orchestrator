@@ -24,6 +24,13 @@ given through the office), never before. A format the player does not know (a `.
 it, for instance) says so and leaves *Download*. Checked by the UI suite's step "an employee gives me a video…" with a
 real one-second H.264 file (`tests/fixtures/tiny.mp4`).
 
+## Listening to a sound in the window
+The same for a sound (the owner, 2026-11-14: "let me play an mp3 file too"): `.mp3`, `.wav`, `.m4a`, `.ogg`, `.flac`,
+`.aac`, `.opus`, or an `audio/…` type (`playableAudio` in `lib/readable.ts`), in the conversation or on a ticket. Its
+chip is violet and says **▶ Play**; a click opens the same viewer (`VideoViewer` with `audio`) with the player's own
+controls under the file's name, *Download* and *Close*. Fetched when opened, at most 25 MB. Checked by the UI suite's
+step "an employee gives me a sound (an mp3)…" with a real 0.6-second tone (`tests/fixtures/tiny.mp3`).
+
 ## The three parts in one paragraph each
 
 **Files for the employee.** In the task window (and in *New task*) a person attaches files — a button, a drop, or a pasted screenshot. The office keeps the bytes. When the task is handed over, each file is copied to the machine the employee's session runs on, into a folder of the host agent *outside every repository*, and the hand-over lists the paths. The employee opens them with Claude Code's own **Read** tool.

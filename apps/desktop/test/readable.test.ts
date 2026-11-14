@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { READ_MAX_BYTES, SHOW_MAX_CHARS, extOf, familyOf, playableVideo, readableAs, shownOf } from '../src/lib/readable.ts';
+import { READ_MAX_BYTES, SHOW_MAX_CHARS, extOf, familyOf, playableAudio, playableVideo, readableAs, shownOf } from '../src/lib/readable.ts';
 
 test('what an employee leaves as text is read in the window; the rest is downloaded', () => {
   // By the name, whatever type it arrived with.
@@ -36,4 +36,11 @@ test('a video an employee leaves is played in the window: by its name, or by its
   // Never read as text, and coloured as a video.
   assert.equal(readableAs('demo.mp4', 'video/mp4', 10), null);
   assert.deepEqual([familyOf('demo.mp4'), familyOf('rec', 'video/webm')], ['video', 'video']);
+});
+
+test('a sound an employee leaves is played in the window too: by its name, or by its type', () => {
+  assert.deepEqual(['voice-note.mp3', 'Take 2.WAV', 'a.m4a', 'b.ogg', 'c.flac', 'd.aac', 'e.opus'].map((n) => playableAudio(n, 'application/octet-stream')), Array(7).fill(true));
+  assert.deepEqual([playableAudio('recording', 'audio/mpeg'), playableAudio('demo.mp4', 'video/mp4'), playableAudio('notes.txt', 'text/plain')], [true, false, false]);
+  assert.equal(readableAs('voice-note.mp3', 'audio/mpeg', 10), null);
+  assert.deepEqual([familyOf('voice-note.mp3'), familyOf('rec', 'audio/wav')], ['audio', 'audio']);
 });

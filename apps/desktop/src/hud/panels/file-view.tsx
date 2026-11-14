@@ -1,5 +1,5 @@
 /**
- * (Also `VideoViewer`, below: a video an employee left, played over the conversation or the ticket.)
+ * (Also `VideoViewer`, below: a video or a sound an employee left, played over the conversation or the ticket.)
  *
  * A file read in the window: what an employee left as text (a check's output, notes, a patch, JSON) opens over the
  * conversation or the ticket it is on, instead of being downloaded to be looked at. Which files: `lib/readable.ts`.
@@ -90,7 +90,7 @@ export function TextViewer({ name, note, as, load, onDownload, onClose }: { name
  * ticket it is on. It is fetched whole when it is opened (a file given through the office is at most 25 MB), and
  * played with the player's own controls; Escape or a click beside it closes it.
  */
-export function VideoViewer({ name, note, size, load, onDownload, onClose }: { name: string; note?: string | null; size?: string | null; load: () => Promise<Blob>; onDownload: () => void; onClose: () => void }) {
+export function VideoViewer({ name, note, size, audio = false, load, onDownload, onClose }: { name: string; note?: string | null; size?: string | null; /** A sound: a player without a picture. */ audio?: boolean; load: () => Promise<Blob>; onDownload: () => void; onClose: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   useEffect(() => {
@@ -123,9 +123,14 @@ export function VideoViewer({ name, note, size, load, onDownload, onClose }: { n
     return () => window.removeEventListener('keydown', key, true);
   }, [onClose]);
   return (
-    <div className="tf-lightbox" role="dialog" aria-label={name} onClick={onClose} data-video={name} data-esc-first>
+    <div className="tf-lightbox" role="dialog" aria-label={name} onClick={onClose} {...(audio ? { 'data-sound': name } : { 'data-video': name })} data-esc-first>
       {failed ? (
         <div className="muted">{failed}</div>
+      ) : url && audio ? (
+        <div className="tf-sound" onClick={(ev) => ev.stopPropagation()}>
+          <div className="tf-sound-name truncate">♪ {name}</div>
+          <audio src={url} controls autoPlay onError={() => setFailed('This sound cannot be played here (its format is not one the player knows). Download it to listen.')} />
+        </div>
       ) : url ? (
         <video className="tf-video" src={url} controls autoPlay playsInline onClick={(ev) => ev.stopPropagation()} onError={() => setFailed('This video cannot be played here (its format is not one the player knows). Download it to watch it.')} />
       ) : (

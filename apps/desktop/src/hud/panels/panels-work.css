@@ -1138,6 +1138,28 @@ button.tk-person-chip:hover {
 .tp-doc-video {
   --file: #f78fb3;
 }
+.tp-doc-audio {
+  --file: #b388ff;
+}
+/* A sound played in the window: its name over the player's own controls. */
+.tf-sound {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(560px, 100%);
+  padding: 20px 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--panel-solid);
+  cursor: default;
+}
+.tf-sound-name {
+  font-weight: 600;
+  color: #b388ff;
+}
+.tf-sound audio {
+  width: 100%;
+}
 /* A video played in the window. */
 .tf-video {
   width: min(1100px, 100%);
