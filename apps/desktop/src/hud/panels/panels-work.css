@@ -1135,6 +1135,23 @@ button.tk-person-chip:hover {
 .tp-doc-picture {
   --file: #4dd0e1;
 }
+.tp-doc-video {
+  --file: #f78fb3;
+}
+/* A video played in the window. */
+.tf-video {
+  width: min(1100px, 100%);
+  max-height: calc(100% - 56px);
+  min-height: 0;
+  border-radius: 6px;
+  background: #000;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  cursor: default;
+}
+.tf-thumb-video .tf-play {
+  font-size: 22px;
+  color: #f78fb3;
+}
 /* A file read in the window. */
 .tf-reader-box {
   cursor: default;

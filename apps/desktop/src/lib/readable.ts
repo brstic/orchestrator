@@ -15,6 +15,7 @@ const CODE = new Set(['js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs', 'py', 'rb', 'php',
 const TEXT = new Set(['txt', 'text', 'log', 'out', 'err', 'rst', 'adoc', 'srt', 'vtt', 'gitignore', 'lock', 'list']);
 const DOC = new Set(['pdf', 'doc', 'docx', 'odt', 'rtf', 'xls', 'xlsx', 'ods', 'ppt', 'pptx', 'odp', 'pages', 'numbers', 'key']);
 const ARCHIVE = new Set(['zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar']);
+const VIDEO = new Set(['mp4', 'm4v', 'mov', 'webm', 'ogv']);
 
 export const extOf = (name: string): string => {
   const base = name.split(/[\\/]/).pop() ?? '';
@@ -28,7 +29,7 @@ export type Reading = 'markdown' | 'text';
 export function readableAs(name: string, mime: string | null | undefined, size: number | null | undefined): Reading | null {
   if (typeof size === 'number' && size > READ_MAX_BYTES) return null;
   const ext = extOf(name);
-  if (DOC.has(ext) || ARCHIVE.has(ext)) return null;
+  if (DOC.has(ext) || ARCHIVE.has(ext) || VIDEO.has(ext)) return null;
   if (MARKDOWN.has(ext) || mime === 'text/markdown') return 'markdown';
   if (DATA.has(ext) || CODE.has(ext) || TEXT.has(ext)) return 'text';
   const m = (mime ?? '').toLowerCase();
@@ -36,7 +37,12 @@ export function readableAs(name: string, mime: string | null | undefined, size: 
   return null;
 }
 
-export type FileFamily = 'text' | 'data' | 'code' | 'doc' | 'picture' | 'archive' | 'other';
+/** Is this a video the window plays (`VideoViewer`) instead of downloading it? By the name, or by the type. */
+export function playableVideo(name: string, mime?: string | null): boolean {
+  return VIDEO.has(extOf(name)) || (mime ?? '').toLowerCase().startsWith('video/');
+}
+
+export type FileFamily = 'text' | 'data' | 'code' | 'doc' | 'picture' | 'video' | 'archive' | 'other';
 
 /** The colour family of a file's chip. */
 export function familyOf(name: string, mime?: string | null): FileFamily {
@@ -46,6 +52,7 @@ export function familyOf(name: string, mime?: string | null): FileFamily {
   if (CODE.has(ext)) return 'code';
   if (DOC.has(ext)) return 'doc';
   if (ARCHIVE.has(ext)) return 'archive';
+  if (playableVideo(name, mime)) return 'video';
   const m = (mime ?? '').toLowerCase();
   if (m.startsWith('image/')) return 'picture';
   if (m.startsWith('text/')) return 'text';

@@ -4,9 +4,9 @@ import { Button } from '@orchestrator/ui';
 import { api, apiBlob } from '../../lib/api.ts';
 import { useAccess } from '../../lib/access.ts';
 import { useOffice } from '../../lib/store.ts';
-import { familyOf, readableAs } from '../../lib/readable.ts';
+import { familyOf, playableVideo, readableAs } from '../../lib/readable.ts';
 import { act, ask } from '../core.tsx';
-import { TextViewer } from './file-view.tsx';
+import { TextViewer, VideoViewer } from './file-view.tsx';
 
 /**
  * Files on a task: what people attach for the employee (a picture of the bug, a mock-up, a document), and what the
@@ -90,10 +90,15 @@ function FileCard({ task, a, mayChange, onOpen }: { task: Task; a: TaskAttachmen
     if (!(await ask({ title: `Remove ${a.name}?`, body: `It is taken off ${task.key} and deleted from the office.${a.kind === 'input' ? ' A copy already sent to an employee\'s machine stays there.' : ''}`, ok: 'Remove' }))) return;
     void act(() => api('DELETE', `/tasks/${task.id}/attachments/${a.id}`), `${a.name} removed`);
   };
+  const [playing, setPlaying] = useState(false);
   return (
     <div className="tf-file" data-attachment={a.name} data-kind={a.kind}>
       {SHOWN.test(a.mime) ? (
         <Thumb taskId={task.id} a={a} onOpen={(url) => onOpen(a, url)} />
+      ) : playableVideo(a.name, a.mime) ? (
+        <button type="button" className="tf-thumb tf-thumb-doc tf-thumb-video" title={`${a.name} — play`} onClick={() => setPlaying(true)} aria-label={`Play ${a.name}`}>
+          <span className="tf-play">▶</span>
+        </button>
       ) : (
         <button type="button" className="tf-thumb tf-thumb-doc" title={`${a.name} — download`} onClick={() => void act(() => download(task.id, a))}>
           <span className="tf-ext">{(a.name.split('.').pop() ?? 'file').slice(0, 5)}</span>
@@ -122,6 +127,7 @@ function FileCard({ task, a, mayChange, onOpen }: { task: Task; a: TaskAttachmen
           )}
         </div>
       </div>
+      {playing && <VideoViewer name={a.name} note={a.caption ? `${a.caption} · ${a.addedBy.name}` : a.addedBy.name} size={size(a.size)} load={() => apiBlob(`/tasks/${task.id}/attachments/${a.id}`)} onDownload={() => void act(() => download(task.id, a))} onClose={() => setPlaying(false)} />}
     </div>
   );
 }
@@ -400,19 +406,22 @@ export function FileLinks({ taskId, list }: { taskId: string; list: TaskAttachme
   const [open, setOpen] = useState<TaskAttachment | null>(null);
   if (!list.length) return null;
   const reading = open ? readableAs(open.name, open.mime, open.size) : null;
+  const video = open ? playableVideo(open.name, open.mime) : false;
   return (
     <div className="tp-docs" data-file-links={list.length}>
       {list.map((a) => {
         const reads = !!readableAs(a.name, a.mime, a.size);
+        const plays = playableVideo(a.name, a.mime);
         return (
-          <button key={a.id} type="button" className={`tp-doc tp-doc-${familyOf(a.name, a.mime)}`} title={`${a.caption ?? a.name} · ${size(a.size)} — ${reads ? 'open it here' : 'download'}`} onClick={() => (reads ? setOpen(a) : void act(() => download(taskId, a)))} data-file={a.name} data-file-reads={reads ? 'yes' : 'no'}>
+          <button key={a.id} type="button" className={`tp-doc tp-doc-${familyOf(a.name, a.mime)}`} title={`${a.caption ?? a.name} · ${size(a.size)} — ${plays ? 'play it here' : reads ? 'open it here' : 'download'}`} onClick={() => (reads || plays ? setOpen(a) : void act(() => download(taskId, a)))} data-file={a.name} data-file-reads={reads ? 'yes' : plays ? 'video' : 'no'}>
             <span className="tf-ext">{(a.name.split('.').pop() ?? 'file').slice(0, 5)}</span>
             <span className="truncate">{a.name}</span>
             <span className="faint">{size(a.size)}</span>
-            <span className="tp-doc-does">{reads ? 'Open' : 'Download'}</span>
+            <span className="tp-doc-does">{plays ? '▶ Play' : reads ? 'Open' : 'Download'}</span>
           </button>
         );
       })}
+      {open && video && <VideoViewer name={open.name} note={open.caption ? `${open.caption} · ${open.addedBy.name}` : open.addedBy.name} size={size(open.size)} load={() => apiBlob(`/tasks/${taskId}/attachments/${open.id}`)} onDownload={() => void act(() => download(taskId, open))} onClose={() => setOpen(null)} />}
       {open && reading && <TextViewer name={open.name} note={open.caption ? `${open.caption} · ${open.addedBy.name}` : open.addedBy.name} as={reading} load={() => apiBlob(`/tasks/${taskId}/attachments/${open.id}`)} onDownload={() => void act(() => download(taskId, open))} onClose={() => setOpen(null)} />}
     </div>
   );

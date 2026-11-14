@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { READ_MAX_BYTES, SHOW_MAX_CHARS, extOf, familyOf, readableAs, shownOf } from '../src/lib/readable.ts';
+import { READ_MAX_BYTES, SHOW_MAX_CHARS, extOf, familyOf, playableVideo, readableAs, shownOf } from '../src/lib/readable.ts';
 
 test('what an employee leaves as text is read in the window; the rest is downloaded', () => {
   // By the name, whatever type it arrived with.
@@ -28,4 +28,12 @@ test('a very long file is drawn up to a limit, and says so', () => {
   assert.deepEqual(shownOf('short'), { text: 'short', cut: false });
   const long = shownOf('x'.repeat(SHOW_MAX_CHARS + 5));
   assert.deepEqual([long.text.length, long.cut], [SHOW_MAX_CHARS, true]);
+});
+
+test('a video an employee leaves is played in the window: by its name, or by its type when the name says nothing', () => {
+  assert.deepEqual(['demo.mp4', 'Screen Recording.MOV', 'clip.webm', 'a.m4v', 'b.ogv'].map((n) => playableVideo(n, 'application/octet-stream')), [true, true, true, true, true]);
+  assert.deepEqual([playableVideo('recording', 'video/mp4'), playableVideo('recording', 'application/octet-stream'), playableVideo('shot.png', 'image/png'), playableVideo('notes.txt', 'text/plain')], [true, false, false, false]);
+  // Never read as text, and coloured as a video.
+  assert.equal(readableAs('demo.mp4', 'video/mp4', 10), null);
+  assert.deepEqual([familyOf('demo.mp4'), familyOf('rec', 'video/webm')], ['video', 'video']);
 });

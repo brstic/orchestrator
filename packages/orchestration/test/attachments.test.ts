@@ -21,6 +21,8 @@ test('a file name from outside is made safe to stand in a folder', () => {
 test('what a file is, is told from its name; only plain picture formats count as images', () => {
   assert.equal(mimeOf('Shot.PNG'), 'image/png');
   assert.equal(mimeOf('a.jpeg'), 'image/jpeg');
+  // A screen recording from a Mac is a .mov: it is a video, so the window plays it.
+  assert.deepEqual(['demo.mp4', 'Screen Recording.mov', 'a.m4v', 'b.webm'].map(mimeOf), ['video/mp4', 'video/quicktime', 'video/mp4', 'video/webm']);
   assert.equal(mimeOf('spec.pdf'), 'application/pdf');
   assert.equal(mimeOf('noextension'), 'application/octet-stream');
   assert.equal(mimeOf('weird.xyz'), 'application/octet-stream');

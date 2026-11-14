@@ -12,6 +12,18 @@ extension first (what arrives is often typed `application/octet-stream`), then b
 rest as plain text; of a very long file the first 300 000 characters. It is fetched through the same route as a
 download, so nobody reads here what they could not download.
 
+## Watching a video in the window
+A video an employee leaves — in the conversation (`attach_file` without a task) or on a ticket — is played, not
+downloaded (the owner, 2026-11-14: "I need to be able to watch the mp4s the agents send me; now I only see them as a
+download"). Its chip is pink and says **▶ Play**; in a task's *Files* the card shows ▶. A click opens a player over
+the window (`file-view.tsx`, `VideoViewer`): the video as wide as 1100 px, the player's own controls (pause, seek,
+sound, full screen), and under it its name, caption and size, *Download* and *Close* (Escape, or a click beside it).
+Which files: `playableVideo` in `lib/readable.ts` — `.mp4`, `.m4v`, `.mov`, `.webm`, `.ogv`, or a `video/…` type. The
+whole file is fetched when it is opened (through the same route as a download; at most 25 MB, the limit of any file
+given through the office), never before. A format the player does not know (a `.mov` in HEVC on a machine without
+it, for instance) says so and leaves *Download*. Checked by the UI suite's step "an employee gives me a video…" with a
+real one-second H.264 file (`tests/fixtures/tiny.mp4`).
+
 ## The three parts in one paragraph each
 
 **Files for the employee.** In the task window (and in *New task*) a person attaches files — a button, a drop, or a pasted screenshot. The office keeps the bytes. When the task is handed over, each file is copied to the machine the employee's session runs on, into a folder of the host agent *outside every repository*, and the hand-over lists the paths. The employee opens them with Claude Code's own **Read** tool.

@@ -24,7 +24,7 @@ export const MAX_FILES_PER_TASK = 200;
 const CHUNK = 1024 * 1024;
 
 const IMAGE = /^image\/(png|jpeg|gif|webp)$/;
-const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf', txt: 'text/plain', md: 'text/markdown', log: 'text/plain', json: 'application/json', csv: 'text/csv', html: 'text/html', svg: 'image/svg+xml', zip: 'application/zip', mp4: 'video/mp4', webm: 'video/webm' };
+const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf', txt: 'text/plain', md: 'text/markdown', log: 'text/plain', json: 'application/json', csv: 'text/csv', html: 'text/html', svg: 'image/svg+xml', zip: 'application/zip', mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', ogv: 'video/ogg' };
 
 export const mimeOf = (name: string): string => MIME[name.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream';
 export const isImage = (mime: string): boolean => IMAGE.test(mime);

@@ -504,6 +504,34 @@ async function scenario() {
     return 'a picture from her, with what it shows and a way to download it';
   });
 
+  await step('an employee gives me a video: it says Play, and it plays in the window instead of being downloaded', async () => {
+    const ava = await js(`window.__t.emp('Ava').id`);
+    const cwd = await waitFor(`(Object.values(window.__t.store().sessions).find((x) => x.employeeId === ${JSON.stringify(ava)} && x.status === 'running' && x.inTurn === false) || {}).cwd`, 15000);
+    // (A real one second of H.264, 64×48: tests/fixtures/tiny.mp4.)
+    const file = path.join(cwd, 'demo-of-the-page.mp4');
+    fs.copyFileSync(path.join(__dirname, '..', 'fixtures', 'tiny.mp4'), file);
+    try {
+      await js(`window.__t.store().openPanel('talk', ${JSON.stringify(ava)})`);
+      await type(`window.__t.scope().querySelector('textarea')`, 'Record it for me. @@fake: mcp attach_file {"path":"demo-of-the-page.mp4","caption":"The page, clicked through"}; say here-is-the-video-5520@@');
+      await clickText('Send');
+      const chip = `window.__t.scope().querySelector('[data-talk-file="demo-of-the-page.mp4"] [data-file="demo-of-the-page.mp4"]')`;
+      await waitFor(`!!${chip} && ${chip}.dataset.fileReads === 'video' && /Play/.test(${chip}.textContent)`, 30000);
+      await click(chip, 'the video\'s chip');
+      // It plays: the player has the frames, and nothing was downloaded instead.
+      await waitFor(`(() => { const v = document.querySelector('[data-video="demo-of-the-page.mp4"] video'); return !!v && !v.error && v.readyState >= 2 && v.videoWidth === 64; })()`, 10000);
+      await js(`(() => { const v = document.querySelector('[data-video] video'); v.pause(); v.currentTime = 0.5; return true; })()`);
+      await sleep(300);
+      await shot('talk-video');
+      // Escape closes the player and only the player.
+      await key('Escape');
+      await waitFor(`!document.querySelector('[data-video]') && window.__t.store().panel === 'talk'`, 4000);
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+    await js(`window.__t.store().openPanel(null)`);
+    return 'a video from her: "▶ Play", played in the window (64×48, no error), Escape closed only the player';
+  });
+
   await step('the arcade: a cartridge of my own runs on the office\'s Mega Drive, the keys are the same for everybody and nothing is chosen, the office does not hear them, a second window joins with the second pad, and where I stopped is kept', async () => {
     // A cartridge written for this (tests/fixtures/md-test-rom.mjs): the colour of its screen says what both pads hold.
     const { buildTestRom, padsOf } = await import(require('node:url').pathToFileURL(path.join(__dirname, '..', 'fixtures', 'md-test-rom.mjs')).href);
