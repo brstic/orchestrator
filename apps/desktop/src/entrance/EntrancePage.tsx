@@ -101,7 +101,7 @@ function Place({ id, kind = id, w, h, r, ax = 0.5, ay = 0.6, className = '' }: {
   return <div className={`ent-slot ${className}`} data-station={id} data-kind={kind} data-ax={ax} data-ay={ay} style={{ '--w': w, '--h': h, '--r': r, '--ax': ax, '--ay': ay } as React.CSSProperties} aria-hidden />;
 }
 
-export default function EntrancePage({ office, onOwnToken }: { office: string; onOwnToken: () => void }) {
+export default function EntrancePage({ office, onOwnToken, showcase = false }: { office: string; onOwnToken: () => void; /** The public demo office: the door says walk in. */ showcase?: boolean }) {
   const scroller = useRef<HTMLDivElement>(null);
   const page = useRef<HTMLDivElement>(null);
   const rig = useRef<HTMLElement>(null);
@@ -332,14 +332,14 @@ export default function EntrancePage({ office, onOwnToken }: { office: string; o
     <div ref={scroller} className={`ent ${calm ? 'ent-calm' : ''} ${staged ? 'ent-staged' : ''} ${wide ? '' : 'ent-narrow'} ${flat ? 'ent-flat' : ''}`} style={style} tabIndex={-1}>
       {/* The door: first in the page for the keyboard and for a screen reader, hanging on the right for the eye. */}
       <div className="ent-rail">
-        <aside ref={rig} className={`ent-rig ${open ? 'is-open' : 'is-folded'}`} aria-label={`The door of ${office}: sign in, or ask to come in`} onPointerEnter={onEnter} onPointerLeave={onLeave} onFocus={onFocus} onBlur={onBlur}>
+        <aside ref={rig} className={`ent-rig ${open ? 'is-open' : 'is-folded'}`} aria-label={showcase ? `The door of ${office}: walk in` : `The door of ${office}: sign in, or ask to come in`} onPointerEnter={onEnter} onPointerLeave={onLeave} onFocus={onFocus} onBlur={onBlur}>
           <span className="ent-cable ent-cable-l" aria-hidden />
           <span className="ent-cable ent-cable-r" aria-hidden />
           <div ref={tilt} className="ent-rig-tilt">
-            <Door office={office} onOwnToken={onOwnToken} folded={!open} onWaiting={setKnocking} />
+            <Door office={office} onOwnToken={onOwnToken} folded={!open} onWaiting={setKnocking} showcase={showcase} />
             {/* What it does is decided by whether somebody opened the door on purpose — not by a pointer on its way to this button. */}
             <button type="button" className="ent-fold" aria-expanded={open} onClick={() => (pinned || typing ? fold() : unfold())} hidden={open && ((wide && edge) || !(pinned || typing))}>
-              {open && (pinned || typing) ? 'Fold the door away' : 'Sign in or knock'}
+              {open && (pinned || typing) ? 'Fold the door away' : showcase ? 'Walk in' : 'Sign in or knock'}
             </button>
           </div>
         </aside>
@@ -554,17 +554,31 @@ export default function EntrancePage({ office, onOwnToken }: { office: string; o
               <h2 id="ent-h-door">
                 This is the door of <span className="ent-grad">{office}</span>.
               </h2>
-              <ul className="ent-ways">
-                <li>
-                  <b>Have a password?</b> Sign in. You come in as the member you are, with that member’s role.
-                </li>
-                <li>
-                  <b>Just looking?</b> Knock. Somebody inside lets you in to look around: you can watch, not change anything.
-                </li>
-                <li>
-                  <b>Work here every day?</b> The Orchestrator desktop app comes in with an invitation link and brings your own computer.
-                </li>
-              </ul>
+              {showcase ? (
+                <ul className="ent-ways">
+                  <li>
+                    <b>Walk in.</b> The door is open: no account, nobody has to let you in. You can walk around and watch, not change anything.
+                  </li>
+                  <li>
+                    <b>What you see is the real office.</b> Sessions, hooks, worktrees, tests, commits, questions and approvals are the product itself; only the employees are scripted stand-ins, so nothing is spent.
+                  </li>
+                  <li>
+                    <b>Want your own?</b> Orchestrator is on GitHub: run it with your own Claude Code agents.
+                  </li>
+                </ul>
+              ) : (
+                <ul className="ent-ways">
+                  <li>
+                    <b>Have a password?</b> Sign in. You come in as the member you are, with that member’s role.
+                  </li>
+                  <li>
+                    <b>Just looking?</b> Knock. Somebody inside lets you in to look around: you can watch, not change anything.
+                  </li>
+                  <li>
+                    <b>Work here every day?</b> The Orchestrator desktop app comes in with an invitation link and brings your own computer.
+                  </li>
+                </ul>
+              )}
               <footer className="ent-footer">
                 <img src={logo} alt="" width={40} height={40} />
                 <p>

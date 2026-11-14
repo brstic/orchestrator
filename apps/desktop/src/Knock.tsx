@@ -128,3 +128,42 @@ export function useKnock() {
   };
   return { name, setName, stage, error, busy, ready, knock, cancel };
 }
+
+/**
+ * Walking into the public demo office (`docs/DEMO.md`): nobody has to answer. The page knocks under the name given
+ * (or a guest's), the office lets the knock in at once as a visitor, and the page goes in.
+ */
+export function useWalkIn() {
+  const [name, setName] = useState(() => remembered('orch.knock-name'));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const walkIn = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const who = name.trim().length >= 2 ? name.trim() : `Guest ${String(Math.floor(1000 + Math.random() * 9000))}`;
+      const k = await (await fetch(`${serverBase}/knock`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: who, via: 'browser' }) })).json();
+      if (!k?.id) throw new Error(k?.error ?? 'The demo office did not answer.');
+      try {
+        if (name.trim().length >= 2) localStorage.setItem('orch.knock-name', name.trim());
+      } catch {
+        /* private window */
+      }
+      for (let i = 0; i < 10; i++) {
+        const a = await (await fetch(`${serverBase}/knock/${k.id}`, { headers: { 'x-knock-secret': k.secret }, cache: 'no-store' })).json();
+        if (a.status === 'admitted') {
+          setToken(a.token);
+          connection.connect();
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 700));
+      }
+      throw new Error('The demo office did not let you in. Try again in a moment.');
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+  return { name, setName, busy, error, walkIn };
+}

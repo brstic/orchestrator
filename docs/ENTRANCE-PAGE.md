@@ -12,6 +12,8 @@ The page **is the floor of a little office at night**. The text and the pictures
 
 `Entrance` in `apps/desktop/src/App.tsx`: the connection is `unauthorized`, this is not the desktop app, and `GET /knock` answered — which it does only through the office's door (`apps/server/src/door.ts`). On the office's own computer, and in the desktop app, the owner-token form is shown as before. A phone is still turned away before any of this (server and `main.tsx`); nothing about that rule changed.
 
+**In the public demo office** (`DEMO.md`) the page is the same, but the door has one way in — *Walk in* — instead of knocking and signing in, and the page's end says what the demo is (`showcase` from `GET /knock`; `DemoDoor` in `Door.tsx`).
+
 ## What is on it
 
 | Part of the page | What it says (all of it from `README.md`) | What stands beside it |

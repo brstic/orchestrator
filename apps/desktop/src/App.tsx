@@ -69,53 +69,13 @@ function Entrance() {
   }, []);
   if (door === null) return <div className="login" />;
   if (door === 'none' || ownToken) return <Login />;
-  if (door.showcase) return <ShowcaseEntry office={door.office} />;
   return (
     <Suspense fallback={<div className="login" />}>
-      <EntrancePage office={door.office} onOwnToken={() => setOwnToken(true)} />
+      <EntrancePage office={door.office} onOwnToken={() => setOwnToken(true)} showcase={door.showcase} />
     </Suspense>
   );
 }
 
-
-/**
- * The public demo office (`docs/DEMO.md`): nobody has to let anybody in. The page knocks by itself under a guest's
- * name, and the office lets the knocker in at once, to look around.
- */
-function ShowcaseEntry({ office }: { office: string }) {
-  const [error, setError] = useState('');
-  useEffect(() => {
-    let live = true;
-    void (async () => {
-      try {
-        const name = `Guest ${String(Math.floor(1000 + Math.random() * 9000))}`;
-        const k = await (await fetch(`${serverBase}/knock`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, via: 'browser' }) })).json();
-        if (!k?.id) throw new Error(k?.error ?? 'The demo office did not answer.');
-        for (let i = 0; i < 10 && live; i++) {
-          const a = await (await fetch(`${serverBase}/knock/${k.id}`, { headers: { 'x-knock-secret': k.secret }, cache: 'no-store' })).json();
-          if (a.status === 'admitted') {
-            setToken(a.token);
-            connection.connect();
-            return;
-          }
-          await new Promise((r) => setTimeout(r, 800));
-        }
-        throw new Error('The demo office did not let you in. Reload the page to try again.');
-      } catch (e) {
-        if (live) setError((e as Error).message);
-      }
-    })();
-    return () => void (live = false);
-  }, []);
-  return (
-    <div className="login">
-      <div className="login-card glass">
-        <h1>{office}</h1>
-        <p className="muted">{error || 'Opening the demo office…'}</p>
-      </div>
-    </div>
-  );
-}
 
 /** Across the top of the demo office: what this is, said plainly. */
 function ShowcaseBanner() {

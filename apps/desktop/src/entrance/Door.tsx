@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { signedInBefore, useKnock, useSignIn } from '../Knock.tsx';
+import { signedInBefore, useKnock, useSignIn, useWalkIn } from '../Knock.tsx';
 
 /**
  * The door itself: the card that travels down the entrance page with whoever reads it. Two ways in — a name and a
@@ -13,6 +13,7 @@ export function Door({
   onOwnToken,
   folded = false,
   onWaiting,
+  showcase = false,
 }: {
   office: string;
   onOwnToken: () => void;
@@ -20,7 +21,56 @@ export function Door({
   folded?: boolean;
   /** Told when a knock starts waiting for an answer, and when it stops. */
   onWaiting?: (waiting: boolean) => void;
+  /** The public demo office: one way in — walk in and watch — no knock, no sign-in. */
+  showcase?: boolean;
 }) {
+  if (showcase) return <DemoDoor office={office} folded={folded} />;
+  return <OfficeDoor office={office} onOwnToken={onOwnToken} folded={folded} onWaiting={onWaiting} />;
+}
+
+/** The demo office's door: say who you are if you like, and walk in. */
+function DemoDoor({ office, folded }: { office: string; folded: boolean }) {
+  const walk = useWalkIn();
+  const ids = useId();
+  return (
+    <div className="ent-door knock-card" data-mode="demo">
+      <div className="ent-door-head">
+        <span className={`ent-door-lamp ${walk.busy ? 'is-waiting' : ''}`} aria-hidden />
+        <div className="ent-door-titles">
+          <div className="knock-kicker">ORCHESTRATOR · LIVE DEMO</div>
+          <h2 className="knock-office">{office}</h2>
+        </div>
+      </div>
+      <div className="ent-door-fold" inert={folded}>
+        <div className="ent-door-body">
+          <p className="ent-door-say">The door is open: walk straight in and watch the team work. No account, nobody to let you in. The employees are scripted stand-ins — no Claude runs here, nothing is spent.</p>
+          <form
+            className="ent-form"
+            onSubmit={(ev) => {
+              ev.preventDefault();
+              void walk.walkIn();
+            }}
+          >
+            <label htmlFor={`${ids}n`}>Your name (if you like)</label>
+            <input id={`${ids}n`} name="visitor" value={walk.name} maxLength={40} autoComplete="off" placeholder="Guest" onChange={(e) => walk.setName(e.target.value)} />
+            {walk.error && (
+              <div className="ent-error" role="alert">
+                {walk.error}
+              </div>
+            )}
+            <button className="ent-go" type="submit" disabled={walk.busy} data-walk-in>
+              {walk.busy ? 'Walking in…' : 'Walk in'}
+            </button>
+          </form>
+          <p className="ent-door-foot">You come in as a visitor: you can walk around and watch everything, not change anything. Use a computer — phones are turned away.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A working office's door: sign in as a member, or knock as a visitor. */
+function OfficeDoor({ office, onOwnToken, folded, onWaiting }: { office: string; onOwnToken: () => void; folded: boolean; onWaiting?: (waiting: boolean) => void }) {
   // Somebody who has signed in here before is shown the sign-in first.
   const [member, setMember] = useState(signedInBefore);
   const signIn = useSignIn();
