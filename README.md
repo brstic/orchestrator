@@ -2,6 +2,11 @@
   <img src="docs/assets/banner.jpg" alt="ORCHESTRATOR — Your code. Your company. Your world. A 3D office where real Claude Code sessions sit at desks and work as your employees." width="100%">
 </p>
 
+<p align="center">
+  <a href="https://www.facebook.com/groups/orchestrator"><img src="https://img.shields.io/badge/Join%20the%20community-Facebook%20group-1877F2?style=for-the-badge&logo=facebook&logoColor=white" alt="Join the Orchestrator community on Facebook"></a>
+</p>
+<p align="center"><sub>Questions, ideas, what you built with your office, help with setting one up — <b>it all happens in the <a href="https://www.facebook.com/groups/orchestrator">Orchestrator community on Facebook</a></b>. Come in and say hello.</sub></p>
+
 https://github.com/user-attachments/assets/6e5bbd27-3d4d-46e3-a719-cef76400f557
 
 <p align="center"><sub>▶ The office in 50 seconds (sound on). The real app, recorded in a demo office whose employees are scripted stand-ins, so no Claude usage was spent.<br>Music: “Funkorama” by Kevin MacLeod (<a href="https://incompetech.com">incompetech.com</a>), licensed under <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons: By Attribution 4.0</a>.</sub></p>
@@ -10,6 +15,7 @@ https://github.com/user-attachments/assets/6e5bbd27-3d4d-46e3-a719-cef76400f557
 
 <p align="center">
   <a href="https://office-demo.sparkcan.com"><b>Live demo</b></a> ·
+  <a href="https://www.facebook.com/groups/orchestrator"><b>Community</b></a> ·
   <a href="#-two-minutes-to-your-first-hire"><b>Quick start</b></a> ·
   <a href="#-why-not-just-open-more-terminals"><b>Why</b></a> ·
   <a href="#️-what-the-office-built-in-one-day"><b>Built in a day</b></a> ·
@@ -331,4 +337,5 @@ Working and verified on macOS (Apple silicon) with Claude Code 2.1.321–2.1.323
   <img src="docs/assets/logo.svg" width="72" alt="The Orchestrator logo: a conductor's baton over a terminal prompt"><br>
   <sub><b>ORCHESTRATOR</b> — the baton conducts, the prompt plays.<br>No employees were harmed by the whip. It only wakes the sleepers.</sub>
 </p>
+<p align="center"><b>Join the community: <a href="https://www.facebook.com/groups/orchestrator">facebook.com/groups/orchestrator</a></b><br><sub>Ask, share what your office built, and hear first what is coming.</sub></p>
 <p align="center"><sub>Made by Branko · <a href="https://www.linkedin.com/in/bste/">LinkedIn</a></sub></p>
