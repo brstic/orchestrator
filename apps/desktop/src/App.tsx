@@ -4,7 +4,7 @@ import { OfficeScene, ownerPosition } from '@orchestrator/office-3d';
 import { PeopleActs, myPlace, personInReach } from './hud/people-acts.tsx';
 import { Button } from '@orchestrator/ui';
 import { api, connection, serverBase, setToken } from './lib/api.ts';
-import { askStateOf, loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, watchOnly, type PanelId } from './lib/store.ts';
+import { askStateOf, loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
 import { loadPrefs, usePrefs } from './lib/prefs.ts';
 import { awardView } from './lib/award.ts';
 import { boardView, ceoView, foremanView, leadViews, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
@@ -84,7 +84,7 @@ function ShowcaseBanner() {
   return (
     <div className="glass showcase-banner" data-showcase>
       <span>
-        <b>Live demo.</b> The employees here are scripted stand-ins — no Claude is running, nothing is spent. Walk around and watch: <span className="kbd">W A S D</span>, the mouse, <span className="kbd">Tab</span> for the overview.
+        <b>Live demo — try everything.</b> Walk up to someone and press <span className="kbd">F</span> to talk, give tasks, answer the hands that go up, open the menu. The employees are scripted stand-ins (no Claude runs, nothing is spent); what would spoil it for the others is switched off.
       </span>
       <a href="https://github.com/brstic/orchestrator" target="_blank" rel="noreferrer">
         Orchestrator on GitHub
@@ -260,7 +260,7 @@ export function App() {
         return;
       }
       // Enter: say something out loud — the chat box opens its line.
-      if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !st.panel && !st.commandOpen && st.cameraMode !== 'workstation' && !watchOnly(st)) {
+      if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !st.panel && !st.commandOpen && st.cameraMode !== 'workstation') {
         e.preventDefault();
         setSaying(true);
         return;
@@ -401,7 +401,6 @@ export function App() {
   }
 
   const inWorkstation = s.cameraMode === 'workstation';
-  const watching = watchOnly(s);
   return (
     <div className="app">
       <div className="scene">
@@ -473,11 +472,11 @@ export function App() {
           // At a terminal the chat stands behind it: what is said in the office does not lie over what the employee
           // writes. It comes forward only while this person is typing a line of their own.
           <div className={`left-dock ${saying ? '' : 'left-dock-behind'}`}>
-            {!watching && <ChatBox open={saying} onOpen={() => setSaying(true)} onClose={() => setSaying(false)} quiet />}
+            <ChatBox open={saying} onOpen={() => setSaying(true)} onClose={() => setSaying(false)} quiet />
           </div>
         ) : (
           <div className="left-dock">
-            {!watching && <ChatBox open={saying} onOpen={() => setSaying(true)} onClose={() => setSaying(false)} />}
+            <ChatBox open={saying} onOpen={() => setSaying(true)} onClose={() => setSaying(false)} />
             <Feed />
           </div>
         )}

@@ -101,6 +101,14 @@ const transcriptPath = path.join(path.dirname(settingsPath ?? cwd), 'fake-transc
 const out = (s) => process.stdout.write(s);
 const say = (s) => out(`${s}\r\n`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/**
+ * With `ORCH_FAKE_KEY` set (the public demo office, docs/DEMO.md), only scripts signed with that key are carried
+ * out — `@@fake#<key>: …@@` — so text from anybody else (a visitor's message, a task, a comment, what is typed into
+ * the terminal) is never run: it gets the demo's harmless stand-in work instead (`demoBehaviour`).
+ */
+const FAKE_KEY = (process.env.ORCH_FAKE_KEY ?? '').replace(/[^A-Za-z0-9]/g, '');
+const signed = (kind) => new RegExp(`@@${kind}${FAKE_KEY ? `#${FAKE_KEY}` : ''}:([\\s\\S]*?)@@`, 'g');
+const hasScript = (text) => signed('fake').test(text) || signed('fake-retry').test(text);
 
 function transcript(rec) {
   try {
@@ -325,8 +333,8 @@ let turnFailed = false;
 async function runDirectives(text) {
   turnFailed = false;
   // A re-delivered task (review feedback, merge conflict) can script a different second attempt.
-  const retry = /Feedback to address from the previous attempt/.test(text) ? [...text.matchAll(/@@fake-retry:([\s\S]*?)@@/g)].map((m) => m[1]) : [];
-  const blocks = retry.length ? retry : [...text.matchAll(/@@fake:([\s\S]*?)@@/g)].map((m) => m[1]);
+  const retry = /Feedback to address from the previous attempt/.test(text) ? [...text.matchAll(signed('fake-retry'))].map((m) => m[1]) : [];
+  const blocks = retry.length ? retry : [...text.matchAll(signed('fake'))].map((m) => m[1]);
   let lastMessage = 'Done.';
   for (const block of blocks) {
     for (const raw of block.split(';')) {
@@ -544,6 +552,42 @@ async function defaultBehaviour(text) {
   return null;
 }
 
+/**
+ * The demo's stand-in work for anything nobody scripted (a visitor's task or message): never what the text says —
+ * only fixed, harmless steps. A task: read the readme, write a note about it, run the project's tests, commit,
+ * complete. A message: a short reply that says what this is.
+ */
+const DEMO_REPLIES = [
+  'On it. (I am a scripted stand-in in this demo office — in a real office this is Claude Code answering you.)',
+  'Got it — I will take care of that. (Scripted demo reply: in your own office a real Claude Code session answers here.)',
+  'Sure. If you want it tracked, give it to me as a task and watch the board. (This demo employee is a scripted stand-in.)',
+];
+let demoReply = 0;
+async function demoBehaviour(text) {
+  const task = /\[ORCH:TASK:/.test(text);
+  if (!task) {
+    await sleep(1500 + Math.random() * 2500);
+    return DEMO_REPLIES[demoReply++ % DEMO_REPLIES.length];
+  }
+  const title = (/New task from the boss — [A-Z]+-\d+: (.+)/.exec(text)?.[1] ?? 'the task').slice(0, 80);
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'task';
+  await useTool('Read', { file_path: path.join(cwd, 'README.md') }, () => ({ content: fs.existsSync(path.join(cwd, 'README.md')) ? fs.readFileSync(path.join(cwd, 'README.md'), 'utf8') : '' }));
+  await orchestrator('report_progress', { note: 'looking at what is there', percent: 20 });
+  await sleep(4000 + Math.random() * 4000);
+  const file = path.join(cwd, 'notes', `${slug}.md`);
+  await useTool('Write', { file_path: file, content: `# ${title.replace(/[<>]/g, '')}\n\nDone by a scripted stand-in in the demo office.\n` }, (input) => {
+    fs.mkdirSync(path.dirname(input.file_path), { recursive: true });
+    fs.writeFileSync(input.file_path, input.content);
+    return { type: 'create', filePath: input.file_path };
+  });
+  await orchestrator('report_progress', { note: 'written, running the tests', percent: 70 });
+  await sleep(3000 + Math.random() * 3000);
+  await bash('npm test --silent');
+  await bash(`git add -A && git commit -q -m ${JSON.stringify(`Notes: ${slug}`)}`);
+  const res = await orchestrator('complete_task', { summary: `${title} — done (scripted demo work)`, tests_run: 'npm test' });
+  return res.text ?? 'Done.';
+}
+
 let interrupted = false;
 let busy = false;
 
@@ -556,8 +600,8 @@ async function handlePrompt(text, viaStopHook = false) {
   }
   say('');
   // A review request quotes the author's task text; a reviewer reviews, it does not replay that script.
-  const scripted = /@@fake(-retry)?:/.test(text) && !/Review request —/.test(text);
-  let last = scripted ? await runDirectives(text) : ((await defaultBehaviour(text)) ?? 'Understood.');
+  const scripted = hasScript(text) && !/Review request —/.test(text);
+  let last = scripted ? await runDirectives(text) : ((await defaultBehaviour(text)) ?? (FAKE_KEY ? await demoBehaviour(text) : 'Understood.'));
   transcript({ type: 'assistant', message: { id: `msg_fake_${Date.now()}`, role: 'assistant', content: [{ type: 'text', text: last }], usage: { input_tokens: 120, output_tokens: 45, cache_read_input_tokens: 1000, cache_creation_input_tokens: 10 } } });
   say(`\x1b[2m${String(last).split('\n')[0].slice(0, 160)}\x1b[0m`);
   // Stop hook: a "block" decision means "keep going with this reason", possibly repeatedly.
@@ -570,7 +614,7 @@ async function handlePrompt(text, viaStopHook = false) {
     // What comes back from the Stop hook is new input: an interrupt of the work before it does not carry over.
     interrupted = false;
     last = await runDirectives(stop.reason);
-    if (!/@@fake(-retry)?:/.test(stop.reason)) last = (await defaultBehaviour(stop.reason)) ?? 'Continuing.';
+    if (!hasScript(stop.reason)) last = (await defaultBehaviour(stop.reason)) ?? (FAKE_KEY ? await demoBehaviour(stop.reason) : 'Continuing.');
   }
   await statusLine();
   busy = false;

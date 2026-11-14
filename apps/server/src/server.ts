@@ -21,6 +21,50 @@ import { handleMcpPost } from '@orchestrator/integrations';
 import { Engine, EngineError, type Timings, SaidFiles } from '@orchestrator/orchestration';
 import { AgentHub, ClientHub } from './hubs.ts';
 
+
+/** What people who walked into a showcase may change through its door: the work of the office (`docs/DEMO.md`). */
+export const SHOWCASE_WORK = new Set([
+  'POST /employees',
+  'PATCH /employees/:id',
+  'POST /employees/:id/message',
+  'POST /employees/:id/pause',
+  'POST /employees/:id/resume',
+  'POST /employees/:id/start',
+  'POST /employees/:id/stop',
+  'POST /employees/:id/report',
+  'PUT /employees/:id/goal',
+  'DELETE /employees/:id/goal',
+  'POST /tasks',
+  'PATCH /tasks/:id',
+  'POST /tasks/:id/comments',
+  'POST /tasks/:id/correct',
+  'POST /tasks/:id/review',
+  'POST /tasks/:id/send-back',
+  'POST /tasks/:id/stop',
+  'POST /tasks/:id/unblock',
+  'POST /tasks/:id/retry-merge',
+  'POST /tasks/release',
+  'POST /questions/:id/answer',
+  'POST /meetings',
+  'POST /meetings/:id/cancel',
+  'POST /routines',
+  'PATCH /routines/:id',
+  'POST /routines/:id/run',
+  'DELETE /routines/:id',
+  'POST /notifications/read',
+  'POST /notifications/:id/resolve',
+  'POST /seen',
+  'POST /radio/play',
+  'POST /radio/stop',
+  'POST /projects/:id/pause',
+  'POST /projects/:id/resume',
+  'POST /projects/:id/plan',
+  'POST /commands/plan',
+  'POST /memory/recall',
+  'POST /logout',
+]);
+export const SHOWCASE_LIMITS = { employees: 30, openTasks: 80 };
+
 export interface ServerOptions {
   /** Directory for the database, owner token and local enrollment token. */
   dataDir: string;
@@ -40,8 +84,9 @@ export interface ServerOptions {
   /** The `mempalace` program for the office's long memory. Absent: looked for (see `findMemPalace`); null: none. */
   memoryBin?: string | null;
   /**
-   * A showcase office, open to anybody (`docs/DEMO.md`): whoever knocks at the door is let in at once as a visitor
-   * (twelve hours), and what visitors say out loud and their voice are dropped. For the public demo office only.
+   * A showcase office, open to anybody (`docs/DEMO.md`): whoever knocks at the door is let in at once as an owner
+   * (twelve hours) who may only do the office's work (`SHOWCASE_WORK`); voices are not passed on. For the public demo
+   * office only — its employees must be the stand-in that runs only signed scripts (`ORCH_FAKE_KEY`).
    */
   showcase?: boolean;
 }
@@ -284,12 +329,13 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     if (!atDoor(req, reply)) return reply;
     const b = (req.body ?? {}) as Record<string, unknown>;
     const k = knocks.knock({ name: b.name, via: b.via, ip: String(req.headers['x-forwarded-for'] ?? req.ip) });
-    // A showcase lets everybody in at once, to look around — whatever they came with — for as long as a browser visit.
+    // A showcase lets everybody in at once, for as long as a browser visit — as an owner, to try everything; what would
+    // spoil the demo for the others is refused below (`SHOWCASE_WORK`), and its employees run nobody's words.
     if (opts.showcase) {
       knocks.admit(k.id, (knock): Admission => {
         const expiresAt = new Date(Date.now() + BROWSER_VISIT_MS).toISOString();
-        const { guest, token } = guests.invite({ name: guests.freeName(knock.name), role: 'visitor', via: knock.via === 'browser' ? 'knock-browser' : 'knock-app', expiresAt }, 'showcase');
-        return { role: 'visitor', name: guest.name, token, invite: connectionOf(guest, token), expiresAt, memberId: guest.id };
+        const { guest, token } = guests.invite({ name: guests.freeName(knock.name), role: 'owner', via: knock.via === 'browser' ? 'knock-browser' : 'knock-app', expiresAt }, 'showcase');
+        return { role: 'owner', name: guest.name, token, invite: connectionOf(guest, token), expiresAt, memberId: guest.id };
       });
     }
     return { ...k, office: engine.core.settings.companyName, anyoneIn: clients.someoneToAnswer() };
@@ -328,6 +374,24 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     const { guest, token } = guests.issue(invites.redeem(code, String(req.headers['x-forwarded-for'] ?? req.ip)));
     return { office: engine.core.settings.companyName, name: guest.name, role: guest.role, invite: connectionOf(guest, token) };
   });
+
+
+  // ───────────── a showcase: what people who walked in may change ─────────────
+  // They come in as owners, to try everything; through the door they may only do the work of the office — talk, tasks,
+  // answers, meetings, goals, routines, the hi-fi, hiring (up to SHOWCASE_LIMITS) — and nothing that runs the office
+  // (settings, access, machines, accounts, the vault, the floor plan) or takes anything away (`docs/DEMO.md`).
+  if (opts.showcase) {
+    app.addHook('onRequest', async (req, reply) => {
+      if (!viaDoor(req) || req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return;
+      const route = req.routeOptions?.url ?? '';
+      if (!route.startsWith('/api/')) return;
+      const key = `${req.method} ${route.slice(4)}`;
+      if (!SHOWCASE_WORK.has(key)) return reply.code(403).send({ error: 'Not in the demo office: this would change it for everybody else. In your own office you can.' });
+      const st = engine.state();
+      if (key === 'POST /employees' && st.employees.filter((e) => !e.archived).length >= SHOWCASE_LIMITS.employees) return reply.code(429).send({ error: `The demo office is full (${SHOWCASE_LIMITS.employees} people). Talk to the ones who are here.` });
+      if (key === 'POST /tasks' && st.tasks.filter((t) => t.status !== 'DONE').length >= SHOWCASE_LIMITS.openTasks) return reply.code(429).send({ error: 'The board is full right now. Wait for the team to finish some work.' });
+    });
+  }
 
   // ───────────── a phone is told that the office is for a computer ─────────────
   // Before anything else is looked at: the page, an invitation link (which is then not used up), the door, the API.

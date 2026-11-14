@@ -607,8 +607,6 @@ export class ClientHub {
             break;
           }
           case 'say': {
-            // In a showcase, open to anybody, a visitor's words reach nobody.
-            if (this.showcase && who.role === 'visitor') break;
             // People talking to each other. Short, and not faster than a person types.
             const text = String(msg.text ?? '').replace(/[\u0000-\u001f]+/g, ' ').trim().slice(0, 300);
             const now = Date.now();
@@ -679,7 +677,8 @@ export class ClientHub {
             break;
           }
           case 'voice': {
-            if (this.showcase && who.role === 'visitor') break;
+            // In a showcase, open to anybody, nobody's voice is passed on.
+            if (this.showcase && who.id !== 'owner') break;
             // A frame of their voice: passed on to those within earshot of their character, and kept nowhere.
             if (!conn.presence || !validFrame(msg.data)) break;
             const now = Date.now();

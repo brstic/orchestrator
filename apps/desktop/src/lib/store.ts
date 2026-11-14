@@ -140,7 +140,7 @@ export interface OfficeState {
   tvOpen: (url?: string) => void;
   /** Who the person at this computer is in this office: its owner, or a guest with a role. */
   me: Me | null;
-  /** The public demo office (`docs/DEMO.md`): a visitor there only watches — no chat, no voice. */
+  /** The public demo office (`docs/DEMO.md`): everybody may try everything there, but voices are not passed on. */
   showcase: boolean;
   /** Everyone present right now, this window included (matched by `clientId`). */
   people: PersonPresence[];
@@ -597,8 +597,8 @@ useOffice.subscribe((s, prev) => {
 export const screens = new Map<string, TerminalScreen>();
 const screenListeners = new Map<string, Set<(s: TerminalScreen) => void>>();
 
-/** In the public demo office a visitor only watches: no chat and no voice (the office drops them anyway). */
-export const watchOnly = (s: { showcase: boolean; me: Me | null }): boolean => s.showcase && s.me?.role === 'visitor';
+/** In the public demo office nobody who walked in is heard: the office passes no voice on (the talk key does nothing). */
+export const voiceOff = (s: { showcase: boolean; me: Me | null }): boolean => s.showcase && s.me?.id !== 'owner';
 
 export function onScreen(sessionId: string, fn: (s: TerminalScreen) => void): () => void {
   let set = screenListeners.get(sessionId);

@@ -557,7 +557,7 @@ export default function EntrancePage({ office, onOwnToken, showcase = false }: {
               {showcase ? (
                 <ul className="ent-ways">
                   <li>
-                    <b>Walk in.</b> The door is open: no account, nobody has to let you in. You can walk around and watch, not change anything.
+                    <b>Walk in.</b> The door is open: no account, nobody has to let you in. You are the boss here — talk to the team, hand out work, answer them.
                   </li>
                   <li>
                     <b>What you see is the real office.</b> Sessions, hooks, worktrees, tests, commits, questions and approvals are the product itself; only the employees are scripted stand-ins, so nothing is spent.

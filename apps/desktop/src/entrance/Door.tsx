@@ -43,7 +43,7 @@ function DemoDoor({ office, folded }: { office: string; folded: boolean }) {
       </div>
       <div className="ent-door-fold" inert={folded}>
         <div className="ent-door-body">
-          <p className="ent-door-say">The door is open: walk straight in and watch the team work. No account, nobody to let you in. The employees are scripted stand-ins — no Claude runs here, nothing is spent.</p>
+          <p className="ent-door-say">The door is open: walk straight in and try it — talk to the team, hand out tasks, answer their questions. No account, nobody to let you in. The employees are scripted stand-ins — no Claude runs here, nothing is spent.</p>
           <form
             className="ent-form"
             onSubmit={(ev) => {
@@ -62,7 +62,7 @@ function DemoDoor({ office, folded }: { office: string; folded: boolean }) {
               {walk.busy ? 'Walking in…' : 'Walk in'}
             </button>
           </form>
-          <p className="ent-door-foot">You come in as a visitor: you can walk around and watch everything, not change anything. Use a computer — phones are turned away.</p>
+          <p className="ent-door-foot">You come in as the boss, for a day. What would spoil the demo for everybody else (settings, access, deleting things) is switched off. Use a computer — phones are turned away.</p>
         </div>
       </div>
     </div>

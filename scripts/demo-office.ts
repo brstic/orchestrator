@@ -19,6 +19,7 @@
  * interface, like any office's door — on the server only nginx reaches it, through 127.0.0.1.
  */
 import { execFileSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -48,10 +49,12 @@ const env = { ...process.env, GIT_AUTHOR_NAME: 'Demo', GIT_AUTHOR_EMAIL: 'demo@e
 const git = (cwd: string, ...a: string[]) => execFileSync('git', a, { cwd, encoding: 'utf8', env });
 
 // ── a fresh office every time ──
-try {
-  execFileSync('tmux', ['-L', sock, 'kill-server'], { stdio: 'ignore' });
-} catch {
-  /* none running */
+for (const socket of [sock, `${sock}-m0`, `${sock}-m1`]) {
+  try {
+    execFileSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'ignore' });
+  } catch {
+    /* none running */
+  }
 }
 fs.rmSync(base, { recursive: true, force: true });
 fs.mkdirSync(base, { recursive: true, mode: 0o700 });
@@ -63,8 +66,13 @@ fs.mkdirSync(home, { recursive: true });
 fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'demo@example.test', organizationName: 'Demo' } }));
 fs.writeFileSync(path.join(home, 'fake-limits.json'), JSON.stringify({ five_hour: { used_percentage: 18, resets_at: Math.floor(Date.now() / 1000) + 3 * 3600 }, seven_day: { used_percentage: 34, resets_at: Math.floor(Date.now() / 1000) + 4 * 86400 } }));
 process.env.HOME = home;
+// The stand-in runs only scripts signed with this start's own key (`ORCH_FAKE_KEY`): the director's. What anybody who
+// walked in writes — a message, a task, keys typed into a terminal — is never run; it gets harmless stand-in work.
+const KEY = crypto.randomBytes(12).toString('hex');
 const wrapper = path.join(root, 'claude');
-fs.writeFileSync(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${fake}" "$@"\n`, { mode: 0o755 });
+fs.writeFileSync(wrapper, `#!/bin/sh\nORCH_FAKE_KEY=${KEY} exec "${process.execPath}" "${fake}" "$@"\n`, { mode: 0o700 });
+const FAKE = `@@fake#${KEY}:`;
+const RETRY = `@@fake-retry#${KEY}:`;
 
 const server = await startServer({ dataDir: path.join(root, 'server'), host: '127.0.0.1', port, quiet: true, uiDir, showcase: true, memoryBin: null, timings: { askBossWaitMs: 3600_000, meetingRoundMs: 600_000 } });
 const cfg = { ...defaultConfig(), serverUrl: server.url, name: 'demo-server', allowedRoots: [root], tmuxSocketName: sock, claudeBin: wrapper, approvalWaitSeconds: 3600 };
@@ -115,10 +123,41 @@ const roster: Array<[string, string, keyof typeof projects]> = [
   ['Zoe', 'frontend', 'api'],
   ['Rev', 'reviewer', 'api'],
 ];
-const team: Array<{ id: string; name: string; role: string; project: keyof typeof projects }> = [];
+const team: Array<{ id: string; name: string; role: string; projectId: string }> = [];
 for (const [name, roleKey, project] of roster) {
   const e = await api('POST', '/employees', { name, roleKey, projectId: projects[project].id, hostId: en.hostId, autonomy: 'auto' });
-  team.push({ id: e.id, name, role: roleKey, project });
+  team.push({ id: e.id, name, role: roleKey, projectId: projects[project].id });
+}
+
+// ── colleagues who came in with their own computers: a room each, with employees of their own ──
+// (As a member's desktop app does: a second host agent, enrolled as that member's own computer.)
+const memberAgents: HostAgent[] = [];
+for (const [n, [name, role, people]] of ([['Mila', 'colleague', [['Mi-1', 'frontend'], ['Mi-2', 'qa'], ['Mi-3', 'backend']]], ['Vuk', 'owner', [['Vu-1', 'fullstack'], ['Vu-2', 'devops']]]] as const).entries()) {
+  const invited = await api('POST', '/guests', { name, role });
+  const memberId: string = invited.guest.id;
+  const mroot = path.join(root, `member-${n}`);
+  fs.mkdirSync(mroot, { recursive: true });
+  const { token } = server.engine.hosts.createMemberEnrollment({ id: memberId, name });
+  const enrolled = await enroll(server.url, token, `${name}'s computer`, { ...info, hostname: `${name.toLowerCase()}-laptop` });
+  const mcfg = { ...cfg, name: `${name}'s computer`, allowedRoots: [mroot], tmuxSocketName: `${sock}-m${n}`, hostId: enrolled.hostId, credential: enrolled.credential };
+  const mhome = path.join(root, `agent-m${n}`);
+  saveConfig(mcfg, mhome);
+  const magent = new HostAgent(mcfg, mhome, () => undefined);
+  await magent.start();
+  while (!magent.isConnected) await sleep(50);
+  memberAgents.push(magent);
+  const own = path.join(mroot, 'side-project');
+  fs.mkdirSync(own);
+  git(own, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(own, 'README.md'), `# ${name}'s side project\n`);
+  fs.writeFileSync(path.join(own, 'package.json'), JSON.stringify({ name: 'side-project', private: true, scripts: { test: 'node -e "console.log(\'ok\')"' } }, null, 2));
+  git(own, 'add', '-A');
+  git(own, 'commit', '-q', '-m', 'initial commit');
+  const mine = await api('POST', '/projects', { name: `${name}'s side project`, repoPath: own, hostId: enrolled.hostId, verifyCommand: 'npm test --silent', description: `A project on ${name}'s own computer.` });
+  for (const [pname, prole] of people) {
+    const e = await api('POST', '/employees', { name: pname, roleKey: prole, projectId: mine.id, hostId: enrolled.hostId, autonomy: 'auto' });
+    team.push({ id: e.id, name: pname, role: prole, projectId: mine.id });
+  }
 }
 // Two who keep to Standard: their commands wait for an approval (which the director gives, a little later).
 for (const e of team.filter((x) => x.name === 'David' || x.name === 'Mike')) await api('PATCH', `/employees/${e.id}`, { autonomy: 'standard' });
@@ -234,9 +273,9 @@ async function tick(): Promise<void> {
     }
     const plan = planFor(e.role);
     const file = `${slug(plan.title)}-${Math.floor(Math.random() * 1000)}`;
-    const description = `@@fake: ${plan.steps(file)}@@${plan.retry ? `\n@@fake-retry: ${plan.retry(file)}@@` : ''}`;
+    const description = `${FAKE} ${plan.steps(file)}@@${plan.retry ? `\n${RETRY} ${plan.retry(file)}@@` : ''}`;
     try {
-      const t = await api('POST', '/tasks', { projectId: projects[e.project].id, title: plan.title, assigneeId: e.id, description, acceptance: 'The checks pass.' });
+      const t = await api('POST', '/tasks', { projectId: e.projectId, title: plan.title, assigneeId: e.id, description, acceptance: 'The checks pass.' });
       busyWith.set(e.id, { taskId: t.id, since: now });
       handed++;
     } catch (err) {
@@ -267,10 +306,13 @@ async function shutdown(code = 0): Promise<void> {
   clearInterval(director);
   clearTimeout(nightly);
   await agent.stop().catch(() => undefined);
-  try {
-    execFileSync('tmux', ['-L', sock, 'kill-server'], { stdio: 'ignore' });
-  } catch {
-    /* none */
+  for (const a of memberAgents) await a.stop().catch(() => undefined);
+  for (const socket of [sock, `${sock}-m0`, `${sock}-m1`]) {
+    try {
+      execFileSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'ignore' });
+    } catch {
+      /* none */
+    }
   }
   await server.close().catch(() => undefined);
   process.exit(code);

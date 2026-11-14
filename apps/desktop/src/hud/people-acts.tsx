@@ -3,7 +3,7 @@ import { EMOTES, type EmoteName } from '@orchestrator/contracts';
 import { ownerPosition } from '@orchestrator/office-3d';
 import { usePrefs } from '../lib/prefs.ts';
 import { keyTaken } from '../lib/keys-taken.ts';
-import { useOffice, watchOnly } from '../lib/store.ts';
+import { useOffice, voiceOff } from '../lib/store.ts';
 import { isTalking, startTalking, stopTalking } from '../lib/voice.ts';
 import { WHEEL_REACH as REACH, sliceAt } from '../lib/people-acts.ts';
 
@@ -72,7 +72,7 @@ export function PeopleActs() {
       const st = useOffice.getState();
       if (st.commandOpen || !st.ready) return;
       if (e.code === talkKey) {
-        if (watchOnly(st)) return;
+        if (voiceOff(st)) return;
         e.preventDefault();
         startTalking();
       } else if (e.code === wheelKey && !st.panel && st.cameraMode !== 'workstation') {
