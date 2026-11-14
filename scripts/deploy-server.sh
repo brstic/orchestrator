@@ -11,6 +11,9 @@
 #   ORCH_DEPLOY_DIR    install folder there     (default: orchestrator-office, under the home folder)
 #   ORCH_DEPLOY_UNIT   systemd user unit        (default: orchestrator-office)
 #
+# The public demo office (orchestrator-demo, docs/DEMO.md) runs from the same folder: where it is installed, it is
+# restarted too — fresh, as every start of it is.
+#
 #   scripts/deploy-server.sh --rollback    put app.old back and restart
 #   scripts/deploy-server.sh --status      what is running there
 set -eu
@@ -43,4 +46,4 @@ TARBALL="release/orchestrator-$VERSION.tar.gz"
 BUILD="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)$(git diff --quiet 2>/dev/null || echo '+uncommitted') $(date -u +%Y-%m-%dT%H:%MZ)"
 echo "Deploying $TARBALL ($BUILD) to $HOST:~/$DIR"
 scp -q -o BatchMode=yes -P "$PORT" "$TARBALL" "$HOST:/tmp/orchestrator-office.tar.gz"
-remote "set -e; cd ~/$DIR; rm -rf app.new; mkdir app.new; tar xzf /tmp/orchestrator-office.tar.gz -C app.new --strip-components=1; echo '$BUILD' > app.new/BUILD; rm -rf app.old; mv app app.old; mv app.new app; rm -f /tmp/orchestrator-office.tar.gz; systemctl --user restart $UNIT; $UP; $STATUS"
+remote "set -e; cd ~/$DIR; rm -rf app.new; mkdir app.new; tar xzf /tmp/orchestrator-office.tar.gz -C app.new --strip-components=1; echo '$BUILD' > app.new/BUILD; rm -rf app.old; mv app app.old; mv app.new app; rm -f /tmp/orchestrator-office.tar.gz; systemctl --user restart $UNIT; if systemctl --user is-enabled orchestrator-demo >/dev/null 2>&1; then systemctl --user restart orchestrator-demo; echo 'demo office restarted'; fi; $UP; $STATUS"

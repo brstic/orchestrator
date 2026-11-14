@@ -383,7 +383,8 @@ export interface ChatFrom {
 }
 
 export type ServerToClient =
-  | { t: 'ready'; clientId: string; state: FullState; me: Me }
+  /** `showcase`: the public demo office, where visitors only watch (`docs/DEMO.md`). */
+  | { t: 'ready'; clientId: string; state: FullState; me: Me; showcase?: boolean }
   | { t: 'people'; people: PersonPresence[] }
   /** Who is at the door right now (sent to those who may let someone in: owners and colleagues). */
   | { t: 'knocks'; knocks: KnockView[] }

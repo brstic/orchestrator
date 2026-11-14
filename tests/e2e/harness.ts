@@ -212,7 +212,7 @@ export function startedWith(tmux: (...args: string[]) => string, pane?: string):
   return lines.map(([name, , start]) => `${name} ${command(start).replace(/\n/g, ' ')}`).join('\n');
 }
 
-export async function createHarness(opts: { timings?: Record<string, number>; approvalWaitSeconds?: number; database?: string; memoryBin?: string | null; reviewDefault?: 'both' | 'boss' | 'peer' | 'none' } = {}): Promise<Harness> {
+export async function createHarness(opts: { timings?: Record<string, number>; approvalWaitSeconds?: number; database?: string; memoryBin?: string | null; reviewDefault?: 'both' | 'boss' | 'peer' | 'none'; showcase?: boolean } = {}): Promise<Harness> {
   let base = os.tmpdir();
   // Unix socket paths are limited to ~104 bytes on macOS; keep the root short.
   if (base.length > 40) base = '/tmp';
@@ -222,7 +222,7 @@ export async function createHarness(opts: { timings?: Record<string, number>; ap
   fs.writeFileSync(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${FAKE_CLAUDE}" "$@"\n`, { mode: 0o755 });
   const dataDir = path.join(tmp, 'server');
   const timings = { askBossWaitMs: 6000, meetingRoundMs: 12000, deliverySettleMs: 120, deliveryConfirmMs: 6000, verifyTimeoutMs: 30000, scheduleDebounceMs: 40, ...(opts.timings ?? {}) };
-  let server = await startServer({ dataDir, host: '127.0.0.1', port: 0, quiet: true, timings, database: opts.database, memoryBin: opts.memoryBin ?? null });
+  let server = await startServer({ dataDir, host: '127.0.0.1', port: 0, quiet: true, timings, database: opts.database, memoryBin: opts.memoryBin ?? null, showcase: opts.showcase });
   const url = server.url;
   const port = Number(new URL(url).port);
   const token = server.ownerToken;
@@ -327,7 +327,7 @@ export async function createHarness(opts: { timings?: Record<string, number>; ap
     async restartServer() {
       for (const c of clients.splice(0)) c.close();
       await server.close().catch(() => undefined);
-      server = await startServer({ dataDir, host: '127.0.0.1', port, quiet: true, timings, database: opts.database, memoryBin: opts.memoryBin ?? null });
+      server = await startServer({ dataDir, host: '127.0.0.1', port, quiet: true, timings, database: opts.database, memoryBin: opts.memoryBin ?? null, showcase: opts.showcase });
       await waitFor(() => agent.isConnected, { label: 'agent reconnect after server restart', timeout: 20000 });
     },
     tmux,

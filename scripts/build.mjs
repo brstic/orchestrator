@@ -3,6 +3,7 @@
  * Bundles the server and the host agent into single files:
  *   apps/server/dist/orchestrator-server.mjs
  *   apps/host-agent/dist/orchestrator-agent.mjs   ← the whole agent; copy it to any machine with Node 22+
+ *   apps/server/dist/orchestrator-demo.mjs        ← the public demo office (scripts/demo-office.ts, docs/DEMO.md)
  */
 import { build } from 'esbuild';
 import fs from 'node:fs';
@@ -25,7 +26,8 @@ const common = {
 };
 await build({ ...common, entryPoints: [path.join(root, 'apps/host-agent/src/cli.ts')], outfile: path.join(root, 'apps/host-agent/dist/orchestrator-agent.mjs') });
 await build({ ...common, entryPoints: [path.join(root, 'apps/server/src/main.ts')], outfile: path.join(root, 'apps/server/dist/orchestrator-server.mjs') });
-for (const f of ['apps/host-agent/dist/orchestrator-agent.mjs', 'apps/server/dist/orchestrator-server.mjs']) {
+await build({ ...common, entryPoints: [path.join(root, 'scripts/demo-office.ts')], outfile: path.join(root, 'apps/server/dist/orchestrator-demo.mjs') });
+for (const f of ['apps/host-agent/dist/orchestrator-agent.mjs', 'apps/server/dist/orchestrator-server.mjs', 'apps/server/dist/orchestrator-demo.mjs']) {
   const p = path.join(root, f);
   console.log(`${f}  ${(fs.statSync(p).size / 1024).toFixed(0)} KB`);
 }

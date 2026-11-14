@@ -140,6 +140,8 @@ export interface OfficeState {
   tvOpen: (url?: string) => void;
   /** Who the person at this computer is in this office: its owner, or a guest with a role. */
   me: Me | null;
+  /** The public demo office (`docs/DEMO.md`): a visitor there only watches — no chat, no voice. */
+  showcase: boolean;
   /** Everyone present right now, this window included (matched by `clientId`). */
   people: PersonPresence[];
   /** Claude accounts the employees run on and how much of each is used (owner only; empty for guests). */
@@ -438,6 +440,7 @@ export const useOffice = create<OfficeState>((set, get) => ({
   radio: { stationId: null, name: null, status: 'idle', error: null, nowPlaying: null },
   tv: { on: false, goto: null, page: null },
   me: null,
+  showcase: false,
   people: [],
   accounts: [],
   myHost: { state: 'none', reason: null, hostId: null },
@@ -594,6 +597,9 @@ useOffice.subscribe((s, prev) => {
 export const screens = new Map<string, TerminalScreen>();
 const screenListeners = new Map<string, Set<(s: TerminalScreen) => void>>();
 
+/** In the public demo office a visitor only watches: no chat and no voice (the office drops them anyway). */
+export const watchOnly = (s: { showcase: boolean; me: Me | null }): boolean => s.showcase && s.me?.role === 'visitor';
+
 export function onScreen(sessionId: string, fn: (s: TerminalScreen) => void): () => void {
   let set = screenListeners.get(sessionId);
   if (!set) screenListeners.set(sessionId, (set = new Set()));
@@ -651,7 +657,7 @@ function handle(msg: ServerToClient): void {
       applyFull(msg.state, msg.clientId);
       // Answers that came while this window was away (a reload, a lost connection).
       for (const ev of msg.state.events ?? []) if (ev.employeeId && Date.parse(ev.ts) > (useOffice.getState().asks[ev.employeeId]?.at ?? Infinity)) noteReply(ev);
-      useOffice.setState({ me: msg.me ?? { kind: 'owner', role: 'owner', name: msg.state.settings.ownerName }, clientId: msg.clientId, people: [], knocks: [] });
+      useOffice.setState({ me: msg.me ?? { kind: 'owner', role: 'owner', name: msg.state.settings.ownerName }, clientId: msg.clientId, people: [], knocks: [], showcase: !!msg.showcase });
       break;
     case 'people': {
       // Only the others are drawn from this list; if just my own entry moved, nothing on screen changes.

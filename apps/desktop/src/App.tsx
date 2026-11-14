@@ -4,7 +4,7 @@ import { OfficeScene, ownerPosition } from '@orchestrator/office-3d';
 import { PeopleActs, myPlace, personInReach } from './hud/people-acts.tsx';
 import { Button } from '@orchestrator/ui';
 import { api, connection, serverBase, setToken } from './lib/api.ts';
-import { askStateOf, loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
+import { askStateOf, loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, watchOnly, type PanelId } from './lib/store.ts';
 import { loadPrefs, usePrefs } from './lib/prefs.ts';
 import { awardView } from './lib/award.ts';
 import { boardView, ceoView, foremanView, leadViews, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
@@ -56,23 +56,83 @@ function Login() {
 const EntrancePage = lazy(() => import('./entrance/EntrancePage.tsx'));
 
 function Entrance() {
-  const [door, setDoor] = useState<{ office: string } | null | 'none'>(window.orchestrator ? 'none' : null);
+  const [door, setDoor] = useState<{ office: string; showcase?: boolean } | null | 'none'>(window.orchestrator ? 'none' : null);
   const [ownToken, setOwnToken] = useState(false);
   useEffect(() => {
     if (window.orchestrator) return;
     let live = true;
     fetch(`${serverBase}/knock`, { cache: 'no-store' })
       .then(async (r) => (r.ok ? await r.json() : null))
-      .then((j) => live && setDoor(j?.orchestrator ? { office: String(j.office || 'An office') } : 'none'))
+      .then((j) => live && setDoor(j?.orchestrator ? { office: String(j.office || 'An office'), showcase: j.showcase === true } : 'none'))
       .catch(() => live && setDoor('none'));
     return () => void (live = false);
   }, []);
   if (door === null) return <div className="login" />;
   if (door === 'none' || ownToken) return <Login />;
+  if (door.showcase) return <ShowcaseEntry office={door.office} />;
   return (
     <Suspense fallback={<div className="login" />}>
       <EntrancePage office={door.office} onOwnToken={() => setOwnToken(true)} />
     </Suspense>
+  );
+}
+
+
+/**
+ * The public demo office (`docs/DEMO.md`): nobody has to let anybody in. The page knocks by itself under a guest's
+ * name, and the office lets the knocker in at once, to look around.
+ */
+function ShowcaseEntry({ office }: { office: string }) {
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const name = `Guest ${String(Math.floor(1000 + Math.random() * 9000))}`;
+        const k = await (await fetch(`${serverBase}/knock`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, via: 'browser' }) })).json();
+        if (!k?.id) throw new Error(k?.error ?? 'The demo office did not answer.');
+        for (let i = 0; i < 10 && live; i++) {
+          const a = await (await fetch(`${serverBase}/knock/${k.id}`, { headers: { 'x-knock-secret': k.secret }, cache: 'no-store' })).json();
+          if (a.status === 'admitted') {
+            setToken(a.token);
+            connection.connect();
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 800));
+        }
+        throw new Error('The demo office did not let you in. Reload the page to try again.');
+      } catch (e) {
+        if (live) setError((e as Error).message);
+      }
+    })();
+    return () => void (live = false);
+  }, []);
+  return (
+    <div className="login">
+      <div className="login-card glass">
+        <h1>{office}</h1>
+        <p className="muted">{error || 'Opening the demo office…'}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Across the top of the demo office: what this is, said plainly. */
+function ShowcaseBanner() {
+  const [hidden, setHidden] = useState(false);
+  if (hidden) return null;
+  return (
+    <div className="glass showcase-banner" data-showcase>
+      <span>
+        <b>Live demo.</b> The employees here are scripted stand-ins — no Claude is running, nothing is spent. Walk around and watch: <span className="kbd">W A S D</span>, the mouse, <span className="kbd">Tab</span> for the overview.
+      </span>
+      <a href="https://github.com/brstic/orchestrator" target="_blank" rel="noreferrer">
+        Orchestrator on GitHub
+      </a>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setHidden(true)} aria-label="Hide">
+        ✕
+      </button>
+    </div>
   );
 }
 
@@ -240,7 +300,7 @@ export function App() {
         return;
       }
       // Enter: say something out loud — the chat box opens its line.
-      if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !st.panel && !st.commandOpen && st.cameraMode !== 'workstation') {
+      if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !st.panel && !st.commandOpen && st.cameraMode !== 'workstation' && !watchOnly(st)) {
         e.preventDefault();
         setSaying(true);
         return;
@@ -381,6 +441,7 @@ export function App() {
   }
 
   const inWorkstation = s.cameraMode === 'workstation';
+  const watching = watchOnly(s);
   return (
     <div className="app">
       <div className="scene">
@@ -447,15 +508,16 @@ export function App() {
         <TopBar />
         <PeopleActs />
         {s.conn !== 'online' && <div className="glass banner">Connection to the server lost — the office is frozen at its last known state. Reconnecting…</div>}
+        {s.showcase && <ShowcaseBanner />}
         {inWorkstation ? (
           // At a terminal the chat stands behind it: what is said in the office does not lie over what the employee
           // writes. It comes forward only while this person is typing a line of their own.
           <div className={`left-dock ${saying ? '' : 'left-dock-behind'}`}>
-            <ChatBox open={saying} onOpen={() => setSaying(true)} onClose={() => setSaying(false)} quiet />
+            {!watching && <ChatBox open={saying} onOpen={() => setSaying(true)} onClose={() => setSaying(false)} quiet />}
           </div>
         ) : (
           <div className="left-dock">
-            <ChatBox open={saying} onOpen={() => setSaying(true)} onClose={() => setSaying(false)} />
+            {!watching && <ChatBox open={saying} onOpen={() => setSaying(true)} onClose={() => setSaying(false)} />}
             <Feed />
           </div>
         )}

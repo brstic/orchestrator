@@ -361,8 +361,12 @@ export class ClientHub {
   private engine!: Engine;
   private log: Log;
 
-  constructor(log: Log) {
+  /** A showcase office (`ServerOptions.showcase`): visitors only watch. */
+  private readonly showcase: boolean;
+
+  constructor(log: Log, opts: { showcase?: boolean } = {}) {
     this.log = log;
+    this.showcase = !!opts.showcase;
   }
 
   attach(engine: Engine): void {
@@ -564,7 +568,7 @@ export class ClientHub {
     const conn: ClientConn = { id, ws, who, presence: null, said: [], ...(loginKey ? { loginKey } : {}) };
     this.clients.set(id, conn);
     const gateway = this.engine.core.gateway;
-    this.send(id, { t: 'ready', clientId: id, state: stateFor(this.engine, who, this.engine.state()), me: { kind: who.kind, role: who.role, name: who.name, id: who.id } });
+    this.send(id, { t: 'ready', clientId: id, state: stateFor(this.engine, who, this.engine.state()), me: { kind: who.kind, role: who.role, name: who.name, id: who.id }, ...(this.showcase ? { showcase: true } : {}) });
     // Everyone gets the live monitors of what they may see (`send` leaves out the rest: other members' own computers).
     gateway.registerClient(id);
     const actor = who.id === 'owner' ? `owner:${id.slice(0, 8)}` : `member:${who.name}`;
@@ -603,6 +607,8 @@ export class ClientHub {
             break;
           }
           case 'say': {
+            // In a showcase, open to anybody, a visitor's words reach nobody.
+            if (this.showcase && who.role === 'visitor') break;
             // People talking to each other. Short, and not faster than a person types.
             const text = String(msg.text ?? '').replace(/[\u0000-\u001f]+/g, ' ').trim().slice(0, 300);
             const now = Date.now();
@@ -673,6 +679,7 @@ export class ClientHub {
             break;
           }
           case 'voice': {
+            if (this.showcase && who.role === 'visitor') break;
             // A frame of their voice: passed on to those within earshot of their character, and kept nowhere.
             if (!conn.presence || !validFrame(msg.data)) break;
             const now = Date.now();

@@ -39,6 +39,11 @@ export interface ServerOptions {
   quiet?: boolean;
   /** The `mempalace` program for the office's long memory. Absent: looked for (see `findMemPalace`); null: none. */
   memoryBin?: string | null;
+  /**
+   * A showcase office, open to anybody (`docs/DEMO.md`): whoever knocks at the door is let in at once as a visitor
+   * (twelve hours), and what visitors say out loud and their voice are dropped. For the public demo office only.
+   */
+  showcase?: boolean;
 }
 
 /**
@@ -139,7 +144,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
   const scheme = opts.tls ? 'https' : 'http';
   const agents = new AgentHub(log);
-  const clients = new ClientHub(log);
+  const clients = new ClientHub(log, { showcase: !!opts.showcase });
   const publicUrl = (opts.publicUrl ?? `${scheme}://${isLoopbackHost(opts.host) ? '127.0.0.1' : opts.host}:${opts.port}`).replace(/\/+$/, '');
   const engine = new Engine({ store, agents, publicUrl, timings: opts.timings, log, vaultKeyFile: path.join(opts.dataDir, 'vault.key'), filesDir: path.join(opts.dataDir, 'files'), memory: { bin: opts.memoryBin === undefined ? findMemPalace() : opts.memoryBin, dir: path.join(opts.dataDir, 'palace') } }, { send: (clientId, msg) => clients.send(clientId, msg) });
   agents.attach(engine);
@@ -273,12 +278,20 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const knockSecret = (req: FastifyRequest): unknown => req.headers['x-knock-secret'];
   app.get('/knock', async (req, reply) => {
     if (!atDoor(req, reply)) return reply;
-    return { orchestrator: true, office: engine.core.settings.companyName };
+    return { orchestrator: true, office: engine.core.settings.companyName, ...(opts.showcase ? { showcase: true } : {}) };
   });
   app.post('/knock', { bodyLimit: 2048 }, async (req, reply) => {
     if (!atDoor(req, reply)) return reply;
     const b = (req.body ?? {}) as Record<string, unknown>;
     const k = knocks.knock({ name: b.name, via: b.via, ip: String(req.headers['x-forwarded-for'] ?? req.ip) });
+    // A showcase lets everybody in at once, to look around — whatever they came with — for as long as a browser visit.
+    if (opts.showcase) {
+      knocks.admit(k.id, (knock): Admission => {
+        const expiresAt = new Date(Date.now() + BROWSER_VISIT_MS).toISOString();
+        const { guest, token } = guests.invite({ name: guests.freeName(knock.name), role: 'visitor', via: knock.via === 'browser' ? 'knock-browser' : 'knock-app', expiresAt }, 'showcase');
+        return { role: 'visitor', name: guest.name, token, invite: connectionOf(guest, token), expiresAt, memberId: guest.id };
+      });
+    }
     return { ...k, office: engine.core.settings.companyName, anyoneIn: clients.someoneToAnswer() };
   });
   app.get('/knock/:id', async (req, reply) => {

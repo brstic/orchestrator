@@ -3772,3 +3772,23 @@ button.ops-row:hover {
 .routine-hint {
   line-height: 1.45;
 }
+
+/* The public demo office: one line across the top that says what this is. */
+.showcase-banner {
+  position: absolute;
+  top: 74px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(980px, calc(100vw - 32px));
+  padding: 8px 10px 8px 16px;
+  font-size: 13px;
+  border-color: rgba(110, 168, 255, 0.4);
+}
+.showcase-banner a {
+  color: var(--accent);
+  white-space: nowrap;
+  font-weight: 600;
+}

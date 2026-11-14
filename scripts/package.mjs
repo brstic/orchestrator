@@ -76,6 +76,9 @@ function stagePayload(dest) {
   const copy = (from, to = from) => fs.cpSync(path.join(root, from), path.join(dest, to), { recursive: true });
   copy('apps/server/dist/orchestrator-server.mjs');
   copy('apps/host-agent/dist/orchestrator-agent.mjs');
+  // The public demo office and the scripted stand-in its employees run (docs/DEMO.md); nothing else starts either.
+  copy('apps/server/dist/orchestrator-demo.mjs');
+  copy('tests/fixtures/fake-claude.mjs', 'demo/fake-claude.mjs');
   copy('apps/desktop/dist');
   copy('scripts/start-local.mjs');
   copy('scripts/office-admin.mjs');

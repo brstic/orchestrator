@@ -21,7 +21,9 @@
  * `iffile <file> <step>` takes the step only when that file is in the working folder.)
  *
  * Nothing in the application ever launches this file; tests point the agent's
- * `claudeBin` at it explicitly.
+ * `claudeBin` at it explicitly — and so does the public demo office
+ * (`scripts/demo-office.ts`, docs/DEMO.md), whose every page says its employees
+ * are scripted stand-ins.
  */
 import { execSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
