@@ -97,7 +97,7 @@ flowchart LR
 
 ## 🏆 Built in one day
 
-**Twenty-one interactive 3D website previews for real businesses — each its own idea, not a template — built by the office's employees in a single day**, while the owner walked the floor. All live; open any of them.
+**Twenty-one interactive 3D website previews for real businesses — each its own idea, not a template — built in a single day by _one_ employee of the office.** The rest of the team spent that day on other projects. All live; open any of them.
 
 <table>
   <tr>
