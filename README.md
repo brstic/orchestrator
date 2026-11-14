@@ -3,15 +3,19 @@
 </p>
 
 <p align="center">
-  <a href="https://www.facebook.com/groups/orchestrator"><img src="https://img.shields.io/badge/Join%20the%20community-Facebook%20group-1877F2?style=for-the-badge&logo=facebook&logoColor=white" alt="Join the Orchestrator community on Facebook"></a>
+  <a href="https://www.facebook.com/groups/orchestrator"><img height="64" src="https://img.shields.io/badge/Join%20the%20community-Facebook%20group-1877F2?style=for-the-badge&logo=facebook&logoColor=white" alt="Join the Orchestrator community on Facebook"></a>
 </p>
-<p align="center"><sub>Questions, ideas, what you built with your office, help with setting one up — <b>it all happens in the <a href="https://www.facebook.com/groups/orchestrator">Orchestrator community on Facebook</a></b>. Come in and say hello.</sub></p>
+<p align="center"><b>Questions, ideas, what you built with your office, help with setting one up — it all happens in the <a href="https://www.facebook.com/groups/orchestrator">Orchestrator community on Facebook</a>. Come in and say hello.</b></p>
+
+<p align="center">
+  <a href="https://office-demo.sparkcan.com"><img src="https://img.shields.io/badge/Live%20demo-office--demo.sparkcan.com-22C55E?style=flat-square&logo=googlechrome&logoColor=white" alt="Live demo"></a> <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-agents-D97757?style=flat-square&logo=claude&logoColor=white" alt="Built for Claude Code"></a> <a href="#-how-it-is-built"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"></a> <a href="#-two-minutes-to-your-first-hire"><img src="https://img.shields.io/badge/Node.js-%E2%89%A5%2022.18-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22.18 or newer"></a> <a href="#-how-it-is-built"><img src="https://img.shields.io/badge/React-19-20232A?style=flat-square&logo=react&logoColor=white" alt="React 19"></a> <a href="#-how-it-is-built"><img src="https://img.shields.io/badge/three.js-r172-000000?style=flat-square&logo=threedotjs&logoColor=white" alt="three.js"></a> <a href="#-two-minutes-to-your-first-hire"><img src="https://img.shields.io/badge/Electron-33-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron 33"></a> <a href="#-what-you-press-and-what-really-happens"><img src="https://img.shields.io/badge/tmux-sessions-1BB91F?style=flat-square&logo=tmux&logoColor=white" alt="tmux"></a> <a href="#-status-and-limits"><img src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-desktop-555555?style=flat-square&logo=apple&logoColor=white" alt="macOS, Linux, Windows"></a> <a href="docs/CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.0-6EA8FF?style=flat-square&logo=semver&logoColor=white" alt="Version 0.1.0"></a>
+</p>
 
 https://github.com/user-attachments/assets/6e5bbd27-3d4d-46e3-a719-cef76400f557
 
 <p align="center"><sub>▶ The office in 50 seconds (sound on). The real app, recorded in a demo office whose employees are scripted stand-ins, so no Claude usage was spent.<br>Music: “Funkorama” by Kevin MacLeod (<a href="https://incompetech.com">incompetech.com</a>), licensed under <a href="https://creativecommons.org/licenses/by/4.0/">Creative Commons: By Attribution 4.0</a>.</sub></p>
 
-<p align="center"><b>👀 Walk in and watch: <a href="https://office-demo.sparkcan.com">office-demo.sparkcan.com</a></b><br><sub>A live demo office, open to anybody, no sign-up: you are in at once as a visitor. Its employees are scripted stand-ins, not Claude — so it costs nothing to keep open — but the office around them (sessions, hooks, worktrees, tests, commits, questions, approvals) is the real one. Use a computer: phones are turned away.</sub></p>
+<p align="center"><b>👀 Walk in and try it: <a href="https://office-demo.sparkcan.com">office-demo.sparkcan.com</a></b><br><sub>A live demo office, open to anybody, no sign-up: you are the boss there for the day — talk to the team (<code>F</code>), hand out tasks, answer their questions, look at the machines and the colleagues' rooms, chat with whoever else walked in. Its employees are scripted stand-ins, not Claude — so it costs nothing to keep open — but the office around them (sessions, hooks, worktrees, tests, commits, questions, approvals) is the real one. Use a computer: phones are turned away.</sub></p>
 
 <p align="center">
   <a href="https://office-demo.sparkcan.com"><b>Live demo</b></a> ·
