@@ -860,6 +860,8 @@ export interface Message {
   files?: SaidFile[];
   /** What the person wrote, without the lines about files the office added for the employee. Absent: `body` is it. */
   said?: string;
+  /** Where it was written, when not in the office's own window: the employee's Telegram bot (`docs/TELEGRAM.md`). */
+  channel?: 'telegram';
 }
 
 // ───────────────────────────── Routines ──────────────────────────

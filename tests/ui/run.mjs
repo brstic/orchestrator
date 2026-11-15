@@ -18,6 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { fakeTelegram } from '../e2e/fake-telegram.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const argv = process.argv.slice(2);
@@ -42,7 +43,11 @@ const check = (name, ok, detail = '') => {
 
 // (`--review none`: the office of this suite is one whose tasks are done when they pass; the steps about review choose it per ticket.)
 // (`--member-room`: one member with a computer of their own and three employees on it, two at work and one asleep — somebody whose "My work" has something in it.)
-const office = spawn(process.execPath, [path.join(root, 'scripts/dev-office.ts'), '--port', String(port), '--review', 'none', '--member-room', 'Mila:3'], { stdio: ['ignore', 'pipe', 'pipe'], cwd: root });
+// (A stand-in for Telegram's Bot API, for the step that gives an employee a bot of their own: `docs/TELEGRAM.md`.)
+const telegram = await fakeTelegram();
+const TELEGRAM_TOKEN = '424242:AAuiSuiteTestToken_notReal0123456789';
+telegram.bot(TELEGRAM_TOKEN, 424242, 'ui_suite_bot', false);
+const office = spawn(process.execPath, [path.join(root, 'scripts/dev-office.ts'), '--port', String(port), '--review', 'none', '--member-room', 'Mila:3'], { stdio: ['ignore', 'pipe', 'pipe'], cwd: root, env: { ...process.env, ORCH_TELEGRAM_API: telegram.url } });
 let officeErr = '';
 office.stderr.on('data', (d) => (officeErr += d));
 const info = await new Promise((resolve) => {
@@ -194,6 +199,7 @@ try {
     spareHost: 'spare-box',
     spareRenamed: 'spare-renamed',
     hireName: 'Quinn',
+    telegramToken: TELEGRAM_TOKEN,
     hireFolder,
     taskTitle: 'Add a UI-created marker',
     taskDescription: 'Created through the task form. @@fake: write ui-marker.txt made-through-the-ui; commit add ui marker; complete marker added@@',
@@ -387,6 +393,7 @@ try {
 } finally {
   station?.close();
   office.kill('SIGTERM');
+  void telegram.close();
   for (let i = 0; i < 50 && office.exitCode === null; i++) await sleep(100);
 }
 console.log(`\n${checks.filter(Boolean).length}/${checks.length} checks passed`);

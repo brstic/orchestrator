@@ -2,6 +2,15 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-15 — Telegram: a bot per employee, paired with a one-time link, polled, and in groups by mention or by their own judgement
+The owner asked for a different Telegram bot on every agent, simple to set up, and for groups where it knows when it is talked about.
+- **Chosen: one bot per employee, its token pasted into their profile.** A bot is the employee's address in Telegram (its own name and picture in the chat list). Rejected: one office bot with `/to <name>` — not "talk to them directly", and one token would reach everybody.
+- **Long polling, not a webhook**: the office often runs on a laptop or behind a door with no public address; polling needs nothing opened.
+- **Pairing with a one-time `?start=` link** made by somebody who may work with the employee, and the pairing person speaks **as that member**. Rejected: an allow list of Telegram user names (names change and can be taken; the link proves the person was in the office). Rights are checked again on every message, so taking access away works without anybody remembering the bot.
+- **Groups, two modes.** *When talked to* (default): mention, the name as a word, a reply, a follow-up within three minutes — costs nothing when the group talks about other things. *Everything*: what is said is gathered until a pause (8 s) and the employee decides, answering `NO_REPLY` to stay quiet — a Claude turn per pause, so it is a choice, not the default. Rejected: asking a cheaper model whether a message is about them — a second account and a second judge, when the employee's own judgement is already there in *Everything*.
+- **Questions and permissions go only to privately paired people**, never into a group, where anybody could press Allow.
+- **The token is sealed with the vault key** and kept in the kv store, not in the vault's list: it is not a credential for employees to use.
+
 ## 2026-11-15 — Review can be set for one project; the office's setting is not split by person
 A co-owner asked why his team's work takes so long. Measured on the live office (2026-11-10…13, four employees, 19 finished tasks): 253 minutes of work, 17 waiting for a colleague's review, **461 waiting for an owner's approval**; a colleague's review asked for changes in 4 of 21. So the colleague's review is cheap and worth it, and the second, human one is where the time goes — for a merge of one minute as for a feature.
 - **Chosen: `ProjectPolicy.review`**, a project's own default that stands in for `OwnerSettings.reviewDefault`. One team can go lighter without changing anything for the others, and it is undone by one click ("As the office").

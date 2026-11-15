@@ -14,6 +14,7 @@ import { byProject, levelLine, teamLine } from '../../lib/team.ts';
 import { byDay, oneLine } from '../../lib/inbox.ts';
 import { More, PickMany, State } from './kit.tsx';
 import { accountChoices } from '../../lib/accounts.ts';
+import { TelegramTab } from './telegram.tsx';
 import { RoutinesOf } from './routines.tsx';
 import { GoalRow } from './goal.tsx';
 import { homeOf, homePatch } from '../../lib/employee-home.ts';
@@ -695,8 +696,8 @@ registerPanel('team', TeamPanel);
 
 // ─────────────────────────── Employee ───────────────────────────
 
-type TabId = 'overview' | 'profile' | 'appearance' | 'session' | 'routines' | 'message' | 'history' | 'desk';
-const TAB_ARG: Record<string, TabId> = { overview: 'overview', settings: 'profile', profile: 'profile', appearance: 'appearance', session: 'session', routines: 'routines', message: 'message', history: 'history', desk: 'desk' };
+type TabId = 'overview' | 'profile' | 'appearance' | 'session' | 'routines' | 'telegram' | 'message' | 'history' | 'desk';
+const TAB_ARG: Record<string, TabId> = { overview: 'overview', settings: 'profile', profile: 'profile', appearance: 'appearance', session: 'session', routines: 'routines', telegram: 'telegram', message: 'message', history: 'history', desk: 'desk' };
 
 interface Draft {
   name: string;
@@ -2143,6 +2144,8 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
           { id: 'session', label: 'Session' },
           // What they repeat by themselves: seen, added to and managed here.
           { id: 'routines', label: 'Routines', count: routineCount || undefined },
+          // Their own Telegram bot: for those who may work with them (not in the public demo).
+          ...(can.work(e.hostId) && !st.showcase ? [{ id: 'telegram' as const, label: 'Telegram' }] : []),
           { id: 'message', label: 'Messages' },
           { id: 'history', label: 'History' },
           // The foreman has no desk to choose.
@@ -2160,6 +2163,7 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
         </div>
         {tab === 'session' && <SessionTab e={e} />}
         {tab === 'routines' && <RoutinesOf employeeId={e.id} name={e.name} canWork={can.work(e.hostId)} />}
+        {tab === 'telegram' && <TelegramTab e={e} />}
         {tab === 'message' && <MessageTab e={e} />}
         {tab === 'history' && <HistoryTab e={e} />}
         {tab === 'desk' && e.roleKey !== 'foreman' && <DeskTab e={e} />}

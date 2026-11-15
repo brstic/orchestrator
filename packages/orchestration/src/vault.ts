@@ -120,6 +120,17 @@ export class Vault {
     return (this.key = fresh);
   }
 
+  /**
+   * Keep a secret that is not an entry of the vault (a Telegram bot's token, `docs/TELEGRAM.md`) under the vault's
+   * key: what comes back is safe to store; `unseal` with the same `label` gives the value back.
+   */
+  seal(value: string, label: string): string {
+    return this.encrypt(value, label);
+  }
+  unseal(sealed: string, label: string): string {
+    return this.decrypt({ id: label, name: label, secret: sealed } as Stored);
+  }
+
   private encrypt(value: string, id: string): string {
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', this.secretKey(), iv);

@@ -4,7 +4,8 @@ import { Invites, inviteLink, invitePage } from './invites.ts';
 import { PHONE_MESSAGE, isPhone, phonePage } from './phone.ts';
 import { Logins, SESSION_DAYS } from './logins.ts';
 import { Knocks, type Admission } from './knocks.ts';
-import { allowed, closedTo, eventFor, mayCall, mayReadRoutine, outcomesScopeFor, stateFor } from './access.ts';
+import { allowed, closedTo, eventFor, mayCall, mayReadRoutine, memberOf, outcomesScopeFor, stateFor } from './access.ts';
+import { Telegram } from './telegram.ts';
 import { HiFi, nowPlaying } from './radio.ts';
 import { ArcadeShelf } from './arcade.ts';
 import { SshLinks } from './ssh-links.ts';
@@ -89,6 +90,10 @@ export interface ServerOptions {
    * office only — its employees must be the stand-in that runs only signed scripts (`ORCH_FAKE_KEY`).
    */
   showcase?: boolean;
+  /** Telegram's Bot API for employees' bots (`docs/TELEGRAM.md`); tests point it at a stand-in. Default: Telegram itself. */
+  telegramApi?: string;
+  /** How long one wait for a bot's messages lasts (s). */
+  telegramPollSeconds?: number;
 }
 
 /**
@@ -224,6 +229,29 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     return typeof q === 'string' ? q : null;
   };
   const guests = new Guests(engine);
+  // ── employees' own Telegram bots (docs/TELEGRAM.md) ──
+  /** Who a member is now, by id — or null when they are no longer in (revoked, run out, made a visitor). */
+  const personNow = (id: string): Who | null => {
+    if (id === 'owner') return { kind: 'owner', id: 'owner', name: engine.core.settings.ownerName || 'the boss', role: 'owner' };
+    const g = guests.get(id);
+    if (!g || g.revokedAt || (g.expiresAt && Date.parse(g.expiresAt) < Date.now())) return null;
+    return g.role === 'owner' ? { kind: 'owner', id: g.id, name: g.name, role: 'owner' } : { kind: 'guest', id: g.id, name: g.name, role: g.role as 'colleague' | 'visitor' };
+  };
+  const telegram = new Telegram({
+    engine,
+    store,
+    log,
+    api: (opts.telegramApi ?? process.env.ORCH_TELEGRAM_API ?? 'https://api.telegram.org').replace(/\/+$/, ''),
+    pollSeconds: opts.telegramPollSeconds ?? 50,
+    mayWork: (personId, employeeId) => {
+      const who = personNow(personId);
+      if (!who) return null;
+      const member = memberOf(engine, 'employee', employeeId);
+      if (closedTo(engine, who, member) || !allowed(who, 'work', member)) return null;
+      return { id: who.id, name: who.name, owner: who.kind === 'owner' };
+    },
+  });
+  telegram.start();
   // Whose machines may connect: a member who is still here, is more than a visitor, and whose time is not up.
   engine.hosts.memberInGoodStanding = (memberId) => {
     const g = guests.get(memberId);
@@ -827,6 +855,21 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       return { ok: true };
     });
     api.post('/routines/:id/run', async (req) => engine.routines.runNow(param(req, 'id'), actorOf(req)));
+    // The employee's own Telegram bot (docs/TELEGRAM.md). Whoever may work with them may set it up; the token never comes back.
+    const telegramBy = (req: FastifyRequest) => ({ id: whoOf(req).id, name: whoOf(req).name, owner: whoOf(req).kind === 'owner' });
+    api.get('/employees/:id/telegram', async (req) => telegram.view(engine.core.employees.require(param(req, 'id')).id));
+    api.put('/employees/:id/telegram', async (req) => {
+      const id = engine.core.employees.require(param(req, 'id')).id;
+      const view = await telegram.connect(id, String(body(req).token ?? ''), telegramBy(req));
+      return { ...view, ...telegram.pair(id, telegramBy(req)) };
+    });
+    api.patch('/employees/:id/telegram', async (req) => telegram.settings(param(req, 'id'), body(req)));
+    api.delete('/employees/:id/telegram', async (req) => telegram.disconnect(param(req, 'id'), telegramBy(req)));
+    api.post('/employees/:id/telegram/pair', async (req) => telegram.pair(param(req, 'id'), telegramBy(req)));
+    api.post('/employees/:id/telegram/check', async (req) => telegram.refresh(param(req, 'id')));
+    api.delete('/employees/:id/telegram/people/:tg', async (req) => telegram.unpair(param(req, 'id'), Number((req.params as Record<string, string>).tg), telegramBy(req)));
+    api.patch('/employees/:id/telegram/groups/:chat', async (req) => telegram.group(param(req, 'id'), Number((req.params as Record<string, string>).chat), body(req)));
+    api.delete('/employees/:id/telegram/groups/:chat', async (req) => telegram.leaveGroup(param(req, 'id'), Number((req.params as Record<string, string>).chat), telegramBy(req)));
     api.post('/employees/:id/report', async (req) => engine.commands.execute({ input: 'request report', interpretedBy: 'rules', operations: [{ operation: { op: 'employee.report', employeeId: param(req, 'id') }, description: 'Request a status report' }], problems: [] }));
     api.get('/employees/:id/git', async (req) => engine.tasks.gitView({ employeeId: param(req, 'id') }));
     api.get('/employees/:id/xp', async (req) => engine.core.xp.filter((x) => x.employeeId === param(req, 'id')).sort((a, b) => (a.ts < b.ts ? 1 : -1)));
@@ -1094,6 +1137,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       return token;
     },
     close: async () => {
+      telegram.close();
       sshLinks?.stop();
       knocks.close();
       clearInterval(visits);

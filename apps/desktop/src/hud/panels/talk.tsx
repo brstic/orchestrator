@@ -17,7 +17,7 @@ import { FileLinks, Pictures, isPicture } from './task-files.tsx';
 import { uploadFile } from './task-files.tsx';
 
 type Line =
-  | { kind: 'boss'; id: string; ts: string; text: string; delivery: string; via: string | null; files: SaidFile[] }
+  | { kind: 'boss'; id: string; ts: string; text: string; delivery: string; via: string | null; files: SaidFile[]; telegram?: boolean }
   | { kind: 'reply'; id: string; ts: string; text: string }
   /** A file the employee gave: in the conversation itself, or left on a task (`taskId`). */
   | { kind: 'file'; id: string; ts: string; file: SaidFile; caption: string | null; taskId: string | null }
@@ -151,7 +151,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
     if (!e) return [];
     const out: Line[] = [];
     for (const m of Object.values(s.messages)) {
-      if (m.toEmployeeId === e.id && (m.from.kind === 'owner' || m.routineId)) out.push({ kind: 'boss', id: m.id, ts: m.createdAt, text: m.said ?? m.body, delivery: m.delivery.status, via: m.delivery.via, files: m.files ?? [] });
+      if (m.toEmployeeId === e.id && (m.from.kind === 'owner' || m.routineId)) out.push({ kind: 'boss', id: m.id, ts: m.createdAt, text: m.said ?? m.body, delivery: m.delivery.status, via: m.delivery.via, files: m.files ?? [], telegram: m.channel === 'telegram' });
     }
     const seen = new Set<string>();
     for (const ev of [...(history.data ?? []), ...s.events]) {
@@ -295,6 +295,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
                 <div className="pre">{l.text}</div>
                 <div className="talk-meta">
                   {clock(l.ts)} ·{' '}
+                  {l.telegram && <span className="talk-via" title="Written in Telegram, to their bot">via Telegram · </span>}
                   <span title={l.delivery === 'confirmed' ? 'Claude Code acknowledged receiving it' : l.delivery === 'sent' ? 'Typed into the terminal; not acknowledged (yet)' : l.delivery === 'queued' ? 'Waiting until the session is between turns' : 'Could not be delivered'}>
                     {l.delivery === 'confirmed' ? '✓ received' : l.delivery === 'sent' ? 'sent' : l.delivery === 'queued' ? 'waiting for a free moment…' : l.delivery}
                   </span>

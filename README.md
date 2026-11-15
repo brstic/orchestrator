@@ -187,6 +187,7 @@ flowchart LR
 | 🧢 **The foreman** | A supervisor that walks the floor, answers operational questions and keeps people moving — you are asked only about direction |
 | 🔋 **Claude accounts** | Several per machine, signed in **from the office**; Z.AI's GLM plan too. Out of quota → people move on; out of Fable → they go on with Opus |
 | 🧠 **Long memory** | The record kept word for word ([MemPalace](docs/MEMORY.md)); agents `recall` and `remember` across sessions |
+| ✈️ **Telegram** | Give anyone on the team a bot of their own: talk to them from your phone, answer their questions with a tap, add them to a group chat where they speak up when it is about them ([docs/TELEGRAM.md](docs/TELEGRAM.md)) |
 | 🔁 **Routines** | "Every 30 minutes, check the error log" — repeated by itself |
 | ⏳ **Background commands** | A long test run or a dev server shows as **⏳ COMMAND RUNNING**; nobody nudges them meanwhile |
 | 📎 **Files & eyes** | Pictures and files on tasks and messages; screenshots as evidence; a browser of their own ([docs/ATTACHMENTS.md](docs/ATTACHMENTS.md)) |

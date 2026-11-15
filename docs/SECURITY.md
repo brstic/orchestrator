@@ -241,6 +241,13 @@ Deny rules of the project still win (Claude Code evaluates them whatever a hook 
 - **What it does not change:** the office's own owner token is not accepted through the door; an owner who signs in is a *member with the role owner*. A phone is turned away before the password is looked at. There is no second factor: for an owner, the password is as strong a key as their invitation was — choose it accordingly, and note that somebody who knows a member's name can keep that name's password sign-in closed by guessing wrongly (the app and invitations still work).
 - **Audit:** `login.password_set`, `login.password_removed`, `login.signed_in` (with the address), `login.failed` (the name tried, cut to 40 characters, and the address), `login.locked`.
 
+## Telegram bots
+An employee's bot (`docs/TELEGRAM.md`) is a way to **talk** to them, not a terminal: what comes in is delivered as a message from the person, through the same delivery, deny rules, high-risk gate and permission prompts as *Talk*.
+- **The token** is sealed with the vault key (AES-256-GCM, kv `telegram.bots`), sent once from the window and never returned to a window, an event, an error (Telegram's errors are redacted) or a log.
+- **Who is served**: only people who paired with a one-time code (random, kept as a SHA-256 hash, ten minutes, made by somebody with **work** on that employee), and groups connected with such a code. Anybody else is told the bot is private; an unconnected group is left. A paired person or a group speaks **as the member who made the code**, and that member's rights are checked again **on every message** — losing access to the employee ends the chat. A button on a permission request decides as the person who pressed it, only if paired; questions and permissions never go to a group.
+- **No open port**: the office polls Telegram (`getUpdates`); no webhook.
+- The public demo refuses every Telegram route.
+
 ## Phones
 
 A phone's browser is refused at the server (`phone.ts`): a page that says the office is for a computer, or a 403 for everything that is not a page. It is recognised by its User-Agent, so it is **not a security boundary** — it keeps people from entering something that does not work on a phone, nothing more. Access is decided by invitations, tokens and roles as before.

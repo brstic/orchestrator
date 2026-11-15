@@ -1376,7 +1376,7 @@ async function scenario() {
       return { name: w.querySelector('.win-head h2').textContent, face: !!w.querySelector('.win-head .win-lead .avatar'), state: w.querySelector('.win-head [data-profile-state] .k-state').textContent, tabs: [...w.querySelectorAll('.tab')].map((t) => t.textContent), on: w.querySelector('.tab-on').textContent, labels: [...w.querySelectorAll('[data-profile-overview] .k-label')].map((l) => l.textContent), figures: w.querySelectorAll('.k-figure').length, inputs: [...w.querySelectorAll('[data-profile-overview] input, [data-profile-overview] select, [data-profile-overview] textarea')].length, primary: [...w.querySelectorAll('.win-head .btn-primary')].map((b) => b.textContent.trim()), height: Math.round(w.getBoundingClientRect().height) };
     })()`);
     if (prof.name !== 'Sarah' || !prof.face || !prof.state) throw new Error(`the head of the profile: "${prof.name}", face ${prof.face}, state "${prof.state}"`);
-    if (prof.tabs.join('|') !== 'Overview|Settings|Look|Session|Routines|Messages|History|Desk and hours' || prof.on !== 'Overview') throw new Error(`the profile's tabs: ${prof.tabs.join(', ')} (open: ${prof.on})`);
+    if (prof.tabs.join('|') !== 'Overview|Settings|Look|Session|Routines|Telegram|Messages|History|Desk and hours' || prof.on !== 'Overview') throw new Error(`the profile's tabs: ${prof.tabs.join(', ')} (open: ${prof.on})`);
     if (prof.primary.length !== 1) throw new Error(`the profile's main buttons: ${prof.primary.join(', ') || 'none'}`);
     // The first thing is what they are doing and what they have delivered — to be read, not filled in.
     if (prof.labels.slice(0, 2).join('|') !== 'Right now|What they are' || !prof.labels.includes('Delivered') || prof.figures !== 6 || prof.inputs) throw new Error(`the overview: ${prof.labels.join(', ')}; ${prof.figures} figures; ${prof.inputs} field(s) to fill in`);
@@ -3060,6 +3060,28 @@ async function scenario() {
     if (inTable) throw new Error('the foreman is also a row of the employee table');
     await close();
     return `${first.stops} desks on its walk; went from ${first.key} to ${second.key} (${walked.toFixed(1)} m)`;
+  });
+
+  await step("an employee's own Telegram bot: three steps, the token pasted, Connect — then the one-time link and the groups", async () => {
+    const quinn = await js(`window.__t.emp(${JSON.stringify(ctx.hireName)}).id`);
+    await js(`window.__t.store().openPanel('employee', ${JSON.stringify(quinn + ':telegram')})`);
+    await waitFor(`!!window.__t.scope().querySelector('[data-telegram="setup"]')`, 8000);
+    const steps = await js(`window.__t.scope().querySelectorAll('.tg-steps > li').length`);
+    if (steps !== 3) throw new Error(`${steps} set-up steps, not 3`);
+    await shot('telegram-setup');
+    await type(`window.__t.scope().querySelector('[data-telegram-token]')`, ctx.telegramToken);
+    await clickText('Connect');
+    await waitFor(`!!window.__t.scope().querySelector('[data-telegram="connected"] [data-telegram-link="phone"]')`, 10000);
+    const link = await js(`window.__t.scope().querySelector('[data-telegram-link] a').getAttribute('href')`);
+    if (!/^https:\/\/t\.me\/ui_suite_bot\?start=/.test(link)) throw new Error(`the link is ${link}`);
+    if (!(await js(`!!window.__t.scope().querySelector('[data-telegram-privacy]')`))) throw new Error('no word about the privacy mode');
+    // The token is not on the page any more.
+    if (await js(`document.body.innerHTML.includes(${JSON.stringify(ctx.telegramToken)})`)) throw new Error('the token is still on the page');
+    await click(`window.__t.scope().querySelector('[data-telegram-group]')`, 'Add to a group');
+    await waitFor(`!!window.__t.scope().querySelector('[data-telegram-link="group"]')`, 5000);
+    await shot('telegram-connected');
+    await js(`window.__t.store().openPanel(null)`);
+    return link.replace(/start=.*/, 'start=…');
   });
 
   await step('this computer\'s preferences, as they are stored at the end', async () => {
