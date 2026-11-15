@@ -1,8 +1,9 @@
 {
   "name": "orchestrator",
   "version": "0.1.0",
+  "license": "Apache-2.0",
   "private": true,
-  "description": "ORCHESTRATOR \u2014 a 3D virtual office where real Claude Code sessions work as employees. Your code. Your company. Your world.",
+  "description": "ORCHESTRATOR — a 3D virtual office where real Claude Code sessions work as employees. Your code. Your company. Your world.",
   "type": "module",
   "engines": {
     "node": ">=22.18.0"

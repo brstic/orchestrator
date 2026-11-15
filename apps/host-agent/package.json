@@ -1,9 +1,12 @@
 {
   "name": "@orchestrator/host-agent",
   "version": "0.1.0",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
-  "bin": { "orchestrator-agent": "./bin/orchestrator-agent.mjs" },
+  "bin": {
+    "orchestrator-agent": "./bin/orchestrator-agent.mjs"
+  },
   "dependencies": {
     "@orchestrator/contracts": "workspace:*",
     "@orchestrator/execution": "workspace:*"

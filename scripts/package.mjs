@@ -83,6 +83,8 @@ function stagePayload(dest) {
   copy('scripts/start-local.mjs');
   copy('scripts/office-admin.mjs');
   copy('README.md');
+  copy('LICENSE');
+  copy('NOTICE');
   copy('docs');
   copy('examples');
   fs.writeFileSync(path.join(dest, 'VERSION'), `${version}\n`);

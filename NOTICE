@@ -1,0 +1,24 @@
+Orchestrator
+Copyright 2026 The Orchestrator Authors
+https://github.com/brstic/orchestrator
+
+Built with Orchestrator — https://github.com/brstic/orchestrator
+
+This notice is part of the licence (Apache License 2.0, section 4(d)). Anyone may
+use, change, sell and redistribute Orchestrator and works made from it, for any
+purpose, as long as this NOTICE comes with every copy and every derived work, and
+its attribution is shown wherever such notices normally appear (for example in the
+documentation, an "about" screen or a credits page):
+
+    Built with Orchestrator — https://github.com/brstic/orchestrator
+
+-------------------------------------------------------------------------------
+Third-party parts that keep their own licences
+-------------------------------------------------------------------------------
+
+apps/desktop/src/arcade/core/  — the arcade's emulator: RetroArch (GPLv3) with the
+Genesis Plus GX core linked in. Genesis Plus GX may be used and passed on free of
+charge but may NOT be sold or be part of something sold. Remove this folder (and the
+arcade) from anything you sell. See apps/desktop/src/arcade/core/NOTICE.md.
+
+Other dependencies are installed from npm under their own licences.

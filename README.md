@@ -11,7 +11,7 @@ https://github.com/user-attachments/assets/6e5bbd27-3d4d-46e3-a719-cef76400f557
 </p>
 
 <p align="center">
-  <a href="https://office-demo.sparkcan.com"><img src="https://img.shields.io/badge/Live%20demo-office--demo.sparkcan.com-22C55E?style=flat-square&logo=googlechrome&logoColor=white" alt="Live demo"></a> <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-agents-D97757?style=flat-square&logo=claude&logoColor=white" alt="Built for Claude Code"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"></a> <a href="#-quick-start"><img src="https://img.shields.io/badge/Node.js-%E2%89%A5%2022.18-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22.18 or newer"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/React-19-20232A?style=flat-square&logo=react&logoColor=white" alt="React 19"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/three.js-r172-000000?style=flat-square&logo=threedotjs&logoColor=white" alt="three.js"></a> <a href="#-quick-start"><img src="https://img.shields.io/badge/Electron-33-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron 33"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/tmux-sessions-1BB91F?style=flat-square&logo=tmux&logoColor=white" alt="tmux"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-desktop-555555?style=flat-square&logo=apple&logoColor=white" alt="macOS, Linux, Windows"></a> <a href="docs/CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.0-6EA8FF?style=flat-square&logo=semver&logoColor=white" alt="Version 0.1.0"></a>
+  <a href="https://office-demo.sparkcan.com"><img src="https://img.shields.io/badge/Live%20demo-office--demo.sparkcan.com-22C55E?style=flat-square&logo=googlechrome&logoColor=white" alt="Live demo"></a> <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude%20Code-agents-D97757?style=flat-square&logo=claude&logoColor=white" alt="Built for Claude Code"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"></a> <a href="#-quick-start"><img src="https://img.shields.io/badge/Node.js-%E2%89%A5%2022.18-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22.18 or newer"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/React-19-20232A?style=flat-square&logo=react&logoColor=white" alt="React 19"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/three.js-r172-000000?style=flat-square&logo=threedotjs&logoColor=white" alt="three.js"></a> <a href="#-quick-start"><img src="https://img.shields.io/badge/Electron-33-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron 33"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/tmux-sessions-1BB91F?style=flat-square&logo=tmux&logoColor=white" alt="tmux"></a> <a href="#-under-the-hood"><img src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-desktop-555555?style=flat-square&logo=apple&logoColor=white" alt="macOS, Linux, Windows"></a> <a href="docs/CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.1.0-6EA8FF?style=flat-square&logo=semver&logoColor=white" alt="Version 0.1.0"></a> <a href="#-license"><img src="https://img.shields.io/badge/license-Apache%202.0-D22128?style=flat-square&logo=apache&logoColor=white" alt="Apache License 2.0"></a>
 </p>
 
 <p align="center">
@@ -277,6 +277,13 @@ Three levels per employee — Standard, Auto, Unrestricted — mapped to Claude 
 </details>
 
 <details>
+<summary><b>Can I use it at work, change it, sell something built on it?</b></summary>
+
+Yes — anything you like, commercial too ([Apache License 2.0](LICENSE)). One condition: keep the [NOTICE](NOTICE) with every copy and everything you build from it, and show its line where such credits normally go: *Built with Orchestrator — https://github.com/brstic/orchestrator*. (The arcade's emulator has its own non-commercial licence: leave it out of anything you sell.)
+
+</details>
+
+<details>
 <summary><b>Which systems?</b></summary>
 
 Verified on macOS (Apple silicon) and Linux; in daily use as an always-on office on Ubuntu, with people coming in from macOS and Windows. Details below, under <i>Status and limits</i>.
@@ -469,6 +476,10 @@ Working and verified on macOS (Apple silicon) with Claude Code 2.1.321–2.1.323
 **Not ours:** the arcade runs RetroArch with the Genesis Plus GX core (in the repository, packed, with its source and checksums in `apps/desktop/src/arcade/core/NOTICE.md`). Genesis Plus GX may be used and passed on free of charge and **may not be sold or be part of something sold**. No game is in the repository, and none may be added: you bring your own.
 
 </details>
+
+## 📜 License
+
+**[Apache License 2.0](LICENSE)** — use it, change it, ship it, sell it, for anything. Just keep the **[NOTICE](NOTICE)** with it, and say where credits normally go: **"Built with Orchestrator — https://github.com/brstic/orchestrator"**. The arcade's emulator core (`apps/desktop/src/arcade/core/`) keeps its own licence: free to pass on, never to be sold.
 
 ---
 
