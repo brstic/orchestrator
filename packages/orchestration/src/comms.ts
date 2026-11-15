@@ -893,7 +893,11 @@ export class Comms {
     const to = this.core.employees.require(input.toEmployeeId);
     // A credential somebody wrote into a message goes to the vault; the message goes on with its name there.
     const body = input.from.kind === 'system' || input.kind === 'system' ? input.body : this.eng.vault.capture(input.body, input.from.kind === 'employee' ? { kind: 'employee', id: input.from.id, name: input.from.name.replace(/ \(.*\)$/, '') } : { kind: 'owner', id: null, name: input.from.name.replace(/ \(.*\)$/, '') }, [to.name]).text;
-    input = { ...input, body };
+    // What the person said, as a window shows it, is the same words: a credential in it goes the same way (a value
+    // already taken from the body is replaced by the name it got there). Kept as written, it stood in the stored
+    // message and in every window's state while the body beside it had only the name.
+    const said = input.said === undefined || input.from.kind === 'system' || input.kind === 'system' ? input.said : this.eng.vault.capture(input.said, input.from.kind === 'employee' ? { kind: 'employee', id: input.from.id, name: input.from.name.replace(/ \(.*\)$/, '') } : { kind: 'owner', id: null, name: input.from.name.replace(/ \(.*\)$/, '') }, [to.name]).text;
+    input = { ...input, body, ...(said === undefined ? {} : { said }) };
     const msg: Message = {
       id: newId(),
       kind: input.kind ?? 'chat',
