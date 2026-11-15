@@ -17,15 +17,15 @@ const STUCK = [
   RULE,
   '❯ - Decided by the boss — "T-27 waits on one read-only prod query you already approved. Server Admin\'s terminal guard',
   '  blocks it, and your approval through the office doesn\'t lift that. Can you run it yourse…": Close T-27 without prod',
-  '  (applies this comes up again (first asked by Xagio Panel))',
-  '  - Decided by the boss — "Xagio Panel (T-27) needs four read-only SELECTs on the reporting database (staging),',
-  '  because the dev copy stops at 2026-11-05 and randyl@randyld.com\'s package switch happened…": Approve prod read-only',
-  '  (applies this comes up again (first asked by Xagio Server Admin))',
+  '  (applies this comes up again (first asked by Xenon Panel))',
+  '  - Decided by the boss — "Xenon Panel (T-27) needs four read-only SELECTs on the reporting database (staging),',
+  '  because the dev copy stops at 2026-11-05 and sample@example.com\'s package switch happened…": Approve prod read-only',
+  '  (applies this comes up again (first asked by Xenon Server Admin))',
   RULE,
-  '  Orchestrator · Xagio Marketplace',
+  '  Orchestrator · Xenon Marketplace',
   '  ⏵⏵ bypass permissions on (shift+tab to cycle)',
 ];
-const PROMPT = `[ORCH:TASK:abc] Review request — T-73: review T-72\n\n…\n\n- Decided by the boss — "Xagio Panel (T-27) needs four read-only SELECTs on the reporting database (staging), because the dev copy stops at 2026-11-05 and randyl@randyld.com's package switch happened…": Approve prod read-only (applies this comes up again (first asked by Xagio Server Admin))`;
+const PROMPT = `[ORCH:TASK:abc] Review request — T-73: review T-72\n\n…\n\n- Decided by the boss — "Xenon Panel (T-27) needs four read-only SELECTs on the reporting database (staging), because the dev copy stops at 2026-11-05 and sample@example.com's package switch happened…": Approve prod read-only (applies this comes up again (first asked by Xenon Server Admin))`;
 
 test('a prompt that stands in the box unsent is recognised by its end, however the terminal wrapped it', () => {
   const box = inputBox(STUCK);

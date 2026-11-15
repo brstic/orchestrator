@@ -1,6 +1,6 @@
 # Ideas — a better memory, borrowing from MemPalace
 
-_Written 2026-11-10 from a conversation with Fenix. **Ideas only: nothing here is decided or built.** When one is picked up, it becomes a plan of its own and a line in `DECISIONS.md`._
+_Written 2026-11-10 from a conversation with a co-owner. **Ideas only: nothing here is decided or built.** When one is picked up, it becomes a plan of its own and a line in `DECISIONS.md`._
 
 **Source:** MemPalace — `github.com/MemPalace/mempalace` (MIT), package `mempalace` on PyPI, site `mempalaceofficial.com`. Those three are the only official ones; its README warns that other domains are impostors. What follows comes from its README and site; its code was not read and it was not run.
 

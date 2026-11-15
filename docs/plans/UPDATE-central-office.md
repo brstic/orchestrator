@@ -69,7 +69,7 @@ Details and the route-by-route table: [../ACCESS.md](../ACCESS.md).
 - [x] Two members at once and real work, on the owner's server (2026-11-10): an owner and a colleague, each in their own desktop app, in the office on Sparkcan at the same time — they saw and heard each other; the owner gave a shared employee on the server one small real task and the colleague gave their own employee on the Mac one; **real Claude Code did both** (a file written on the server, a file written on the Mac), and both accounts' usage arrived at the office. Trial members and employees were removed afterwards.
 
 ## Closed
-The owner closed the plan on 2026-11-10: the collaborator has GitHub and will build the client from the repository (INSTALL.md, "Without an installer") and come in with the invitation made for them ("Fenix", colleague — in `~/Desktop/Orchestrator-za-kolegu/PROCITAJ.txt` on the owner's Mac). What their first real session turns up goes into `STATUS.md` as ordinary follow-up work, not into this plan.
+The owner closed the plan on 2026-11-10: the collaborator has GitHub and will build the client from the repository (INSTALL.md, "Without an installer") and come in with the invitation made for them ("Mila", colleague — in `~/Desktop/Orchestrator-za-kolegu/PROCITAJ.txt` on the owner's Mac). What their first real session turns up goes into `STATUS.md` as ordinary follow-up work, not into this plan.
 
 ## What "done" does not cover
 - The trials used one client computer (this Mac) for both people; the server was a separate machine. Real work was one trivial task per side.

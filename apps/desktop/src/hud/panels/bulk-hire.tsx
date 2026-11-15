@@ -33,7 +33,7 @@ const SMALL = new Set(['the', 'a', 'an', 'of', 'and', 'for', 'my', 'new', 'app',
 
 /**
  * A name you can match to the project at a glance: the folder's own words, capitalised and
- * joined ("xagio-panel" → "XagioPanel", "1p-work" → "1pWork", "my_shop.api" → "ShopApi").
+ * joined ("xenon-panel" → "XenonPanel", "1p-work" → "1pWork", "my_shop.api" → "ShopApi").
  * Filler words are dropped when something more telling remains.
  */
 export function nameForFolder(path: string): string {

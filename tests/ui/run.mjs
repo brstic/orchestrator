@@ -77,7 +77,7 @@ try {
   fs.writeFileSync(path.join(hireFolder, 'docs', 'GUIDE.md'), '# Guide\n\n| Step | Who |\n| --- | --- |\n| Write | Quinn |\n\n- one\n- two\n\n```sh\nnpm test\n```\n');
   // Several project folders to hire for in one go: two repositories and a plain folder.
   const portfolio = path.join(fs.realpathSync(info.base), 'portfolio');
-  for (const [name, isRepo] of [['xagio-panel', true], ['ai_tuner', true], ['client notes', false]]) {
+  for (const [name, isRepo] of [['xenon-panel', true], ['ai_tuner', true], ['client notes', false]]) {
     const dir = path.join(portfolio, name);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'README.md'), `# ${name}\n`);
@@ -343,8 +343,8 @@ try {
   check('the station added at the hi-fi is saved with the office and noted as the last one played; the volume set there stayed on this computer', fm?.url === ctx.radioUrl && fm?.nowPlayingUrl === ctx.radioNow && s.settings.radio.lastStationId === fm?.id && s.settings.radio.volume === before.settings.radio.volume, `${fm?.name} @ ${fm?.url}, the office's volume ${before.settings.radio.volume} → ${s.settings.radio.volume}`);
   const whipTrace = [...events, ...audit].filter((x) => /whip/i.test(JSON.stringify(x)));
   check('the whip left no trace on the server: no event, no audit entry, no message', whipTrace.length === 0 && !s.messages.some((m) => /whip/i.test(m.body ?? '')), `${whipTrace.length} traces`);
-  const bulk = ['XagioPanel', 'AiTuner', 'Scribe'].map((n) => by(n));
-  const bulkFolders = ['xagio-panel', 'ai_tuner', 'client notes'].map((f) => path.join(portfolio, f));
+  const bulk = ['XenonPanel', 'AiTuner', 'Scribe'].map((n) => by(n));
+  const bulkFolders = ['xenon-panel', 'ai_tuner', 'client notes'].map((f) => path.join(portfolio, f));
   check(
     // (Unrestricted: what an owner's hires start as since 2026-11-11.)
     'everyone hired in bulk lives in their own folder, which became their project, and none of them was started',

@@ -51,7 +51,7 @@ There is one office and it lives on the server. Desktop apps are clients; the pa
 ### A person's computer (client)
 | | |
 | --- | --- |
-| App | built from this repository. On the owner's Mac: `release/Orchestrator.app` in the checkout (`/Users/brstefanovic/Projects/office`), with `~/Desktop/Orchestrator.app` linking to it |
+| App | built from this repository. On the owner's Mac: `release/Orchestrator.app` in the checkout (`~/Projects/office`), with `~/Desktop/Orchestrator.app` linking to it |
 | App data | macOS: `~/Library/Application Support/Orchestrator/` — `joined.json` (saved offices and invitations, mode 600), `prefs.json` (graphics, keys, extras for this computer) |
 | Their own room | `~/.orchestrator/offices/<id>/agent` — the host agent for their own sessions in that office (one folder per office). Their sessions: their default tmux server, `orch-*` |
 | Old local office (owner's Mac) | `~/.orchestrator-local-office-backup-2026-11-10/` — set aside, not used. Safe to delete |

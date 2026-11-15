@@ -7,13 +7,13 @@ const e = (name: string, extra: Partial<{ title: string; specialization: string;
 
 test('a task says whose it is: the part of the product in a colleague\'s name, speciality or folder', () => {
   const task = { title: 'Marketplace Stripe status: push, deploy to dev', description: 'The sell page must show the account status.' };
-  assert.ok(about(task, e('Xagio Marketplace')) > about(task, e('Xagio Panel')));
-  assert.equal(about(task, e('Xagio Panel')), 0, 'a word they all share ("xagio") is not in the task, and nothing else matches');
+  assert.ok(about(task, e('Xenon Marketplace')) > about(task, e('Xenon Panel')));
+  assert.equal(about(task, e('Xenon Panel')), 0, 'a word they all share ("xenon") is not in the task, and nothing else matches');
   // By folder and by speciality too.
   assert.ok(about({ title: 'Fix the checkout total', description: '' }, e('Dana', { workingDir: '/srv/shop/checkout' })) > 0);
   assert.ok(about({ title: 'Rotate the backups', description: '' }, e('Omar', { specialization: 'Backups and restore' })) > 0);
   // A word in the title weighs more than one in the description.
-  assert.ok(about({ title: 'Panel: month graph', description: '' }, e('Xagio Panel')) > about({ title: 'Month graph', description: 'in the panel' }, e('Xagio Panel')));
+  assert.ok(about({ title: 'Panel: month graph', description: '' }, e('Xenon Panel')) > about({ title: 'Month graph', description: 'in the panel' }, e('Xenon Panel')));
 });
 
 test('what everybody has in common points at nobody, and the weight is bounded', () => {

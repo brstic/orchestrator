@@ -338,21 +338,21 @@ async function scenario() {
     await js(`[...document.querySelectorAll('.win .hire-place')].find((b) => /dev-mac/.test(b.textContent)).click()`);
     await waitFor(`!!window.__t.near('portfolio', 'open ›', window.__t.scope())`, 10000).catch(() => undefined);
     await click(`[...window.__t.scope().querySelectorAll('.bulk-item')].find((r) => r.textContent.includes('portfolio')).querySelector('.fp-link')`, 'open portfolio');
-    await waitFor(`[...window.__t.scope().querySelectorAll('.bulk-item')].some((r) => r.textContent.includes('xagio-panel'))`, 8000);
+    await waitFor(`[...window.__t.scope().querySelectorAll('.bulk-item')].some((r) => r.textContent.includes('xenon-panel'))`, 8000);
     await clickText('All repositories');
     await waitFor(`window.__t.scope().querySelectorAll('.bulk-row').length === 2`, 5000);
     // The third one is not a repository: tick it by hand.
     await click(`[...window.__t.scope().querySelectorAll('.bulk-item')].find((r) => r.textContent.includes('client notes')).querySelector('input[type=checkbox]')`, 'client notes');
     await waitFor(`window.__t.scope().querySelectorAll('.bulk-row').length === 3`, 5000);
     const names = await js(`[...window.__t.scope().querySelectorAll('.bulk-row input')].map((i) => i.value)`);
-    if ([...names].sort().join(',') !== 'AiTuner,ClientNotes,XagioPanel') throw new Error(`names were ${names.join(', ')}`);
+    if ([...names].sort().join(',') !== 'AiTuner,ClientNotes,XenonPanel') throw new Error(`names were ${names.join(', ')}`);
     // A name can be changed before hiring.
     await type(`[...window.__t.scope().querySelectorAll('.bulk-row input')].find((i) => i.value === 'ClientNotes')`, 'Scribe');
     await shot('hire-many');
     await clickText('Hire 3 employees');
-    await waitFor(`['XagioPanel', 'AiTuner', 'Scribe'].every((n) => !!window.__t.emp(n))`, 15000);
+    await waitFor(`['XenonPanel', 'AiTuner', 'Scribe'].every((n) => !!window.__t.emp(n))`, 15000);
     await sleep(2500);
-    const started = await js(`Object.values(window.__t.store().sessions).filter((s) => ['XagioPanel', 'AiTuner', 'Scribe'].some((n) => window.__t.emp(n).id === s.employeeId)).length`);
+    const started = await js(`Object.values(window.__t.store().sessions).filter((s) => ['XenonPanel', 'AiTuner', 'Scribe'].some((n) => window.__t.emp(n).id === s.employeeId)).length`);
     if (started) throw new Error(`${started} session(s) were started at hire`);
     await js(`window.__t.store().openPanel(null)`);
     return `hired ${names.filter((n) => n !== 'ClientNotes').join(', ')} and Scribe (renamed from ClientNotes); no session started`;

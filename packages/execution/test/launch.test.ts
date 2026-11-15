@@ -30,7 +30,7 @@ const NASTY = `Lessons:\n- don't "fix" $HOME or \`rm -rf\` anything; it's the ow
 const LONG = `${NASTY.repeat(Math.ceil(40_000 / NASTY.length))}\nthe end, with a blank line after it\n\n`;
 
 const spec = (over: Record<string, unknown>) =>
-  ({ displayName: 'Xagio Panel', cwd: tmp, mode: 'interactive_cli', model: null, permissionMode: 'default', permissions: { allow: [], deny: [], ask: [] }, allowedTools: [], disallowedTools: [], appendSystemPrompt: '', mcp: { url: 'http://127.0.0.1:1/mcp', token: 't' }, strictMcp: true, highRiskPatterns: [], claudeSessionId: 's-1', resume: false, env: {}, cols: 100, rows: 30, ...over }) as any;
+  ({ displayName: 'Xenon Panel', cwd: tmp, mode: 'interactive_cli', model: null, permissionMode: 'default', permissions: { allow: [], deny: [], ask: [] }, allowedTools: [], disallowedTools: [], appendSystemPrompt: '', mcp: { url: 'http://127.0.0.1:1/mcp', token: 't' }, strictMcp: true, highRiskPatterns: [], claudeSessionId: 's-1', resume: false, env: {}, cols: 100, rows: 30, ...over }) as any;
 
 /** A plan with a stand-in for Claude Code that writes down exactly what it was started with, and stays. */
 function plan(name: string, prompt: string) {

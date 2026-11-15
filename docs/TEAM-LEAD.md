@@ -1,6 +1,6 @@
 # A member's team lead
 
-Asked for by an owner (Fenix, 2026-11-12): "one of ours who is in charge of my agents only — I tell him 'look at the tickets for Xagio Studio' or 'check that domain', and he knows which agent to give it to, so that we do not run round handing out work ourselves. He must not guess: if he is not sure, he asks. He may hire whom he needs — find where the project is, and ask if he cannot — with a guard so that he cannot make five hundred of them: five."
+Asked for by a co-owner (2026-11-12): "one of ours who is in charge of my agents only — I tell him 'look at the tickets for Xenon Studio' or 'check that domain', and he knows which agent to give it to, so that we do not run round handing out work ourselves. He must not guess: if he is not sure, he asks. He may hire whom he needs — find where the project is, and ask if he cannot — with a guard so that he cannot make five hundred of them: five."
 
 ## What it is
 

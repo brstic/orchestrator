@@ -1,6 +1,6 @@
 # Ideas — what to take from T3 Code
 
-_Written 2026-11-10 from a conversation with Fenix. **Ideas only: nothing here is decided or built.** When one is picked up, it becomes a plan of its own and a line in `DECISIONS.md`._
+_Written 2026-11-10 from a conversation with a co-owner. **Ideas only: nothing here is decided or built.** When one is picked up, it becomes a plan of its own and a line in `DECISIONS.md`._
 
 **Source:** `github.com/pingdotgg/t3code` at commit `17a6a01d` (MIT, so logic may be reused with attribution). It was read, not run; where a point rests on their documentation rather than their code, it says so. A local copy is in `/srv/marko/t3code` on Sparkcan.
 

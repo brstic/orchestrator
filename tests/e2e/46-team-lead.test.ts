@@ -49,7 +49,7 @@ before(async () => {
   const { token } = h.server.engine.hosts.createMemberEnrollment({ id: fenix.guest.id, name: 'Fenix' });
   mine = await h.addHost('fenix-laptop', {}, { enrollToken: token });
   // Two employees of his, each in a folder of their own (which is their project).
-  ids.Ana = (await h.api<any>('POST', '/employees', { name: 'Ana', roleKey: 'backend', hostId: mine.hostId, workingDir: folder('xagio-studio') })).id;
+  ids.Ana = (await h.api<any>('POST', '/employees', { name: 'Ana', roleKey: 'backend', hostId: mine.hostId, workingDir: folder('xenon-studio') })).id;
   ids.Bo = (await h.api<any>('POST', '/employees', { name: 'Bo', roleKey: 'frontend', hostId: mine.hostId, workingDir: folder('domains-site') })).id;
 });
 after(async () => {
@@ -83,7 +83,7 @@ test('it sees its member’s team and nothing else of the office, and nobody els
   const seen = (await call('Lea', 'team_overview')).text;
   assert.match(seen, /Your team — 2 people/);
   assert.match(seen, /- Ana — Senior Backend Engineer · fenix-laptop|- Ana — .* · Fenix's computer/);
-  assert.match(seen, /project: xagio-studio · folder: .*xagio-studio/);
+  assert.match(seen, /project: xenon-studio · folder: .*xenon-studio/);
   assert.match(seen, /- domains-site · /);
   assert.ok(!/Alex|Shop/.test(seen), 'the office’s shared employees and projects are not its team');
   assert.match(seen, new RegExp(`You may hire ${LEAD_HIRE_LIMIT} more \\(${LEAD_HIRE_LIMIT} at most at a time\\)`));
@@ -95,9 +95,9 @@ test('it sees its member’s team and nothing else of the office, and nobody els
 });
 
 test('it hands work to the one whose it is: in words, or as a task on that one’s board — within the team', async () => {
-  const told = await call('Lea', 'team_tell', { employee: 'Ana', message: 'From Fenix: look at the open tickets for Xagio Studio and report what is urgent.' });
+  const told = await call('Lea', 'team_tell', { employee: 'Ana', message: 'From Fenix: look at the open tickets for Xenon Studio and report what is urgent.' });
   assert.ok(!told.isError && /Told Ana/.test(told.text), told.text);
-  const msg = (await h.state()).messages.find((m) => m.toEmployeeId === ids.Ana && /open tickets for Xagio Studio/.test(m.body))!;
+  const msg = (await h.state()).messages.find((m) => m.toEmployeeId === ids.Ana && /open tickets for Xenon Studio/.test(m.body))!;
   assert.deepEqual([msg.from.kind, msg.from.name], ['employee', "Lea (Fenix's lead)"]);
   assert.match((await call('Lea', 'team_tell', { employee: 'Alex', message: 'x' })).text, /Nobody on your team matches "Alex"/);
 
@@ -121,7 +121,7 @@ test('it hands work to the one whose it is: in words, or as a task on that one�
 test('it finds where things are on its member’s machines, and hires there — never more than five at a time', async () => {
   folder('billing-api');
   const folders = await call('Lea', 'team_folders', {});
-  assert.ok(!folders.isError && /- billing-api \[git repository\]/.test(folders.text) && /- xagio-studio \[git repository\]/.test(folders.text), folders.text);
+  assert.ok(!folders.isError && /- billing-api \[git repository\]/.test(folders.text) && /- xenon-studio \[git repository\]/.test(folders.text), folders.text);
   assert.match((await call('Lea', 'team_folders', { machine: 'no-such' })).text, /No machine of Fenix's matches/);
 
   for (const [args, said] of [

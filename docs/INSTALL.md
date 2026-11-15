@@ -29,7 +29,7 @@ pnpm serve -- --address https://office.example.com:4610
 Invite the first owner — yourself — from the same machine:
 
 ```sh
-pnpm office invite Branko --role owner     # prints the invitation link once
+pnpm office invite Ana --role owner     # prints the invitation link once
 pnpm office status                         # addresses, certificate fingerprint, members
 ```
 

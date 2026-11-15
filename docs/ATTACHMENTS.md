@@ -64,7 +64,7 @@ person in the office: GET /api/tasks/:id/attachments/:aid  → the picture, or a
 
 ## Files in a conversation
 
-Asked for by an owner (Fenix, 2026-11-12): "when I talk to an employee I want to paste a picture — I grab a screenshot and say 'look at this'. They are temporary, we need not remember them long. And a way to give them files. But most of all: Ctrl+V."
+Asked for by a co-owner (2026-11-12): "when I talk to an employee I want to paste a picture — I grab a screenshot and say 'look at this'. They are temporary, we need not remember them long. And a way to give them files. But most of all: Ctrl+V."
 
 In the conversation window (Talk): **Ctrl+V** with a picture on the clipboard, a file **dropped** on the box, or the **paperclip** at the box's left. What was added waits at the top of the box as a small picture or a name, with a × to take it out; it is sent to the office at once, so *Send* does not wait for it. A picture can be the whole message (the office writes "Look at this." for the words).
 
