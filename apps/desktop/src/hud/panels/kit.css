@@ -1646,36 +1646,56 @@ button.k-row:focus-visible {
   }
 }
 
-/* An employee's routines, in their own window: each with the way to change its words under it. */
-.routine-list-own {
+/* An employee's routines, in their own window (routines.tsx, RoutinesOf). */
+.routine-top {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 16px;
 }
-.routine-own {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 4px 10px 6px;
+.routine-top .k-text {
+  flex: 1;
 }
-.routine-own .routine-row {
-  border: 0;
-  padding-left: 0;
-  padding-right: 0;
+.routine-own .routine-words {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.routine-own .routine-text {
-  white-space: normal;
+.routine-own.routine-off .routine-words {
+  color: var(--muted);
+}
+.routine-top > .btn {
+  flex: none;
+  margin-left: auto;
+}
+/* Open, its words are read in full on its own line. */
+.routine-own [aria-expanded='true'] .routine-words {
+  white-space: pre-wrap;
+  overflow: visible;
+  line-height: 1.5;
 }
 .routine-change {
-  font-size: 12px;
+  align-self: flex-start;
+}
+.routine-rhythm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+.routine-rhythm .k-filters > button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.routine-sheet-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 .routine-edit {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px;
-  border: 1px solid rgba(110, 168, 255, 0.28);
-  border-radius: 10px;
-  background: rgba(110, 168, 255, 0.045);
 }
 
 /* An employee's Telegram (panels/telegram.tsx). */

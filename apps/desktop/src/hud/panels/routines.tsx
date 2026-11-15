@@ -4,7 +4,51 @@ import { ROUTINE_LIMITS } from '@orchestrator/contracts';
 import { Button, clock } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
-import { act } from '../core.tsx';
+import { act, ask } from '../core.tsx';
+import { onActivate } from './company-shared.tsx';
+
+/** A routine taken away, once it was asked. */
+async function removeRoutine(r: Routine): Promise<void> {
+  const short = r.instruction.length > 80 ? `${r.instruction.slice(0, 80)}…` : r.instruction;
+  if (!(await ask({ title: 'Remove this routine?', body: `“${short}” stops repeating, and is gone (what it did so far stays in the conversation).`, ok: 'Remove' }))) return;
+  await act(() => api('DELETE', `/routines/${r.id}`), 'Routine removed');
+}
+
+/** How often, as a person says it. */
+export function rhythm(minutes: number): string {
+  if (minutes === 1440) return 'every day';
+  if (minutes % 60 === 0) return minutes === 60 ? 'every hour' : `every ${minutes / 60} h`;
+  return `every ${minutes} min`;
+}
+
+/** The rhythms most routines want, one click each; anything else in minutes beside them. */
+const PRESETS = [15, 30, 60, 180, 1440];
+
+function Every({ value, onChange, disabled, name }: { value: number; onChange: (n: number) => void; disabled?: boolean; name?: string }) {
+  const [typed, setTyped] = useState(String(value));
+  useEffect(() => setTyped(String(value)), [value]);
+  const take = () => {
+    const n = Math.round(Number(typed));
+    if (Number.isFinite(n) && n >= ROUTINE_LIMITS.minMinutes && n <= ROUTINE_LIMITS.maxMinutes && n !== value) onChange(n);
+    else setTyped(String(value));
+  };
+  return (
+    <div className="routine-rhythm" data-routine-every={name}>
+      <div className="k-filters" role="group" aria-label="How often">
+        {PRESETS.map((n) => (
+          <button key={n} type="button" disabled={disabled} aria-pressed={value === n} className={value === n ? 'k-filter-on' : ''} onClick={() => onChange(n)}>
+            {rhythm(n).replace('every ', '')}
+          </button>
+        ))}
+      </div>
+      <label className="routine-every small" title={`${ROUTINE_LIMITS.minMinutes}–${ROUTINE_LIMITS.maxMinutes} minutes`}>
+        or every
+        <input type="number" min={ROUTINE_LIMITS.minMinutes} max={ROUTINE_LIMITS.maxMinutes} step={1} value={typed} disabled={disabled} aria-label="Minutes between runs" onChange={(ev) => setTyped(ev.target.value)} onBlur={take} onKeyDown={(ev) => ev.key === 'Enter' && (ev.preventDefault(), (ev.target as HTMLInputElement).blur())} />
+        min
+      </label>
+    </div>
+  );
+}
 
 /** What the last look at a routine came to, in plain words. */
 function outcome(r: Routine): { text: string; tone: 'good' | 'warn' | 'bad' | 'muted' } {
@@ -28,7 +72,8 @@ function outcome(r: Routine): { text: string; tone: 'good' | 'warn' | 'bad' | 'm
 function when(r: Routine): string {
   if (!r.enabled) return '';
   // (When the last look handed it over, the line already begins with that time.)
-  const last = r.lastOutcome === 'delivered' && !r.lastNote ? '' : r.lastRunAt ? `last run ${clock(r.lastRunAt)}` : 'not run yet';
+  // (When the last look handed it over, the line already begins with that time; "Not run yet" is said already too.)
+  const last = (r.lastOutcome === 'delivered' && !r.lastNote) || !r.lastRunAt ? '' : `last run ${clock(r.lastRunAt)}`;
   if (!r.nextRunAt) return last;
   // Past due while it is held (their machine is away, they are paused): it runs as soon as that is over.
   const next = Date.parse(r.nextRunAt) < Date.now() - 60_000 ? 'next as soon as it can' : `next ${clock(r.nextRunAt)}`;
@@ -71,7 +116,7 @@ function Row({ r, canWork }: { r: Routine; canWork: boolean }) {
           <Button small onClick={() => void act(() => api('PATCH', `/routines/${r.id}`, { enabled: !r.enabled }), r.enabled ? 'Routine paused' : 'Routine runs again')}>
             {r.enabled ? 'Pause' : 'Resume'}
           </Button>
-          <Button small variant="ghost" onClick={() => void act(() => api('DELETE', `/routines/${r.id}`), 'Routine removed')} title="Remove this routine">
+          <Button small variant="ghost" onClick={() => void removeRoutine(r)} title="Remove this routine">
             Remove
           </Button>
         </>
@@ -125,15 +170,14 @@ export async function createRoutine(employeeId: string, name: string, instructio
 /** A new routine for an employee: what to do each time, how often, and whether the first run is now. */
 function AddRoutine({ employeeId, name, onClose }: { employeeId: string; name: string; onClose: () => void }) {
   const [text, setText] = useState('');
-  const [minutes, setMinutes] = useState(String(ROUTINE_LIMITS.defaultMinutes * 6));
+  const [every, setEvery] = useState(60);
   const [now, setNow] = useState(true);
   const [busy, setBusy] = useState(false);
-  const every = Math.round(Number(minutes));
-  const valid = !!text.trim() && Number.isFinite(every) && every >= ROUTINE_LIMITS.minMinutes && every <= ROUTINE_LIMITS.maxMinutes;
+  const valid = !!text.trim();
   const add = async () => {
     if (!valid || busy) return;
     setBusy(true);
-    const made = await act(() => api<Routine>('POST', '/routines', { employeeId, instruction: text.trim(), everyMinutes: every, runNow: now }), 'Routine added');
+    const made = await act(() => api<Routine>('POST', '/routines', { employeeId, instruction: text.trim(), everyMinutes: every, runNow: now }), `Routine added — ${rhythm(every)}`);
     setBusy(false);
     if (made) onClose();
   };
@@ -156,18 +200,16 @@ function AddRoutine({ employeeId, name, onClose }: { employeeId: string; name: s
         <span className="field-label">What to do each time</span>
         <textarea value={text} onChange={(ev) => setText(ev.target.value)} maxLength={ROUTINE_LIMITS.instruction} placeholder="e.g. Check the error log of the shop; if something new is there, say what it is and what you would do about it." autoFocus style={{ minHeight: 84 }} aria-label="What to do each time" />
       </label>
-      <div className="row" style={{ gap: 14, flexWrap: 'wrap' }}>
-        <label className="routine-every small">
-          every
-          <input type="number" min={ROUTINE_LIMITS.minMinutes} max={ROUTINE_LIMITS.maxMinutes} step={1} value={minutes} onChange={(ev) => setMinutes(ev.target.value)} aria-label="Minutes between runs" />
-          minutes
-        </label>
-        <label className="check small" style={{ alignItems: 'center' }}>
+      <div className="field">
+        <span className="field-label">How often</span>
+        <Every value={every} onChange={setEvery} name="new" />
+      </div>
+      <div className="routine-sheet-foot">
+        <label className="check small">
           <input type="checkbox" checked={now} onChange={(ev) => setNow(ev.target.checked)} style={{ margin: 0 }} />
           and once right now
         </label>
-        <span className="grow" />
-        <Button small variant="primary" type="submit" disabled={!valid || busy}>
+        <Button variant="primary" type="submit" disabled={!valid || busy}>
           {busy ? 'Adding…' : 'Add the routine'}
         </Button>
       </div>
@@ -176,29 +218,94 @@ function AddRoutine({ employeeId, name, onClose }: { employeeId: string; name: s
   );
 }
 
-/** One routine with its text open for changing: saved with the button, left as it was with Cancel. */
-function EditRoutine({ r, onClose }: { r: Routine; onClose: () => void }) {
+/** How a routine is, as a dot: lit while it repeats, a ring when paused, orange or red when its last look did not hand it over. */
+function dotOf(r: Routine): string {
+  if (!r.enabled) return 'k-dot-off';
+  const tone = outcome(r).tone;
+  return tone === 'bad' ? 'k-dot-bad' : tone === 'warn' ? 'k-dot-busy' : '';
+}
+
+/** One routine: a line — its words, how often, when next — and on a click all of it, to change, run, pause or remove. */
+function OwnRow({ r, canWork, open, onToggle }: { r: Routine; canWork: boolean; open: boolean; onToggle: () => void }) {
+  const [editing, setEditing] = useState(false);
   const [text, setText] = useState(r.instruction);
-  const changed = text.trim() !== r.instruction && !!text.trim();
+  useEffect(() => {
+    if (!editing) setText(r.instruction);
+  }, [r.instruction, editing]);
+  const o = outcome(r);
+  const next = r.enabled && r.nextRunAt ? (Date.parse(r.nextRunAt) < Date.now() - 60_000 ? 'next as soon as it can' : `next ${clock(r.nextRunAt)}`) : null;
+  const line = [r.enabled ? rhythm(r.everyMinutes) : `Paused · was ${rhythm(r.everyMinutes)}`, next, r.runs > 0 ? `${r.runs} run${r.runs === 1 ? '' : 's'}` : 'not run yet'].filter(Boolean).join(' · ');
+  const changed = !!text.trim() && text.trim() !== r.instruction;
   return (
-    <div className="routine-edit" data-edit-routine={r.id}>
-      <textarea value={text} onChange={(ev) => setText(ev.target.value)} maxLength={ROUTINE_LIMITS.instruction} aria-label="What to do each time" autoFocus style={{ minHeight: 72 }} />
-      <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-        <Button small variant="ghost" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button small disabled={!changed} onClick={() => void act(() => api('PATCH', `/routines/${r.id}`, { instruction: text.trim() }), 'Routine changed').then((ok) => ok && onClose())}>
-          Save
-        </Button>
+    <div className={`routine-own${r.enabled ? '' : ' routine-off'}`} data-routine={r.id}>
+      <div className="k-row k-row-click" role="button" tabIndex={0} aria-expanded={open} onClick={onToggle} onKeyDown={(ev) => ev.target === ev.currentTarget && onActivate(onToggle)(ev)}>
+        <span className={`k-dot ${dotOf(r)}`} aria-hidden />
+        <div className="k-main">
+          <div className="k-title-sm routine-words">{r.instruction}</div>
+          <div className="k-sub">{line}</div>
+        </div>
+        {(o.tone === 'warn' || o.tone === 'bad') && <span className={`k-aside routine-${o.tone}`}>{o.tone === 'bad' ? 'Failed' : 'Held'}</span>}
+        <span className="k-chev" aria-hidden />
       </div>
+      {open && (
+        <div className="k-detail">
+          <div className="k-section">
+            {editing ? (
+              <div className="routine-edit" data-edit-routine={r.id}>
+                <textarea value={text} onChange={(ev) => setText(ev.target.value)} maxLength={ROUTINE_LIMITS.instruction} aria-label="What to do each time" autoFocus style={{ minHeight: 84 }} />
+                <div className="k-actions">
+                  <Button small variant="primary" disabled={!changed} onClick={() => void act(() => api('PATCH', `/routines/${r.id}`, { instruction: text.trim() }), 'Routine changed').then((ok) => ok && setEditing(false))}>
+                    Save
+                  </Button>
+                  <Button small variant="ghost" onClick={() => (setText(r.instruction), setEditing(false))}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              // (The words themselves stand in full on the line above, once it is open.)
+              canWork && (
+                <button type="button" className="k-link routine-change" onClick={() => setEditing(true)}>
+                  Change the words
+                </button>
+              )
+            )}
+          </div>
+          <div className="k-section">
+            <span className="k-label">How often</span>
+            <Every value={r.everyMinutes} disabled={!canWork} name={r.id} onChange={(n) => void act(() => api('PATCH', `/routines/${r.id}`, { everyMinutes: n }), `Now ${rhythm(n)}`)} />
+          </div>
+          <div className="k-section">
+            <span className="k-label">Last run</span>
+            <div className={`small routine-${o.tone}`}>
+              {o.text}
+              {r.lastRunAt && r.lastOutcome !== 'delivered' ? ` · last handed over ${clock(r.lastRunAt)}` : ''}
+            </div>
+          </div>
+          {canWork && (
+            <div className="k-actions">
+              <Button small disabled={!r.enabled} onClick={() => void act(() => api<Routine>('POST', `/routines/${r.id}/run`, {})).then((res) => res && useOffice.getState().toast(res.lastOutcome === 'delivered' ? 'Handed over now' : `Not run: ${res.lastNote ?? 'they are busy'}`, res.lastOutcome === 'delivered' ? 'success' : 'info'))} title="Run it once now, whatever its rhythm says">
+                Run now
+              </Button>
+              <Button small onClick={() => void act(() => api('PATCH', `/routines/${r.id}`, { enabled: !r.enabled }), r.enabled ? 'Routine paused' : 'Routine runs again')}>
+                {r.enabled ? 'Pause' : 'Resume'}
+              </Button>
+              <span className="grow" />
+              <Button small variant="ghost" className="k-quiet" onClick={() => void removeRoutine(r)}>
+                Remove
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 /**
- * Everything one employee repeats by themselves, in their own window (the "Routines" tab): what each is, how often,
- * what the last run came to — and adding one, changing its words or its rhythm, running it now, pausing and
- * removing it. The same routines the Talk window lists above a conversation; here they are the subject.
+ * Everything one employee repeats by themselves, in their own window (the "Routines" tab): one line per routine — its
+ * words, how often, when next — and on a click its words to change, its rhythm, what the last run came to, and running
+ * it now, pausing and removing it. The same routines the Talk window lists above a conversation; here they are the subject.
  */
 export function RoutinesOf({ employeeId, name, canWork = true }: { employeeId: string; name: string; canWork?: boolean }) {
   const routines = useOffice((s) => s.routines);
@@ -206,7 +313,7 @@ export function RoutinesOf({ employeeId, name, canWork = true }: { employeeId: s
     .filter((r) => r.employeeId === employeeId)
     .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
   const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
   const [, tick] = useState(0);
   useEffect(() => {
     const t = window.setInterval(() => tick((n) => n + 1), 30_000);
@@ -216,12 +323,12 @@ export function RoutinesOf({ employeeId, name, canWork = true }: { employeeId: s
   const on = mine.filter((r) => r.enabled).length;
   return (
     <div className="k-stack" data-profile-routines>
-      <div className="k-head">
-        <div className="k-text" style={{ flex: 1 }}>
-          A routine is an instruction the office hands {name} again and again — every so many minutes, each time they are between turns. A run that finds them busy is skipped.
+      <div className="routine-top">
+        <div className="k-text">
+          Instructions the office hands {name} again and again — every so many minutes, whenever they are between turns. A run that finds them busy waits for the next.
         </div>
         {canWork && !adding && (
-          <Button small disabled={full} title={full ? `${name} already has ${ROUTINE_LIMITS.perEmployee} routines; remove one first` : undefined} onClick={() => setAdding(true)} data-add-routine-open>
+          <Button variant="primary" disabled={full} title={full ? `${name} already has ${ROUTINE_LIMITS.perEmployee} routines; remove one first` : undefined} onClick={() => setAdding(true)} data-add-routine-open>
             Add a routine
           </Button>
         )}
@@ -235,26 +342,15 @@ export function RoutinesOf({ employeeId, name, canWork = true }: { employeeId: s
           </div>
         )
       ) : (
-        <div>
-          <div className="k-label">
+        <div className="k-section">
+          <span className="k-label">
             {mine.length} routine{mine.length === 1 ? '' : 's'}
             {on < mine.length ? ` · ${mine.length - on} paused` : ''}
-          </div>
-          <div className="routine-list routine-list-own" aria-label="Routines">
-            {mine.map((r) =>
-              editing === r.id ? (
-                <EditRoutine key={r.id} r={r} onClose={() => setEditing(null)} />
-              ) : (
-                <div key={r.id} className="routine-own" data-routine={r.id}>
-                  <Row r={r} canWork={canWork} />
-                  {canWork && (
-                    <button type="button" className="k-quiet routine-change" onClick={() => setEditing(r.id)}>
-                      Change the words
-                    </button>
-                  )}
-                </div>
-              ),
-            )}
+          </span>
+          <div className="k-group">
+            {mine.map((r) => (
+              <OwnRow key={r.id} r={r} canWork={canWork} open={open === r.id} onToggle={() => setOpen((o) => (o === r.id ? null : r.id))} />
+            ))}
           </div>
         </div>
       )}

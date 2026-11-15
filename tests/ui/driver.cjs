@@ -864,8 +864,12 @@ async function scenario() {
     // Pause it, then remove it: both from its row.
     await click(`window.__t.byText('Pause', 'button', window.__t.scope().querySelector('.routine-row'))`, 'Pause');
     await waitFor(`!!window.__t.scope().querySelector('.routine-row.routine-off') && /Paused/.test(window.__t.scope().querySelector('.routine-row').textContent)`, 5000);
+    // Removing asks first.
+    await js(`window.__asked = []; window.__orchConfirm = (m) => { window.__asked.push(String(m)); return true; }; true`);
     await click(`window.__t.byText('Remove', 'button', window.__t.scope().querySelector('.routine-row'))`, 'Remove');
     await waitFor(`!window.__t.scope().querySelector('.routine-row') && Object.keys(window.__t.store().routines).length === 0`, 5000);
+    if (!(await js(`window.__asked.length === 1`))) throw new Error('a routine was removed without asking');
+    await js(`delete window.__orchConfirm; true`);
     await js(`window.__t.store().openPanel(null)`);
     if (!reset) throw new Error('after creating the routine the message box did not go back to "Send"');
     return 'created with its first run answered → paused → removed';
@@ -1472,6 +1476,14 @@ async function scenario() {
     if (made.every !== 45 || !made.on || made.runs !== 0) throw new Error(`the routine that was added: ${JSON.stringify(made)}`);
     const row = `${tab}.querySelector('[data-routine="${made.id}"]')`;
     await waitFor(`!!${row} && !${tab}.querySelector('[data-add-routine]') && /Routines\\s*${before + 1}/.test(window.__t.scope().querySelector('.tab-on').textContent)`, 6000);
+    // One line: its words, how often, not run yet; the rest on a click.
+    const line = await js(`${row}.querySelector('.k-sub').textContent`);
+    if (!/^every 45 min · next .+ · not run yet$/.test(line)) throw new Error(`its line: ${line}`);
+    await click(`${row}.querySelector('.k-row-click')`, 'the routine');
+    await waitFor(`!!${row}.querySelector('.k-detail [data-routine-every]')`, 4000);
+    // How often, with one click: every hour.
+    await click(`[...${row}.querySelectorAll('[data-routine-every] .k-filters button')].find((b) => b.textContent.trim() === 'hour')`, 'hour');
+    await waitFor(`window.__t.store().routines[${JSON.stringify(made.id)}].everyMinutes === 60 && /^every hour/.test(${row}.querySelector('.k-sub').textContent)`, 8000);
     await shot('profile-routines');
     // Its words are changed in place.
     await click(`[...${row}.querySelectorAll('button')].find((b) => /Change the words/.test(b.textContent))`, 'Change the words');
@@ -1481,10 +1493,13 @@ async function scenario() {
     // Paused, and removed.
     await click(`[...${row}.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Pause')`, 'Pause');
     await waitFor(`window.__t.store().routines[${JSON.stringify(made.id)}].enabled === false && /1 paused/.test(${tab}.textContent)`, 8000);
+    await js(`window.__asked = []; window.__orchConfirm = (m) => { window.__asked.push(String(m)); return true; }; true`);
     await click(`[...${row}.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Remove')`, 'Remove');
     await waitFor(`!window.__t.store().routines[${JSON.stringify(made.id)}] && ${mine}.length === ${before}`, 8000);
+    if (!(await js(`window.__asked.length === 1`))) throw new Error('a routine was removed without asking');
+    await js(`delete window.__orchConfirm; true`);
     await close();
-    return `added (every 45 min, not run), reworded, paused, removed; Sarah has ${before} routine(s) again`;
+    return `added (every 45 min, not run), set to every hour, reworded, paused, removed (asked first); Sarah has ${before} routine(s) again`;
   });
 
   await step('Team: editing a profile saves standing instructions', async () => {
