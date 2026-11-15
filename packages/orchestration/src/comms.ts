@@ -876,7 +876,7 @@ export class Comms {
   // ─────────────────────────── messages ────────────────────────────
 
   /** `returned`: it is handed to the recipient as the result of a tool call of theirs that is waiting for it, so nothing is typed into their terminal. */
-  sendMessage(input: { from: Message['from']; toEmployeeId: string; body: string; kind?: MessageKind; taskId?: string | null; threadId?: string | null; routineId?: string | null; returned?: boolean; files?: Message['files']; said?: string; channel?: Message['channel'] }): Message {
+  sendMessage(input: { from: Message['from']; toEmployeeId: string; body: string; kind?: MessageKind; taskId?: string | null; threadId?: string | null; routineId?: string | null; returned?: boolean; files?: Message['files']; said?: string; channel?: Message['channel']; chat?: string }): Message {
     const to = this.core.employees.require(input.toEmployeeId);
     // A credential somebody wrote into a message goes to the vault; the message goes on with its name there.
     const body = input.from.kind === 'system' || input.kind === 'system' ? input.body : this.eng.vault.capture(input.body, input.from.kind === 'employee' ? { kind: 'employee', id: input.from.id, name: input.from.name.replace(/ \(.*\)$/, '') } : { kind: 'owner', id: null, name: input.from.name.replace(/ \(.*\)$/, '') }, [to.name]).text;
@@ -893,8 +893,10 @@ export class Comms {
       createdAt: nowIso(),
       readAt: input.returned ? nowIso() : null,
       ...(input.routineId ? { routineId: input.routineId } : {}),
-      ...(input.files?.length ? { files: input.files, said: input.said ?? input.body } : {}),
+      // What the person said, as a window shows it, where the prompt the employee is given says more (files, a chat's context).
+      ...(input.files?.length ? { files: input.files, said: input.said ?? input.body } : input.said !== undefined && input.said !== input.body ? { said: input.said } : {}),
       ...(input.channel ? { channel: input.channel } : {}),
+      ...(input.chat ? { chat: input.chat } : {}),
     };
     this.core.put('message', msg);
     this.core.event({

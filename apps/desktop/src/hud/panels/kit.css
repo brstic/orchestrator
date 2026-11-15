@@ -1864,6 +1864,30 @@ button.k-row:focus-visible {
     align-items: stretch;
   }
 }
+.talk-group {
+  align-self: stretch;
+  margin: 2px 34px;
+  padding: 8px 12px;
+  border-left: 2px solid #37aee2;
+  border-radius: 4px 10px 10px 4px;
+  background: rgba(55, 174, 226, 0.07);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.talk-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.talk-group-chat {
+  font-weight: 600;
+  color: var(--text);
+}
+.talk-group-time {
+  font-size: 11px;
+  color: var(--faint);
+}
 .talk-via {
   opacity: 0.8;
 }

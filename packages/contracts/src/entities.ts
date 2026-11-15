@@ -862,6 +862,8 @@ export interface Message {
   said?: string;
   /** Where it was written, when not in the office's own window: the employee's Telegram bot (`docs/TELEGRAM.md`). */
   channel?: 'telegram';
+  /** The Telegram group it came from (its title); none for a private chat. */
+  chat?: string;
 }
 
 // ───────────────────────────── Routines ──────────────────────────

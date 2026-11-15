@@ -149,12 +149,18 @@ test('in a group: connected with the link, it answers when it is talked to — b
   const answered = await tg.waitSent(textTo(GROUP.id, /group-answer-5520/), 40_000);
   assert.equal(answered.body.reply_parameters, undefined, 'answered as a reply although she did not choose to');
   const msg = (await h.state()).messages.filter((m) => m.toEmployeeId === kira.id).pop()!;
-  assert.match(msg.body, /Telegram group "Launch team"/);
-  assert.match(msg.body, /Who is bringing the cake on Friday\?/, 'the conversation so far was not given');
+  assert.match(msg.body, /^On Telegram, in the group "Launch team"/);
+  assert.match(msg.body, /Earlier in the chat:\n#\d+ Dana: Who is bringing the cake on Friday\?/, 'the conversation so far was not given');
+  // A window (Talk) shows what was said, not the prompt around it; and from which group.
+  assert.equal(msg.said, 'Dana: kira, can you check the checkout? @@fake: say group-answer-5520@@');
+  assert.equal(msg.chat, 'Launch team');
   assert.match(msg.from.name, /Dana in the Telegram group "Launch team"/);
   // A follow-up from the person she just answered: for her too.
   tg.message(TOKEN, FRIEND, 'and the totals too please @@fake: say follow-up-answer-6630@@', { chat: GROUP });
   await tg.waitSent(textTo(GROUP.id, /follow-up-answer-6630/), 40_000);
+  // In the same conversation of hers, what she was given already is not given again — nor her own answer.
+  const followUp = (await h.state()).messages.filter((m) => m.toEmployeeId === kira.id).pop()!;
+  assert.doesNotMatch(followUp.body, /cake|group-answer-5520|Earlier in the chat/, 'the chat she had seen was given again');
   // A mention, and a reply to her message.
   tg.message(TOKEN, ME, '@kira_office_bot status of the release? @@fake: say mention-answer-7740@@', { chat: GROUP });
   const mentioned = await tg.waitSent(textTo(GROUP.id, /mention-answer-7740/), 40_000);
@@ -180,7 +186,7 @@ test('a group that sends everything: what is said is handed over once it pauses,
   await waitFor(async () => (await h.state()).messages.filter((m) => m.toEmployeeId === kira.id).length > n, { label: 'the gathered messages handed over', timeout: 20_000 });
   const gathered = (await h.state()).messages.find((m) => m.toEmployeeId === kira.id && /lunch at noon/.test(m.body))!;
   assert.match(gathered.body, /lunch at noon\?[\s\S]*the usual place/);
-  assert.match(gathered.body, /reply with exactly NO_REPLY/);
+  assert.match(gathered.body, /reply exactly NO_REPLY/);
   await waitFor(async () => !(await h.session(kira.id))?.inTurn, { label: 'her turn over', timeout: 30_000 });
   await sleep(1500);
   assert.equal(count(), posted, 'NO_REPLY was posted in the group');

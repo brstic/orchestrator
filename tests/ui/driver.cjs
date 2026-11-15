@@ -3092,8 +3092,18 @@ async function scenario() {
     await waitFor(`window.__t.scope().querySelector('[data-telegram-chat="Launch team"] [data-telegram-mode="all"]').getAttribute('aria-pressed') === 'true'`, 5000);
     if (!(await js(`!!window.__t.scope().querySelector('[data-telegram-privacy]')`))) throw new Error('no word about the privacy mode');
     await shot('telegram-connected');
+    // Back on "When talked to"; somebody in the group asks them by name — and Talk shows it as the group's, with the answer said to have gone there.
+    await click(`window.__t.scope().querySelector('[data-telegram-chat="Launch team"] [data-telegram-mode="addressed"]')`, 'When talked to');
+    await waitFor(`window.__t.scope().querySelector('[data-telegram-chat="Launch team"] [data-telegram-mode="addressed"]').getAttribute('aria-pressed') === 'true'`, 5000);
+    fs.writeFileSync(path.join(outDir, 'telegram-say.txt'), `${ctx.hireName}, can you check the docs? @@fake: say [reply #1] the notes are in docs/GUIDE.md@@`);
+    await js(`window.__t.store().openPanel('talk', ${JSON.stringify(quinn)})`);
+    await waitFor(`!!document.querySelector('[data-talk-group="Launch team"]') && [...document.querySelectorAll('.talk-meta')].some((m) => /sent to Telegram · Launch team/.test(m.textContent))`, 40000);
+    const shown = await js(`document.querySelector('[data-talk-group="Launch team"] .pre').textContent`);
+    if (/Earlier in the chat|On Telegram|release notes/.test(shown) || !/^Dana: Quinn, can you check the docs\?/.test(shown)) throw new Error(`Talk shows the prompt, not what was said: ${shown}`);
+    if (await js(`[...document.querySelectorAll('.talk-them')].some((b) => /\\[reply #/.test(b.textContent))`)) throw new Error('the reply mark is shown in Talk');
+    await shot('telegram-in-talk');
     await js(`window.__t.store().openPanel(null)`);
-    return `${link.replace(/start=.*/, 'start=…')}; Ana paired; "Launch team" on Everything`;
+    return `${link.replace(/start=.*/, 'start=…')}; Ana paired; "Launch team" on Everything and back; in Talk: ${shown.replace(/\n/g, ' / ')}`;
   });
 
   await step('this computer\'s preferences, as they are stored at the end', async () => {

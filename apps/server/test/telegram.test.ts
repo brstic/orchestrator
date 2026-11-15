@@ -32,18 +32,22 @@ test('said to them in a group: a mention, their name as a word, a reply to them,
   assert.equal(said('and the totals?', { from: 8, lastAnswer: { to: 7, at: base.now - 1000 } }), false);
 });
 
-test('what they are given from a group: the conversation so far and what is for them — or all of it, to judge', () => {
-  const heard = [{ who: 'Dana', text: 'who brings the cake?', id: 40 }];
-  const one = groupPrompt({ group: 'Launch team', me: 'Kira', heard, who: 'Dana', new: [{ who: 'Dana', text: 'kira, the checkout?', id: 41 }], everything: false });
-  assert.match(one, /^\[Telegram group "Launch team" — you take part as Kira\./);
-  assert.match(one, /ordinary chat message/);
-  assert.match(one, /\[reply #<number>\]/);
-  assert.match(one, /- #40 Dana: who brings the cake\?/);
-  assert.match(one, /Dana said to you:\n#41 Dana: kira, the checkout\?$/);
+test('what they are given from a group: where it is, what they have not seen, what is for them — or all of it, to judge', () => {
+  const earlier = [{ who: 'Dana', text: 'who brings the cake?', id: 40 }];
+  const one = groupPrompt({ group: 'Launch team', me: 'Kira', earlier, first: true, who: 'Dana', new: [{ who: 'Dana', text: 'kira, the checkout?', id: 41 }], everything: false });
+  assert.match(one, /^On Telegram, in the group "Launch team" — you are Kira there\./);
+  assert.match(one, /Earlier in the chat:\n#40 Dana: who brings the cake\?/);
+  assert.match(one, /Dana to you:\n#41 Dana: kira, the checkout\?/);
+  assert.match(one, /start it with \[reply #n\]/);
   assert.doesNotMatch(one, /NO_REPLY/);
-  const all = groupPrompt({ group: 'Launch team', me: 'Kira', heard: [], who: null, new: [{ who: 'Ivo', text: 'lunch?', id: 50 }, { who: 'Mia', text: 'sure', id: 51 }], everything: true });
-  assert.match(all, /New in the group:\n#50 Ivo: lunch\?\n#51 Mia: sure/);
-  assert.match(all, /reply with exactly NO_REPLY and nothing else/);
+  // Later in the same conversation: only what was said since, and said so.
+  const later = groupPrompt({ group: 'Launch team', me: 'Kira', earlier: [{ who: 'Ivo', text: 'done', id: 44 }], first: false, who: 'Dana', new: [{ who: 'Dana', text: 'kira?', id: 45 }], everything: false });
+  assert.match(later, /Meanwhile in the chat:\n#44 Ivo: done/);
+  const quiet = groupPrompt({ group: 'Launch team', me: 'Kira', earlier: [], first: false, who: 'Dana', new: [{ who: 'Dana', text: 'and?', id: 46 }], everything: false });
+  assert.doesNotMatch(quiet, /Earlier|Meanwhile/);
+  const all = groupPrompt({ group: 'Launch team', me: 'Kira', earlier: [], first: true, who: null, new: [{ who: 'Ivo', text: 'lunch?', id: 50 }, { who: 'Mia', text: 'sure', id: 51 }], everything: true });
+  assert.match(all, /New:\n#50 Ivo: lunch\?\n#51 Mia: sure/);
+  assert.match(all, /otherwise reply exactly NO_REPLY/);
 });
 
 test('an answer is an ordinary message; a reply only to a message they chose, and only one the chat has', () => {

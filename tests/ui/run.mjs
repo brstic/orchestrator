@@ -231,7 +231,15 @@ try {
   // into a file, and the stand-in Bot API is told that somebody opened it.
   const tgDone = new Set();
   tgWatch = setInterval(() => {
-    for (const [file, chat] of [['telegram-phone.txt', null], ['telegram-group.txt', { id: -100555, type: 'group', title: 'Launch team' }]]) {
+    const group = { id: -100555, type: 'group', title: 'Launch team' };
+    // Then somebody in the group talks to the employee by name.
+    const say = path.join(outDir, 'telegram-say.txt');
+    if (!tgDone.has('say') && fs.existsSync(say)) {
+      tgDone.add('say');
+      telegram.message(TELEGRAM_TOKEN, { id: 7002, first_name: 'Dana' }, 'who has the release notes?', { chat: group });
+      telegram.message(TELEGRAM_TOKEN, { id: 7002, first_name: 'Dana' }, fs.readFileSync(say, 'utf8').trim(), { chat: group });
+    }
+    for (const [file, chat] of [['telegram-phone.txt', null], ['telegram-group.txt', group]]) {
       const f = path.join(outDir, file);
       if (tgDone.has(file) || !fs.existsSync(f)) continue;
       tgDone.add(file);

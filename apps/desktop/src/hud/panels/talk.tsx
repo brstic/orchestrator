@@ -18,7 +18,10 @@ import { uploadFile } from './task-files.tsx';
 
 type Line =
   | { kind: 'boss'; id: string; ts: string; text: string; delivery: string; via: string | null; files: SaidFile[]; telegram?: boolean }
-  | { kind: 'reply'; id: string; ts: string; text: string }
+  /** What was said in a Telegram group they are in, and handed to them. */
+  | { kind: 'group'; id: string; ts: string; text: string; chat: string }
+  /** `to`: where the answer went, when not here (Telegram). */
+  | { kind: 'reply'; id: string; ts: string; text: string; to?: string }
   /** A file the employee gave: in the conversation itself, or left on a task (`taskId`). */
   | { kind: 'file'; id: string; ts: string; file: SaidFile; caption: string | null; taskId: string | null }
   | { kind: 'note'; id: string; ts: string; text: string; tone: 'good' | 'bad' | 'info' | 'start' | 'ask' | 'report' };
@@ -151,21 +154,41 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
     if (!e) return [];
     const out: Line[] = [];
     for (const m of Object.values(s.messages)) {
-      if (m.toEmployeeId === e.id && (m.from.kind === 'owner' || m.routineId)) out.push({ kind: 'boss', id: m.id, ts: m.createdAt, text: m.said ?? m.body, delivery: m.delivery.status, via: m.delivery.via, files: m.files ?? [], telegram: m.channel === 'telegram' });
+      if (m.toEmployeeId === e.id && m.channel === 'telegram' && m.chat) out.push({ kind: 'group', id: m.id, ts: m.createdAt, text: m.said ?? m.body, chat: m.chat });
+      else if (m.toEmployeeId === e.id && (m.from.kind === 'owner' || m.routineId)) out.push({ kind: 'boss', id: m.id, ts: m.createdAt, text: m.said ?? m.body, delivery: m.delivery.status, via: m.delivery.via, files: m.files ?? [], telegram: m.channel === 'telegram' });
     }
     const seen = new Set<string>();
     for (const ev of [...(history.data ?? []), ...s.events]) {
       if (ev.employeeId !== e.id || seen.has(ev.id)) continue;
       seen.add(ev.id);
       const d = ev.data as Record<string, any>;
-      if (ev.type === 'agent.turn_finished' && typeof d.lastMessage === 'string' && d.lastMessage.trim()) out.push({ kind: 'reply', id: ev.id, ts: ev.ts, text: d.lastMessage });
+      // (In a group they may choose to stay quiet — nothing to show — or to answer one message: the mark is for Telegram.)
+      if (ev.type === 'agent.turn_finished' && typeof d.lastMessage === 'string' && d.lastMessage.trim() && !/^\s*NO_REPLY\s*$/.test(d.lastMessage)) out.push({ kind: 'reply', id: ev.id, ts: ev.ts, text: d.lastMessage.replace(/^\s*\[reply #\d+\]\s*/i, '') });
       else if (ev.type === 'agent.file_given' && d.file?.id && d.file?.name) out.push({ kind: 'file', id: ev.id, ts: ev.ts, file: d.file as SaidFile, caption: typeof d.caption === 'string' ? d.caption : null, taskId: typeof d.taskId === 'string' ? d.taskId : null });
       else if (ev.type === 'task.completed') out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: 'good' });
       else if (ev.type === 'agent.goal' && (d.phase === 'set' || d.phase === 'met' || d.phase === 'stopped')) out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: d.phase === 'met' ? 'good' : d.phase === 'set' ? 'start' : 'bad' });
       else if (ev.type === 'task.blocked' || ev.type === 'task.verification_failed') out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: 'bad' });
       else if (ev.type === 'task.started' || ev.type === 'agent.question' || ev.type === 'agent.status_report') out.push({ kind: 'note', id: ev.id, ts: ev.ts, text: ev.summary, tone: ev.type === 'task.started' ? 'start' : ev.type === 'agent.question' ? 'ask' : 'report' });
     }
-    return out.sort((a, b) => (a.ts < b.ts ? -1 : 1)).slice(-120);
+    out.sort((a, b) => (a.ts < b.ts ? -1 : 1));
+    // An answer to something from Telegram went back there: said under it, so the conversation here reads right.
+    let from: string | null = null;
+    for (const l of out) {
+      if (l.kind === 'group') from = `Telegram · ${l.chat}`;
+      else if (l.kind === 'boss') from = l.telegram ? 'Telegram' : null;
+      else if (l.kind === 'reply' && from) {
+        l.to = from;
+        from = null;
+      }
+    }
+    // What a group said, one hand-over after another with no answer between (they stayed quiet): one block, not many.
+    const merged: Line[] = [];
+    for (const l of out) {
+      const prev = merged[merged.length - 1];
+      if (l.kind === 'group' && prev?.kind === 'group' && prev.chat === l.chat) merged[merged.length - 1] = { ...prev, text: `${prev.text}\n${l.text}`, ts: l.ts };
+      else merged.push(l);
+    }
+    return merged.slice(-120);
   }, [e, s.messages, s.events, history.data]);
 
   useEffect(() => {
@@ -302,6 +325,14 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
                 </div>
               </div>
             </div>
+          ) : l.kind === 'group' ? (
+            <div key={l.id} className="talk-group" data-talk-group={l.chat}>
+              <div className="talk-group-head">
+                <span className="talk-group-chat">{l.chat}</span>
+                <span className="talk-group-time">Telegram group · {clock(l.ts)}</span>
+              </div>
+              <div className="pre">{l.text}</div>
+            </div>
           ) : l.kind === 'file' ? (
             <div key={l.id} className="talk-row" data-talk-file={l.file.name}>
               <Avatar appearance={e.appearance} size={26} />
@@ -317,7 +348,9 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
               <Avatar appearance={e.appearance} size={26} />
               <div className="talk-bubble talk-them">
                 <Markdown text={l.text} />
-                <div className="talk-meta">{clock(l.ts)} · from their session</div>
+                <div className="talk-meta">
+                  {clock(l.ts)} · {l.to ? <span className="talk-via">sent to {l.to}</span> : 'from their session'}
+                </div>
               </div>
             </div>
           ) : (

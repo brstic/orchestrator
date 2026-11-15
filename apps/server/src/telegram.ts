@@ -160,16 +160,24 @@ export interface Heard {
   id: number;
 }
 const line = (h: Heard) => `${h.id ? `#${h.id} ` : ''}${h.who}: ${h.text}`;
+/** As a window shows it: who said what, without the numbers. */
+const plain = (hs: Heard[]) => hs.map((h) => `${h.who}: ${h.text}`).join('\n');
 
-/** What the employee is given from a group: the conversation so far, and what is for them (or all of it, to judge). */
-export function groupPrompt(g: { group: string; me: string; heard: Heard[]; who: string | null; new: Heard[]; everything: boolean }): string {
-  const lines = [
-    `[Telegram group "${g.group}" — you take part as ${g.me}. Your whole reply is posted in the group as an ordinary chat message: talk as people do in a group chat — short, plain, relaxed.`,
-    'Only when it would otherwise be unclear what you are answering (the talk moved on, or several things are open), begin your reply with [reply #<number>] to post it as a reply to that message. Usually, do not.]',
-  ];
-  if (g.heard.length) lines.push('', 'Recent messages in the group (oldest first):', ...g.heard.map((h) => `- ${line(h)}`));
-  if (g.everything) lines.push('', 'New in the group:', ...g.new.map(line), '', 'Nobody may be talking to you. If nothing here needs you, reply with exactly NO_REPLY and nothing else.');
-  else lines.push('', `${g.who} said to you:`, ...g.new.map(line));
+/**
+ * What the employee is given from a group: where it is, what was said there that they have not seen yet (all of the
+ * recent chat the first time, in a conversation of theirs), what is for them — or, in a group that sends everything,
+ * what is new, for them to judge — and how to answer. Every line carries its number, for `[reply #n]`.
+ */
+export function groupPrompt(g: { group: string; me: string; earlier: Heard[]; first: boolean; who: string | null; new: Heard[]; everything: boolean }): string {
+  const lines = [`On Telegram, in the group "${g.group}" — you are ${g.me} there.`];
+  if (g.earlier.length) lines.push('', g.first ? 'Earlier in the chat:' : 'Meanwhile in the chat:', ...g.earlier.map(line));
+  if (g.everything) lines.push('', 'New:', ...g.new.map(line));
+  else lines.push('', `${g.who} to you:`, ...g.new.map(line));
+  lines.push(
+    '',
+    (g.everything ? '(You follow this chat; nobody may be talking to you. Say something only if it is for you or you have something useful to add — otherwise reply exactly NO_REPLY. ' : '(') +
+      'Your reply is posted in the group as a chat message: short and plain, as people write there. When it answers one message in particular — a question asked earlier, one of several people — start it with [reply #n] and it goes as a reply to that one; otherwise just write.)',
+  );
   return lines.join('\n');
 }
 
@@ -475,11 +483,11 @@ export class Telegram {
   }
 
   private async deliver(b: Bot, p: Paired, as: TelegramPerson, text: string, fileIds: string[]): Promise<void> {
-    await this.handOver(b, as, text, fileIds, p.chatId, null, false);
+    await this.handOver(b, as, text, fileIds, p.chatId, null, null);
   }
 
   /** Into the employee's session, as from `as` (or a group connected by `as`); and wait for what they say. */
-  private async handOver(b: Bot, as: TelegramPerson, text: string, fileIds: string[], chatId: number, replyTo: number | null, group: boolean, fromName?: string): Promise<void> {
+  private async handOver(b: Bot, as: TelegramPerson, text: string, fileIds: string[], chatId: number, replyTo: number | null, group: { title: string; said: string; from: string } | null): Promise<void> {
     const engine = this.deps.engine;
     const employee = engine.core.employees.require(b.employeeId);
     // Nobody at the desk: they are brought in, as the office's own window does when somebody talks to them.
@@ -493,11 +501,12 @@ export class Telegram {
       }
     }
     const sent = await engine.saidFiles.deliver(employee, fileIds, as.id);
-    const from = fromName ?? (as.id === 'owner' ? 'the boss' : as.owner ? `${as.name} (an owner of this office)` : `${as.name} (a colleague the boss invited; not the boss)`);
-    engine.comms.sendMessage({ from: { kind: 'owner', id: null, name: from }, toEmployeeId: employee.id, body: text + (sent.lines.length ? `\n\n${sent.lines.join('\n')}` : ''), files: sent.files, said: text, channel: 'telegram' });
+    const from = group?.from ?? (as.id === 'owner' ? 'the boss' : as.owner ? `${as.name} (an owner of this office)` : `${as.name} (a colleague the boss invited; not the boss)`);
+    // The employee gets the whole of it (a group's context and how to answer); a window shows what was said.
+    engine.comms.sendMessage({ from: { kind: 'owner', id: null, name: from }, toEmployeeId: employee.id, body: text + (sent.lines.length ? `\n\n${sent.lines.join('\n')}` : ''), files: sent.files, said: group?.said ?? text, channel: 'telegram', ...(group ? { chat: group.title } : {}) });
     // "typing…" while they work on it, and their answer back here when the turn ends.
     const w = this.waiting.get(employee.id) ?? { chats: new Map<number, { replyTo: number | null; group: boolean }>(), since: Date.now(), timer: setInterval(() => this.typing(employee.id), 4500) };
-    w.chats.set(chatId, { replyTo, group });
+    w.chats.set(chatId, { replyTo, group: !!group });
     this.waiting.set(employee.id, w);
     this.typing(employee.id);
   }
@@ -541,6 +550,27 @@ export class Telegram {
 
   /** Who wrote the message an answer goes to, by group and message: a follow-up from them is meant for the employee too. */
   private repliedUser = new Map<string, number>();
+
+  /** What of a group's chat the employee has been given, in which conversation of theirs (Claude Code's session id). */
+  private given = new Map<string, { conversation: string | null; last: number }>();
+
+  /**
+   * The chat's lines the employee has not seen, besides those handed over now: all the recent ones the first time — or
+   * when their conversation is another one than the one that saw them — and after that only what was said since.
+   * Their own answers are not given back to them.
+   */
+  private unseen(employeeId: string, chatId: number, now: Heard[]): { earlier: Heard[]; first: boolean } {
+    const key = `${employeeId}:${chatId}`;
+    const conversation = this.deps.engine.core.runningSessionOf(employeeId)?.claudeSessionId ?? null;
+    const was = this.given.get(key);
+    const first = !was || !conversation || was.conversation !== conversation;
+    const ids = new Set(now.map((h) => h.id));
+    const me = this.nameOf(employeeId);
+    const all = (this.heard.get(chatId) ?? []).filter((h) => !ids.has(h.id));
+    const earlier = first ? all : all.filter((h) => h.id > was!.last && h.who !== me);
+    this.given.set(key, { conversation, last: Math.max(was?.last ?? 0, ...all.map((h) => h.id), ...now.map((h) => h.id)) });
+    return { earlier: earlier.slice(-30).map(({ who, text, id }) => ({ who, text, id })), first };
+  }
 
   private remember(chatId: number, who: string, text: string, id: number): void {
     const list = this.heard.get(chatId) ?? [];
@@ -629,7 +659,8 @@ export class Telegram {
         clearTimeout(pending.timer);
         this.gathering.delete(chatId);
       }
-      await this.handOver(b, as, groupPrompt({ group: g.title, me: this.nameOf(b.employeeId), heard: (this.heard.get(chatId) ?? []).slice(0, -1), who, new: [{ who, text: text || 'Look at this.', id: Number(m.message_id) }], everything: false }), fileIds, chatId, m.message_id, true, groupFrom(who, g, as));
+      const said: Heard[] = [{ who, text: text || 'Look at this.', id: Number(m.message_id) }];
+      await this.handOver(b, as, groupPrompt({ group: g.title, me: this.nameOf(b.employeeId), ...this.unseen(b.employeeId, chatId, said), who, new: said, everything: false }), fileIds, chatId, m.message_id, { title: g.title, said: plain(said), from: groupFrom(who, g, as) });
       return;
     }
     // Not said to them: in a group that sends them everything, what is said is gathered and handed over in one go
@@ -643,7 +674,7 @@ export class Telegram {
     const wait = Date.now() - pending.first > 25_000 ? 0 : GATHER_MS;
     pending.timer = setTimeout(() => {
       this.gathering.delete(chatId);
-      void this.handOver(b, as, groupPrompt({ group: g!.title, me: this.nameOf(b.employeeId), heard: (this.heard.get(chatId) ?? []).slice(0, -pending.lines.length), who: null, new: pending.lines, everything: true }), [], chatId, pending.replyTo, true, groupFrom(null, g!, as)).catch(() => undefined);
+      void this.handOver(b, as, groupPrompt({ group: g!.title, me: this.nameOf(b.employeeId), ...this.unseen(b.employeeId, chatId, pending.lines), who: null, new: pending.lines, everything: true }), [], chatId, pending.replyTo, { title: g!.title, said: plain(pending.lines), from: groupFrom(null, g!, as) }).catch(() => undefined);
     }, wait);
     this.gathering.set(chatId, pending);
   }

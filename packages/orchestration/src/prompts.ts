@@ -321,8 +321,14 @@ export const ROUTINE_GUIDE = [
   'If there is nothing new, change nothing and answer in one line that there is nothing new.',
 ].join(' ');
 
+/** How a reply to a message from Telegram is to be written: it is sent there as a chat message. */
+export const TELEGRAM_REPLY = '(Your reply is sent back to Telegram as a chat message: plain and short, as people write there — no tables or headings. Messages without "On Telegram" come from the office, as usual.)';
+
 export function messagePrompt(msg: Message, collab: CollabRequest | undefined): string {
-  const from = msg.from.kind === 'owner' ? 'the boss' : msg.from.name;
+  // A person: the boss, or by name — an owner or a colleague the boss invited is not the boss.
+  const from = msg.from.kind === 'owner' ? (/^the boss$/i.test(msg.from.name) || !msg.from.name ? 'the boss' : msg.from.name) : msg.from.name;
+  // From Telegram: a group's text says where it is and how to answer; a private chat is said to be one.
+  if (msg.channel === 'telegram') return msg.chat ? `${correlationMarker('MSG', msg.id)} ${msg.body}` : `${correlationMarker('MSG', msg.id)} On Telegram, ${from} writes: ${msg.body}\n${TELEGRAM_REPLY}`;
   if (collab && msg.kind === 'collab_request') {
     return [
       `${correlationMarker('MSG', msg.id)} Request from ${from} (request id ${collab.id}): ${collab.summary}`,
