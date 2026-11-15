@@ -492,4 +492,4 @@ Working and verified on macOS (Apple silicon) with Claude Code 2.1.321–2.1.323
   <img src="docs/assets/logo.svg" width="72" alt="The Orchestrator logo: a conductor's baton over a terminal prompt"><br>
   <sub><b>ORCHESTRATOR</b> — the baton conducts, the prompt plays.<br>No employees were harmed by the whip. It only wakes the sleepers.</sub>
 </p>
-<p align="center"><sub>Made by Branko · <a href="https://www.linkedin.com/in/bste/">LinkedIn</a></sub></p>
+<p align="center"><sub>Made by <a href="https://www.linkedin.com/in/bste/">Branko</a> and <a href="https://www.linkedin.com/in/marko-jevtic-75247368/">Marko Jevtić</a> · LinkedIn</sub></p>
