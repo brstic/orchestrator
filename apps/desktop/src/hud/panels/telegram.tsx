@@ -1,14 +1,16 @@
 /**
  * An employee's own Telegram bot, in their profile (`docs/TELEGRAM.md`): three steps to set it up — make a bot with
- * @BotFather, paste its token, open the one-time link on your phone — and then who talks to them there, the groups
- * they take part in (and when they speak up in each), whether their questions go there too, and taking it all away.
+ * @BotFather, paste its token, scan the code with your phone — and then who talks to them there, the groups they take
+ * part in (and when they speak up in each), whether their questions go there too, and taking it all away.
  * The token is sent once and never comes back to a window.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import qrcode from 'qrcode-generator';
 import type { Employee } from '@orchestrator/contracts';
 import { Button } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { act, ask } from '../core.tsx';
+import { More } from './kit.tsx';
 
 interface View {
   connected: boolean;
@@ -26,7 +28,28 @@ interface Links {
   until: string;
 }
 
-const minutesLeft = (until: string) => Math.max(1, Math.round((Date.parse(until) - Date.now()) / 60_000));
+const minutesLeft = (until: string) => Math.max(1, Math.ceil((Date.parse(until) - Date.now()) / 60_000));
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+
+/** A QR code of a link, drawn as one SVG path (dark modules on a white card, with the quiet zone QR readers need). */
+function Qr({ text, size = 148 }: { text: string; size?: number }) {
+  const path = useMemo(() => {
+    const q = qrcode(0, 'M');
+    q.addData(text);
+    q.make();
+    const n = q.getModuleCount();
+    let d = '';
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (q.isDark(y, x)) d += `M${x + 4} ${y + 4}h1v1h-1z`;
+    return { d, n: n + 8 };
+  }, [text]);
+  return (
+    <svg className="tg-qr" width={size} height={size} viewBox={`0 0 ${path.n} ${path.n}`} shapeRendering="crispEdges" role="img" aria-label="QR code of the link">
+      <rect width={path.n} height={path.n} fill="#fff" />
+      <path d={path.d} fill="#0b0f17" />
+    </svg>
+  );
+}
 
 export function TelegramTab({ e }: { e: Employee }) {
   const [view, setView] = useState<View | null>(null);
@@ -36,6 +59,7 @@ export function TelegramTab({ e }: { e: Employee }) {
   const [links, setLinks] = useState<Links | null>(null);
   const [show, setShow] = useState<'phone' | 'group'>('phone');
   const [copied, setCopied] = useState(false);
+  const [, tick] = useState(0);
   const load = () => api<View>('GET', `/employees/${e.id}/telegram`).then(setView, (err: Error) => setError(err.message));
   useEffect(() => {
     setView(null);
@@ -45,6 +69,21 @@ export function TelegramTab({ e }: { e: Employee }) {
     const t = window.setInterval(() => void load(), 4000);
     return () => window.clearInterval(t);
   }, [e.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A link that was used has done its job: once the person (or the group) it was for is in, it is put away.
+  const seen = useRef({ people: -1, groups: -1 });
+  useEffect(() => {
+    if (!view) return;
+    const was = seen.current;
+    if (links && ((show === 'phone' && was.people >= 0 && view.people.length > was.people) || (show === 'group' && was.groups >= 0 && view.groups.length > was.groups))) setLinks(null);
+    seen.current = { people: view.people.length, groups: view.groups.length };
+  }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The minutes a link has left, said right; an old link goes.
+  useEffect(() => {
+    if (!links) return;
+    const t = window.setInterval(() => (Date.parse(links.until) < Date.now() ? setLinks(null) : tick((n) => n + 1)), 20_000);
+    return () => window.clearInterval(t);
+  }, [links]);
 
   const connect = async () => {
     if (!token.trim() || busy) return;
@@ -80,9 +119,9 @@ export function TelegramTab({ e }: { e: Employee }) {
   if (!view.connected) {
     return (
       <div className="k-stack tg" data-telegram="setup">
-        <div>
-          <div className="k-title">Talk to {e.name} from your phone</div>
-          <p className="k-text">Give {e.name} a Telegram bot of their own. What you write to it goes into their real session; their answers, questions and permission requests come back there — and in a group you add them to, they join the conversation.</p>
+        <div className="tg-intro">
+          <div className="k-title">Talk to {e.name} on Telegram</div>
+          <p className="k-text">A bot of their own: what you write goes into their real session; their answers, questions and approvals come back. Add it to a group and they join the conversation.</p>
         </div>
         <ol className="k-group tg-steps">
           <li className="k-row">
@@ -90,17 +129,17 @@ export function TelegramTab({ e }: { e: Employee }) {
             <div className="k-main">
               <div className="k-title-sm">Make a bot</div>
               <div className="k-sub">
-                In Telegram, open <b>@BotFather</b>, send <code>/newbot</code>, and give it a name — e.g. “{e.name}”. It answers with a token.
+                In @BotFather send <code>/newbot</code> and name it — “{e.name}”, say. It answers with a token.
               </div>
             </div>
-            <a className="btn btn-sm" href="https://t.me/BotFather" target="_blank" rel="noreferrer">
+            <a className="btn btn-sm k-quiet" href="https://t.me/BotFather" target="_blank" rel="noreferrer">
               Open @BotFather
             </a>
           </li>
           <li className="k-row">
             <span className="tg-num">2</span>
             <div className="k-main">
-              <div className="k-title-sm">Paste its token</div>
+              <div className="k-title-sm">Paste its token here</div>
               <form
                 className="tg-token"
                 onSubmit={(ev) => {
@@ -108,39 +147,53 @@ export function TelegramTab({ e }: { e: Employee }) {
                   void connect();
                 }}
               >
-                <input value={token} onChange={(ev) => setToken(ev.target.value)} placeholder="123456789:AA…" autoComplete="off" spellCheck={false} aria-label="The bot's token" data-telegram-token />
+                <input value={token} onChange={(ev) => setToken(ev.target.value)} placeholder="123456789:AAH…" autoComplete="off" spellCheck={false} aria-label="The bot's token" data-telegram-token style={{ width: 'auto' }} />
                 <Button variant="primary" type="submit" disabled={!token.trim() || busy}>
-                  {busy ? 'Checking with Telegram…' : 'Connect'}
+                  {busy ? 'Checking…' : 'Connect'}
                 </Button>
               </form>
-              {error && <div className="k-note k-bad" role="alert">{error}</div>}
+              {error && (
+                <div className="k-sub k-bad tg-error" role="alert">
+                  {error}
+                </div>
+              )}
             </div>
           </li>
-          <li className="k-row">
+          <li className="k-row tg-later">
             <span className="tg-num">3</span>
             <div className="k-main">
-              <div className="k-title-sm">Open the link on your phone</div>
-              <div className="k-sub">You get a link that works once: it lets you — and only you — talk to {e.name}. Anybody else who finds the bot is told it is private.</div>
+              <div className="k-title-sm">Scan the code with your phone</div>
+              <div className="k-sub">It works once, and only for you. Anybody else who finds the bot is told it is private.</div>
             </div>
           </li>
         </ol>
-        <p className="k-text">The token is kept locked with the office's vault key and never shown again.</p>
+        <p className="k-text tg-fine">The token is locked with the office's vault key and never shown again.</p>
       </div>
     );
   }
 
   const bot = view.bot!;
   const shown = links ? (show === 'group' ? links.groupLink : links.link) : null;
+  const summary = [plural(view.people.length, 'person', 'people'), plural(view.groups.length, 'group', 'groups')].join(' · ');
+  const nobody = view.people.length === 0;
   return (
     <div className="k-stack tg" data-telegram="connected">
       <div className="k-group">
         <div className="k-row">
-          <span className={`k-dot ${view.error ? 'k-dot-bad' : ''}`} />
+          <span className="tg-logo" aria-hidden>
+            {bot.username.slice(0, 1).toUpperCase()}
+          </span>
           <div className="k-main">
-            <div className="k-title">
-              @{bot.username} <span className="k-title-note">{bot.name}</span>
+            <div className="k-title">@{bot.username}</div>
+            <div className="k-sub">
+              {view.error ? (
+                <span className="k-bad">{view.error}</span>
+              ) : (
+                <>
+                  <i className="k-dot" aria-hidden /> Listening · {summary}
+                </>
+              )}
             </div>
-            <div className="k-sub">{view.error ? <span className="k-bad">{view.error}</span> : `${e.name}'s line to Telegram — listening.`}</div>
           </div>
           <a className="btn btn-sm k-quiet" href={bot.link} target="_blank" rel="noreferrer">
             Open in Telegram
@@ -148,40 +201,66 @@ export function TelegramTab({ e }: { e: Employee }) {
         </div>
       </div>
 
-      {shown && links && (
+      {shown && links ? (
         <div className="k-sheet tg-link" data-telegram-link={show}>
-          <div className="k-title-sm">{show === 'phone' ? 'Open this on your phone' : `Open this, then pick the group — ${e.name} joins it`}</div>
-          <div className="k-code">
-            <a href={shown} target="_blank" rel="noreferrer">
-              {shown}
-            </a>
-            <button type="button" className="btn btn-sm k-quiet" onClick={() => copy(shown)}>
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-          <div className="k-sub">
-            Works once, for the next {minutesLeft(links.until)} minutes. {show === 'phone' ? 'It speaks as you: whatever you write there comes from you.' : 'Everybody in the group can talk to them then — as people you brought in.'}
+          <Qr text={shown} />
+          <div className="tg-link-main">
+            <div className="k-title">{show === 'phone' ? 'Scan with your phone' : `Add ${e.name} to a group`}</div>
+            <div className="k-sub">{show === 'phone' ? `Telegram opens the bot; press Start and you are talking to ${e.name} — as you.` : 'Scan or open it, pick the group, and the bot joins. Everybody there can then talk to them, in your name.'}</div>
+            <div className="k-code">
+              <a href={shown} target="_blank" rel="noreferrer">
+                {shown.replace(/^https:\/\//, '')}
+              </a>
+              <button type="button" className="btn btn-sm k-quiet" onClick={() => copy(shown)}>
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <div className="tg-link-foot">
+              <span className="k-sub">Works once · {minutesLeft(links.until)} min left</span>
+              <button type="button" className="k-link" onClick={() => setLinks(null)}>
+                Done
+              </button>
+            </div>
           </div>
         </div>
+      ) : (
+        nobody && (
+          <div className="k-sheet tg-first">
+            <div className="k-main">
+              <div className="k-title">Connect your phone</div>
+              <div className="k-sub">
+                A code to scan — then whatever you write to @{bot.username} goes to {e.name}.
+              </div>
+            </div>
+            <Button variant="primary" onClick={() => void newLink('phone')} data-telegram-pair-first>
+              Show the code
+            </Button>
+          </div>
+        )
       )}
 
-      <div>
+      <section className="tg-section">
         <div className="k-head">
-          <span className="k-label">Who talks to {e.name} here</span>
+          <span className="k-label">People</span>
           <button type="button" className="k-link" onClick={() => void newLink('phone')} data-telegram-pair>
-            Connect your Telegram
+            + Connect a phone
           </button>
         </div>
-        {view.people.length ? (
+        {view.people.length > 0 ? (
           <div className="k-group">
             {view.people.map((p) => (
               <div className="k-row k-row-sm" key={p.tgId} data-telegram-person={p.username ?? p.name}>
+                <span className="tg-face" aria-hidden>
+                  {p.name.slice(0, 1).toUpperCase()}
+                </span>
                 <div className="k-main">
                   <div className="k-title-sm">
                     {p.name}
                     {p.username && <span className="k-title-note"> @{p.username}</span>}
                   </div>
-                  <div className="k-sub">as {p.as} in the office</div>
+                  <div className="k-sub">
+                    as {p.as} · since {day(p.since)}
+                  </div>
                 </div>
                 <button type="button" className="k-x" title="Disconnect this person" aria-label={`Disconnect ${p.name}`} onClick={() => void act(() => api<View>('DELETE', `/employees/${e.id}/telegram/people/${p.tgId}`).then(setView), `${p.name} disconnected`)}>
                   ×
@@ -190,37 +269,40 @@ export function TelegramTab({ e }: { e: Employee }) {
             ))}
           </div>
         ) : (
-          <p className="k-text">Nobody yet. “Connect your Telegram” gives you a one-time link for your phone.</p>
+          <div className="k-sub">Nobody yet.</div>
         )}
-      </div>
+      </section>
 
-      <div>
+      <section className="tg-section">
         <div className="k-head">
           <span className="k-label">Groups</span>
           <button type="button" className="k-link" onClick={() => void newLink('group')} data-telegram-group>
-            Add to a group
+            + Add to a group
           </button>
         </div>
-        {!view.hearsAll && (
-          <div className="k-note" data-telegram-privacy>
-            In groups, Telegram now shows this bot only messages that mention it or reply to it. To let {e.name} follow the conversation and notice when it is about them: in @BotFather send <code>/setprivacy</code>, choose @{bot.username}, <b>Disable</b> — then add the bot to the group again.{' '}
-            <button type="button" className="k-link" onClick={() => void act(() => api<View>('POST', `/employees/${e.id}/telegram/check`, {}).then(setView))}>
-              Check again
-            </button>
-          </div>
-        )}
-        {view.groups.length ? (
+        {view.groups.length > 0 ? (
           <div className="k-group">
             {view.groups.map((g) => (
               <div className="k-row k-row-sm" key={g.chatId} data-telegram-chat={g.title}>
+                <span className="tg-face tg-face-group" aria-hidden>
+                  #
+                </span>
                 <div className="k-main">
                   <div className="k-title-sm">{g.title}</div>
-                  <div className="k-sub">connected by {g.as}</div>
+                  <div className="k-sub">{g.mode === 'all' ? 'Follows everything, speaks up when it is for them' : 'Answers when named, mentioned or replied to'}</div>
                 </div>
-                <select value={g.mode} aria-label={`When ${e.name} speaks in ${g.title}`} onChange={(ev) => void act(() => api<View>('PATCH', `/employees/${e.id}/telegram/groups/${g.chatId}`, { mode: ev.target.value }).then(setView))} title="When talked to: a mention, their name, a reply to them, or a follow-up. Everything: every message goes to them and they decide — each pause in the conversation is a turn of their Claude.">
-                  <option value="addressed">When talked to</option>
-                  <option value="all">Everything (they decide)</option>
-                </select>
+                <div className="k-filters" role="group" aria-label={`When ${e.name} speaks in ${g.title}`}>
+                  {(
+                    [
+                      ['addressed', 'When talked to', 'A mention, their name, a reply to them, or a follow-up.'],
+                      ['all', 'Everything', 'Every message reaches them and they decide — each pause in the chat is a turn of their Claude.'],
+                    ] as const
+                  ).map(([mode, label, why]) => (
+                    <button key={mode} type="button" title={why} aria-pressed={g.mode === mode} className={g.mode === mode ? 'k-filter-on' : ''} data-telegram-mode={mode} onClick={() => g.mode !== mode && void act(() => api<View>('PATCH', `/employees/${e.id}/telegram/groups/${g.chatId}`, { mode }).then(setView))}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <button type="button" className="k-x" title="Leave this group" aria-label={`Leave ${g.title}`} onClick={() => void act(() => api<View>('DELETE', `/employees/${e.id}/telegram/groups/${g.chatId}`).then(setView), `${e.name} left ${g.title}`)}>
                   ×
                 </button>
@@ -228,14 +310,29 @@ export function TelegramTab({ e }: { e: Employee }) {
             ))}
           </div>
         ) : (
-          <p className="k-text">In no group yet. “Add to a group” gives a link that adds the bot to a group of your choice; there {e.name} answers when somebody mentions them, says their name or replies to them.</p>
+          <div className="k-sub">In no group yet.</div>
         )}
-      </div>
+        {!view.hearsAll && (
+          <More summary={<span data-telegram-privacy>Telegram shows this bot only messages that mention it</span>} startOpen={view.groups.length > 0}>
+            <div className="k-note">
+              To let {e.name} follow the whole chat and notice when it is about them: in @BotFather send <code>/setprivacy</code>, pick @{bot.username}, choose <b>Disable</b> — then add the bot to the group again.{' '}
+              <button type="button" className="k-link" onClick={() => void act(() => api<View>('POST', `/employees/${e.id}/telegram/check`, {}).then(setView))}>
+                Check again
+              </button>
+            </div>
+          </More>
+        )}
+      </section>
 
-      <label className="check">
-        <input type="checkbox" checked={view.questions} onChange={(ev) => void act(() => api<View>('PATCH', `/employees/${e.id}/telegram`, { questions: ev.target.checked }).then(setView))} />
-        Send their questions and permission requests to Telegram too (with buttons to answer)
-      </label>
+      <div className="k-group">
+        <label className="k-row k-row-sm tg-switch">
+          <div className="k-main">
+            <div className="k-title-sm">Questions and approvals</div>
+            <div className="k-sub">Sent to the people above, with buttons to answer. Never to a group.</div>
+          </div>
+          <input type="checkbox" role="switch" checked={view.questions} onChange={(ev) => void act(() => api<View>('PATCH', `/employees/${e.id}/telegram`, { questions: ev.target.checked }).then(setView))} />
+        </label>
+      </div>
 
       <div className="k-actions">
         <Button

@@ -153,12 +153,32 @@ export function addressedTo(m: { text: string; botUsername: string; botId: numbe
 }
 
 /** What the employee is given from a group: the conversation so far, and what is for them (or all of it, to judge). */
-export function groupPrompt(g: { group: string; me: string; heard: Array<{ who: string; text: string }>; who: string | null; text: string; everything: boolean }): string {
-  const lines = [`[Telegram group "${g.group}" — you take part as ${g.me}. Your whole reply is posted in the group, as a chat message: keep it short and plain.]`];
-  if (g.heard.length) lines.push('', 'Recent messages in the group (oldest first):', ...g.heard.map((h) => `- ${h.who}: ${h.text}`));
-  if (g.everything) lines.push('', 'New in the group:', g.text, '', 'Nobody may be talking to you. If nothing here needs you, reply with exactly NO_REPLY and nothing else.');
-  else lines.push('', `${g.who} said to you:`, g.text);
+export interface Heard {
+  who: string;
+  text: string;
+  /** Telegram's message id in that chat (0 when not known): what `[reply #id]` points at. */
+  id: number;
+}
+const line = (h: Heard) => `${h.id ? `#${h.id} ` : ''}${h.who}: ${h.text}`;
+
+/** What the employee is given from a group: the conversation so far, and what is for them (or all of it, to judge). */
+export function groupPrompt(g: { group: string; me: string; heard: Heard[]; who: string | null; new: Heard[]; everything: boolean }): string {
+  const lines = [
+    `[Telegram group "${g.group}" — you take part as ${g.me}. Your whole reply is posted in the group as an ordinary chat message: talk as people do in a group chat — short, plain, relaxed.`,
+    'Only when it would otherwise be unclear what you are answering (the talk moved on, or several things are open), begin your reply with [reply #<number>] to post it as a reply to that message. Usually, do not.]',
+  ];
+  if (g.heard.length) lines.push('', 'Recent messages in the group (oldest first):', ...g.heard.map((h) => `- ${line(h)}`));
+  if (g.everything) lines.push('', 'New in the group:', ...g.new.map(line), '', 'Nobody may be talking to you. If nothing here needs you, reply with exactly NO_REPLY and nothing else.');
+  else lines.push('', `${g.who} said to you:`, ...g.new.map(line));
   return lines.join('\n');
+}
+
+/** What the employee said, and whether they chose to post it as a reply to one message (`[reply #id]` at the start; only an id that chat has). */
+export function answerOf(said: string, known: ReadonlySet<number>): { text: string; replyTo: number | null } {
+  const m = /^\s*\[reply #(\d+)\]\s*/i.exec(said);
+  if (!m) return { text: said.trim(), replyTo: null };
+  const id = Number(m[1]);
+  return { text: said.slice(m[0].length).trim(), replyTo: known.has(id) ? id : null };
 }
 
 /** How a message from a group is named to the employee. */
@@ -184,10 +204,10 @@ export class Telegram {
   /** Chats waiting for what an employee says when the current turn ends, and their "typing…" timers. */
   private waiting = new Map<string, { chats: Map<number, { replyTo: number | null; group: boolean }>; since: number; timer: NodeJS.Timeout }>();
   /** What was said lately in each group (for context), and whom the employee last answered there, when. */
-  private heard = new Map<number, Array<{ who: string; text: string; at: number }>>();
+  private heard = new Map<number, Array<Heard & { at: number }>>();
   private lastAnswer = new Map<number, { to: number; at: number }>();
   /** In a group that sends them everything: what has come since the last delivery, and the timer that delivers it. */
-  private gathering = new Map<number, { lines: Array<{ who: string; text: string }>; replyTo: number; timer: NodeJS.Timeout; first: number }>();
+  private gathering = new Map<number, { lines: Heard[]; replyTo: number; timer: NodeJS.Timeout; first: number }>();
   /** Questions sent to Telegram: where, so the message can say when it was answered. */
   private sent = new Map<string, Array<{ employeeId: string; chatId: number; messageId: number; text: string }>>();
   /** Which Telegram message stands for which question (a reply to it answers the question). */
@@ -500,13 +520,18 @@ export class Telegram {
     if (!w || !b) return;
     clearInterval(w.timer);
     this.waiting.delete(employeeId);
-    const said = last.trim();
     for (const [chat, how] of w.chats) {
+      // Posted as an ordinary message; as a reply only to the message they chose (`[reply #id]`) — in a group.
+      const { text: said, replyTo } = answerOf(last, new Set(how.group ? (this.heard.get(chat) ?? []).map((h) => h.id).filter(Boolean) : []));
       // In a group they may decide that nothing was for them: then nothing is posted.
       if (how.group && (!said || /^NO_REPLY\b/.test(said))) continue;
-      for (const [i, part] of pieces(said || '(They finished without a word.)').entries()) await this.send(b, chat, part, i === 0 ? how.replyTo : null).catch(() => undefined);
+      let first = 0;
+      for (const [i, part] of pieces(said || '(They finished without a word.)').entries()) {
+        const id = await this.send(b, chat, part, i === 0 ? replyTo : null).catch(() => 0);
+        if (i === 0) first = id;
+      }
       if (how.group) {
-        this.remember(chat, this.nameOf(employeeId), said);
+        this.remember(chat, this.nameOf(employeeId), said, first);
         if (how.replyTo !== null) this.lastAnswer.set(chat, { to: this.repliedUser.get(`${chat}:${how.replyTo}`) ?? 0, at: Date.now() });
       }
     }
@@ -517,9 +542,9 @@ export class Telegram {
   /** Who wrote the message an answer goes to, by group and message: a follow-up from them is meant for the employee too. */
   private repliedUser = new Map<string, number>();
 
-  private remember(chatId: number, who: string, text: string): void {
+  private remember(chatId: number, who: string, text: string, id: number): void {
     const list = this.heard.get(chatId) ?? [];
-    list.push({ who, text: text.slice(0, 600), at: Date.now() });
+    list.push({ who, text: text.slice(0, 600), id, at: Date.now() });
     while (list.length > 30) list.shift();
     this.heard.set(chatId, list);
   }
@@ -592,7 +617,7 @@ export class Telegram {
     if (/^\/help(@\w+)?$/.test(text)) return void (await this.send(b, chatId, `I'm ${this.nameOf(b.employeeId)}'s line to the office. Talk to me — mention @${b.username}, say my name, or reply to me — and I answer here.${g.mode === 'all' ? ' I also follow the whole conversation and speak up when something is for me.' : ''}\n/status — what I am doing`, m.message_id));
     const who = [m.from.first_name, m.from.last_name].filter(Boolean).join(' ') || String(m.from.username ?? 'someone');
     if (!text && !m.photo && !m.document) return;
-    this.remember(chatId, who, text || '(a picture or a file)');
+    this.remember(chatId, who, text || '(a picture or a file)', Number(m.message_id));
     if (addressedTo({ text, botUsername: b.username, botId: b.botId, name: this.nameOf(b.employeeId), replyToFrom: m.reply_to_message?.from?.id ?? null, entities: m.entities ?? m.caption_entities ?? [], from: Number(m.from.id), lastAnswer: this.lastAnswer.get(chatId) ?? null })) {
       this.repliedUser.set(`${chatId}:${m.message_id}`, Number(m.from.id));
       const fileIds: string[] = [];
@@ -604,21 +629,21 @@ export class Telegram {
         clearTimeout(pending.timer);
         this.gathering.delete(chatId);
       }
-      await this.handOver(b, as, groupPrompt({ group: g.title, me: this.nameOf(b.employeeId), heard: (this.heard.get(chatId) ?? []).slice(0, -1), who, text: text || 'Look at this.', everything: false }), fileIds, chatId, m.message_id, true, groupFrom(who, g, as));
+      await this.handOver(b, as, groupPrompt({ group: g.title, me: this.nameOf(b.employeeId), heard: (this.heard.get(chatId) ?? []).slice(0, -1), who, new: [{ who, text: text || 'Look at this.', id: Number(m.message_id) }], everything: false }), fileIds, chatId, m.message_id, true, groupFrom(who, g, as));
       return;
     }
     // Not said to them: in a group that sends them everything, what is said is gathered and handed over in one go
     // once the conversation pauses — and they decide whether it needs them.
     if (g.mode !== 'all') return;
-    const pending = this.gathering.get(chatId) ?? { lines: [] as Array<{ who: string; text: string }>, replyTo: Number(m.message_id), timer: setTimeout(() => undefined, 0), first: Date.now() };
+    const pending = this.gathering.get(chatId) ?? { lines: [] as Heard[], replyTo: Number(m.message_id), timer: setTimeout(() => undefined, 0), first: Date.now() };
     clearTimeout(pending.timer);
-    pending.lines.push({ who, text: text || '(a picture or a file)' });
+    pending.lines.push({ who, text: text || '(a picture or a file)', id: Number(m.message_id) });
     pending.replyTo = m.message_id;
     this.repliedUser.set(`${chatId}:${m.message_id}`, Number(m.from.id));
     const wait = Date.now() - pending.first > 25_000 ? 0 : GATHER_MS;
     pending.timer = setTimeout(() => {
       this.gathering.delete(chatId);
-      void this.handOver(b, as, groupPrompt({ group: g!.title, me: this.nameOf(b.employeeId), heard: (this.heard.get(chatId) ?? []).slice(0, -pending.lines.length), who: null, text: pending.lines.map((l) => `${l.who}: ${l.text}`).join('\n'), everything: true }), [], chatId, pending.replyTo, true, groupFrom(null, g!, as)).catch(() => undefined);
+      void this.handOver(b, as, groupPrompt({ group: g!.title, me: this.nameOf(b.employeeId), heard: (this.heard.get(chatId) ?? []).slice(0, -pending.lines.length), who: null, new: pending.lines, everything: true }), [], chatId, pending.replyTo, true, groupFrom(null, g!, as)).catch(() => undefined);
     }, wait);
     this.gathering.set(chatId, pending);
   }
@@ -713,8 +738,10 @@ export class Telegram {
     return said.id;
   }
 
-  private async send(b: Bot, chatId: number, text: string, replyTo: number | null = null): Promise<void> {
-    await this.call(this.token(b), 'sendMessage', { chat_id: chatId, text: text.slice(0, TELEGRAM_LIMITS.textChars), ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}) });
+  /** A message from the bot; its id in that chat. */
+  private async send(b: Bot, chatId: number, text: string, replyTo: number | null = null): Promise<number> {
+    const r = await this.call<{ message_id?: number }>(this.token(b), 'sendMessage', { chat_id: chatId, text: text.slice(0, TELEGRAM_LIMITS.textChars), ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}) });
+    return Number(r?.message_id ?? 0);
   }
 
   /** One call to Telegram's Bot API. Errors never carry the token (it is part of the address). */

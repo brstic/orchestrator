@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FOLLOW_UP_MS, addressedTo, groupPrompt, pieces, startPayload } from '../src/telegram.ts';
+import { FOLLOW_UP_MS, addressedTo, answerOf, groupPrompt, pieces, startPayload } from '../src/telegram.ts';
 
 const base = { botUsername: 'kira_office_bot', botId: 9001, name: 'Kira', replyToFrom: null, entities: [], from: 1, lastAnswer: null, now: 1_000_000 };
 
@@ -33,15 +33,28 @@ test('said to them in a group: a mention, their name as a word, a reply to them,
 });
 
 test('what they are given from a group: the conversation so far and what is for them — or all of it, to judge', () => {
-  const heard = [{ who: 'Dana', text: 'who brings the cake?' }];
-  const one = groupPrompt({ group: 'Launch team', me: 'Kira', heard, who: 'Dana', text: 'kira, the checkout?', everything: false });
+  const heard = [{ who: 'Dana', text: 'who brings the cake?', id: 40 }];
+  const one = groupPrompt({ group: 'Launch team', me: 'Kira', heard, who: 'Dana', new: [{ who: 'Dana', text: 'kira, the checkout?', id: 41 }], everything: false });
   assert.match(one, /^\[Telegram group "Launch team" — you take part as Kira\./);
-  assert.match(one, /- Dana: who brings the cake\?/);
-  assert.match(one, /Dana said to you:\nkira, the checkout\?$/);
+  assert.match(one, /ordinary chat message/);
+  assert.match(one, /\[reply #<number>\]/);
+  assert.match(one, /- #40 Dana: who brings the cake\?/);
+  assert.match(one, /Dana said to you:\n#41 Dana: kira, the checkout\?$/);
   assert.doesNotMatch(one, /NO_REPLY/);
-  const all = groupPrompt({ group: 'Launch team', me: 'Kira', heard: [], who: null, text: 'Ivo: lunch?\nMia: sure', everything: true });
-  assert.match(all, /New in the group:\nIvo: lunch\?\nMia: sure/);
+  const all = groupPrompt({ group: 'Launch team', me: 'Kira', heard: [], who: null, new: [{ who: 'Ivo', text: 'lunch?', id: 50 }, { who: 'Mia', text: 'sure', id: 51 }], everything: true });
+  assert.match(all, /New in the group:\n#50 Ivo: lunch\?\n#51 Mia: sure/);
   assert.match(all, /reply with exactly NO_REPLY and nothing else/);
+});
+
+test('an answer is an ordinary message; a reply only to a message they chose, and only one the chat has', () => {
+  const known = new Set([40, 41]);
+  assert.deepEqual(answerOf('  sure, on it  ', known), { text: 'sure, on it', replyTo: null });
+  assert.deepEqual(answerOf('[reply #40] the cake is mine', known), { text: 'the cake is mine', replyTo: 40 });
+  assert.deepEqual(answerOf('[Reply #41]\nchecked: all fine', known), { text: 'checked: all fine', replyTo: 41 });
+  // A number the chat does not have: the mark goes, the message is plain.
+  assert.deepEqual(answerOf('[reply #999] hm', known), { text: 'hm', replyTo: null });
+  // Not at the start: left as said.
+  assert.deepEqual(answerOf('see [reply #40]', known), { text: 'see [reply #40]', replyTo: null });
 });
 
 test('a pairing code is what comes after /start, also /start@bot in a group', () => {

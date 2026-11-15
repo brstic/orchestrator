@@ -63,6 +63,7 @@ const info = await new Promise((resolve) => {
   setTimeout(() => resolve(null), 90000);
 });
 let exitCode = 1;
+let tgWatch = null;
 let station = null;
 try {
   if (!info) throw new Error(`the development office did not start\n${officeErr.slice(-600)}`);
@@ -226,6 +227,18 @@ try {
   // written anything must not be read as the one that passed last time (it was, on 2026-11-12).
   const resultsFile = path.join(outDir, 'results.json');
   fs.rmSync(resultsFile, { force: true });
+  // The Telegram step: when the window shows a one-time link, a phone (or a group) uses it — the driver writes the link
+  // into a file, and the stand-in Bot API is told that somebody opened it.
+  const tgDone = new Set();
+  tgWatch = setInterval(() => {
+    for (const [file, chat] of [['telegram-phone.txt', null], ['telegram-group.txt', { id: -100555, type: 'group', title: 'Launch team' }]]) {
+      const f = path.join(outDir, file);
+      if (tgDone.has(file) || !fs.existsSync(f)) continue;
+      tgDone.add(file);
+      const code = fs.readFileSync(f, 'utf8').trim().replace(/^.*=/, '');
+      telegram.message(TELEGRAM_TOKEN, { id: 7001, first_name: 'Ana', username: 'ana_tests' }, chat ? `/start@ui_suite_bot ${code}` : `/start ${code}`, chat ? { chat } : {});
+    }
+  }, 300);
   const driver = spawn(electron, [path.join(root, 'tests/ui/driver.cjs'), info.url, outDir, ctxFile], { stdio: ['ignore', 'inherit', 'inherit'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '' } });
   const code = await new Promise((resolve) => {
     driver.on('exit', resolve);
@@ -394,6 +407,7 @@ try {
   station?.close();
   office.kill('SIGTERM');
   void telegram.close();
+  clearInterval(tgWatch);
   for (let i = 0; i < 50 && office.exitCode === null; i++) await sleep(100);
 }
 console.log(`\n${checks.filter(Boolean).length}/${checks.length} checks passed`);

@@ -144,10 +144,10 @@ test('in a group: connected with the link, it answers when it is talked to — b
   tg.message(TOKEN, FRIEND, 'Who is bringing the cake on Friday?', { chat: GROUP });
   await sleep(2500);
   assert.equal((await h.state()).messages.filter((m) => m.toEmployeeId === kira.id).length, before, 'a message not for her was handed over');
-  // Her name: handed over with the conversation so far, and her answer is a reply in the group.
+  // Her name: handed over with the conversation so far, and her answer is an ordinary message in the group.
   const asked = tg.message(TOKEN, FRIEND, 'kira, can you check the checkout? @@fake: say group-answer-5520@@', { chat: GROUP });
   const answered = await tg.waitSent(textTo(GROUP.id, /group-answer-5520/), 40_000);
-  assert.equal(answered.body.reply_parameters?.message_id, asked);
+  assert.equal(answered.body.reply_parameters, undefined, 'answered as a reply although she did not choose to');
   const msg = (await h.state()).messages.filter((m) => m.toEmployeeId === kira.id).pop()!;
   assert.match(msg.body, /Telegram group "Launch team"/);
   assert.match(msg.body, /Who is bringing the cake on Friday\?/, 'the conversation so far was not given');
@@ -160,6 +160,13 @@ test('in a group: connected with the link, it answers when it is talked to — b
   const mentioned = await tg.waitSent(textTo(GROUP.id, /mention-answer-7740/), 40_000);
   tg.message(TOKEN, STRANGER, 'thanks! one more thing @@fake: say reply-answer-8850@@', { chat: GROUP, replyTo: { message_id: mentioned.messageId!, from: { id: 9001 } } });
   await tg.waitSent(textTo(GROUP.id, /reply-answer-8850/), 40_000);
+  // When she chooses to answer one message in particular: `[reply #id]` makes it a reply to it, and the mark is not shown.
+  const cake = tg.message(TOKEN, { id: 603, first_name: 'Lea' }, 'and who brings the cake?', { chat: GROUP });
+  await sleep(300);
+  tg.message(TOKEN, ME, `kira, answer Lea please @@fake: say [reply #${cake}] chosen-reply-9960@@`, { chat: GROUP });
+  const chosen = await tg.waitSent(textTo(GROUP.id, /chosen-reply-9960/), 40_000);
+  assert.equal(chosen.body.reply_parameters?.message_id, cake);
+  assert.doesNotMatch(chosen.body.text, /\[reply/);
 });
 
 test('a group that sends everything: what is said is handed over once it pauses, and NO_REPLY posts nothing', async () => {

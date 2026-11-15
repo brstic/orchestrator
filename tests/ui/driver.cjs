@@ -3062,26 +3062,38 @@ async function scenario() {
     return `${first.stops} desks on its walk; went from ${first.key} to ${second.key} (${walked.toFixed(1)} m)`;
   });
 
-  await step("an employee's own Telegram bot: three steps, the token pasted, Connect — then the one-time link and the groups", async () => {
+  await step("an employee's own Telegram bot: three steps, the token, Connect — a code to scan; a phone and a group come in, and the group is set to everything", async () => {
     const quinn = await js(`window.__t.emp(${JSON.stringify(ctx.hireName)}).id`);
     await js(`window.__t.store().openPanel('employee', ${JSON.stringify(quinn + ':telegram')})`);
     await waitFor(`!!window.__t.scope().querySelector('[data-telegram="setup"]')`, 8000);
     const steps = await js(`window.__t.scope().querySelectorAll('.tg-steps > li').length`);
     if (steps !== 3) throw new Error(`${steps} set-up steps, not 3`);
+    // A token of the wrong shape is refused in words.
+    await type(`window.__t.scope().querySelector('[data-telegram-token]')`, '12345:short');
+    await clickText('Connect');
+    await waitFor(`!!window.__t.scope().querySelector('.tg-error')`, 5000);
     await shot('telegram-setup');
     await type(`window.__t.scope().querySelector('[data-telegram-token]')`, ctx.telegramToken);
     await clickText('Connect');
-    await waitFor(`!!window.__t.scope().querySelector('[data-telegram="connected"] [data-telegram-link="phone"]')`, 10000);
+    await waitFor(`!!window.__t.scope().querySelector('[data-telegram="connected"] [data-telegram-link="phone"] svg.tg-qr path')`, 10000);
     const link = await js(`window.__t.scope().querySelector('[data-telegram-link] a').getAttribute('href')`);
     if (!/^https:\/\/t\.me\/ui_suite_bot\?start=/.test(link)) throw new Error(`the link is ${link}`);
-    if (!(await js(`!!window.__t.scope().querySelector('[data-telegram-privacy]')`))) throw new Error('no word about the privacy mode');
-    // The token is not on the page any more.
     if (await js(`document.body.innerHTML.includes(${JSON.stringify(ctx.telegramToken)})`)) throw new Error('the token is still on the page');
+    await shot('telegram-code');
+    // The phone opens it: the person is listed and the code is put away by itself.
+    fs.writeFileSync(path.join(outDir, 'telegram-phone.txt'), link);
+    await waitFor(`!!window.__t.scope().querySelector('[data-telegram-person="ana_tests"]') && !window.__t.scope().querySelector('[data-telegram-link]')`, 15000);
+    // A group: its link, used; then "Everything".
     await click(`window.__t.scope().querySelector('[data-telegram-group]')`, 'Add to a group');
-    await waitFor(`!!window.__t.scope().querySelector('[data-telegram-link="group"]')`, 5000);
+    await waitFor(`!!window.__t.scope().querySelector('[data-telegram-link="group"] svg.tg-qr')`, 5000);
+    fs.writeFileSync(path.join(outDir, 'telegram-group.txt'), await js(`window.__t.scope().querySelector('[data-telegram-link] a').getAttribute('href')`));
+    await waitFor(`!!window.__t.scope().querySelector('[data-telegram-chat="Launch team"]') && !window.__t.scope().querySelector('[data-telegram-link]')`, 15000);
+    await click(`window.__t.scope().querySelector('[data-telegram-chat="Launch team"] [data-telegram-mode="all"]')`, 'Everything');
+    await waitFor(`window.__t.scope().querySelector('[data-telegram-chat="Launch team"] [data-telegram-mode="all"]').getAttribute('aria-pressed') === 'true'`, 5000);
+    if (!(await js(`!!window.__t.scope().querySelector('[data-telegram-privacy]')`))) throw new Error('no word about the privacy mode');
     await shot('telegram-connected');
     await js(`window.__t.store().openPanel(null)`);
-    return link.replace(/start=.*/, 'start=…');
+    return `${link.replace(/start=.*/, 'start=…')}; Ana paired; "Launch team" on Everything`;
   });
 
   await step('this computer\'s preferences, as they are stored at the end', async () => {
