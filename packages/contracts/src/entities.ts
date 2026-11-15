@@ -488,6 +488,13 @@ export interface ProjectPolicy {
    * (`OwnerSettings.reviewDefault`). Set, it stands in for the office's setting for this project alone (`reviewUsualOf`).
    */
   review?: ReviewBy | null;
+  /**
+   * Seconds for which what one employee writes to another of this project (a message, a comment on a ticket) is
+   * kept before it is typed to a recipient who sits idle, so that several arrive in one turn of their session
+   * instead of one turn each. Absent, null or 0: at once, as before. Never applied to a person's words, a task, an
+   * answer, a routine, or a request somebody waits on (`gatherSecOf`).
+   */
+  gatherSec?: number | null;
 }
 
 /** What is known about a shared project's integration branch: its last test run and its last promotion to the base branch. */
@@ -573,6 +580,8 @@ export interface TaskEvidence {
   review: { reviewerId: ID | null; verdict: 'approved' | 'changes_requested'; comments: string; ts: ISODate; by: 'employee' | 'owner' } | null;
   /** `reviewBy: 'both'`: the colleague's approval that sent the work on to the boss. Cleared when the work is handed in again. */
   peerReview?: { reviewerId: ID; comments: string; ts: ISODate } | null;
+  /** A colleague asked for changes after the task had been sent back `REVIEW_SEND_BACKS` times: it was not sent back again, and waits for the boss with what they asked for. */
+  contested?: { reviewerId: ID; comments: string; ts: ISODate } | null;
   merge: { ts: ISODate; ok: boolean; sha: string | null; into: string; detail: string } | null;
 }
 
@@ -599,6 +608,17 @@ export interface TaskAttachment {
  */
 export type ReviewBy = 'both' | 'boss' | 'peer' | 'none';
 export const REVIEW_BY: ReviewBy[] = ['both', 'boss', 'peer', 'none'];
+/**
+ * How many times a colleague may send the same task back. The next time a colleague asks for changes, the task is
+ * not sent back again: it waits for the boss, who approves it as it is or sends it back themself.
+ */
+export const REVIEW_SEND_BACKS = 2;
+/** The longest a project may gather its employees' messages for, and what it gathers for when nothing is set (not at all). */
+export const GATHER_SEC_MAX = 600;
+export function gatherSecOf(project: { policy?: { gatherSec?: unknown } | null } | null | undefined): number {
+  const n = Number(project?.policy?.gatherSec);
+  return Number.isFinite(n) && n > 0 ? Math.min(GATHER_SEC_MAX, Math.floor(n)) : 0;
+}
 /** What a task is reviewed by when nobody chose: the office's setting, else a colleague and then the boss. */
 export function reviewDefaultOf(settings: { reviewDefault?: unknown } | null | undefined): ReviewBy {
   return REVIEW_BY.includes(settings?.reviewDefault as ReviewBy) ? (settings!.reviewDefault as ReviewBy) : 'both';

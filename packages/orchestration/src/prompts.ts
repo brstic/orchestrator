@@ -308,7 +308,9 @@ export function reviewPrompt(review: Task, target: Task, project: Project, autho
       ? `Look at this first: the task changed what it is checked by (${target.evidence.verification.touchedChecks.slice(0, 8).join(', ')}). The checks passed with those changes in place. Were the tests changed because the behaviour was meant to change, or weakened so that they pass? Request changes if you cannot tell.`
       : '',
     '',
-    `Review for correctness, tests, security and maintainability. Then call submit_review with task "${target.key}", your verdict (approve or request_changes) and specific comments, and finally complete_task with no_code_changes=true.`,
+    `Review one thing: does this diff do what the task asked, and is it safe to use? Ask for changes only for what would make it wrong in use: a bug, a case the task names that does not work, a security hole, a test weakened so that it passes. For each, name the file and say what goes wrong.`,
+    `Not grounds to send it back: style, naming, how you would have built it, more tests "for completeness", and anything outside this task. Leave those out, or put at most three under "Not blocking:" beside an approval — the author may take them or not. Do not redo the author's work${target.evidence.verification?.passed ? ', and do not run the whole check again: the office ran it, above' : ''}.`,
+    `Then call submit_review with task "${target.key}", your verdict (approve or request_changes) and short comments, and finally complete_task with no_code_changes=true.`,
   ]
     .filter((l) => l !== '')
     .join('\n');

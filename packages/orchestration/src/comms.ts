@@ -1,5 +1,5 @@
 import type { AgentSession, CollabRequest, Employee, Message, MessageKind, Notification, NotificationKind, Question, QuestionOption } from '@orchestrator/contracts';
-import { correlationMarker, matchRole, newId, nowIso, optionsIn, truncate } from '@orchestrator/contracts';
+import { correlationMarker, gatherSecOf, matchRole, newId, nowIso, optionsIn, truncate } from '@orchestrator/contracts';
 import { xpForAssist } from '@orchestrator/game-systems';
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
@@ -161,6 +161,19 @@ export interface Delivery {
   wake?: boolean;
   /** How many times it was sent again after Claude Code did not acknowledge it (see `recover`). */
   recovered?: number;
+  /** Not typed to an idle session before this (ms): a colleague's message that is gathered with the next ones (`ProjectPolicy.gatherSec`). It still goes at once with whatever else is handed to the session. */
+  holdUntil?: number;
+}
+
+/**
+ * What to type next into an idle session, from what waits for it: the first that is not being gathered — or, when
+ * everything is, nothing yet and how long until the first of them is due.
+ */
+export function nextToType(list: Pick<Delivery, 'holdUntil'>[], now: number): { index: number } | { waitMs: number } | null {
+  if (!list.length) return null;
+  const index = list.findIndex((d) => !d.holdUntil || d.holdUntil <= now);
+  if (index >= 0) return { index };
+  return { waitMs: Math.min(...list.map((d) => d.holdUntil!)) - now };
 }
 
 interface HookPending {
@@ -932,9 +945,23 @@ export class Comms {
         stopRequestId: null,
         // A run of a routine, and a request whose sender cannot go on without the answer, start the session of someone who has none.
         wake: !!msg.routineId || (msg.kind === 'collab_request' && !!collab?.waited),
+        ...(this.gathered(msg) ? { holdUntil: Date.now() + this.gathered(msg) * 1000 } : {}),
       },
       pump,
     );
+  }
+
+  /**
+   * For how many seconds this message is gathered with the next ones (0: it goes at once). Only what one employee
+   * says to another in passing — a message, a comment on a ticket — and only in a project that chose it: every wake of
+   * an idle session is a whole turn of its model over everything it holds, so three notes a minute apart cost three
+   * turns where one would do. Never a person's words, a routine, or a request somebody waits on.
+   */
+  private gathered(msg: Message): number {
+    if (msg.from.kind !== 'employee' || msg.routineId || (msg.kind !== 'chat' && msg.kind !== 'comment')) return 0;
+    if (msg.threadId && this.core.collabs.get(msg.threadId)) return 0;
+    const to = this.core.employees.get(msg.toEmployeeId);
+    return gatherSecOf(to?.projectId ? this.core.projects.get(to.projectId) : null);
   }
 
   private enqueueAnswer(q: Question, pump: boolean): void {
@@ -1273,7 +1300,11 @@ export class Comms {
       const screen = this.core.gateway.screens.get(session.id);
       if (screen && !inputBox(screen.lines)) return this.schedulePump(employeeId, 700);
     }
-    const d = list.shift()!;
+    // What is being gathered waits; anything else goes first, and what was gathered rides behind it (the Stop hook).
+    const next = nextToType(list, Date.now());
+    if (!next) return;
+    if ('waitMs' in next) return this.schedulePump(employeeId, next.waitMs + 20);
+    const d = list.splice(next.index, 1)[0]!;
     d.attempts++;
     const hooks = session!.capabilities.hooks;
     // An SDK-managed worker takes the prompt as structured input; nothing is typed into its terminal.

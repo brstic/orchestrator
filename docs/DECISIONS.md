@@ -2,6 +2,13 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-16 — A review asks one question, colleagues get two rounds, and their notes can be gathered
+A co-owner's team was seen to spend more time and words on reviewing than on the work, and a wide reading of what others report (`plans/IDEAS-leaner-teamwork.md`) said the same from every side: a reviewer asked widely always finds something, and acting on small findings breeds more work than it removes.
+- **The reviewer's question is narrowed in the prompt, not by a level of severity the office would have to judge.** The office cannot tell a serious finding from a small one; the reviewer can, when told which is which. Small remarks are still allowed — beside an approval, at most three — so that nothing a reviewer saw has to be thrown away to approve.
+- **Two send-backs by colleagues, then the boss — a constant, not a setting.** Rejected: letting the author decline a colleague's findings (as one team does): here the author would then be the judge of their own work with nobody watching. Rejected: approving automatically after two rounds: the third objection may be the real one. A person decides; the rounds stop costing two sessions each. The boss's own send-backs are not limited: the limit is on a conversation between two employees, not on what the owner wants.
+- **Gathering is per project and off by default.** A delay in what colleagues say to each other changes how a team feels to work with, so a team chooses it; nobody else's office changes. Rejected: gathering everything for an idle session — a person who writes expects an answer now, and a request somebody waits on would run into its own time limit.
+- **What was gathered is typed as one prompt followed by the rest at the end of that turn**, not pasted as one text: the delivery of a prompt is confirmed by its own marker, and one text with several markers would have needed a second way of confirming. The cost is one more pass at the end of the turn instead of none.
+
 ## 2026-11-15 — Telegram: a bot per employee, paired with a one-time link, polled, and in groups by mention or by their own judgement
 The owner asked for a different Telegram bot on every agent, simple to set up, and for groups where it knows when it is talked about.
 - **Chosen: one bot per employee, its token pasted into their profile.** A bot is the employee's address in Telegram (its own name and picture in the chat list). Rejected: one office bot with `/to <name>` — not "talk to them directly", and one token would reach everybody.

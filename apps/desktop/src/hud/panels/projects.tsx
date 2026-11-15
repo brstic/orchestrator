@@ -1,5 +1,5 @@
 import { useEffect, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
-import { reviewDefaultOf, reviewUsualOf, type Project, type ReviewBy, type Task, type TaskStatus } from '@orchestrator/contracts';
+import { gatherSecOf, reviewDefaultOf, reviewUsualOf, type Project, type ReviewBy, type Task, type TaskStatus } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field, Stat, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useAccess } from '../../lib/access.ts';
@@ -310,6 +310,14 @@ function invalidRegexes(patterns: string[]): string[] {
   });
 }
 
+/** For how long a project gathers what its employees write to each other (`ProjectPolicy.gatherSec`). */
+const GATHER_CHOICES: [string, string][] = [
+  ['0', 'At once'],
+  ['30', 'Gathered for 30 seconds'],
+  ['60', 'Gathered for a minute'],
+  ['120', 'Gathered for two minutes'],
+  ['300', 'Gathered for five minutes'],
+];
 /** How many checks a way of reviewing is: fewer than before is asked about when it is saved. */
 const REVIEW_WEIGHT: Record<ReviewBy, number> = { none: 0, peer: 1, boss: 1, both: 2 };
 const reviewLabel = (r: ReviewBy) => REVIEW_CHOICES.find((c) => c.id === r)!.label;
@@ -324,6 +332,7 @@ function ProjectPolicyTab({ project }: { project: Project }) {
     autoAssign: p.autoAssign,
     requireReview: p.requireReview,
     review: (p.review ?? '') as ReviewBy | '',
+    gatherSec: String(gatherSecOf(project)),
     autoMerge: p.autoMerge,
     integrationTests: p.integrationTests !== false,
     oneAtATime: p.oneAtATime === true,
@@ -360,7 +369,7 @@ function ProjectPolicyTab({ project }: { project: Project }) {
         api('PATCH', `/projects/${project.id}`, {
           verifyCommand: draft.verifyCommand.trim() || null,
           verifyTimeoutSec: timeout,
-          policy: { allow, deny, highRiskPatterns: highRisk, autoAssign: draft.autoAssign, requireReview: draft.requireReview, review: draft.review || null, autoMerge: draft.autoMerge, integrationTests: draft.integrationTests, oneAtATime: draft.oneAtATime },
+          policy: { allow, deny, highRiskPatterns: highRisk, autoAssign: draft.autoAssign, requireReview: draft.requireReview, review: draft.review || null, gatherSec: Number(draft.gatherSec) || null, autoMerge: draft.autoMerge, integrationTests: draft.integrationTests, oneAtATime: draft.oneAtATime },
         }),
       'Policy saved',
     );
@@ -398,6 +407,15 @@ function ProjectPolicyTab({ project }: { project: Project }) {
               {REVIEW_CHOICES.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Colleagues' messages reach an idle employee" hint="What employees of this project write to each other (messages, comments on a ticket) can be gathered, so that several arrive in one turn instead of one turn each — every turn of an idle session costs usage. A person's words, tasks, answers and requests somebody waits on always go at once.">
+            <select aria-label="Colleagues' messages reach an idle employee" data-project-gather value={draft.gatherSec} onChange={(e) => set({ gatherSec: e.target.value })}>
+              {GATHER_CHOICES.concat(GATHER_CHOICES.some(([v]) => v === draft.gatherSec) ? [] : [[draft.gatherSec, `Gathered for ${draft.gatherSec} seconds`]]).map(([v, label]) => (
+                <option key={v} value={v}>
+                  {label}
                 </option>
               ))}
             </select>

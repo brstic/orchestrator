@@ -52,6 +52,20 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   `evidence.peerReview`, the stage becomes `'boss'`, the boss is notified, and no colleague can approve it again.
   The boss's approval finishes it (merge included) at either stage. "Request changes" by anybody returns it to its
   author; the next hand-in starts with a colleague again.
+- **What a reviewer is asked** (`reviewPrompt`, since 2026-11-16): one thing — does the diff do what the task asked,
+  and is it safe to use. Changes are asked for only for what would make it wrong in use (a bug, a case the task
+  names that does not work, a security hole, a test weakened so that it passes), each with its file. Style, naming,
+  "how I would have built it", more tests for completeness and anything outside the task are named as **no reason
+  to send work back**: left out, or at most three under "Not blocking:" beside an approval, for the author to take
+  or leave. Where the office ran the project's check and it passed, the reviewer is told not to run it again.
+  (Before, the prompt said "correctness, tests, security and maintainability", and a reviewer asked that widely
+  always finds something.)
+- **Two rounds between colleagues, then the boss** (`REVIEW_SEND_BACKS` = 2, `TaskManager.contest`): a colleague
+  may send the same task back twice (`friction.reviewRejections`). The next "request changes" from a colleague does
+  not send it back and is not counted as a rejection: the task stays in REVIEW with stage `'boss'`, what was asked
+  for is kept in `evidence.contested` and written on the ticket, the boss is notified ("… needs your decision"),
+  and no colleague can give a verdict on it any more. The boss approves it as it is, or sends it back themself —
+  as often as they like; the limit is on colleagues only. It is a constant, not a setting.
 
 ## 2. The conversation
 
@@ -117,6 +131,23 @@ answerTo? }`.
   was named and cannot be read is said to the employee; one that was only found in the text is passed over.
 - A task's prompt carries the last twelve entries of its conversation (`TaskTalk.promptLines`), so whoever gets a
   ticket — again, or after somebody else — reads what was said on it. `get_task` shows them as well.
+
+### Gathering what colleagues write (`ProjectPolicy.gatherSec`)
+Every prompt typed into an idle session is a whole turn of its model over everything the session holds. Three notes
+from a colleague a minute apart are three such turns. A project can have them gathered: *Project → Policy →
+"Colleagues' messages reach an idle employee"* — at once (the default: nothing changes for a project that does not
+choose), or after 30 seconds, one, two or five minutes (`gatherSecOf`, at most 600 seconds).
+- **What waits**: a message (`send_message`) or a comment on a ticket that one employee writes to another employee
+  of a project that gathers (`Comms.gathered`; the recipient's project decides). The delivery carries `holdUntil`.
+- **What never waits**: anything a person wrote (the boss, a member, a Telegram chat), a task, a review request, an
+  answer, a meeting, a routine, the office's own notices, and a request for help — waited on or not.
+- **How it goes**: an idle session is not typed into while everything that waits for it is being gathered
+  (`nextToType`); when the first is due it is typed, and the others are handed over at the end of that turn through
+  the Stop hook, as queued prompts always are. A session that is working is not affected at all: what is queued for
+  it reaches it at the end of its turn, as before, gathered or not.
+- *Checked:* `packages/orchestration/test/gather-messages.test.ts` — what waits and what does not, the choice of what
+  is typed next, the bounds of the number. *Not checked:* in a running office with real sessions (the two paths it
+  rides on — typing into an idle session, and the Stop hook — are covered by the e2e suite as they were).
 
 ## 3. Sending back
 

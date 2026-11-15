@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { DeliveryState, Employee, Message, Project, ProjectPolicy, ReviewBy, Task, TaskKind, TaskPriority, TaskStatus, XpEntry } from '@orchestrator/contracts';
-import { REVIEW_BY, matchRole, newId, nowIso, redactSecrets, reviewByOf, reviewDefaultOf, reviewUsualOf, roleByKey, slugify, truncate, stripEnd, LEAD_ROLE, directsOthers } from '@orchestrator/contracts';
+import { GATHER_SEC_MAX, REVIEW_BY, REVIEW_SEND_BACKS, matchRole, newId, nowIso, redactSecrets, reviewByOf, reviewDefaultOf, reviewUsualOf, roleByKey, slugify, truncate, stripEnd, LEAD_ROLE, directsOthers } from '@orchestrator/contracts';
 import { applyXp, evaluateMilestones, xpForCompletedTask, xpForReview } from '@orchestrator/game-systems';
 import { EngineError, within } from './core.ts';
 import type { Engine } from './engine.ts';
@@ -159,6 +159,7 @@ export function policyShaped(policy: Partial<ProjectPolicy> | undefined): void {
   }
   // (null: the project follows the office again.)
   if (policy.review !== undefined && policy.review !== null && !REVIEW_BY.includes(policy.review)) throw new EngineError(`"policy.review" is one of ${REVIEW_BY.join(', ')}, or empty for the office's own way`);
+  if (policy.gatherSec !== undefined && policy.gatherSec !== null && !(Number.isInteger(policy.gatherSec) && policy.gatherSec >= 0 && policy.gatherSec <= GATHER_SEC_MAX)) throw new EngineError(`"policy.gatherSec" is a whole number of seconds from 0 to ${GATHER_SEC_MAX}`);
   for (const pattern of policy.highRiskPatterns ?? []) {
     try {
       new RegExp(pattern, 'i');
@@ -1784,10 +1785,13 @@ export class TaskManager {
       if (!assigned && this.core.settings.employeesManageBoard === false) throw new EngineError(`you were not asked to review ${task.key}`);
       if (!this.canSee(by, task)) throw new EngineError(`no task "${taskRef}"`);
       // A colleague has approved it already: what it waits for now is the boss.
+      if (task.reviewStage === 'boss' && task.evidence.contested) throw new EngineError(`${task.key} was sent back ${REVIEW_SEND_BACKS} times already and now waits for the boss`);
       if (task.reviewStage === 'boss' && task.evidence.peerReview) throw new EngineError(`${task.key} was approved by ${this.core.employees.get(task.evidence.peerReview.reviewerId)?.name ?? 'a colleague'} and now waits for the boss`);
     }
     const approved = verdict === 'approve';
     if (!approved && !comments.trim()) throw new EngineError('say what should change: it is what the author reads');
+    if (!approved && by !== 'owner' && task.friction.reviewRejections >= REVIEW_SEND_BACKS) return this.contest(task, by, comments);
+    task.evidence.contested = null;
     task.evidence.review = { reviewerId: by === 'owner' ? null : by.id, verdict: approved ? 'approved' : 'changes_requested', comments, ts: nowIso(), by: by === 'owner' ? 'owner' : 'employee' };
     this.core.company.reviewsCompleted++;
     this.core.saveCompany();
@@ -1840,6 +1844,30 @@ export class TaskManager {
     return task;
   }
 
+  /**
+   * A colleague asks for changes on work that was sent back `REVIEW_SEND_BACKS` times already. Another round between
+   * the two of them is what this stops: each one costs a turn of the author and a turn of the reviewer, and what is
+   * still found by the third is as a rule either small, or a disagreement only the boss can settle. The task stays
+   * in review and waits for the boss, with what the colleague asked for; the boss approves it as it is, or sends it
+   * back in their own words.
+   */
+  private contest(task: Task, by: Employee, comments: string): Task {
+    task.evidence.contested = { reviewerId: by.id, comments, ts: nowIso() };
+    task.evidence.peerReview = null;
+    task.evidence.review = null;
+    task.reviewStage = 'boss';
+    this.core.company.reviewsCompleted++;
+    this.core.saveCompany();
+    this.history(task, `${by.name} asked for changes after ${REVIEW_SEND_BACKS} rounds: waiting for the boss`, by.name);
+    this.eng.talk.add(task, { from: { kind: 'employee', id: by.id, name: by.name }, body: `Still asks for changes, after ${REVIEW_SEND_BACKS} rounds — for the boss to decide: ${comments.trim()}`, kind: 'note', mentions: [] }, { store: false, quiet: true });
+    this.core.put('task', task);
+    this.core.event({ type: 'task.review_completed', source: 'mcp', summary: `${by.name} asked for changes on ${task.key} once more: it waits for the boss`, taskId: task.id, projectId: task.projectId, employeeId: by.id, data: { key: task.key, verdict: 'contested', comments: truncate(comments, 600), reviewerId: by.id } });
+    this.eng.comms.resolveNotifications((n) => n.kind === 'review' && n.taskId === task.id);
+    this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your decision`, body: `"${task.title}" was sent back ${REVIEW_SEND_BACKS} times, and ${by.name} still asks for changes: ${truncate(comments, 400)} — Approve it as it is, or send it back yourself.`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
+    this.closeStaleReviews();
+    return task;
+  }
+
   /** Does this task still wait for a colleague's verdict? (Not once one is given, or once it is the boss's turn.) */
   private waitsForPeer(task: Task): boolean {
     return task.status === 'REVIEW' && task.reviewStage !== 'boss' && !task.evidence.review && !task.evidence.peerReview;
@@ -1852,6 +1880,7 @@ export class TaskManager {
     if (v?.verdict === 'approved') return `${task.key} was approved by ${name(v.reviewerId, v.by)}`;
     if (v) return `${name(v.reviewerId, v.by)} sent ${task.key} back with changes to make`;
     if (task.evidence.peerReview) return `${task.key} was approved by ${name(task.evidence.peerReview.reviewerId)} and now waits for the boss`;
+    if (task.evidence.contested && task.status === 'REVIEW') return `${task.key} was sent back ${REVIEW_SEND_BACKS} times and now waits for the boss`;
     if (task.status === 'REVIEW') return `${task.key} now waits for the boss`;
     return `${task.key} is no longer waiting for a review (it is ${task.status === 'DONE' ? 'done' : task.status === 'BLOCKED' ? 'blocked' : 'back with its author'})`;
   }
