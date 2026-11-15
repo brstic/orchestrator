@@ -6,8 +6,10 @@
 # invitations stay valid; open desktop apps reconnect by themselves (reload them to get a new UI).
 # The previous version stays in ~/orchestrator-office/app.old (see --rollback).
 #
-#   ORCH_DEPLOY_HOST   ssh destination          (default: <user>@<server>)
-#   ORCH_DEPLOY_PORT   ssh port                 (default: 22)
+#   ORCH_DEPLOY_HOST   ssh destination, user@host   (required)
+#   ORCH_DEPLOY_PORT   ssh port                     (default: 22)
+#
+# They may be kept in scripts/deploy.local.env (not in git — the repository is public), which is read first.
 #   ORCH_DEPLOY_DIR    install folder there     (default: orchestrator-office, under the home folder)
 #   ORCH_DEPLOY_UNIT   systemd user unit        (default: orchestrator-office)
 #
@@ -18,7 +20,9 @@
 #   scripts/deploy-server.sh --status      what is running there
 set -eu
 cd "$(dirname "$0")/.."
-HOST="${ORCH_DEPLOY_HOST:-<user>@<server>}"
+# The server's address is nobody else's business: it is kept out of the repository, in a file of your own.
+[ -f scripts/deploy.local.env ] && . scripts/deploy.local.env
+HOST="${ORCH_DEPLOY_HOST:?set ORCH_DEPLOY_HOST=user@host (or put it in scripts/deploy.local.env)}"
 PORT="${ORCH_DEPLOY_PORT:-22}"
 DIR="${ORCH_DEPLOY_DIR:-orchestrator-office}"
 UNIT="${ORCH_DEPLOY_UNIT:-orchestrator-office}"

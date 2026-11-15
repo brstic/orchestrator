@@ -1,5 +1,7 @@
 # Picking up the work
 
+> **The repository is public (since 2026-11-15).** The server's real address, SSH port and user, and the CloudPanel details are not in it: the docs say `<server>`, `<ssh-port>`, `<user>`. Ask the owner for them privately; `pnpm deploy:server` reads them from `scripts/deploy.local.env` (not in git: `ORCH_DEPLOY_HOST=user@host`, `ORCH_DEPLOY_PORT=…`).
+
 For a collaborator who continues where someone else stopped. It says what you need, how a change gets from your editor into the running office, and where the rest is written down. Everything here was true on 2026-11-11; `STATUS.md` is the page that is kept current.
 
 ## 1. What there is
@@ -17,7 +19,7 @@ For a collaborator who continues where someone else stopped. It says what you ne
 | Node.js 22.18 or newer, pnpm | Node runs the TypeScript sources directly; older versions do not. `corepack enable` gives pnpm |
 | tmux, git, openssl | The tests start real tmux sessions and make a real certificate. macOS: `brew install tmux` |
 | A place in the office | An invitation link from an owner (**Access → Invite**), pasted into the app under *Connect to an office*. This is separate from the next line: being an owner of the office does not give you a shell on the server |
-| **SSH to the server** — only needed to deploy | Your public key in `~/.ssh/authorized_keys` of the user `sparkcan` on the server. The owner adds it (`ssh-copy-id -p <ssh-port> <user>@<address>` from a machine that already has access, or by pasting the key). Check: `ssh -p <ssh-port> <user>@<server> true` |
+| **SSH to the server** — only needed to deploy | Your public key in `~/.ssh/authorized_keys` of the server's user on the server. The owner adds it (`ssh-copy-id -p <ssh-port> <user>@<address>` from a machine that already has access, or by pasting the key). Check: `ssh -p <ssh-port> <user>@<server> true` |
 | A network path to the server's SSH | The server's SSH port is in the private notes. `<server-lan-ip>` works on the owner's LAN; from elsewhere use the Tailscale address `<server-vpn-ip>` (you have to be in the owner's tailnet). The public domain `office.sparkcan.com` is for the office itself (port 443), not for SSH |
 | Claude Code on your computer | Only for your own room in the office (sessions that run on your computer), and if you work on this code with it |
 

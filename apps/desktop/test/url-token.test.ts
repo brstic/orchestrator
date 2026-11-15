@@ -8,5 +8,5 @@ test('a token in the address is taken by a browser that holds none, and on this 
 });
 
 test('a link does not swap the credential somebody is signed in with for another one', () => {
-  for (const host of ['office.example.com', '<server-lan-ip>', 'localhost.example.com', '127.0.0.1.example.com', 'notlocalhost', '']) assert.equal(adoptUrlToken('mine', host), false, host || '(no name)');
+  for (const host of ['office.example.com', '192.168.1.20', 'localhost.example.com', '127.0.0.1.example.com', 'notlocalhost', '']) assert.equal(adoptUrlToken('mine', host), false, host || '(no name)');
 });

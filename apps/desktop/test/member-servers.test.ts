@@ -52,7 +52,7 @@ test('what ssh says is passed on in words a person can act on, and a password is
 
 test('an office a server could not recognise by itself: an address that is not a domain over TLS', async () => {
   // No connection is made for these: an IP address has no name a certificate could vouch for, and plain http has no certificate.
-  assert.equal(await publiclyTrusted('https://<server-lan-ip>:4610'), false);
+  assert.equal(await publiclyTrusted('https://192.168.1.20:4610'), false);
   assert.equal(await publiclyTrusted('https://[::1]:4610'), false);
   assert.equal(await publiclyTrusted('http://office.example.com'), false);
   assert.equal(await publiclyTrusted('not an address'), false);

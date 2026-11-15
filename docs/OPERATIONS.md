@@ -1,5 +1,7 @@
 # Operations: where everything runs and how to update it
 
+> **The repository is public (since 2026-11-15).** Real addresses, the SSH port and user, and the CloudPanel site users are replaced here with `<server>`, `<server-lan-ip>`, `<server-vpn-ip>`, `<server-public-ip>`, `<ssh-port>`, `<user>`, `<site-user>`. They are kept out of git: in `scripts/deploy.local.env` (what `pnpm deploy:server` reads) and in `docs/private/` on the owner's machine.
+
 The practical page. Why things are built this way is in `ARCHITECTURE.md` and `DECISIONS.md`; who may do what is in `ACCESS.md`. No secrets are written here — only where they live.
 
 ## The picture
@@ -23,7 +25,7 @@ There is one office and it lives on the server. Desktop apps are clients; the pa
 ### The server
 | | |
 | --- | --- |
-| Machine | "Sparkcan", Ubuntu 22.04, user `sparkcan` |
+| Machine | "Sparkcan", Ubuntu 22.04, the server's user |
 | Reach it | `ssh -p <ssh-port> <user>@<server>` (LAN) — or the Tailscale address `<server-vpn-ip>` |
 | Program | `~/orchestrator-office/app` (the portable package). Previous version: `~/orchestrator-office/app.old`. `app/BUILD` says which commit is running |
 | State | `~/.orchestrator-office/server` (database `orchestrator.db`, door certificate, the office's own owner token) and `~/.orchestrator-office/agent` (the shared host agent) |
@@ -32,7 +34,7 @@ There is one office and it lives on the server. Desktop apps are clients; the pa
 | Ports | 4600 on loopback (the office itself), **4610/tcp open in ufw** (the door, TLS) |
 | Members reach it at | **`https://office.sparkcan.com`** (through Cloudflare and the server's nginx — see "The domain" below) · `https://<server-vpn-ip>:4610` (Tailscale) · `https://<server-lan-ip>:4610` (LAN). Invitation links start with the first (it is the address saved in **Access**); once someone is in, their app keeps all three and uses the first that answers |
 | Claude Code | `/usr/local/bin/claude`, logged in as `sparkcan`: this is the account shared employees use |
-| Shared sessions | the default tmux server of `sparkcan`, sessions named `orch-<employee>-<id>` |
+| Shared sessions | the default tmux server of the server's user, sessions named `orch-<employee>-<id>` |
 | Not ours | `~/.orchestrator-mac-link-backup-2026-11-10` — the agent of the old Mac office, stopped and set aside. Safe to delete |
 
 ### The domain
@@ -40,7 +42,7 @@ There is one office and it lives on the server. Desktop apps are clients; the pa
 
 - **Certificate:** Let's Encrypt, installed and renewed by CloudPanel (`sudo clpctl lets-encrypt:install:certificate --domainName=office.sparkcan.com` to do it by hand). The desktop app trusts an office when its certificate is the one named in the invitation (addresses with a port: the door's own certificate) **or** one the system trusts for that name (the domain) — so renewals need nothing. If the DNS record is ever switched to proxied, Cloudflare's certificate is trusted the same way.
 - **The proxy must point at the door (4610), never at the office's own port (4600):** the door is what marks a request as coming from outside, and only that keeps the office's own owner token from being usable over the network. Checked after setup: the owner token gets 401 through the domain.
-- **CloudPanel:** site user `<site-user>`; its password is in `~/.orchestrator-office/cloudpanel-site-user.txt` on the server (mode 600). Vhost: `/etc/nginx/sites-enabled/office.sparkcan.com.conf`; WebSocket headers and 900 s timeouts come from CloudPanel's reverse-proxy template. One line was added by hand in `location @reverse_proxy`: `access_log off;` (older clients carry their token in the WebSocket address; current ones send it as a subprotocol). A copy of the original is in `/root/office.sparkcan.com.conf.bak-2026-11-10`. **If the vhost is saved from the CloudPanel UI, check that this line is still there.**
+- **CloudPanel:** site user `<site-user>`; its password is in `(a file on the server, see the private notes)` on the server (mode 600). Vhost: `/etc/nginx/sites-enabled/office.sparkcan.com.conf`; WebSocket headers and 900 s timeouts come from CloudPanel's reverse-proxy template. One line was added by hand in `location @reverse_proxy`: `access_log off;` (older clients carry their token in the WebSocket address; current ones send it as a subprotocol). A copy of the original is in `/root/office.sparkcan.com.conf.bak-2026-11-10`. **If the vhost is saved from the CloudPanel UI, check that this line is still there.**
 - Verified 2026-11-10 from the owner's Mac: the desktop app joins over the domain (API, WebSocket, and the relay for the Mac's own room all go to `<server-public-ip>:443`).
 - **People without an invitation** open `https://office.sparkcan.com` in a browser (they can ask to look around) or type `office.sparkcan.com` into the desktop app's start screen (they can be let in as visitor, colleague or owner). Whoever is inside answers from the card at the top right of the office window.
 - The office limits knocks per caller address, which it takes from the last entry of `X-Forwarded-For` as set by this nginx (`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` in CloudPanel's template). If that line is ever removed, every caller looks like `127.0.0.1` and shares one limit.
@@ -62,7 +64,7 @@ There is one office and it lives on the server. Desktop apps are clients; the pa
 ### 1. The server (the usual update)
 (New here? [`HANDOVER.md`](HANDOVER.md) walks through the whole loop, including what you need before the first deploy.)
 
-From a checkout with the change, on a machine that can ssh to the server (your public key in `~/.ssh/authorized_keys` of `sparkcan`; from outside the LAN: `ORCH_DEPLOY_HOST=<user>@<server-vpn-ip>`):
+From a checkout with the change, on a machine that can ssh to the server (your public key in `~/.ssh/authorized_keys` of the server's user; from outside the LAN: `ORCH_DEPLOY_HOST=<user>@<server-vpn-ip>`):
 
 ```sh
 pnpm typecheck && pnpm test && pnpm test:e2e     # at least these; UI changes: pnpm build:ui && node tests/ui/run.mjs

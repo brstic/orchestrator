@@ -35,7 +35,7 @@ Measured on the development machine (2026-11-14): 20 tasks done in the first fou
 | Address | `office-demo.sparkcan.com` → Cloudflare DNS record `office-demo`, **proxied** (orange cloud, like the `*-preview` sites; Cloudflare's SSL mode accepts the origin's certificate) → the server's nginx on 443 → `https://127.0.0.1:4621`, the demo's door |
 | nginx | **written by hand, not a CloudPanel site** (this CloudPanel's `clpctl` has no command for sites): `/etc/nginx/sites-enabled/office-demo.sparkcan.com.conf`. No access log; errors in `/var/log/nginx/office-demo.error.log`. The visitor's own address reaches the office: nginx takes it from `CF-Connecting-IP` (`real_ip_header` in `/etc/nginx/nginx.conf`) and passes it in `X-Forwarded-For`, so the knock limits are per visitor, not per Cloudflare edge |
 | Certificate | Let's Encrypt by **certbot** (`certbot certonly --webroot -w /var/www/office-demo-acme -d office-demo.sparkcan.com`, deploy hook `systemctl reload nginx`), renewed by `certbot.timer`. First issued 2026-11-14, valid to 2027-02-12 |
-| Site user password (unused) | `~/.orchestrator-office/cloudpanel-demo-site-user.txt` — made for a CloudPanel site that could not be created; delete it if no CloudPanel site is ever made |
+| Site user password (unused) | `(a file on the server, see the private notes)` — made for a CloudPanel site that could not be created; delete it if no CloudPanel site is ever made |
 
 The demo has nothing to do with the real office: its own server, database, owner token, host agent, tmux server and folder. Its owner token never leaves the server, and through the door it is refused as everywhere (`SECURITY.md`).
 

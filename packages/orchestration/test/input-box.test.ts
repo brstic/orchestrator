@@ -10,7 +10,7 @@ const RULE = '─'.repeat(118);
 /** The reviewer's terminal as it stood on the live office on 2026-11-12, forty minutes after a review was "handed" to it. */
 const STUCK = [
   '  The PM has the summary. The report and his two screenshots are in',
-  '  /home/<user>/Projects/xagio/_handoff/studio-images/. Nothing was changed on production, on dev, or on his sites.',
+  '  /home/dev/Projects/acme/_handoff/studio-images/. Nothing was changed on production, on dev, or on his sites.',
   '',
   '✻ Sautéed for 3m 3s · done 9:26 AM',
   '',

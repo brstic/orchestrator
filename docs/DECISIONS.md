@@ -1196,6 +1196,11 @@ The owner: "you must track the weekly limit for Fable, we do not track that"; "g
 - **The table edits a draft and applies on a button.** A change of account, model or effort starts a running session again; with a select per person that applied at once, a slip of the hand would restart somebody mid-thought, and a bulk change would restart a dozen. The bar says how many and what before anything happens.
 - **An account is set for many only within one machine.** An account is a folder on a machine; "everybody on second@…" has no meaning across two machines.
 
+## A public repository keeps the server's details out (2026-11-15)
+The owner made the repository public and said: "delete everything that can do harm, now that the repository is public — my IP, the server and the rest". No secret was ever committed (checked over the whole history: every key-like string is a made-up test value or a checksum). What was in it was a map of the infrastructure: the server's public, LAN and VPN addresses, its SSH port and user, the CloudPanel site users and where their passwords lie, the door certificate's fingerprint, internal paths, and a line of a real prompt about a production database.
+- **Out of the files, into a place of their own.** The docs say `<server>`, `<ssh-port>`, `<user>`…; `scripts/deploy-server.sh` has no real default any more and reads `scripts/deploy.local.env` (in `.gitignore`); the old texts with the real values are in `docs/private/` (in `.gitignore`) on the owner's machine. Tests use a documentation LAN address and a made-up prompt.
+- **The history still has them** until it is rewritten — that is the owner's call (it rewrites every commit and every clone must be made again), so it was asked, not done.
+
 ## Out in the city: alone, made from numbers, and nothing to the server (2026-11-14)
 The owner: "make the city really huge (only the part we see is drawn), let me jump off this building with a parachute … take a car and drive … a Back to Office button … procedurally generated, with traffic and people walking."
 - **A block is made from its own two numbers.** Infinite and the same for everybody needs no storage and no network: `blockAt(i, j)` seeds its own random numbers with `i` and `j`. What is drawn and what is walked into are the same `Part`s and `Solid`s, so a wall one sees is a wall one stops at.

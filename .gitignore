@@ -9,3 +9,7 @@ coverage/
 release/
 release-next/
 .claude/worktrees/
+
+# Private: real server details, never published (the repository is public)
+docs/private/
+scripts/deploy.local.env
