@@ -483,6 +483,11 @@ export interface ProjectPolicy {
   oneAtATime?: boolean;
   /** After each merge, run the verification command on the integration branch itself (default: on). */
   integrationTests?: boolean;
+  /**
+   * Who reviews this project's finished work, when nobody chose for the task. Absent or null: as the office does
+   * (`OwnerSettings.reviewDefault`). Set, it stands in for the office's setting for this project alone (`reviewUsualOf`).
+   */
+  review?: ReviewBy | null;
 }
 
 /** What is known about a shared project's integration branch: its last test run and its last promotion to the base branch. */
@@ -597,6 +602,11 @@ export const REVIEW_BY: ReviewBy[] = ['both', 'boss', 'peer', 'none'];
 /** What a task is reviewed by when nobody chose: the office's setting, else a colleague and then the boss. */
 export function reviewDefaultOf(settings: { reviewDefault?: unknown } | null | undefined): ReviewBy {
   return REVIEW_BY.includes(settings?.reviewDefault as ReviewBy) ? (settings!.reviewDefault as ReviewBy) : 'both';
+}
+/** The same for a task of one project: the project's own way where it has one (`ProjectPolicy.review`), else the office's. */
+export function reviewUsualOf(settings: { reviewDefault?: unknown } | null | undefined, project: { policy?: { review?: unknown } | null } | null | undefined): ReviewBy {
+  const own = project?.policy?.review;
+  return REVIEW_BY.includes(own as ReviewBy) ? (own as ReviewBy) : reviewDefaultOf(settings);
 }
 /** Who reviews this task (tasks from before `reviewBy` existed: a colleague when there is one, as it was). */
 export function reviewByOf(task: { reviewBy?: ReviewBy; requiresReview: boolean }): ReviewBy {

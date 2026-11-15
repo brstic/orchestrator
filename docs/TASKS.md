@@ -23,7 +23,15 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   the older `requiresReview: false`. Not reviewed, by the office's own decision: a review task itself, the planning
   task of "Plan project" (its proposals are released by hand), and a **part** of a divided ticket (the whole is
   reviewed, section 4).
-- Only in an office whose owner set the default to "No review" does a project's `policy.requireReview` still decide,
+- **One project can be reviewed differently** (`ProjectPolicy.review`, read with `reviewUsualOf(settings, project)`;
+  *Project → Policy → "Finished work is reviewed by"*, first choice "As the office"). Set, it stands in for the
+  office's default for the new tasks of that project alone — made by a person (the New ticket form starts from it),
+  by an employee or by a routine; cleared (`null`), the project follows the office again. Nothing else changes: what
+  is chosen for one task still wins, a part is still not reviewed on its own, a task that passed its checks after
+  changing them still goes to a colleague, and tasks that exist keep what they have. Choosing fewer checks than the
+  project had is asked about when the policy is saved, like a wider allow rule.
+- Only in an office whose owner set the default to "No review" does a project's `policy.requireReview` still decide
+  (for a project that follows the office; one set to "No review" itself is not reviewed),
   as it did before (for work that makes commits, by a colleague). The test suites run such offices
   (`createHarness({ reviewDefault })`, `dev-office.ts --review`), so that their scripted tasks finish when they pass.
 - **Once**, at the first start with this code (`tasks.reviewByDefault` in the office's key-value store,

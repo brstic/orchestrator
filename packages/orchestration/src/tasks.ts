@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { DeliveryState, Employee, Message, Project, ProjectPolicy, ReviewBy, Task, TaskKind, TaskPriority, TaskStatus, XpEntry } from '@orchestrator/contracts';
-import { REVIEW_BY, matchRole, newId, nowIso, redactSecrets, reviewByOf, reviewDefaultOf, roleByKey, slugify, truncate, stripEnd, LEAD_ROLE, directsOthers } from '@orchestrator/contracts';
+import { REVIEW_BY, matchRole, newId, nowIso, redactSecrets, reviewByOf, reviewDefaultOf, reviewUsualOf, roleByKey, slugify, truncate, stripEnd, LEAD_ROLE, directsOthers } from '@orchestrator/contracts';
 import { applyXp, evaluateMilestones, xpForCompletedTask, xpForReview } from '@orchestrator/game-systems';
 import { EngineError, within } from './core.ts';
 import type { Engine } from './engine.ts';
@@ -157,6 +157,8 @@ export function policyShaped(policy: Partial<ProjectPolicy> | undefined): void {
     if (list === undefined) continue;
     if (!Array.isArray(list) || list.length > 100 || list.some((x) => typeof x !== 'string' || !x || x.length > 300)) throw new EngineError(`"policy.${key}" is a list of at most 100 texts of at most 300 characters`);
   }
+  // (null: the project follows the office again.)
+  if (policy.review !== undefined && policy.review !== null && !REVIEW_BY.includes(policy.review)) throw new EngineError(`"policy.review" is one of ${REVIEW_BY.join(', ')}, or empty for the office's own way`);
   for (const pattern of policy.highRiskPatterns ?? []) {
     try {
       new RegExp(pattern, 'i');
@@ -430,14 +432,16 @@ export class TaskManager {
   }
 
   /** What the office reviews by when it reviews at all: its default, or — where that is "nobody" — a colleague. */
-  private usualReview(): ReviewBy {
-    const usual = reviewDefaultOf(this.core.settings);
+  /** How a task that must be reviewed is reviewed, when nobody said by whom: its project's way, else the office's. */
+  private usualReview(project?: Project | null): ReviewBy {
+    const usual = reviewUsualOf(this.core.settings, project);
     return usual === 'none' ? 'peer' : usual;
   }
 
   /**
-   * Who reviews a new task. Chosen for it: that. Otherwise every task is reviewed the way the office reviews (a
-   * colleague, then the boss, unless the owner set it differently) — a review itself and a part of a task are not.
+   * Who reviews a new task. Chosen for it: that. Otherwise every task is reviewed the way its project is (where an
+   * owner set one for it: `ProjectPolicy.review`), else the way the office reviews (a colleague, then the boss,
+   * unless the owner set it differently) — a review itself and a part of a task are not.
    * Only in an office whose owner set "nobody" is it as it was before: a project's own "require review", for work
    * that makes commits.
    */
@@ -445,10 +449,13 @@ export class TaskManager {
     if (kind === 'review' || input.reviewOf) return 'none';
     if (input.reviewBy && REVIEW_BY.includes(input.reviewBy)) return input.reviewBy;
     if (input.requiresReview === false) return 'none';
-    if (input.requiresReview === true) return this.usualReview();
+    if (input.requiresReview === true) return this.usualReview(project);
     if (part) return 'none';
-    const usual = reviewDefaultOf(this.core.settings);
+    const usual = reviewUsualOf(this.core.settings, project);
     if (usual !== 'none') return usual;
+    // ("No review" chosen for this project is that; the older "require review" is for a project that follows an
+    // office set to nobody.)
+    if (project.policy.review === 'none') return 'none';
     return project.policy.requireReview && !NON_CODE_KINDS.has(kind) ? 'peer' : 'none';
   }
 
@@ -484,7 +491,7 @@ export class TaskManager {
     }
     // Who reviews it, said either way: the two fields say the same thing.
     if (patch.reviewBy !== undefined) task.requiresReview = patch.reviewBy !== 'none';
-    else if (patch.requiresReview !== undefined) task.reviewBy = patch.requiresReview ? (task.reviewBy && task.reviewBy !== 'none' ? task.reviewBy : this.usualReview()) : 'none';
+    else if (patch.requiresReview !== undefined) task.reviewBy = patch.requiresReview ? (task.reviewBy && task.reviewBy !== 'none' ? task.reviewBy : this.usualReview(this.core.projects.get(task.projectId))) : 'none';
     if (patch.helperIds !== undefined) this.eng.talk.setHelpers(task, patch.helperIds, actor);
     if (patch.status && patch.status !== task.status) this.moveByOwner(task, patch.status, actor);
     task.updatedAt = nowIso();
@@ -1354,7 +1361,7 @@ export class TaskManager {
           const aboutTests = task.kind === 'test' && !/^employee:/.test(task.createdBy ?? '');
           if (!aboutTests && !task.requiresReview) {
             task.requiresReview = true;
-            task.reviewBy = this.usualReview();
+            task.reviewBy = this.usualReview(project);
             this.core.event({ type: 'task.updated', source: 'server', summary: `${task.key} passed its checks after changing them (${touched[0]}${touched.length > 1 ? ` and ${touched.length - 1} more` : ''}): it goes to review`, taskId: task.id, projectId: project.id, employeeId: employee.id, data: { key: task.key, touchedChecks: touched } });
           }
         }

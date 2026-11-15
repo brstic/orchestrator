@@ -1,5 +1,5 @@
 import { useEffect, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
-import type { Project, Task, TaskStatus } from '@orchestrator/contracts';
+import { reviewDefaultOf, reviewUsualOf, type Project, type ReviewBy, type Task, type TaskStatus } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field, Stat, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useAccess } from '../../lib/access.ts';
@@ -12,6 +12,7 @@ import { registerPanel } from './index.tsx';
 import { scoped, whoseLabel, whoseProject } from '../../lib/mine.ts';
 import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { TaskChip, activeEmployees, plural, stamp, useAction } from './tasks.tsx';
+import { REVIEW_CHOICES } from './task-shared.tsx';
 import './panels-work.css';
 
 type PanelProps = { arg: string | null; onClose: () => void };
@@ -309,14 +310,20 @@ function invalidRegexes(patterns: string[]): string[] {
   });
 }
 
+/** How many checks a way of reviewing is: fewer than before is asked about when it is saved. */
+const REVIEW_WEIGHT: Record<ReviewBy, number> = { none: 0, peer: 1, boss: 1, both: 2 };
+const reviewLabel = (r: ReviewBy) => REVIEW_CHOICES.find((c) => c.id === r)!.label;
+
 function ProjectPolicyTab({ project }: { project: Project }) {
   const [busy, run] = useAction();
+  const settings = useOffice((s) => s.settings);
   const p = project.policy;
   const [draft, setDraft, dirty] = useDraft({
     verifyCommand: project.verifyCommand ?? '',
     verifyTimeoutSec: String(project.verifyTimeoutSec),
     autoAssign: p.autoAssign,
     requireReview: p.requireReview,
+    review: (p.review ?? '') as ReviewBy | '',
     autoMerge: p.autoMerge,
     integrationTests: p.integrationTests !== false,
     oneAtATime: p.oneAtATime === true,
@@ -331,6 +338,10 @@ function ProjectPolicyTab({ project }: { project: Project }) {
   const badRegexes = invalidRegexes(highRisk);
   const timeout = Number(draft.verifyTimeoutSec);
   const timeoutOk = Number.isInteger(timeout) && timeout > 0;
+  // How this project's work is reviewed: its own way, or the office's while none is chosen.
+  const officeReview = reviewDefaultOf(settings);
+  const reviewWas = reviewUsualOf(settings, project);
+  const reviewNow: ReviewBy = draft.review || officeReview;
 
   const save = async (ev: FormEvent) => {
     ev.preventDefault();
@@ -340,6 +351,8 @@ function ProjectPolicyTab({ project }: { project: Project }) {
       ...allow.filter((r) => !p.allow.includes(r)).map((r) => `allow  ${r}`),
       ...p.deny.filter((r) => !deny.includes(r)).map((r) => `no longer denied  ${r}`),
       ...p.highRiskPatterns.filter((r) => !highRisk.includes(r)).map((r) => `no longer needs approval  ${r}`),
+      // Fewer eyes on finished work than there were is said the same way.
+      ...(REVIEW_WEIGHT[reviewNow] < REVIEW_WEIGHT[reviewWas] ? [`finished work reviewed by: ${reviewLabel(reviewNow)}  (was: ${reviewLabel(reviewWas)})`] : []),
     ];
     if (widening.length && !(await ask({ title: `Let employees on "${project.name}" do more without asking?`, body: `${widening.join('\n')}\n\nThis takes effect for sessions started from now on.`, ok: 'Save the rules' }))) return;
     void run(
@@ -347,7 +360,7 @@ function ProjectPolicyTab({ project }: { project: Project }) {
         api('PATCH', `/projects/${project.id}`, {
           verifyCommand: draft.verifyCommand.trim() || null,
           verifyTimeoutSec: timeout,
-          policy: { allow, deny, highRiskPatterns: highRisk, autoAssign: draft.autoAssign, requireReview: draft.requireReview, autoMerge: draft.autoMerge, integrationTests: draft.integrationTests, oneAtATime: draft.oneAtATime },
+          policy: { allow, deny, highRiskPatterns: highRisk, autoAssign: draft.autoAssign, requireReview: draft.requireReview, review: draft.review || null, autoMerge: draft.autoMerge, integrationTests: draft.integrationTests, oneAtATime: draft.oneAtATime },
         }),
       'Policy saved',
     );
@@ -379,7 +392,17 @@ function ProjectPolicyTab({ project }: { project: Project }) {
           <Field label="Verification timeout (seconds)" hint={timeoutOk ? 'The command is stopped and counted as failed after this long.' : 'Enter a whole number of seconds greater than zero.'}>
             <input type="number" min={1} step={1} value={draft.verifyTimeoutSec} onChange={(e) => set({ verifyTimeoutSec: e.target.value })} />
           </Field>
-          {check('requireReview', 'Require review', 'Code tasks created from now on need an approved review before they count as done.')}
+          <Field label="Finished work is reviewed by" hint={`${draft.review ? REVIEW_CHOICES.find((c) => c.id === draft.review)!.hint : `This project follows the office: ${reviewLabel(officeReview).toLowerCase()}.`} What every new task of this project starts with, whoever makes it; a task can still be set differently, and tasks that exist keep what they have.`}>
+            <select aria-label="Finished work of this project is reviewed by" data-project-review value={draft.review} onChange={(e) => set({ review: e.target.value as ReviewBy | '' })}>
+              <option value="">As the office ({reviewLabel(officeReview).toLowerCase()})</option>
+              {REVIEW_CHOICES.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {!draft.review && officeReview === 'none' && check('requireReview', 'Require review', 'Code tasks created from now on need an approved review before they count as done.')}
           {check('integrationTests', 'Integration tests', 'After every merge the verification command also runs on the integration branch itself, so work that passes alone but breaks together is caught.')}
         </div>
       </section>

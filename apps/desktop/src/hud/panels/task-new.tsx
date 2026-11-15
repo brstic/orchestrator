@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { ReviewBy, Task, TaskKind, TaskPriority } from '@orchestrator/contracts';
-import { ROLE_CATALOGUE, reviewDefaultOf } from '@orchestrator/contracts';
+import { ROLE_CATALOGUE, reviewUsualOf } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field } from '@orchestrator/ui';
 import { PickMany } from './kit.tsx';
 import { api } from '../../lib/api.ts';
@@ -36,8 +36,14 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
   const [helperIds, setHelperIds] = useState<string[]>([]);
   const [roleHint, setRoleHint] = useState('');
   const [dependsOn, setDependsOn] = useState<string[]>([]);
-  const usual = reviewDefaultOf(s.settings);
+  // What a task of this project starts with: the project's own way of reviewing, else the office's.
+  const usual = reviewUsualOf(s.settings, s.projects[projectId]);
   const [reviewBy, setReviewBy] = useState<ReviewBy>(usual);
+  // Until somebody chooses for this task, it follows the project that is picked.
+  const [reviewChosen, setReviewChosen] = useState(false);
+  useEffect(() => {
+    if (!reviewChosen) setReviewBy(usual);
+  }, [usual, reviewChosen]);
   const [released, setReleased] = useState(true);
   const [more, setMore] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
@@ -163,7 +169,7 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
           <span className="field-label">When it is finished, it is reviewed by</span>
           <div className="tk-seg" role="radiogroup" aria-label="Review">
             {REVIEW_CHOICES.map((c) => (
-              <button key={c.id} type="button" role="radio" aria-checked={reviewBy === c.id} className={reviewBy === c.id ? 'on' : ''} onClick={() => setReviewBy(c.id)} data-review={c.id}>
+              <button key={c.id} type="button" role="radio" aria-checked={reviewBy === c.id} className={reviewBy === c.id ? 'on' : ''} onClick={() => (setReviewChosen(true), setReviewBy(c.id))} data-review={c.id}>
                 {c.label}
               </button>
             ))}
@@ -244,7 +250,7 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
         <Button variant="ghost" type="button" onClick={onCancel}>
           Cancel
         </Button>
-        {reviewBy !== usual && <span className="small faint">Reviewed differently from the office's usual ({REVIEW_CHOICES.find((c) => c.id === usual)!.label.toLowerCase()}).</span>}
+        {reviewBy !== usual && <span className="small faint">Reviewed differently from {s.projects[projectId]?.policy.review ? "this project's" : "the office's"} usual ({REVIEW_CHOICES.find((c) => c.id === usual)!.label.toLowerCase()}).</span>}
       </div>
     </form>
   );

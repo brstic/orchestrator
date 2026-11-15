@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-15 — Review can be set for one project; the office's setting is not split by person
+An owner (Fenix) asked why his team's work takes so long. Measured on the live office (2026-11-10…13, four employees, 19 finished tasks): 253 minutes of work, 17 waiting for a colleague's review, **461 waiting for an owner's approval**; a colleague's review asked for changes in 4 of 21. So the colleague's review is cheap and worth it, and the second, human one is where the time goes — for a merge of one minute as for a feature.
+- **Chosen: `ProjectPolicy.review`**, a project's own default that stands in for `OwnerSettings.reviewDefault`. One team can go lighter without changing anything for the others, and it is undone by one click ("As the office").
+- **Not chosen: a default per kind of task** (merges and chores lighter everywhere). It would change every team's work at once, and the kind of a task is whatever its author called it.
+- **Not chosen: a default per member.** Shared employees are looked after by a member (`keptBy`) but a project is not a member's; the Inbox already has "Mine" for whose approval is whose.
+- **Fewer checks is a widening**: asked about when saved, as a wider allow rule is. A task that passed after changing its own checks still goes to a colleague, whatever the project says.
+- **Not done: skipping a second review of a commit the same reviewer approved on another task.** Considered and left: the office knows the commit (`evidence.headSha`) only for work it manages in its own worktrees — 3 of that team's 23 tasks — and an approval given for one task's purpose would be carried to another's.
+
+## 2026-11-15 — A decision the boss gave once goes only into prompts about that matter
+`captureOwnerAnswer` keeps every answer of an owner as project knowledge ("Decided by the boss — "question": answer"), so that nobody asks twice. `selectLessons` ranked lessons by fit and then **filled the rest of the budget with whatever was left**, so "Push now" (about two commits of one task) went into 33 later prompts and "merge into dev checkout" into 40.
+- For an ordinary lesson that is harmless: a habit that does not fit a task costs a line. A **decision is about one matter**; elsewhere it is noise, and a permission given once ("Push now", "Yes, release both") must not read as a standing one.
+- So a lesson whose source is `owner_answer` is taken only when it fits the task (`fits`: wording, same file or directory) or was asked about again although the office knew it (`captureMustInclude`). Left out, it is recorded as `other_matter`. `get_playbook` and prompts without a task are unchanged: the knowledge is there for whoever looks.
+- Not chosen: retiring such lessons after a time, or tying them to the task they were asked on. A decision about how a project works ("subfolders under the dev domain") is right to repeat wherever that matter comes up.
+
 ## 2026-11-13 — Goals: the office's /goal, on the Stop hook it already holds
 The owner: "agents need something like Claude Code's /goal, so that they can work until they have finished everything the goal asks." Claude Code's `/goal` is a session Stop hook of type `prompt`: a separate model checks after every turn whether the condition holds, and the session goes on until it does.
 - **The office's own, not Claude Code's typed in.** Every session's Stop hook is already the office's to answer (it delivers messages there and nudges a task on): a goal is one more answer, and with it comes what typing `/goal` into a terminal would not give — the goal seen in the office, given from Talk or the profile, on the record, the same for the SDK-managed worker, testable with the fake CLI, and not dependent on whether a Claude Code version has `/goal` switched on.

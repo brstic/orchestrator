@@ -321,7 +321,7 @@ export interface ChosenLesson {
 export interface Selection {
   chosen: ChosenLesson[];
   /** Lessons that applied but were not included, best first. */
-  leftOut: Array<{ id: string; score: number; why: 'budget' | 'duplicate'; of?: string }>;
+  leftOut: Array<{ id: string; score: number; why: 'budget' | 'duplicate' | 'other_matter'; of?: string }>;
   usedChars: number;
   budgetChars: number;
   considered: number;
@@ -467,6 +467,10 @@ export function selectLessons(input: { lessons: Lesson[]; employeeId: string; co
   const take = (s: (typeof scored)[number], viaQuota: boolean) => {
     if (seen.has(s.lesson.id)) return;
     seen.add(s.lesson.id);
+    // An answer the boss gave to one question ("Push now", "Yes, release both") is a decision about that matter. In a
+    // prompt about something else it is noise at best, and at worst reads as a standing permission. It goes in only
+    // where it fits the task — or where it was asked about again although the office knew it (`fits` covers both).
+    if (isDecision(s.lesson) && !s.fits) return void leftOut.push({ id: s.lesson.id, score: s.score, why: 'other_matter' });
     const twin = chosen.find((c) => compareLessons(c.lesson, s.lesson, similarityIdf).verdict === 'duplicate');
     if (twin) return void leftOut.push({ id: s.lesson.id, score: s.score, why: 'duplicate', of: twin.lesson.id });
     const length = lessonLine(s.lesson).length + 1;

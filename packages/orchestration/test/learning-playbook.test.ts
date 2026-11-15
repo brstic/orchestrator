@@ -42,6 +42,24 @@ test('words are reduced to what they mean: stems, aliases, no filler', () => {
   assert.deepEqual(pathsIn('Touch src/db/schema.ts and package.json, not the README'), ['src/db/schema.ts', 'package.json']);
 });
 
+test('a decision the boss gave once goes only into prompts about that matter', () => {
+  // What happened in the office (2026-11-12/13): "Push now", the answer to one question about two commits of one
+  // task, was put into 33 later prompts — as the best fit for a bug in a traffic chart, too.
+  const pushNow = lesson({ id: 'dec', scope: 'project', employeeId: null, projectId: 'shop', source: 'owner_answer', text: 'Decided by the boss — "Panel asks me to push the two T-82 commits to master (fast-forward). May I push?": Push now', appliesWhen: 'this comes up again (first asked by Panel)' });
+  const habit = lesson({ id: 'hab', scope: 'project', employeeId: null, projectId: 'shop', text: 'Log request ids on every API error so support can trace a complaint' });
+  const chart = selectLessons({ lessons: [pushNow, habit], employeeId: 'alex', context: context({ title: 'Traffic chart draws page views as people', description: 'Days counted before the people-only filter must not show as people.', kind: 'bug' }) });
+  assert.deepEqual(ids(chart), ['hab'], 'room in the budget is not a reason to repeat a decision about something else');
+  assert.deepEqual(chart.leftOut, [{ id: 'dec', score: chart.leftOut[0]!.score, why: 'other_matter' }]);
+
+  // The same matter comes up again: there it is, so nobody asks twice.
+  const again = selectLessons({ lessons: [pushNow, habit], employeeId: 'alex', context: context({ title: 'Push the T-82 commits to master', description: 'Two commits, fast-forward.', kind: 'ops' }) });
+  assert.ok(ids(again).includes('dec'));
+
+  // Asked again although the office knew it: it did not reach the session that needed it, so it goes in wherever.
+  const missed = selectLessons({ lessons: [{ ...pushNow, captureMustInclude: 1 } as Lesson, habit], employeeId: 'alex', context: context({ title: 'Traffic chart draws page views as people', kind: 'bug' }) });
+  assert.ok(ids(missed).includes('dec'));
+});
+
 test('relevance: the lesson about migrations is chosen for a migration task over ten newer unrelated ones', () => {
   // Room for about four lessons: under the old rule (own lessons first, newest first) the project's migration lesson came last.
   const s = selectLessons({ lessons: [...newer, migration], employeeId: 'alex', context: migrationTask, budgetChars: 400 });
