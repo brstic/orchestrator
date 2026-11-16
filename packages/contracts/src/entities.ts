@@ -880,10 +880,86 @@ export interface Message {
   files?: SaidFile[];
   /** What the person wrote, without the lines about files the office added for the employee. Absent: `body` is it. */
   said?: string;
-  /** Where it was written, when not in the office's own window: the employee's Telegram bot (`docs/TELEGRAM.md`). */
-  channel?: 'telegram';
+  /**
+   * Where it was written, when not in the office's own window: the employee's Telegram bot (`docs/TELEGRAM.md`), or the
+   * Rent portal, by a client who rents them (`docs/RENT.md`; `clientId` says which).
+   */
+  channel?: 'telegram' | 'rent';
+  /** The client who wrote it on the Rent portal. */
+  clientId?: ID;
   /** The Telegram group it came from (its title); none for a private chat. */
   chat?: string;
+}
+
+// ───────────────────────────── Rent ──────────────────────────────
+// Employees the office rents out to people who never come into the office: a client talks to them on the Rent portal
+// at the office's address, and they work only in their own folders and with each other (`docs/RENT.md`).
+
+/** What a rented employee may do. The owner sets it per employee; the office enforces it on their machine and in its tools. */
+export interface RentPerms {
+  /** Run shell commands (Bash). */
+  commands: boolean;
+  /** Change files (Edit, Write, MultiEdit, NotebookEdit). Off: they only read. */
+  edit: boolean;
+  /** Fetch web pages and search the web. */
+  web: boolean;
+  /** Talk to and work with the other employees the same client rents. */
+  teamwork: boolean;
+  /** Files both ways: the client sends files, the employee gives files to the client. */
+  files: boolean;
+  /** Use the office's vault (its credentials). */
+  vault: boolean;
+  /** Read and write the office's long memory. */
+  memory: boolean;
+}
+
+export const RENT_PERMS_DEFAULT: RentPerms = { commands: true, edit: true, web: true, teamwork: true, files: true, vault: false, memory: false };
+export const RENT_PERM_KEYS = Object.keys(RENT_PERMS_DEFAULT) as Array<keyof RentPerms>;
+
+export interface Rental {
+  employeeId: ID;
+  since: ISODate;
+  perms: RentPerms;
+}
+
+/** Somebody who rents employees of the office. Not a member: they never come into the office. */
+export interface RentClient {
+  id: ID;
+  name: string;
+  /** Their company or what they are to the office, as the owner writes it. */
+  company: string | null;
+  /** The owner's note: what was agreed, what they are for. Never shown to the client or the employees. */
+  note: string;
+  createdAt: ISODate;
+  createdBy: string;
+  revokedAt: ISODate | null;
+  lastSeenAt: ISODate | null;
+  rentals: Rental[];
+}
+
+/** One line of a conversation on the Rent portal. */
+export interface RentLine {
+  id: ID;
+  clientId: ID;
+  employeeId: ID;
+  /** client: what the client wrote; agent: what the employee answered; note: what the office says (could not deliver, started…). */
+  from: 'client' | 'agent' | 'note';
+  text: string;
+  ts: ISODate;
+  /** The office's message that carried a client's line to the employee (for its delivery state). */
+  messageId?: ID;
+  files?: SaidFile[];
+}
+
+/** The limits of what a rented employee reaches on its machine (`LaunchSpec.fence`). */
+export interface RentFence {
+  /** Folders they may read and change: their own, and those of the employees the same client rents (with teamwork). */
+  roots: string[];
+  commands: boolean;
+  edit: boolean;
+  web: boolean;
+  /** Who they work for, for the words they are refused with. */
+  client: string;
 }
 
 // ───────────────────────────── Routines ──────────────────────────

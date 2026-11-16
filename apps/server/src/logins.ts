@@ -10,9 +10,28 @@
  * trying names.
  */
 import crypto from 'node:crypto';
-import { generateToken } from '@orchestrator/database';
+import { generateToken, type CredentialKind } from '@orchestrator/database';
 import { EngineError, type Engine } from '@orchestrator/orchestration';
 import type { Guest, Guests } from './guests.ts';
+
+/** Whoever signs in with a password: a member (`guests.ts`), or a client of the Rent portal (`rent-door.ts`). */
+export interface Person {
+  id: string;
+  name: string;
+  revokedAt: string | null;
+  expiresAt?: string | null;
+}
+export interface People<P extends Person = Person> {
+  get(id: string): P | undefined;
+  list(): P[];
+}
+/** Where one kind of person's passwords are kept, which credentials their sessions are, and what they are called. */
+export interface LoginsOptions {
+  kv: string;
+  kind: CredentialKind;
+  /** "member" or "client": in the record and in what the owners are told. */
+  label: string;
+}
 
 const KV = 'logins';
 const MIN = 8;
@@ -48,9 +67,10 @@ const scryptLater = (password: string, salt: Buffer): Promise<Buffer> =>
   new Promise((resolve, reject) => crypto.scrypt(password.normalize('NFKC'), salt, 64, COST, (err, key) => (err ? reject(err) : resolve(key))));
 
 
-export class Logins {
+export class Logins<P extends Person = Guest> {
   private engine: Engine;
-  private guests: Guests;
+  private guests: People<P>;
+  private opts: LoginsOptions;
   private stored: Record<string, Stored>;
   private names = new Map<string, { fails: number; until: number; locks: number }>();
   private ips = new Map<string, number[]>();
@@ -68,11 +88,12 @@ export class Logins {
     return crypto.createHash('sha256').update(token).digest('hex').slice(0, 24);
   }
 
-  constructor(engine: Engine, guests: Guests, now: () => number = Date.now) {
+  constructor(engine: Engine, guests: Guests | People<P>, now: () => number = Date.now, opts: LoginsOptions = { kv: KV, kind: 'guest', label: 'member' }) {
     this.engine = engine;
-    this.guests = guests;
+    this.guests = guests as People<P>;
     this.now = now;
-    this.stored = engine.core.store.kvGet<Record<string, Stored>>(KV, {});
+    this.opts = opts;
+    this.stored = engine.core.store.kvGet<Record<string, Stored>>(opts.kv, {});
   }
 
   has(guestId: string): boolean {
@@ -82,7 +103,7 @@ export class Logins {
   /** Give a member a password (or a new one). What they are signed in with elsewhere through a password stops working. */
   set(guestId: string, password: unknown, actor: string): void {
     const guest = this.guests.get(guestId);
-    if (!guest || guest.revokedAt) throw new EngineError('unknown member', 404);
+    if (!guest || guest.revokedAt) throw new EngineError(`unknown ${this.opts.label}`, 404);
     const pw = typeof password === 'string' ? password : '';
     if (pw.length < MIN) throw new EngineError(`a password has at least ${MIN} characters`);
     if (pw.length > MAX) throw new EngineError('that password is too long');
@@ -104,12 +125,12 @@ export class Logins {
   }
 
   private save(): void {
-    this.engine.core.store.kvSet(KV, this.stored);
+    this.engine.core.store.kvSet(this.opts.kv, this.stored);
   }
 
   /** Sessions made by signing in (not the member's own app's credential) end. */
   private endSessions(guestId: string): void {
-    this.engine.core.store.revokeCredentialsWhere('guest', guestId, SESSION);
+    this.engine.core.store.revokeCredentialsWhere(this.opts.kind, guestId, SESSION);
     this.onEnded(guestId);
   }
 
@@ -117,17 +138,22 @@ export class Logins {
    * A name and a password at the door. The member's session credential, or an error that says no more than it must:
    * the same words for a wrong name and a wrong password.
    */
-  async signIn(username: unknown, password: unknown, ip: string): Promise<{ guest: Guest; token: string; expiresAt: string }> {
+  async signIn(username: unknown, password: unknown, ip: string): Promise<{ guest: P; token: string; expiresAt: string }> {
     const guest = await this.check(username, password, ip);
+    return { guest, ...this.session(guest, ip) };
+  }
+
+  /** A new sign-in session for this person (signing in, or setting their first password with an invitation). */
+  session(guest: P, ip: string): { token: string; expiresAt: string } {
     const ttlMs = SESSION_DAYS * 24 * 60 * 60_000;
-    const token = generateToken('orch_guest');
-    this.engine.core.store.addCredential('guest', token, { refId: guest.id, label: `${SESSION}${guest.name}`, ttlMs });
-    this.engine.core.audit(`member:${guest.name}`, 'login.signed_in', guest.id, { name: guest.name, role: guest.role, ip });
-    return { guest, token, expiresAt: new Date(this.now() + ttlMs).toISOString() };
+    const token = generateToken(this.opts.kind === 'guest' ? 'orch_guest' : `orch_${this.opts.kind}`);
+    this.engine.core.store.addCredential(this.opts.kind, token, { refId: guest.id, label: `${SESSION}${guest.name}`, ttlMs });
+    this.engine.core.audit(`${this.opts.label}:${guest.name}`, 'login.signed_in', guest.id, { name: guest.name, ...('role' in guest ? { role: (guest as unknown as Guest).role } : {}), ip });
+    return { token, expiresAt: new Date(this.now() + ttlMs).toISOString() };
   }
 
   /** Is this the member's password? Counted like an attempt at the door (the same locks), and it throws like one. */
-  async check(username: unknown, password: unknown, ip: string): Promise<Guest> {
+  async check(username: unknown, password: unknown, ip: string): Promise<P> {
     const name = String(username ?? '').trim().toLowerCase();
     const pw = typeof password === 'string' ? password : '';
     const now = this.now();
@@ -164,13 +190,13 @@ export class Logins {
           n.fails = 0;
           n.until = now + Math.min(NAME_LOCK_MS * 2 ** (n.locks - 1), 24 * 60 * 60_000);
           this.engine.core.audit('door', 'login.locked', guest?.id ?? name, { name, ip, minutes: Math.round((n.until - now) / 60_000) });
-          if (guest) this.engine.comms.notify({ kind: 'security', severity: 'warning', title: `Sign-in for ${guest.name} is closed for a while`, body: `Five wrong passwords in a row (last from ${ip}). Nobody can sign in under that name for ${Math.round((n.until - now) / 60_000)} minutes; an invitation and the desktop app still work.` });
+          if (guest) this.engine.comms.notify({ kind: 'security', severity: 'warning', title: `Sign-in for ${guest.name} is closed for a while`, body: `Five wrong passwords in a row (last from ${ip}). Nobody can sign in under that name for ${Math.round((n.until - now) / 60_000)} minutes${this.opts.kind === 'guest' ? '; an invitation and the desktop app still work' : ` (a ${this.opts.label})`}.` });
         }
         this.names.set(name, n);
         if (this.names.size > 5000) this.names.clear();
       }
       this.engine.core.audit('door', 'login.failed', guest?.id ?? 'unknown', { name: name.slice(0, 40), ip });
-      throw new EngineError('That name and password do not match a member of this office.', 401);
+      throw new EngineError(this.opts.kind === 'guest' ? 'That name and password do not match a member of this office.' : 'That name and password do not match.', 401);
     }
     this.names.delete(name);
     return guest;
@@ -178,13 +204,13 @@ export class Logins {
 
   /** Is this token a session made by signing in with a password (rather than the credential a member's app keeps)? */
   isSession(token: string | null): boolean {
-    return !!token && !!this.engine.core.store.checkCredential('guest', token)?.label?.startsWith(SESSION);
+    return !!token && !!this.engine.core.store.checkCredential(this.opts.kind, token)?.label?.startsWith(SESSION);
   }
 
   /** End the session this token is — only one made by signing in; a member's app keeps its own credential. */
   signOut(token: string | null): boolean {
     if (!token || !this.isSession(token)) return false;
-    const guestId = this.engine.core.store.checkCredential('guest', token)?.refId;
+    const guestId = this.engine.core.store.checkCredential(this.opts.kind, token)?.refId;
     this.engine.core.store.revokeCredential(token);
     if (guestId) this.onEnded(guestId, token);
     return true;

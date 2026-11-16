@@ -58,6 +58,10 @@ browser ── POST /login {username, password} ──▶ door (4610, TLS) ─�
 - `tests/ui/entrance.mjs` — the form itself in a browser window at the door of a made-up office: a wrong password refused where it was typed, the right one in as that member, the name and the session kept.
 - By hand: `node scripts/entrance-office.ts` (a made-up office with its door open and two members with passwords; it prints the address and the passwords) and a browser window: the door's page, a wrong password, in, Settings → Sign-in, Sign out.
 
+## Clients of the Rent portal
+
+The same door signs in a **client** (`docs/RENT.md`): a name that belongs to a client is checked against the clients' own passwords (`Logins` with kind `client` and store `rent.logins`), and the answer says `kind: "client"`; the form then sends the browser to `/rent` with the client's session. Clients and members never share a name.
+
 ## Limits, plainly
 
 - **No second factor.** For an owner the password is as strong a key as their invitation was.

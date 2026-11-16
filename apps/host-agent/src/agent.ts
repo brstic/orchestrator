@@ -18,6 +18,7 @@ import type {
   RawHookEvent,
   ServerToAgent,
   SessionCapabilities,
+  RentFence,
 } from '@orchestrator/contracts';
 import { HOOKS_VERSION, PROTOCOL_VERSION, redactSecrets, slugify } from '@orchestrator/contracts';
 import type { AccountInfo, AccountLogin } from '@orchestrator/contracts';
@@ -87,6 +88,8 @@ interface Tracked {
   claudeSessionId: string | null;
   hookToken: string | null;
   spec: LaunchSpec | null;
+  /** A rented employee's fence as the office last sent it (`session.fence`); absent: the one in `spec`. */
+  fence?: RentFence | null;
   startedAt: string;
   transcriptPath: string | null;
   hooksSeen: boolean;
@@ -1115,6 +1118,13 @@ export class HostAgent {
         rt.grants = [...(rt.grants ?? []).filter((g) => g.until > now), { key: grantKey(rpc.params.tool, rpc.params.input), until: now + Math.max(10_000, Math.min(Number(rpc.params.ttlMs) || 0, 30 * 60_000)) }].slice(-20);
         return { ok: true };
       }
+      case 'session.fence': {
+        // A rental changed: what this session may reach changes now, not at its next start (docs/RENT.md).
+        const t = this.requireTracked(rpc.params.sessionId);
+        t.fence = rpc.params.fence ?? null;
+        this.saveState();
+        return { ok: true };
+      }
       case 'session.keys':
         await this.requireStream(rpc.params.sessionId).keys(rpc.params.keys);
         return { ok: true };
@@ -1435,6 +1445,9 @@ export class HostAgent {
     if (payload.tool_name !== 'Bash' && named && reach.holds(named, payload.cwd ?? t.cwd)) {
       return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: "Orchestrator policy: that is one of the office's own files on this machine (another session's folder, the agent's records, or the office's data). It is not part of anybody's work; leave it alone." } };
     }
+    // A rented employee: their own folders only, and only what the owner lets them do (docs/RENT.md).
+    const fenced = this.rentFence(t, payload);
+    if (fenced) return fenced;
     if (payload.tool_name !== 'Bash') return null;
     const command = String(payload.tool_input?.command ?? '');
     if (reach.mentioned(command)) {
@@ -1460,6 +1473,72 @@ export class HostAgent {
       }
     }
     return null;
+  }
+
+  /**
+   * The fence of a rented employee (`LaunchSpec.fence`, or as `session.fence` changed it): a tool the owner did not allow
+   * is refused, and so is a file or a folder outside the ones they work in — named to a file tool, or written out in a
+   * command. Like the fence around the office's own files, a command is read for the paths it names; a path the command
+   * puts together itself is not seen (`docs/RENT.md`, "Limits").
+   */
+  private rentFence(t: Tracked, payload: HookPayload): Record<string, unknown> | null {
+    const f = t.fence !== undefined ? t.fence : (t.spec?.fence ?? null);
+    if (!f) return null;
+    const tool = String(payload.tool_name ?? '');
+    const deny = (why: string) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Orchestrator policy — you are rented to ${f.client}: ${why}` } });
+    if (!f.web && (tool === 'WebFetch' || tool === 'WebSearch')) return deny('the owner has not let you use the web.');
+    if (!f.edit && RENT_WRITE_TOOLS.has(tool)) return deny('the owner has let you read files, not change them.');
+    if (!f.commands && tool === 'Bash') return deny('the owner has not let you run commands.');
+    const reach = this.rentReach(t, f);
+    const cwd = payload.cwd ?? t.cwd;
+    const where = f.roots.length ? f.roots.join(', ') : t.cwd;
+    const input = payload.tool_input ?? {};
+    const named = ['file_path', 'path', 'notebook_path'].map((k) => input[k]).filter((v): v is string => typeof v === 'string' && !!v);
+    // Glob's pattern may be a path of its own ("/etc/**").
+    if (tool === 'Glob' && typeof input.pattern === 'string' && /^(\/|~)/.test(input.pattern)) named.push(input.pattern.replace(/[*?[{].*$/, '') || '/');
+    if (tool !== 'Bash') {
+      const out = named.find((p) => !reach.holds(p, cwd));
+      return out ? deny(`${out} is outside the folders you work in (${where}). Stay in them.`) : null;
+    }
+    const outside = reach.outsideIn(String(input.command ?? ''), cwd);
+    return outside ? deny(`this command names ${outside}, which is outside the folders you work in (${where}). Work inside them.`) : null;
+  }
+
+  /** What a rented employee may reach: their folders, the session's own, the files said to them, and the system's programs and scratch space. */
+  private rentReach(t: Tracked, f: RentFence): { holds: (file: string, cwd: string) => boolean; outsideIn: (command: string, cwd: string) => string | null } {
+    const real = (p: string) => realpathOfDeepestExisting(path.resolve(p));
+    const homeDir = os.homedir();
+    const roots = [...f.roots, t.cwd, this.filesRoot(), path.join(this.p.sessions, t.sessionId)].filter(Boolean).map(real);
+    const system = RENT_SYSTEM_ROOTS.map((r) => path.resolve(r));
+    const inside = (p: string, root: string) => p === root || p.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
+    const resolve = (file: string, cwd: string): string => {
+      const expanded = file.replace(/^\$\{?HOME\}?(?=\/|$)/, homeDir).replace(/^~(?=\/|$)/, homeDir);
+      return path.resolve(path.isAbsolute(expanded) ? expanded : path.join(cwd || homeDir, expanded));
+    };
+    const holds = (file: string, cwd: string): boolean => {
+      let abs: string;
+      try {
+        abs = resolve(file, cwd);
+      } catch {
+        return false;
+      }
+      if (system.some((r) => inside(abs, r))) return true;
+      return roots.some((r) => inside(real(abs), r));
+    };
+    // In a command: every word that is a path — written from the root or the home folder, or one that climbs out
+    // (`..`). A word longer than any path, or more of them than are worth following, ends the reading: refused.
+    const outsideIn = (command: string, cwd: string): string | null => {
+      const words = [...new Set(command.replace(/\$\{?HOME\}?/g, homeDir).split(/[\s"'`;|&<>()=,]+/).filter((w) => /^(\/|~|\.\.)/.test(w) || w.includes('/..')))];
+      let budget = FENCE_LOOKUPS;
+      for (const w of words) {
+        if (w.length > PATH_LONGEST || (budget -= w.split('/').length) < 0) return 'more paths than can be checked';
+        // (An address on the web is not a path on this machine.)
+        if (/^[a-z][a-z0-9+.-]*:\/\//i.test(w)) continue;
+        if (!holds(w, cwd)) return w;
+      }
+      return null;
+    };
+    return { holds, outsideIn };
   }
 
   /**
@@ -2089,6 +2168,10 @@ export class HostAgent {
  */
 /** No path is longer than this on the systems the agent runs on (Linux: 4096, macOS: 1024). */
 const PATH_LONGEST = 4096;
+/** The tools that change files, which a rented employee who may only read is refused. */
+const RENT_WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+/** Where a rented employee may always look: the system's programs, devices and scratch space — nobody's work is there. */
+const RENT_SYSTEM_ROOTS = ['/usr', '/bin', '/sbin', '/opt/homebrew', '/dev', '/tmp', '/private/tmp', '/var/folders', '/private/var/folders', '/proc/self'];
 /** How many folders deep, over all the paths a command names, the fence follows them on the disk. */
 const FENCE_LOOKUPS = 20_000;
 

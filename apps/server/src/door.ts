@@ -34,7 +34,7 @@ export interface DoorStatus {
 
 /** What may pass. Everything else is answered 404 at the door. */
 // `/mcp` is how a worker on a member's own computer talks to the office; it answers only to a session's own token.
-const ALLOWED = [/^\/$/, /^\/index\.html$/, /^\/assets\/[A-Za-z0-9._-]+$/, /^\/favicon\.[a-z]+$/, /^\/healthz$/, /^\/api\/[^?#]*$/, /^\/mcp$/, /^\/knock(\/[A-Za-z0-9-]{1,64})?$/, /^\/join(\/[A-Za-z0-9.-]{1,80})?$/, /^\/login$/];
+const ALLOWED = [/^\/$/, /^\/index\.html$/, /^\/assets\/[A-Za-z0-9._-]+$/, /^\/favicon\.[a-z]+$/, /^\/healthz$/, /^\/api\/[^?#]*$/, /^\/mcp$/, /^\/knock(\/[A-Za-z0-9-]{1,64})?$/, /^\/join(\/[A-Za-z0-9.-]{1,80})?$/, /^\/login$/, /^\/rent(\/[^?#]*)?$/, /^\/r\/[A-Za-z0-9.-]{1,80}$/];
 // `/ws/agent`: the office accepts only a member's own computer there when the connection comes through the door.
 const ALLOWED_UPGRADE = /^\/ws\/(client|agent)$/;
 

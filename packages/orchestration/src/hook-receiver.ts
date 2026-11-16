@@ -313,7 +313,12 @@ export class HookReceiver {
     // A Bash call in front of the session began or ended, or a turn did: which of its commands run in the background.
     this.eng.background.onHook(session, payload);
 
+    // What began this turn: a message of the office's (its marker), or anything else. A client's turn is tagged below,
+    // so that its end goes back to that client's conversation and stays out of the owner's (rent.ts).
+    if (employee && payload.hook_event_name === 'UserPromptSubmit') this.eng.rent.turnStarted(employee.id, interp.markers.find((m) => m.kind === 'MSG')?.id ?? null);
+    const rentClientId = employee ? this.eng.rent.clientOfTurn(employee.id) : null;
     interp.events.forEach((ev, i) => {
+      const forClient = rentClientId && (ev.type === 'agent.turn_finished' || ev.type === 'agent.prompt_submitted') ? { rentClientId } : {};
       this.core.event({
         id: `${raw.id}:${i}`,
         ts: raw.ts,
@@ -326,7 +331,7 @@ export class HookReceiver {
         taskId: task?.id ?? null,
         projectId: task?.projectId ?? employee?.projectId ?? null,
         correlationId: payload.tool_use_id ?? null,
-        data: { ...ev.data, hook: payload.hook_event_name, ...(ev.quiet ? { quiet: true } : {}) },
+        data: { ...ev.data, hook: payload.hook_event_name, ...(ev.quiet ? { quiet: true } : {}), ...forClient },
       });
     });
 

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Badge, Button, Field, Window, timeAgo, type Tone } from '@orchestrator/ui';
+import { Badge, Button, Field, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
 import { act, ask } from '../core.tsx';
 import { registerPanel } from './index.tsx';
 import { copyText } from './company-shared.tsx';
+import { RentTab } from './rent.tsx';
 
 type Role = 'visitor' | 'colleague' | 'owner';
 const ROLES: Role[] = ['visitor', 'colleague', 'owner'];
@@ -50,16 +51,29 @@ const day = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'shor
  * Access: who can come into the office, and as what. For an owner: the address people come to, inviting
  * someone with a link, and the members. For everyone else: what their own role lets them do, and who is here.
  */
-function AccessPanel({ onClose }: { arg: string | null; onClose: () => void }) {
+function AccessPanel({ arg, onClose }: { arg: string | null; onClose: () => void }) {
   const me = useOffice((s) => s.me);
   const people = useOffice((s) => s.people);
   const clientId = useOffice((s) => s.clientId);
   const office = useOffice((s) => s.settings?.companyName ?? 'the office');
   const others = people.filter((p) => p.id !== clientId);
+  const [tab, setTab] = useState<'members' | 'rent'>(arg === 'rent' ? 'rent' : 'members');
+  useEffect(() => setTab(arg === 'rent' ? 'rent' : 'members'), [arg]);
   if (me?.kind === 'owner') {
+    // Two ways in: members come into the office; clients of the Rent portal never do (docs/RENT.md).
     return (
-      <Window kit title="Access" subtitle={`Who can come into ${office}, and as what`} onClose={onClose} width={700}>
-        <OwnerAccess here={new Set(others.map((p) => p.memberId).filter((id): id is string => !!id))} />
+      <Window kit flush title="Access" subtitle={tab === 'rent' ? `Employees ${office} rents out, and to whom` : `Who can come into ${office}, and as what`} onClose={onClose} width={760}>
+        <Tabs<'members' | 'rent'>
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { id: 'members', label: 'Members' },
+            { id: 'rent', label: 'Rent' },
+          ]}
+        />
+        <div className="k-body access-body" data-access-tab={tab}>
+          {tab === 'members' ? <OwnerAccess here={new Set(others.map((p) => p.memberId).filter((id): id is string => !!id))} /> : <RentTab />}
+        </div>
       </Window>
     );
   }

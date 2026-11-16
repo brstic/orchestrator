@@ -3121,6 +3121,89 @@ async function scenario() {
     return `${link.replace(/start=.*/, 'start=…')}; Ana paired; "Launch team" on Everything and back; in Talk: ${shown.replace(/\n/g, ' / ')}`;
   });
 
+  await step('Rent: the owner makes a client in Access → Rent; the client sets a password with the link and talks to the employee on the portal — computer and phone — and the owner reads it there, not in Talk', async () => {
+    const quinn = await js(`window.__t.emp(${JSON.stringify(ctx.hireName)}).id`);
+    // The address people come to: the link starts with it.
+    await js(`fetch('/api/sharing', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + localStorage.getItem('orch.token') }, body: JSON.stringify({ address: 'https://office.example.test' }) }).then((r) => r.ok)`);
+    await js(`window.__t.store().openPanel('people', 'rent')`);
+    await waitFor(`!!window.__t.scope().querySelector('[data-rent-tab]')`, 8000);
+    await click(`window.__t.scope().querySelector('[data-rent-open-new]')`, 'New client');
+    await waitFor(`!!window.__t.scope().querySelector('[data-rent-new]')`, 4000);
+    await type(`window.__t.scope().querySelector('[data-rent-new] input[aria-label="Their name"]')`, 'Ana Client');
+    await type(`window.__t.scope().querySelector('[data-rent-new] input[aria-label="Company"]')`, 'Acme');
+    await click(`window.__t.scope().querySelector('[data-rent-new] .k-many-add')`, 'Add an employee');
+    await waitFor(`!!document.querySelector('.k-pop [data-pick-option="${quinn}"]')`, 4000);
+    await click(`document.querySelector('.k-pop [data-pick-option="${quinn}"]')`, ctx.hireName);
+    await key('Escape');
+    await shot('rent-new-client');
+    await click(`window.__t.scope().querySelector('[data-rent-create]')`, 'Make the client and a link');
+    await waitFor(`!!window.__t.scope().querySelector('[data-rent-link="Ana Client"] .k-code')`, 8000);
+    const link = await js(`window.__t.scope().querySelector('[data-rent-link] .k-code').firstChild.textContent.trim()`);
+    if (!/\/r\/[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(link)) throw new Error(`the link: ${link}`);
+    await shot('rent-access');
+    // The client, in a browser of their own.
+    const origin = new URL(win.webContents.getURL()).origin;
+    const guest = new BrowserWindow({ width: 1280, height: 820, show: false, webPreferences: { backgroundThrottling: false, partition: 'rent-client' } });
+    const gjs = (code) => guest.webContents.executeJavaScript(code, true);
+    const gwait = async (code, timeout = 15000) => {
+      for (const end = Date.now() + timeout; Date.now() < end; await sleep(150)) {
+        const v = await gjs(`(() => { try { return (${code}); } catch (e) { return null; } })()`).catch(() => null);
+        if (v) return v;
+      }
+      throw new Error(`the client's browser: timed out waiting for ${String(code).slice(0, 140)}`);
+    };
+    const gset = (sel, value) => gjs(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    const gshot = async (name) => fs.writeFileSync(path.join(outDir, `${name}.png`), (await guest.webContents.capturePage()).toPNG());
+    let shown = '';
+    try {
+      await guest.loadURL(`${origin}/r/${link.split('/r/')[1]}`);
+      await gwait(`!!document.querySelector('[data-rent-password]') && /Welcome, Ana/.test(document.body.textContent)`);
+      await gset('[data-rent-password]', 'a good password 42');
+      await gset('[data-rent-password-again]', 'a good password 42');
+      await gshot('rent-portal-join');
+      await gjs(`document.querySelector('[data-rent-join]').click()`);
+      await gwait(`!!document.querySelector('[data-rent-box]') && location.pathname === '/rent'`, 15000);
+      await gshot('rent-portal-hello');
+      await gset('[data-rent-box]', 'Hi Quinn, can you check the docs folder for me? @@fake: sleep 1200; say Sure, Ana. **Found two guides** in the docs folder:\n\n- GUIDE.md — the steps\n- README.md — the overview\n\nWant me to summarise them?@@');
+      await gjs(`document.querySelector('[data-rent-send]').click()`);
+      await gwait(`!!document.querySelector('[data-rent-typing]')`, 10000);
+      await gwait(`[...document.querySelectorAll('[data-rent-line="agent"]')].some((b) => /Found two guides/.test(b.textContent))`, 40000);
+      shown = await gjs(`document.querySelector('[data-rent-line="agent"] .rp-md').textContent.slice(0, 60)`);
+      await gshot('rent-portal');
+      // A phone: the conversation alone, and the team behind its back button.
+      guest.setSize(390, 844);
+      await sleep(400);
+      await gwait(`getComputedStyle(document.querySelector('.rp-side')).display !== 'none' && document.documentElement.scrollWidth <= 390 && document.querySelector('.rp-agent').getBoundingClientRect().right <= 390`);
+      await gshot('rent-portal-phone-team');
+      await gjs(`document.querySelector('[data-rent-agent="${ctx.hireName}"]').click()`);
+      await gwait(`getComputedStyle(document.querySelector('.rp-side')).display === 'none' && !!document.querySelector('[data-rent-box]') && document.querySelector('.rp-box').getBoundingClientRect().right <= 390`);
+      await sleep(300);
+      await gshot('rent-portal-phone');
+      if (!(await gjs(`[...document.querySelectorAll('[data-rent-line="client"] .rp-tick')].some((t) => /Seen/.test(t.textContent))`))) throw new Error('the line the employee answered is not shown as seen');
+    } finally {
+      guest.destroy();
+    }
+    // The owner reads it in Access → Rent …
+    await click(`window.__t.scope().querySelector('[data-rent-read="${ctx.hireName}"]')`, 'Conversation');
+    await waitFor(`/Found two guides/.test(window.__t.scope().querySelector('[data-rent-convo]')?.textContent || '')`, 8000);
+    await shot('rent-access-conversation');
+    // … and not in their own conversation with the employee.
+    await js(`window.__t.store().openPanel('talk', ${JSON.stringify(quinn)})`);
+    await waitFor(`!!window.__t.scope().querySelector('.talk-compose')`, 5000);
+    await sleep(500);
+    if (await js(`/check the docs folder|Found two guides/.test(window.__t.scope().textContent)`)) throw new Error("the client's conversation is in the owner's Talk");
+    // The rental ends: Quinn is the office's again for whatever comes next.
+    await js(`window.__orchConfirm = () => true; true`);
+    await js(`window.__t.store().openPanel('people', 'rent')`);
+    await waitFor(`!!window.__t.scope().querySelector('[data-rent-client="Ana Client"] .k-row-click')`, 6000);
+    if (!(await js(`!!window.__t.scope().querySelector('[data-rent-end]')`))) await click(`window.__t.scope().querySelector('[data-rent-client="Ana Client"] .k-row-click')`, 'Ana Client');
+    await waitFor(`!!window.__t.scope().querySelector('[data-rent-end]')`, 6000);
+    await click(`window.__t.scope().querySelector('[data-rent-end]')`, 'End the rental');
+    await waitFor(`!window.__t.scope().querySelector('[data-rent-client="Ana Client"]')`, 8000);
+    await js(`delete window.__orchConfirm; window.__t.store().openPanel(null); true`);
+    return `link ${link.replace(/\/r\/.*/, '/r/…')}; the client's answer: "${shown}"`;
+  });
+
   await step('this computer\'s preferences, as they are stored at the end', async () => {
     return js(`localStorage.getItem('orch.prefs')`);
   });

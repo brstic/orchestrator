@@ -241,6 +241,13 @@ Deny rules of the project still win (Claude Code evaluates them whatever a hook 
 - **What it does not change:** the office's own owner token is not accepted through the door; an owner who signs in is a *member with the role owner*. A phone is turned away before the password is looked at. There is no second factor: for an owner, the password is as strong a key as their invitation was — choose it accordingly, and note that somebody who knows a member's name can keep that name's password sign-in closed by guessing wrongly (the app and invitations still work).
 - **Audit:** `login.password_set`, `login.password_removed`, `login.signed_in` (with the address), `login.failed` (the name tried, cut to 40 characters, and the address), `login.locked`.
 
+## The Rent portal (clients)
+Clients of the office talk to the employees they rent at `<address>/rent` (`docs/RENT.md`).
+- **A client is not a member.** Their sessions are credentials of a kind of their own (`client`) that nothing but `/rent/api` takes: the owner API, the office's WebSocket and the worker endpoint answer them 401. There they reach only the employees they rent (404 for any other), and only the files of their own conversations.
+- **Links and passwords** work as the members' do, kept apart: a link's code is stored as a hash, works once, for a week, is rate-limited per address, and is used up only once a password was set with it; passwords are scrypt hashes with the same locks on guessing; a new link takes the password and every session away; ending the rental ends everything.
+- **What is said with clients is the owners'**: not sent to colleagues or visitors; the feed says only that a client wrote.
+- **A rented employee is walled and fenced**: they reach only the employees of the same client (`reaches`), are given only a fixed set of the office's tools (no vault, no memory unless the owner allows; no board, lessons, hiring), and on their machine every tool call is checked against their folders and the owner's switches (`rentFence`) — changed live. The command check reads the paths a command writes out; it is not a sandbox (`RENT.md`, "Limits"). The office's own-files fence and the high-risk gate stay in front of it as for everyone.
+
 ## Telegram bots
 An employee's bot (`docs/TELEGRAM.md`) is a way to **talk** to them, not a terminal: what comes in is delivered as a message from the person, through the same delivery, deny rules, high-risk gate and permission prompts as *Talk*.
 - **The token** is sealed with the vault key (AES-256-GCM, kv `telegram.bots`), sent once from the window and never returned to a window, an event, an error (Telegram's errors are redacted) or a log.

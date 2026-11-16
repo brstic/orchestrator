@@ -289,7 +289,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       const task = eng.tasks.currentTask(employee.id);
       const roleOrder = ['architect', 'fullstack', 'backend', 'frontend', 'qa', 'security', 'devops'];
       const helper = core.employees
-        .filter((e) => !e.archived && e.id !== employee.id && e.roleKey !== FOREMAN_ROLE && !!core.runningSessionOf(e.id) && (e.projectId === employee.projectId || !e.projectId) && sameSide(employee, e) && !closedTo(employee, e))
+        .filter((e) => !e.archived && e.id !== employee.id && e.roleKey !== FOREMAN_ROLE && !!core.runningSessionOf(e.id) && (e.projectId === employee.projectId || !e.projectId) && sameSide(employee, e) && !closedTo(employee, e) && eng.rent.reaches(employee, e))
         .sort((x, y) => roleOrder.indexOf(x.roleKey) - roleOrder.indexOf(y.roleKey))
         .find((e) => roleOrder.includes(e.roleKey));
       if (helper) {
@@ -374,7 +374,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     get_team: async (_a, { employee }) => {
-      const team = core.employees.filter((e) => !e.archived && e.id !== employee.id);
+      const team = core.employees.filter((e) => !e.archived && e.id !== employee.id && eng.rent.reaches(employee, e));
       if (!team.length) return 'You are the only employee.';
       // What part of the office each one keeps: their project and folder say more than a title everyone shares. And
       // whether work can be given to them at all — it cannot cross to or from a member's own computer (a message can).
@@ -483,6 +483,13 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
         if (many) return err(many);
         try {
           const given = await eng.saidFiles.give(employee, file, (e, p, dest) => eng.attachments.pull(e, p, dest));
+          // While answering a client on the Rent portal, the file is for that client's conversation (rent.ts).
+          const clientId = eng.rent.clientOfTurn(employee.id);
+          const client = eng.rent.active(clientId);
+          if (client) {
+            core.event({ type: 'agent.file_given', source: 'mcp', summary: `${employee.name} gave ${client.name} a file: ${given.name}`, employeeId: employee.id, projectId: employee.projectId, data: { file: given, caption, rentClientId: client.id, quiet: true } });
+            return `${given.name} (${size(given.size)}) is in your conversation with ${client.name} on the portal${caption ? `: ${caption}` : ''}. Say in your reply what it is.`;
+          }
           core.event({ type: 'agent.file_given', source: 'mcp', summary: `${employee.name} gave the boss a file: ${given.name}`, employeeId: employee.id, projectId: employee.projectId, data: { file: given, caption } });
           eng.comms.notify({ kind: 'info', severity: 'info', title: `${employee.name} gave you a file`, body: `${given.name}${caption ? ` — ${caption}` : ''}`, employeeId: employee.id });
           return `${given.name} (${size(given.size)}) is in your conversation with the boss${/^image\//.test(given.mime) ? ', where they see it' : ', where they can download it'}${caption ? `: ${caption}` : ''}. Say in your reply what it is.`;
@@ -631,6 +638,11 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     ...eng.lead.handlers(),
   };
 
+  // A rented employee is given the office's tools only as far as its rental lets it (rent.ts, `toolAllowed`): the rest
+  // is neither listed nor answered.
+  for (const [name, handler] of Object.entries(handlers)) {
+    handlers[name] = async (a, ctx) => (eng.rent.toolAllowed(ctx.employee, name) === false ? err(`While you are rented to ${eng.rent.rentalOf(ctx.employee.id)?.client.name ?? 'a client'}, ${name} is not yours to use. Work with what you have, or ask the boss (ask_boss).`) : handler(a, ctx));
+  }
   const foremanTools = new Set(FOREMAN_TOOLS.map((t) => t.name));
   const leadTools = new Set(LEAD_TOOLS.map((t) => t.name));
   // What a lead is shown besides its own tools: how it asks its boss and hears back, and how colleagues reach it. Nothing
@@ -647,6 +659,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     handlers,
     // Only a foreman is shown the foreman's tools; everyone else's tool list (and prompt) stays as small as before.
     // The board tools are shown while the owner leaves the board to the employees (a foreman assigns with its own tool).
-    listed: (tool, { employee }) => (employee.roleKey === LEAD_ROLE ? leadTools.has(tool.name) || LEAD_ALSO.has(tool.name) : !leadTools.has(tool.name)) && tool.name !== 'vault_read' && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
+    listed: (tool, { employee }) => eng.rent.toolAllowed(employee, tool.name) !== false && (employee.roleKey === LEAD_ROLE ? leadTools.has(tool.name) || LEAD_ALSO.has(tool.name) : !leadTools.has(tool.name)) && tool.name !== 'vault_read' && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
   };
 }

@@ -1,0 +1,480 @@
+/**
+ * Rent: employees the office rents out (`docs/RENT.md`).
+ *
+ * A client is not a member. They never come into the office: they get a link, set a password and talk to the
+ * employees they rent on the Rent portal at the office's address — a chat, one conversation per employee. The office
+ * keeps the line between the two worlds here:
+ *
+ *   - **Conversations apart.** What a client writes reaches the employee's real session as a message from the client
+ *     (`Message.channel: 'rent'`), and what the employee says at the end of that turn goes back to that client's
+ *     conversation — not to the owner's Talk. The owner's own conversation stays the owner's. The employee is one session
+ *     and knows all of it; each person sees only their own conversation (the owner can read the client's in Access → Rent).
+ *   - **A wall between employees.** A rented employee talks to and works with only the other employees the same client
+ *     rents (with teamwork on) — and nobody else in the office reaches them, but the foreman (`reaches`).
+ *   - **A fence on their machine.** They reach only their own folder and their co-rented colleagues' folders, and run
+ *     commands, change files and use the web only as far as the owner allows (`fenceFor` → `LaunchSpec.fence`, enforced
+ *     by the host agent on every tool call, and pushed live when a rental changes).
+ *   - **The office's things stay the office's.** No vault, no long memory unless the owner allows it; no task board, no
+ *     lessons, no hiring (the MCP tools a rented employee is given: `toolAllowed`).
+ *
+ * Which turn is a client's: the office notes what started each turn (`turnStarted`, from the prompt's marker or the
+ * Stop-hook delivery), and the end of that turn carries the client (`clientOfTurn`).
+ */
+import { RENT_PERMS_DEFAULT, RENT_PERM_KEYS, newId, nowIso, truncate, type Employee, type OrchestratorEvent, type RentClient, type RentFence, type RentLine, type RentPerms, type Rental, type SaidFile } from '@orchestrator/contracts';
+import { LEAD_ROLE } from '@orchestrator/contracts';
+import { EngineError } from './core.ts';
+import type { Engine } from './engine.ts';
+
+const KV = 'rent.clients';
+const chatKey = (clientId: string, employeeId: string) => `rent.chat.${clientId}.${employeeId}`;
+/** A client's name cannot hold what would make it something else in a prompt or a page. */
+const clean = (s: unknown, max: number): string =>
+  String(s ?? '')
+    .normalize('NFKC')
+    .replace(/\p{Cf}/gu, '')
+    .replace(/[\u0000-\u001f\u007f<>[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+
+export const RENT_LIMITS = { name: 60, company: 80, note: 2000, text: 8000, lines: 3000, clients: 500, agents: 20 };
+
+/** The office's own tools a rented employee is given (beside those its permissions add). Anything new stays out until named here. */
+const RENT_TOOLS = new Set([
+  'get_current_task',
+  'get_project_context',
+  'report_status',
+  'report_progress',
+  'ask_boss',
+  'wait_for_answer',
+  'comment_on_task',
+  'report_blocker',
+  'complete_task',
+  'submit_result',
+  'request_review',
+  'submit_review',
+  'send_message',
+  'request_collaboration',
+  'respond_to_request',
+  'wait_for_colleague',
+  'check_messages',
+  'set_goal',
+  'goal_met',
+  'get_team',
+  'get_task',
+  'wake_colleague',
+  'meeting_contribute',
+  'meeting_conclude',
+]);
+/** Tools that go with a permission. */
+const PERM_TOOLS: Record<string, keyof RentPerms> = { attach_file: 'files', vault_list: 'vault', vault_store: 'vault', vault_read: 'vault', recall: 'memory', remember: 'memory' };
+/** Tools that reach another employee: given only with teamwork. */
+const TEAM_TOOLS = new Set(['send_message', 'request_collaboration', 'respond_to_request', 'wait_for_colleague', 'wake_colleague', 'get_team']);
+
+export function permsFrom(input: unknown, base: RentPerms = RENT_PERMS_DEFAULT): RentPerms {
+  const out = { ...base };
+  if (input && typeof input === 'object') for (const k of RENT_PERM_KEYS) if (typeof (input as Record<string, unknown>)[k] === 'boolean') out[k] = (input as Record<string, boolean>)[k]!;
+  return out;
+}
+
+export class Rent {
+  private eng: Engine;
+  private clients = new Map<string, RentClient>();
+  /** What each employee's turn in hand answers: the client whose message began it, or null (the office). */
+  private turns = new Map<string, string | null>();
+  /** Told when a line is added to a conversation (the portal asks again; this is for whoever listens live). */
+  onLine: (line: RentLine) => void = () => undefined;
+
+  constructor(eng: Engine) {
+    this.eng = eng;
+    for (const c of eng.core.store.kvGet<RentClient[]>(KV, [])) this.clients.set(c.id, c);
+  }
+
+  private get core() {
+    return this.eng.core;
+  }
+
+  start(): void {
+    this.core.bus.on('event', (e) => this.onEvent(e));
+    // A rented employee's folder moved, or a colleague's did: their fences follow.
+    this.core.bus.on('entity', (kind, op, data) => {
+      if (kind === 'employee' && op === 'upsert' && this.rentalOf((data as Employee).id)) this.pushFences(this.groupOf((data as Employee).id));
+    });
+  }
+
+  private save(): void {
+    this.core.store.kvSet(KV, [...this.clients.values()]);
+  }
+
+  // ───────────── who rents whom ─────────────
+
+  list(): RentClient[] {
+    return [...this.clients.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  get(id: string): RentClient | undefined {
+    return this.clients.get(id);
+  }
+
+  /** A client who is still a client. */
+  active(id: string | null | undefined): RentClient | null {
+    const c = id ? this.clients.get(id) : undefined;
+    return c && !c.revokedAt ? c : null;
+  }
+
+  byName(name: string): RentClient | undefined {
+    const n = clean(name, RENT_LIMITS.name).toLowerCase();
+    return n ? this.list().find((c) => !c.revokedAt && c.name.toLowerCase() === n) : undefined;
+  }
+
+  /** The client renting this employee now, and on what terms. */
+  rentalOf(employeeId: string | null | undefined): { client: RentClient; rental: Rental } | null {
+    if (!employeeId) return null;
+    for (const client of this.clients.values()) {
+      if (client.revokedAt) continue;
+      const rental = client.rentals.find((r) => r.employeeId === employeeId);
+      if (rental) return { client, rental };
+    }
+    return null;
+  }
+
+  isRented(employeeId: string | null | undefined): boolean {
+    return !!this.rentalOf(employeeId);
+  }
+
+  /** The employees one client rents (who still exist). */
+  agentsOf(client: RentClient): Employee[] {
+    return client.rentals.map((r) => this.core.employees.get(r.employeeId)).filter((e): e is Employee => !!e && !e.archived);
+  }
+
+  /** This employee and everyone the same client rents (for fences, which depend on each other's folders). */
+  private groupOf(employeeId: string): string[] {
+    const r = this.rentalOf(employeeId);
+    return r ? r.client.rentals.map((x) => x.employeeId) : [employeeId];
+  }
+
+  /** Can this employee be rented: someone who does the work, on a machine of the office's own. */
+  private rentable(e: Employee): string | null {
+    if (e.archived) return `${e.name} is archived.`;
+    if (e.roleKey === 'foreman') return `${e.name} is the foreman: it supervises the office and is not rented out.`;
+    if (e.roleKey === LEAD_ROLE) return `${e.name} is a member's team lead.`;
+    if (this.eng.hosts.memberOfHost(e.hostId)) return `${e.name} works on a member's own computer; only employees on the office's own machines are rented out.`;
+    if (e.selfDriven) return `${e.name} is somebody's own session, not an employee the office runs.`;
+    const now = this.rentalOf(e.id);
+    if (now) return `${e.name} is rented to ${now.client.name} already.`;
+    return null;
+  }
+
+  create(input: { name?: unknown; company?: unknown; note?: unknown; employeeIds?: unknown; perms?: unknown }, actor: string, taken: (name: string) => boolean): RentClient {
+    const name = clean(input.name, RENT_LIMITS.name);
+    if (!name) throw new EngineError('a client needs a name');
+    if (this.byName(name) || taken(name)) throw new EngineError(`the name "${name}" is taken: everybody who signs in at the office's address needs a name of their own`);
+    if (this.list().filter((c) => !c.revokedAt).length >= RENT_LIMITS.clients) throw new EngineError('there are as many clients as the office keeps');
+    const ids = Array.isArray(input.employeeIds) ? [...new Set(input.employeeIds.map(String))] : [];
+    const perms = permsFrom(input.perms);
+    for (const id of ids) {
+      const e = this.core.employees.require(id);
+      const no = this.rentable(e);
+      if (no) throw new EngineError(no);
+    }
+    const now = nowIso();
+    const client: RentClient = { id: newId(), name, company: clean(input.company, RENT_LIMITS.company) || null, note: String(input.note ?? '').slice(0, RENT_LIMITS.note), createdAt: now, createdBy: actor, revokedAt: null, lastSeenAt: null, rentals: ids.map((employeeId) => ({ employeeId, since: now, perms: { ...perms } })) };
+    this.clients.set(client.id, client);
+    this.save();
+    this.core.audit(actor, 'rent.client_created', client.id, { name, employees: ids.map((id) => this.core.employees.get(id)?.name) });
+    this.changed(client, ids);
+    return client;
+  }
+
+  update(id: string, patch: { name?: unknown; company?: unknown; note?: unknown }, actor: string, taken: (name: string) => boolean): RentClient {
+    const client = this.require(id);
+    if (patch.name !== undefined) {
+      const name = clean(patch.name, RENT_LIMITS.name);
+      if (!name) throw new EngineError('a client needs a name');
+      if (name.toLowerCase() !== client.name.toLowerCase() && (this.byName(name) || taken(name))) throw new EngineError(`the name "${name}" is taken`);
+      client.name = name;
+    }
+    if (patch.company !== undefined) client.company = clean(patch.company, RENT_LIMITS.company) || null;
+    if (patch.note !== undefined) client.note = String(patch.note ?? '').slice(0, RENT_LIMITS.note);
+    this.save();
+    this.core.audit(actor, 'rent.client_changed', id, { name: client.name });
+    this.changed(client, []);
+    return client;
+  }
+
+  rent(id: string, employeeId: string, perms: unknown, actor: string): RentClient {
+    const client = this.require(id);
+    if (client.rentals.length >= RENT_LIMITS.agents) throw new EngineError(`a client rents at most ${RENT_LIMITS.agents} employees`);
+    const e = this.core.employees.require(employeeId);
+    const no = this.rentable(e);
+    if (no) throw new EngineError(no);
+    client.rentals.push({ employeeId, since: nowIso(), perms: permsFrom(perms) });
+    this.save();
+    this.core.audit(actor, 'rent.rented', id, { client: client.name, employee: e.name });
+    this.changed(client, client.rentals.map((r) => r.employeeId));
+    return client;
+  }
+
+  setPerms(id: string, employeeId: string, perms: unknown, actor: string): RentClient {
+    const client = this.require(id);
+    const rental = client.rentals.find((r) => r.employeeId === employeeId);
+    if (!rental) throw new EngineError('that employee is not rented to this client', 404);
+    rental.perms = permsFrom(perms, rental.perms);
+    this.save();
+    this.core.audit(actor, 'rent.perms_changed', id, { client: client.name, employee: this.core.employees.get(employeeId)?.name, perms: rental.perms });
+    this.changed(client, client.rentals.map((r) => r.employeeId));
+    return client;
+  }
+
+  /** The employee is no longer rented to this client: they are the office's again, fence and wall gone. */
+  release(id: string, employeeId: string, actor: string): RentClient {
+    const client = this.require(id);
+    const before = client.rentals.length;
+    client.rentals = client.rentals.filter((r) => r.employeeId !== employeeId);
+    if (client.rentals.length === before) throw new EngineError('that employee is not rented to this client', 404);
+    this.save();
+    this.core.audit(actor, 'rent.released', id, { client: client.name, employee: this.core.employees.get(employeeId)?.name });
+    this.changed(client, [employeeId, ...client.rentals.map((r) => r.employeeId)]);
+    return client;
+  }
+
+  /** The client is no longer a client: every rental ends. Their conversations stay for the owner to read. */
+  revoke(id: string, actor: string): RentClient {
+    const client = this.require(id);
+    if (client.revokedAt) return client;
+    const ids = client.rentals.map((r) => r.employeeId);
+    client.revokedAt = nowIso();
+    this.save();
+    this.core.audit(actor, 'rent.client_revoked', id, { name: client.name });
+    this.changed(client, ids);
+    return client;
+  }
+
+  seen(id: string): void {
+    const c = this.clients.get(id);
+    if (!c) return;
+    const now = Date.now();
+    if (c.lastSeenAt && now - Date.parse(c.lastSeenAt) < 60_000) return;
+    c.lastSeenAt = new Date(now).toISOString();
+    this.save();
+  }
+
+  private require(id: string): RentClient {
+    const c = this.clients.get(id);
+    if (!c) throw new EngineError('unknown client', 404);
+    return c;
+  }
+
+  /** A rental changed: the fences of those it touches follow at once, and the office's windows are told. */
+  private changed(client: RentClient, employeeIds: string[]): void {
+    this.pushFences(employeeIds);
+    this.core.event({ type: 'rent.changed', source: 'server', summary: `Rent: ${client.name}`, data: { clientId: client.id, quiet: true } });
+  }
+
+  // ───────────── the wall between employees ─────────────
+
+  /**
+   * May `from` reach `to` (a message, a request, waiting for them, waking them)? Between two employees nobody rents:
+   * as ever. A rented one reaches only those the same client rents, both with teamwork on; nobody else reaches a rented
+   * one — but the foreman, which supervises the office for the owner.
+   */
+  reaches(from: Employee, to: Employee): boolean {
+    const a = this.rentalOf(from.id);
+    const b = this.rentalOf(to.id);
+    if (!a && !b) return true;
+    if (!a && from.roleKey === 'foreman') return true;
+    return !!a && !!b && a.client.id === b.client.id && a.rental.perms.teamwork && b.rental.perms.teamwork;
+  }
+
+  /** Why `from` cannot reach `to`, in words for `from`; null when it can. */
+  wall(from: Employee, to: Employee): string | null {
+    if (this.reaches(from, to)) return null;
+    const a = this.rentalOf(from.id);
+    if (a) return `${to.name} is not one of the colleagues you work with for ${a.client.name}: while you are rented you work only with them${a.rental.perms.teamwork ? '' : ' — and the owner has not let you work with other employees at all'}. Nothing was sent.`;
+    return `${to.name} is rented to a client and works only with that client's other employees. Nothing was sent.`;
+  }
+
+  /** May a rented employee use this tool of the office's (null: not rented, everything as usual). */
+  toolAllowed(employee: Employee, tool: string): boolean | null {
+    const r = this.rentalOf(employee.id);
+    if (!r) return null;
+    const perm = PERM_TOOLS[tool];
+    if (perm) return r.rental.perms[perm];
+    if (TEAM_TOOLS.has(tool) && !r.rental.perms.teamwork) return false;
+    return RENT_TOOLS.has(tool);
+  }
+
+  // ───────────── the fence on their machine ─────────────
+
+  fenceFor(employee: Employee, cwd?: string | null): RentFence | null {
+    const r = this.rentalOf(employee.id);
+    if (!r) return null;
+    const own = [employee.workingDir, cwd].filter((d): d is string => !!d);
+    const peers = r.rental.perms.teamwork ? this.agentsOf(r.client).filter((e) => e.id !== employee.id && this.rentalOf(e.id)?.rental.perms.teamwork).map((e) => e.workingDir).filter((d): d is string => !!d) : [];
+    const p = r.rental.perms;
+    return { roots: [...new Set([...own, ...peers])], commands: p.commands, edit: p.edit, web: p.web, client: r.client.name };
+  }
+
+  /** Claude Code's own rules for a rented employee, beside the fence: the tools they are not allowed are not there at all. */
+  denyRulesFor(employee: Employee): string[] {
+    const r = this.rentalOf(employee.id);
+    if (!r) return [];
+    const p = r.rental.perms;
+    return [...(p.commands ? [] : ['Bash']), ...(p.edit ? [] : ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']), ...(p.web ? [] : ['WebFetch', 'WebSearch'])];
+  }
+
+  /** The co-rented colleagues' folders, so that Claude Code lets them work there. */
+  extraDirsFor(employee: Employee): string[] {
+    const f = this.fenceFor(employee);
+    return f ? f.roots.filter((d) => d !== employee.workingDir) : [];
+  }
+
+  /** Send the fence of each of these employees to the machine their session runs on, as it is now. */
+  pushFences(employeeIds: string[]): void {
+    for (const id of new Set(employeeIds)) {
+      const e = this.core.employees.get(id);
+      const s = this.core.runningSessionOf(id);
+      if (!e || !s || !this.core.agents.isOnline(s.hostId)) continue;
+      const fence = this.fenceFor(e, s.cwd);
+      void this.core.agents.rpc(s.hostId, { method: 'session.fence', params: { sessionId: s.id, fence } }, 8000).catch((err) => this.core.log('warn', `the fence of ${e.name} did not reach their machine: ${(err as Error).message}`));
+    }
+  }
+
+  // ───────────── conversations ─────────────
+
+  lines(clientId: string, employeeId: string): RentLine[] {
+    return this.core.store.kvGet<RentLine[]>(chatKey(clientId, employeeId), []);
+  }
+
+  private add(line: Omit<RentLine, 'id' | 'ts'> & { ts?: string }): RentLine {
+    const full: RentLine = { id: newId(), ts: line.ts ?? nowIso(), ...line } as RentLine;
+    const key = chatKey(full.clientId, full.employeeId);
+    this.core.store.kvSet(key, [...this.core.store.kvGet<RentLine[]>(key, []), full].slice(-RENT_LIMITS.lines));
+    this.onLine(full);
+    return full;
+  }
+
+  /** The body the employee is given: who writes, what, and how to answer — the client sees only the reply. */
+  private body(client: RentClient, employee: Employee, rental: Rental, text: string): string {
+    const peers = rental.perms.teamwork ? this.agentsOf(client).filter((e) => e.id !== employee.id && this.rentalOf(e.id)?.rental.perms.teamwork) : [];
+    const who = `${client.name}${client.company ? ` (${client.company})` : ''}`;
+    const can = [rental.perms.commands ? null : 'run no commands', rental.perms.edit ? null : 'change no files', rental.perms.web ? null : 'use no web'].filter(Boolean);
+    return [
+      `On the Rent portal, ${who} writes — a client of the office who rents you:`,
+      text,
+      '',
+      `(Your reply goes to ${client.name} on the portal; they see only what you reply${rental.perms.files ? ' and the files you give them with attach_file' : ''}, nothing of the office. ` +
+        `While rented you work only in your own folder${employee.workingDir ? ` (${employee.workingDir})` : ''}` +
+        (peers.length ? ` and in those of ${peers.map((e) => `${e.name}${e.workingDir ? ` (${e.workingDir})` : ''}`).join(', ')}, whom ${client.name} rents too — coordinate with them with send_message` : '') +
+        (can.length ? `; the owner set that you ${can.join(', ')}` : '') +
+        '. What the boss tells you in the office is not for clients unless the boss says so.)',
+    ].join('\n');
+  }
+
+  /**
+   * A client writes to an employee they rent. Their session is brought in if nobody is at the desk. The line stands in
+   * the conversation whatever happens next; when it cannot be handed over, the office says so under it.
+   */
+  async say(clientId: string, employeeId: string, text: unknown, fileIds: string[], by: string): Promise<RentLine> {
+    const client = this.active(clientId);
+    if (!client) throw new EngineError('this client is no longer a client of the office', 403);
+    const rental = client.rentals.find((r) => r.employeeId === employeeId);
+    if (!rental) throw new EngineError('no such employee', 404);
+    const employee = this.core.employees.require(employeeId);
+    const words = String(text ?? '').replace(/\r\n/g, '\n').trim().slice(0, RENT_LIMITS.text);
+    if (!words && !fileIds.length) throw new EngineError('write something');
+    if (fileIds.length && !rental.perms.files) throw new EngineError('files cannot be sent to this employee');
+    // Nobody at the desk: they are brought in, as the office's own window does when somebody talks to them.
+    if (!this.core.runningSessionOf(employee.id) && !this.eng.sessions.present(employee.id)) {
+      const why = !employee.hostId
+        ? 'they have no machine to work on'
+        : await Promise.resolve()
+            .then(() => this.eng.sessions.start(employee.id, { resume: true, actor: `client:${client.name}` }))
+            .then(
+              () => null,
+              (e: Error) => e.message,
+            );
+      if (why) {
+        const line = this.add({ clientId, employeeId, from: 'client', text: words });
+        this.add({ clientId, employeeId, from: 'note', text: `${employee.name} cannot start right now. The office has been told; try again a little later.` });
+        this.core.log('warn', `rent: ${employee.name} could not start for ${client.name}: ${why}`);
+        this.eng.comms.notify({ kind: 'info', severity: 'warning', title: `${employee.name} could not start for ${client.name}`, body: `A message from ${client.name} on the Rent portal is waiting: ${why}`, employeeId: employee.id });
+        return line;
+      }
+    }
+    const sent = await this.eng.saidFiles.deliver(employee, fileIds, by);
+    const said = words || 'Look at this.';
+    const message = this.eng.comms.sendMessage({
+      from: { kind: 'owner', id: null, name: `${client.name} (a client who rents you)` },
+      toEmployeeId: employee.id,
+      body: this.body(client, employee, rental, said) + (sent.lines.length ? `\n\nFiles that go with this — open ${sent.lines.length === 1 ? 'it' : 'each'} with the Read tool before you answer:\n${sent.lines.join('\n')}` : ''),
+      files: sent.files,
+      said,
+      channel: 'rent',
+      clientId,
+    });
+    return this.add({ clientId, employeeId, from: 'client', text: words, messageId: message.id, ...(sent.files.length ? { files: sent.files } : {}) });
+  }
+
+  // ───────────── which turn is whose ─────────────
+
+  /** A turn began with this message of the office's (null: a prompt that is not a message — a task, a person at the keyboard). */
+  turnStarted(employeeId: string, messageId: string | null): void {
+    const m = messageId ? this.core.messages.get(messageId) : undefined;
+    this.turns.set(employeeId, m?.channel === 'rent' && m.clientId ? m.clientId : null);
+  }
+
+  /** The client whose message the employee's turn in hand answers, if it is one. */
+  clientOfTurn(employeeId: string | null | undefined): string | null {
+    return employeeId ? (this.turns.get(employeeId) ?? null) : null;
+  }
+
+  private onEvent(e: OrchestratorEvent): void {
+    const clientId = typeof e.data?.rentClientId === 'string' ? e.data.rentClientId : null;
+    if (!clientId || !e.employeeId) return;
+    const client = this.active(clientId);
+    if (!client || !client.rentals.some((r) => r.employeeId === e.employeeId)) return;
+    if (e.type === 'agent.turn_finished') {
+      const text = String(e.data.lastMessage ?? '').trim();
+      if (text) this.add({ clientId, employeeId: e.employeeId, from: 'agent', text, ts: e.ts });
+    } else if (e.type === 'agent.file_given' && e.data.file && !e.data.taskId) {
+      const file = e.data.file as SaidFile;
+      this.add({ clientId, employeeId: e.employeeId, from: 'agent', text: typeof e.data.caption === 'string' ? e.data.caption : '', files: [file], ts: e.ts });
+    }
+  }
+
+  /** A file of a conversation, for the client of that conversation only: one the client sent, or one the employee gave them. */
+  fileOf(clientId: string, employeeId: string, fileId: string): SaidFile | null {
+    for (const line of this.lines(clientId, employeeId)) {
+      const f = line.files?.find((x) => x.id === fileId);
+      if (f) return f;
+    }
+    return null;
+  }
+
+  /** What the client is told about an employee they rent: who they are and what they are doing — nothing of the office. */
+  agentView(e: Employee, rental: Rental): { id: string; name: string; title: string; appearance: Employee['appearance']; state: string; busy: boolean; files: boolean; since: string } {
+    const s = this.core.runningSessionOf(e.id);
+    const busy = !!s && (s.inTurn === true || ['thinking', 'reading', 'coding', 'testing', 'debugging', 'running_command', 'researching', 'planning', 'reviewing', 'delegating'].includes(s.activity));
+    const state = !s ? 'away' : s.activity === 'paused' ? 'paused' : busy ? 'working' : 'available';
+    return { id: e.id, name: e.name, title: e.title, appearance: e.appearance, state, busy, files: rental.perms.files, since: rental.since };
+  }
+
+  /** A short line for the owner's lists: who, what for, and the conversation's last word. */
+  summary(client: RentClient): { lastLineAt: string | null; lines: number } {
+    let last: string | null = null;
+    let n = 0;
+    for (const r of client.rentals) {
+      const ls = this.lines(client.id, r.employeeId);
+      n += ls.length;
+      const t = ls[ls.length - 1]?.ts ?? null;
+      if (t && (!last || t > last)) last = t;
+    }
+    return { lastLineAt: last, lines: n };
+  }
+
+  /** Cut for a prompt or a list, where a line could be long. */
+  static short(text: string, n = 120): string {
+    return truncate(text.replace(/\s+/g, ' '), n);
+  }
+}

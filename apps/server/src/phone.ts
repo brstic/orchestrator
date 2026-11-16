@@ -41,6 +41,7 @@ export function phonePage(office: string): string {
   <h1>${esc(office)} opens on a computer</h1>
   <p>The office is a 3D room with live terminals. It needs a <strong>desktop or laptop computer</strong>; it cannot be entered from a phone.</p>
   <p>Open this same link on a computer — in a browser, or in the Orchestrator app. If it is an invitation, it has <strong>not</strong> been used up: it still works there.</p>
+  <p>Talking to an AI employee ${esc(office)} rents you? <a href="/rent" style="color:#ffd166">The Rent portal</a> works on a phone.</p>
 </main>
 </body>
 </html>

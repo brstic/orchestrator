@@ -354,6 +354,8 @@ function outline(e: OrchestratorEvent): OrchestratorEvent {
 export function eventFor(engine: Engine, who: Who, e: OrchestratorEvent): OrchestratorEvent | null {
   // An owner reads everything — except what is said in a room its member has closed.
   if (who.kind === 'owner') return closedTo(engine, who, memberOfEvent(engine, e)) ? null : e;
+  // The Rent portal — its clients and what is said with them — is the owners'.
+  if (e.type.startsWith('rent.') || (e.data && typeof e.data.rentClientId === 'string')) return null;
   const pub = FOREMAN_PUBLIC[e.type];
   if (pub) return { ...e, sessionId: null, taskId: null, projectId: null, ...pub(e) };
   if (!can(engine, who, 'read', memberOfEvent(engine, e))) return null;
@@ -365,6 +367,8 @@ export function eventFor(engine: Engine, who: Who, e: OrchestratorEvent): Orches
  * read that one — except that the foreman as sender hides nothing: what it tells an employee is that employee's.
  */
 export function mayReadMessage(engine: Engine, who: Who, m: Message): boolean {
+  // What a client of the Rent portal writes is the office's business with that client: the owners'.
+  if (m.channel === 'rent' && who.kind !== 'owner') return false;
   if (!can(engine, who, 'read', memberOf(engine, 'employee', m.toEmployeeId))) return false;
   const sender = m.from.kind === 'employee' ? memberOf(engine, 'employee', m.from.id) : null;
   return sender === OWNERS_ONLY || can(engine, who, 'read', sender);

@@ -74,6 +74,8 @@ export type EventType =
   // An employee's goal (EmployeeGoal): data { phase: 'set' | 'met' | 'stopped' | 'cleared', condition, … }.
   | 'agent.goal'
   | 'agent.file_given'
+  /** A client of the Rent portal, or what they rent, changed (rent.ts). */
+  | 'rent.changed'
   | 'meeting.created'
   | 'meeting.round_started'
   | 'meeting.contribution'

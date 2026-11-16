@@ -24,6 +24,7 @@ import { TaskTalk } from './task-talk.ts';
 import { Waits } from './waits.ts';
 import { Background } from './background.ts';
 import { Goals } from './goals.ts';
+import { Rent } from './rent.ts';
 
 /**
  * The orchestration engine: the single source of truth the 3D office renders.
@@ -61,6 +62,8 @@ export class Engine {
   readonly waits: Waits;
   readonly background: Background;
   readonly goals: Goals;
+  /** Employees rented out to clients who talk to them on the Rent portal (rent.ts, `docs/RENT.md`). */
+  readonly rent: Rent;
   readonly vault: Vault;
   readonly memory: Memory;
   readonly attachments: Attachments;
@@ -88,6 +91,7 @@ export class Engine {
     this.waits = new Waits(this);
     this.background = new Background(this);
     this.goals = new Goals(this);
+    this.rent = new Rent(this);
     this.vault = new Vault(this.core, opts.vaultKeyFile ?? null);
     this.vault.onCaptureFailed = (why) =>
       void this.comms?.securityAlert({
@@ -153,6 +157,7 @@ export class Engine {
 
   /** Reconstruct runtime state from the database after a (re)start. */
   start(): void {
+    this.rent.start();
     // Before anything is remembered or shown: credentials that stand in old records go to the vault.
     try {
       this.vault.sweep();

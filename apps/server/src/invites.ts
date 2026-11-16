@@ -60,15 +60,18 @@ export class Invites {
   private now: () => number;
   private pending: Pending[];
   private wrong = new Map<string, number[]>();
+  private kv: string;
 
-  constructor(store: Kv, now: () => number = Date.now) {
+  /** `kv`: where these codes are kept — the members' (`invites`), or another set of them (the Rent portal's clients). */
+  constructor(store: Kv, now: () => number = Date.now, kv = KV) {
     this.store = store;
     this.now = now;
-    this.pending = store.kvGet<Pending[]>(KV, []);
+    this.kv = kv;
+    this.pending = store.kvGet<Pending[]>(kv, []);
   }
 
   private save(): void {
-    this.store.kvSet(KV, this.pending);
+    this.store.kvSet(this.kv, this.pending);
   }
 
   private sweep(): void {
@@ -106,8 +109,20 @@ export class Invites {
     return p && Date.parse(p.expiresAt) > this.now() ? p.expiresAt : null;
   }
 
+  /** Whose this code is, without using it up (a page that says whom it was made for). A wrong one counts like one tried. */
+  peek(raw: unknown, ip: string): string {
+    return this.find(raw, ip).guestId;
+  }
+
   /** Exchange a code for the member it was made for. It works once. */
   redeem(raw: unknown, ip: string): string {
+    const found = this.find(raw, ip);
+    this.pending = this.pending.filter((p) => p !== found);
+    this.save();
+    return found.guestId;
+  }
+
+  private find(raw: unknown, ip: string): Pending {
     const now = this.now();
     const tries = (this.wrong.get(ip) ?? []).filter((t) => now - t < INVITE_LIMITS.windowMs);
     if (tries.length >= INVITE_LIMITS.wrongPerIp) throw new EngineError('Too many invitation links that did not work were tried from here. Wait a few minutes.', 429);
@@ -120,9 +135,7 @@ export class Invites {
       for (const [k, v] of this.wrong) if (k !== ip && v.every((t) => now - t >= INVITE_LIMITS.windowMs)) this.wrong.delete(k);
       throw new EngineError('This invitation link has been used already, or it is more than a week old. Ask for a new one.', 410);
     }
-    this.pending = this.pending.filter((p) => p !== found);
-    this.save();
-    return found.guestId;
+    return found;
   }
 }
 

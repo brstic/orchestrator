@@ -37,6 +37,17 @@ export function useSignIn() {
       const res = await fetch(`${serverBase}/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: username.trim(), password }) });
       const a = await res.json().catch(() => ({}));
       if (!res.ok || !a.token) throw new Error(a?.error ?? 'The office did not answer.');
+      // A client of the Rent portal signs in at the same door: their place is the portal, not the office (docs/RENT.md).
+      if (a.kind === 'client') {
+        try {
+          localStorage.setItem('orch.rent-token', a.token);
+          localStorage.setItem('orch.rent-name', username.trim());
+        } catch {
+          /* private window: they sign in again there */
+        }
+        window.location.assign('/rent');
+        return;
+      }
       try {
         localStorage.setItem('orch.login-name', username.trim());
       } catch {

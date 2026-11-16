@@ -21,6 +21,7 @@ import type {
   PerformanceStat,
   Project,
   RadioNow,
+  RentFence,
   Question,
   Routine,
   SessionCapabilities,
@@ -128,6 +129,8 @@ export interface LaunchSpec {
   browser?: boolean;
   /** Start by continuing the latest conversation Claude Code already has in this folder, instead of a new one. */
   continueLast?: boolean;
+  /** A rented employee: the folders they may reach and what they may do there (`docs/RENT.md`). Changed live with `session.fence`. */
+  fence?: RentFence | null;
   env: Record<string, string>;
   cols: number;
   rows: number;
@@ -143,6 +146,7 @@ export type AgentRpc =
   | { method: 'session.keys'; params: { sessionId: ID; keys: string[] } }
   /** The owner allowed one exact tool call that Claude Code had refused: the next identical call from this session is let through, once, within `ttlMs`. */
   | { method: 'session.grant'; params: { sessionId: ID; tool: string; input: unknown; ttlMs: number } }
+  | { method: 'session.fence'; params: { sessionId: ID; fence: RentFence | null } }
   | { method: 'term.subscribe'; params: { sessionId: ID } }
   | { method: 'term.unsubscribe'; params: { sessionId: ID } }
   | { method: 'term.input'; params: { sessionId: ID; data: string } }

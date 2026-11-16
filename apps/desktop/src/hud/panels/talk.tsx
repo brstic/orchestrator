@@ -154,6 +154,8 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
     if (!e) return [];
     const out: Line[] = [];
     for (const m of Object.values(s.messages)) {
+      // A client of the Rent portal and the employee: their conversation, not this one (Access → Rent shows it).
+      if (m.channel === 'rent') continue;
       if (m.toEmployeeId === e.id && m.channel === 'telegram' && m.chat) out.push({ kind: 'group', id: m.id, ts: m.createdAt, text: m.said ?? m.body, chat: m.chat });
       else if (m.toEmployeeId === e.id && (m.from.kind === 'owner' || m.routineId)) out.push({ kind: 'boss', id: m.id, ts: m.createdAt, text: m.said ?? m.body, delivery: m.delivery.status, via: m.delivery.via, files: m.files ?? [], telegram: m.channel === 'telegram' });
     }
@@ -162,6 +164,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
       if (ev.employeeId !== e.id || seen.has(ev.id)) continue;
       seen.add(ev.id);
       const d = ev.data as Record<string, any>;
+      if (typeof d.rentClientId === 'string') continue;
       // (In a group they may choose to stay quiet — nothing to show — or to answer one message: the mark is for Telegram.)
       if (ev.type === 'agent.turn_finished' && typeof d.lastMessage === 'string' && d.lastMessage.trim() && !/^\s*NO_REPLY\s*$/.test(d.lastMessage)) out.push({ kind: 'reply', id: ev.id, ts: ev.ts, text: d.lastMessage.replace(/^\s*\[reply #\d+\]\s*/i, '') });
       else if (ev.type === 'agent.file_given' && d.file?.id && d.file?.name) out.push({ kind: 'file', id: ev.id, ts: ev.ts, file: d.file as SaidFile, caption: typeof d.caption === 'string' ? d.caption : null, taskId: typeof d.taskId === 'string' ? d.taskId : null });

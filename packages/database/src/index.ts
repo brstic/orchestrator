@@ -80,7 +80,7 @@ const MIGRATIONS: string[] = [
   `,
 ];
 
-export type CredentialKind = 'owner' | 'enrollment' | 'host' | 'mcp' | 'guest';
+export type CredentialKind = 'owner' | 'enrollment' | 'host' | 'mcp' | 'guest' | 'client';
 
 export interface CredentialRecord {
   kind: CredentialKind;

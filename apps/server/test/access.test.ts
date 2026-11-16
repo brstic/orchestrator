@@ -327,3 +327,18 @@ test('what a shared project lets its employees run unasked is the owners\' to ch
   assert.equal(call(ana, 'POST', '/projects', { name: 'New', hostId: 'h-shared', policy: { autoAssign: true, allow: [] } }), true);
   assert.equal(call(jovan, 'POST', '/projects', { name: 'Mine', hostId: 'h-jovan', policy: { allow: ['Bash(ls:*)'] } }), true);
 });
+
+test('the Rent portal is the owners\': what a client writes, what is said back, and the record of clients — never a colleague\'s or a visitor\'s', () => {
+  const ev = (type: string, data: Record<string, unknown>) => ({ id: type, seq: 1, ts: '2026-11-16T10:00:00.000Z', type, source: { kind: 'server' }, correlationId: null, hostId: null, sessionId: null, employeeId: 'e-shared', taskId: null, projectId: null, summary: 'x', data }) as any;
+  const forClient = ev('agent.turn_finished', { lastMessage: 'the answer for the client', rentClientId: 'c-1' });
+  const ownTurn = ev('agent.turn_finished', { lastMessage: 'for the office' });
+  assert.deepEqual([root, vera, jovan, mila].map((who) => !!eventFor(engine, who, forClient)), [true, true, false, false]);
+  assert.deepEqual([vera, jovan, mila].map((who) => !!eventFor(engine, who, ev('rent.changed', { clientId: 'c-1' }))), [true, false, false]);
+  assert.deepEqual([vera, jovan, mila].map((who) => !!eventFor(engine, who, ownTurn)), [true, true, true]);
+  const fromClient = { id: 'm', toEmployeeId: 'e-shared', from: { kind: 'owner', id: null, name: 'Ana (a client who rents you)' }, channel: 'rent', clientId: 'c-1' } as any;
+  assert.deepEqual([vera, jovan, ana, mila].map((who) => mayReadMessage(engine, who, fromClient)), [true, false, false, false]);
+  // The owners' routes for it are listed nowhere for members: an owner's.
+  assert.deepEqual([vera, jovan, mila].map((who) => call(who, 'GET', '/rent')), [true, false, false]);
+  assert.equal(call(jovan, 'POST', '/rent/clients', { name: 'x' }), false);
+  assert.equal(call(jovan, 'GET', '/rent/clients/c-1/chats/e-shared'), false);
+});

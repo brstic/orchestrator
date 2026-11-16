@@ -1988,7 +1988,8 @@ export class SessionRegistry {
       // Only an effort that machine's Claude Code has (its agent says which); otherwise Claude Code's own default.
       effort: employee.effort && host?.info?.claudeEffortLevels?.includes(employee.effort) ? employee.effort : null,
       permissionMode: perms.permissionMode,
-      permissions: { allow: perms.allow, deny: perms.deny, ask: perms.ask },
+      // A rented employee: the tools the owner did not allow are not there at all (rent.ts; the fence below does the rest).
+      permissions: { allow: perms.allow, deny: [...perms.deny, ...this.eng.rent.denyRulesFor(employee)], ask: perms.ask },
       allowedTools: [],
       disallowedTools: [],
       appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available(), this.eng.attachments.available(), this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser, asksHighRisk(this.core.settings, employee.autonomy)),
@@ -2001,7 +2002,9 @@ export class SessionRegistry {
       claudeSessionId: session.claudeSessionId!,
       resume,
       // A project's other repositories, when they are on the machine this employee works on.
-      addDirs: project && (!project.hostId || project.hostId === session.hostId) ? (project.extraRepos ?? []).map((x) => x.path).filter((p) => p !== cwd) : [],
+      addDirs: [...new Set([...(project && (!project.hostId || project.hostId === session.hostId) ? (project.extraRepos ?? []).map((x) => x.path) : []), ...this.eng.rent.extraDirsFor(employee)])].filter((p) => p !== cwd),
+      // Rented: the folders they may reach and what they may do there, enforced on their machine (rent.ts).
+      fence: this.eng.rent.fenceFor(employee, cwd),
       env: {
         ORCH_EMPLOYEE: slugify(employee.name),
         // Their own Claude login, if they were given one.

@@ -329,6 +329,8 @@ export const TELEGRAM_REPLY = '(Your reply is sent back to Telegram as a chat me
 export function messagePrompt(msg: Message, collab: CollabRequest | undefined): string {
   // A person: the boss, or by name — an owner or a colleague the boss invited is not the boss.
   const from = msg.from.kind === 'owner' ? (/^the boss$/i.test(msg.from.name) || !msg.from.name ? 'the boss' : msg.from.name) : msg.from.name;
+  // From a client on the Rent portal: the text says who writes and how to answer them (rent.ts).
+  if (msg.channel === 'rent') return `${correlationMarker('MSG', msg.id)} ${msg.body}`;
   // From Telegram: a group's text says where it is and how to answer; a private chat is said to be one.
   if (msg.channel === 'telegram') return msg.chat ? `${correlationMarker('MSG', msg.id)} ${msg.body}` : `${correlationMarker('MSG', msg.id)} On Telegram, ${from} writes: ${msg.body}\n${TELEGRAM_REPLY}`;
   if (collab && msg.kind === 'collab_request') {

@@ -889,7 +889,7 @@ export class Comms {
   // ─────────────────────────── messages ────────────────────────────
 
   /** `returned`: it is handed to the recipient as the result of a tool call of theirs that is waiting for it, so nothing is typed into their terminal. */
-  sendMessage(input: { from: Message['from']; toEmployeeId: string; body: string; kind?: MessageKind; taskId?: string | null; threadId?: string | null; routineId?: string | null; returned?: boolean; files?: Message['files']; said?: string; channel?: Message['channel']; chat?: string }): Message {
+  sendMessage(input: { from: Message['from']; toEmployeeId: string; body: string; kind?: MessageKind; taskId?: string | null; threadId?: string | null; routineId?: string | null; returned?: boolean; files?: Message['files']; said?: string; channel?: Message['channel']; chat?: string; clientId?: string }): Message {
     const to = this.core.employees.require(input.toEmployeeId);
     // A credential somebody wrote into a message goes to the vault; the message goes on with its name there.
     const body = input.from.kind === 'system' || input.kind === 'system' ? input.body : this.eng.vault.capture(input.body, input.from.kind === 'employee' ? { kind: 'employee', id: input.from.id, name: input.from.name.replace(/ \(.*\)$/, '') } : { kind: 'owner', id: null, name: input.from.name.replace(/ \(.*\)$/, '') }, [to.name]).text;
@@ -914,17 +914,19 @@ export class Comms {
       ...(input.files?.length ? { files: input.files, said: input.said ?? input.body } : input.said !== undefined && input.said !== input.body ? { said: input.said } : {}),
       ...(input.channel ? { channel: input.channel } : {}),
       ...(input.chat ? { chat: input.chat } : {}),
+      ...(input.clientId ? { clientId: input.clientId } : {}),
     };
     this.core.put('message', msg);
     this.core.event({
       type: 'agent.message',
       source: input.from.kind === 'owner' ? 'owner' : input.from.kind === 'employee' ? 'mcp' : 'server',
-      summary: `${input.from.name} → ${to.name}: ${truncate(input.body, 120)}`,
+      // (A client of the Rent portal: their words stay in their conversation, not in the office's feed — rent.ts.)
+      summary: msg.channel === 'rent' ? `${input.from.name.replace(/ \(.*\)$/, '')} wrote to ${to.name} on the Rent portal` : `${input.from.name} → ${to.name}: ${truncate(input.body, 120)}`,
       employeeId: input.from.kind === 'employee' ? input.from.id : to.id,
       taskId: msg.taskId,
       projectId: to.projectId,
       correlationId: msg.threadId ?? msg.id,
-      data: { messageId: msg.id, toEmployeeId: to.id, fromEmployeeId: input.from.kind === 'employee' ? input.from.id : null, kind: msg.kind, ...(msg.routineId ? { routineId: msg.routineId } : {}) },
+      data: { messageId: msg.id, toEmployeeId: to.id, fromEmployeeId: input.from.kind === 'employee' ? input.from.id : null, kind: msg.kind, ...(msg.routineId ? { routineId: msg.routineId } : {}), ...(msg.channel === 'rent' ? { rentClientId: msg.clientId, quiet: true } : {}) },
     });
     if (!input.returned) this.enqueueMessage(msg, true);
     // A message that reads as a standing rule ("don't…", "from now on…") is kept as a lesson candidate.
@@ -1006,10 +1008,11 @@ export class Comms {
   /** Resolve "Alex" or "backend" to a teammate. */
   resolveTeammate(from: Employee, to: string): Employee | undefined {
     const byName = this.core.employeeByName(to);
-    if (byName && byName.id !== from.id) return byName;
+    // (A rented employee and the rest of the office do not reach each other: such a name is no teammate — rent.ts.)
+    if (byName && byName.id !== from.id) return this.eng.rent.reaches(from, byName) ? byName : undefined;
     const role = matchRole(to);
     if (!role) return undefined;
-    const candidates = this.core.employees.filter((e) => !e.archived && e.id !== from.id && e.roleKey === role.key);
+    const candidates = this.core.employees.filter((e) => !e.archived && e.id !== from.id && e.roleKey === role.key && this.eng.rent.reaches(from, e));
     const sameProject = candidates.filter((e) => e.projectId && e.projectId === from.projectId);
     const pool = sameProject.length ? sameProject : candidates;
     return pool.find((e) => !!this.core.runningSessionOf(e.id)) ?? pool[0];
@@ -1388,6 +1391,8 @@ export class Comms {
       if (m) {
         m.delivery = state;
         this.core.put('message', m);
+        // Handed over as the Stop hook's feedback, it goes on the turn that was ending: that turn now answers it.
+        if (status === 'sent' && via === 'stop_hook') this.eng.rent.turnStarted(m.toEmployeeId, m.id);
         if (status === 'confirmed' || status === 'sent') {
           const to = this.core.employees.get(m.toEmployeeId);
           if (status === 'confirmed') {

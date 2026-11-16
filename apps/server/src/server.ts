@@ -6,6 +6,7 @@ import { Logins, SESSION_DAYS } from './logins.ts';
 import { Knocks, type Admission } from './knocks.ts';
 import { allowed, closedTo, eventFor, mayCall, mayReadRoutine, memberOf, outcomesScopeFor, stateFor } from './access.ts';
 import { Telegram } from './telegram.ts';
+import { RentDoor, pageAt } from './rent-door.ts';
 import { HiFi, nowPlaying } from './radio.ts';
 import { ArcadeShelf } from './arcade.ts';
 import { SshLinks } from './ssh-links.ts';
@@ -261,6 +262,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   // A sign-in that has ended (signed out, the password changed) is over for the windows that are open with it, too.
   logins.onEnded = (guestId, token) => clients.dropLogins(guestId, token ? Logins.keyOf(token) : undefined);
   const invites = new Invites(store);
+  // ── the Rent portal: clients who talk to the employees they rent, at the office's address (docs/RENT.md) ──
+  // (`rentDoor` is made once `addressOf` exists, below.)
   let door: Door | null = null;
   /** Did this request come in through the guest door (from the network), rather than from this computer? */
   const viaDoor = (req: FastifyRequest): boolean => !!door && req.headers['x-orch-door'] === door.secret;
@@ -292,6 +295,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   };
   /** Where a request comes from: what the door says (it sets the header itself), otherwise the connection's own address. */
   const addressOf = (req: FastifyRequest): string => (viaDoor(req) ? String(req.headers['x-forwarded-for'] ?? req.ip) : req.ip);
+  const rentDoor = new RentDoor({ engine, guests, address: () => store.kvGet<{ address: string | null }>('sharing', { address: null }).address, addressOf, page: pageAt(opts.uiDir ?? null), log });
+  rentDoor.register(app);
 
   app.setErrorHandler((err: any, _req, reply) => {
     if (err instanceof EngineError) return reply.code(err.status).send({ error: err.message });
@@ -385,6 +390,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   app.post('/login', { bodyLimit: 2048 }, async (req, reply) => {
     void reply.header('cache-control', 'no-store');
     const b = (req.body ?? {}) as Record<string, unknown>;
+    // The name of a client of the Rent portal: their session, for the portal (they never come into the office).
+    if (rentDoor.isClient(b.username)) return rentDoor.signIn(b.username, b.password, addressOf(req));
     const { guest, token, expiresAt } = await logins.signIn(b.username, b.password, addressOf(req));
     return { token, name: guest.name, role: guest.role, office: engine.core.settings.companyName, expiresAt, days: SESSION_DAYS };
   });
@@ -428,6 +435,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     if (!isPhone(req.headers['user-agent'])) return;
     const route = (req.raw.url ?? '/').split('?')[0]!;
     if (route === '/healthz' || route === '/mcp' || route === '/ws/agent') return;
+    // The Rent portal is made for a phone as much as for a computer: its page, its files and its API.
+    if (route === '/rent' || route.startsWith('/rent/') || route.startsWith('/r/') || route.startsWith('/assets/') || route.startsWith('/favicon')) return;
     const wantsPage = req.method === 'GET' && !route.startsWith('/api/') && !route.startsWith('/ws/') && !/\.[a-z0-9]{2,5}$/i.test(route);
     void reply.header('cache-control', 'no-store');
     if (wantsPage) return reply.code(403).type('text/html; charset=utf-8').send(phonePage(engine.core.settings.companyName));
@@ -640,6 +649,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
     api.post('/guests', async (req) => {
       needDoor();
+      if (rentDoor.isClient(body(req).name)) throw new EngineError('a client of the Rent portal has that name: everybody who signs in at the door needs a name of their own');
       // With a link, the credential is made when the link is used; without, it is in the text itself.
       const { guest, token } = guests.invite({ name: String(body(req).name ?? ''), role: body(req).role, credential: !officeAddress() });
       return { guest, ...invite(guest, token) };
@@ -845,6 +855,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
     // Routines: a standing instruction the office repeats for one employee (see `routines.ts`).
     const actorOf = (req: FastifyRequest) => (whoOf(req).id === 'owner' ? 'owner' : `member:${whoOf(req).name}`);
+    // The Rent portal, the owner's side: clients, what they rent, what each rented employee may do (rent-door.ts).
+    rentDoor.ownerRoutes(api, actorOf);
     /** The person behind a request, as the task conversation names them. */
     const personOf = (req: FastifyRequest): { kind: 'owner' | 'member'; id: string | null; name: string } => (whoOf(req).id === 'owner' ? { kind: 'owner', id: null, name: 'The boss' } : { kind: 'member', id: whoOf(req).id, name: whoOf(req).name });
     api.get('/routines', async (req) => engine.routines.list().filter((r) => mayReadRoutine(engine, whoOf(req), r)));

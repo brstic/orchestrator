@@ -1911,3 +1911,121 @@ button.k-row:focus-visible {
 .talk-via {
   opacity: 0.8;
 }
+
+/* Access → Rent (panels/rent.tsx, docs/RENT.md). */
+.rent-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.rent-top .k-text {
+  flex: 1;
+}
+.rent-top > .btn {
+  flex: none;
+  margin-left: auto;
+}
+.rent-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.rent-initial {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-weight: 700;
+  color: #1c1503;
+  background: linear-gradient(140deg, #ffd166, #ff9f43);
+}
+.rent-initial-ended {
+  width: 26px;
+  height: 26px;
+  font-size: 12px;
+  filter: grayscale(0.8) opacity(0.6);
+}
+.rent-faces {
+  display: flex;
+  flex: none;
+}
+.rent-faces .avatar {
+  margin-left: -6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--panel, #11161f);
+}
+.rent-agent + .rent-agent {
+  border-top: 1px solid var(--line);
+}
+.rent-agent .k-row {
+  border-top: 0 !important;
+}
+.rent-agent .avatar {
+  border-radius: 50%;
+}
+.rent-agent-perms {
+  padding: 0 16px 12px 58px;
+}
+.rent-perms .k-toggle:disabled {
+  opacity: 0.6;
+}
+.rent-perms .rent-perm-wide.k-toggle-on {
+  background: rgba(255, 176, 32, 0.16);
+  color: #ffd27a;
+}
+.rent-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.rent-add select {
+  flex: 1;
+  min-width: 0;
+}
+.rent-convo {
+  margin: 0 16px 14px 58px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}
+.rent-line-who {
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--muted);
+}
+.rent-line-who span {
+  font-weight: 400;
+  color: var(--faint);
+}
+.rent-line-client .rent-line-who {
+  color: #ffd166;
+}
+.rent-line-note {
+  color: #ffd27a;
+}
+.rent-line-file {
+  display: inline-block;
+  margin: 2px 0;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+.access-body {
+  padding-top: 18px;
+}
+@media (max-width: 720px) {
+  .rent-two {
+    grid-template-columns: 1fr;
+  }
+}
