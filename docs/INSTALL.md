@@ -254,4 +254,4 @@ pnpm test:real         # acceptance run against the real Claude Code CLI
 pnpm test:real:sdk     # an SDK-managed worker with the real Agent SDK (ORCH_SDK_PATH or `sdk install`)
 ```
 
-Environment: `ORCH_SERVER_HOME`, `ORCH_AGENT_HOME`, `ORCH_PORT`, `ORCH_HOST`, `ORCH_PUBLIC_URL`, `ORCH_DEBUG_HTTP=1` (request trace without credentials).
+Environment: `ORCH_SERVER_HOME`, `ORCH_AGENT_HOME`, `ORCH_PORT`, `ORCH_HOST`, `ORCH_PUBLIC_URL`, `ORCH_DEBUG_HTTP=1` (request trace without credentials), `ORCH_START_WAIT_SEC` (how long `pnpm start` / `pnpm serve` waits for the server to come up before it gives up and stops it; default 120).

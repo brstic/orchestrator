@@ -61,8 +61,14 @@ function run(entry, argv, opts = {}) {
   return child;
 }
 
+// How long a starting server is waited for. A large office needs a while to read its database, and a start right
+// after a deploy longer still; fifteen seconds, as it once was, was not enough on a real one. ORCH_START_WAIT_SEC
+// changes it.
+const startWaitMs = (Number(process.env.ORCH_START_WAIT_SEC) > 0 ? Number(process.env.ORCH_START_WAIT_SEC) : 120) * 1000;
+
 async function waitForServer() {
-  for (let i = 0; i < 100; i++) {
+  const began = Date.now();
+  while (Date.now() - began < startWaitMs && !stopping) {
     try {
       if ((await fetch(`${url}/healthz`)).ok) return;
     } catch {
@@ -70,7 +76,18 @@ async function waitForServer() {
     }
     await new Promise((r) => setTimeout(r, 150));
   }
-  throw new Error(`the server did not come up on ${url}`);
+  throw new Error(`the server did not come up on ${url} within ${Math.round(startWaitMs / 1000)} seconds`);
+}
+
+/**
+ * Giving up while starting: say why, end the server and the agent this process started, and leave. Never returns.
+ * Simply throwing would end this process and leave the server behind, holding the office's ports — and whoever
+ * starts the office again (systemd, five seconds later) would then fail on those ports, again and again.
+ */
+async function giveUp(e) {
+  if (!stopping) console.error(e?.message ?? String(e));
+  shutdown(1);
+  await new Promise(() => {});
 }
 
 function agentConfig() {
@@ -132,10 +149,10 @@ server.on('exit', (code) => {
     shutdown(1);
   }
 });
-await waitForServer();
+await waitForServer().catch(giveUp);
 const token = fs.readFileSync(path.join(serverHome, 'owner-token'), 'utf8').trim();
 const cfg = agentConfig();
-if (!cfg?.credential || cfg.serverUrl !== url) await enrollAgent(token);
+if (!cfg?.credential || cfg.serverUrl !== url) await enrollAgent(token).catch(giveUp);
 startAgent(token);
 
 // An office on a server: the door to its members is opened here, once; the server reopens it by itself after a restart.
