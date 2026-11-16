@@ -98,7 +98,7 @@ test('what the client writes reaches the session, and the answer comes back to t
   assert.equal(m.clientId, clientId);
   assert.match(m.body, /^On the Rent portal, Ana Client \(Acme\) writes/);
   assert.match(m.body, /Your reply goes to Ana Client on the portal/);
-  assert.match(m.body, /in those of Mila/);
+  assert.match(m.body, /rents Mila \(whose folder .*mila-api you may use too\)/);
   // The end of that turn carries the client: the owner's Talk leaves it out.
   const events = await h.api<any[]>('GET', `/events?employeeId=${kira.id}&limit=200`);
   assert.ok(events.some((e) => e.type === 'agent.turn_finished' && e.data.rentClientId === clientId && /client-answer-1188/.test(e.data.lastMessage)));

@@ -10,12 +10,30 @@
  * Everything it asks of the office is under `/rent/api`, with the client's own session (kept in this browser as
  * `orch.rent-token`). The office answers nothing else to it.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Appearance, RentLine, SaidFile } from '@orchestrator/contracts';
 import { Avatar, Markdown } from '@orchestrator/ui';
 import { serverBase } from '../lib/api.ts';
 import logo from '../entrance/logo.svg';
+import type { StageMood, StageReaction } from './AgentStage.tsx';
 import './rent.css';
+
+// The 3D (three.js) is loaded only when it is shown: the portal opens with faces and the figures follow.
+const AgentStage = lazy(() => import('./AgentStage.tsx').then((m) => ({ default: m.AgentStage })));
+const TeamStage = lazy(() => import('./AgentStage.tsx').then((m) => ({ default: m.TeamStage })));
+/** Can this browser draw in 3D? Asked once, without loading three.js for it. */
+let webgl: boolean | null = null;
+const canDraw3d = (): boolean => {
+  if (webgl !== null) return webgl;
+  try {
+    const c = document.createElement('canvas');
+    webgl = !!(c.getContext('webgl2') || c.getContext('webgl'));
+  } catch {
+    webgl = false;
+  }
+  return webgl;
+};
+const STAGE = 'orch.rent-stage';
 
 const TOKEN = 'orch.rent-token';
 const SEEN = 'orch.rent-seen';
@@ -47,6 +65,7 @@ async function call<T>(method: string, path: string, body?: unknown, token?: str
   return data as T;
 }
 
+type Doing = 'thinking' | 'reading' | 'writing' | 'running' | 'researching' | 'waiting';
 interface Agent {
   id: string;
   name: string;
@@ -56,8 +75,14 @@ interface Agent {
   busy: boolean;
   files: boolean;
   since: string;
+  /** Their machine is not connected (a computer that is off): away until it is back. */
+  offline?: boolean;
+  doing?: Doing | null;
   last: RentLine | null;
 }
+const DOING_WORD: Record<Doing, string> = { thinking: 'thinking', reading: 'reading', writing: 'writing', running: 'running something', researching: 'looking things up', waiting: 'waiting on the office' };
+const moodOf = (a: Agent, reading: boolean): StageMood =>
+  a.state === 'away' ? 'away' : a.state === 'paused' ? 'paused' : a.busy ? (a.doing === 'reading' || a.doing === 'researching' ? 'reading' : a.doing === 'thinking' || a.doing === 'waiting' ? 'thinking' : 'working') : reading ? 'reading' : 'available';
 interface Me {
   office: string;
   name: string;
@@ -116,7 +141,7 @@ function Door({ children, wide }: { children: ReactNode; wide?: boolean }) {
 }
 
 function Join({ code, onIn, onSignIn }: { code: string; onIn: (token: string) => void; onSignIn: () => void }) {
-  const [info, setInfo] = useState<{ office: string; name: string; company: string | null; agents: Array<{ name: string; title: string }> } | null>(null);
+  const [info, setInfo] = useState<{ office: string; name: string; company: string | null; agents: Array<{ name: string; title: string; appearance?: Appearance }> } | null>(null);
   const [gone, setGone] = useState('');
   const [password, setPassword] = useState('');
   const [again, setAgain] = useState('');
@@ -146,6 +171,11 @@ function Join({ code, onIn, onSignIn }: { code: string; onIn: (token: string) =>
   const ready = password.length >= 8 && again === password && !busy;
   return (
     <Door>
+      {canDraw3d() && info.agents.some((a) => a.appearance) && (
+        <Suspense fallback={<div className="rp-team-canvas" />}>
+          <TeamStage looks={info.agents.map((a) => a.appearance).filter((a): a is Appearance => !!a)} />
+        </Suspense>
+      )}
       <div className="rp-eyebrow">{info.office} · Rent portal</div>
       <h1 className="rp-h1">Welcome, {info.name.split(' ')[0]}</h1>
       <p className="rp-lead">
@@ -400,7 +430,7 @@ function Portal({ token, onOut, onToken }: { token: string; onOut: () => void; o
       </aside>
       <section className="rp-main">
         {agent ? (
-          <Chat key={agent.id} agent={agent} ask={ask} onBack={() => setShowChat(false)} onSeen={markSeen} onSent={() => void load()} />
+          <Chat key={agent.id} agent={agent} me={me.name} ask={ask} onBack={() => setShowChat(false)} onSeen={markSeen} onSent={() => void load()} />
         ) : (
           <div className="rp-blank">
             <img src={logo} alt="" width={56} height={56} />
@@ -423,7 +453,7 @@ interface Pending {
   error: string | null;
 }
 
-function Chat({ agent, ask, onBack, onSeen, onSent }: { agent: Agent; ask: <T>(method: string, path: string, body?: unknown) => Promise<T>; onBack: () => void; onSeen: (eid: string, lineId: string) => void; onSent: () => void }) {
+function Chat({ agent, me, ask, onBack, onSeen, onSent }: { agent: Agent; me: string; ask: <T>(method: string, path: string, body?: unknown) => Promise<T>; onBack: () => void; onSeen: (eid: string, lineId: string) => void; onSent: () => void }) {
   const [lines, setLines] = useState<Line[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [live, setLive] = useState(agent);
@@ -437,6 +467,17 @@ function Chat({ agent, ask, onBack, onSeen, onSent }: { agent: Agent; ask: <T>(m
   const picker = useRef<HTMLInputElement>(null);
   const last = useRef<string>('');
   const stick = useRef(true);
+  // The figure: what they do, a gesture now and then, and a word over their head.
+  const [reaction, setReaction] = useState<StageReaction | null>(null);
+  const [bubble, setBubble] = useState<string | null>(null);
+  const [readingUntil, setReadingUntil] = useState(0);
+  const [stageOn, setStageOn] = useState(() => read(STAGE) !== 'off');
+  const seenIds = useRef<Set<string> | null>(null);
+  const say = useCallback((text: string, pose: StageReaction['pose']) => {
+    setReaction({ pose, at: Date.now() });
+    setBubble(text);
+    window.setTimeout(() => setBubble((b) => (b === text ? null : b)), 2800);
+  }, []);
 
   const pull = useCallback(async () => {
     const r = await ask<{ agent: Agent; lines: Line[]; pending: Line[]; whole: boolean }>('GET', `/chats/${agent.id}${last.current ? `?after=${last.current}` : ''}`);
@@ -460,7 +501,15 @@ function Chat({ agent, ask, onBack, onSeen, onSent }: { agent: Agent; ask: <T>(m
   useEffect(() => {
     const l = lines[lines.length - 1];
     if (l) onSeen(agent.id, l.id);
-  }, [lines, agent.id, onSeen]);
+    if (!loaded) return;
+    if (!seenIds.current) {
+      seenIds.current = new Set(lines.map((x) => x.id));
+      return;
+    }
+    const fresh = lines.filter((x) => !seenIds.current!.has(x.id));
+    for (const x of fresh) seenIds.current.add(x.id);
+    if (fresh.some((x) => x.from === 'agent')) say(['Done!', 'Here you go', 'All yours', 'Got it'][Math.floor(Math.random() * 4)]!, 'thumbsUp');
+  }, [lines, agent.id, onSeen, loaded, say]);
   // New lines keep the view at the bottom — unless the client has scrolled up to read.
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -506,6 +555,7 @@ function Chat({ agent, ask, onBack, onSeen, onSent }: { agent: Agent; ask: <T>(m
     try {
       const line = await ask<Line>('POST', `/chats/${agent.id}`, { text: words, files: ids });
       stick.current = true;
+      setReadingUntil(Date.now() + 5000);
       setLines((ls) => (ls.some((l) => l.id === line.id) ? ls : [...ls, line]));
       last.current = line.id;
       setText('');
@@ -539,6 +589,12 @@ function Chat({ agent, ask, onBack, onSeen, onSent }: { agent: Agent; ask: <T>(m
   }, [lines]);
   const lastLine = lines[lines.length - 1];
   const thinking = live.busy || (!!lastLine && lastLine.from === 'client' && lastLine.delivery !== 'failed' && live.state !== 'away' && Date.now() - Date.parse(lastLine.ts) < 10 * 60_000);
+  const doingWord = live.busy && live.doing ? DOING_WORD[live.doing] : null;
+  const stateWord = live.offline ? 'away — their computer is off' : doingWord ? `${doingWord}…` : live.busy ? 'working…' : STATE_WORD[live.state].toLowerCase();
+  const mood = moodOf(live, Date.now() < readingUntil);
+  const first = me.split(' ')[0];
+  const show3d = canDraw3d();
+  const SUGGEST = [`Hi ${live.name}! What can you do for me?`, 'Where are we on the work so far?', 'Here is what I need today:'];
 
   return (
     <div
@@ -569,10 +625,55 @@ function Chat({ agent, ask, onBack, onSeen, onSent }: { agent: Agent; ask: <T>(m
         <div className="rp-chat-who">
           <b>{live.name}</b>
           <small>
-            {live.title} · <span className={`rp-state rp-state-${live.state}`}>{live.busy ? 'working…' : STATE_WORD[live.state].toLowerCase()}</span>
+            {live.title} · <span className={`rp-state rp-state-${live.state}`} data-rent-state>{stateWord}</span>
           </small>
         </div>
+        {show3d && (
+          <button
+            type="button"
+            className={`rp-icon rp-stage-toggle ${stageOn ? 'rp-stage-toggle-on' : ''}`}
+            aria-pressed={stageOn}
+            title={stageOn ? `Hide ${live.name}'s desk` : `Show ${live.name}'s desk`}
+            onClick={() => {
+              write(STAGE, stageOn ? 'off' : null);
+              setStageOn(!stageOn);
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden>
+              <path d="M3 18h18M5 18V9h14v9M9 9V6h6v3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        )}
       </header>
+      <div className={`rp-chat-body ${show3d && stageOn ? 'rp-with-stage' : ''}`}>
+      {show3d && stageOn && (
+        <aside className="rp-stage" data-rent-stage={mood}>
+          <Suspense fallback={<div className="rp-stage-canvas rp-stage-wait"><Avatar appearance={live.appearance} size={64} /></div>}>
+            <AgentStage look={live.appearance} mood={mood} reaction={reaction} label={`${live.name} at their desk, ${stateWord}`} onPoke={() => say(live.state === 'away' ? 'Zzz…' : `Hi ${first}! 👋`, live.state === 'away' ? 'bow' : 'wave')} />
+          </Suspense>
+          <div className="rp-stage-tag" aria-hidden>
+            <b>{live.name}</b>
+            <span className={`rp-stage-word rp-stage-word-${mood}`}>{live.offline ? 'AWAY' : doingWord ? doingWord.toUpperCase() : live.busy ? 'WORKING' : STATE_WORD[live.state].toUpperCase()}</span>
+          </div>
+          {bubble && (
+            <div className="rp-stage-bubble" key={bubble + (reaction?.at ?? 0)}>
+              {bubble}
+            </div>
+          )}
+          <div className="rp-stage-card">
+            <div>
+              <small>Works for you since</small>
+              <b>{new Date(live.since).toLocaleDateString([], { month: 'long', day: 'numeric' })}</b>
+            </div>
+            <div>
+              <small>Files</small>
+              <b>{live.files ? 'both ways' : 'words only'}</b>
+            </div>
+            <p className="rp-stage-hint">Drag to turn the desk · click {live.name} to say hi</p>
+          </div>
+        </aside>
+      )}
+      <div className="rp-chat-col">
       <div
         className="rp-lines"
         ref={scroller}
@@ -590,6 +691,13 @@ function Chat({ agent, ask, onBack, onSeen, onSent }: { agent: Agent; ask: <T>(m
               <p>
                 {live.title}. Tell {live.name} what you need, in your own words — {live.files ? 'add files if they help. ' : ''}They work on it and answer here.
               </p>
+              <div className="rp-suggest">
+                {SUGGEST.map((s) => (
+                  <button key={s} type="button" onClick={() => (setText(s), box.current?.focus())}>
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           {rows.map((r) =>
@@ -598,7 +706,7 @@ function Chat({ agent, ask, onBack, onSeen, onSent }: { agent: Agent; ask: <T>(m
                 <span>{r.day}</span>
               </div>
             ) : (
-              <Bubble key={r.key} line={r.line} first={r.first} agent={live} ask={ask} />
+              <Bubble key={r.key} line={r.line} first={r.first} agent={live} ask={ask} fresh={!!seenIds.current && !seenIds.current.has(r.line.id)} />
             ),
           )}
           {thinking && (
@@ -610,6 +718,7 @@ function Chat({ agent, ask, onBack, onSeen, onSent }: { agent: Agent; ask: <T>(m
                 <i />
                 <i />
                 <i />
+                {doingWord && <span className="rp-typing-word">{doingWord}</span>}
               </div>
             </div>
           )}
@@ -690,11 +799,13 @@ function Chat({ agent, ask, onBack, onSeen, onSent }: { agent: Agent; ask: <T>(m
         </div>
         <small className="rp-compose-hint">{live.state === 'away' ? `${live.name} is away; they start as soon as you write.` : 'Enter to send · Shift+Enter for a new line'}</small>
       </form>
+      </div>
+      </div>
     </div>
   );
 }
 
-function Bubble({ line, first, agent, ask }: { line: Line; first: boolean; agent: Agent; ask: <T>(method: string, path: string, body?: unknown) => Promise<T> }) {
+function Bubble({ line, first, agent, ask, fresh }: { line: Line; first: boolean; agent: Agent; ask: <T>(method: string, path: string, body?: unknown) => Promise<T>; fresh?: boolean }) {
   if (line.from === 'note')
     return (
       <div className="rp-note" role="status">
@@ -704,7 +815,7 @@ function Bubble({ line, first, agent, ask }: { line: Line; first: boolean; agent
   const mine = line.from === 'client';
   const tick = mine ? (line.delivery === 'failed' ? 'Not delivered' : line.delivery === 'confirmed' ? 'Seen' : 'Sent') : null;
   return (
-    <div className={`rp-row ${mine ? 'rp-row-me' : 'rp-row-agent'} ${first ? 'rp-row-first' : ''}`} data-rent-line={line.from}>
+    <div className={`rp-row ${mine ? 'rp-row-me' : 'rp-row-agent'} ${first ? 'rp-row-first' : ''} ${fresh ? 'rp-row-new' : ''}`} data-rent-line={line.from}>
       {!mine && <span className="rp-row-face">{first && <Avatar appearance={agent.appearance} size={28} />}</span>}
       <div className={`rp-bubble ${mine ? 'rp-bubble-me' : 'rp-bubble-agent'}`}>
         {line.files?.map((f) => (

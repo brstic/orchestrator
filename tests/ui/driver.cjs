@@ -3158,6 +3158,9 @@ async function scenario() {
     try {
       await guest.loadURL(`${origin}/r/${link.split('/r/')[1]}`);
       await gwait(`!!document.querySelector('[data-rent-password]') && /Welcome, Ana/.test(document.body.textContent)`);
+      // The team on their feet, in 3D, once the figures are loaded.
+      await gwait(`!!document.querySelector('.rp-team-canvas canvas')`, 20000);
+      await sleep(1500);
       await gset('[data-rent-password]', 'a good password 42');
       await gset('[data-rent-password-again]', 'a good password 42');
       await gshot('rent-portal-join');
@@ -3168,6 +3171,11 @@ async function scenario() {
       await gjs(`document.querySelector('[data-rent-send]').click()`);
       await gwait(`!!document.querySelector('[data-rent-typing]')`, 10000);
       await gwait(`[...document.querySelectorAll('[data-rent-line="agent"]')].some((b) => /Found two guides/.test(b.textContent))`, 40000);
+      // The desk in 3D beside the conversation; a click on the employee is a hello.
+      await gwait(`!!document.querySelector('[data-rent-stage] canvas')`, 20000);
+      await gjs(`document.querySelector('.rp-stage-canvas').click()`);
+      await gwait(`/Hi Ana/.test(document.querySelector('.rp-stage-bubble')?.textContent || '')`, 5000);
+      await sleep(900);
       shown = await gjs(`document.querySelector('[data-rent-line="agent"] .rp-md').textContent.slice(0, 60)`);
       await gshot('rent-portal');
       // A phone: the conversation alone, and the team behind its back button.

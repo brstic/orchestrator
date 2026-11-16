@@ -95,7 +95,7 @@ export class RentDoor {
       ...e.rent.summary(c),
       agents: c.rentals.map((r) => {
         const emp = e.core.employees.get(r.employeeId);
-        return { ...r, name: emp?.name ?? '(gone)', title: emp?.title ?? '', appearance: emp?.appearance ?? null, workingDir: emp?.workingDir ?? null, state: emp ? e.rent.agentView(emp, r).state : 'away' };
+        return { ...r, name: emp?.name ?? '(gone)', title: emp?.title ?? '', appearance: emp?.appearance ?? null, workingDir: emp?.workingDir ?? null, state: emp ? e.rent.agentView(emp, r).state : 'away', mine: !!emp && !!e.hosts.memberOfHost(emp.hostId), online: !!emp?.hostId && e.core.agents.isOnline(emp.hostId) };
       }),
     };
   }
@@ -120,7 +120,7 @@ export class RentDoor {
     app.get('/rent/join/:code', async (req) => {
       const client = engine.rent.active(this.invites.peek(String((req.params as Record<string, string>).code).split('.')[0], this.deps.addressOf(req)));
       if (!client) throw new EngineError('This link is no longer valid. Ask for a new one.', 410);
-      return { office: engine.core.settings.companyName, name: client.name, company: client.company, agents: engine.rent.agentsOf(client).map((x) => ({ name: x.name, title: x.title })) };
+      return { office: engine.core.settings.companyName, name: client.name, company: client.company, agents: engine.rent.agentsOf(client).map((x) => ({ name: x.name, title: x.title, appearance: x.appearance })) };
     });
 
     app.post('/rent/join', { bodyLimit: 4096 }, async (req, reply) => {
@@ -234,22 +234,36 @@ export class RentDoor {
 
   // ───────────── the owner's side (under /api, owners only) ─────────────
 
-  ownerRoutes(api: FastifyInstance, actorOf: (req: FastifyRequest) => string): void {
+  ownerRoutes(api: FastifyInstance, actorOf: (req: FastifyRequest) => string, memberOf: (req: FastifyRequest) => string): void {
     const engine = this.engine;
     const body = (req: FastifyRequest) => (req.body ?? {}) as Record<string, unknown>;
     const param = (req: FastifyRequest, k: string) => String((req.params as Record<string, string>)[k] ?? '');
-    const all = () => ({
-      address: this.deps.address(),
-      clients: engine.rent.list().map((c) => this.view(c)),
-      // Whom the owner can rent out: those who do the work on the office's own machines.
-      employees: engine.core.employees
-        .filter((e) => !e.archived && e.roleKey !== 'foreman' && e.roleKey !== LEAD_ROLE && !e.selfDriven && !engine.hosts.memberOfHost(e.hostId))
-        .map((e) => ({ id: e.id, name: e.name, title: e.title, appearance: e.appearance, workingDir: e.workingDir, rentedTo: engine.rent.rentalOf(e.id)?.client.name ?? null })),
-    });
-    api.get('/rent', async () => all());
+    const all = (req: FastifyRequest) => {
+      const me = memberOf(req);
+      return {
+        address: this.deps.address(),
+        clients: engine.rent.list().map((c) => this.view(c)),
+        // Whom this owner can rent out: those who do the work on the office's own machines, and on this owner's own
+        // computer (they work while it is connected).
+        employees: engine.core.employees
+          .filter((e) => !e.archived && e.roleKey !== 'foreman' && e.roleKey !== LEAD_ROLE && !e.selfDriven && (!engine.hosts.memberOfHost(e.hostId) || engine.hosts.memberOfHost(e.hostId) === me))
+          .map((e) => ({
+            id: e.id,
+            name: e.name,
+            title: e.title,
+            appearance: e.appearance,
+            workingDir: e.workingDir,
+            rentedTo: engine.rent.rentalOf(e.id)?.client.name ?? null,
+            mine: !!engine.hosts.memberOfHost(e.hostId),
+            online: !!e.hostId && engine.core.agents.isOnline(e.hostId),
+            cannot: engine.rent.rentalOf(e.id) ? null : engine.rent.rentable(e, me),
+          })),
+      };
+    };
+    api.get('/rent', async (req) => all(req));
     api.post('/rent/clients', async (req) => {
       const b = body(req);
-      const client = engine.rent.create(b, actorOf(req), (n) => this.memberName(n));
+      const client = engine.rent.create(b, actorOf(req), (n) => this.memberName(n), memberOf(req));
       return { client: this.view(client), ...this.link(client.id) };
     });
     api.patch('/rent/clients/:id', async (req) => this.view(engine.rent.update(param(req, 'id'), body(req), actorOf(req), (n) => this.memberName(n))));
@@ -265,7 +279,7 @@ export class RentDoor {
       this.endAccess(client!.id, actorOf(req));
       return { client: this.view(client!), ...this.link(client!.id) };
     });
-    api.post('/rent/clients/:id/agents', async (req) => this.view(engine.rent.rent(param(req, 'id'), String(body(req).employeeId ?? ''), body(req).perms, actorOf(req))));
+    api.post('/rent/clients/:id/agents', async (req) => this.view(engine.rent.rent(param(req, 'id'), String(body(req).employeeId ?? ''), body(req).perms, actorOf(req), memberOf(req))));
     api.patch('/rent/clients/:id/agents/:eid', async (req) => this.view(engine.rent.setPerms(param(req, 'id'), param(req, 'eid'), body(req).perms, actorOf(req))));
     api.delete('/rent/clients/:id/agents/:eid', async (req) => this.view(engine.rent.release(param(req, 'id'), param(req, 'eid'), actorOf(req))));
     api.get('/rent/clients/:id/chats/:eid', async (req) => {

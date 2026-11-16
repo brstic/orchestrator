@@ -856,7 +856,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     // Routines: a standing instruction the office repeats for one employee (see `routines.ts`).
     const actorOf = (req: FastifyRequest) => (whoOf(req).id === 'owner' ? 'owner' : `member:${whoOf(req).name}`);
     // The Rent portal, the owner's side: clients, what they rent, what each rented employee may do (rent-door.ts).
-    rentDoor.ownerRoutes(api, actorOf);
+    rentDoor.ownerRoutes(api, actorOf, (req) => whoOf(req).id);
     /** The person behind a request, as the task conversation names them. */
     const personOf = (req: FastifyRequest): { kind: 'owner' | 'member'; id: string | null; name: string } => (whoOf(req).id === 'owner' ? { kind: 'owner', id: null, name: 'The boss' } : { kind: 'member', id: whoOf(req).id, name: whoOf(req).name });
     api.get('/routines', async (req) => engine.routines.list().filter((r) => mayReadRoutine(engine, whoOf(req), r)));

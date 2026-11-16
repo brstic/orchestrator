@@ -11,12 +11,14 @@ import { permsFrom } from '../src/rent.ts';
  * employee is given, what their fence on the machine holds, and what may be rented at all. No machine, no model.
  */
 const sent: Array<{ method: string; params: any }> = [];
+/** Machines that are not connected (a member's computer that is off). */
+const off = new Set<string>();
 const link: AgentLink = {
   rpc: async (_h, rpc) => {
     sent.push(rpc as { method: string; params: any });
     return { ok: true } as never;
   },
-  isOnline: () => true,
+  isOnline: (hostId) => !off.has(hostId),
   respondHook: () => true,
   disconnect: () => undefined,
 };
@@ -39,7 +41,7 @@ test('a client rents employees on the office\'s own machines — one client at a
   assert.deepEqual(eng.rent.agentsOf(c).map((e) => e.name), ['Kira', 'Lea']);
   assert.equal(eng.rent.rentalOf(kira.id)?.client.id, c.id);
   assert.throws(() => eng.rent.create({ name: 'Other', employeeIds: [kira.id] }, 'owner', never), /rented to Ana already/);
-  assert.throws(() => eng.rent.create({ name: 'Other', employeeIds: [own.id] }, 'owner', never), /member's own computer/);
+  assert.throws(() => eng.rent.create({ name: 'Other', employeeIds: [own.id] }, 'owner', never), /Mila's own computer: only they can rent them out/);
   assert.throws(() => eng.rent.create({ name: 'ana' }, 'owner', never), /taken/);
   assert.throws(() => eng.rent.create({ name: 'Somebody' }, 'owner', (n) => n === 'Somebody'), /taken/, 'a member has that name');
   // A name cannot carry what would make it something else in a prompt.
@@ -131,4 +133,35 @@ test('a turn is a client\'s when the message that began it was theirs; anything 
   eng.rent.turnStarted(kira.id, m.id);
   eng.rent.turnStarted(kira.id, null);
   assert.equal(eng.rent.clientOfTurn(kira.id), null, 'a task, or a person at the keyboard');
+});
+
+test("an owner rents the employees on their own computer too — not somebody else's — when its app can fence them; while it is off, a client's words wait", async () => {
+  const { eng, own, bob } = office();
+  // Mila (the member whose computer it is) may; anybody else may not.
+  assert.match(eng.rent.rentable(own, 'someone-else')!, /only they can rent them out/);
+  assert.equal(eng.rent.rentable(own, 'm-1'), null);
+  // A computer whose app is from before Rent cannot keep them to their folders.
+  eng.core.put('host', { ...mine, info: { hostname: 'mila-mac', platform: 'darwin', arch: 'arm64', agentVersion: '0.1.0', tmuxVersion: null, claudeVersion: null } as never });
+  assert.match(eng.rent.rentable(own, 'm-1')!, /too old to keep a rented employee to their folders/);
+  eng.core.put('host', { ...mine, info: { hostname: 'mila-mac', platform: 'darwin', arch: 'arm64', agentVersion: '0.1.0', tmuxVersion: null, claudeVersion: null, rentFence: true } as never });
+  const c = eng.rent.create({ name: 'Ana', employeeIds: [own.id, bob.id] }, 'owner', never, 'm-1');
+  // Her computer is off: the words are kept, she is told the employee is away, and nothing is started.
+  off.add(mine.id);
+  try {
+    assert.equal(eng.rent.agentView(own, c.rentals[0]!).state, 'away');
+    assert.equal(eng.rent.agentView(own, c.rentals[0]!).offline, true);
+    const line = await eng.rent.say(c.id, own.id, 'are you there?', [], 'client:x');
+    assert.equal(line.from, 'client');
+    const lines = eng.rent.lines(c.id, own.id);
+    assert.match(lines[lines.length - 1]!.text, /away right now\. They get this as soon as they are back/);
+    const m = eng.core.messages.get(line.messageId!)!;
+    assert.equal(m.channel, 'rent');
+    assert.equal(m.delivery.status, 'queued');
+    await assert.rejects(() => eng.rent.say(c.id, own.id, 'a file', ['f1'], 'client:x'), /send the files when they are back/);
+  } finally {
+    off.delete(mine.id);
+  }
+  // Her folder is on her computer: the shared colleague's is not hers to reach, and hers is not his.
+  assert.deepEqual(eng.rent.fenceFor(own)!.roots, ['/work/own']);
+  assert.deepEqual(eng.rent.fenceFor(bob)!.roots, ['/work/bob']);
 });

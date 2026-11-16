@@ -24,6 +24,9 @@ interface Agent {
   appearance: Appearance | null;
   workingDir: string | null;
   state: string;
+  /** On the owner's own computer: they work while it is connected. */
+  mine?: boolean;
+  online?: boolean;
 }
 interface Client {
   id: string;
@@ -46,6 +49,10 @@ interface Rentable {
   appearance: Appearance;
   workingDir: string | null;
   rentedTo: string | null;
+  mine?: boolean;
+  online?: boolean;
+  /** Why this owner cannot rent them out (another member's, or a computer whose app is too old). */
+  cannot?: string | null;
 }
 interface RentView {
   address: string | null;
@@ -156,10 +163,10 @@ function NewClient({ view, onMade, onClose }: { view: RentView; onMade: (m: Made
           onChange={setIds}
           add="Add an employee"
           none="Nobody yet — you can add them later"
-          options={view.employees.map((e) => ({ id: e.id, label: e.name, hint: e.rentedTo ? `rented to ${e.rentedTo}` : e.title, lead: <Avatar appearance={e.appearance} size={18} />, also: e.title, warn: e.rentedTo ? `${e.name} is rented to ${e.rentedTo} already` : undefined }))}
+          options={view.employees.map((e) => ({ id: e.id, label: e.name, hint: e.rentedTo ? `rented to ${e.rentedTo}` : e.mine ? `${e.title} · your computer${e.online ? '' : ' (off now)'}` : e.title, lead: <Avatar appearance={e.appearance} size={18} />, also: e.title, warn: e.rentedTo ? `${e.name} is rented to ${e.rentedTo} already` : (e.cannot ?? undefined) }))}
         />
         <span className="field-hint">
-          {free.length ? 'Each employee works for one client at a time, and while rented works only for them: their folder, and their colleagues of the same client.' : 'Everybody is rented out already: release someone, or hire.'}
+          {free.length ? 'Each employee works for one client at a time, and while rented works only for them: their folder, and their colleagues of the same client. Those on your own computer answer while it is connected; when it is off, what the client writes waits for them.' : 'Everybody is rented out already: release someone, or hire.'}
         </span>
       </div>
       <div className="field">
@@ -187,7 +194,7 @@ function ClientRow({ c, view, open, onToggle, reload, onLink }: { c: Client; vie
     reload();
     return r;
   };
-  const free = view.employees.filter((e) => !e.rentedTo);
+  const free = view.employees.filter((e) => !e.rentedTo && !e.cannot);
   const status = c.inviteExpiresAt ? `link not used yet · works until ${day(c.inviteExpiresAt)}` : c.lastSeenAt ? `here ${timeAgo(c.lastSeenAt)}` : c.hasPassword ? 'has not come back yet' : 'no link — make one';
   return (
     <div data-rent-client={c.name}>
@@ -226,6 +233,7 @@ function ClientRow({ c, view, open, onToggle, reload, onLink }: { c: Client; vie
                           {a.name} <span className="k-title-note">{a.title}</span>
                         </div>
                         <div className="k-sub">
+                          {a.mine ? (a.online ? 'on your computer · ' : 'on your computer, which is off now · ') : ''}
                           {a.state} · since {day(a.since)}
                           {a.workingDir ? ` · works in ${a.workingDir}` : ' · no folder of their own'}
                         </div>
@@ -261,6 +269,7 @@ function ClientRow({ c, view, open, onToggle, reload, onLink }: { c: Client; vie
                   {free.map((e) => (
                     <option key={e.id} value={e.id}>
                       {e.name} — {e.title}
+                      {e.mine ? ' (your computer)' : ''}
                     </option>
                   ))}
                 </select>

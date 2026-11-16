@@ -19,6 +19,8 @@ export interface HostInfo {
   hooksVersion?: number;
   /** This machine's agent says what it holds a command for (`orch_held_for`), so the office can answer for the high-risk list by itself where the owner switched the hold off. Absent from older agents. */
   saysHeldFor?: boolean;
+  /** This machine's agent fences a rented employee to their folders (`LaunchSpec.fence`, `session.fence`; docs/RENT.md). Absent from older agents. */
+  rentFence?: boolean;
   hostname: string;
   platform: string;
   arch: string;

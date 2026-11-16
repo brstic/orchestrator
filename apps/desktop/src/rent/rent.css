@@ -970,3 +970,247 @@
     font-size: 26px;
   }
 }
+
+/* ───────────── the employee's desk, in 3D (AgentStage.tsx) ───────────── */
+.rp-chat-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.rp-chat-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rp-stage {
+  order: 2;
+  flex: none;
+  position: relative;
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background:
+    radial-gradient(70% 45% at 50% 38%, rgba(255, 209, 102, 0.12), transparent 70%),
+    radial-gradient(60% 40% at 30% 70%, rgba(139, 92, 246, 0.12), transparent 70%),
+    linear-gradient(180deg, rgba(12, 17, 28, 0.6), rgba(8, 11, 18, 0.9));
+  overflow: hidden;
+}
+.rp-stage-canvas {
+  position: relative;
+  flex: none;
+  height: 400px;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+}
+.rp-stage-canvas:active {
+  cursor: grabbing;
+}
+.rp-stage-wait {
+  display: grid;
+  place-items: center;
+}
+.rp-stage-wait .avatar {
+  border-radius: 50%;
+  opacity: 0.6;
+}
+.rp-stage-tag {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 7px 16px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(8, 11, 18, 0.82);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.rp-stage-tag b {
+  font: 700 15px var(--display);
+}
+.rp-stage-word {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--dim);
+}
+.rp-stage-word-working,
+.rp-stage-word-reading,
+.rp-stage-word-thinking {
+  color: var(--gold);
+}
+.rp-stage-word-available {
+  color: var(--good);
+}
+.rp-stage-word-paused {
+  color: var(--warn);
+}
+.rp-stage-bubble {
+  position: absolute;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 16px;
+  background: #fff;
+  color: #10131c;
+  font: 700 14px var(--display);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  white-space: nowrap;
+  animation: rp-pop 0.32s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.rp-stage-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  transform: translateX(-50%) rotate(45deg);
+  border-radius: 2px;
+}
+@keyframes rp-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.85);
+  }
+}
+.rp-stage-card {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0 18px 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.rp-stage-card > div {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.rp-stage-card small {
+  color: var(--faint);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+.rp-stage-card b {
+  font-size: 14.5px;
+}
+.rp-stage-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+.rp-stage-toggle {
+  margin-left: auto;
+}
+.rp-stage-toggle-on {
+  color: var(--gold) !important;
+}
+/* The welcome: the team on their feet, waving. */
+.rp-team-canvas {
+  height: 210px;
+  margin: -8px -12px 4px;
+}
+.rp-card:has(.rp-team-canvas) .rp-card-logo {
+  display: none;
+}
+/* Things to say first, one tap away. */
+.rp-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+.rp-suggest button {
+  padding: 8px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+.rp-suggest button:hover {
+  border-color: rgba(255, 209, 102, 0.5);
+  background: rgba(255, 209, 102, 0.07);
+}
+.rp-suggest button:active {
+  transform: translateY(1px);
+}
+.rp-typing-word {
+  margin-left: 6px;
+  color: var(--dim);
+  font-size: 13px;
+  font-style: italic;
+}
+/* A line that has just arrived comes up into place. */
+.rp-row-new {
+  animation: rp-in 0.32s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes rp-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rp-row-new,
+  .rp-stage-bubble {
+    animation: none;
+  }
+}
+/* Narrower: the desk is a band over the conversation. */
+@media (max-width: 1180px) {
+  .rp-chat-body {
+    flex-direction: column;
+  }
+  .rp-stage {
+    order: 0;
+    width: auto;
+    height: 200px;
+    border-left: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .rp-stage-canvas {
+    height: 200px;
+  }
+  .rp-stage-card {
+    display: none;
+  }
+  .rp-stage-tag {
+    top: 12px;
+    left: 18px;
+    transform: none;
+    align-items: flex-start;
+  }
+  .rp-stage-bubble {
+    top: 60px;
+  }
+}
+@media (max-width: 760px) {
+  .rp-stage,
+  .rp-stage-canvas {
+    height: 160px;
+  }
+  .rp-team-canvas {
+    height: 170px;
+  }
+}

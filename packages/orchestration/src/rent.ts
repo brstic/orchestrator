@@ -37,6 +37,10 @@ const clean = (s: unknown, max: number): string =>
     .trim()
     .slice(0, max);
 
+/** What a client is told their employee is doing: a word of their own, never what the office calls it inside (no approvals, no tasks). */
+export type RentDoing = 'thinking' | 'reading' | 'writing' | 'running' | 'researching' | 'waiting';
+const DOING: Record<string, RentDoing> = { thinking: 'thinking', planning: 'thinking', reviewing: 'reading', reading: 'reading', coding: 'writing', debugging: 'writing', testing: 'running', running_command: 'running', waiting_command: 'running', researching: 'researching', delegating: 'thinking', needs_approval: 'waiting', waiting_answer: 'waiting', blocked: 'waiting' };
+
 export const RENT_LIMITS = { name: 60, company: 80, note: 2000, text: 8000, lines: 3000, clients: 500, agents: 20 };
 
 /** The office's own tools a rented employee is given (beside those its permissions add). Anything new stays out until named here. */
@@ -99,6 +103,8 @@ export class Rent {
     // A rented employee's folder moved, or a colleague's did: their fences follow.
     this.core.bus.on('entity', (kind, op, data) => {
       if (kind === 'employee' && op === 'upsert' && this.rentalOf((data as Employee).id)) this.pushFences(this.groupOf((data as Employee).id));
+      // A machine is back (a member's own computer connected again): rented employees there whom a client wrote to meanwhile start.
+      if (kind === 'host' && op === 'upsert' && (data as { status?: string }).status === 'online') this.wakeWaiting((data as { id: string }).id);
     });
   }
 
@@ -153,19 +159,27 @@ export class Rent {
     return r ? r.client.rentals.map((x) => x.employeeId) : [employeeId];
   }
 
-  /** Can this employee be rented: someone who does the work, on a machine of the office's own. */
-  private rentable(e: Employee): string | null {
+  /**
+   * Can this employee be rented by this person (`by`: the member's id, 'owner' for the office's own owner): someone who
+   * does the work, on one of the office's machines — or on that person's own computer, where they work while it is
+   * connected. Another member's own employees are that member's to rent, not anybody else's.
+   */
+  rentable(e: Employee, by: string | null): string | null {
     if (e.archived) return `${e.name} is archived.`;
     if (e.roleKey === 'foreman') return `${e.name} is the foreman: it supervises the office and is not rented out.`;
     if (e.roleKey === LEAD_ROLE) return `${e.name} is a member's team lead.`;
-    if (this.eng.hosts.memberOfHost(e.hostId)) return `${e.name} works on a member's own computer; only employees on the office's own machines are rented out.`;
+    const member = this.eng.hosts.memberOfHost(e.hostId);
+    if (member && member !== by) return `${e.name} works on ${this.core.hosts.get(e.hostId ?? '')?.memberName ?? 'a member'}'s own computer: only they can rent them out.`;
+    // Their machine must be able to keep them to their folders; one that says nothing is an agent from before Rent.
+    const info = this.core.hosts.get(e.hostId ?? '')?.info;
+    if (member && info && !info.rentFence) return `${e.name}'s computer runs an Orchestrator too old to keep a rented employee to their folders: update the app there first.`;
     if (e.selfDriven) return `${e.name} is somebody's own session, not an employee the office runs.`;
     const now = this.rentalOf(e.id);
     if (now) return `${e.name} is rented to ${now.client.name} already.`;
     return null;
   }
 
-  create(input: { name?: unknown; company?: unknown; note?: unknown; employeeIds?: unknown; perms?: unknown }, actor: string, taken: (name: string) => boolean): RentClient {
+  create(input: { name?: unknown; company?: unknown; note?: unknown; employeeIds?: unknown; perms?: unknown }, actor: string, taken: (name: string) => boolean, by: string | null = null): RentClient {
     const name = clean(input.name, RENT_LIMITS.name);
     if (!name) throw new EngineError('a client needs a name');
     if (this.byName(name) || taken(name)) throw new EngineError(`the name "${name}" is taken: everybody who signs in at the office's address needs a name of their own`);
@@ -174,7 +188,7 @@ export class Rent {
     const perms = permsFrom(input.perms);
     for (const id of ids) {
       const e = this.core.employees.require(id);
-      const no = this.rentable(e);
+      const no = this.rentable(e, by);
       if (no) throw new EngineError(no);
     }
     const now = nowIso();
@@ -202,11 +216,11 @@ export class Rent {
     return client;
   }
 
-  rent(id: string, employeeId: string, perms: unknown, actor: string): RentClient {
+  rent(id: string, employeeId: string, perms: unknown, actor: string, by: string | null = null): RentClient {
     const client = this.require(id);
     if (client.rentals.length >= RENT_LIMITS.agents) throw new EngineError(`a client rents at most ${RENT_LIMITS.agents} employees`);
     const e = this.core.employees.require(employeeId);
-    const no = this.rentable(e);
+    const no = this.rentable(e, by);
     if (no) throw new EngineError(no);
     client.rentals.push({ employeeId, since: nowIso(), perms: permsFrom(perms) });
     this.save();
@@ -310,7 +324,8 @@ export class Rent {
     const r = this.rentalOf(employee.id);
     if (!r) return null;
     const own = [employee.workingDir, cwd].filter((d): d is string => !!d);
-    const peers = r.rental.perms.teamwork ? this.agentsOf(r.client).filter((e) => e.id !== employee.id && this.rentalOf(e.id)?.rental.perms.teamwork).map((e) => e.workingDir).filter((d): d is string => !!d) : [];
+    // (A colleague's folder is theirs to reach only where it is: on the same machine.)
+    const peers = r.rental.perms.teamwork ? this.agentsOf(r.client).filter((e) => e.id !== employee.id && e.hostId === employee.hostId && this.rentalOf(e.id)?.rental.perms.teamwork).map((e) => e.workingDir).filter((d): d is string => !!d) : [];
     const p = r.rental.perms;
     return { roots: [...new Set([...own, ...peers])], commands: p.commands, edit: p.edit, web: p.web, client: r.client.name };
   }
@@ -365,7 +380,7 @@ export class Rent {
       '',
       `(Your reply goes to ${client.name} on the portal; they see only what you reply${rental.perms.files ? ' and the files you give them with attach_file' : ''}, nothing of the office. ` +
         `While rented you work only in your own folder${employee.workingDir ? ` (${employee.workingDir})` : ''}` +
-        (peers.length ? ` and in those of ${peers.map((e) => `${e.name}${e.workingDir ? ` (${e.workingDir})` : ''}`).join(', ')}, whom ${client.name} rents too — coordinate with them with send_message` : '') +
+        (peers.length ? `; ${client.name} rents ${peers.map((e) => `${e.name}${e.hostId === employee.hostId && e.workingDir ? ` (whose folder ${e.workingDir} you may use too)` : ''}`).join(', ')} too — coordinate with them with send_message` : '') +
         (can.length ? `; the owner set that you ${can.join(', ')}` : '') +
         '. What the boss tells you in the office is not for clients unless the boss says so.)',
     ].join('\n');
@@ -384,6 +399,14 @@ export class Rent {
     const words = String(text ?? '').replace(/\r\n/g, '\n').trim().slice(0, RENT_LIMITS.text);
     if (!words && !fileIds.length) throw new EngineError('write something');
     if (fileIds.length && !rental.perms.files) throw new EngineError('files cannot be sent to this employee');
+    // Their machine is not connected (a member's own computer that is off): the words wait, and they get them when it is back.
+    if (employee.hostId && !this.core.agents.isOnline(employee.hostId) && !this.core.runningSessionOf(employee.id)) {
+      if (fileIds.length) throw new EngineError(`${employee.name} is away (their computer is not connected): send the files when they are back.`);
+      const message = this.eng.comms.sendMessage({ from: { kind: 'owner', id: null, name: `${client.name} (a client who rents you)` }, toEmployeeId: employee.id, body: this.body(client, employee, rental, words), said: words, channel: 'rent', clientId });
+      const line = this.add({ clientId, employeeId, from: 'client', text: words, messageId: message.id });
+      this.add({ clientId, employeeId, from: 'note', text: `${employee.name} is away right now. They get this as soon as they are back.` });
+      return line;
+    }
     // Nobody at the desk: they are brought in, as the office's own window does when somebody talks to them.
     if (!this.core.runningSessionOf(employee.id) && !this.eng.sessions.present(employee.id)) {
       const why = !employee.hostId
@@ -414,6 +437,22 @@ export class Rent {
       clientId,
     });
     return this.add({ clientId, employeeId, from: 'client', text: words, messageId: message.id, ...(sent.files.length ? { files: sent.files } : {}) });
+  }
+
+  /** Rented employees on this machine who have a client's words waiting and no session: started, so the words reach them. */
+  private wakeWaiting(hostId: string): void {
+    for (const client of this.clients.values()) {
+      if (client.revokedAt) continue;
+      for (const r of client.rentals) {
+        const e = this.core.employees.get(r.employeeId);
+        if (!e || e.hostId !== hostId || this.core.runningSessionOf(e.id) || this.eng.sessions.present(e.id)) continue;
+        const waiting = !!this.core.messages.find((m) => m.toEmployeeId === e.id && m.channel === 'rent' && m.delivery.status === 'queued');
+        if (!waiting) continue;
+        void Promise.resolve()
+          .then(() => this.eng.sessions.start(e.id, { resume: true, actor: `client:${client.name}` }))
+          .catch((err: Error) => this.core.log('warn', `rent: ${e.name} could not start when their machine came back: ${err.message}`));
+      }
+    }
   }
 
   // ───────────── which turn is whose ─────────────
@@ -453,11 +492,13 @@ export class Rent {
   }
 
   /** What the client is told about an employee they rent: who they are and what they are doing — nothing of the office. */
-  agentView(e: Employee, rental: Rental): { id: string; name: string; title: string; appearance: Employee['appearance']; state: string; busy: boolean; files: boolean; since: string } {
+  agentView(e: Employee, rental: Rental): { id: string; name: string; title: string; appearance: Employee['appearance']; state: string; busy: boolean; files: boolean; since: string; offline: boolean; doing: RentDoing | null } {
     const s = this.core.runningSessionOf(e.id);
+    // (Their machine not connected: a member's own computer that is off. They are away until it is back.)
+    const offline = !!e.hostId && !this.core.agents.isOnline(e.hostId);
     const busy = !!s && (s.inTurn === true || ['thinking', 'reading', 'coding', 'testing', 'debugging', 'running_command', 'researching', 'planning', 'reviewing', 'delegating'].includes(s.activity));
     const state = !s ? 'away' : s.activity === 'paused' ? 'paused' : busy ? 'working' : 'available';
-    return { id: e.id, name: e.name, title: e.title, appearance: e.appearance, state, busy, files: rental.perms.files, since: rental.since };
+    return { id: e.id, name: e.name, title: e.title, appearance: e.appearance, state: offline ? 'away' : state, busy: !offline && busy, files: rental.perms.files, since: rental.since, offline, doing: !offline && s ? (DOING[s.activity] ?? (busy ? 'thinking' : null)) : null };
   }
 
   /** A short line for the owner's lists: who, what for, and the conversation's last word. */
