@@ -776,7 +776,11 @@ export const SESSION_ROWS = 44;
 
 /** Claude Code's warning at the first start in bypass mode (its wording, as in the installed program). */
 const BYPASS_WARNING = /Bypass Permissions mode/i;
-const TRUST_PROMPT = /(do you trust the files in this folder|trust this folder|is this a project you (created|trust)|accessing workspace)/i;
+// (A newer Claude Code asks it of a folder added to the session as well: "Adding a new directory: … Is this a directory
+// you created or one you trust?" — seen with the folder of the files said to employees, 2026-11-17.)
+const TRUST_PROMPT = /(do you trust the files in this folder|trust this folder|is this a (project|directory) you (created|trust)|accessing workspace)/i;
+/** Which of the start's trust questions this is: one session can be asked about its folder and then about an added one. */
+const trustKind = (text: string): string => /adding a new directory/i.test(text) ? `dir:${/adding a new directory:\s*(\S+)/i.exec(text)?.[1] ?? ''}` : 'folder';
 
 export class SessionRegistry {
   private eng: Engine;
@@ -1894,7 +1898,6 @@ export class SessionRegistry {
     this.promptOnScreen(sessionId, false, screen);
     this.bypassWarningOnScreen(sessionId, screen);
     this.limitMenuOnScreen(sessionId, screen);
-    if (this.trustAsked.has(sessionId)) return;
     const s = this.core.sessions.get(sessionId);
     // Only the interactive CLI shows a trust prompt; an SDK-managed worker's pane is a transcript.
     // (Also a session that continues an earlier conversation: started in another folder than before — its own
@@ -1902,7 +1905,9 @@ export class SessionRegistry {
     if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || !atStartDialog(s, screen)) return;
     const text = screen.lines.join('\n').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
     if (!TRUST_PROMPT.test(text)) return;
-    this.trustAsked.add(sessionId);
+    const asked = `${sessionId}|${trustKind(text)}`;
+    if (this.trustAsked.has(asked)) return;
+    this.trustAsked.add(asked);
     const employee = this.core.employees.get(s.employeeId) ?? null;
     // Whoever put this employee in this folder chose the folder: the office answers "yes" for them, on the record —
     // at every level since 2026-11-13 (the owner: "say yes and trust the folder by itself, instead of getting stuck");
@@ -1916,7 +1921,7 @@ export class SessionRegistry {
             this.core.audit('system', 'trust.auto_accepted', s.id, { employee: employee.name, cwd: s.cwd });
             this.core.event({ type: 'session.started', source: 'server', summary: `The folder ${s.cwd} was trusted for Claude Code without asking you (${employee.name} was put there)`, sessionId: s.id, employeeId: employee.id, hostId: s.hostId, data: { trust: 'auto', cwd: s.cwd } });
           })
-          .catch(() => this.trustAsked.delete(sessionId));
+          .catch(() => this.trustAsked.delete(asked));
         return;
       }
     }
@@ -2082,11 +2087,10 @@ export class SessionRegistry {
     session.asleepSince = null;
     session.resumed = resume;
     this.turnSince.delete(session.id);
-    this.trustAsked.delete(session.id);
+    for (const k of [...this.trustAsked]) if (k.startsWith(`${session.id}|`)) this.trustAsked.delete(k);
     this.bypassAsked.delete(session.id);
     if (resume) this.resumeProbes.set(session.id, session.lastEventAt);
     else this.resumeProbes.delete(session.id);
-    this.trustAsked.delete(session.id);
 
     // A fresh bearer token per launch; older tokens for this session stop working.
     this.core.store.revokeCredentialsFor('mcp', session.id);

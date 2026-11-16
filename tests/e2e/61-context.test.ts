@@ -9,6 +9,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createHarness, waitFor, sleep, type Harness } from './harness.ts';
 
@@ -143,4 +144,21 @@ test('who may write what: a colleague writes the office\'s and a project\'s fact
   assert.equal(seen.body.facts.some((f: any) => f.layer === 'client'), false, "a client's facts are the owners'");
   assert.equal((await as(mila, 'GET', '/context')).status, 403);
   assert.equal((await as(mila, 'POST', '/context/facts', { layer: 'office', title: 'x', text: 'y' })).status, 403);
+});
+
+test('whichever Claude account an employee runs on (another config folder, as a Z.AI account is), the same context reaches them — and whole again after a compaction', async () => {
+  // (An account folder lives in the home folder, as the office's own accounts do.)
+  const other = fs.mkdtempSync(path.join(os.homedir(), '.claude-ctx-test-'));
+  after(() => fs.rmSync(other, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(other, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'second@example.test', organizationName: 'Org' } }));
+  const ben = await h.employee('Ben', 'backend', { projectId, workingDir: h.makeRepo('ctx-ben'), autonomy: 'auto', claudeConfigDir: other });
+  await h.api('POST', `/employees/${ben.id}/start`, {});
+  await waitFor(async () => (await h.session(ben.id))?.status === 'running', { label: 'Ben at work', timeout: 20_000 });
+  await tell(ben, 'Hi @@fake: ctx b-start.txt; compact; ctx b-compact.txt; say ben-7777@@', /ben-7777/);
+  const start = read(ben, 'b-start.txt');
+  const compacted = read(ben, 'b-compact.txt');
+  assert.match(start, /\[startup\][\s\S]*Shop stack/);
+  assert.match(compacted, /^\[compact\]\n# The office's central context[\s\S]*Shop stack/);
+  const s = (await ctx()).sessions.find((x: any) => x.name === 'Ben');
+  assert.equal(s.holds, s.current);
 });
