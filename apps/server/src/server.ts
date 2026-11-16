@@ -899,6 +899,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       if (body(req).title !== undefined || body(req).text !== undefined) engine.context.update(f.id, body(req), actorOf(req));
       return engine.context.accept(f.id, actorOf(req));
     });
+    // What the office already knows (standing instructions, projects' descriptions, lessons), offered once as proposals.
+    api.post('/context/import', async (req) => ({ offered: engine.context.importExisting(actorOf(req)) }));
     api.post('/context/facts/:id/drop', async (req) => {
       engine.context.drop(contextFact(req).id, actorOf(req));
       return { ok: true };

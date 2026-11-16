@@ -44,7 +44,11 @@ Each fact: a title, the text (Markdown, short), **Always** (in the pack) or **On
 
 1. **People**: the **Context** window (menu → Work → *Context*). Owners and colleagues write the office's, a role's, a project's (if they may work on it) and an employee's (if they may work with them); a client's are an owner's.
 2. **Employees**: `propose_context { layer, title, text }`. **Straight in** for their own notes (`self`) and their project (`project`) — `CONTEXT_STRAIGHT_IN`; the office's, a role's and a client's (a client's only while answering that client) wait in **Proposals** (and a line in the Inbox): *Take in*, *Edit* then take in, *Drop*. Thirty proposals an hour per employee at most.
-3. **The office notices**: a meeting that reached a decision is offered as a proposal for its project (or the office) — once, never put in by itself. A meeting about a member's own project is not offered.
+3. **The office notices** — each offered once as a proposal, never put in by itself, and never what is on a member's own computer:
+   - a meeting that reached a decision → its project (or the office);
+   - **the boss's answer that sounds standing** — "always", "never", "from now on", "every time", "by default", or in Serbian "uvek", "nikad", "od sada", "ubuduće", "svaki put", "standardno" (`STANDING`) → the asker's project (or the office); an answer for this once is not offered, nor the foreman's;
+   - **a lesson for the office or a project**, once it is active (`noticeLesson`).
+4. **The import**: *Import what the office knows* (Office tab) offers, once, what already exists — each employee's standing instructions as their own notes, each project's description, goals and notes, the active lessons of the office and the projects. One line in the Inbox for all of them; *Take in all* in Proposals, after looking through them. A dropped proposal is not offered again (the history remembers where it came from).
 
 ## The window
 
@@ -78,5 +82,6 @@ Routes (`access.ts`, the finer check in the route): `GET /api/context` (**detail
 - **Claude Code only** (the owner's word: other providers later). Every employee the office runs is Claude Code, on any Claude account or Z.AI, so this covers them all today; an SDK-managed worker does not run these hooks and gets only what its launch prompt says.
 - **A session given the context by an older machine agent** (a member's computer whose app is from before) gets nothing from the hooks: update the app there.
 - **"The newest word" is an instruction.** The model is told the context replaces what it was told before; it is not forced to follow it.
-- **Proposals from answers and lessons** are not offered yet — only meetings' decisions; the plan's import of what exists (standing instructions, READMEs) is not built: facts are added by hand or proposed.
-- Tried with the scripted stand-in, not yet with real Claude Code — `additionalContext` on `SessionStart` and `UserPromptSubmit` is Claude Code's documented hook output.
+- **Which answers are "standing"** is decided by words, not understood: a rule said without one of them is not offered (add it by hand), and an answer with one of them that holds only once is offered (drop it).
+- **The import does not read repositories' README files**: a project's description, goals and notes in the office are what it offers.
+- **Seen with real Claude Code** on the live office (2026-11-17): after the deploy, the next prompt of a running employee (on the server, a Claude account) was answered by its machine with the pack — the office recorded the version it holds, equal to the current one — and the text stands in that session's own Claude Code transcript (as hook additional context), so the model was given it. A compaction with real Claude Code was not watched yet (it is the same hook, `SessionStart`, with the source `compact`).

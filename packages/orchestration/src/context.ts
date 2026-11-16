@@ -15,7 +15,7 @@
  * their project, through a person for the rest.
  */
 import crypto from 'node:crypto';
-import { CONTEXT_HARD_CAP_CHARS, newId, nowIso, roleByKey, truncate, type ContextFact, type ContextItem, type ContextLayer, type ContextPack, type Employee, type Meeting } from '@orchestrator/contracts';
+import { CONTEXT_HARD_CAP_CHARS, newId, nowIso, roleByKey, truncate, type ContextFact, type ContextItem, type ContextLayer, type ContextPack, type Employee, type Lesson, type Meeting, type Question } from '@orchestrator/contracts';
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
 
@@ -37,6 +37,9 @@ export interface ContextChange {
   before?: string;
   after?: string;
 }
+
+/** An answer that sounds like it holds from now on — in English or in Serbian. */
+const STANDING = /\b(always|never|from now on|every time|whenever|by default|in future|going forward|uvek|uvijek|nikad|nikada|od sada|ubudu[cć]e|svaki put|uvek kad|po defaultu|standardno)\b/i;
 
 const clean = (s: unknown, max: number) => String(s ?? '').replace(/\r\n/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, max);
 
@@ -70,9 +73,13 @@ export class CentralContext {
     this.core.bus.on('event', (e) => {
       if (e.type === 'rent.changed') this.later();
     });
-    // The office notices: a meeting's decision is offered for the context — never put in by itself.
+    // The office notices: a meeting's decision, a standing answer of the boss's, a lesson the office took in — each offered
+    // for the context, once; never put in by itself.
     this.core.bus.on('entity', (kind, op, data) => {
-      if (kind === 'meeting' && op === 'upsert') this.noticeMeeting(data as Meeting);
+      if (op !== 'upsert') return;
+      if (kind === 'meeting') this.noticeMeeting(data as Meeting);
+      else if (kind === 'question') this.noticeAnswer(data as Question);
+      else if (kind === 'lesson') this.noticeLesson(data as Lesson);
     });
   }
 
@@ -262,6 +269,72 @@ export class CentralContext {
     } catch (e) {
       this.core.log('warn', `context: a meeting's decision was not offered: ${(e as Error).message}`);
     }
+  }
+
+  /** Offered already (by what it came from), or not. */
+  private offered(marker: string): boolean {
+    return this.list().some((f) => f.createdBy === marker) || this.history().some((h) => h.by === marker);
+  }
+
+  /** A proposal the office makes itself, once per thing it came from. */
+  private offer(marker: string, input: { layer: ContextLayer; scope: string | null; title: string; text: string }, why: string, quiet = false): ContextFact | null {
+    if (this.offered(marker)) return null;
+    try {
+      const fact = this.add({ ...input, title: truncate(input.title, CONTEXT_LIMITS.title), text: truncate(input.text, 900) }, marker, 'proposed');
+      if (!quiet) this.eng.comms.notify({ kind: 'info', severity: 'info', title: `Proposed for the central context by ${why}`, body: `${fact.title} (Context → Proposals)` });
+      return fact;
+    } catch (e) {
+      this.core.log('warn', `context: not offered (${marker}): ${(e as Error).message}`);
+      return null;
+    }
+  }
+
+  /** Is this project (or the asker's machine) a member's own: what is said there is that member's, not offered to the office. */
+  private personal(projectId: string | null | undefined, employeeId?: string | null): boolean {
+    return !!this.eng.hosts.memberOfHost(this.core.projects.get(projectId ?? '')?.hostId) || !!(employeeId && this.eng.hosts.memberOfHost(this.core.employees.get(employeeId)?.hostId));
+  }
+
+  /**
+   * The boss answered a question with what sounds like a standing rule ("always…", "never…", "from now on…"): offered
+   * for the asker's project (or the office). An answer for this once is not.
+   */
+  private noticeAnswer(q: Question): void {
+    if (q.kind !== 'question' || !q.answer || !['answered', 'delivered', 'confirmed'].includes(q.status) || q.answeredBy?.kind === 'foreman') return;
+    if (!STANDING.test(q.answer) || this.personal(q.projectId, q.employeeId)) return;
+    const project = q.projectId && this.core.projects.get(q.projectId) ? q.projectId : null;
+    this.offer(`answer:${q.id}`, { layer: project ? 'project' : 'office', scope: project, title: `The boss's word: ${q.text.replace(/\s+/g, ' ')}`, text: q.answer }, "the boss's answer");
+  }
+
+  /** A lesson for the whole office or a project, taken in: offered as a fact (it is a rule the office already follows). */
+  private noticeLesson(l: Lesson, quiet = false): void {
+    if (l.status !== 'active' || l.scope === 'employee') return;
+    if (l.scope === 'project' && (!l.projectId || this.personal(l.projectId))) return;
+    this.offer(`lesson:${l.id}`, { layer: l.scope === 'project' ? 'project' : 'office', scope: l.scope === 'project' ? l.projectId : null, title: `Lesson: ${l.text.replace(/\s+/g, ' ')}`, text: `${l.text}${l.appliesWhen ? ` (${l.appliesWhen})` : ''}` }, 'a lesson', quiet);
+  }
+
+  /**
+   * What the office already knows, offered once as proposals (the owner takes in what holds): each employee's standing
+   * instructions as their own notes, each project's description, goals and docs, the office's and projects' active
+   * lessons. Not what is on a member's own computer. Returns how many were offered.
+   */
+  importExisting(by: string): number {
+    let n = 0;
+    for (const e of this.core.employees.filter((x) => !x.archived && !!x.instructions.trim() && !this.personal(null, x.id))) {
+      if (this.offer(`import:instructions:${e.id}`, { layer: 'self', scope: e.id, title: `${e.name}'s standing instructions`, text: e.instructions.trim() }, 'an import', true)) n++;
+    }
+    for (const p of this.core.projects.filter((x) => x.status !== 'archived' && !this.personal(x.id))) {
+      const text = [p.description, p.goals ? `Goals: ${p.goals}` : '', p.docs ? `Notes: ${p.docs}` : ''].map((x) => x.trim()).filter(Boolean).join('\n');
+      if (text && this.offer(`import:project:${p.id}`, { layer: 'project', scope: p.id, title: `About ${p.name}`, text }, 'an import', true)) n++;
+    }
+    for (const l of this.core.lessons.filter((x) => x.status === 'active' && x.scope !== 'employee')) {
+      const before = this.facts.size;
+      this.noticeLesson(l, true);
+      if (this.facts.size > before) n++;
+    }
+    this.core.audit(by, 'context.imported', 'context', { offered: n });
+    // (One line in the Inbox for all of them, not one each.)
+    if (n) this.eng.comms.notify({ kind: 'info', severity: 'info', title: `${n} proposal${n === 1 ? '' : 's'} for the central context`, body: 'What the office already knew — standing instructions, projects, lessons — waits in Context → Proposals: take in what holds.' });
+    return n;
   }
 
   // ───────────── what an employee holds ─────────────

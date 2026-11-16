@@ -2101,3 +2101,15 @@ button.k-row:focus-visible {
 .ctx-body {
   padding-top: 18px;
 }
+.ctx-import {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+}
+.ctx-import .k-sub {
+  flex: 1;
+  white-space: normal;
+}

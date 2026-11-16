@@ -199,6 +199,7 @@ const RULES: Rule[] = [
   rule('DELETE', '/context/facts/:id', 'work'),
   rule('POST', '/context/facts/:id/accept', 'work'),
   rule('POST', '/context/facts/:id/drop', 'work'),
+  rule('POST', '/context/import', 'work'),
   // Whether what the office learned helped. Counted, for anyone but an owner, only from what they may see (`outcomesScopeFor`).
   rule('GET', '/growth/outcomes', 'detail'),
   // What the office did by itself with what it learned; each entry is filtered like any other event.

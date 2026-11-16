@@ -3222,6 +3222,17 @@ async function scenario() {
     await click(`window.__t.scope().querySelector('[data-context-save]')`, 'Add the fact');
     await waitFor(`!!window.__t.scope().querySelector('[data-context-fact="How we deploy"]')`, 8000);
     await shot('context-office');
+    // What the office already knows, offered once: the Proposals tab opens with it, and all of it is taken in.
+    await js(`window.__orchConfirm = () => true; true`);
+    await click(`window.__t.scope().querySelector('[data-context-import]')`, 'Import what the office knows');
+    await waitFor(`!!window.__t.scope().querySelector('[data-context-proposals] [data-context-proposal]')`, 8000);
+    const offered = await js(`window.__t.scope().querySelectorAll('[data-context-proposal]').length`);
+    await shot('context-proposals');
+    if (offered > 1) {
+      await click(`window.__t.scope().querySelector('[data-context-accept-all]')`, 'Take in all');
+      await waitFor(`!window.__t.scope().querySelector('[data-context-proposal]')`, 15000);
+    }
+    await js(`delete window.__orchConfirm; true`);
     // Who holds it: a working employee's pack has it.
     await click(`[...window.__t.scope().querySelectorAll('.tab')].find((b) => /Who holds it/.test(b.textContent))`, 'Who holds it');
     await waitFor(`!!window.__t.scope().querySelector('[data-context-show]')`, 8000);
@@ -3230,7 +3241,7 @@ async function scenario() {
     await shot('context-holders');
     const who = await js(`window.__t.scope().querySelector('[data-context-holder]').dataset.contextHolder`);
     await js(`window.__t.store().openPanel(null)`);
-    return `added; ${who} is given it`;
+    return `added; ${offered} offered by the import and taken in; ${who} is given it`;
   });
 
   await step('this computer\'s preferences, as they are stored at the end', async () => {

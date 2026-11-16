@@ -101,3 +101,40 @@ test("a change reaches every running session's machine once — not again while 
   assert.equal(pushes.length, 1);
   assert.ok(pushes[0]!.params.context.items.some((i: { title: string }) => i.title === 'Deploy'));
 });
+
+test("the office notices: the boss's standing answer and a lesson it took in are offered once; an answer for this once is not", () => {
+  const { eng, shop, kira } = office();
+  eng.context.start();
+  const q = (id: string, answer: string) => eng.core.put('question', { id, kind: 'question', channel: 'mcp_tool', employeeId: kira.id, sessionId: null, taskId: null, projectId: shop.id, text: 'Which branch do I deploy?', context: '', why: '', options: [], answers: null, status: 'answered', answer, answeredBy: null, answeredAt: now(), createdAt: now() } as never);
+  q('q1', 'Today the release branch.');
+  q('q2', 'Always from main — from now on, never from a branch.');
+  q('q2', 'Always from main — from now on, never from a branch.');
+  const offered = eng.context.list().filter((f) => f.createdBy.startsWith('answer:'));
+  assert.deepEqual(offered.map((f) => [f.createdBy, f.layer, f.status]), [['answer:q2', 'project', 'proposed']]);
+  assert.match(offered[0]!.title, /^The boss's word: Which branch do I deploy\?/);
+  // A Serbian standing answer counts too.
+  q('q3', 'Uvek pitaj klijenta pre deploya.');
+  assert.ok(eng.context.list().some((f) => f.createdBy === 'answer:q3'));
+  // A lesson for the office, once active.
+  const lesson = { id: 'l1', scope: 'company', employeeId: null, projectId: null, text: 'Run the tests before a merge.', appliesWhen: 'when merging', source: 'owner', evidence: [], status: 'active', authoredBy: { kind: 'owner', id: null, name: 'boss' }, appliedCount: 0, createdAt: now(), updatedAt: now() };
+  eng.core.put('lesson', lesson as never);
+  eng.core.put('lesson', lesson as never);
+  assert.equal(eng.context.list().filter((f) => f.createdBy === 'lesson:l1').length, 1);
+  // Dropped: not offered again.
+  const dropped = eng.context.list().find((f) => f.createdBy === 'lesson:l1')!;
+  eng.context.drop(dropped.id, 'owner');
+  eng.core.put('lesson', { ...lesson, updatedAt: now() } as never);
+  assert.equal(eng.context.list().filter((f) => f.createdBy === 'lesson:l1').length, 0);
+});
+
+test('the import offers what the office already knows — standing instructions, projects, lessons — once', () => {
+  const { eng, shop, kira } = office();
+  eng.core.put('employee', { ...eng.core.employees.require(kira.id), instructions: 'Write tests first.' });
+  eng.core.put('project', { ...eng.core.projects.require(shop.id), description: 'The online shop.', goals: 'Launch in December.' });
+  const n = eng.context.importExisting('owner');
+  assert.equal(n, 2);
+  const titles = eng.context.list().filter((f) => f.status === 'proposed').map((f) => f.title).sort();
+  assert.deepEqual(titles, ["About Shop", "Kira's standing instructions"]);
+  assert.match(eng.context.list().find((f) => f.title === 'About Shop')!.text, /The online shop\.\nGoals: Launch in December\./);
+  assert.equal(eng.context.importExisting('owner'), 0, 'not offered twice');
+});

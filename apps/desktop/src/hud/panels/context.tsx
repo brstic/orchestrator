@@ -46,7 +46,9 @@ const ABOUT: Record<ContextLayer, string> = {
   client: "The employees this client rents get these with every message of the client's.",
   self: "One employee's own notes — what they are in the middle of. They write them themselves too (propose_context), straight in.",
 };
-const who = (by: string) => (by.startsWith('meeting:') ? 'a meeting' : by.replace(/^member:/, '').replace(/^employee:/, '').replace(/^owner$/, 'the owner'));
+/** Who wrote a fact, in words: a person, an employee, or what the office offered it from. */
+const who = (by: string) =>
+  by.startsWith('meeting:') ? 'a meeting' : by.startsWith('lesson:') ? 'a lesson the office follows' : by.startsWith('answer:') ? "the boss's answer" : by.startsWith('import:') ? 'what the office already knew' : by.replace(/^member:/, '').replace(/^employee:/, '').replace(/^owner$/, 'the owner');
 
 function FactEditor({ fact, layer, scope, onDone }: { fact: ContextFact | null; layer: ContextLayer; scope: string | null; onDone: () => void }) {
   const [title, setTitle] = useState(fact?.title ?? '');
@@ -154,7 +156,7 @@ function FactRow({ f, open, onToggle, reload }: { f: ContextFact; open: boolean;
   );
 }
 
-function Layer({ view, layer, scope, scopes, onScope, reload }: { view: View; layer: ContextLayer; scope: string | null; scopes?: Array<{ id: string; label: string }>; onScope?: (id: string) => void; reload: () => void }) {
+function Layer({ view, layer, scope, scopes, onScope, reload, onImported }: { view: View; layer: ContextLayer; scope: string | null; scopes?: Array<{ id: string; label: string }>; onScope?: (id: string) => void; reload: () => void; onImported?: () => void }) {
   const [adding, setAdding] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const facts = view.facts.filter((f) => f.layer === layer && f.status === 'active' && (layer === 'office' || f.scope === scope));
@@ -170,6 +172,24 @@ function Layer({ view, layer, scope, scopes, onScope, reload }: { view: View; la
           </Button>
         )}
       </div>
+      {layer === 'office' && (
+        <div className="ctx-import">
+          <span className="k-sub">Start from what the office already knows: each employee's standing instructions, each project's description and goals, the lessons the office follows — offered as proposals, to take in what holds.</span>
+          <Button
+            small
+            onClick={async () => {
+              const r = await act(() => api<{ offered: number }>('POST', '/context/import', {}));
+              if (!r) return;
+              useOffice.getState().toast(r.offered ? `${r.offered} proposal${r.offered === 1 ? '' : 's'} to look at` : 'Nothing new to offer: it was all offered before', r.offered ? 'success' : 'info');
+              reload();
+              if (r.offered) onImported?.();
+            }}
+            data-context-import
+          >
+            Import what the office knows
+          </Button>
+        </div>
+      )}
       {scopes && (
         <select value={scope ?? ''} onChange={(e) => onScope?.(e.target.value)} aria-label="Which" className="ctx-scope">
           {!scope && <option value="">Choose…</option>}
@@ -219,8 +239,26 @@ function Proposals({ view, reload, names }: { view: View; reload: () => void; na
   const proposed = view.facts.filter((f) => f.status === 'proposed');
   const [editing, setEditing] = useState<string | null>(null);
   const [text, setText] = useState('');
+  const all = proposed.length > 1 && (
+    <div className="k-actions">
+      <span className="k-sub grow">{proposed.length} proposals. Look through them; take in what holds.</span>
+      <Button
+        small
+        onClick={async () => {
+          if (!(await ask({ title: `Take in all ${proposed.length}?`, body: 'Every employee concerned holds them from their next prompt. You can change or archive any of them afterwards.', ok: 'Take in all' }))) return;
+          for (const f of proposed) await api('POST', `/context/facts/${f.id}/accept`, {}).catch(() => undefined);
+          reload();
+        }}
+        data-context-accept-all
+      >
+        Take in all
+      </Button>
+    </div>
+  );
   if (!proposed.length) return <div className="k-empty"><div className="k-title">Nothing proposed</div><div className="k-text">When an employee proposes a fact for the office, a role or a client, it waits here. Their own notes and their project's state go in at once ({view.straightIn.join(', ')}).</div></div>;
   return (
+    <div className="k-stack">
+    {all}
     <div className="k-group" data-context-proposals>
       {proposed.map((f) => (
         <div key={f.id} className="k-row ctx-proposal" data-context-proposal={f.title}>
@@ -245,6 +283,7 @@ function Proposals({ view, reload, names }: { view: View; reload: () => void; na
           </div>
         </div>
       ))}
+    </div>
     </div>
   );
 }
@@ -312,7 +351,10 @@ function ContextPanel({ arg, onClose }: { arg: string | null; onClose: () => voi
     }),
     [projects, employees, clients],
   );
-  const names = (layer: ContextLayer, scope: string | null) => (layer === 'office' ? 'the office' : `${layer} ${(lists[layer as keyof typeof lists] ?? []).find((x) => x.id === scope)?.label ?? ''}`.trim());
+  const names = (layer: ContextLayer, scope: string | null) => {
+    const label = (lists[layer as keyof typeof lists] ?? []).find((x) => x.id === scope)?.label ?? '';
+    return layer === 'office' ? 'the office' : layer === 'self' ? `${label}'s own notes` : `${layer} ${label}`.trim();
+  };
   const proposals = view?.facts.filter((f) => f.status === 'proposed').length ?? 0;
   const tabs: Array<{ id: Tab; label: string; count?: number }> = [
     { id: 'office', label: 'Office' },
@@ -335,7 +377,7 @@ function ContextPanel({ arg, onClose }: { arg: string | null; onClose: () => voi
           <Holders view={view} />
         ) : (
           <>
-            <Layer view={view} layer={tab} scope={tab === 'office' ? null : (scopes[tab] ?? lists[tab as keyof typeof lists]?.[0]?.id ?? null)} scopes={tab === 'office' ? undefined : lists[tab as keyof typeof lists]} onScope={(id) => setScopes((s) => ({ ...s, [tab]: id }))} reload={() => void load()} />
+            <Layer onImported={() => setTab('proposals')} view={view} layer={tab} scope={tab === 'office' ? null : (scopes[tab] ?? lists[tab as keyof typeof lists]?.[0]?.id ?? null)} scopes={tab === 'office' ? undefined : lists[tab as keyof typeof lists]} onScope={(id) => setScopes((s) => ({ ...s, [tab]: id }))} reload={() => void load()} />
             <More summary={`Recent changes (${view.history.length})`}>
               <div className="ctx-history">
                 {[...view.history].reverse().slice(0, 40).map((h) => (
