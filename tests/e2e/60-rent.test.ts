@@ -128,6 +128,16 @@ test('a rented employee works with the colleagues the same client rents, and nob
   assert.match(fs.readFileSync(path.join(bobDir, 'to-kira.txt'), 'utf8'), /^ERROR No teammate matches "Kira"/);
 });
 
+test('"office work": the same employee goes on with the whole office — a colleague nobody rents, and the task board', async () => {
+  await h.api('PATCH', `/rent/clients/${clientId}/agents/${kira.id}`, { perms: { office: true } });
+  await portal('POST', `/chats/${kira.id}`, { text: 'Tell Bob @@fake: mcp send_message {"to":"Bob","message":"from the client"}; result to-bob-office.txt; mcp get_available_tasks; result board.txt; say told-bob-5151@@' });
+  await said(kira.id, /told-bob-5151/);
+  const read = (f: string) => fs.readFileSync(path.join(kira.workingDir!, f), 'utf8');
+  assert.doesNotMatch(read('to-bob-office.txt'), /^ERROR/);
+  assert.doesNotMatch(read('board.txt'), /not yours to use/);
+  await h.api('PATCH', `/rent/clients/${clientId}/agents/${kira.id}`, { perms: { office: false } });
+});
+
 test('the fence: their folders only, and only what the owner allows — changed live, without a restart', async () => {
   const kiraDir = kira.workingDir!;
   const milaDir = mila.workingDir!;

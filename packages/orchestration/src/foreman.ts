@@ -861,7 +861,7 @@ export class Foreman {
         const to = this.findEmployee(String(a.employee));
         if (!to) return err(`No employee matches "${a.employee}". Use office_overview to see who works here.`);
         if (to.roleKey === FOREMAN_ROLE) return err('A foreman supervises and does not take tasks. Assign it to someone who does the work.');
-        const rented = this.eng.rent.rentalOf(to.id);
+        const rented = this.eng.rent.isWalled(to.id) ? this.eng.rent.rentalOf(to.id) : null;
         if (rented) return err(`${to.name} is rented to ${rented.client.name} and works only for them. Give the task to someone else.`);
         if (task.assigneeId === to.id) return `${task.key} is already assigned to ${to.name}.`;
         if (this.closed(to.hostId)) return this.refuse(employee, 'assign_task', this.closedSay(to.name), task.id);

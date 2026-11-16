@@ -196,3 +196,28 @@ test('"anywhere" and "never waits": the fence opens and nothing waits for the of
   assert.equal(eng.rent.fenceFor(iso)!.autonomous, true);
   assert.equal(eng.rent.fenceFor(trk)!.anywhere, undefined);
 });
+
+test('"office work": a rented employee goes on with the whole office — the board, every colleague both ways, office work — and rentals that had everything on take it', () => {
+  const { eng, kira, bob } = office();
+  const c = eng.rent.create({ name: 'Support', employeeIds: [kira.id] }, 'owner', never);
+  // Walled in by default: no board, no colleague outside.
+  assert.equal(eng.rent.toolAllowed(kira, 'propose_tasks'), false);
+  assert.equal(eng.comms.resolveTeammate(kira, 'Bob'), undefined);
+  assert.equal(eng.rent.isWalled(kira.id), true);
+  eng.rent.setPerms(c.id, kira.id, { office: true }, 'owner');
+  assert.equal(eng.rent.toolAllowed(kira, 'propose_tasks'), true);
+  assert.equal(eng.rent.toolAllowed(kira, 'give_task'), true);
+  assert.equal(eng.rent.toolAllowed(kira, 'team_hire'), false, "a lead's own tools stay a lead's");
+  assert.equal(eng.rent.toolAllowed(kira, 'assign_task'), false, "the foreman's stay the foreman's");
+  assert.equal(eng.rent.toolAllowed(kira, 'vault_list'), false, 'the vault still goes with its own switch');
+  assert.equal(eng.comms.resolveTeammate(kira, 'Bob')?.id, bob.id);
+  assert.equal(eng.comms.resolveTeammate(bob, 'Kira')?.id, kira.id, 'and colleagues reach them');
+  assert.equal(eng.rent.isWalled(kira.id), false);
+  // A rental written before the switch, with every other switch on, takes it.
+  const store = new Store(':memory:');
+  const all = { commands: true, edit: true, web: true, teamwork: true, files: true, vault: true, memory: true, anywhere: true, autonomous: true };
+  store.kvSet('rent.clients', [{ id: 'c9', name: 'S', company: null, note: '', createdAt: now(), createdBy: 'owner', revokedAt: null, lastSeenAt: null, rentals: [{ employeeId: 'e1', since: now(), perms: all }, { employeeId: 'e2', since: now(), perms: { ...all, vault: false } }] }]);
+  const eng2 = new Engine({ store, agents: link, publicUrl: 'http://127.0.0.1:1', timings: { deliverySettleMs: 0, sleepIdleMs: 1 } }, { send: () => undefined });
+  const perms = eng2.rent.get('c9')!.rentals.map((r) => r.perms.office);
+  assert.deepEqual(perms, [true, false]);
+});

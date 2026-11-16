@@ -76,7 +76,7 @@ export class Lead {
     const member = this.memberOf(lead);
     const rank = (e: Employee) => (this.memberOf(e) ? 0 : e.keptBy?.id === member ? 1 : 2);
     return this.core.employees
-      .filter((e) => !e.archived && e.id !== lead.id && !NOT_HIRED.has(e.roleKey) && !e.selfDriven && !this.eng.rent.isRented(e.id) && (this.within(lead, e.hostId) || this.kept(lead, e)))
+      .filter((e) => !e.archived && e.id !== lead.id && !NOT_HIRED.has(e.roleKey) && !e.selfDriven && !this.eng.rent.isWalled(e.id) && (this.within(lead, e.hostId) || this.kept(lead, e)))
       .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
   }
 

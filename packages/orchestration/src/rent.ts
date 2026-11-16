@@ -70,6 +70,8 @@ const RENT_TOOLS = new Set([
   'meeting_contribute',
   'meeting_conclude',
 ]);
+/** The foreman's and a team lead's own tools: never a rented employee's (their handlers refuse other callers anyway). */
+const FOREIGN_ROLE_TOOLS = /^(team_|office_overview$|look_at$|answer_question$|assign_task$|create_task$|tell_employee$|escalate_to_owner$|finish_round$)/;
 /** Tools that go with a permission. */
 const PERM_TOOLS: Record<string, keyof RentPerms> = { attach_file: 'files', vault_list: 'vault', vault_store: 'vault', vault_read: 'vault', recall: 'memory', remember: 'memory' };
 /** Tools that reach another employee: given only with teamwork. */
@@ -95,10 +97,14 @@ export class Rent {
       // Rentals made before "anywhere" and "never waits" existed: the owner who switched everything on meant everything
       // (their word of 2026-11-16: "what I allowed it may do — the server and all the rest — and the client must not
       // wait"); anybody else's rental keeps its fence and the office's approvals.
+      // So too "office work" (the same day: a project manager rented out could no longer give its team work — "it will not
+      // do things it could before"): taken on where every other switch was on.
       for (const r of c.rentals) {
-        if (r.perms.anywhere !== undefined && r.perms.autonomous !== undefined) continue;
+        if (r.perms.anywhere !== undefined && r.perms.autonomous !== undefined && r.perms.office !== undefined) continue;
         const all = (['commands', 'edit', 'web', 'teamwork', 'files', 'vault', 'memory'] as const).every((k) => r.perms[k]);
-        r.perms = { ...RENT_PERMS_DEFAULT, ...r.perms, anywhere: r.perms.anywhere ?? all, autonomous: r.perms.autonomous ?? all };
+        const anywhere = r.perms.anywhere ?? all;
+        const autonomous = r.perms.autonomous ?? all;
+        r.perms = { ...RENT_PERMS_DEFAULT, ...r.perms, anywhere, autonomous, office: r.perms.office ?? (all && anywhere && autonomous) };
       }
       this.clients.set(c.id, c);
     }
@@ -163,6 +169,12 @@ export class Rent {
 
   isRented(employeeId: string | null | undefined): boolean {
     return !!this.rentalOf(employeeId);
+  }
+
+  /** Rented and walled in with the client's other employees (not let do office work): kept out of the office's work. */
+  isWalled(employeeId: string | null | undefined): boolean {
+    const r = this.rentalOf(employeeId);
+    return !!r && !r.rental.perms.office;
   }
 
   /** The employees one client rents (who still exist). */
@@ -312,7 +324,10 @@ export class Rent {
   reaches(from: Employee, to: Employee): boolean {
     const a = this.rentalOf(from.id);
     const b = this.rentalOf(to.id);
-    if (!a && !b) return true;
+    // (One let do office work is not walled in: as far as reaching goes, they are the office's.)
+    const walledA = !!a && !a.rental.perms.office;
+    const walledB = !!b && !b.rental.perms.office;
+    if (!walledA && !walledB) return true;
     if (!a && from.roleKey === 'foreman') return true;
     return !!a && !!b && a.client.id === b.client.id && a.rental.perms.teamwork && b.rental.perms.teamwork;
   }
@@ -334,6 +349,8 @@ export class Rent {
     if (TEAM_TOOLS.has(tool) && !r.rental.perms.teamwork) return false;
     // Never waiting for the office: nothing is asked of the owner — the client is asked, in the conversation.
     if (r.rental.perms.autonomous && (tool === 'ask_boss' || tool === 'wait_for_answer')) return false;
+    // Office work: the office's tools as before (the board, handing work out, lessons) — but the foreman's and a lead's.
+    if (r.rental.perms.office) return !FOREIGN_ROLE_TOOLS.test(tool);
     return RENT_TOOLS.has(tool);
   }
 
@@ -420,6 +437,7 @@ export class Rent {
         (peers.length ? `; ${client.name} rents ${peers.map((e) => `${e.name}${!rental.perms.anywhere && e.hostId === employee.hostId && e.workingDir ? ` (whose folder ${e.workingDir} you may use too)` : ''}`).join(', ')} too — coordinate with them with send_message` : '') +
         (can.length ? `; the owner set that you ${can.join(', ')}` : '') +
         '. ' +
+        (rental.perms.office ? 'You go on working with the office as before — the task board and every colleague — for this client as for anyone. ' : '') +
         (rental.perms.autonomous
           ? `Nothing you do waits for the office: the owner has given you leave for all of it, so decide yourself and go on — do not ask the boss. What is ${client.name}'s to decide, ask ${client.name} in your reply. `
           : '') +

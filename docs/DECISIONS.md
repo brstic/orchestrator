@@ -2,6 +2,9 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-16 — A rented employee may keep working with the whole office (Office work)
+The wall (a rented employee reaches only the client's other employees) was the first request; a project manager rented as a client's way into the team showed that it can be the wrong shape. **Office work** is a per-employee switch, off by default, that takes the wall and the narrow tool list away for that employee (both ways: colleagues reach them too) — not the folder fence (*Anywhere*) and not the office's approvals (*Never waits*), which stay separate switches. The foreman's and a lead's own tools stay theirs. Rejected: dropping the wall for everybody (a client's specialist would then be handed the office's work and talk to anyone).
+
 ## 2026-11-16 — A rented employee may be let past the high-risk hold, by a switch of its own
 The owner, after their first client waited while an employee asked them about a deploy: "if I gave it permissions, it may do all of it — the server and everything — the client must not wait." The hard rule stands that the office's high-risk gate is switched off only by the owner (Settings → Employees, for Auto or Unrestricted) and never by default. **Never waits** is that kind of switch, per rented employee: off by default, the owner's to turn on (it is amber when on), and it lets through only what the employee's other switches allow; the fence around the office's own files is not touched. Rentals that already had every switch on were given it, on the owner's word of that day. Rejected: making every permission switch imply it (a switch that says "Commands" would then also mean "deploys nobody approves").
 

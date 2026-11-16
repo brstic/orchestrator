@@ -75,10 +75,11 @@ const PERMS: Array<{ key: keyof RentPerms; label: string; about: string }> = [
   { key: 'vault', label: 'Vault', about: "Use the office's credentials" },
   { key: 'memory', label: 'Memory', about: "Read and write the office's long memory" },
   { key: 'anywhere', label: 'Anywhere', about: 'Beyond their folders: the whole machine, and the servers the work needs (ssh, deploys) — the office’s own files stay fenced' },
+  { key: 'office', label: 'Office work', about: 'They go on working with the whole office as before: the task board, every colleague (who can reach them too), office work handed to them — for a project manager or anyone the client reaches the team through. Off: walled in with this client’s employees' },
   { key: 'autonomous', label: 'Never waits', about: 'The client never waits for you: what the switches allow runs without your approval — the high-risk hold too — and they ask you nothing (the client is asked instead)' },
 ];
 /** Switches that reach past this client: shown amber when on. */
-const WIDE = new Set<keyof RentPerms>(['vault', 'memory', 'anywhere', 'autonomous']);
+const WIDE = new Set<keyof RentPerms>(['vault', 'memory', 'anywhere', 'autonomous', 'office']);
 const day = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
 
 /** The permissions of one rented employee as a row of switches. */

@@ -920,9 +920,14 @@ export interface RentPerms {
    * they ask the owner nothing — what is the client's to decide they ask the client. The office's own files stay fenced.
    */
   autonomous: boolean;
+  /**
+   * Office work: they go on working with the whole office as before — the task board, every colleague (and every
+   * colleague reaches them), office work handed to them. Off: walled in with the client's other employees.
+   */
+  office: boolean;
 }
 
-export const RENT_PERMS_DEFAULT: RentPerms = { commands: true, edit: true, web: true, teamwork: true, files: true, vault: false, memory: false, anywhere: false, autonomous: false };
+export const RENT_PERMS_DEFAULT: RentPerms = { commands: true, edit: true, web: true, teamwork: true, files: true, vault: false, memory: false, anywhere: false, autonomous: false, office: false };
 export const RENT_PERM_KEYS = Object.keys(RENT_PERMS_DEFAULT) as Array<keyof RentPerms>;
 
 export interface Rental {

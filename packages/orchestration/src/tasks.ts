@@ -783,7 +783,7 @@ export class TaskManager {
     const projectHost = this.core.projects.get(task.projectId)?.hostId ?? null;
     const sameComputer = (e: Employee) => !(this.eng.hosts.memberOfHost(e.hostId) || this.eng.hosts.memberOfHost(projectHost)) || e.hostId === projectHost;
     // A person's own session is given work only by a person, never by the scheduler.
-    const pool = this.core.employees.filter((e) => !e.selfDriven && !this.eng.rent.isRented(e.id) && this.isFree(e) && sameComputer(e) && (e.projectId === task.projectId || e.projectId === null || !!e.alsoProjectIds?.includes(task.projectId)));
+    const pool = this.core.employees.filter((e) => !e.selfDriven && !this.eng.rent.isWalled(e.id) && this.isFree(e) && sameComputer(e) && (e.projectId === task.projectId || e.projectId === null || !!e.alsoProjectIds?.includes(task.projectId)));
     let best: { e: Employee; score: number; reason: string | null } | undefined;
     for (const e of pool) {
       // A foreman supervises; work is never routed to one.
