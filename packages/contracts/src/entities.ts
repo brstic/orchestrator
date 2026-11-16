@@ -913,9 +913,16 @@ export interface RentPerms {
   vault: boolean;
   /** Read and write the office's long memory. */
   memory: boolean;
+  /** Beyond their folders: the whole machine and other servers (paths outside their folders, in file tools and in commands). */
+  anywhere: boolean;
+  /**
+   * Never waits for the office: what the switches above allow runs without an approval, the high-risk hold included, and
+   * they ask the owner nothing — what is the client's to decide they ask the client. The office's own files stay fenced.
+   */
+  autonomous: boolean;
 }
 
-export const RENT_PERMS_DEFAULT: RentPerms = { commands: true, edit: true, web: true, teamwork: true, files: true, vault: false, memory: false };
+export const RENT_PERMS_DEFAULT: RentPerms = { commands: true, edit: true, web: true, teamwork: true, files: true, vault: false, memory: false, anywhere: false, autonomous: false };
 export const RENT_PERM_KEYS = Object.keys(RENT_PERMS_DEFAULT) as Array<keyof RentPerms>;
 
 export interface Rental {
@@ -960,6 +967,10 @@ export interface RentFence {
   commands: boolean;
   edit: boolean;
   web: boolean;
+  /** Not fenced to `roots`: the whole machine (the office's own files stay fenced). */
+  anywhere?: boolean;
+  /** The high-risk list does not hold them (the office's own files still do). */
+  autonomous?: boolean;
   /** Who they work for, for the words they are refused with. */
   client: string;
 }

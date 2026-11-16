@@ -148,6 +148,23 @@ test('the fence: their folders only, and only what the owner allows — changed 
   await h.api('PATCH', `/rent/clients/${clientId}/agents/${kira.id}`, { perms: { commands: true, edit: true } });
 });
 
+test('"anywhere" and "never waits": past their folders, a high-risk command runs without anybody being asked, and the boss is not asked either', async () => {
+  const kiraDir = kira.workingDir!;
+  await h.api('PATCH', `/rent/clients/${clientId}/agents/${kira.id}`, { perms: { anywhere: true, autonomous: true } });
+  await sleep(300);
+  const asked = (await h.state()).questions.filter((q) => q.employeeId === kira.id).length;
+  await portal('POST', `/chats/${kira.id}`, { text: `Go @@fake: bash cat ${path.join(outside, 'secret.txt')} > leak2.txt; bash git push 2>/dev/null && echo pushed > pushed.txt || echo pushed > pushed.txt; mcp ask_boss {"question":"may I?","options":[{"label":"yes"}]}; result asked.txt; say free-run-9911@@` });
+  await said(kira.id, /free-run-9911/);
+  assert.equal(fs.readFileSync(path.join(kiraDir, 'leak2.txt'), 'utf8'), 'not for clients\n', 'anywhere: a file outside their folder');
+  assert.equal(fs.readFileSync(path.join(kiraDir, 'pushed.txt'), 'utf8').trim(), 'pushed', 'a high-risk command ran');
+  assert.match(fs.readFileSync(path.join(kiraDir, 'asked.txt'), 'utf8'), /^ERROR .*not yours to use/, 'the boss is not asked');
+  assert.equal((await h.state()).questions.filter((q) => q.employeeId === kira.id).length, asked, 'nothing waited for the owner');
+  const m = (await h.state()).messages.filter((x) => x.channel === 'rent' && /free-run-9911/.test(x.body)).pop()!;
+  assert.match(m.body, /Nothing you do waits for the office/);
+  await h.api('PATCH', `/rent/clients/${clientId}/agents/${kira.id}`, { perms: { anywhere: false, autonomous: false } });
+  await sleep(300);
+});
+
 test('a file the employee gives goes to the client, and the client downloads it from their conversation only', async () => {
   fs.writeFileSync(path.join(kira.workingDir!, 'report.txt'), 'the report\n');
   await portal('POST', `/chats/${kira.id}`, { text: 'Send me the report @@fake: mcp attach_file {"path":"report.txt","caption":"Here it is"}; say file-sent-7722@@' });

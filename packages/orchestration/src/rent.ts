@@ -91,7 +91,17 @@ export class Rent {
 
   constructor(eng: Engine) {
     this.eng = eng;
-    for (const c of eng.core.store.kvGet<RentClient[]>(KV, [])) this.clients.set(c.id, c);
+    for (const c of eng.core.store.kvGet<RentClient[]>(KV, [])) {
+      // Rentals made before "anywhere" and "never waits" existed: the owner who switched everything on meant everything
+      // (their word of 2026-11-16: "what I allowed it may do — the server and all the rest — and the client must not
+      // wait"); anybody else's rental keeps its fence and the office's approvals.
+      for (const r of c.rentals) {
+        if (r.perms.anywhere !== undefined && r.perms.autonomous !== undefined) continue;
+        const all = (['commands', 'edit', 'web', 'teamwork', 'files', 'vault', 'memory'] as const).every((k) => r.perms[k]);
+        r.perms = { ...RENT_PERMS_DEFAULT, ...r.perms, anywhere: r.perms.anywhere ?? all, autonomous: r.perms.autonomous ?? all };
+      }
+      this.clients.set(c.id, c);
+    }
   }
 
   private get core() {
@@ -100,11 +110,18 @@ export class Rent {
 
   start(): void {
     this.core.bus.on('event', (e) => this.onEvent(e));
+    // What a rented employee's machine holds may be from before this start (or before a rental changed): sent again.
+    setTimeout(() => this.pushFences(this.list().filter((c) => !c.revokedAt).flatMap((c) => c.rentals.map((r) => r.employeeId))), 3000).unref?.();
     // A rented employee's folder moved, or a colleague's did: their fences follow.
     this.core.bus.on('entity', (kind, op, data) => {
       if (kind === 'employee' && op === 'upsert' && this.rentalOf((data as Employee).id)) this.pushFences(this.groupOf((data as Employee).id));
       // A machine is back (a member's own computer connected again): rented employees there whom a client wrote to meanwhile start.
-      if (kind === 'host' && op === 'upsert' && (data as { status?: string }).status === 'online') this.wakeWaiting((data as { id: string }).id);
+      if (kind === 'host' && op === 'upsert' && (data as { status?: string }).status === 'online') {
+        const hostId = (data as { id: string }).id;
+        this.wakeWaiting(hostId);
+        // (Its agent may have been updated, or kept an older fence while it was away: it is told the fences as they are now.)
+        this.pushFences(this.list().filter((c) => !c.revokedAt).flatMap((c) => c.rentals.map((r) => r.employeeId)).filter((id) => this.core.employees.get(id)?.hostId === hostId));
+      }
     });
   }
 
@@ -315,6 +332,8 @@ export class Rent {
     const perm = PERM_TOOLS[tool];
     if (perm) return r.rental.perms[perm];
     if (TEAM_TOOLS.has(tool) && !r.rental.perms.teamwork) return false;
+    // Never waiting for the office: nothing is asked of the owner — the client is asked, in the conversation.
+    if (r.rental.perms.autonomous && (tool === 'ask_boss' || tool === 'wait_for_answer')) return false;
     return RENT_TOOLS.has(tool);
   }
 
@@ -327,7 +346,7 @@ export class Rent {
     // (A colleague's folder is theirs to reach only where it is: on the same machine.)
     const peers = r.rental.perms.teamwork ? this.agentsOf(r.client).filter((e) => e.id !== employee.id && e.hostId === employee.hostId && this.rentalOf(e.id)?.rental.perms.teamwork).map((e) => e.workingDir).filter((d): d is string => !!d) : [];
     const p = r.rental.perms;
-    return { roots: [...new Set([...own, ...peers])], commands: p.commands, edit: p.edit, web: p.web, client: r.client.name };
+    return { roots: [...new Set([...own, ...peers])], commands: p.commands, edit: p.edit, web: p.web, ...(p.anywhere ? { anywhere: true } : {}), ...(p.autonomous ? { autonomous: true } : {}), client: r.client.name };
   }
 
   /** Claude Code's own rules for a rented employee, beside the fence: the tools they are not allowed are not there at all. */
@@ -336,6 +355,22 @@ export class Rent {
     if (!r) return [];
     const p = r.rental.perms;
     return [...(p.commands ? [] : ['Bash']), ...(p.edit ? [] : ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']), ...(p.web ? [] : ['WebFetch', 'WebSearch'])];
+  }
+
+  /** Does this rented employee never wait for the office (approvals, the high-risk hold, questions)? */
+  autonomous(employeeId: string | null | undefined): boolean {
+    return !!this.rentalOf(employeeId)?.rental.perms.autonomous;
+  }
+
+  /** May a rented employee who never waits run this tool without an approval? Only what their switches allow. */
+  mayRunUnasked(employeeId: string | null | undefined, tool: string): boolean {
+    const r = this.rentalOf(employeeId);
+    if (!r || !r.rental.perms.autonomous) return false;
+    const p = r.rental.perms;
+    if (tool === 'Bash') return p.commands;
+    if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tool)) return p.edit;
+    if (tool === 'WebFetch' || tool === 'WebSearch') return p.web;
+    return true;
   }
 
   /** The co-rented colleagues' folders, so that Claude Code lets them work there. */
@@ -379,10 +414,16 @@ export class Rent {
       text,
       '',
       `(Your reply goes to ${client.name} on the portal; they see only what you reply${rental.perms.files ? ' and the files you give them with attach_file' : ''}, nothing of the office. ` +
-        `While rented you work only in your own folder${employee.workingDir ? ` (${employee.workingDir})` : ''}` +
-        (peers.length ? `; ${client.name} rents ${peers.map((e) => `${e.name}${e.hostId === employee.hostId && e.workingDir ? ` (whose folder ${e.workingDir} you may use too)` : ''}`).join(', ')} too — coordinate with them with send_message` : '') +
+        (rental.perms.anywhere
+          ? `You may work anywhere on this machine and on the servers the work needs, as far as the owner allows (${[rental.perms.commands ? 'commands' : null, rental.perms.edit ? 'changing files' : null, rental.perms.web ? 'the web' : null].filter(Boolean).join(', ') || 'reading only'})`
+          : `While rented you work only in your own folder${employee.workingDir ? ` (${employee.workingDir})` : ''}`) +
+        (peers.length ? `; ${client.name} rents ${peers.map((e) => `${e.name}${!rental.perms.anywhere && e.hostId === employee.hostId && e.workingDir ? ` (whose folder ${e.workingDir} you may use too)` : ''}`).join(', ')} too — coordinate with them with send_message` : '') +
         (can.length ? `; the owner set that you ${can.join(', ')}` : '') +
-        '. What the boss tells you in the office is not for clients unless the boss says so.)',
+        '. ' +
+        (rental.perms.autonomous
+          ? `Nothing you do waits for the office: the owner has given you leave for all of it, so decide yourself and go on — do not ask the boss. What is ${client.name}'s to decide, ask ${client.name} in your reply. `
+          : '') +
+        'What the boss tells you in the office is not for clients unless the boss says so.)',
     ].join('\n');
   }
 

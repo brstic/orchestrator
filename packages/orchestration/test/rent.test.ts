@@ -165,3 +165,34 @@ test("an owner rents the employees on their own computer too — not somebody el
   assert.deepEqual(eng.rent.fenceFor(own)!.roots, ['/work/own']);
   assert.deepEqual(eng.rent.fenceFor(bob)!.roots, ['/work/bob']);
 });
+
+test('"anywhere" and "never waits": the fence opens and nothing waits for the office — and rentals from before both existed take them on only where every switch was on', () => {
+  const store = new Store(':memory:');
+  // Two rentals written before the two switches existed: one with everything on, one with commands off.
+  const mk = () => new Engine({ store, agents: link, publicUrl: 'http://127.0.0.1:1', timings: { deliverySettleMs: 0, sleepIdleMs: 1 } }, { send: () => undefined });
+  const first = mk();
+  first.core.put('host', shared);
+  const a = first.employees.create({ name: 'Iso', roleKey: 'backend', hostId: shared.id, workingDir: '/work/iso' });
+  const b = first.employees.create({ name: 'Trk', roleKey: 'backend', hostId: shared.id, workingDir: '/work/trk' });
+  const all = { commands: true, edit: true, web: true, teamwork: true, files: true, vault: true, memory: true };
+  store.kvSet('rent.clients', [
+    { id: 'c1', name: 'Lazar', company: null, note: '', createdAt: now(), createdBy: 'owner', revokedAt: null, lastSeenAt: null, rentals: [{ employeeId: a.id, since: now(), perms: all }] },
+    { id: 'c2', name: 'Other', company: null, note: '', createdAt: now(), createdBy: 'owner', revokedAt: null, lastSeenAt: null, rentals: [{ employeeId: b.id, since: now(), perms: { ...all, commands: false } }] },
+  ]);
+  const eng = mk();
+  const iso = eng.core.employees.require(a.id);
+  const trk = eng.core.employees.require(b.id);
+  assert.deepEqual([eng.rent.rentalOf(iso.id)!.rental.perms.anywhere, eng.rent.rentalOf(iso.id)!.rental.perms.autonomous], [true, true]);
+  assert.deepEqual([eng.rent.rentalOf(trk.id)!.rental.perms.anywhere, eng.rent.rentalOf(trk.id)!.rental.perms.autonomous], [false, false]);
+  // Never waits: nothing asked of the owner; what the switches allow runs unasked; what they do not, does not.
+  assert.equal(eng.rent.toolAllowed(iso, 'ask_boss'), false);
+  assert.equal(eng.rent.toolAllowed(trk, 'ask_boss'), true);
+  assert.equal(eng.rent.mayRunUnasked(iso.id, 'Bash'), true);
+  assert.equal(eng.rent.mayRunUnasked(trk.id, 'Bash'), false);
+  eng.rent.setPerms('c1', iso.id, { web: false }, 'owner');
+  assert.equal(eng.rent.mayRunUnasked(iso.id, 'WebFetch'), false);
+  // The fence the machine gets says so.
+  assert.equal(eng.rent.fenceFor(iso)!.anywhere, true);
+  assert.equal(eng.rent.fenceFor(iso)!.autonomous, true);
+  assert.equal(eng.rent.fenceFor(trk)!.anywhere, undefined);
+});

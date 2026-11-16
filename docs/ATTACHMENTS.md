@@ -19,7 +19,7 @@ download"). Its chip is pink and says **▶ Play**; in a task's *Files* the card
 the window (`file-view.tsx`, `VideoViewer`): the video as wide as 1100 px, the player's own controls (pause, seek,
 sound, full screen), and under it its name, caption and size, *Download* and *Close* (Escape, or a click beside it).
 Which files: `playableVideo` in `lib/readable.ts` — `.mp4`, `.m4v`, `.mov`, `.webm`, `.ogv`, or a `video/…` type. The
-whole file is fetched when it is opened (through the same route as a download; at most 25 MB, the limit of any file
+whole file is fetched when it is opened (through the same route as a download; at most 100 MB, the limit of any file
 given through the office), never before. A format the player does not know (a `.mov` in HEVC on a machine without
 it, for instance) says so and leaves *Download*. Checked by the UI suite's step "an employee gives me a video…" with a
 real one-second H.264 file (`tests/fixtures/tiny.mp4`).
@@ -28,7 +28,7 @@ real one-second H.264 file (`tests/fixtures/tiny.mp4`).
 The same for a sound (the owner, 2026-11-14: "let me play an mp3 file too"): `.mp3`, `.wav`, `.m4a`, `.ogg`, `.flac`,
 `.aac`, `.opus`, or an `audio/…` type (`playableAudio` in `lib/readable.ts`), in the conversation or on a ticket. Its
 chip is violet and says **▶ Play**; a click opens the same viewer (`VideoViewer` with `audio`) with the player's own
-controls under the file's name, *Download* and *Close*. Fetched when opened, at most 25 MB. Checked by the UI suite's
+controls under the file's name, *Download* and *Close*. Fetched when opened, at most 100 MB. Checked by the UI suite's
 step "an employee gives me a sound (an mp3)…" with a real 0.6-second tone (`tests/fixtures/tiny.mp3`).
 
 ## The three parts in one paragraph each
@@ -56,7 +56,7 @@ employee: attach_file { path } ──▶ office asks the machine: files.get (pie
 person in the office: GET /api/tasks/:id/attachments/:aid  → the picture, or a download
 ```
 
-- **Limits:** 25 MB a file, 200 files a task (30 until 2026-11-12: a long task with a picture per step was full, and its employee went back to naming paths on its machine). Larger things belong on the machine, named in the task.
+- **Limits:** 100 MB a file, 200 files a task (30 until 2026-11-12: a long task with a picture per step was full, and its employee went back to naming paths on its machine). Larger things belong on the machine, named in the task.
 - **Names** are made safe (`safeName`: no path, no control characters, not hidden) and unique within a task (`spec.pdf`, `spec-2.pdf`).
 - **A file added while the employee is already on the task** is sent at once and they get a message with its path.
 - **A task that is deleted** takes its files along (the office's copies; a copy on an employee's machine stays there).
@@ -82,7 +82,7 @@ window ──(pieces of ≤ 384 KB)──▶ office: <data folder>/files-said/<e
 - **The message keeps two texts**: `said` — what the person wrote, which the conversation shows with the pictures over it — and `body`, the same with the paths added for the employee. `Message.files` lists what went along.
 - **Nothing is sent without its file.** A file that has not arrived whole, or a machine that is not in the office, refuses the message: "look at this" does not arrive alone.
 - **How long.** The office keeps its copy **seven days** (`SAID_KEEP_MS`) so the conversation can show the picture, then drops it and the conversation says "no longer kept here". A file that was uploaded and never said is given up after an hour, or at a restart. **The copy on the employee's machine is not removed by anything**: there is no call for it yet, and a member's own computer runs the agent of their desktop app.
-- **Limits:** 25 MB a file, 10 files a message. Names are made safe as for a task's files.
+- **Limits:** 100 MB a file, 10 files a message. Names are made safe as for a task's files.
 - **Who:** whoever may talk to that employee (level *work*, and their member's alone on a member's computer). A file is its sender's until it is said: nobody else adds to it or sends it. A visitor neither sends nor sees them.
 - **Sent, and seen to be sent.** A paste that names files is taken in by Claude Code over a moment; the agent presses Enter once it sees the paste in the input box and again while it is still standing there (`DECISIONS.md`, "After Enter, the input box is looked at").
 - **Not for** a repeated instruction (a routine is words), nor for what a team lead or the foreman tells someone.

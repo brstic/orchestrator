@@ -1998,7 +1998,8 @@ export class SessionRegistry {
       strictMcp: !this.core.settings.workersInheritMcp,
       // On `auto` the owner can choose to leave even these to Claude Code's auto mode, and on `unrestricted` to
       // have nothing held at all (`asksHighRisk`).
-      highRiskPatterns: (session.highRiskHeld = asksHighRisk(this.core.settings, employee.autonomy)) ? [...DEFAULT_HIGH_RISK_PATTERNS, ...(project?.policy.highRiskPatterns ?? [])] : [],
+      // (A rented employee whom the owner let never wait for the office is not held by it either — rent.ts.)
+      highRiskPatterns: (session.highRiskHeld = asksHighRisk(this.core.settings, employee.autonomy) && !this.eng.rent.autonomous(employee.id)) ? [...DEFAULT_HIGH_RISK_PATTERNS, ...(project?.policy.highRiskPatterns ?? [])] : [],
       claudeSessionId: session.claudeSessionId!,
       resume,
       // A project's other repositories, when they are on the machine this employee works on.

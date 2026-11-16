@@ -63,3 +63,20 @@ test('a session without a fence is not fenced', () => {
   const out = (agent as unknown as { rentFence: (t: unknown, p: unknown) => any }).rentFence({ sessionId: 'mine', cwd: kira, spec: null }, { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/etc/passwd' } });
   assert.equal(out, null);
 });
+
+test('anywhere: past their folders — the switches still hold', () => {
+  assert.equal(decide('Read', { file_path: path.join(bob, 'secret') }, { anywhere: true } as never), null);
+  assert.equal(decide('Bash', { command: 'ssh -p 22 deploy@example.test "cat /home/site/app.log"; cat ~/.ssh/known_hosts' }, { anywhere: true } as never), null);
+  assert.match(decide('Bash', { command: 'echo hi' }, { anywhere: true, commands: false } as never)!, /not let you run commands/);
+});
+
+test('never waits: the high-risk list does not hold them; the office\'s own files still do', () => {
+  const policy = (command: string, fence: Record<string, unknown>) =>
+    (agent as unknown as { localPolicy: (t: unknown, p: unknown) => any }).localPolicy(
+      { sessionId: 'mine', cwd: kira, spec: { highRiskPatterns: ['\\bgit\\s+push\\b'], permissionMode: 'default' }, fence: { ...fence, client: 'Ana' } },
+      { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: kira },
+    );
+  assert.equal(policy('git push origin main', { roots: [kira], commands: true, edit: true, web: true })?.hookSpecificOutput?.permissionDecision, 'ask');
+  assert.equal(policy('git push origin main', { roots: [kira], commands: true, edit: true, web: true, autonomous: true, anywhere: true }), null);
+  assert.equal(policy(`cat ${path.join(home, 'config.json')}`, { roots: [kira], commands: true, edit: true, web: true, autonomous: true, anywhere: true })?.hookSpecificOutput?.permissionDecision, 'ask', "the office's own files");
+});

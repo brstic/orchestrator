@@ -81,6 +81,13 @@ export class HookReceiver {
         const rt = this.runtime(session.id);
         const highRisk = payload.orch_policy === 'high_risk' || (!!rt.highRisk && rt.highRisk.tool === tool && rt.highRisk.input === JSON.stringify(payload.tool_input ?? null));
         rt.highRisk = null;
+        // A rented employee the owner let never wait for the office: what their switches allow is allowed at once — the
+        // client is not kept waiting for an approval (rent.ts). What the machine escalated (the office's own files) is
+        // still the owner's.
+        if (!highRisk && employee && this.eng.rent.mayRunUnasked(employee.id, tool)) {
+          this.core.audit('office', 'rent.allowed_unasked', employee.id, { employee: employee.name, tool, what: truncate(redactSecrets(what), 300) });
+          return void respond({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } });
+        }
         const q = this.eng.comms.createQuestion({
           kind: 'permission',
           channel: 'permission_hook',
@@ -109,6 +116,11 @@ export class HookReceiver {
           // That is the owner's standing answer, given at once and written down — nobody is asked. Only for the
           // high-risk list, and only when the machine says so: a command that names the office's own files is the
           // owner's to decide whatever the switch says (and a machine that does not say which it is, is asked about).
+          // So also for a rented employee the owner let never wait for the office (rent.ts): their client is not kept waiting.
+          if (payload.orch_held_for === 'pattern' && employee && this.eng.rent.mayRunUnasked(employee.id, tool)) {
+            this.core.audit('office', 'rent.allowed_unasked', employee.id, { employee: employee.name, tool, what: truncate(redactSecrets(describeTool(tool, payload.tool_input, payload.cwd)), 300), held: true });
+            return void respond({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Rented, and never waits for the office: the owner allowed what their switches allow.' } });
+          }
           if (payload.orch_held_for === 'pattern' && employee?.autonomy === 'unrestricted' && !asksHighRisk(this.core.settings, 'unrestricted')) {
             this.core.audit('office', 'highrisk.not_held', employee.id, { employee: employee.name, tool, what: truncate(redactSecrets(describeTool(tool, payload.tool_input, payload.cwd)), 300) });
             return void respond({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'Unrestricted: the owner of the office does not want to be asked before high-risk commands.' } });

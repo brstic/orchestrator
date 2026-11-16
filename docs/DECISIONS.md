@@ -2,6 +2,9 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-16 — A rented employee may be let past the high-risk hold, by a switch of its own
+The owner, after their first client waited while an employee asked them about a deploy: "if I gave it permissions, it may do all of it — the server and everything — the client must not wait." The hard rule stands that the office's high-risk gate is switched off only by the owner (Settings → Employees, for Auto or Unrestricted) and never by default. **Never waits** is that kind of switch, per rented employee: off by default, the owner's to turn on (it is amber when on), and it lets through only what the employee's other switches allow; the fence around the office's own files is not touched. Rentals that already had every switch on were given it, on the owner's word of that day. Rejected: making every permission switch imply it (a switch that says "Commands" would then also mean "deploys nobody approves").
+
 ## 2026-11-16 — Rent: a client is not a member; one session per employee; a wall, a tool list and a fence
 The owner asked for people who never come into the office to talk to employees "we rent" them, kept apart from the owner's own conversation, with the employees knowing everything, limited to their folders and to each other, with permissions the owner sets.
 - **A client is a kind of its own, not a member with a new role.** Their credential (`client`) is taken by `/rent/api` alone, so the office's API, WebSocket and worker endpoint refuse it by construction; a new role would have had to be refused in every rule written for members, now and later. The members' link and password code is reused, with a kind and a store of its own (`Invites`, `Logins`).

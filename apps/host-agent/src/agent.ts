@@ -1455,7 +1455,9 @@ export class HostAgent {
       if (t.spec?.permissionMode === 'bypassPermissions') return { orchHold: true, fence: true, pattern: "the office's own files on this machine" };
       return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: "Orchestrator policy: this command names the office's own files on this machine (another session's folder, the agent's records, or the office's data) and needs the owner's approval." } };
     }
-    for (const pattern of t.spec?.highRiskPatterns ?? []) {
+    // A rented employee the owner let never wait for the office: the high-risk list does not hold them (docs/RENT.md).
+    const rented = t.fence !== undefined ? t.fence : (t.spec?.fence ?? null);
+    for (const pattern of rented?.autonomous ? [] : (t.spec?.highRiskPatterns ?? [])) {
       try {
         if (new RegExp(pattern, 'i').test(command)) {
           // In bypass mode Claude Code asks nobody, so "ask" would mean nothing there: the call is held here until
@@ -1490,6 +1492,8 @@ export class HostAgent {
     if (!f.web && (tool === 'WebFetch' || tool === 'WebSearch')) return deny('the owner has not let you use the web.');
     if (!f.edit && RENT_WRITE_TOOLS.has(tool)) return deny('the owner has let you read files, not change them.');
     if (!f.commands && tool === 'Bash') return deny('the owner has not let you run commands.');
+    // Anywhere: the whole machine and the servers the work needs — only the switches above (and the office's own files) hold.
+    if (f.anywhere) return null;
     const reach = this.rentReach(t, f);
     const cwd = payload.cwd ?? t.cwd;
     const where = f.roots.length ? f.roots.join(', ') : t.cwd;

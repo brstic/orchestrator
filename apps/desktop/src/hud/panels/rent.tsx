@@ -74,7 +74,11 @@ const PERMS: Array<{ key: keyof RentPerms; label: string; about: string }> = [
   { key: 'files', label: 'Files', about: 'The client sends files, and they give the client files' },
   { key: 'vault', label: 'Vault', about: "Use the office's credentials" },
   { key: 'memory', label: 'Memory', about: "Read and write the office's long memory" },
+  { key: 'anywhere', label: 'Anywhere', about: 'Beyond their folders: the whole machine, and the servers the work needs (ssh, deploys) — the office’s own files stay fenced' },
+  { key: 'autonomous', label: 'Never waits', about: 'The client never waits for you: what the switches allow runs without your approval — the high-risk hold too — and they ask you nothing (the client is asked instead)' },
 ];
+/** Switches that reach past this client: shown amber when on. */
+const WIDE = new Set<keyof RentPerms>(['vault', 'memory', 'anywhere', 'autonomous']);
 const day = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
 
 /** The permissions of one rented employee as a row of switches. */
@@ -84,7 +88,7 @@ function Perms({ value, onChange, disabled, name }: { value: RentPerms; onChange
       {PERMS.map((p) => {
         const on = value[p.key];
         return (
-          <button key={p.key} type="button" disabled={disabled} className={`k-toggle ${on ? 'k-toggle-on' : ''} ${(p.key === 'vault' || p.key === 'memory') && on ? 'rent-perm-wide' : ''}`} aria-pressed={on} title={`${p.about}${p.key === 'vault' || p.key === 'memory' ? ' — the whole office’s, not only this client’s' : ''}`} onClick={() => onChange({ ...value, [p.key]: !on })} data-perm={p.key}>
+          <button key={p.key} type="button" disabled={disabled} className={`k-toggle ${on ? 'k-toggle-on' : ''} ${WIDE.has(p.key) && on ? 'rent-perm-wide' : ''}`} aria-pressed={on} title={`${p.about}${p.key === 'vault' || p.key === 'memory' ? ' — the whole office’s, not only this client’s' : ''}`} onClick={() => onChange({ ...value, [p.key]: !on })} data-perm={p.key}>
             {p.label}
           </button>
         );
@@ -172,7 +176,7 @@ function NewClient({ view, onMade, onClose }: { view: RentView; onMade: (m: Made
       <div className="field">
         <span className="field-label">What they may do</span>
         <Perms value={perms} onChange={setPerms} name="the new client's employees" />
-        <span className="field-hint">For each employee, changed any time below — at once, in the session that runs. Vault and memory are the whole office's: off unless you mean it.</span>
+        <span className="field-hint">For each employee, changed any time below — at once, in the session that runs. Vault and memory are the whole office's; Anywhere lets them past their folders (servers too); Never waits means nothing they are allowed waits for your approval or answer — so the client never waits.</span>
       </div>
       <div className="k-actions">
         <Button variant="primary" type="submit" disabled={busy || !name.trim() || !view.address} title={!view.address ? 'Save the address people come to first (Members)' : undefined} data-rent-create>

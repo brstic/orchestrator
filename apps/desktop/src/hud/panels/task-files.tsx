@@ -13,7 +13,7 @@ import { TextViewer, VideoViewer } from './file-view.tsx';
  * employee leaves as evidence (a screenshot of the result). Pictures are shown; everything else is a download.
  */
 
-export const MAX_FILE_BYTES = 25 * 1024 * 1024;
+export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 const CHUNK = 384 * 1024; // as base64 it stays under half a megabyte: through any proxy in front of the office
 const SHOWN = /^image\/(png|jpeg|gif|webp)$/;
 
@@ -28,7 +28,7 @@ function base64(bytes: Uint8Array): string {
 /** Send one file to a task, in pieces. `onProgress` gets 0…1. */
 export async function uploadFile(taskId: string, file: File, onProgress?: (done: number) => void): Promise<TaskAttachment> {
   if (file.size === 0) throw new Error(`${file.name} is empty`);
-  if (file.size > MAX_FILE_BYTES) throw new Error(`${file.name} is larger than 25 MB. Put it on the machine and name its path in the task instead.`);
+  if (file.size > MAX_FILE_BYTES) throw new Error(`${file.name} is larger than 100 MB. Put it on the machine and name its path in the task instead.`);
   const begun = await api<TaskAttachment>('POST', `/tasks/${taskId}/attachments`, { name: file.name || 'pasted.png', size: file.size });
   let last = begun;
   for (let offset = 0; offset < file.size; offset += CHUNK) {
@@ -213,7 +213,7 @@ export function TaskFiles({ task, only }: { task: Task; only?: 'evidence' }) {
         {mayChange && (
           <>
             <input ref={input} type="file" multiple hidden onChange={(ev) => (void send([...(ev.target.files ?? [])]), (ev.target.value = ''))} />
-            <Button small disabled={!!sending} onClick={() => input.current?.click()} title="Pictures, documents, logs — up to 25 MB each. You can also drop files here, or click here and paste a screenshot.">
+            <Button small disabled={!!sending} onClick={() => input.current?.click()} title="Pictures, documents, logs — up to 100 MB each. You can also drop files here, or click here and paste a screenshot.">
               Attach files…
             </Button>
           </>

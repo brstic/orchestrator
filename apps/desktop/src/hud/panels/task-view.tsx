@@ -329,7 +329,7 @@ function Composer({ task }: { task: Task }) {
         {filesGo && (
           <>
             <input ref={picker} type="file" multiple hidden onChange={(ev) => (void addFiles([...(ev.target.files ?? [])]), (ev.target.value = ''))} />
-            <Button variant="ghost" disabled={busy || !!sending} onClick={() => picker.current?.click()} title="A picture, a document — up to 25 MB each. You can also paste a screenshot into the box, or drop files on it." data-attach>
+            <Button variant="ghost" disabled={busy || !!sending} onClick={() => picker.current?.click()} title="A picture, a document — up to 100 MB each. You can also paste a screenshot into the box, or drop files on it." data-attach>
               Attach…
             </Button>
           </>

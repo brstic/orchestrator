@@ -25,6 +25,10 @@ The address people come to must be saved first (Access → Members): the link st
 | **Files** | the client sends files; the employee gives the client files (`attach_file`) | no files either way |
 | **Vault** (off by default) | uses the office's credentials | — |
 | **Memory** (off by default) | reads and writes the office's long memory | — |
+| **Anywhere** (off by default) | past their folders: the whole machine and the servers the work needs (ssh, deploys); only the switches above hold — and the office's own files stay fenced | fenced to their folder (and co-rented colleagues', with Teamwork) |
+| **Never waits** (off by default) | the client never waits for the owner: what the switches allow runs without an approval — the high-risk hold too — and they ask the owner nothing (`ask_boss` is not theirs); what is the client's to decide they ask the client | approvals and the high-risk hold as for any employee |
+
+_Anywhere and Never waits were added on 2026-11-16 after the owner's first client waited: "I rented IsoStudio and Tracks3D; IsoStudio keeps asking me questions — that must not happen, the client must not wait: if I gave it permissions, it may do all of it — the server and everything else." IsoStudio had been asked to set up a staging site on a server; every command it ran to reach the server named paths outside its folder (the key in `~/.ssh`, paths on the server) and the fence refused it, so it asked the owner — four times — while the client waited. Rentals made before the two switches existed take both **on where every other switch was on** (the owner had given everything) and stay off otherwise (`Rent` constructor)._
 
 Vault and memory are the **whole office's**, not this client's: off unless you mean it (the switch turns amber when on).
 
@@ -93,6 +97,12 @@ Who sees what in the office: messages with `channel: 'rent'`, events with `rentC
 | Portal | `apps/desktop/src/rent/RentPortal.tsx`, `rent.css`; chosen by the address in `main.tsx` (which now loads the office only for the office) |
 | Owner's window | `apps/desktop/src/hud/panels/rent.tsx` (`RentTab`), a tab of Access (`people.tsx`); Talk leaves the client's out (`talk.tsx`); the front door's sign-in sends a client on (`Knock.tsx`) |
 | Tests | `packages/orchestration/test/rent.test.ts` (rentable, the wall, the tools, the fence and its live push, permissions, whose turn); `apps/host-agent/test/rent-fence.test.ts` (files, commands, links, the switches); `apps/server/test/access.test.ts` (owners only); `tests/e2e/60-rent.test.ts` (the whole way, with real sessions: the link and a password, a client reaches nothing else, an answer to the client and not the owner and back, the wall both ways, the fence and a live change without a restart, a file to the client, ending it); the UI suite's Rent step (Access → Rent, the link opened in a second browser, a password, a conversation, a phone, the owner reading it there and not in Talk, ending it) |
+
+## Never waits, in the office
+
+- A permission request of a rented employee who never waits, for a tool their switches allow, is answered **allow** at once by the office and audited (`rent.allowed_unasked`); what the machine escalated as the office's own files stays the owner's (`hook-receiver.ts`).
+- The high-risk list does not hold them: it is left out of their launch (`buildSpec`), skipped by their machine while the session runs (`fence.autonomous`, live), and a held call of a session started before is let through.
+- `ask_boss` and `wait_for_answer` are not theirs; the frame of each client message tells them to decide and go on, and to ask the client in their reply.
 
 ## Limits, plainly
 

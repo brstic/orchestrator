@@ -87,7 +87,7 @@ export function TextViewer({ name, note, as, load, onDownload, onClose }: { name
 
 /**
  * A video an employee left (a screen recording, a demo of what they built), played over the conversation or the
- * ticket it is on. It is fetched whole when it is opened (a file given through the office is at most 25 MB), and
+ * ticket it is on. It is fetched whole when it is opened (a file given through the office is at most 100 MB), and
  * played with the player's own controls; Escape or a click beside it closes it.
  */
 export function VideoViewer({ name, note, size, audio = false, load, onDownload, onClose }: { name: string; note?: string | null; size?: string | null; /** A sound: a player without a picture. */ audio?: boolean; load: () => Promise<Blob>; onDownload: () => void; onClose: () => void }) {

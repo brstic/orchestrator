@@ -9,7 +9,7 @@ import { api, apiBlob } from '../../lib/api.ts';
 import { familyOf, playableAs, readableAs } from '../../lib/readable.ts';
 import { TextViewer, VideoViewer } from './file-view.tsx';
 
-export const MAX_FILE_BYTES = 25 * 1024 * 1024;
+export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 export const MAX_SAID_FILES = 10;
 const CHUNK = 384 * 1024; // as base64 it stays under half a megabyte: through any proxy in front of the office
 const SHOWN = /^image\/(png|jpeg|gif|webp)$/;
@@ -34,7 +34,7 @@ export function named(f: File, now = new Date()): File {
 export function refusal(f: Pick<File, 'name' | 'size'>, already: number): string | null {
   if (already >= MAX_SAID_FILES) return `At most ${MAX_SAID_FILES} files go with one message.`;
   if (f.size === 0) return `${f.name} is empty.`;
-  if (f.size > MAX_FILE_BYTES) return `${f.name} is larger than 25 MB. Put it on their machine and name its path instead.`;
+  if (f.size > MAX_FILE_BYTES) return `${f.name} is larger than 100 MB. Put it on their machine and name its path instead.`;
   return null;
 }
 
