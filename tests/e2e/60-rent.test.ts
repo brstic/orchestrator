@@ -53,7 +53,8 @@ test('the owner makes a client who rents two employees, and gets a link that wor
   assert.deepEqual(r.client.agents.map((a: any) => a.name).sort(), ['Kira', 'Mila']);
   assert.equal(r.client.hasPassword, false);
   // One client per employee; and the names people sign in with are their own.
-  assert.match((await h.apiRaw('POST', '/rent/clients', { name: 'Other', employeeIds: [kira.id] })).body.error, /rented to Ana Client already/);
+  // One client rents an employee once; another client may rent the same employee too (see the test of two clients).
+  assert.match((await h.apiRaw('POST', `/rent/clients/${clientId}/agents`, { employeeId: kira.id })).body.error, /rented to Ana Client already/);
   assert.match((await h.apiRaw('POST', '/rent/clients', { name: 'ana client' })).body.error, /taken/);
   // The list the owner's window reads: whom they can rent, and to whom each one is rented.
   const all = await h.api<any>('GET', '/rent');
@@ -185,6 +186,24 @@ test('a file the employee gives goes to the client, and the client downloads it 
   assert.equal(res.status, 200);
   assert.equal(await res.text(), 'the report\n');
   assert.equal((await raw('GET', `/rent/api/chats/${mila.id}/files/${line.files![0]!.id}`, undefined, token)).status, 404, "another conversation's file");
+});
+
+test('two clients, one employee: each has their own conversation — the answer goes to whoever wrote, not to the other', async () => {
+  const made = await h.api<any>('POST', '/rent/clients', { name: 'Bea Client', employeeIds: [kira.id] });
+  const joined = await raw('POST', '/rent/join', { code: codeOf(made.link), password: 'bea password 99' });
+  const bea = joined.body.token as string;
+  const beaLines = async () => (await raw('GET', `/rent/api/chats/${kira.id}`, undefined, bea)).body.lines as Array<{ from: string; text: string }>;
+  assert.equal((await h.api<any>('GET', '/rent')).employees.find((e: any) => e.name === 'Kira').rentedTo, 'Ana Client, Bea Client');
+  await raw('POST', `/rent/api/chats/${kira.id}`, { text: 'Hi, Bea here @@fake: say bea-answer-3131@@' }, bea);
+  await waitFor(async () => (await beaLines()).find((l) => l.from === 'agent' && /bea-answer-3131/.test(l.text)), { label: "Bea's answer", timeout: 40_000 });
+  await portal('POST', `/chats/${kira.id}`, { text: 'Ana again @@fake: say ana-answer-4141@@' });
+  await said(kira.id, /ana-answer-4141/);
+  await sleep(500);
+  assert.equal((await linesOf(kira.id)).some((l) => /bea/i.test(l.text)), false, "Bea's conversation reached Ana");
+  assert.equal((await beaLines()).some((l) => /ana-answer-4141|Ana again/.test(l.text)), false, "Ana's conversation reached Bea");
+  const m = (await h.state()).messages.filter((x) => x.channel === 'rent' && /bea-answer-3131/.test(x.body)).pop()!;
+  assert.match(m.body, /Other clients rent you too \(Ana Client\)/);
+  await h.api('DELETE', `/rent/clients/${made.client.id}`);
 });
 
 test('when the client is no longer a client, everything they came in with ends, and their employees are the office\'s again', async () => {

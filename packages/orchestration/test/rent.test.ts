@@ -40,7 +40,11 @@ test('a client rents employees on the office\'s own machines — one client at a
   const c = eng.rent.create({ name: 'Ana', company: 'Acme', employeeIds: [kira.id, lea.id] }, 'owner', never);
   assert.deepEqual(eng.rent.agentsOf(c).map((e) => e.name), ['Kira', 'Lea']);
   assert.equal(eng.rent.rentalOf(kira.id)?.client.id, c.id);
-  assert.throws(() => eng.rent.create({ name: 'Other', employeeIds: [kira.id] }, 'owner', never), /rented to Ana already/);
+  // Several clients may rent the same employee; one client rents them once.
+  const other = eng.rent.create({ name: 'Other', employeeIds: [kira.id] }, 'owner', never);
+  assert.deepEqual(eng.rent.rentalsOf(kira.id).map((r) => r.client.name), ['Ana', 'Other']);
+  assert.throws(() => eng.rent.rent(other.id, kira.id, {}, 'owner'), /rented to Other already/);
+  eng.rent.revoke(other.id, 'owner');
   assert.throws(() => eng.rent.create({ name: 'Other', employeeIds: [own.id] }, 'owner', never), /Mila's own computer: only they can rent them out/);
   assert.throws(() => eng.rent.create({ name: 'ana' }, 'owner', never), /taken/);
   assert.throws(() => eng.rent.create({ name: 'Somebody' }, 'owner', (n) => n === 'Somebody'), /taken/, 'a member has that name');
@@ -220,4 +224,34 @@ test('"office work": a rented employee goes on with the whole office — the boa
   const eng2 = new Engine({ store, agents: link, publicUrl: 'http://127.0.0.1:1', timings: { deliverySettleMs: 0, sleepIdleMs: 1 } }, { send: () => undefined });
   const perms = eng2.rent.get('c9')!.rentals.map((r) => r.perms.office);
   assert.deepEqual(perms, [true, false]);
+});
+
+test('one employee, several clients: each conversation its own, told to keep each client\'s words apart; one session under the widest switches; teamwork per client', async () => {
+  const { eng, kira, lea, bob } = office();
+  const ana = eng.rent.create({ name: 'Ana', employeeIds: [kira.id, lea.id], perms: { web: false } }, 'owner', never);
+  const ivo = eng.rent.create({ name: 'Ivo', employeeIds: [kira.id, bob.id], perms: { commands: false } }, 'owner', never);
+  // The widest switches of the two: web from Ivo's rental, commands from Ana's.
+  const p = eng.rent.perms(kira.id)!;
+  assert.deepEqual([p.web, p.commands], [true, true]);
+  assert.equal(eng.rent.fenceFor(kira)!.client, 'Ana, Ivo');
+  // Teamwork per client: Kira reaches Lea (Ana's) and Bob (Ivo's); Lea and Bob — of different clients — do not reach each other.
+  assert.equal(eng.rent.reaches(kira, lea), true);
+  assert.equal(eng.rent.reaches(kira, bob), true);
+  assert.equal(eng.rent.reaches(lea, bob), false);
+  assert.deepEqual(eng.rent.fenceFor(kira)!.roots, ['/work/kira', '/work/lea', '/work/bob']);
+  assert.deepEqual(eng.rent.fenceFor(lea)!.roots, ['/work/lea', '/work/kira']);
+  // Each client's words go to Kira with the other named, and the line stays in that client's conversation alone.
+  eng.core.put('session', { id: 's-k', employeeId: kira.id, hostId: shared.id, origin: 'managed', mode: 'interactive_cli', tmuxSession: 'k', tmuxPane: null, cwd: '/work/kira', repoRoot: null, branch: null, claudeSessionId: 'c', status: 'running', activity: 'idle', activityDetail: null, activitySince: now(), inTurn: false, control: 'AGENT_CONTROLLED', controllerId: null, capabilities: { terminal: true, hooks: true, mcp: true, structuredApproval: true, structuredMessaging: true, usage: false }, permissionMode: null, model: null, cols: 1, rows: 1, pid: null, usage: null, startedAt: now(), endedAt: null, lastEventAt: null, exitReason: null } as never);
+  const line = await eng.rent.say(ana.id, kira.id, 'for Kira, from Ana', [], 'client:a');
+  const m = eng.core.messages.get(line.messageId!)!;
+  assert.match(m.body, /Other clients rent you too \(Ivo\): what each of them tells you is theirs — do not pass it on to Ana/);
+  assert.equal(eng.rent.lines(ana.id, kira.id).length, 1);
+  assert.equal(eng.rent.lines(ivo.id, kira.id).length, 0);
+  // The answer goes to the client whose message began the turn.
+  eng.rent.turnStarted(kira.id, m.id);
+  assert.equal(eng.rent.clientOfTurn(kira.id), ana.id);
+  // Ana leaves: Kira is still Ivo's, under Ivo's switches alone.
+  eng.rent.revoke(ana.id, 'owner');
+  assert.deepEqual(eng.rent.rentalsOf(kira.id).map((r) => r.client.name), ['Ivo']);
+  assert.equal(eng.rent.perms(kira.id)!.commands, false);
 });

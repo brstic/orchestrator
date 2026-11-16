@@ -27,6 +27,8 @@ interface Agent {
   /** On the owner's own computer: they work while it is connected. */
   mine?: boolean;
   online?: boolean;
+  /** Other clients who rent the same employee. */
+  others?: string[];
 }
 interface Client {
   id: string;
@@ -48,7 +50,9 @@ interface Rentable {
   title: string;
   appearance: Appearance;
   workingDir: string | null;
+  /** Who rents them now (names), and those clients' ids: one employee may be rented to several. */
   rentedTo: string | null;
+  clients?: string[];
   mine?: boolean;
   online?: boolean;
   /** Why this owner cannot rent them out (another member's, or a computer whose app is too old). */
@@ -128,7 +132,7 @@ function NewClient({ view, onMade, onClose }: { view: RentView; onMade: (m: Made
   const [ids, setIds] = useState<string[]>([]);
   const [perms, setPerms] = useState<RentPerms>(RENT_PERMS_DEFAULT);
   const [busy, setBusy] = useState(false);
-  const free = view.employees.filter((e) => !e.rentedTo);
+  const free = view.employees.filter((e) => !e.cannot);
   return (
     <form
       className="k-sheet"
@@ -168,10 +172,10 @@ function NewClient({ view, onMade, onClose }: { view: RentView; onMade: (m: Made
           onChange={setIds}
           add="Add an employee"
           none="Nobody yet — you can add them later"
-          options={view.employees.map((e) => ({ id: e.id, label: e.name, hint: e.rentedTo ? `rented to ${e.rentedTo}` : e.mine ? `${e.title} · your computer${e.online ? '' : ' (off now)'}` : e.title, lead: <Avatar appearance={e.appearance} size={18} />, also: e.title, warn: e.rentedTo ? `${e.name} is rented to ${e.rentedTo} already` : (e.cannot ?? undefined) }))}
+          options={view.employees.map((e) => ({ id: e.id, label: e.name, hint: [e.mine ? `${e.title} · your computer${e.online ? '' : ' (off now)'}` : e.title, e.rentedTo ? `also rented to ${e.rentedTo}` : ''].filter(Boolean).join(' · '), lead: <Avatar appearance={e.appearance} size={18} />, also: e.title, warn: e.cannot ?? undefined }))}
         />
         <span className="field-hint">
-          {free.length ? 'Each employee works for one client at a time, and while rented works only for them: their folder, and their colleagues of the same client. Those on your own computer answer while it is connected; when it is off, what the client writes waits for them.' : 'Everybody is rented out already: release someone, or hire.'}
+          {free.length ? 'One employee may be rented to several clients at once: each has their own conversation, and the employee is told to keep each client\'s words to that client. While rented they work in their folder, with their colleagues of the same client. Those on your own computer answer while it is connected; when it is off, what the client writes waits for them.' : 'Nobody here can be rented out yet: hire someone first.'}
         </span>
       </div>
       <div className="field">
@@ -199,7 +203,7 @@ function ClientRow({ c, view, open, onToggle, reload, onLink }: { c: Client; vie
     reload();
     return r;
   };
-  const free = view.employees.filter((e) => !e.rentedTo && !e.cannot);
+  const free = view.employees.filter((e) => !e.cannot && !e.clients?.includes(c.id));
   const status = c.inviteExpiresAt ? `link not used yet · works until ${day(c.inviteExpiresAt)}` : c.lastSeenAt ? `here ${timeAgo(c.lastSeenAt)}` : c.hasPassword ? 'has not come back yet' : 'no link — make one';
   return (
     <div data-rent-client={c.name}>
@@ -239,6 +243,7 @@ function ClientRow({ c, view, open, onToggle, reload, onLink }: { c: Client; vie
                         </div>
                         <div className="k-sub">
                           {a.mine ? (a.online ? 'on your computer · ' : 'on your computer, which is off now · ') : ''}
+                          {a.others?.length ? `also works for ${a.others.join(', ')} — under the widest switches of their clients · ` : ''}
                           {a.state} · since {day(a.since)}
                           {a.workingDir ? ` · works in ${a.workingDir}` : ' · no folder of their own'}
                         </div>
@@ -275,6 +280,7 @@ function ClientRow({ c, view, open, onToggle, reload, onLink }: { c: Client; vie
                     <option key={e.id} value={e.id}>
                       {e.name} — {e.title}
                       {e.mine ? ' (your computer)' : ''}
+                      {e.rentedTo ? ` (also rented to ${e.rentedTo})` : ''}
                     </option>
                   ))}
                 </select>

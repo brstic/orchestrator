@@ -95,7 +95,9 @@ export class RentDoor {
       ...e.rent.summary(c),
       agents: c.rentals.map((r) => {
         const emp = e.core.employees.get(r.employeeId);
-        return { ...r, name: emp?.name ?? '(gone)', title: emp?.title ?? '', appearance: emp?.appearance ?? null, workingDir: emp?.workingDir ?? null, state: emp ? e.rent.agentView(emp, r).state : 'away', mine: !!emp && !!e.hosts.memberOfHost(emp.hostId), online: !!emp?.hostId && e.core.agents.isOnline(emp.hostId) };
+        // (Also rented to others: they work under the widest switches of their clients — RENT.md.)
+        const others = emp ? e.rent.rentalsOf(emp.id).filter((x) => x.client.id !== c.id).map((x) => x.client.name) : [];
+        return { ...r, others, name: emp?.name ?? '(gone)', title: emp?.title ?? '', appearance: emp?.appearance ?? null, workingDir: emp?.workingDir ?? null, state: emp ? e.rent.agentView(emp, r).state : 'away', mine: !!emp && !!e.hosts.memberOfHost(emp.hostId), online: !!emp?.hostId && e.core.agents.isOnline(emp.hostId) };
       }),
     };
   }
@@ -253,10 +255,12 @@ export class RentDoor {
             title: e.title,
             appearance: e.appearance,
             workingDir: e.workingDir,
-            rentedTo: engine.rent.rentalOf(e.id)?.client.name ?? null,
+            // Several clients may rent one employee: who rents them now (names, and the clients' ids).
+            rentedTo: engine.rent.clientNames(e.id) || null,
+            clients: engine.rent.rentalsOf(e.id).map((r) => r.client.id),
             mine: !!engine.hosts.memberOfHost(e.hostId),
             online: !!e.hostId && engine.core.agents.isOnline(e.hostId),
-            cannot: engine.rent.rentalOf(e.id) ? null : engine.rent.rentable(e, me),
+            cannot: engine.rent.rentable(e, me),
           })),
       };
     };

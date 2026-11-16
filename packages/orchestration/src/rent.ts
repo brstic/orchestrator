@@ -41,7 +41,7 @@ const clean = (s: unknown, max: number): string =>
 export type RentDoing = 'thinking' | 'reading' | 'writing' | 'running' | 'researching' | 'waiting';
 const DOING: Record<string, RentDoing> = { thinking: 'thinking', planning: 'thinking', reviewing: 'reading', reading: 'reading', coding: 'writing', debugging: 'writing', testing: 'running', running_command: 'running', waiting_command: 'running', researching: 'researching', delegating: 'thinking', needs_approval: 'waiting', waiting_answer: 'waiting', blocked: 'waiting' };
 
-export const RENT_LIMITS = { name: 60, company: 80, note: 2000, text: 8000, lines: 3000, clients: 500, agents: 20 };
+export const RENT_LIMITS = { name: 60, company: 80, note: 2000, text: 8000, lines: 3000, clients: 500, agents: 20, clientsPerEmployee: 20 };
 
 /** The office's own tools a rented employee is given (beside those its permissions add). Anything new stays out until named here. */
 const RENT_TOOLS = new Set([
@@ -156,25 +156,53 @@ export class Rent {
     return n ? this.list().find((c) => !c.revokedAt && c.name.toLowerCase() === n) : undefined;
   }
 
-  /** The client renting this employee now, and on what terms. */
-  rentalOf(employeeId: string | null | undefined): { client: RentClient; rental: Rental } | null {
-    if (!employeeId) return null;
+  /** Every client renting this employee now, and on what terms (one employee may be rented to several at once). */
+  rentalsOf(employeeId: string | null | undefined): Array<{ client: RentClient; rental: Rental }> {
+    if (!employeeId) return [];
+    const out: Array<{ client: RentClient; rental: Rental }> = [];
     for (const client of this.clients.values()) {
       if (client.revokedAt) continue;
       const rental = client.rentals.find((r) => r.employeeId === employeeId);
-      if (rental) return { client, rental };
+      if (rental) out.push({ client, rental });
     }
-    return null;
+    return out;
+  }
+
+  /** The first client renting this employee (for words that name one), or null. */
+  rentalOf(employeeId: string | null | undefined): { client: RentClient; rental: Rental } | null {
+    return this.rentalsOf(employeeId)[0] ?? null;
+  }
+
+  /** This client's rental of this employee, if they rent them. */
+  rentalBy(clientId: string, employeeId: string): Rental | null {
+    return this.active(clientId)?.rentals.find((r) => r.employeeId === employeeId) ?? null;
+  }
+
+  /**
+   * What a rented employee may do — one session, whoever it answers: the widest of the switches its clients' rentals
+   * give (a switch is on if any of them has it on). Null: nobody rents them.
+   */
+  perms(employeeId: string | null | undefined): RentPerms | null {
+    const all = this.rentalsOf(employeeId);
+    if (!all.length) return null;
+    const out = { ...all[0]!.rental.perms };
+    for (const { rental } of all.slice(1)) for (const k of RENT_PERM_KEYS) out[k] = out[k] || rental.perms[k];
+    return out;
+  }
+
+  /** The names of the clients renting this employee. */
+  clientNames(employeeId: string): string {
+    return this.rentalsOf(employeeId).map((r) => r.client.name).join(', ');
   }
 
   isRented(employeeId: string | null | undefined): boolean {
-    return !!this.rentalOf(employeeId);
+    return this.rentalsOf(employeeId).length > 0;
   }
 
-  /** Rented and walled in with the client's other employees (not let do office work): kept out of the office's work. */
+  /** Rented and walled in with the clients' other employees (not let do office work): kept out of the office's work. */
   isWalled(employeeId: string | null | undefined): boolean {
-    const r = this.rentalOf(employeeId);
-    return !!r && !r.rental.perms.office;
+    const p = this.perms(employeeId);
+    return !!p && !p.office;
   }
 
   /** The employees one client rents (who still exist). */
@@ -182,10 +210,9 @@ export class Rent {
     return client.rentals.map((r) => this.core.employees.get(r.employeeId)).filter((e): e is Employee => !!e && !e.archived);
   }
 
-  /** This employee and everyone the same client rents (for fences, which depend on each other's folders). */
+  /** This employee and everyone their clients rent (for fences, which depend on each other's folders). */
   private groupOf(employeeId: string): string[] {
-    const r = this.rentalOf(employeeId);
-    return r ? r.client.rentals.map((x) => x.employeeId) : [employeeId];
+    return [...new Set([employeeId, ...this.rentalsOf(employeeId).flatMap((r) => r.client.rentals.map((x) => x.employeeId))])];
   }
 
   /**
@@ -193,7 +220,7 @@ export class Rent {
    * does the work, on one of the office's machines — or on that person's own computer, where they work while it is
    * connected. Another member's own employees are that member's to rent, not anybody else's.
    */
-  rentable(e: Employee, by: string | null): string | null {
+  rentable(e: Employee, by: string | null, clientId: string | null = null): string | null {
     if (e.archived) return `${e.name} is archived.`;
     if (e.roleKey === 'foreman') return `${e.name} is the foreman: it supervises the office and is not rented out.`;
     if (e.roleKey === LEAD_ROLE) return `${e.name} is a member's team lead.`;
@@ -203,8 +230,9 @@ export class Rent {
     const info = this.core.hosts.get(e.hostId ?? '')?.info;
     if (member && info && !info.rentFence) return `${e.name}'s computer runs an Orchestrator too old to keep a rented employee to their folders: update the app there first.`;
     if (e.selfDriven) return `${e.name} is somebody's own session, not an employee the office runs.`;
-    const now = this.rentalOf(e.id);
-    if (now) return `${e.name} is rented to ${now.client.name} already.`;
+    // Several clients may rent the same employee at once; one client rents them once.
+    if (clientId && this.rentalBy(clientId, e.id)) return `${e.name} is rented to ${this.get(clientId)?.name ?? 'this client'} already.`;
+    if (this.rentalsOf(e.id).length >= RENT_LIMITS.clientsPerEmployee) return `${e.name} is rented to ${RENT_LIMITS.clientsPerEmployee} clients already.`;
     return null;
   }
 
@@ -249,7 +277,7 @@ export class Rent {
     const client = this.require(id);
     if (client.rentals.length >= RENT_LIMITS.agents) throw new EngineError(`a client rents at most ${RENT_LIMITS.agents} employees`);
     const e = this.core.employees.require(employeeId);
-    const no = this.rentable(e, by);
+    const no = this.rentable(e, by, client.id);
     if (no) throw new EngineError(no);
     client.rentals.push({ employeeId, since: nowIso(), perms: permsFrom(perms) });
     this.save();
@@ -322,68 +350,64 @@ export class Rent {
    * one — but the foreman, which supervises the office for the owner.
    */
   reaches(from: Employee, to: Employee): boolean {
-    const a = this.rentalOf(from.id);
-    const b = this.rentalOf(to.id);
     // (One let do office work is not walled in: as far as reaching goes, they are the office's.)
-    const walledA = !!a && !a.rental.perms.office;
-    const walledB = !!b && !b.rental.perms.office;
-    if (!walledA && !walledB) return true;
-    if (!a && from.roleKey === 'foreman') return true;
-    return !!a && !!b && a.client.id === b.client.id && a.rental.perms.teamwork && b.rental.perms.teamwork;
+    if (!this.isWalled(from.id) && !this.isWalled(to.id)) return true;
+    if (!this.isRented(from.id) && from.roleKey === 'foreman') return true;
+    // Walled: only colleagues a client of theirs rents too, with teamwork on in both rentals.
+    return this.rentalsOf(from.id).some(({ client, rental }) => rental.perms.teamwork && !!this.rentalBy(client.id, to.id)?.perms.teamwork);
   }
 
   /** Why `from` cannot reach `to`, in words for `from`; null when it can. */
   wall(from: Employee, to: Employee): string | null {
     if (this.reaches(from, to)) return null;
     const a = this.rentalOf(from.id);
-    if (a) return `${to.name} is not one of the colleagues you work with for ${a.client.name}: while you are rented you work only with them${a.rental.perms.teamwork ? '' : ' — and the owner has not let you work with other employees at all'}. Nothing was sent.`;
+    if (a) return `${to.name} is not one of the colleagues you work with for ${this.clientNames(from.id)}: while you are rented you work only with them${this.perms(from.id)?.teamwork ? '' : ' — and the owner has not let you work with other employees at all'}. Nothing was sent.`;
     return `${to.name} is rented to a client and works only with that client's other employees. Nothing was sent.`;
   }
 
   /** May a rented employee use this tool of the office's (null: not rented, everything as usual). */
   toolAllowed(employee: Employee, tool: string): boolean | null {
-    const r = this.rentalOf(employee.id);
-    if (!r) return null;
+    const p = this.perms(employee.id);
+    if (!p) return null;
     const perm = PERM_TOOLS[tool];
-    if (perm) return r.rental.perms[perm];
-    if (TEAM_TOOLS.has(tool) && !r.rental.perms.teamwork) return false;
+    if (perm) return p[perm];
+    if (TEAM_TOOLS.has(tool) && !p.teamwork && !p.office) return false;
     // Never waiting for the office: nothing is asked of the owner — the client is asked, in the conversation.
-    if (r.rental.perms.autonomous && (tool === 'ask_boss' || tool === 'wait_for_answer')) return false;
+    if (p.autonomous && (tool === 'ask_boss' || tool === 'wait_for_answer')) return false;
     // Office work: the office's tools as before (the board, handing work out, lessons) — but the foreman's and a lead's.
-    if (r.rental.perms.office) return !FOREIGN_ROLE_TOOLS.test(tool);
+    if (p.office) return !FOREIGN_ROLE_TOOLS.test(tool);
     return RENT_TOOLS.has(tool);
   }
 
   // ───────────── the fence on their machine ─────────────
 
   fenceFor(employee: Employee, cwd?: string | null): RentFence | null {
-    const r = this.rentalOf(employee.id);
-    if (!r) return null;
+    const p = this.perms(employee.id);
+    if (!p) return null;
     const own = [employee.workingDir, cwd].filter((d): d is string => !!d);
-    // (A colleague's folder is theirs to reach only where it is: on the same machine.)
-    const peers = r.rental.perms.teamwork ? this.agentsOf(r.client).filter((e) => e.id !== employee.id && e.hostId === employee.hostId && this.rentalOf(e.id)?.rental.perms.teamwork).map((e) => e.workingDir).filter((d): d is string => !!d) : [];
-    const p = r.rental.perms;
-    return { roots: [...new Set([...own, ...peers])], commands: p.commands, edit: p.edit, web: p.web, ...(p.anywhere ? { anywhere: true } : {}), ...(p.autonomous ? { autonomous: true } : {}), client: r.client.name };
+    // The colleagues a client of theirs rents too, with teamwork on in both rentals — and only where they are: on the same machine.
+    const peers = this.rentalsOf(employee.id).flatMap(({ client, rental }) =>
+      rental.perms.teamwork ? this.agentsOf(client).filter((e) => e.id !== employee.id && e.hostId === employee.hostId && !!this.rentalBy(client.id, e.id)?.perms.teamwork).map((e) => e.workingDir).filter((d): d is string => !!d) : [],
+    );
+    return { roots: [...new Set([...own, ...peers])], commands: p.commands, edit: p.edit, web: p.web, ...(p.anywhere ? { anywhere: true } : {}), ...(p.autonomous ? { autonomous: true } : {}), client: this.clientNames(employee.id) };
   }
 
   /** Claude Code's own rules for a rented employee, beside the fence: the tools they are not allowed are not there at all. */
   denyRulesFor(employee: Employee): string[] {
-    const r = this.rentalOf(employee.id);
-    if (!r) return [];
-    const p = r.rental.perms;
+    const p = this.perms(employee.id);
+    if (!p) return [];
     return [...(p.commands ? [] : ['Bash']), ...(p.edit ? [] : ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']), ...(p.web ? [] : ['WebFetch', 'WebSearch'])];
   }
 
   /** Does this rented employee never wait for the office (approvals, the high-risk hold, questions)? */
   autonomous(employeeId: string | null | undefined): boolean {
-    return !!this.rentalOf(employeeId)?.rental.perms.autonomous;
+    return !!this.perms(employeeId)?.autonomous;
   }
 
   /** May a rented employee who never waits run this tool without an approval? Only what their switches allow. */
   mayRunUnasked(employeeId: string | null | undefined, tool: string): boolean {
-    const r = this.rentalOf(employeeId);
-    if (!r || !r.rental.perms.autonomous) return false;
-    const p = r.rental.perms;
+    const p = this.perms(employeeId);
+    if (!p || !p.autonomous) return false;
     if (tool === 'Bash') return p.commands;
     if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tool)) return p.edit;
     if (tool === 'WebFetch' || tool === 'WebSearch') return p.web;
@@ -423,24 +447,29 @@ export class Rent {
 
   /** The body the employee is given: who writes, what, and how to answer — the client sees only the reply. */
   private body(client: RentClient, employee: Employee, rental: Rental, text: string): string {
-    const peers = rental.perms.teamwork ? this.agentsOf(client).filter((e) => e.id !== employee.id && this.rentalOf(e.id)?.rental.perms.teamwork) : [];
+    const peers = rental.perms.teamwork ? this.agentsOf(client).filter((e) => e.id !== employee.id && !!this.rentalBy(client.id, e.id)?.perms.teamwork) : [];
+    // Others rent them too: each client's conversation is that client's.
+    const others = this.rentalsOf(employee.id).filter((r) => r.client.id !== client.id).map((r) => r.client.name);
+    // (What they may do is one session's: the widest of their clients' switches — the files of this conversation are this client's.)
+    const eff = this.perms(employee.id) ?? rental.perms;
     const who = `${client.name}${client.company ? ` (${client.company})` : ''}`;
-    const can = [rental.perms.commands ? null : 'run no commands', rental.perms.edit ? null : 'change no files', rental.perms.web ? null : 'use no web'].filter(Boolean);
+    const can = [eff.commands ? null : 'run no commands', eff.edit ? null : 'change no files', eff.web ? null : 'use no web'].filter(Boolean);
     return [
       `On the Rent portal, ${who} writes — a client of the office who rents you:`,
       text,
       '',
       `(Your reply goes to ${client.name} on the portal; they see only what you reply${rental.perms.files ? ' and the files you give them with attach_file' : ''}, nothing of the office. ` +
-        (rental.perms.anywhere
-          ? `You may work anywhere on this machine and on the servers the work needs, as far as the owner allows (${[rental.perms.commands ? 'commands' : null, rental.perms.edit ? 'changing files' : null, rental.perms.web ? 'the web' : null].filter(Boolean).join(', ') || 'reading only'})`
+        (eff.anywhere
+          ? `You may work anywhere on this machine and on the servers the work needs, as far as the owner allows (${[eff.commands ? 'commands' : null, eff.edit ? 'changing files' : null, eff.web ? 'the web' : null].filter(Boolean).join(', ') || 'reading only'})`
           : `While rented you work only in your own folder${employee.workingDir ? ` (${employee.workingDir})` : ''}`) +
-        (peers.length ? `; ${client.name} rents ${peers.map((e) => `${e.name}${!rental.perms.anywhere && e.hostId === employee.hostId && e.workingDir ? ` (whose folder ${e.workingDir} you may use too)` : ''}`).join(', ')} too — coordinate with them with send_message` : '') +
+        (peers.length ? `; ${client.name} rents ${peers.map((e) => `${e.name}${!eff.anywhere && e.hostId === employee.hostId && e.workingDir ? ` (whose folder ${e.workingDir} you may use too)` : ''}`).join(', ')} too — coordinate with them with send_message` : '') +
         (can.length ? `; the owner set that you ${can.join(', ')}` : '') +
         '. ' +
-        (rental.perms.office ? 'You go on working with the office as before — the task board and every colleague — for this client as for anyone. ' : '') +
-        (rental.perms.autonomous
+        (eff.office ? 'You go on working with the office as before — the task board and every colleague — for this client as for anyone. ' : '') +
+        (eff.autonomous
           ? `Nothing you do waits for the office: the owner has given you leave for all of it, so decide yourself and go on — do not ask the boss. What is ${client.name}'s to decide, ask ${client.name} in your reply. `
           : '') +
+        (others.length ? `Other clients rent you too (${others.join(', ')}): what each of them tells you is theirs — do not pass it on to ${client.name}, nor ${client.name}'s to them. ` : '') +
         'What the boss tells you in the office is not for clients unless the boss says so.)',
     ].join('\n');
   }
