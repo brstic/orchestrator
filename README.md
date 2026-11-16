@@ -187,6 +187,7 @@ flowchart LR
 | 🧢 **The foreman** | A supervisor that walks the floor, answers operational questions and keeps people moving — you are asked only about direction |
 | 🔋 **Claude accounts** | Several per machine, signed in **from the office**; Z.AI's GLM plan too. Out of quota → people move on; out of Fable → they go on with Opus |
 | 🧠 **Long memory** | The record kept word for word ([MemPalace](docs/MEMORY.md)); agents `recall` and `remember` across sessions |
+| 🧭 **Central context** | What every employee always knows — the office, the project, their role, a client, their own notes — given at every start, after every compaction and as a change; employees propose, you keep it ([docs/CONTEXT.md](docs/CONTEXT.md)) |
 | 🤝 **Rent** | Rent employees out: a client gets a link and talks to the agents you assign them in a chat at your office's address — kept apart from your own conversation, fenced to their folders, with permissions you switch ([docs/RENT.md](docs/RENT.md)) |
 | ✈️ **Telegram** | Give anyone on the team a bot of their own: talk to them from your phone, answer their questions with a tap, add them to a group chat where they speak up when it is about them ([docs/TELEGRAM.md](docs/TELEGRAM.md)) |
 | 🔁 **Routines** | "Every 30 minutes, check the error log" — repeated by itself |

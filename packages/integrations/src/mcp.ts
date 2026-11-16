@@ -407,6 +407,27 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
     },
   },
   {
+    name: 'get_context',
+    description:
+      "The office's central context: what everybody here is to know. Most of it is already in front of you (it was given to you when your session started, and again after every compaction); use this for a fact you do not see — give a few words of what you need (\"deploy shop\", \"client invoices\"). With no topic: the facts kept on demand.",
+    inputSchema: { type: 'object', properties: { topic: { type: 'string', description: 'A few words of what you need.' } } },
+  },
+  {
+    name: 'propose_context',
+    description:
+      'Propose a fact for the central context — something everybody concerned should know from now on and not have to be told again: how something is done here, a decision, where something is, what a client wants. Short and standing on its own. layer: "self" (your own notes: what you are in the middle of — goes in at once), "project" (your project\'s state or how it works — goes in at once), "office", "role" or "client" (wait for a person). Never put a credential in it: name the vault entry.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        layer: { type: 'string', enum: ['self', 'project', 'office', 'role', 'client'] },
+        title: { type: 'string', description: 'A few words: what it is.' },
+        text: { type: 'string', description: 'The fact, short.' },
+        project: { type: 'string', description: 'For layer "project": which project, when not your own.' },
+      },
+      required: ['layer', 'title', 'text'],
+    },
+  },
+  {
     name: 'get_playbook',
     description: 'Read the lessons in your playbook and the shared team knowledge that applies to you.',
     inputSchema: { type: 'object', properties: {} },

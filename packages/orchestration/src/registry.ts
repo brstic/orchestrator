@@ -2006,6 +2006,8 @@ export class SessionRegistry {
       addDirs: [...new Set([...(project && (!project.hostId || project.hostId === session.hostId) ? (project.extraRepos ?? []).map((x) => x.path) : []), ...this.eng.rent.extraDirsFor(employee)])].filter((p) => p !== cwd),
       // Rented: the folders they may reach and what they may do there, enforced on their machine (rent.ts).
       fence: this.eng.rent.fenceFor(employee, cwd),
+      // What every employee always knows: handed to the model by their machine at the start, after a compaction, and as a change (context.ts).
+      context: this.eng.context.forLaunch(employee, session.id),
       env: {
         ORCH_EMPLOYEE: slugify(employee.name),
         // Their own Claude login, if they were given one.

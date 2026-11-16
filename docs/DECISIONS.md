@@ -2,6 +2,15 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-17 — The central context is given by the machine through Claude Code's hooks, as a pack with a version
+- **Hooks, not the system prompt.** The launch's prompt is written once; a session runs for days and is compacted. `SessionStart` (startup, resume, compact) and `UserPromptSubmit` are the points where a session can be told — whole when it may have lost it, the change otherwise — and Claude Code reads their `additionalContext` whatever model answers it.
+- **Answered by the machine's agent from what it holds**, as it answers the fence: no prompt waits on a round trip to the office; the office sends the pack when it changes (`session.context`).
+- **A version per employee's pack** (a hash of its items): the office knows who holds what, and a change is said only once.
+- **About 4,000 tokens always**, a hard cap past which facts are on demand: it is paid for at every start and compaction.
+- **A client's facts go with that client's messages**, not into the pack: one employee may answer several clients.
+- **Proposals straight in only for one's own notes and one's project**; the office's, a role's and a client's wait for a person (the owner's answer: "straight in for some").
+- Rejected: putting MemPalace in front of every prompt (it is an archive found by meaning, not a short list of standing facts); a second model to summarise (cost, and a summary is not the owner's words).
+
 ## 2026-11-16 — One employee, several clients: separate conversations, one session under the widest switches
 The owner: "one agent must be rentable to several people at the same time." The conversations were already kept per client and the answer routed by what began the turn, so two clients never see each other's words. What cannot be split is the session: the fence and the tools are the session's, so they are the **widest** of the clients' switches (a switch is on if any rental has it), and Access says so. The employee is told, in each client's message, who else rents them and to keep each client's words apart — an instruction: an owner who must keep two clients strictly apart rents them different employees. Teamwork stays per client (colleagues of different clients do not reach each other through a shared employee). Rejected: a session per client (the owner's other requirement — the employee knows every conversation — would be lost, and every client would cost a session).
 

@@ -132,6 +132,7 @@ export function TopBar() {
         { id: 'meetings', label: 'Meetings' },
         { id: 'reports', label: 'Reports', count: Object.keys(s.artifacts).length || undefined },
         { id: 'growth', label: 'Growth', count: suggestions },
+        { id: 'context', label: 'Context' },
       ],
     },
     {

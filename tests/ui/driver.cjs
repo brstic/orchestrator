@@ -3212,6 +3212,27 @@ async function scenario() {
     return `link ${link.replace(/\/r\/.*/, '/r/…')}; the client's answer: "${shown}"`;
   });
 
+  await step('Context: a fact for the whole office is added in its window, and is what a working employee is given', async () => {
+    await js(`window.__t.store().openPanel('context')`);
+    await waitFor(`!!window.__t.scope().querySelector('[data-context-layer="office"]')`, 8000);
+    await click(`window.__t.scope().querySelector('[data-context-add]')`, 'Add a fact');
+    await waitFor(`!!window.__t.scope().querySelector('[data-context-edit="new"]')`, 4000);
+    await type(`window.__t.scope().querySelector('[data-context-edit="new"] input[aria-label="Title"]')`, 'How we deploy');
+    await type(`window.__t.scope().querySelector('[data-context-edit="new"] textarea')`, 'Always from main, with the deploy script.');
+    await click(`window.__t.scope().querySelector('[data-context-save]')`, 'Add the fact');
+    await waitFor(`!!window.__t.scope().querySelector('[data-context-fact="How we deploy"]')`, 8000);
+    await shot('context-office');
+    // Who holds it: a working employee's pack has it.
+    await click(`[...window.__t.scope().querySelectorAll('.tab')].find((b) => /Who holds it/.test(b.textContent))`, 'Who holds it');
+    await waitFor(`!!window.__t.scope().querySelector('[data-context-show]')`, 8000);
+    await click(`window.__t.scope().querySelector('[data-context-show]')`, 'What they know');
+    await waitFor(`/How we deploy/.test(window.__t.scope().querySelector('[data-context-pack]')?.textContent || '')`, 8000);
+    await shot('context-holders');
+    const who = await js(`window.__t.scope().querySelector('[data-context-holder]').dataset.contextHolder`);
+    await js(`window.__t.store().openPanel(null)`);
+    return `added; ${who} is given it`;
+  });
+
   await step('this computer\'s preferences, as they are stored at the end', async () => {
     return js(`localStorage.getItem('orch.prefs')`);
   });

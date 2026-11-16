@@ -1516,6 +1516,15 @@ function SessionTab({ e }: { e: Employee }) {
                 <dd className="k-mono">{session.permissionMode ?? <span className="muted">unknown</span>}</dd>
               </div>
               <div>
+                <dt>Central context</dt>
+                <dd>
+                  {session.contextRev ? <span className="k-mono">{session.contextRev}</span> : <span className="muted">not given yet</span>}{' '}
+                  <button type="button" className="k-link" onClick={() => useOffice.getState().openPanel('context', 'holders')}>
+                    What they know
+                  </button>
+                </dd>
+              </div>
+              <div>
                 <dt>Started</dt>
                 <dd>{fmtDateTime(session.startedAt)}</dd>
               </div>

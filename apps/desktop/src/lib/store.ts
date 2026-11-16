@@ -73,6 +73,7 @@ export type PanelId =
   | 'radio'
   | 'tv'
   | 'vault'
+  | 'context'
   | 'arcade'
   | 'seat'
   | 'people'

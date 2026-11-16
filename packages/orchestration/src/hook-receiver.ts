@@ -453,6 +453,8 @@ export class HookReceiver {
     }
 
     if (interp.said !== undefined) session.saying = interp.said;
+    // The machine gave the model the central context with this hook: the session holds that version now.
+    if (typeof payload.orch_context === 'string' && payload.orch_context) session.contextRev = payload.orch_context.slice(0, 16);
     if (interp.activity) {
       const wait = session.waitingOn;
       const toolHook = payload.hook_event_name === 'PreToolUse' || payload.hook_event_name === 'PostToolUse' || payload.hook_event_name === 'PostToolUseFailure';

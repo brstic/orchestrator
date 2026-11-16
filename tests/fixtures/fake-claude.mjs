@@ -150,6 +150,19 @@ function fireHook(event, extra = {}) {
 let currentHook = null;
 
 /**
+ * What the hooks put in front of the model as `additionalContext` (Claude Code adds it to the conversation): kept in
+ * order, so a test can ask what this session was given — the office's central context (docs/CONTEXT.md).
+ */
+const contextSeen = [];
+function noteContext(out, when) {
+  const add = out?.hookSpecificOutput?.additionalContext;
+  if (typeof add === 'string' && add) {
+    contextSeen.push(`[${when}]\n${add}`);
+    say(`\x1b[2m  ⎿ context (${when}): ${add.split('\n')[0].slice(0, 90)}\x1b[0m`);
+  }
+}
+
+/**
  * Run the configured status line command after an answer, as Claude Code does, with the session's
  * state on stdin. A "subscription account" exists for the fixture when the Claude config folder it
  * was started with holds a `fake-limits.json` (the `rate_limits` object Claude Code would send).
@@ -354,6 +367,16 @@ async function runDirectives(text) {
         case 'saw':
           // Was this text in the prompt that was delivered? (What a test asks about a prompt's content.)
           say(`saw[${rest}]=${text.replace(/@@[\s\S]*?@@/g, '').includes(rest) ? 'yes' : 'no'}`);
+          break;
+        case 'ctx':
+          // What this session has been given as context so far, into a file in the working directory.
+          fs.writeFileSync(path.join(cwd, rest), contextSeen.join('\n\n---\n\n') + '\n');
+          say(`ctx → ${rest}`);
+          break;
+        case 'compact':
+          // Claude Code compacts the conversation: what was in it is gone, and SessionStart(compact) runs again.
+          contextSeen.length = 0;
+          noteContext(await fireHook('SessionStart', { source: 'compact' }), 'compact');
           break;
         case 'sleep':
           await sleep(Number(rest) || 100);
@@ -596,7 +619,7 @@ async function handlePrompt(text, viaStopHook = false) {
   interrupted = false;
   if (!viaStopHook) {
     transcript({ type: 'user', message: { role: 'user', content: text } });
-    await fireHook('UserPromptSubmit', { prompt: text });
+    noteContext(await fireHook('UserPromptSubmit', { prompt: text }), 'prompt');
   }
   say('');
   // A review request quotes the author's task text; a reviewer reviews, it does not replay that script.
@@ -860,5 +883,5 @@ if (permissionMode === 'bypassPermissions') {
     out('\x1b[5A\x1b[J');
   }
 }
-await fireHook('SessionStart', { source: resumeId ? 'resume' : 'startup' });
+noteContext(await fireHook('SessionStart', { source: resumeId ? 'resume' : 'startup' }), resumeId ? 'resume' : 'startup');
 prompt();

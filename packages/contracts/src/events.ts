@@ -188,4 +188,6 @@ export interface HookPayload {
   agent_type?: string;
   agent_id?: string;
   [k: string]: unknown;
+  /** Added by the machine's agent: the version of the central context it gave the model with this hook (docs/CONTEXT.md). */
+  orch_context?: string;
 }

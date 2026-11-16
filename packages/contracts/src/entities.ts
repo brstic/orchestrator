@@ -415,6 +415,8 @@ export interface AgentSession {
   startedAt: ISODate;
   endedAt: ISODate | null;
   lastEventAt: ISODate | null;
+  /** The version of the central context this session was last given (`docs/CONTEXT.md`); absent: none yet. */
+  contextRev?: string | null;
   exitReason: string | null;
   /**
    * Set when the office itself stopped this session because it sat idle (see `OwnerSettings.sleepAfterMinutes`):

@@ -1,6 +1,6 @@
 # Plan: the central context — what every employee always knows
 
-_Status: **proposed, not started** (2026-11-16). The owner: "can we make a kind of central context so that more or less all agents have certain same information… we already have memory, but the point is that every agent always keeps the same context, no matter whom it talks to, whether it is rented or not, on another Claude account, on OpenAI, DeepSeek, Z.AI — that they always know everything they need to know. Make a good plan, tell me, and we will see whether it is good before we start."_
+_Status: **built 2026-11-17** — phases 1–3 and 5 (see `docs/CONTEXT.md`); phase 4 (other providers) waits, by the owner's word ("later, much later; for now only Claude Code"). The owner's answers: owners and colleagues write; proposals straight in for some layers (own notes, project); rented employees get it; the size was left to us (about 4,000 tokens). Not built from phase 3: proposals from answers and lessons, and the one-time import. Proposed 2026-11-16. The owner: "can we make a kind of central context so that more or less all agents have certain same information… we already have memory, but the point is that every agent always keeps the same context, no matter whom it talks to, whether it is rented or not, on another Claude account, on OpenAI, DeepSeek, Z.AI — that they always know everything they need to know. Make a good plan, tell me, and we will see whether it is good before we start."_
 
 ## The problem, as it stands today
 

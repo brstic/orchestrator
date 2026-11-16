@@ -189,7 +189,7 @@ test('what may not be attached is refused, in words the employee can act on', as
   assert.match(fs.readFileSync(path.join(sarah.cwd, 'attach-result.txt'), 'utf8'), /^ERROR .*is not your task/);
   // From people: an empty file, one that is too large, pieces out of order.
   assert.equal((await h.apiRaw('POST', `/tasks/${task.id}/attachments`, { name: 'empty.txt', size: 0 })).status, 400);
-  assert.match(JSON.stringify((await h.apiRaw('POST', `/tasks/${task.id}/attachments`, { name: 'huge.bin', size: 26 * 1024 * 1024 })).body), /larger than 25 MB/);
+  assert.match(JSON.stringify((await h.apiRaw('POST', `/tasks/${task.id}/attachments`, { name: 'huge.bin', size: 101 * 1024 * 1024 })).body), /larger than 100 MB/);
   const begun = await h.api('POST', `/tasks/${task.id}/attachments`, { name: 'a.txt', size: 10 });
   assert.equal((await h.apiRaw('POST', `/tasks/${task.id}/attachments/${begun.id}/data`, { offset: 5, dataBase64: Buffer.from('later').toString('base64') })).status, 409);
   assert.equal((await h.apiRaw('POST', `/tasks/${task.id}/attachments/${begun.id}/data`, { offset: 0, dataBase64: Buffer.from('more than ten bytes').toString('base64') })).status, 400);

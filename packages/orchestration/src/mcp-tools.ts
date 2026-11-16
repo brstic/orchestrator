@@ -611,6 +611,21 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     // The helper's call: the value goes to the command that asked, and the use is on the record.
     vault_read: async (a, { employee }) => eng.vault.use(String(a.name ?? ''), { kind: 'employee', id: employee.id, name: employee.name }).value,
 
+    // ── The central context (context.ts) ──
+
+    get_context: async (a, { employee }) => eng.context.find(employee, String(a.topic ?? '').trim()),
+
+    propose_context: async (a, { employee }) => {
+      const many = tooMany(employee, 'context proposal', 30);
+      if (many) return err(many);
+      try {
+        const fact = eng.context.propose(employee, a, eng.rent.clientOfTurn(employee.id));
+        return fact.status === 'active' ? `In the central context now (${fact.layer}): "${fact.title}". Everyone concerned holds it from their next prompt.` : `Proposed: "${fact.title}". A person looks at it in the Context window; you are told nothing more — it simply appears in the context once taken in.`;
+      } catch (e) {
+        return err((e as Error).message);
+      }
+    },
+
     // ── The long memory ──
 
     recall: async (a) => {

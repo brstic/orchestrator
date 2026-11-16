@@ -23,3 +23,5 @@ export * from './goals.ts';
 export * from './vault.ts';
 export * from './memory.ts';
 export * from './vault-detect.ts';
+
+export { CentralContext, CONTEXT_LIMITS, CONTEXT_STRAIGHT_IN, type ContextChange } from './context.ts';

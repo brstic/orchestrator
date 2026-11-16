@@ -32,6 +32,7 @@ import type {
   XpEntry,
 } from './entities.ts';
 import type { OrchestratorEvent, RawHookEvent } from './events.ts';
+import type { ContextPack } from './context.ts';
 import type { ArcadeButton, ArcadeGame, ArcadeMediaKind, ArcadeTable } from './arcade.ts';
 
 export const PROTOCOL_VERSION = 1;
@@ -131,6 +132,8 @@ export interface LaunchSpec {
   continueLast?: boolean;
   /** A rented employee: the folders they may reach and what they may do there (`docs/RENT.md`). Changed live with `session.fence`. */
   fence?: RentFence | null;
+  /** The central context this employee holds (`docs/CONTEXT.md`); changed live with `session.context`. */
+  context?: ContextPack | null;
   env: Record<string, string>;
   cols: number;
   rows: number;
@@ -147,6 +150,7 @@ export type AgentRpc =
   /** The owner allowed one exact tool call that Claude Code had refused: the next identical call from this session is let through, once, within `ttlMs`. */
   | { method: 'session.grant'; params: { sessionId: ID; tool: string; input: unknown; ttlMs: number } }
   | { method: 'session.fence'; params: { sessionId: ID; fence: RentFence | null } }
+  | { method: 'session.context'; params: { sessionId: ID; context: ContextPack | null } }
   | { method: 'term.subscribe'; params: { sessionId: ID } }
   | { method: 'term.unsubscribe'; params: { sessionId: ID } }
   | { method: 'term.input'; params: { sessionId: ID; data: string } }

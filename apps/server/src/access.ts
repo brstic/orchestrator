@@ -190,6 +190,15 @@ const RULES: Rule[] = [
   rule('POST', '/vault', 'work'),
   rule('PATCH', '/lessons/:id', 'work'),
   rule('POST', '/commands/plan', 'work'),
+  // The central context (docs/CONTEXT.md): read by those who work here; written by owners and colleagues — which fact,
+  // whose (a client's is an owner's; a project's or an employee's whoever may work on it), the route checks.
+  rule('GET', '/context', 'detail'),
+  rule('GET', '/context/pack/:id', 'detail', path('employee')),
+  rule('POST', '/context/facts', 'work'),
+  rule('PATCH', '/context/facts/:id', 'work'),
+  rule('DELETE', '/context/facts/:id', 'work'),
+  rule('POST', '/context/facts/:id/accept', 'work'),
+  rule('POST', '/context/facts/:id/drop', 'work'),
   // Whether what the office learned helped. Counted, for anyone but an owner, only from what they may see (`outcomesScopeFor`).
   rule('GET', '/growth/outcomes', 'detail'),
   // What the office did by itself with what it learned; each entry is filtered like any other event.

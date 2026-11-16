@@ -19,8 +19,9 @@ import type {
   ServerToAgent,
   SessionCapabilities,
   RentFence,
+  ContextPack,
 } from '@orchestrator/contracts';
-import { HOOKS_VERSION, PROTOCOL_VERSION, redactSecrets, slugify } from '@orchestrator/contracts';
+import { HOOKS_VERSION, PROTOCOL_VERSION, redactSecrets, renderContext, renderContextChange, slugify } from '@orchestrator/contracts';
 import type { AccountInfo, AccountLogin } from '@orchestrator/contracts';
 import {
   NESTED_SESSION_ENV,
@@ -90,6 +91,10 @@ interface Tracked {
   spec: LaunchSpec | null;
   /** A rented employee's fence as the office last sent it (`session.fence`); absent: the one in `spec`. */
   fence?: RentFence | null;
+  /** The central context as the office last sent it (`session.context`); absent: the one in `spec` (docs/CONTEXT.md). */
+  context?: ContextPack | null;
+  /** The pack this session's model was last given (whole, or as a change): what the next change is measured against. */
+  contextGiven?: ContextPack | null;
   startedAt: string;
   transcriptPath: string | null;
   hooksSeen: boolean;
@@ -1119,6 +1124,14 @@ export class HostAgent {
         rt.grants = [...(rt.grants ?? []).filter((g) => g.until > now), { key: grantKey(rpc.params.tool, rpc.params.input), until: now + Math.max(10_000, Math.min(Number(rpc.params.ttlMs) || 0, 30 * 60_000)) }].slice(-20);
         return { ok: true };
       }
+      case 'session.context': {
+        // The office's central context changed for this employee: given whole at the next start or compaction, and as
+        // a change at their next prompt (docs/CONTEXT.md).
+        const t = this.requireTracked(rpc.params.sessionId);
+        t.context = rpc.params.context ?? null;
+        this.saveState();
+        return { ok: true };
+      }
       case 'session.fence': {
         // A rental changed: what this session may reach changes now, not at its next start (docs/RENT.md).
         const t = this.requireTracked(rpc.params.sessionId);
@@ -2030,6 +2043,23 @@ export class HostAgent {
       return;
     }
 
+    // The office's central context: whole when a session starts, is resumed or was compacted (what it held is gone),
+    // and the change since what it was last given at a prompt. Answered here, from what this machine holds: nothing
+    // waits on the office (docs/CONTEXT.md).
+    if (held === null && (payload.hook_event_name === 'SessionStart' || payload.hook_event_name === 'UserPromptSubmit')) {
+      const pack = tracked.context !== undefined ? tracked.context : (tracked.spec?.context ?? null);
+      const whole = payload.hook_event_name === 'SessionStart';
+      const text = pack ? (whole ? renderContext(pack) : renderContextChange(tracked.contextGiven ?? null, pack)) : null;
+      if (pack && text) {
+        tracked.contextGiven = pack;
+        this.saveState();
+        event.payload = { ...payload, orch_context: pack.rev };
+        this.enqueue(event);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ hookSpecificOutput: { hookEventName: payload.hook_event_name, additionalContext: text } }));
+        return;
+      }
+    }
     if (held !== null) event.payload = payload;
     const refuse = (why: string) => JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Orchestrator policy: this command matches a high-risk pattern (${held}) and needs the owner's approval. ${why} Do not try it another way: wait, or ask the boss (ask_boss).` } });
     // The office went away a moment ago and may be back in a moment (a restart): a request for a decision waits for it.

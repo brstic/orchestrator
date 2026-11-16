@@ -122,6 +122,9 @@ A member may have one employee with the role **Team Lead** on their own computer
 ### An employee's Telegram bot
 `GET/PUT/PATCH/DELETE /employees/:id/telegram`, `POST …/telegram/pair` and `…/check`, `DELETE …/telegram/people/:tg`, `PATCH/DELETE …/telegram/groups/:chat` — level **work** on that employee, like talking to them (so not a visitor; a colleague for their own employees and the shared ones open to them). Whoever pairs from Telegram speaks as the member who made the link, and that member's **work** on the employee is checked again for every message (`docs/TELEGRAM.md`). Not in the public demo.
 
+### The central context
+`GET /context` and `GET /context/pack/:employee` are **detail**; writing facts (`POST`/`PATCH`/`DELETE /context/facts…`, accepting and dropping proposals) is **work**, then by layer: the office's and a role's — owners and colleagues; a project's — whoever may work on the project; an employee's own notes — whoever may work with that employee (and the employee itself, through `propose_context`); a client's — owners only, and only owners are sent them. `docs/CONTEXT.md`.
+
 ### The Rent portal's clients
 A **client** is not a member and is in no table above: they never come into the office. Their credential is of its own kind (`client`) and opens only `/rent/api` — the employees they rent, and nothing of the office (`docs/RENT.md`). Everything about clients — `GET/POST/PATCH/DELETE /api/rent…`, reading their conversations — is **admin** (owners), as is what is said with them: messages with `channel: 'rent'` and events carrying `rentClientId` or of type `rent.*` are sent to owners only (`mayReadMessage`, `eventFor`). A rented employee reaches, and is reached by, only the employees the same client rents (and the foreman); they are fenced to their folders on their machine.
 

@@ -69,6 +69,8 @@ const RENT_TOOLS = new Set([
   'wake_colleague',
   'meeting_contribute',
   'meeting_conclude',
+  'get_context',
+  'propose_context',
 ]);
 /** The foreman's and a team lead's own tools: never a rented employee's (their handlers refuse other callers anyway). */
 const FOREIGN_ROLE_TOOLS = /^(team_|office_overview$|look_at$|answer_question$|assign_task$|create_task$|tell_employee$|escalate_to_owner$|finish_round$)/;
@@ -471,6 +473,7 @@ export class Rent {
           : '') +
         (others.length ? `Other clients rent you too (${others.join(', ')}): what each of them tells you is theirs — do not pass it on to ${client.name}, nor ${client.name}'s to them. ` : '') +
         'What the boss tells you in the office is not for clients unless the boss says so.)',
+      ...((facts) => (facts.length ? ['', `What the office knows about ${client.name} (the central context):`, ...facts.map((f) => `- **${f.title}** — ${f.text}`)] : []))(this.eng.context.clientFacts(client.id).filter((f) => f.always)),
     ].join('\n');
   }
 

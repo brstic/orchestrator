@@ -108,7 +108,7 @@ test('who may: whoever may talk to the employee; a file is its sender’s until 
   }
   // The limits: not empty, not huge, not more than a message carries, and no more bytes than were announced.
   assert.match((await as(h.token, 'POST', `/employees/${alex}/files`, { name: 'x', size: 0 })).body.error, /empty/);
-  assert.match((await as(h.token, 'POST', `/employees/${alex}/files`, { name: 'x', size: 26 * 1024 * 1024 })).body.error, /larger than 25 MB/);
+  assert.match((await as(h.token, 'POST', `/employees/${alex}/files`, { name: 'x', size: 101 * 1024 * 1024 })).body.error, /larger than 100 MB/);
   assert.match((await as(h.token, 'POST', `/employees/${alex}/files/${mine.body.id}/data`, { offset: 0, dataBase64: Buffer.alloc(1001).toString('base64') })).body.error, /more was sent than the file was said to hold/);
   assert.match((await as(h.token, 'POST', `/employees/${alex}/message`, { body: 'x', fileIds: Array.from({ length: MAX_SAID_FILES + 1 }, (_, i) => `f${i}`) })).body.error, /at most 10 files go with one message/);
 });

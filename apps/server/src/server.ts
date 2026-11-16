@@ -7,6 +7,7 @@ import { Knocks, type Admission } from './knocks.ts';
 import { allowed, closedTo, eventFor, mayCall, mayReadRoutine, memberOf, outcomesScopeFor, stateFor } from './access.ts';
 import { Telegram } from './telegram.ts';
 import { RentDoor, pageAt } from './rent-door.ts';
+import { renderContext } from '@orchestrator/contracts';
 import { HiFi, nowPlaying } from './radio.ts';
 import { ArcadeShelf } from './arcade.ts';
 import { SshLinks } from './ssh-links.ts';
@@ -20,7 +21,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { ROLE_CATALOGUE, type Host, stripEnd } from '@orchestrator/contracts';
 import { NotFoundError, PgStore, Store, generateToken, type Storage } from '@orchestrator/database';
 import { handleMcpPost } from '@orchestrator/integrations';
-import { Engine, EngineError, type Timings, SaidFiles } from '@orchestrator/orchestration';
+import { CONTEXT_STRAIGHT_IN, Engine, EngineError, type Timings, SaidFiles } from '@orchestrator/orchestration';
 import { AgentHub, ClientHub } from './hubs.ts';
 
 
@@ -856,6 +857,52 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     // Routines: a standing instruction the office repeats for one employee (see `routines.ts`).
     const actorOf = (req: FastifyRequest) => (whoOf(req).id === 'owner' ? 'owner' : `member:${whoOf(req).name}`);
     // The Rent portal, the owner's side: clients, what they rent, what each rented employee may do (rent-door.ts).
+
+    // ── the central context (docs/CONTEXT.md) ──
+    /** May this person read / write a fact of this layer about this thing? A client's: owners. A project's or an employee's: by whose it is. */
+    const contextMay = (who: Who, need: 'detail' | 'work', layer: string, scope: string | null): boolean => {
+      if (layer === 'client') return who.kind === 'owner';
+      const member = layer === 'project' ? memberOf(engine, 'project', scope) : layer === 'self' ? memberOf(engine, 'employee', scope) : null;
+      return !closedTo(engine, who, member) && allowed(who, need, member);
+    };
+    const contextFact = (req: FastifyRequest) => {
+      const f = engine.context.require(param(req, 'id'));
+      if (!contextMay(whoOf(req), 'work', f.layer, f.scope)) throw new EngineError('That fact is not yours to change.', 403);
+      return f;
+    };
+    api.get('/context', async (req) => {
+      const who = whoOf(req);
+      const facts = engine.context.list().filter((f) => f.status !== 'archived' && contextMay(who, 'detail', f.layer, f.scope));
+      const shown = new Set(facts.map((f) => f.id));
+      const sessions = engine.core.sessions
+        .filter((s) => s.status === 'running' && !!s.employeeId && !!engine.core.employees.get(s.employeeId) && contextMay(who, 'detail', 'self', s.employeeId))
+        .map((s) => {
+          const e = engine.core.employees.get(s.employeeId!)!;
+          return { employeeId: e.id, name: e.name, holds: s.contextRev ?? null, current: engine.context.packFor(e).rev };
+        });
+      return { facts, history: engine.context.history().filter((h) => shown.has(h.factId) || (h.what === 'archived' && contextMay(who, 'detail', h.layer, h.scope))).slice(-120), sessions, straightIn: CONTEXT_STRAIGHT_IN };
+    });
+    api.get('/context/pack/:id', async (req) => {
+      const e = engine.core.employees.require(param(req, 'id'));
+      const pack = engine.context.packFor(e);
+      return { pack, text: renderContext(pack), chars: renderContext(pack).length };
+    });
+    api.post('/context/facts', async (req) => {
+      const b = body(req);
+      if (!contextMay(whoOf(req), 'work', String(b.layer ?? ''), b.scope ? String(b.scope) : null)) throw new EngineError(b.layer === 'client' ? "A client's facts are for an owner of this office to write." : 'That is not yours to write about.', 403);
+      return engine.context.add(b, actorOf(req));
+    });
+    api.patch('/context/facts/:id', async (req) => engine.context.update(contextFact(req).id, body(req), actorOf(req)));
+    api.delete('/context/facts/:id', async (req) => engine.context.archive(contextFact(req).id, actorOf(req)));
+    api.post('/context/facts/:id/accept', async (req) => {
+      const f = contextFact(req);
+      if (body(req).title !== undefined || body(req).text !== undefined) engine.context.update(f.id, body(req), actorOf(req));
+      return engine.context.accept(f.id, actorOf(req));
+    });
+    api.post('/context/facts/:id/drop', async (req) => {
+      engine.context.drop(contextFact(req).id, actorOf(req));
+      return { ok: true };
+    });
     rentDoor.ownerRoutes(api, actorOf, (req) => whoOf(req).id);
     /** The person behind a request, as the task conversation names them. */
     const personOf = (req: FastifyRequest): { kind: 'owner' | 'member'; id: string | null; name: string } => (whoOf(req).id === 'owner' ? { kind: 'owner', id: null, name: 'The boss' } : { kind: 'member', id: whoOf(req).id, name: whoOf(req).name });
