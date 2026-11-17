@@ -1,3 +1,4 @@
+import { lookKey } from './looks.ts';
 import { useFrame } from '@react-three/fiber';
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
@@ -242,7 +243,8 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
       leather: mat('#5a3519', 0.55, offline),
       badge: badgeMat(level, offline),
     };
-  }, [appearance.skin, appearance.hair, appearance.shirt, appearance.pants, appearance.hairStyle, appearance.accessory, offline, level, detail?.tie, detail?.shoes]);
+  // (By every field of the look — `lookKey` — so that each choice of the character creator shows at once.)
+  }, [lookKey(appearance), offline, level, detail?.tie, detail?.shoes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Arms and legs are each one skinned surface; the joints of this rig are their bones.
   useLayoutEffect(() => {

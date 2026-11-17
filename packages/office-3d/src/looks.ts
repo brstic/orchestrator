@@ -59,3 +59,11 @@ export function filledLook(a: Appearance, level: number): Appearance {
     tie: a.tie ?? TIES[t.seed % TIES.length]!,
   };
 }
+
+/**
+ * What a figure is rebuilt by: every field of a look. (A field left out here is a choice that changes nothing on
+ * screen until something else does.)
+ */
+export function lookKey(a: Appearance): string {
+  return [a.skin, a.hair, a.shirt, a.pants, a.hairStyle, a.accessory, a.build, a.outfit, a.glasses, a.facialHair, a.face, a.brows, a.eyes, a.girth, a.shoes, a.tie].join('|');
+}

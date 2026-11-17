@@ -63,6 +63,8 @@ Nobody can change anybody else's character.
 
 ## Tests
 
+- `packages/office-3d/test/looks.test.ts` — changing any field of a look rebuilds the figure (it failed for nine fields before the fix of 2026-11-17: they showed only when something else changed).
+
 - `packages/contracts/test/appearance.test.ts` — what is kept of a look sent from outside.
 - `packages/office-3d/test/character.test.ts` — the new hair styles are sound surfaces (also under a cap, with headphones), facial hair is the head's own triangles in a group of their own (beard > goatee > mustache), a look's own choices win and a look without them is drawn as before.
 - `tests/e2e/62-character.test.ts` — a colleague makes one: kept as sent, in their next window, seen by everybody in the `people` list; a visitor makes their own and only their own; what is not a look is not kept; back to the office's look; the owner's is there after a restart; the change is on the audit log.
