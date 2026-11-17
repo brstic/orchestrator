@@ -20,6 +20,7 @@ import type {
   SessionCapabilities,
   RentFence,
   ContextPack,
+  AccountProvider,
 } from '@orchestrator/contracts';
 import { HOOKS_VERSION, PROTOCOL_VERSION, redactSecrets, renderContext, renderContextChange, slugify } from '@orchestrator/contracts';
 import type { AccountInfo, AccountLogin } from '@orchestrator/contracts';
@@ -144,6 +145,12 @@ const OUTBOX_LIMIT = 5000;
 
 /** Where Claude Code is sent for Z.AI's GLM Coding Plan (their instructions: docs.z.ai/devpack/tool/claude). */
 const ZAI_BASE_URL = 'https://api.z.ai/api/anthropic';
+/** DeepSeek answers Anthropic's API itself (their instructions for Claude Code). */
+const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/anthropic';
+/** Their model for Claude Code's three names, unless the owner says otherwise. */
+const DEEPSEEK_MODEL = 'deepseek-chat';
+/** A proxy on this machine may speak plain http: nothing leaves the machine on the way to it. */
+const LOOPBACK_HOST = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/;
 /** The keys the office may press in a sign-in's terminal, by the names it uses for them. */
 const LOGIN_KEYS: Record<string, string> = { enter: 'Enter', up: 'Up', down: 'Down', left: 'Left', right: 'Right', escape: 'Escape', tab: 'Tab', backspace: 'BSpace', space: 'Space' };
 
@@ -1797,7 +1804,7 @@ export class HostAgent {
    * Does this config folder send Claude Code to another service than Anthropic's? Read from the folder's own
    * `settings.json` (`env.ANTHROPIC_BASE_URL`). Says which service and whether a key is set — never the key.
    */
-  private accountProvider(configDir: string): { provider: 'zai' | 'custom'; endpoint: string | null; hasKey: boolean } | null {
+  private accountProvider(configDir: string): { provider: Exclude<AccountProvider, 'anthropic'>; endpoint: string | null; hasKey: boolean } | null {
     try {
       const env = JSON.parse(fs.readFileSync(path.join(configDir, 'settings.json'), 'utf8'))?.env;
       const url = typeof env?.ANTHROPIC_BASE_URL === 'string' ? env.ANTHROPIC_BASE_URL.trim() : '';
@@ -1808,7 +1815,9 @@ export class HostAgent {
       } catch {
         /* not an address: said as it is not */
       }
-      return { provider: endpoint && /(^|\.)z\.ai$/.test(endpoint) ? 'zai' : 'custom', endpoint, hasKey: !!String(env.ANTHROPIC_AUTH_TOKEN ?? env.ANTHROPIC_API_KEY ?? '').trim() };
+      // (OpenAI is reached through a proxy whose address says nothing: the office marks the folder when it sets it up.)
+      const provider = env.ORCH_PROVIDER === 'openai' ? 'openai' : endpoint && /(^|\.)z\.ai$/.test(endpoint) ? 'zai' : endpoint && /(^|\.)deepseek\.com$/.test(endpoint) ? 'deepseek' : 'custom';
+      return { provider, endpoint, hasKey: !!String(env.ANTHROPIC_AUTH_TOKEN ?? env.ANTHROPIC_API_KEY ?? '').trim() };
     } catch {
       return null;
     }
@@ -1821,17 +1830,19 @@ export class HostAgent {
    * The folder is marked as set up (`hasCompletedOnboarding`), so that the first session does not stop at the
    * first-run screens. What was in the folder's settings stays; only these keys are written.
    */
-  private setAccountProvider(p: { dir: string; provider: 'zai' | 'custom'; token: string; baseUrl?: string; models?: { opus?: string; sonnet?: string; haiku?: string } }): AccountInfo {
+  private setAccountProvider(p: { dir: string; provider: Exclude<AccountProvider, 'anthropic'>; token: string; baseUrl?: string; models?: { opus?: string; sonnet?: string; haiku?: string } }): AccountInfo {
     const token = String(p.token ?? '').trim();
     if (!token || /\s/.test(token) || token.length > 512) throw new Error('that does not look like an API key');
-    const baseUrl = p.provider === 'zai' ? ZAI_BASE_URL : String(p.baseUrl ?? '').trim();
+    if (!['zai', 'deepseek', 'openai', 'custom'].includes(p.provider)) throw new Error('unknown kind of account');
+    const baseUrl = p.provider === 'zai' ? ZAI_BASE_URL : p.provider === 'deepseek' ? DEEPSEEK_BASE_URL : String(p.baseUrl ?? '').trim();
     let url: URL;
     try {
       url = new URL(baseUrl);
     } catch {
       throw new Error('the address of the service is not a web address');
     }
-    if (url.protocol !== 'https:') throw new Error('the address of the service must begin with https://');
+    // https — or plain http to a proxy on this very machine (OpenAI through LiteLLM or claude-code-router).
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK_HOST.test(url.hostname) && (p.provider === 'openai' || p.provider === 'custom'))) throw new Error('the address of the service must begin with https:// (or be a proxy on this machine: http://127.0.0.1:…)');
     const prepared = this.describeAccount(p.dir, true);
     if (prepared.error) throw new Error(prepared.error);
     const dir = this.accountDir(p.dir);
@@ -1849,10 +1860,14 @@ export class HostAgent {
     delete env.ANTHROPIC_API_KEY;
     // The services answer more slowly than Anthropic's; their own instructions set this.
     env.API_TIMEOUT_MS ??= '3000000';
+    if (p.provider === 'openai') env.ORCH_PROVIDER = 'openai';
+    else delete env.ORCH_PROVIDER;
+    // DeepSeek: their model for all three of Claude Code's names, unless the owner named others.
+    const models = p.provider === 'deepseek' && !p.models ? { opus: DEEPSEEK_MODEL, sonnet: DEEPSEEK_MODEL, haiku: DEEPSEEK_MODEL } : p.models;
     for (const [key, name] of [['opus', 'ANTHROPIC_DEFAULT_OPUS_MODEL'], ['sonnet', 'ANTHROPIC_DEFAULT_SONNET_MODEL'], ['haiku', 'ANTHROPIC_DEFAULT_HAIKU_MODEL']] as const) {
-      const model = String(p.models?.[key] ?? '').trim();
+      const model = String(models?.[key] ?? '').trim();
       if (model && /^[A-Za-z0-9._:\[\]\/-]{1,80}$/.test(model)) env[name] = model;
-      else if (p.models && key in p.models) delete env[name];
+      else if (models && key in models) delete env[name];
     }
     settings.env = env;
     fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n', { mode: 0o600 });

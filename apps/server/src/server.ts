@@ -989,7 +989,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/hosts/:id/accounts/provider', async (req) => {
       const b = body(req);
       const models = b.models && typeof b.models === 'object' ? { opus: String(b.models.opus ?? ''), sonnet: String(b.models.sonnet ?? ''), haiku: String(b.models.haiku ?? '') } : undefined;
-      return engine.sessions.addProviderAccount(param(req, 'id'), { dir: b.dir ? String(b.dir) : null, provider: b.provider === 'custom' ? 'custom' : 'zai', token: String(b.token ?? ''), baseUrl: b.baseUrl ? String(b.baseUrl) : undefined, models }, actorOf(req));
+      return engine.sessions.addProviderAccount(param(req, 'id'), { dir: b.dir ? String(b.dir) : null, provider: String(b.provider ?? 'zai') as 'zai' | 'deepseek' | 'openai' | 'custom', token: String(b.token ?? ''), baseUrl: b.baseUrl ? String(b.baseUrl) : undefined, models }, actorOf(req));
     });
     api.post('/hosts/:id/accounts/check', async (req) => ({ accounts: await engine.sessions.checkAccounts(param(req, 'id'), [null, ...(engine.core.hosts.require(param(req, 'id')).claudeAccounts ?? [])]) }));
     api.post('/hosts/:id/accounts/move', async (req) => ({ moved: await engine.sessions.failover({ key: `${param(req, 'id')}|${String(body(req).from ?? '') || 'default'}`, actor: actorOf(req) }) }));

@@ -15,6 +15,8 @@ export interface NamedAccount {
 /** "Z.AI" for theirs; another service by its address. Null: Anthropic's own (a Claude login). */
 export function providerName(a: Pick<NamedAccount, 'provider' | 'endpoint'>): string | null {
   if (a.provider === 'zai') return 'Z.AI';
+  if (a.provider === 'deepseek') return 'DeepSeek';
+  if (a.provider === 'openai') return 'OpenAI';
   if (a.provider === 'custom') return a.endpoint || 'Another service';
   return null;
 }

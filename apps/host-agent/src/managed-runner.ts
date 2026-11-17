@@ -40,7 +40,7 @@ export interface ManagedSpec {
   env: Record<string, string>;
 }
 
-const HOOKS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Notification', 'Stop', 'SubagentStart', 'SubagentStop', 'SessionEnd'] as const;
+const HOOKS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Notification', 'Stop', 'SubagentStart', 'SubagentStop', 'SessionEnd'] as const;
 const BLOCKING = new Set(['PreToolUse', 'Stop']);
 
 const out = (s: string) => process.stdout.write(s);
@@ -111,10 +111,34 @@ export async function runManaged(specPath: string): Promise<void> {
   let announced = false;
   let keyWaiter = null as ((key: string) => void) | null;
 
+  /**
+   * The office's central context given at the start (the answer to the start this runner reports itself, below):
+   * the SDK has no conversation yet to put it in, so it goes in with the first prompt (docs/CONTEXT.md).
+   */
+  let startContext: string | null = null;
   const hooks: Record<string, unknown[]> = {};
   for (const event of HOOKS) {
     const timeout = BLOCKING.has(event) ? spec.approvalWaitSeconds + 30 : 30;
-    hooks[event] = [{ timeout: timeout + 5, hooks: [async (payload: any) => (await call('POST', '/hook', { ...payload, orch_runtime: 'sdk' }, timeout * 1000)) ?? {}] }];
+    hooks[event] = [
+      {
+        timeout: timeout + 5,
+        hooks: [
+          async (payload: any) => {
+            // The start and a resume are reported by this runner itself once Claude Code is up; the SDK's own
+            // SessionStart is passed on only after a compaction (or /clear), when what the session held is gone.
+            if (event === 'SessionStart' && payload?.source !== 'compact' && payload?.source !== 'clear') return {};
+            const res: any = (await call('POST', '/hook', { ...payload, orch_runtime: 'sdk' }, timeout * 1000)) ?? {};
+            if (event === 'UserPromptSubmit' && startContext) {
+              const now = res?.hookSpecificOutput?.additionalContext;
+              const merged = [startContext, typeof now === 'string' ? now : ''].filter(Boolean).join('\n\n');
+              startContext = null;
+              return { ...res, hookSpecificOutput: { ...(res.hookSpecificOutput ?? {}), hookEventName: 'UserPromptSubmit', additionalContext: merged } };
+            }
+            return res;
+          },
+        ],
+      },
+    ];
   }
 
   /** The SDK asks whether a tool may run: the question goes to the office. */
@@ -255,7 +279,9 @@ export async function runManaged(specPath: string): Promise<void> {
   q = query({ prompt: input(), options });
   // Wait until Claude Code itself is up before telling the office this worker is ready.
   if (typeof q.initializationResult === 'function') await q.initializationResult();
-  await call('POST', '/hook', { hook_event_name: 'SessionStart', source: spec.resume ? 'resume' : 'startup', session_id: spec.claudeSessionId, cwd: spec.cwd, permission_mode: spec.permissionMode, orch_runtime: 'sdk' }, 10000);
+  const started: any = await call('POST', '/hook', { hook_event_name: 'SessionStart', source: spec.resume ? 'resume' : 'startup', session_id: spec.claudeSessionId, cwd: spec.cwd, permission_mode: spec.permissionMode, orch_runtime: 'sdk' }, 10000);
+  const given = started?.hookSpecificOutput?.additionalContext;
+  if (typeof given === 'string' && given) startContext = given;
   out('\r\n\x1b[1m>\x1b[0m ');
 
   try {

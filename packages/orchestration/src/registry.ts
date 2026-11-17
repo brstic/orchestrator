@@ -16,6 +16,7 @@ import type {
   TerminalScreen,
   ActivityState,
 } from '@orchestrator/contracts';
+import type { ServiceProvider } from '@orchestrator/contracts';
 import { AUTONOMY_LEVELS, EFFORT_CHOICES, HOOKS_VERSION, isAutonomyLevel, memberSeatOf, modelFamily, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, directsOthers, LEAD_ROLE, LEAD_MODEL, LEAD_EFFORT, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
 import { inputBox, menuKeys, permissionPrompt, plainScreen, trustPromptKeys } from './comms.ts';
@@ -1774,14 +1775,16 @@ export class SessionRegistry {
    * own settings name the service and hold its API key. The key goes from the owner to that machine and is written
    * there; the office does not keep it, log it or send it to anybody.
    */
-  async addProviderAccount(hostId: string, p: { dir?: string | null; provider: 'zai' | 'custom'; token: string; baseUrl?: string; models?: { opus?: string; sonnet?: string; haiku?: string } }, actor = 'owner'): Promise<AccountInfo> {
+  async addProviderAccount(hostId: string, p: { dir?: string | null; provider: ServiceProvider; token: string; baseUrl?: string; models?: { opus?: string; sonnet?: string; haiku?: string } }, actor = 'owner'): Promise<AccountInfo> {
     const host = this.core.hosts.require(hostId);
-    if (p.provider !== 'zai' && p.provider !== 'custom') throw new EngineError('unknown kind of account');
+    if (!['zai', 'deepseek', 'openai', 'custom'].includes(p.provider)) throw new EngineError('unknown kind of account');
     const token = String(p.token ?? '').trim();
     if (!token) throw new EngineError('the API key is missing');
     if (/\s/.test(token) || token.length > 512) throw new EngineError('that does not look like an API key');
-    if (p.provider === 'custom' && !/^https:\/\/[^\s]+$/.test(String(p.baseUrl ?? '').trim())) throw new EngineError('the address of the service must begin with https://');
-    const dir = this.accountFolder(host, p.dir, p.provider === 'zai' ? '~/.claude-zai' : '~/.claude-other');
+    // Another service's own address (https), or — OpenAI, or any other — a proxy on that machine (http://127.0.0.1:…).
+    const address = String(p.baseUrl ?? '').trim();
+    if ((p.provider === 'custom' || p.provider === 'openai') && !/^https:\/\/[^\s]+$/.test(address) && !/^http:\/\/(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d{1,5})?(\/[^\s]*)?$/.test(address)) throw new EngineError('the address of the service must begin with https:// — or be a proxy on that machine, http://127.0.0.1:…');
+    const dir = this.accountFolder(host, p.dir, ({ zai: '~/.claude-zai', deepseek: '~/.claude-deepseek', openai: '~/.claude-openai', custom: '~/.claude-other' } as const)[p.provider]);
     let res: { account: AccountInfo };
     try {
       res = await this.core.agents.rpc<{ account: AccountInfo }>(hostId, { method: 'claude.provider', params: { dir, provider: p.provider, token, ...(p.baseUrl ? { baseUrl: String(p.baseUrl) } : {}), ...(p.models ? { models: p.models } : {}) } }, 15_000);

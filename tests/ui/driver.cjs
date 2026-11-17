@@ -2629,6 +2629,21 @@ async function scenario() {
     if (!zai.add || zai.fields !== 1) throw new Error(`the Z.AI form: Add disabled without a key ${zai.add}, ${zai.fields} field(s) in sight`);
     await shot('claude-zai');
     await click(`[...window.__t.scope().querySelectorAll('[data-zai-account] button')].find((b) => b.textContent.trim() === 'Cancel')`, 'Cancel');
+    // DeepSeek asks for a key only; OpenAI for the proxy's address on the machine (filled in) and its key.
+    await waitFor(`!window.__t.scope().querySelector('[data-zai-account]')`, 4000);
+    await click(`[...window.__t.scope().querySelectorAll('button')].find((b) => /^Add an account/.test(b.textContent.trim()) && !b.disabled)`, 'Add an account…');
+    await waitFor(`!!window.__t.scope().querySelector('[data-add-deepseek]') && !!window.__t.scope().querySelector('[data-add-openai]')`, 4000);
+    await click(`window.__t.scope().querySelector('[data-add-deepseek]')`, 'DeepSeek');
+    const ds = await waitFor(`(() => { const f = window.__t.scope().querySelector('[data-service-account="deepseek"]'); return f && { fields: f.querySelectorAll('.k-form > label input').length, link: !!f.querySelector('a[href*="deepseek.com"]') }; })()`, 4000);
+    if (ds.fields !== 1 || !ds.link) throw new Error(`the DeepSeek form: ${JSON.stringify(ds)}`);
+    await click(`[...window.__t.scope().querySelectorAll('[data-service-account] button')].find((b) => b.textContent.trim() === 'Cancel')`, 'Cancel');
+    await waitFor(`!window.__t.scope().querySelector('[data-service-account]')`, 4000);
+    await click(`[...window.__t.scope().querySelectorAll('button')].find((b) => /^Add an account/.test(b.textContent.trim()) && !b.disabled)`, 'Add an account…');
+    await click(`window.__t.scope().querySelector('[data-add-openai]')`, 'OpenAI');
+    const oa = await waitFor(`(() => { const f = window.__t.scope().querySelector('[data-service-account="openai"]'); return f && { url: f.querySelector('[data-service-url]')?.value, fields: f.querySelectorAll('.k-form > label input').length, add: [...f.querySelectorAll('button')].find((b) => /Add the account/.test(b.textContent)).disabled }; })()`, 4000);
+    if (oa.url !== 'http://127.0.0.1:4000' || oa.fields !== 2 || !oa.add) throw new Error(`the OpenAI form: ${JSON.stringify(oa)}`);
+    await shot('claude-openai');
+    await click(`[...window.__t.scope().querySelectorAll('[data-service-account] button')].find((b) => b.textContent.trim() === 'Cancel')`, 'Cancel');
     await close();
     // In Ava's settings her account is chosen by that name now — no folder to read.
     await open('employee', `window.__t.emp('Ava').id + ':profile'`);

@@ -35,7 +35,7 @@ Unauthenticated requests get `401`; a client WebSocket without the owner token i
 ## Claude accounts: what passes through the office
 
 - **Signing in from the office** (`ACCOUNTS.md`): the machine runs Claude Code's own sign-in in a terminal apart from the employees'; an owner's window shows its text and passes on what is typed. The office handles the address of the sign-in page and the single-use code on their way, and keeps, logs and audits neither; the token Claude Code receives stays in its folder on the machine. Owners only.
-- **An API key of another service (Z.AI)** goes from an owner's window to the machine and is written into that account's `settings.json` there (mode 600). The office does not keep it and nothing it says or records contains it (tested: `tests/e2e/51-account-sign-in.test.ts`). Anybody who can read that user's files on that machine can read the key — as with a Claude login.
+- **An API key of another service (Z.AI, DeepSeek, or the key of an OpenAI proxy on the machine)** goes from an owner's window to the machine and is written into that account's `settings.json` there (mode 600). The office does not keep it and nothing it says or records contains it (tested: `tests/e2e/51-account-sign-in.test.ts`). Anybody who can read that user's files on that machine can read the key — as with a Claude login. The address of such a service must be https; plain http only to a proxy on that very machine (localhost, 127.x, [::1]), so nothing leaves it unencrypted.
 - The office never moves an employee from one service's models to another's by itself.
 
 ## Agent permissions

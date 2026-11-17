@@ -2,6 +2,13 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-17 — Other models through Claude Code, not other runtimes (DeepSeek directly, OpenAI through a proxy)
+The owner wanted every agent to keep the same context "on another Claude account, on OpenAI, DeepSeek, Z.AI".
+- **The employee stays Claude Code**; only the model behind it changes (an account folder whose settings point Claude Code elsewhere). Everything the office gives — hooks, the fence, MCP tools, the context, approvals — is Claude Code's, so it holds on any of them with nothing new to keep in step. A second runtime (Codex CLI) would need all of that again, weaker (no compaction hook).
+- **DeepSeek directly** (it answers Anthropic's API); **OpenAI through a proxy on the machine** (LiteLLM, claude-code-router) — the office points the account at it but does not install it: it holds the OpenAI key and is the machine owner's to run.
+- **Plain http only to the machine itself.** A proxy on 127.0.0.1 has no certificate and needs none — nothing leaves the machine; anything else must be https, as before.
+- **The folder is marked `ORCH_PROVIDER=openai`**: a proxy's address does not say whose models are behind it, and failover must not move somebody from OpenAI to a Claude account.
+
 ## 2026-11-17 — The central context is given by the machine through Claude Code's hooks, as a pack with a version
 - **Hooks, not the system prompt.** The launch's prompt is written once; a session runs for days and is compacted. `SessionStart` (startup, resume, compact) and `UserPromptSubmit` are the points where a session can be told — whole when it may have lost it, the change otherwise — and Claude Code reads their `additionalContext` whatever model answers it.
 - **Answered by the machine's agent from what it holds**, as it answers the fence: no prompt waits on a round trip to the office; the office sends the pack when it changes (`session.context`).

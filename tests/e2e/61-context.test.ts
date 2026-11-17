@@ -146,11 +146,13 @@ test('who may write what: a colleague writes the office\'s and a project\'s fact
   assert.equal((await as(mila, 'POST', '/context/facts', { layer: 'office', title: 'x', text: 'y' })).status, 403);
 });
 
-test('whichever Claude account an employee runs on (another config folder, as a Z.AI account is), the same context reaches them — and whole again after a compaction', async () => {
+test('whichever account an employee runs on — here a DeepSeek one, as the machine sees it — the same context reaches them, and whole again after a compaction', async () => {
   // (An account folder lives in the home folder, as the office's own accounts do.)
   const other = fs.mkdtempSync(path.join(os.homedir(), '.claude-ctx-test-'));
   after(() => fs.rmSync(other, { recursive: true, force: true }));
-  fs.writeFileSync(path.join(other, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'second@example.test', organizationName: 'Org' } }));
+  // As the office sets up a DeepSeek account (the scripted stand-in does not call out; Claude Code would, to DeepSeek).
+  fs.writeFileSync(path.join(other, 'settings.json'), JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic', ANTHROPIC_AUTH_TOKEN: 'ds-test-key', ANTHROPIC_DEFAULT_SONNET_MODEL: 'deepseek-chat' } }));
+  fs.writeFileSync(path.join(other, '.claude.json'), JSON.stringify({ hasCompletedOnboarding: true }));
   const ben = await h.employee('Ben', 'backend', { projectId, workingDir: h.makeRepo('ctx-ben'), autonomy: 'auto', claudeConfigDir: other });
   await h.api('POST', `/employees/${ben.id}/start`, {});
   await waitFor(async () => (await h.session(ben.id))?.status === 'running', { label: 'Ben at work', timeout: 20_000 });
@@ -161,4 +163,8 @@ test('whichever Claude account an employee runs on (another config folder, as a 
   assert.match(compacted, /^\[compact\]\n# The office's central context[\s\S]*Shop stack/);
   const s = (await ctx()).sessions.find((x: any) => x.name === 'Ben');
   assert.equal(s.holds, s.current);
+  const dir = `~/${path.basename(other)}`;
+  await h.api('POST', `/hosts/${h.hostId}/accounts`, { dir });
+  const row = await waitFor(async () => (await h.api<any[]>('GET', '/usage')).find((r) => r.configDir === dir && r.provider), { label: 'the account is known', timeout: 15_000 });
+  assert.deepEqual([row.provider, row.endpoint], ['deepseek', 'api.deepseek.com'], 'the office knows Ben is on DeepSeek');
 });

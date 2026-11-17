@@ -121,6 +121,26 @@ test('a Z.AI account: the key is written into the account\'s own folder on the m
   for (const bad of [{ provider: 'zai', token: '' }, { provider: 'zai', token: 'two words' }, { provider: 'custom', token: KEY, baseUrl: 'http://plain.example.test' }, { provider: 'zai', token: KEY, dir: '../etc' }]) assert.equal((await h.apiRaw('POST', `/hosts/${h.hostId}/accounts/provider`, bad)).status, 400, JSON.stringify(bad).replace(KEY, '…'));
 });
 
+test('DeepSeek and OpenAI (through a proxy on the machine) are accounts of the same kind: their own folder, their key only there, known by their service', async () => {
+  const ds = await h.api<any>('POST', `/hosts/${h.hostId}/accounts/provider`, { provider: 'deepseek', token: KEY });
+  assert.deepEqual([ds.dir, ds.provider, ds.endpoint, ds.loggedIn], ['~/.claude-deepseek', 'deepseek', 'api.deepseek.com', true]);
+  const dsEnv = JSON.parse(fs.readFileSync(path.join(home, '.claude-deepseek', 'settings.json'), 'utf8')).env;
+  assert.equal(dsEnv.ANTHROPIC_BASE_URL, 'https://api.deepseek.com/anthropic');
+  assert.deepEqual([dsEnv.ANTHROPIC_DEFAULT_OPUS_MODEL, dsEnv.ANTHROPIC_DEFAULT_SONNET_MODEL, dsEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL], ['deepseek-chat', 'deepseek-chat', 'deepseek-chat'], 'their model for all three names unless the owner names others');
+  // OpenAI: Claude Code speaks to a proxy on that machine (plain http is allowed there, and only there).
+  const oa = await h.api<any>('POST', `/hosts/${h.hostId}/accounts/provider`, { provider: 'openai', token: KEY, baseUrl: 'http://127.0.0.1:4000', models: { opus: 'gpt-big', sonnet: 'gpt-mid', haiku: 'gpt-small' } });
+  assert.deepEqual([oa.dir, oa.provider, oa.endpoint], ['~/.claude-openai', 'openai', '127.0.0.1']);
+  const oaEnv = JSON.parse(fs.readFileSync(path.join(home, '.claude-openai', 'settings.json'), 'utf8')).env;
+  assert.deepEqual([oaEnv.ANTHROPIC_BASE_URL, oaEnv.ANTHROPIC_AUTH_TOKEN, oaEnv.ANTHROPIC_DEFAULT_OPUS_MODEL, oaEnv.ORCH_PROVIDER], ['http://127.0.0.1:4000', KEY, 'gpt-big', 'openai']);
+  assert.equal(fs.statSync(path.join(home, '.claude-openai', 'settings.json')).mode & 0o777, 0o600);
+  assert.deepEqual([(await account('~/.claude-deepseek')).provider, (await account('~/.claude-openai')).provider], ['deepseek', 'openai']);
+  for (const [what, value] of [['usage', await usage()], ['state', await h.state()], ['audit', await h.api('GET', '/audit')]] as const) assert.ok(!JSON.stringify(value).includes(KEY), `the key is not in ${what}`);
+  // Plain http anywhere but this machine is refused; so is an unknown service.
+  for (const bad of [{ provider: 'openai', token: KEY, baseUrl: 'http://proxy.example.test:4000' }, { provider: 'openai', token: KEY }, { provider: 'deepseek', token: '' }, { provider: 'gemini', token: KEY }]) assert.equal((await h.apiRaw('POST', `/hosts/${h.hostId}/accounts/provider`, bad)).status, 400, JSON.stringify(bad).replace(KEY, '…'));
+  // Off the list again, so the tests after this see the accounts they expect.
+  for (const dir of ['~/.claude-deepseek', '~/.claude-openai']) await h.api('DELETE', `/hosts/${h.hostId}/accounts?dir=${encodeURIComponent(dir)}`);
+});
+
 test('an employee put on the Z.AI account runs with that folder; nobody is moved to it or off it by the office', async () => {
   // Alex works on the default login, which then runs out. The only other account with room is Z.AI's: Alex stays.
   // (The second Claude account would take him; it is taken off the list first, so that only Z.AI is left.)

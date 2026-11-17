@@ -22,6 +22,7 @@ import type {
   Project,
   RadioNow,
   RentFence,
+  ServiceProvider,
   Question,
   Routine,
   SessionCapabilities,
@@ -168,7 +169,7 @@ export type AgentRpc =
    */
   | { method: 'claude.login'; params: { op: 'start' | 'screen' | 'input' | 'stop'; dir: string | null; text?: string; key?: string; email?: string } }
   /** Make a config folder an account of another service (Z.AI): its address and key go into that folder's own settings, on the machine. Answers with `{ account: AccountInfo }`. */
-  | { method: 'claude.provider'; params: { dir: string; provider: 'zai' | 'custom'; token: string; baseUrl?: string; models?: { opus?: string; sonnet?: string; haiku?: string } } }
+  | { method: 'claude.provider'; params: { dir: string; provider: ServiceProvider; token: string; baseUrl?: string; models?: { opus?: string; sonnet?: string; haiku?: string } } }
   /** A piece of a file for an employee on this machine (a task's attachment). Kept in the agent's own folder; answers with its path there. */
   | { method: 'files.put'; params: { folder: string; name: string; offset: number; dataBase64: string; last: boolean } }
   /** A piece of a file an employee on this machine leaves as evidence. Read only from the allowed roots, the agent's own folders and the temp folder. */

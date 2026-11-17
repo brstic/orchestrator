@@ -139,6 +139,13 @@ export function query({ prompt, options }) {
     return text;
   }
 
+  /** What this session was given as context (the hooks' additionalContext), as fake-claude keeps it. */
+  const contextSeen = [];
+  const noteContext = (out, when) => {
+    const add = out?.hookSpecificOutput?.additionalContext;
+    if (typeof add === 'string' && add) contextSeen.push(`[${when}]\n${add}`);
+  };
+
   async function runDirectives(text) {
     let last = 'Understood.';
     for (const [, block] of text.matchAll(/@@fake:([\s\S]*?)@@/g)) {
@@ -161,6 +168,12 @@ export function query({ prompt, options }) {
             return { content: `wrote ${i.file_path}` };
           });
         } else if (verb === 'bash') await bash(rest);
+        else if (verb === 'ctx') fs.writeFileSync(path.join(cwd, rest), contextSeen.join('\n\n---\n\n') + '\n');
+        else if (verb === 'compact') {
+          // The SDK compacts the conversation: what was in it is gone, and SessionStart(compact) runs.
+          contextSeen.length = 0;
+          noteContext(await hook('SessionStart', { source: 'compact' }), 'compact');
+        }
         else if (verb === 'commit') await bash(`git add -A && git commit -q -m ${JSON.stringify(rest || 'work')}`);
         else if (verb === 'mcp') await orchestrator(parts[0], rest.slice(parts[0].length).trim() ? JSON.parse(rest.slice(parts[0].length).trim()) : {});
         else if (verb === 'ask') last = await orchestrator('ask_boss', { question: rest, context: 'asked by the test fixture', why: 'the scripted task needs it', options: [{ label: 'Option A' }, { label: 'Option B' }] });
@@ -181,7 +194,7 @@ export function query({ prompt, options }) {
     abort = new AbortController();
     turns++;
     transcript({ type: 'user', message: { role: 'user', content: text } });
-    await hook('UserPromptSubmit', { prompt: text });
+    noteContext(await hook('UserPromptSubmit', { prompt: text }), 'prompt');
     let last = await runDirectives(text);
     for (let depth = 0; depth < 6; depth++) {
       emit({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: last }] } });

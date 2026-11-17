@@ -510,70 +510,97 @@ function SignIn({ host, dir, fresh = false, onClose }: { host: Host; dir: string
   );
 }
 
+type Service = 'zai' | 'deepseek' | 'openai';
+/** What the window says about each service an account can run on (Claude Code with another service's models). */
+const SERVICES: Record<Service, { name: string; what: string; keyFrom: { href: string; label: string } | null; proxy: boolean; modelHint: string; models: string }> = {
+  zai: { name: 'Z.AI', what: "Claude Code can run on Z.AI's GLM models instead of Anthropic's (their GLM Coding Plan).", keyFrom: { href: 'https://z.ai/manage-apikey/apikey-list', label: 'z.ai → API keys' }, proxy: false, modelHint: "a model's name at Z.AI", models: 'Z.AI chooses when these are empty' },
+  deepseek: { name: 'DeepSeek', what: "Claude Code can run on DeepSeek's models: DeepSeek answers Claude Code itself (its Anthropic-compatible API).", keyFrom: { href: 'https://platform.deepseek.com/api_keys', label: 'platform.deepseek.com → API keys' }, proxy: false, modelHint: 'deepseek-chat, deepseek-reasoner…', models: 'deepseek-chat for all three when these are empty' },
+  openai: { name: 'OpenAI', what: "Claude Code can run on OpenAI's models through a proxy on the machine that speaks Anthropic's API to Claude Code and OpenAI's to OpenAI — LiteLLM or claude-code-router, set up there with your OpenAI key. The office points the account at it.", keyFrom: null, proxy: true, modelHint: 'the model name the proxy knows (gpt-…)', models: 'the proxy chooses when these are empty' },
+};
+
 /**
- * An account of Z.AI's GLM Coding Plan: Claude Code on that account talks to Z.AI's models with an API key instead
- * of a Claude login. The key is written into the account's own folder on the machine and nowhere else.
+ * An account on another service's models — Z.AI's GLM Coding Plan, DeepSeek, or OpenAI through a proxy: Claude Code
+ * on that account talks to that service with an API key instead of a Claude login. The key is written into the
+ * account's own folder on the machine and nowhere else. Everything the office gives an employee (hooks, tools, the
+ * central context) is Claude Code's, so it is the same on any of these.
  */
-function ZaiAccount({ host, onClose }: { host: Host; onClose: () => void }) {
+function ServiceAccount({ host, service, onClose }: { host: Host; service: Service; onClose: () => void }) {
+  const about = SERVICES[service];
   const [token, setToken] = useState('');
+  const [baseUrl, setBaseUrl] = useState(about.proxy ? 'http://127.0.0.1:4000' : '');
   const [models, setModels] = useState({ opus: '', sonnet: '', haiku: '' });
   const [made, setMade] = useState<AccountInfo | null>(null);
   const [busy, run] = useAction();
   const add = async () => {
     const named = models.opus.trim() || models.sonnet.trim() || models.haiku.trim();
-    const res = await run(() => api<AccountInfo>('POST', `/hosts/${host.id}/accounts/provider`, { provider: 'zai', token: token.trim(), ...(named ? { models } : {}) }));
+    const res = await run(() => api<AccountInfo>('POST', `/hosts/${host.id}/accounts/provider`, { provider: service, token: token.trim(), ...(about.proxy ? { baseUrl: baseUrl.trim() } : {}), ...(named ? { models } : {}) }));
     if (res) {
       setMade(res);
       setToken('');
     }
     await loadAccounts();
   };
+  const ready = !!token.trim() && (!about.proxy || !!baseUrl.trim());
   return (
-    <div className="k-sheet" data-zai-account>
+    <div className="k-sheet" data-zai-account={service === 'zai' ? '' : undefined} data-service-account={service}>
       <div className="k-sheet-head">
-        <div className="k-title">A Z.AI account on {host.name}</div>
+        <div className="k-title">
+          A {about.name} account on {host.name}
+        </div>
         <Button small variant="ghost" onClick={onClose}>
           {made ? 'Done' : 'Cancel'}
         </Button>
       </div>
       {made ? (
-        <div className="k-text" data-zai-made>
-          The account is there (<span className="mono">{made.dir}</span>). Put an employee on it in their settings — <b>Claude account → Z.AI</b>: their session then runs on Z.AI&apos;s models. Nobody is moved onto it or off it by the office itself.
+        <div className="k-text" data-zai-made={service === 'zai' ? '' : undefined} data-service-made={service}>
+          The account is there (<span className="mono">{made.dir}</span>). Put an employee on it in their settings — <b>Claude account → {about.name}</b>: their session then runs on {about.name}&apos;s models, with the same tools and the same central context. Nobody is moved onto it or off it by the office itself.
         </div>
       ) : (
         <form
           className="k-form"
           onSubmit={(ev) => {
             ev.preventDefault();
-            if (token.trim()) void add();
+            if (ready) void add();
           }}
         >
           <div className="k-text">
-            Claude Code can run on Z.AI&apos;s GLM models instead of Anthropic&apos;s (their <b>GLM Coding Plan</b>). It needs an API key from{' '}
-            <a href="https://z.ai/manage-apikey/apikey-list" target="_blank" rel="noopener noreferrer">
-              z.ai → API keys
-            </a>
-            . The key is written into the account&apos;s folder on {host.name} and is not kept in the office.
+            {about.what}{' '}
+            {about.keyFrom ? (
+              <>
+                It needs an API key from{' '}
+                <a href={about.keyFrom.href} target="_blank" rel="noopener noreferrer">
+                  {about.keyFrom.label}
+                </a>
+                .{' '}
+              </>
+            ) : null}
+            The key is written into the account&apos;s folder on {host.name} and is not kept in the office.
           </div>
+          {about.proxy && (
+            <label className="field">
+              <span className="field-label">The proxy&apos;s address on {host.name}</span>
+              <input className="mono" value={baseUrl} onChange={(ev) => setBaseUrl(ev.target.value)} placeholder="http://127.0.0.1:4000" spellCheck={false} aria-label="Proxy address" data-service-url />
+            </label>
+          )}
           <label className="field">
-            <span className="field-label">API key</span>
-            <input type="password" className="mono" value={token} onChange={(ev) => setToken(ev.target.value)} placeholder="Your Z.AI API key" spellCheck={false} autoComplete="off" aria-label="Z.AI API key" />
+            <span className="field-label">{about.proxy ? "The proxy's key" : 'API key'}</span>
+            <input type="password" className="mono" value={token} onChange={(ev) => setToken(ev.target.value)} placeholder={about.proxy ? 'The key the proxy expects (its master key)' : `Your ${about.name} API key`} spellCheck={false} autoComplete="off" aria-label={`${about.name} API key`} />
           </label>
-          <More summary="Which models (Z.AI chooses when these are empty)">
+          <More summary={`Which models (${about.models})`}>
             <div className="grid3" style={{ marginTop: 10 }}>
               {(['opus', 'sonnet', 'haiku'] as const).map((k) => (
                 <label key={k} className="field">
                   <span className="field-label">Instead of {k}</span>
-                  <input className="mono" value={models[k]} onChange={(ev) => setModels({ ...models, [k]: ev.target.value })} placeholder="a model's name at Z.AI" spellCheck={false} aria-label={`Model instead of ${k}`} />
+                  <input className="mono" value={models[k]} onChange={(ev) => setModels({ ...models, [k]: ev.target.value })} placeholder={about.modelHint} spellCheck={false} aria-label={`Model instead of ${k}`} />
                 </label>
               ))}
             </div>
             <div className="k-sub" style={{ whiteSpace: 'normal', marginTop: 8 }}>
-              An employee&apos;s model in the office is still called opus, sonnet or haiku; here you can say which of Z.AI&apos;s models each of those means (the names are in Z.AI&apos;s instructions for Claude Code).
+              An employee&apos;s model in the office is still called opus, sonnet or haiku; here you can say which of {about.name}&apos;s models each of those means.
             </div>
           </More>
           <div className="k-actions">
-            <Button small variant="primary" type="submit" disabled={busy || !token.trim()}>
+            <Button small variant="primary" type="submit" disabled={busy || !ready}>
               Add the account
             </Button>
           </div>
@@ -583,11 +610,11 @@ function ZaiAccount({ host, onClose }: { host: Host; onClose: () => void }) {
   );
 }
 
-/** Another account for a machine: a Claude subscription signed in to from here, or Z.AI with an API key. */
+/** Another account for a machine: a Claude subscription signed in to from here, or another service's models with an API key. */
 function AddAccount({ host, onClose }: { host: Host; onClose: () => void }) {
-  const [kind, setKind] = useState<'claude' | 'zai' | null>(null);
+  const [kind, setKind] = useState<'claude' | Service | null>(null);
   if (kind === 'claude') return <SignIn host={host} dir={null} fresh onClose={onClose} />;
-  if (kind === 'zai') return <ZaiAccount host={host} onClose={onClose} />;
+  if (kind) return <ServiceAccount host={host} service={kind} onClose={onClose} />;
   return (
     <div className="k-sheet" data-add-account>
       <div className="k-sheet-head">
@@ -604,6 +631,14 @@ function AddAccount({ host, onClose }: { host: Host; onClose: () => void }) {
         <button className="k-option" onClick={() => setKind('zai')} data-add-zai>
           <strong>Z.AI — GLM Coding Plan</strong>
           <span>Claude Code running on Z.AI&apos;s models, with an API key from z.ai. For employees you choose to put on it.</span>
+        </button>
+        <button className="k-option" onClick={() => setKind('deepseek')} data-add-deepseek>
+          <strong>DeepSeek</strong>
+          <span>Claude Code running on DeepSeek&apos;s models, with an API key from DeepSeek. For employees you choose to put on it.</span>
+        </button>
+        <button className="k-option" onClick={() => setKind('openai')} data-add-openai>
+          <strong>OpenAI — through a proxy</strong>
+          <span>Claude Code running on OpenAI&apos;s models through LiteLLM or claude-code-router on that machine. For employees you choose to put on it.</span>
         </button>
       </div>
     </div>

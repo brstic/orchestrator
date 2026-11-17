@@ -189,3 +189,30 @@ test('the terminal is still a real, streamed terminal in the office', async () =
   await waitFor(() => /SDK-managed Claude worker/.test(boss.terminal(sessionId)) || /totals added|add totals/.test(boss.terminal(sessionId)), { label: 'terminal streamed to the office' });
   boss.send({ t: 'term.close', sessionId });
 });
+
+test('the central context reaches an SDK-managed worker too: with the first prompt after a start, the change at a prompt, whole again after a compaction', async () => {
+  await idle(mira.id);
+  // A start: the runner reports it itself; what the office answered goes in with the first prompt.
+  await h.api('POST', `/employees/${mira.id}/stop`, {});
+  await h.api('POST', `/employees/${mira.id}/start`, {});
+  await idle(mira.id);
+  const fact = await h.api('POST', '/context/facts', { layer: 'office', title: 'Ledger rule', text: 'Amounts are kept in cents.' });
+  await sleep(1200); // (sent to the machine a moment after a change)
+  const ask = async (body: string, file: string) => {
+    await h.api('POST', `/employees/${mira.id}/message`, { body });
+    return waitFor(() => (fs.existsSync(path.join(repo, file)) ? fs.readFileSync(path.join(repo, file), 'utf8') : null), { label: file, timeout: 20000 });
+  };
+  const first = await ask('@@fake: ctx sdk-first.txt; say ok@@', 'sdk-first.txt');
+  assert.match(first, /^\[prompt\]\n# The office's central context[\s\S]*Amounts are kept in cents/, 'the whole pack, with the first prompt');
+  await idle(mira.id);
+  await h.api('PATCH', `/context/facts/${fact.id}`, { text: 'Amounts are kept in whole cents, never floats.' });
+  await sleep(1200);
+  const change = await ask('@@fake: ctx sdk-change.txt; say ok@@', 'sdk-change.txt');
+  assert.match(change, /never floats/);
+  assert.doesNotMatch(change.split('---').pop()!, /^\[prompt\]\n# The office's central context\n/m, 'only the change, not the whole pack again');
+  await idle(mira.id);
+  const compacted = await ask('@@fake: compact; ctx sdk-compact.txt; say ok@@', 'sdk-compact.txt');
+  assert.match(compacted, /^\[compact\]\n# The office's central context[\s\S]*never floats/);
+  const held = (await h.api<any>('GET', '/context')).sessions.find((x: any) => x.name === 'Mira');
+  assert.equal(held.holds, held.current);
+});

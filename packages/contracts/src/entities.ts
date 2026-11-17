@@ -1765,7 +1765,14 @@ export interface LimitWindow {
  * Plan with an API key (`zai`), or another service that speaks the same protocol (`custom`). An account is a Claude
  * config folder either way; for the last two the folder's `settings.json` names the service and holds the key.
  */
-export type AccountProvider = 'anthropic' | 'zai' | 'custom';
+/**
+ * Whose models a Claude account folder talks to: Anthropic's (a Claude login), or another service's through Claude Code
+ * — Z.AI and DeepSeek (both answer Anthropic's API themselves), OpenAI (through a proxy on the machine that speaks
+ * Anthropic's API, e.g. LiteLLM or claude-code-router), or any other address (`custom`).
+ */
+export type AccountProvider = 'anthropic' | 'zai' | 'deepseek' | 'openai' | 'custom';
+/** The services an account of another provider can be set up for from the office. */
+export type ServiceProvider = Exclude<AccountProvider, 'anthropic'>;
 
 /** What a machine says about one of its Claude config folders (`claude.accounts`, `claude.login`, `claude.provider`). */
 export interface AccountInfo {
