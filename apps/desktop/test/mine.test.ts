@@ -101,3 +101,13 @@ test('the Inbox on "Mine": what my employees ask, what is stuck on my tasks, pro
   const only = needsYou(questions, notifications, (x) => waitsForMe(hosts, fenix, x as any, things));
   assert.deepEqual([only.count, only.questions.map((q) => q.id), only.stuck.map((n) => n.id)], [2, ['q1'], ['n2']]);
 });
+
+test('what an employee wrote to me is mine and needs me, whoever the employee is; dismissed, it does not', () => {
+  const things = { employees, tasks: {}, projects } as any;
+  // A shared employee wrote to Fenix: the office sent it to Fenix only, so in their Inbox it is theirs.
+  const note = { id: 'n1', kind: 'message', severity: 'info', title: 'Ava: the deploy is ready', body: 'The deploy is ready.', employeeId: 'b', sessionId: null, taskId: null, projectId: 'po', questionId: null, hostId: null, createdAt: '2026-11-18T00:00:00.000Z', readAt: null, resolvedAt: null, for: ['#owners'] } as any;
+  assert.equal(waitsForMe(hosts, fenix, note, things), true);
+  assert.equal(waitsForMe(hosts, fenix, { ...note, for: undefined }, things), false, 'the office\'s own news about a shared employee is not');
+  assert.equal(needsYou({}, { n1: note }).count, 1);
+  assert.equal(needsYou({}, { n1: { ...note, resolvedAt: '2026-11-18T00:01:00.000Z' } }).count, 0);
+});

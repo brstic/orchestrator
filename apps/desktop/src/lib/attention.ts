@@ -1,7 +1,7 @@
 import type { Notification, NotificationKind, Question } from '@orchestrator/contracts';
 
-/** Notification kinds that mean someone is stuck until a person acts. */
-export const NEEDS_KINDS = new Set<NotificationKind>(['blocked', 'review', 'merge_conflict', 'session_lost', 'host_disconnected', 'host_resources', 'security']);
+/** Notification kinds that mean someone is stuck until a person acts — and what an employee wrote to this person (`message`). */
+export const NEEDS_KINDS = new Set<NotificationKind>(['blocked', 'review', 'merge_conflict', 'session_lost', 'host_disconnected', 'host_resources', 'security', 'message']);
 
 /**
  * What needs you: open questions and approvals, and unresolved notifications of the kinds above.

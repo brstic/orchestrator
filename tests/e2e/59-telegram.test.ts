@@ -105,6 +105,19 @@ test('her question comes to Telegram, and a reply to it answers it', async () =>
   await tg.waitSent((s) => s.method === 'editMessageText' && s.body.message_id === asked.messageId && /Answered: Yes, Friday morning/.test(s.body.text));
 });
 
+test('what she writes to the boss (message_person) comes to Telegram as well, from her own bot', async () => {
+  tg.message(TOKEN, ME, 'Tell me when the notes are ready @@fake: mcp message_person {"to":"boss","message":"The release notes are ready for you to read.","urgent":true}; say wrote-to-the-boss@@');
+  await tg.waitSent(textTo(ME.id, /^❗ The release notes are ready for you to read\.$/), 30_000);
+  const n = (await h.state()).notifications.find((x) => x.kind === 'message' && x.employeeId === kira.id)!;
+  assert.deepEqual([n.for, n.severity, n.title], [['#owners'], 'warning', 'Kira · urgent: The release notes are ready for you to read.']);
+  await tg.waitSent(textTo(ME.id, /wrote-to-the-boss/));
+  // Read in the office, it is not sent again.
+  const before = tg.sent.filter(textTo(ME.id, /release notes are ready/)).length;
+  await h.api('POST', '/notifications/read', { ids: [n.id] });
+  await sleep(500);
+  assert.equal(tg.sent.filter(textTo(ME.id, /release notes are ready/)).length, before);
+});
+
 test('a permission request comes with Allow and Deny; a button decides it, as the person who paired', async () => {
   const project = (await h.state()).projects.find((p) => p.name === 'Shop')!;
   const standard = await h.employee('Lio', 'devops', { autonomy: 'standard', projectId: project.id });

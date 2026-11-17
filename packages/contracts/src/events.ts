@@ -65,6 +65,8 @@ export type EventType =
   | 'agent.permission_decided'
   | 'agent.message'
   | 'agent.message_delivered'
+  // An employee wrote to a person of the office (`message_person`): data { to, notificationId, urgent }. Only who, not what.
+  | 'agent.message_to_person'
   | 'agent.status_report'
   | 'agent.collaboration_requested'
   | 'agent.collaboration_resolved'

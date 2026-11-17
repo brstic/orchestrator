@@ -508,8 +508,10 @@ test('people see each other in the office and can talk', async () => {
   const mila = join(invites.Mila!.t);
   const jovan = join(invites.Jovan!.t);
   const ready = await mila.until('ready');
-  assert.deepEqual(ready.me, { kind: 'guest', role: 'visitor', name: 'Mila', id: guestIds.Mila });
-  assert.deepEqual((await jovan.until('ready')).me, { kind: 'guest', role: 'colleague', name: 'Jovan', id: guestIds.Jovan });
+  // (With their character — none made yet — and the colour the office gives them: CHARACTER.md.)
+  const who = (me: any) => ({ ...me, hue: typeof me.hue === 'number' ? 'a colour' : me.hue });
+  assert.deepEqual(who(ready.me), { kind: 'guest', role: 'visitor', name: 'Mila', id: guestIds.Mila, look: null, hue: 'a colour' });
+  assert.deepEqual(who((await jovan.until('ready')).me), { kind: 'guest', role: 'colleague', name: 'Jovan', id: guestIds.Jovan, look: null, hue: 'a colour' });
   boss.send({ t: 'presence', x: 1, z: 2, rot: 0.5, moving: false } as any);
   mila.send({ t: 'presence', x: -3, z: 4, rot: 1, moving: true });
   jovan.send({ t: 'presence', x: 9999, z: Number.NaN, rot: 0, moving: false });

@@ -1,5 +1,5 @@
 import type { AgentSession, Employee, Task } from '@orchestrator/contracts';
-import { ACTIVITY_LABEL, reviewByOf, truncate } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, FOR_OWNERS, reviewByOf, truncate } from '@orchestrator/contracts';
 import type { McpServerOptions, McpToolHandler } from '@orchestrator/integrations';
 import { BOARD_TOOLS, FILE_TOOLS, FOREMAN_TOOLS, LEAD_TOOLS, MEMORY_TOOLS, ORCHESTRATOR_TOOLS, VAULT_TOOLS } from '@orchestrator/integrations';
 import type { Engine } from './engine.ts';
@@ -237,6 +237,50 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       if (late) return late;
       const task = await eng.tasks.submitReview(employee, String(a.task), a.verdict, String(a.comments));
       return a.verdict === 'approve' ? `Approved. ${task.key} is now ${task.status}.` : `Changes requested. ${task.key} goes back to ${core.employees.get(task.assigneeId)?.name ?? 'its author'} with your comments.`;
+    },
+
+    message_person: async (a, { employee }) => {
+      const text = String(a.message ?? '').trim();
+      if (!text) return err('Write the message in "message".');
+      const plain = (x: string) => x.normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const want = plain(String(a.to ?? '')).replace(/^@/, '');
+      const people = eng.comms.people();
+      // On a member's own computer what is said stays with that member: they are the only one to write to.
+      const member = eng.hosts.memberOfHost(employee.hostId);
+      let to: { for: string[]; name: string } | null = null;
+      if (member) {
+        const them = people.find((p) => p.id === member);
+        if (!them) return err('The member whose computer you work on is not in the office now. Nothing was sent.');
+        if (['boss', 'the boss', 'owner', 'owners', plain(them.name), plain(them.name).split(' ')[0]].includes(want)) to = { for: [them.id], name: them.name };
+        else return err(`You work on ${them.name}'s own computer: what you write goes to ${them.name} only. Write to "${them.name}". Nothing was sent.`);
+      } else if (['boss', 'the boss', 'owner', 'owners'].includes(want)) {
+        to = { for: [FOR_OWNERS], name: 'the boss' };
+      } else {
+        const exact = people.filter((p) => plain(p.name) === want);
+        const first = exact.length ? exact : people.filter((p) => plain(p.name).split(' ')[0] === want);
+        if (first.length === 1) to = { for: [first[0]!.id], name: first[0]!.name };
+        else {
+          const names = ['the boss', ...people.filter((p) => p.id !== 'owner').map((p) => p.name)];
+          return err(`${first.length > 1 ? `More than one person is called "${a.to}"; write the whole name.` : `Nobody in the office is called "${a.to}" (an employee? use send_message).`} You can write to: ${names.join(', ')}. Nothing was sent.`);
+        }
+      }
+      const many = tooMany(employee, 'message to a person', 20);
+      if (many) return err(many);
+      const urgent = a.urgent === true;
+      const task = eng.tasks.currentTask(employee.id);
+      const firstLine = text.split('\n').find((l) => l.trim())!.trim();
+      const note = eng.comms.notify({
+        kind: 'message',
+        severity: urgent ? 'warning' : 'info',
+        title: `${employee.name}${urgent ? ' · urgent' : ''}: ${truncate(firstLine, 110)}`,
+        body: truncate(text, 4000),
+        employeeId: employee.id,
+        taskId: task?.id ?? null,
+        projectId: employee.projectId,
+        for: to.for,
+      });
+      core.event({ type: 'agent.message_to_person', source: 'mcp', summary: `${employee.name} wrote to ${to.name}`, employeeId: employee.id, taskId: task?.id ?? null, projectId: employee.projectId, data: { to: to.name, notificationId: note.id, urgent } });
+      return `Sent to ${to.name}: it is in their Inbox${urgent ? ', marked urgent' : ''}, and on Telegram if they talk to you there. If they answer, it comes to you as a message — carry on meanwhile.`;
     },
 
     send_message: async (a, { employee }) => {
@@ -662,7 +706,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
   const leadTools = new Set(LEAD_TOOLS.map((t) => t.name));
   // What a lead is shown besides its own tools: how it asks its boss and hears back, and how colleagues reach it. Nothing
   // about tasks of its own — it has none — so that its every turn carries as little as possible.
-  const LEAD_ALSO = new Set(['ask_boss', 'wait_for_answer', 'report_status', 'send_message', 'check_messages', 'respond_to_request']);
+  const LEAD_ALSO = new Set(['ask_boss', 'wait_for_answer', 'report_status', 'send_message', 'message_person', 'check_messages', 'respond_to_request']);
   const boardTools = new Set(BOARD_TOOLS.map((t) => t.name));
   const memoryTools = new Set(MEMORY_TOOLS.map((t) => t.name));
   return {

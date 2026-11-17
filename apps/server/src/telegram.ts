@@ -22,8 +22,8 @@
  */
 import crypto from 'node:crypto';
 import { EngineError, type Engine } from '@orchestrator/orchestration';
-import type { Question } from '@orchestrator/contracts';
-import { ACTIVITY_LABEL } from '@orchestrator/contracts';
+import type { Notification, Question } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, notificationFor } from '@orchestrator/contracts';
 import type { Storage } from '@orchestrator/database';
 
 /** Who may use an employee's bot is decided as for anything else in the office: by the server (`access.ts`). */
@@ -235,6 +235,7 @@ export class Telegram {
     });
     core.bus.on('entity', (kind: string, op: string, data: unknown) => {
       if (kind === 'question' && op === 'upsert') void this.question(data as Question);
+      if (kind === 'notification' && op === 'upsert') void this.personMessage(data as Notification);
       if (kind === 'employee' && op === 'remove') void this.disconnect((data as { id: string }).id);
     });
   }
@@ -720,6 +721,27 @@ export class Telegram {
     }
     if (out.length) this.sent.set(q.id, out);
   }
+
+  /**
+   * What an employee wrote to a person (`message_person`): also sent by that employee's own bot, privately, to the
+   * people it is for who talk to it there. A reply in that chat goes to the employee, as everything said there does.
+   */
+  private async personMessage(n: Notification): Promise<void> {
+    if (n.kind !== 'message' || !n.employeeId || !n.for?.length || n.readAt || this.toldPeople.has(n.id)) return;
+    // (Only as it is written: not again when the office starts, or when it is read.)
+    if (Date.now() - Date.parse(n.createdAt) > 120_000) return;
+    const b = this.bots.get(n.employeeId);
+    if (!b) return;
+    this.toldPeople.add(n.id);
+    if (this.toldPeople.size > 2000) this.toldPeople.clear();
+    for (const p of b.people) {
+      const who = this.deps.mayWork(p.as.id, n.employeeId);
+      if (!who || !notificationFor(n, { id: who.id, owner: who.owner })) continue;
+      await this.call(this.token(b), 'sendMessage', { chat_id: p.chatId, text: `${n.severity === 'warning' ? '❗ ' : ''}${n.body}`.slice(0, TELEGRAM_LIMITS.textChars) }).catch(() => undefined);
+    }
+  }
+  /** The messages to people already sent on (`personMessage`). */
+  private readonly toldPeople = new Set<string>();
 
   private async button(b: Bot, cb: Record<string, any>): Promise<void> {
     const reply = (text: string) => this.call(this.token(b), 'answerCallbackQuery', { callback_query_id: cb.id, text }).catch(() => undefined);

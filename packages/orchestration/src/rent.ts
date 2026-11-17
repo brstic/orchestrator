@@ -51,6 +51,8 @@ const RENT_TOOLS = new Set([
   'report_progress',
   'ask_boss',
   'wait_for_answer',
+  // (It waits for nothing, so also on a rental that never waits for the office; the rate limit keeps it rare.)
+  'message_person',
   'comment_on_task',
   'report_blocker',
   'complete_task',

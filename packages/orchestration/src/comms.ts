@@ -273,6 +273,7 @@ export class Comms {
     projectId?: string | null;
     questionId?: string | null;
     hostId?: string | null;
+    for?: string[];
   }): Notification {
     const note: Notification = {
       id: newId(),
@@ -289,6 +290,7 @@ export class Comms {
       createdAt: nowIso(),
       readAt: null,
       resolvedAt: null,
+      ...(n.for?.length ? { for: n.for } : {}),
     };
     return this.core.put('notification', note);
   }
@@ -308,6 +310,13 @@ export class Comms {
     this.notify({ kind: 'security', severity: a.severity ?? 'warning', title: a.title, body: a.body, employeeId: a.employeeId ?? null, sessionId: a.sessionId ?? null, hostId: a.hostId ?? null, projectId: a.projectId ?? null });
     return true;
   }
+
+  /**
+   * The people of the office an employee may write to (`message_person`): the owners and colleagues who are in now —
+   * not visitors, not anyone revoked or run out. The office's members are the server's to know (apps/server sets this).
+   * `id`: the member's id, `'owner'` for the root owner.
+   */
+  people: () => Array<{ id: string; name: string; owner: boolean }> = () => [];
 
   resolveNotifications(match: (n: Notification) => boolean): void {
     for (const n of this.core.notifications.filter((x) => !x.resolvedAt && match(x))) {

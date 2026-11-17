@@ -270,6 +270,20 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
     inputSchema: { type: 'object', properties: { to: str('Teammate name'), message: str('The message') }, required: ['to', 'message'] },
   },
   {
+    name: 'message_person',
+    description:
+      'Write straight to a person of the office — the boss, or a colleague (a person, not an employee) by name — when something needs their attention now, or when you were asked to tell them something. It lands in their Inbox, and on Telegram where they talk to you there. It does not wait for an answer: if they answer, it comes to you as a message. For a decision you cannot go on without, use ask_boss; for an employee, send_message. Use it sparingly: every one interrupts a person.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to: str('"boss" (every owner of the office), or the name of a person, e.g. "Ana"'),
+        message: str('What they should know or do — whole, so that it can be read without your terminal'),
+        urgent: { type: 'boolean', description: 'Only when it cannot wait: it is marked as needing their attention' },
+      },
+      required: ['to', 'message'],
+    },
+  },
+  {
     name: 'request_collaboration',
     description:
       'Ask a teammate for something you need from them (an endpoint, a contract, a fix, information). They must respond: incorporate it, turn it into a task, report a dependency, or escalate. If you cannot go on without their answer, set wait to true: the call then stays open until they answer (a few minutes at most) and returns their answer.',

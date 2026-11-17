@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { ROLE_CATALOGUE, type Host, stripEnd } from '@orchestrator/contracts';
+import { ROLE_CATALOGUE, notificationFor, type Host, type Notification, stripEnd } from '@orchestrator/contracts';
 import { NotFoundError, PgStore, Store, generateToken, type Storage } from '@orchestrator/database';
 import { handleMcpPost } from '@orchestrator/integrations';
 import { CONTEXT_STRAIGHT_IN, Engine, EngineError, type Timings, SaidFiles } from '@orchestrator/orchestration';
@@ -257,6 +257,15 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     },
   });
   telegram.start();
+  // Whom an employee may write to (`message_person`): the owners and colleagues who are in now.
+  engine.comms.people = () => [
+    { id: 'owner', name: engine.core.settings.ownerName || 'the boss', owner: true },
+    ...guests
+      .list()
+      .map((g) => personNow(g.id))
+      .filter((w): w is Who => !!w && w.role !== 'visitor')
+      .map((w) => ({ id: w.id, name: w.name, owner: w.kind === 'owner' })),
+  ];
   // Whose machines may connect: a member who is still here, is more than a visitor, and whose time is not up.
   engine.hosts.memberInGoodStanding = (memberId) => {
     const g = guests.get(memberId);
@@ -1116,12 +1125,20 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       const who = whoOf(req);
       return engine.comms.answer(param(req, 'id'), body(req), who.id === 'owner' ? 'owner' : `member:${who.name}`);
     });
+    // (Only what is for this person: "Mark all read" in one Inbox leaves somebody else's messages unread in theirs.)
+    const forThem = (req: FastifyRequest) => {
+      const who = whoOf(req);
+      return (n: Notification) => notificationFor(n, { id: who.id, owner: who.kind === 'owner' });
+    };
     api.post('/notifications/read', async (req) => {
-      engine.comms.markRead(body(req).ids ?? 'all');
+      const ids = body(req).ids;
+      const mine = forThem(req);
+      engine.comms.markRead(engine.core.notifications.filter((n) => !n.readAt && mine(n) && (!Array.isArray(ids) || ids.includes(n.id))).map((n) => n.id));
       return { ok: true };
     });
     api.post('/notifications/:id/resolve', async (req) => {
-      engine.comms.resolveNotifications((n) => n.id === param(req, 'id'));
+      const mine = forThem(req);
+      engine.comms.resolveNotifications((n) => n.id === param(req, 'id') && mine(n));
       return { ok: true };
     });
     api.post('/meetings', async (req) => engine.meetings.create(body(req) as any));

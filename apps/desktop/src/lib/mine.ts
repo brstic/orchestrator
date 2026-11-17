@@ -69,7 +69,9 @@ type Things = { projects: Record<string, Project>; employees: Record<string, Emp
  * about a task or a project of mine, or — for news — about a machine of mine? What is about nobody in particular
  * (a sign-in alert, the office's own news) is the office's, and is found under Everyone.
  */
-export function waitsForMe(hosts: Hosts, me: Me | null, x: Pick<Question, 'employeeId' | 'taskId' | 'projectId'> & Partial<Pick<Notification, 'hostId'>>, things: Things): boolean {
+export function waitsForMe(hosts: Hosts, me: Me | null, x: Pick<Question, 'employeeId' | 'taskId' | 'projectId'> & Partial<Pick<Notification, 'hostId' | 'for'>>, things: Things): boolean {
+  // Written to somebody (an employee's message to a person): the office sends it only to them, so it is theirs.
+  if (x.for?.length) return true;
   if (x.hostId && whoseHost(hosts, me, x.hostId).kind === 'mine') return true;
   if (x.employeeId && whoseEmployee(hosts, me, things.employees[x.employeeId]).kind === 'mine') return true;
   const task = x.taskId ? things.tasks[x.taskId] : undefined;

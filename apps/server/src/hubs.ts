@@ -3,10 +3,10 @@ import crypto from 'node:crypto';
 import type { WebSocket } from 'ws';
 import { eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, mayReadRoutine, maySee, shownTo, stateFor } from './access.ts';
 import { VOICE_FRAMES_PER_SECOND, hears, validFrame } from './voice.ts';
-import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, OrchestratorEvent, PersonPresence, RadioNow, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
+import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, Notification, OrchestratorEvent, PersonPresence, RadioNow, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
 import type { Characters } from './characters.ts';
 import { hueOf, type Who } from './guests.ts';
-import { AUTONOMY_LEVELS, PROTOCOL_VERSION, ROLE_CATALOGUE, isAutonomyLevel, isEmote, matchRole, nowIso, roleByKey } from '@orchestrator/contracts';
+import { AUTONOMY_LEVELS, PROTOCOL_VERSION, ROLE_CATALOGUE, isAutonomyLevel, isEmote, matchRole, notificationFor, nowIso, roleByKey } from '@orchestrator/contracts';
 import { EngineError, FOREMAN_ROLE, type AgentLink, type Engine } from '@orchestrator/orchestration';
 
 interface AgentConn {
@@ -416,6 +416,8 @@ export class ClientHub {
    * everyone only in outline (see `access.ts`): the message as this connection gets it, or null for not at all.
    */
   private heardBy(c: ClientConn, msg: ServerToClient): ServerToClient | null {
+    // A notification addressed to some people reaches their windows only (an owner's too).
+    if (msg.t === 'entity' && msg.kind === 'notification' && msg.op === 'upsert' && !notificationFor(msg.data as Notification, { id: c.who.id, owner: c.who.kind === 'owner' })) return null;
     // An owner hears everything, except from a room its member has closed.
     if (c.who.kind === 'owner' && !this.engine.hosts.closedMembers().some((id) => id !== c.who.id)) return msg;
     // A visitor is sent each thing with only what a visitor may know of it, or not at all.
@@ -436,7 +438,7 @@ export class ClientHub {
   broadcast(msg: ServerToClient): void {
     if (!this.clients.size) return;
     const text = JSON.stringify(msg);
-    const scoped = msg.t === 'event' || (msg.t === 'entity' && (msg.kind === 'message' || msg.kind === 'question' || msg.kind === 'routine'));
+    const scoped = msg.t === 'event' || (msg.t === 'entity' && (msg.kind === 'message' || msg.kind === 'question' || msg.kind === 'routine' || (msg.kind === 'notification' && !!(msg.data as Notification).for?.length)));
     for (const c of this.clients.values()) {
       const mine = scoped || (msg.t === 'entity' && c.who.role === 'visitor') ? this.heardBy(c, msg) : msg;
       if (!mine) continue;

@@ -1121,7 +1121,22 @@ export type NotificationKind =
   | 'mention'
   | 'milestone'
   | 'improvement'
+  /** An employee wrote to a person (`message_person`): addressed — see `Notification.for`. */
+  | 'message'
   | 'info';
+
+/** `Notification.for`: every owner of the office (what an employee writes "to the boss"). */
+export const FOR_OWNERS = '#owners';
+
+/**
+ * Is this notification for that person? One without `for` is the office's own and goes to everyone who gets
+ * notifications (owners and colleagues); one with it only to whom it names — a member's id (`'owner'` for the root
+ * owner), or `FOR_OWNERS` for every owner.
+ */
+export function notificationFor(n: Pick<Notification, 'for'>, who: { id: string; owner: boolean }): boolean {
+  if (!n.for?.length) return true;
+  return n.for.includes(who.id) || (who.owner && n.for.includes(FOR_OWNERS));
+}
 
 export interface Notification {
   id: ID;
@@ -1138,6 +1153,8 @@ export interface Notification {
   createdAt: ISODate;
   readAt: ISODate | null;
   resolvedAt: ISODate | null;
+  /** Addressed to these people only (`notificationFor`); absent for the office's own notifications, which everyone gets. */
+  for?: string[];
 }
 
 // ──────────────────────────── Meetings ───────────────────────────

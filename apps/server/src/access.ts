@@ -24,7 +24,7 @@
  *
  * A route that is not listed here needs an owner: forgetting to list a new route fails closed.
  */
-import { matchRole, roleByKey, type AgentSession, type Employee, type EntityKind, type FullState, type Host, type Meeting, type Message, type OrchestratorEvent, type OwnerSettings, type Project, type Question, type Routine, type Task } from '@orchestrator/contracts';
+import { matchRole, notificationFor, roleByKey, type AgentSession, type Employee, type EntityKind, type FullState, type Host, type Meeting, type Message, type OrchestratorEvent, type OwnerSettings, type Project, type Question, type Routine, type Task } from '@orchestrator/contracts';
 import { FOREMAN_ROLE, type Engine, type OutcomesScope } from '@orchestrator/orchestration';
 
 export type Role = 'owner' | 'colleague' | 'visitor';
@@ -487,6 +487,8 @@ export function stateFor(engine: Engine, who: Who, state: FullState): FullState 
       events: state.events.map((e) => eventFor(engine, who, e)).filter((e): e is OrchestratorEvent => !!e),
     };
   }
+  // A notification addressed to some people (an employee's `message_person`) is in their state only.
+  if (state.notifications?.some((n) => n.for?.length)) state = { ...state, notifications: state.notifications.filter((n) => notificationFor(n, { id: who.id, owner: who.kind === 'owner' })) };
   // An owner reads the whole state unless some member has closed their room; then what is said there is left out for them too.
   if (who.kind === 'owner' && !engine.hosts.closedMembers().some((id) => id !== who.id)) return state;
   return { ...state, events: state.events.map((e) => eventFor(engine, who, e)).filter((e): e is OrchestratorEvent => !!e), messages: state.messages.filter((m) => mayReadMessage(engine, who, m)), questions: state.questions.filter((q) => mayReadQuestion(engine, who, q)), routines: (state.routines ?? []).filter((r) => mayReadRoutine(engine, who, r)) };

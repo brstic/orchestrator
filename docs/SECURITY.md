@@ -163,6 +163,9 @@ Who may do what is specified in [ACCESS.md](ACCESS.md) and enforced in `apps/ser
 - **Colleagues can type into shared terminals and decide permission requests of shared employees.** A colleague therefore has, in effect, shell access as the office's user on shared machines, within what Claude Code's permission rules allow. Give that role to people you would give an account on the server.
 - **Audit.** Every change a member makes is recorded as `member:<name>` with the route; answers and decisions record who gave them.
 
+## Employees writing to people
+`message_person` (`MESSAGE-PERSON.md`) puts what an employee wrote in front of a person — their Inbox and, through the employee's own bot, their Telegram. So: only owners and colleagues who are in now can be written to (no visitors, nobody revoked); an employee on a member's own computer writes to that member only; twenty in an hour at most; the notification is addressed (`Notification.for`) and filtered out of everybody else's state, live updates and read/dismiss actions; the feed records who wrote to whom, not what. What is written is the employee's words — a steered employee can still write misleading text to a person, as it can in any message.
+
 ## The vault
 Where the office keeps passwords, tokens and keys (`packages/orchestration/src/vault.ts`, `vault-detect.ts`).
 
