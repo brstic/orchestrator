@@ -133,3 +133,38 @@ test('a session stopped on purpose is a stop, not a loss — nobody is told the 
   await waitFor(async () => (await events('session.lost')).length === 1, { label: 'the loss is reported', timeout: 20000 });
   assert.deepEqual([await alerts(), (await h.state()).company.sessionsLost], [1, lostBefore + 1]);
 });
+
+test('a session that dies in the middle of a task is started again by the office and told to go on — twice, then a person is asked', async () => {
+  // Seen on the live office: a session ended at Claude Code's start-up question while working on a ticket, and the
+  // ticket stood "in progress" with nobody on it all night — the alert only said to restart the session by hand.
+  const ula = (await h.employee('Ula', 'backend', { projectId: project, autonomy: 'auto' })).id;
+  const task = await h.task({ projectId: project, title: 'Long careful change', assigneeId: ula, description: 'Wait for what is said on the ticket.' });
+  await waitFor(async () => (await h.getTask(task.id)).status === 'IN_PROGRESS' && (await h.session(ula))?.inTurn === false, { label: 'Ula is at it', timeout: 30000 });
+  const alerts = async () => (await h.state()).notifications.filter((n) => n.kind === 'session_lost' && n.employeeId === ula);
+  const toldToGoOn = async () => (await h.state()).messages.filter((m) => m.toEmployeeId === ula && m.taskId === task.id && /started it again/.test(m.body));
+  const kill = async (n: number) => {
+    const s = (await h.session(ula))!;
+    h.tmux('kill-session', '-t', s.tmuxSession!);
+    await waitFor(async () => (await alerts()).length === n, { label: `loss ${n} is reported`, timeout: 20000 });
+    return s.startedAt;
+  };
+  for (const n of [1, 2]) {
+    const before = await kill(n);
+    const back = await waitFor(async () => {
+      const s = await h.session(ula);
+      return s?.status === 'running' && s.startedAt !== before ? s : null;
+    }, { label: `started again (${n})`, timeout: 30000 });
+    assert.ok(back);
+    const told = await waitFor(async () => ((await toldToGoOn()).length === n ? toldToGoOn() : null), { label: `told to go on (${n})` });
+    assert.match(told.at(-1)!.body, new RegExp(`working on ${task.key} .*Continue ${task.key} where you left off`, 's'));
+    assert.match((await alerts()).at(-1)!.body, /The office started it again/);
+    // (Taken — acknowledged by Claude Code — before the next loss: one that was not is handed over again, as it should.)
+    await waitFor(async () => (await toldToGoOn()).every((m) => m.delivery.status === 'confirmed') && (await h.session(ula))?.inTurn === false, { label: 'Ula took it', timeout: 30000 });
+  }
+  // A third time within the half hour: not again by itself — a person looks.
+  await kill(3);
+  await sleep(3000);
+  assert.equal((await h.session(ula))!.status, 'lost', 'not started a third time');
+  assert.match((await alerts()).at(-1)!.body, /stopped 3 times.*Restart the session/s);
+  assert.equal((await h.getTask(task.id)).status, 'IN_PROGRESS');
+});

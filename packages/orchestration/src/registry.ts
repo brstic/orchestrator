@@ -75,6 +75,10 @@ function accountDirOf(raw: unknown): string | null {
 /** What somebody who names a level that is not one is told. */
 const notALevel = (value: unknown): string => `"${truncate(String(value), 40)}" is not a level: it is one of ${AUTONOMY_LEVELS.join(', ')}`;
 
+/** A session that ends in the middle of a task is started again by the office at most this many times in this window. */
+const RESTARTS_PER_WINDOW = 2;
+const RESTART_WINDOW_MS = 30 * 60_000;
+
 export class HostRegistry {
   private eng: Engine;
   private lastResourcePersist = new Map<string, number>();
@@ -1237,17 +1241,41 @@ export class SessionRegistry {
     if (employee) this.eng.comms.employeeSessionGone(employee.id);
     if (employee && !onPurpose) {
       const task = this.eng.tasks.currentTask(employee.id);
+      // In the middle of a task the office starts the session again itself, with the same conversation, and tells the
+      // employee to go on — the live office had a ticket stand "in progress" all night after its session ended. Twice
+      // in half an hour at most: a session that keeps ending is looked at by a person.
+      const now = Date.now();
+      const recent = (this.restartedFor.get(employee.id) ?? []).filter((t) => now - t < RESTART_WINDOW_MS);
+      const again = !!task && !employee.archived && recent.length < RESTARTS_PER_WINDOW;
+      if (again) {
+        recent.push(now);
+        this.restartedFor.set(employee.id, recent);
+        this.eng.comms.sendMessage({
+          from: { kind: 'system', id: null, name: 'the office' },
+          toEmployeeId: employee.id,
+          kind: 'system',
+          taskId: task.id,
+          wake: true,
+          body: `Your session stopped while you were working on ${task.key} "${truncate(task.title, 100)}" (${truncate(reason, 200)}), and the office started it again. Continue ${task.key} where you left off: first look at what is already done (git status, the last commits, the ticket), then go on.`,
+        });
+      } else this.restartedFor.set(employee.id, recent);
       this.eng.comms.notify({
         kind: 'session_lost',
-        severity: task ? 'critical' : 'warning',
+        severity: task && !again ? 'critical' : 'warning',
         title: `${employee.name} went offline`,
-        body: task ? `Their session stopped while working on ${task.key} (${reason}). Restart the session to resume the same conversation.` : `Their session stopped (${reason}).`,
+        body: !task
+          ? `Their session stopped (${reason}).`
+          : again
+            ? `Their session stopped while working on ${task.key} (${reason}). The office started it again, with the same conversation, and told them to go on with ${task.key}.`
+            : `Their session stopped while working on ${task.key} (${reason}) — it has stopped ${recent.length + 1} times in ${RESTART_WINDOW_MS / 60_000} minutes, so it is not started again by itself. Restart the session to resume the same conversation.`,
         employeeId: employee.id,
         sessionId: s.id,
         taskId: task?.id ?? null,
       });
     }
   }
+  /** When the office started each employee's session again after it ended in the middle of a task (`sessionDied`). */
+  private readonly restartedFor = new Map<string, number[]>();
 
   /** Claude accounts and what Claude Code last said about their limits, by `<host>|<config folder>`. */
   private accounts = new Map<string, AccountUsage>();

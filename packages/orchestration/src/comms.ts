@@ -889,7 +889,7 @@ export class Comms {
   // ─────────────────────────── messages ────────────────────────────
 
   /** `returned`: it is handed to the recipient as the result of a tool call of theirs that is waiting for it, so nothing is typed into their terminal. */
-  sendMessage(input: { from: Message['from']; toEmployeeId: string; body: string; kind?: MessageKind; taskId?: string | null; threadId?: string | null; routineId?: string | null; returned?: boolean; files?: Message['files']; said?: string; channel?: Message['channel']; chat?: string; clientId?: string }): Message {
+  sendMessage(input: { from: Message['from']; toEmployeeId: string; body: string; kind?: MessageKind; wake?: boolean; taskId?: string | null; threadId?: string | null; routineId?: string | null; returned?: boolean; files?: Message['files']; said?: string; channel?: Message['channel']; chat?: string; clientId?: string }): Message {
     const to = this.core.employees.require(input.toEmployeeId);
     // A credential somebody wrote into a message goes to the vault; the message goes on with its name there.
     const body = input.from.kind === 'system' || input.kind === 'system' ? input.body : this.eng.vault.capture(input.body, input.from.kind === 'employee' ? { kind: 'employee', id: input.from.id, name: input.from.name.replace(/ \(.*\)$/, '') } : { kind: 'owner', id: null, name: input.from.name.replace(/ \(.*\)$/, '') }, [to.name]).text;
@@ -928,13 +928,14 @@ export class Comms {
       correlationId: msg.threadId ?? msg.id,
       data: { messageId: msg.id, toEmployeeId: to.id, fromEmployeeId: input.from.kind === 'employee' ? input.from.id : null, kind: msg.kind, ...(msg.routineId ? { routineId: msg.routineId } : {}), ...(msg.channel === 'rent' ? { rentClientId: msg.clientId, quiet: true } : {}) },
     });
-    if (!input.returned) this.enqueueMessage(msg, true);
+    if (!input.returned) this.enqueueMessage(msg, true, !!input.wake);
     // A message that reads as a standing rule ("don't…", "from now on…") is kept as a lesson candidate.
     this.eng.improver.capture.onMessage(msg);
     return msg;
   }
 
-  private enqueueMessage(msg: Message, pump: boolean): void {
+  /** `wake`: it starts the session of an employee who has none (beside a routine's run and a request waited on). */
+  private enqueueMessage(msg: Message, pump: boolean, wake = false): void {
     const collab = msg.threadId ? this.core.collabs.get(msg.threadId) : undefined;
     this.enqueue(
       {
@@ -950,7 +951,7 @@ export class Comms {
         via: null,
         stopRequestId: null,
         // A run of a routine, and a request whose sender cannot go on without the answer, start the session of someone who has none.
-        wake: !!msg.routineId || (msg.kind === 'collab_request' && !!collab?.waited),
+        wake: wake || !!msg.routineId || (msg.kind === 'collab_request' && !!collab?.waited),
         ...(this.gathered(msg) ? { holdUntil: Date.now() + this.gathered(msg) * 1000 } : {}),
       },
       pump,
