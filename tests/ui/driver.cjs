@@ -1951,12 +1951,16 @@ async function scenario() {
 
   await step('Task panel: the owner approves a change that is waiting for review', async () => {
     await open('task', JSON.stringify(ctx.reviewTaskId));
-    await clickText('Approve');
+    // The verdict is at the side and takes two steps.
+    await clickText('Approve…');
+    await clickText('Approve and finish');
     await waitFor(`window.__t.store().tasks[${JSON.stringify(ctx.reviewTaskId)}].status === 'DONE'`, 30000);
     await close();
   });
 
   await step('A task has a conversation: the employee asks there instead of blocking, I answer, send the work back, and approve it', async () => {
+    // (Also when this step is run alone: the office may still be opening.)
+    await waitFor(`!!window.__office && window.__t.store().ready && !!window.__t.store().me`, 60000);
     // Somebody who is at their desk with nothing to do.
     const who = await js(`(() => { const st = window.__t.store(); const e = Object.values(st.employees).find((x) => !x.archived && x.roleKey !== 'foreman' && x.projectId && !st.hosts[x.hostId]?.memberId && Object.values(st.sessions).some((q) => q.employeeId === x.id && q.status === 'running' && q.inTurn === false) && !Object.values(st.tasks).some((t) => t.assigneeId === x.id && (t.status === 'IN_PROGRESS' || t.status === 'READY'))); return e ? { id: e.id, name: e.name, projectId: e.projectId } : null; })()`);
     if (!who) throw new Error('nobody is free for a ticket');
@@ -2017,15 +2021,24 @@ async function scenario() {
     await click(`(${pane}).querySelector('[data-option="Blue"]')`, 'the choice "Blue"');
     await waitFor(`${t}.status === 'REVIEW' && ${t}.reviewStage === 'boss'`, 40000);
     await waitFor(`(${pane}).querySelector('[data-compose]').dataset.compose === 'review' && [...(${pane}).querySelectorAll('[data-comment]')].map((c) => c.dataset.comment).join(',') === 'question,answer,handed_in'`, 8000);
-    // Sent back with what should change; it comes back, and is approved.
-    const sendBack = `window.__t.byText('Send back')`;
-    if (await js(`!!(${sendBack})`)) throw new Error('"Send back" is offered before anything was written');
-    await type(box, 'Make it darker. @@fake-retry: write banner.txt navy; commit darker; complete it is navy now@@');
-    await clickText('Send back');
+    // In review the box below is only for talking it over: its one button comments, and the verdict is at the side.
+    const below = await js(`[...(${pane}).querySelectorAll('.tk-compose button')].map((b) => b.textContent.trim()).filter((x) => x !== 'Attach…').join(',')`);
+    if (below !== 'Comment') throw new Error(`the box in review offers "${below}", not only "Comment"`);
+    if (!(await js(`!!(${pane}).querySelector('.tk-aside [data-verdict="closed"]')`))) throw new Error('no verdict at the side of a ticket in review');
+    await type(box, 'Why blue?');
+    await clickText('Comment');
+    await waitFor(`${t}.status === 'REVIEW' && (${t}.comments || []).some((c) => c.kind === 'note' && c.body === 'Why blue?')`, 8000);
+    // Sent back with what should change: the form at the side does not send without it.
+    await clickText('Send back…');
+    if (await js(`!!window.__t.byText('Send it back')`)) throw new Error('"Send it back" can be pressed before anything was written');
+    await type(`(${pane}).querySelector('.tk-verdict textarea')`, 'Make it darker. @@fake-retry: write banner.txt navy; commit darker; complete it is navy now@@');
+    await shot('ticket-verdict');
+    await clickText('Send it back');
     await waitFor(`${t}.status === 'REVIEW' && ${t}.attempts === 1`, 40000);
-    await waitFor(`[...(${pane}).querySelectorAll('[data-comment]')].map((c) => c.dataset.comment).join(',') === 'question,answer,handed_in,sent_back,handed_in'`, 8000);
+    await waitFor(`[...(${pane}).querySelectorAll('[data-comment]')].map((c) => c.dataset.comment).join(',') === 'question,answer,handed_in,note,sent_back,handed_in'`, 8000);
     await shot('ticket-review');
-    await clickText('Approve');
+    await clickText('Approve…');
+    await clickText('Approve and finish');
     await waitFor(`${t}.status === 'DONE'`, 30000);
     // Done is not the end: it can still be sent back from here.
     await waitFor(`(${pane}).querySelector('[data-ticket-need]').dataset.ticketNeed === 'done' && !!window.__t.scope().querySelector('.tk-compose') && [...window.__t.scope().querySelectorAll('.tk-compose button')].some((b) => b.textContent.trim() === 'Send back')`, 8000);

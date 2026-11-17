@@ -1219,3 +1219,34 @@ button.tk-person-chip:hover {
   min-width: 0;
   font-size: 12.5px;
 }
+/* The verdict on work in review, at the side (task-view.tsx, Verdict): apart from the conversation's box. */
+.tk-verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.tk-verdict-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tk-verdict-note {
+  width: 100%;
+  resize: vertical;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.tk-verdict-note:focus {
+  outline: none;
+  border-color: var(--accent);
+}

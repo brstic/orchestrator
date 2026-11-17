@@ -226,6 +226,12 @@ export class TaskTalk {
     if (task.status === 'IN_PROGRESS' && assignee && !assignee.archived) {
       this.tell(assignee, task, from, `Comment from ${said(who)} on ${task.key} "${truncate(task.title, 100)}", which you are working on:\n${comment.body}\n\nTake it into account and go on with the task. If it needs an answer, ${this.howToAnswer(task).replace(/^Answer/, 'answer')}`);
       told.add(assignee.id);
+    } else if (task.status === 'REVIEW' && assignee && !assignee.archived && !mentions.some((m) => m.kind === 'employee' && m.id !== assignee.id)) {
+      // In review the ticket is where the work is talked over before the verdict: its author is asked, and answers there.
+      // Tagging somebody else instead brings it to them only.
+      const Said = `${said(who)[0]!.toUpperCase()}${said(who).slice(1)}`;
+      this.tell(assignee, task, from, `${Said} wrote on ${task.key} "${truncate(task.title, 100)}", which you handed in and which is in review:\n${comment.body}\n\n${this.howToAnswer(task)} This is talking it over before the verdict: answer, explain, show — but do not change the work for it. If changes are wanted, the ticket is sent back to you. Then carry on with your own work.`);
+      told.add(assignee.id);
     }
     for (const m of mentions) {
       if (m.kind !== 'employee' || told.has(m.id)) continue;
@@ -346,6 +352,11 @@ export class TaskTalk {
     if (task.status === 'IN_PROGRESS' && assignee && assignee.id !== employee.id && !reached.has(assignee.id) && !this.cannotTag(employee, assignee, task)) {
       this.tell(assignee, task, from, `${employee.name} (${employee.title}) commented on ${task.key}, which you are working on:\n${comment.body}\n\nTake it into account. If it needs an answer, ${this.howToAnswer(task).replace(/^Answer/, 'answer')}`);
       told.push(assignee.name);
+    }
+    // Its author, on a ticket that waits for the boss's verdict: they are talking it over with the boss.
+    if (task.status === 'REVIEW' && task.reviewStage === 'boss' && task.assigneeId === employee.id && !told.includes('the boss')) {
+      this.eng.comms.notify({ kind: 'mention', severity: 'info', title: `${employee.name} answered on ${task.key}`, body: truncate(comment.body, 400), employeeId: employee.id, taskId: task.id, projectId: task.projectId });
+      told.push('the boss');
     }
     if (told.length) this.eng.foreman.noteMessage(employee);
     return { text: `Comment added to ${task.key}${told.length ? ` — ${told.join(', ')} ${told.length === 1 ? 'is' : 'are'} told` : ' (nobody was tagged, so nobody is told; tag @boss or a colleague when somebody should read it)'}.${notes.length ? ` ${notes.join(' ')}` : ''}` };

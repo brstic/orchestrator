@@ -256,7 +256,6 @@ function Composer({ task }: { task: Task }) {
     setAdded([]);
   };
   const comment = (ok: string) => run(() => api('POST', `/tasks/${task.id}/comments`, { body: said, attachmentIds: added.map((a) => a.id) }), ok).then(done);
-  const approve = () => run(() => api('POST', `/tasks/${task.id}/review`, { verdict: 'approve', comments: said }), `${task.key} approved`).then(done);
   const sendBack = async () => {
     if (task.status === 'DONE' && !(await ask({ title: `Send ${task.key} back?`, body: `"${task.title}"\n\nIt is opened again${task.assigneeId ? ` for ${who}` : ''} with what you wrote, and is checked and reviewed again when it is handed in. What was done so far stays as it is.`, ok: 'Send it back' }))) return;
     await run(() => api('POST', `/tasks/${task.id}/send-back`, { note: said }), task.status === 'IN_PROGRESS' ? `${who} was told` : `${task.key} sent back`).then(done);
@@ -281,9 +280,9 @@ function Composer({ task }: { task: Task }) {
     primary = { label: 'Unblock', run: unblock, need: false, variant: 'success' };
     hint = `Unblocking sends the task back to ${who} with your note.`;
   } else if (task.status === 'REVIEW') {
-    placeholder = 'A note with your approval — or what should change, to send it back';
-    primary = { label: 'Approve', run: approve, need: false, variant: 'success' };
-    hint = 'Approve lets it finish (merge included). Send back returns it to its author with what you wrote.';
+    // Here one only talks it over; the verdict is given at the side, so that it is never pressed by accident.
+    placeholder = `Ask ${who} about it, or say what you think — @ to tag somebody else`;
+    hint = `${who} reads it and answers here. Approve or send back at the side, once it is settled.`;
   }
   // What whoever asks proposed as answers (also for a question asked with `ask_boss` before comments carried them).
   const options = answering ? (question!.options?.length ? question!.options : ((question!.questionId && s.questions[question!.questionId]?.status === 'open' && s.questions[question!.questionId]?.options) || [])) : [];
@@ -334,16 +333,6 @@ function Composer({ task }: { task: Task }) {
             </Button>
           </>
         )}
-        {task.status === 'REVIEW' && (
-          <>
-            <Button variant="danger" disabled={busy || !said} onClick={sendBack} title={said ? undefined : 'Write what should change first'}>
-              Send back
-            </Button>
-            <Button variant="ghost" disabled={busy || !said} onClick={() => comment('Comment added')}>
-              Just comment
-            </Button>
-          </>
-        )}
         {task.status === 'DONE' && (
           <Button disabled={busy || !said} onClick={sendBack} title={said ? 'Open it again with what you wrote' : 'Write what should change first'}>
             Send back
@@ -362,6 +351,81 @@ function Composer({ task }: { task: Task }) {
         <span className="tk-compose-hint small faint">{hint}</span>
       </div>
     </div>
+  );
+}
+
+/**
+ * The verdict on work in review, at the side of the task — apart from the conversation, so that talking it over
+ * never presses it. Each is two steps: the button opens its own small form, and only that form's button acts.
+ */
+function Verdict({ task }: { task: Task }) {
+  const s = useOffice();
+  const [busy, run] = useAction();
+  const [mode, setMode] = useState<'approve' | 'back' | null>(null);
+  const [note, setNote] = useState('');
+  useEffect(() => {
+    setMode(null);
+    setNote('');
+  }, [task.id, task.status]);
+  const who = s.employees[task.assigneeId ?? '']?.name ?? 'its author';
+  const said = note.trim();
+  const close = (res: unknown) => {
+    if (res === undefined) return;
+    setMode(null);
+    setNote('');
+  };
+  const approve = () => run(() => api('POST', `/tasks/${task.id}/review`, { verdict: 'approve', comments: said }), `${task.key} approved`).then(close);
+  const sendBack = () => run(() => api('POST', `/tasks/${task.id}/send-back`, { note: said }), `${task.key} sent back`).then(close);
+  const open = (m: 'approve' | 'back') => {
+    setMode(m);
+    setNote('');
+  };
+  return (
+    <section className="tk-verdict" data-verdict={mode ?? 'closed'} aria-label="Your verdict">
+      <div className="tk-meta-label">Your verdict</div>
+      {mode === null && (
+        <>
+          <div className="small muted">Talk it over with {who} in the conversation first; decide here once it is settled.</div>
+          <div className="tk-verdict-row">
+            <Button variant="success" small disabled={busy} onClick={() => open('approve')}>
+              Approve…
+            </Button>
+            <Button variant="danger" small disabled={busy} onClick={() => open('back')}>
+              Send back…
+            </Button>
+          </div>
+        </>
+      )}
+      {mode !== null && (
+        <>
+          <textarea
+            className="tk-verdict-note"
+            rows={mode === 'back' ? 5 : 3}
+            value={note}
+            disabled={busy}
+            autoFocus
+            aria-label={mode === 'back' ? 'What should change' : 'A note with your approval'}
+            placeholder={mode === 'back' ? `What should change — ${who} gets exactly this` : 'A note with your approval (optional)'}
+            onChange={(e) => setNote(e.target.value)}
+          />
+          <div className="small faint">{mode === 'back' ? `It goes back to ${who}, is done again, checked and reviewed again.` : `It is finished${task.branch ? ' and merged' : ''}.`}</div>
+          <div className="tk-verdict-row">
+            {mode === 'approve' ? (
+              <Button variant="success" small disabled={busy} onClick={() => void approve()}>
+                Approve and finish
+              </Button>
+            ) : (
+              <Button variant="danger" small disabled={busy || !said} onClick={() => void sendBack()} title={said ? undefined : 'Write what should change first'}>
+                Send it back
+              </Button>
+            )}
+            <Button variant="ghost" small disabled={busy} onClick={() => setMode(null)}>
+              Cancel
+            </Button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -668,9 +732,11 @@ function Details({ task }: { task: Task }) {
 
 export function TicketView({ task, tab, onTab }: { task: Task; tab: TicketTab; onTab: (t: TicketTab) => void }) {
   const s = useOffice();
+  const can = useAccess();
   const [busy, run] = useAction();
   const [editing, setEditing] = useState(false);
   useEffect(() => setEditing(false), [task.id]);
+  const mayWork = can.work(s.projects[task.projectId]?.hostId);
   // The small menus of the task (people to add, more actions) close when one clicks anywhere else.
   useEffect(() => {
     const away = (e: MouseEvent) => {
@@ -731,6 +797,7 @@ export function TicketView({ task, tab, onTab }: { task: Task; tab: TicketTab; o
           <More task={task} onEdit={() => (onTab('talk'), setEditing(true))} />
         </div>
         <div className="tk-line">{need.line}</div>
+        {task.status === 'REVIEW' && task.kind !== 'review' && mayWork && <Verdict task={task} />}
         {!task.released && task.status === 'BACKLOG' && (
           <Button variant="success" small disabled={busy} onClick={() => run(() => api('POST', '/tasks/release', { ids: [task.id] }), `${task.key} released`)}>
             Release

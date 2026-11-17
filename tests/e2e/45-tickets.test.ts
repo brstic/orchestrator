@@ -119,6 +119,27 @@ test('"the boss alone" asks no colleague, and a ticket is sent back — from rev
   await until(t.id, (x) => x.status === 'DONE', 'done again');
 });
 
+test('in review the ticket is a conversation: the boss writes, its author is told and answers there, and the boss hears back', async () => {
+  const t = await h.task({ projectId: shop, title: 'Add the sidebar', assigneeId: ids.Alex, reviewBy: 'boss', description: '@@fake: write sidebar.txt ok; commit sidebar; complete sidebar added@@' });
+  await until(t.id, (x) => x.status === 'REVIEW' && x.reviewStage === 'boss', 'the sidebar waits for the boss');
+  // Untagged: still for whoever made it — they are asked to answer on the ticket, not to change the work.
+  await h.api('POST', `/tasks/${t.id}/comments`, { body: 'Why is it on the left?' });
+  const told = await waitFor(async () => (await messagesTo('Alex')).find((m) => m.kind === 'comment' && m.taskId === t.id && m.body.includes('Why is it on the left?')), { label: 'Alex is told' });
+  assert.match(told.body, new RegExp(`The boss wrote on ${t.key} .*which you handed in and which is in review`));
+  assert.match(told.body, new RegExp(`comment_on_task with task "${t.key}"`));
+  assert.match(told.body, /do not change the work for it/);
+  // Their answer, untagged, reaches the boss whose review it is.
+  const answer = await tool('Alex', 'comment_on_task', { task: t.key, text: 'The menu is on the left too.' });
+  assert.match(answer.text, /the boss is told/, answer.text);
+  const heard = (await h.state()).notifications.find((n) => n.kind === 'mention' && n.taskId === t.id);
+  assert.match(heard?.title ?? '', new RegExp(`Alex answered on ${t.key}`));
+  // Talking it over moves nothing: the verdict is still the boss's.
+  const now = await task(t.id);
+  assert.deepEqual([now.status, now.attempts, kinds(now)], ['REVIEW', 0, ['handed_in', 'note', 'note']]);
+  await h.api('POST', `/tasks/${t.id}/review`, { verdict: 'approve', comments: '' });
+  await until(t.id, (x) => x.status === 'DONE', 'the sidebar is done');
+});
+
 test('a comment reaches who it is for: whoever works on the ticket, and whoever is tagged', async () => {
   const t = await inProgress('Alex', 'Pick the colours');
   // A person's comment on a ticket somebody is working on goes to them.

@@ -199,9 +199,18 @@ talk there, as in Plane or Trello. So:
     through the rest, Escape closes the picture and not the task — the other files behind "All n files", the parts,
     then the **conversation**, where a comment's own pictures stand under it and a question shows its choices — comments, with the office's own
     lines of the story between them — and **one box at the bottom** whose first button is what the task is waiting
-    for: *Answer* (a question, or a task parked on one), *Approve* / *Send back* (in review), *Unblock*, otherwise
-    *Comment* — with *Send back* on a finished task and *Tell them now* on one in progress. `@` offers the office's
-    people. ⌘/Ctrl+Enter presses the first button. Tabs beside the conversation: **Work** (the measured evidence and
+    for: *Answer* (a question, or a task parked on one), *Unblock*, otherwise *Comment* — with *Send back* on a
+    finished task and *Tell them now* on one in progress. `@` offers the office's people. ⌘/Ctrl+Enter presses the
+    first button.
+  - **In review the box is only for talking it over** (the owner's word of 2026-11-17: talk with the agents on the
+    left until everything is settled, approve or send back on the right, so that neither is pressed by accident).
+    Its one button is *Comment*, and what is written there goes to the task's author even untagged
+    (`TaskTalk.byPerson`): they are told it is in review, to answer on the ticket with `comment_on_task`, and not to
+    change the work for it — changes come by sending it back. Their answer, untagged, is brought to the boss when the
+    review is the boss's (`reviewStage: 'boss'`; a `mention` notification "… answered on T-n"). Tagging somebody
+    else brings it to them instead. **The verdict is at the side** ("Your verdict", `Verdict` in `task-view.tsx`),
+    in two steps: *Approve…* opens a note (optional) and *Approve and finish*; *Send back…* opens what should change
+    (required) and *Send it back*; *Cancel* closes either. Nothing there answers to ⌘/Ctrl+Enter. Tabs beside the conversation: **Work** (the measured evidence and
     the technical details), **Changes** (the diff, read live), **History** (every recorded event).
   - *At the side*: what it needs, in a pill and a sentence; assignee, who is on it with them ("+ Add"), who reviews
     it, priority — each changed right there; project, kind, what it is a part of, dates; and the **⋯** menu: change
