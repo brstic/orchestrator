@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Appearance } from '@orchestrator/contracts';
 import { textures } from '../models/kit.ts';
 import type { Outfit } from './body.ts';
-import { BROW_COUNT, FACE_COUNT, IRIS } from './head.ts';
+import { BROW_COUNT, BROWS_MADE_UP, FACE_COUNT, IRIS } from './head.ts';
 
 /**
  * What a character is made of, and what makes one person different from the next. Materials are shared by colour
@@ -274,15 +274,16 @@ export function traitsOf(a: Appearance, level: number): Traits {
   const light = new THREE.Color(a.skin).getHSL({ h: 0, s: 0, l: 0 }).l;
   // Brown is the common colour everywhere; lighter eyes come with lighter skin.
   const pool = light < 0.45 ? [0, 1, 1, 0, 2] : light < 0.64 ? [0, 1, 0, 2, 3, 0] : [0, 2, 3, 4, 4, 5, 0, 1];
+  // What a look chooses itself (the character creator) wins; the rest follows from the look as it always has.
   return {
     seed,
-    outfit: level >= 8 ? 'suit' : OUTFITS[seed % OUTFITS.length]!,
-    face: (r >>> 15) % FACE_COUNT,
-    brow: (r >>> 13) % BROW_COUNT,
-    iris: IRIS[pool[(r >>> 18) % pool.length]!]!,
+    outfit: a.outfit ?? (level >= 8 ? 'suit' : OUTFITS[seed % OUTFITS.length]!),
+    face: a.face !== undefined ? a.face % FACE_COUNT : (r >>> 15) % FACE_COUNT,
+    brow: a.brows !== undefined ? a.brows % BROW_COUNT : (r >>> 13) % BROWS_MADE_UP,
+    iris: a.eyes ?? IRIS[pool[(r >>> 18) % pool.length]!]!,
     flip: ((r >>> 12) & 1) === 1,
     headW: 0.97 + (((r >>> 3) % 8) / 7) * 0.07,
     headD: 0.98 + (((r >>> 6) % 5) / 4) * 0.04,
-    girth: 0.97 + (((r >>> 9) % 8) / 7) * 0.09,
+    girth: a.girth ?? 0.97 + (((r >>> 9) % 8) / 7) * 0.09,
   };
 }

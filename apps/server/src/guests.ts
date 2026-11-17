@@ -9,6 +9,7 @@
  * What each role may do is decided in `access.ts`. (The store and the API still say "guest" in
  * places — the name these people had before there were three roles.)
  */
+import type { Appearance } from '@orchestrator/contracts';
 import crypto from 'node:crypto';
 import { newId, nowIso } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
@@ -53,6 +54,8 @@ export interface PersonPresence {
   moving: boolean;
   /** A stable colour and look derived from who they are. */
   hue: number;
+  /** Their own character, when they made one (`characters.ts`). */
+  look?: Appearance;
 }
 
 const KV = 'guests';

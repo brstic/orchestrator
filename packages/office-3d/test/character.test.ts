@@ -13,7 +13,7 @@ import { DESK_TOP } from '../src/models/workplace.ts';
  * gives the same person.
  */
 
-const STYLES: HairStyle[] = ['short', 'long', 'bun', 'curly', 'bald'];
+const STYLES: HairStyle[] = ['short', 'long', 'bun', 'curly', 'bald', 'buzz', 'ponytail', 'afro', 'mohawk'];
 const OUTFITS: Outfit[] = ['polo', 'shirt', 'tee', 'sweater', 'suit'];
 const tris = (g: THREE.BufferGeometry | null) => (g ? (g.index ? g.index.count : g.getAttribute('position').count) / 3 : 0);
 
@@ -178,4 +178,32 @@ test('seated, a garment over the hips lies on the thighs, not through them; the 
   }
   // Standing nothing moves: the targets are offsets, at 0 the garment is as it was.
   assert.equal(g.torsoTucked.morphAttributes.position, undefined, 'a tucked-in shirt is inside the trousers and needs none');
+});
+
+test("facial hair is the head's own triangles in a group of their own — nothing lies on the face", () => {
+  for (let face = 0; face < FACE_COUNT; face++) {
+    const plain = headGeo(face);
+    for (const kind of ['stubble', 'mustache', 'goatee', 'beard'] as const) {
+      const g = headGeo(face, kind);
+      sound(`head ${face} with ${kind}`, g);
+      // The same surface: as many vertices and triangles as the head without it, split into skin and hair.
+      assert.equal(g.getAttribute('position').count, plain.getAttribute('position').count, `${kind}: no new surface`);
+      assert.equal(g.index!.count, plain.index!.count);
+      assert.equal(g.groups.length, 2);
+      const [skin, hair] = g.groups;
+      assert.ok(hair!.count > 0 && skin!.count > hair!.count, `${kind}: some of the face, not all of it`);
+    }
+    // More hair for a beard than for a goatee, and for a goatee than for a mustache.
+    const n = (k: 'mustache' | 'goatee' | 'beard') => headGeo(face, k).groups[1]!.count;
+    assert.ok(n('beard') > n('goatee') && n('goatee') > n('mustache'), `face ${face}: beard > goatee > mustache`);
+  }
+});
+
+test('a look chooses for itself: outfit, face, brows, eyes, build — and a look that chooses nothing is drawn as before', () => {
+  const plain = { skin: '#e0ac69', hair: '#241c17', hairStyle: 'short', shirt: '#2b3c66', pants: '#2b3c66', accessory: 'none', build: 1 } as const;
+  const before = traitsOf(plain, 1);
+  assert.ok(before.brow < 3, 'a made-up look keeps to the first three brows (as every look made before did)');
+  const chosen = traitsOf({ ...plain, outfit: 'sweater', face: 2, brows: 4, eyes: '#3f78ad', girth: 1.05 }, 9);
+  assert.deepEqual([chosen.outfit, chosen.face, chosen.brow, chosen.iris, chosen.girth], ['sweater', 2, 4, '#3f78ad', 1.05], 'even at a level that would put them in a suit');
+  assert.deepEqual(traitsOf(plain, 1), before, 'the same look is the same person');
 });

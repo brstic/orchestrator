@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { hearTableNews } from '../arcade/net.ts';
 import { mayOpenPanel } from './visitor-panels.ts';
-import type {
+import type { Appearance,
   ArcadeGame,
   ArcadeTable,
   EmoteName,
@@ -74,6 +74,7 @@ export type PanelId =
   | 'tv'
   | 'vault'
   | 'context'
+  | 'character'
   | 'arcade'
   | 'seat'
   | 'people'
@@ -652,6 +653,16 @@ function applyFull(state: FullState, clientId: string): void {
   });
 }
 
+/** The looks of the people present, by person: the same object for as long as the look is the same. */
+const looks = new Map<string, { json: string; look: Appearance }>();
+function sameLook(person: string, look: Appearance): Appearance {
+  const json = JSON.stringify(look);
+  const had = looks.get(person);
+  if (had && had.json === json) return had.look;
+  looks.set(person, { json, look });
+  return look;
+}
+
 function handle(msg: ServerToClient): void {
   switch (msg.t) {
     case 'ready':
@@ -665,7 +676,14 @@ function handle(msg: ServerToClient): void {
       const st = useOffice.getState();
       const others = (list: typeof msg.people) => JSON.stringify(list.filter((p) => p.id !== st.clientId));
       if (st.people.length === msg.people.length && others(st.people) === others(msg.people)) break;
-      useOffice.setState({ people: msg.people });
+      // A look that has not changed stays the same object: a character is rebuilt only when its look changes, not
+      // with every step anybody takes.
+      useOffice.setState({ people: msg.people.map((p) => (p.look ? { ...p, look: sameLook(p.memberId ?? p.id, p.look) } : p)) });
+      break;
+    }
+    case 'me.look': {
+      const me = useOffice.getState().me;
+      if (me) useOffice.setState({ me: { ...me, look: msg.look } });
       break;
     }
     case 'knocks': {

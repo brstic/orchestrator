@@ -5,6 +5,8 @@
  * office draws, so whatever changes there changes here.
  */
 export { Character, type Motion, type PoseName } from './Character.tsx';
+export { CEO_LOOK, defaultLook, filledLook } from './looks.ts';
+export { IRIS } from './character/head.ts';
 export { Model } from './models/Model.tsx';
 export { DESK_TOP, desk, divider, lampDome, taskChair } from './models/workplace.ts';
 export { arcade, coffeeTable, deskPlant, floorLamp, mug, notebook, plant, rug, sofa, trophyCase } from './models/decor.ts';

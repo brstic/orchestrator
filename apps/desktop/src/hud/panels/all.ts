@@ -38,4 +38,5 @@ registerLazyPanels(['myroom'], () => import('./my-room.tsx'));
 registerLazyPanels(['mine'], () => import('./mine.tsx'));
 registerLazyPanels(['vault'], () => import('./vault.tsx'));
 registerLazyPanels(['context'], () => import('./context.tsx'));
+registerLazyPanels(['character'], () => import('./character.tsx'));
 registerLazyPanels(['arcade'], () => import('./arcade.tsx'));

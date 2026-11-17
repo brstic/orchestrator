@@ -2,7 +2,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { memo, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import type { Desk, OfficeLayout, Surroundings as SurroundingsKind } from '@orchestrator/contracts';
+import type { Appearance, Desk, OfficeLayout, Surroundings as SurroundingsKind } from '@orchestrator/contracts';
 import type { EffectiveLayout } from './member-rooms.ts';
 import { Documents as DocumentsPart, type DocsView } from './Documents.tsx';
 import { HiFi as HiFiPart } from './HiFi.tsx';
@@ -44,6 +44,8 @@ const Rig = memo(RigPart);
 const Surroundings = memo(SurroundingsPart);
 
 export interface OfficeSceneProps {
+  /** This window's own character (`docs/CHARACTER.md`): what the person made, or the look the office gives them. */
+  selfLook?: Appearance;
   /** The stored layout, or that layout with the rooms of connected members added (see `withMemberRooms`). */
   layout: OfficeLayout;
   /** Where the office stands (an owner's choice, the same for everybody in it). Not given: by itself, in the dark. */
@@ -244,7 +246,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       {(props.leads ?? []).map((lead) => (
         <Foreman key={lead.id} foreman={lead} people={props.people} world={world} selected={props.selectedId === lead.id} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />
       ))}
-      <Rig positions={positions} walkers={walkers} moving={!!props.freeSeats} whipAt={props.whipAt} ouchAt={props.ouchAt} emote={props.emote} approachZoom={props.approachZoom} seatAsk={props.seatAsk} jumpAsk={props.jumpAsk} onSeated={props.onSeated} onJumped={props.onJumped} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} city={surroundings === 'skyline'} outside={props.outside} onOutside={props.onOutside} onOutsideHint={props.onOutsideHint} />
+      <Rig positions={positions} walkers={walkers} moving={!!props.freeSeats} whipAt={props.whipAt} ouchAt={props.ouchAt} emote={props.emote} approachZoom={props.approachZoom} seatAsk={props.seatAsk} jumpAsk={props.jumpAsk} onSeated={props.onSeated} onJumped={props.onJumped} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} city={surroundings === 'skyline'} outside={props.outside} onOutside={props.onOutside} onOutsideHint={props.onOutsideHint} look={props.selfLook} />
     </Canvas>
   );
 });

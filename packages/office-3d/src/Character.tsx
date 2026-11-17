@@ -195,7 +195,7 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
     const tucked = outfit === 'polo' || outfit === 'shirt';
     const casual = outfit === 'tee' || outfit === 'sweater';
     const cap = appearance.accessory === 'cap';
-    const shoeHex = detail?.shoes ?? (outfit === 'suit' ? SHOES[0]! : SHOES[(seed >>> 3) % (casual ? 4 : 3)]!);
+    const shoeHex = detail?.shoes ?? appearance.shoes ?? (outfit === 'suit' ? SHOES[0]! : SHOES[(seed >>> 3) % (casual ? 4 : 3)]!);
     const lightShoe = new THREE.Color(shoeHex).getHSL({ h: 0, s: 0, l: 0 }).l > 0.6;
     // Each garment is its own cloth: piqué, jersey, crisp poplin, knitted wool, striped worsted.
     const cloth: MatOptions = outfit === 'polo' ? { grain: 'weave', depth: 0.9 } : outfit === 'tee' ? { grain: 'weave', depth: 0.3 } : outfit === 'sweater' ? { grain: 'knit', depth: 1.5 } : outfit === 'suit' ? { stripe: true, grain: 'weave', depth: 0.35 } : {};
@@ -211,7 +211,9 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
       tucked,
       casual,
       torso: outfit === 'suit' ? g.torsoJacket : tucked ? g.torsoTucked : g.torsoLoose,
-      head: headGeo(who.face),
+      // (With facial hair, the head carries it as a second group of its own triangles: drawn with `[face, beard]`.)
+      head: headGeo(who.face, appearance.facialHair && appearance.facialHair !== 'none' ? appearance.facialHair : null),
+      bearded: !!appearance.facialHair && appearance.facialHair !== 'none',
       eyes: eyesGeo(who.iris),
       brows: browsGeo(who.brow),
       hair,
@@ -220,14 +222,17 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
       skin: mat(appearance.skin, 0.74, offline, { sheen: 0.5 }),
       face: mat(appearance.skin, 0.74, offline, { sheen: 0.5, painted: true }),
       eye: eyeMat(offline),
-      hairMat: appearance.hairStyle === 'curly' ? mat(appearance.hair, 0.78, offline, { grain: 'curl', depth: 0.55, sheen: 0.6 }) : mat(appearance.hair, 0.56, offline),
+      hairMat: appearance.hairStyle === 'curly' || appearance.hairStyle === 'afro' ? mat(appearance.hair, 0.78, offline, { grain: 'curl', depth: 0.55, sheen: 0.6 }) : mat(appearance.hair, 0.56, offline),
+      // Hair on the face, in the colour of the hair; stubble is so short that the skin shows through it.
+      beard: appearance.facialHair === 'stubble' ? mat('#' + new THREE.Color(appearance.hair).lerp(new THREE.Color(appearance.skin), 0.45).getHexString(), 0.9, offline) : mat(appearance.hair, 0.82, offline, { sheen: 0.5 }),
+      glasses: appearance.accessory === 'glasses' || appearance.glasses === true,
       brow: mat(appearance.hair, 0.8, offline, { shade: -0.25 }),
       shirt: mat(appearance.shirt, rough, offline, cloth),
       trim: mat(outfit === 'suit' ? '#f1f1ee' : appearance.shirt, outfit === 'suit' ? 0.7 : rough, offline, { ...trim, decal: true, painted: true }),
       // The jacket's own cloth (the same weave and stripe, a shade lighter): smoother and lighter, its collar and pocket
       // flaps read as grey patches stuck on.
       lapel: mat(appearance.shirt, 0.7, offline, { shade: 0.012, decal: true, stripe: true, grain: 'weave', depth: 0.35 }),
-      tie: mat(detail?.tie ?? TIES[seed % TIES.length]!, 0.5, offline, { decal: true }),
+      tie: mat(detail?.tie ?? appearance.tie ?? TIES[seed % TIES.length]!, 0.5, offline, { decal: true }),
       pants: outfit === 'suit' ? mat(appearance.pants, 0.74, offline, { stripe: true, grain: 'weave', depth: 0.35 }) : mat(appearance.pants, 0.86, offline, { grain: 'weave', depth: 0.7 }),
       belt: mat('#ffffff', 0.45, offline, { painted: true }),
       shoe: mat(shoeHex, casual ? 0.8 : 0.36, offline),
@@ -580,13 +585,13 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
           {whip && <mesh ref={coil} geometry={g.coil} material={look3d.leather} position={[-0.145, -0.015, -0.112]} rotation={[0, -0.93, 0]} castShadow />}
           <group ref={head} position={[0, HEAD_Y, -0.002]}>
             <group position={[0, 0.103 * HEAD_SCALE, 0.014 * HEAD_SCALE]} scale={[HEAD_SCALE * who.headW, HEAD_SCALE, HEAD_SCALE * who.headD]}>
-              <mesh geometry={look3d.head} material={look3d.face} castShadow />
+              <mesh geometry={look3d.head} material={look3d.bearded ? [look3d.face, look3d.beard] : look3d.face} castShadow />
               <mesh geometry={look3d.eyes} material={look3d.eye} />
               <mesh ref={lidL} geometry={LIDS} material={look3d.face} position={[EYE_AT.x, EYE_AT.y, EYE_AT.z]} rotation={[0, EYE_YAW, 0, 'YXZ']} />
               <mesh ref={lidR} geometry={LIDS} material={look3d.face} position={[-EYE_AT.x, EYE_AT.y, EYE_AT.z]} rotation={[0, -EYE_YAW, 0, 'YXZ']} />
               <mesh geometry={look3d.brows} material={look3d.brow} />
               {look3d.hair && <mesh geometry={look3d.hair} material={look3d.hairMat} castShadow />}
-              {appearance.accessory === 'glasses' && <mesh geometry={glassesGeo()} material={look3d.dark} />}
+              {look3d.glasses && <mesh geometry={glassesGeo()} material={look3d.dark} />}
               {look3d.phones && <mesh geometry={look3d.phones} material={look3d.dark} />}
               {appearance.accessory === 'cap' && <mesh geometry={capGeo()} material={look3d.capMat} castShadow />}
             </group>

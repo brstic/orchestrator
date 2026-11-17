@@ -2,7 +2,7 @@ import { DeskPicker, WherePicker, useHirePlaces, type HirePlace } from './hire-w
 import { BulkHire } from './bulk-hire.tsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentSession, Appearance, AutonomyLevel, CommunicationStyle, DeliveryStatus, Employee, ExecutionMode, Host, OrchestratorEvent, Project, XpEntry } from '@orchestrator/contracts';
-import { DESK_SIZE, EFFORT_CHOICES, MODEL_CHOICES, ROLE_CATALOGUE, memberSeatOf, roleByKey } from '@orchestrator/contracts';
+import { HAIR_STYLES as ALL_HAIR_STYLES, DESK_SIZE, EFFORT_CHOICES, MODEL_CHOICES, ROLE_CATALOGUE, memberSeatOf, roleByKey } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Empty, Field, Progress, Provenance, Stat, Tabs, Window, timeAgo, type Tone } from '@orchestrator/ui';
 import { api, connection } from '../../lib/api.ts';
 import { activityOf, currentTaskOf, loadAccounts, openQuestionsOf, sessionOfEmployee, useOffice } from '../../lib/store.ts';
@@ -1178,7 +1178,8 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
   );
 }
 
-const HAIR_STYLES: Appearance['hairStyle'][] = ['short', 'long', 'bun', 'curly', 'bald'];
+// (Every style the office draws — the character creator's too.)
+const HAIR_STYLES: readonly Appearance['hairStyle'][] = ALL_HAIR_STYLES;
 const ACCESSORIES: Appearance['accessory'][] = ['none', 'glasses', 'headphones', 'cap'];
 
 /**

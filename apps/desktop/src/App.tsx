@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { surroundingsOf, unlockedUpgrades } from '@orchestrator/contracts';
-import { OfficeScene, ownerPosition } from '@orchestrator/office-3d';
+import { defaultLook, OfficeScene, ownerPosition } from '@orchestrator/office-3d';
 import { PeopleActs, myPlace, personInReach } from './hud/people-acts.tsx';
 import { Button } from '@orchestrator/ui';
 import { api, connection, serverBase, setToken } from './lib/api.ts';
@@ -345,6 +345,9 @@ export function App() {
   }, [docKey, s.ready]);
   // The hi-fi in the 3D office shows the office's state, the same in every window — also in one that has muted its copy.
   const radioView = useMemo(() => ({ playing: !!s.hifi, station: s.hifi?.station.name ?? null }), [s.hifi]);
+  // My own character: what I made in the character creator, or the look the office gives me (the same one the others
+  // see — docs/CHARACTER.md).
+  const selfLook = useMemo(() => s.me?.look ?? defaultLook(s.me?.hue ?? 0, s.me?.role, s.me?.id ?? (s.me?.kind === 'owner' ? 'owner' : null)), [s.me?.look, s.me?.hue, s.me?.role, s.me?.id, s.me?.kind]);
   // The other people in the office (not this window), each with what they last said for a few seconds.
   const humans = useMemo(() => {
     const now = Date.now();
@@ -405,6 +408,7 @@ export function App() {
     <div className="app">
       <div className="scene">
         <OfficeScene
+          selfLook={selfLook}
           layout={office?.layout ?? s.layout}
           unlocked={unlocked}
           people={people}

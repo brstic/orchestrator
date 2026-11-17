@@ -164,6 +164,7 @@ export function TopBar() {
     {
       title: '',
       items: [
+        { id: 'character', label: 'My character' },
         { id: 'settings', label: 'Settings' },
         { id: 'help', label: 'Help', k: '?' },
       ],

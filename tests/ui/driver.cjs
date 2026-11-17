@@ -3227,6 +3227,37 @@ async function scenario() {
     return `link ${link.replace(/\/r\/.*/, '/r/…')}; the client's answer: "${shown}"`;
   });
 
+  await step('My character: opened from the menu, a look made with real clicks, saved — and drawn so in the office', async () => {
+    // (Also when this step is run alone: the office may still be opening.)
+    await waitFor(`!!window.__office && window.__t.store().ready && !!window.__t.store().me`, 60000);
+    await js(`window.__t.store().openPanel('character')`);
+    await waitFor(`!!window.__t.scope().querySelector('[data-character-creator] canvas')`, 10000);
+    const tab = async (name) => click(`[...window.__t.scope().querySelectorAll('[role=tab]')].find((b) => b.textContent.trim() === ${JSON.stringify(name)})`, name);
+    const choose = async (group, word) => click(`[...window.__t.scope().querySelectorAll('[role=radiogroup][aria-label=${JSON.stringify(group)}] [role=radio]')].find((b) => b.textContent.trim() === ${JSON.stringify(word)})`, `${group}: ${word}`);
+    await tab('Hair');
+    await choose('Hair style', 'Afro');
+    await tab('Face');
+    await choose('Facial hair', 'Beard');
+    await tab('Clothes');
+    await choose('Outfit', 'Sweater');
+    await tab('Extras');
+    await choose('Glasses', 'Glasses');
+    await click(`[...window.__t.scope().querySelectorAll('.chc-previews button')].find((b) => b.textContent.trim() === 'Sitting')`, 'Sitting');
+    await shot('character-creator');
+    await click(`window.__t.scope().querySelector('[data-character-save]')`, 'Save my character');
+    const look = await waitFor(`(() => { const l = window.__t.store().me?.look; return l && l.hairStyle === 'afro' ? l : null; })()`, 8000);
+    if (look.facialHair !== 'beard' || look.outfit !== 'sweater' || look.glasses !== true) throw new Error(`saved look: ${JSON.stringify(look)}`);
+    // Opened again, the window starts from what was saved (the office keeping it is the e2e test's: 62-character).
+    await close();
+    await js(`window.__t.store().openPanel('character')`);
+    await waitFor(`!!window.__t.scope().querySelector('[data-character-creator]')`, 8000);
+    await tab('Hair');
+    const on = await js(`window.__t.scope().querySelector('[role=radiogroup][aria-label="Hair style"] [aria-checked=true]')?.textContent.trim()`);
+    if (on !== 'Afro') throw new Error(`opened again, the hair style chosen is ${on}`);
+    await close();
+    return `afro, beard, sweater, glasses — saved, and there when the window is opened again`;
+  });
+
   await step('Context: a fact for the whole office is added in its window, and is what a working employee is given', async () => {
     await js(`window.__t.store().openPanel('context')`);
     await waitFor(`!!window.__t.scope().querySelector('[data-context-layer="office"]')`, 8000);

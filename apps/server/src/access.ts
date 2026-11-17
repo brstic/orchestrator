@@ -63,6 +63,10 @@ const RULES: Rule[] = [
   rule('GET', '/me', 'read'),
   // One's own password and one's own session: anybody who is in.
   rule('POST', '/me/password', 'read'),
+  // One's own character (docs/CHARACTER.md): everybody who comes in has one, visitors too — and only their own.
+  rule('GET', '/me/character', 'read'),
+  rule('PUT', '/me/character', 'read'),
+  rule('DELETE', '/me/character', 'read'),
   rule('POST', '/logout', 'read'),
   rule('GET', '/state', 'read'),
   rule('GET', '/people', 'read'),

@@ -1,3 +1,4 @@
+import { defaultLook } from './looks.ts';
 import { Html } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { memo, useMemo, useRef, useState } from 'react';
@@ -34,34 +35,10 @@ export interface HumanView {
   sit?: boolean;
   /** When their character last jumped, by this window's clock (`performance.now()`). */
   jumpAt?: number;
-}
-
-const SKIN = ['#f1c9a5', '#e0ac69', '#c68642', '#8d5524', '#ffdbac'];
-const HAIR = ['#2c1b10', '#3b2a1a', '#6b4423', '#111111', '#a0522d', '#d6b370'];
-
-/** A look that is the same every time for the same person, and different from person to person. */
-function hsl(h: number, s: number, l: number): string {
-  // Appearance colours are hex strings; convert so every part of the character can use them.
-  const a = (s / 100) * Math.min(l / 100, 1 - l / 100);
-  const f = (n: number) => {
-    const k = (n + h / 30) % 12;
-    return Math.round(255 * (l / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))))
-      .toString(16)
-      .padStart(2, '0');
-  };
-  return `#${f(0)}${f(8)}${f(4)}`;
-}
-
-function lookOf(h: HumanView): Appearance {
-  return {
-    skin: SKIN[h.hue % SKIN.length]!,
-    hair: HAIR[(h.hue >> 2) % HAIR.length]!,
-    hairStyle: (['short', 'long', 'bun', 'curly'] as const)[(h.hue >> 4) % 4]!,
-    shirt: hsl(h.hue, 55, 46),
-    pants: hsl((h.hue + 200) % 360, 18, 24),
-    accessory: 'none',
-    build: 1,
-  };
+  /** Whose window: the member's id ('owner' for the root owner). */
+  memberId?: string;
+  /** Their own character, when they made one (`docs/CHARACTER.md`). */
+  look?: Appearance;
 }
 
 /**
@@ -85,7 +62,8 @@ const Human = memo(function Human({ h }: { h: HumanView }) {
   // The name tag is an HTML overlay; mounted in the very first commit of the scene (someone was already
   // here when the office loaded) it never appears, so it is added once this character has been drawn.
   const [drawn, setDrawn] = useState(false);
-  const look = useMemo(() => lookOf(h), [h.hue]);
+  // Their own character if they made one, else the look the office gives them (the same in their own window).
+  const look = useMemo(() => h.look ?? defaultLook(h.hue, h.role, h.memberId), [h.look, h.hue, h.role, h.memberId]);
   // A whip crack, a flinch from someone else's, a gesture: each plays once when it is announced (as the owner's own character does).
   const act = useActs({ whipAt: h.whipAt, ouchAt: h.ouchAt, emote: h.emote });
   const jumpAt = useRef(h.jumpAt);
@@ -185,7 +163,7 @@ const Human = memo(function Human({ h }: { h: HumanView }) {
 function sameButForPlace(a: { h: HumanView }, b: { h: HumanView }): boolean {
   const x = a.h;
   const y = b.h;
-  return x.id === y.id && x.name === y.name && x.role === y.role && x.hue === y.hue && x.saying === y.saying && !!x.sit === !!y.sit && x.jumpAt === y.jumpAt && x.whipAt === y.whipAt && x.ouchAt === y.ouchAt && x.emote?.at === y.emote?.at && x.emote?.name === y.emote?.name && !!x.speaking === !!y.speaking;
+  return x.id === y.id && x.look === y.look && x.memberId === y.memberId && x.name === y.name && x.role === y.role && x.hue === y.hue && x.saying === y.saying && !!x.sit === !!y.sit && x.jumpAt === y.jumpAt && x.whipAt === y.whipAt && x.ouchAt === y.ouchAt && x.emote?.at === y.emote?.at && x.emote?.name === y.emote?.name && !!x.speaking === !!y.speaking;
 }
 
 /** The other people in the office: real persons at their own computers, drawn where they say they are. */

@@ -1,4 +1,5 @@
 import type {
+  Appearance,
   AgentSession,
   Artifact,
   AuditEntry,
@@ -352,6 +353,10 @@ export interface Me {
   name: string;
   /** The member's id; 'owner' for the root owner. Personal hosts with this `memberId` are this person's. */
   id?: string;
+  /** Their own character, as they made it (`docs/CHARACTER.md`); null: never made, the office's look is drawn. */
+  look?: Appearance | null;
+  /** The colour the office gives them (the ring under their character, and their look when they made none). */
+  hue?: number;
 }
 
 /** A person present in the office right now (one entry per open window). */
@@ -370,6 +375,8 @@ export interface PersonPresence {
   /** They are sitting (on a sofa, a chair): `x`, `z` and `rot` are the seat's. */
   sit?: boolean;
   hue: number;
+  /** Their own character, when they made one (`docs/CHARACTER.md`). */
+  look?: Appearance;
 }
 
 /** Someone at the office's door, asking to be let in (see the server's `knocks.ts`). */
@@ -395,6 +402,8 @@ export type ServerToClient =
   /** `showcase`: the public demo office, where visitors only watch (`docs/DEMO.md`). */
   | { t: 'ready'; clientId: string; state: FullState; me: Me; showcase?: boolean }
   | { t: 'people'; people: PersonPresence[] }
+  /** This person's own character changed (in another window of theirs, or this one): null — back to the office's. */
+  | { t: 'me.look'; look: Appearance | null }
   /** Who is at the door right now (sent to those who may let someone in: owners and colleagues). */
   | { t: 'knocks'; knocks: KnockView[] }
   /** What the office's hi-fi is playing (null: it is off). Sent to everyone when they come in and whenever it changes. */

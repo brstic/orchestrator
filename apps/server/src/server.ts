@@ -1,3 +1,4 @@
+import { Characters } from './characters.ts';
 import { Door, inviteCode } from './door.ts';
 import { Guests, whoIs, type Who } from './guests.ts';
 import { Invites, inviteLink, invitePage } from './invites.ts';
@@ -201,6 +202,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const engine = new Engine({ store, agents, publicUrl, timings: opts.timings, log, vaultKeyFile: path.join(opts.dataDir, 'vault.key'), filesDir: path.join(opts.dataDir, 'files'), memory: { bin: opts.memoryBin === undefined ? findMemPalace() : opts.memoryBin, dir: path.join(opts.dataDir, 'palace') } }, { send: (clientId, msg) => clients.send(clientId, msg) });
   agents.attach(engine);
   clients.attach(engine);
+  const characters = new Characters(engine);
+  clients.characters = characters;
   // The office's hi-fi: what is on is told to every window, and follows the list of stations when an owner edits it.
   // The arcade's shelf: the games the members brought, kept with the office (docs/ARCADE.md).
   const shelf = new ArcadeShelf(path.join(opts.dataDir, 'arcade'), () => clients.arcadeChanged());
@@ -534,6 +537,23 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     // The foreman: who it is, the round in flight and the last ones, and what needs attention right now (owner only).
     api.get('/foreman', async () => engine.foreman.status());
     // `hasPassword`: may this member sign in with a name and password; `passwordSession`: is this very session such a sign-in.
+    // One's own character: kept for the person, drawn for them in every window (docs/CHARACTER.md).
+    api.get('/me/character', async (req) => ({ look: characters.get(whoOf(req).id) }));
+    api.put('/me/character', async (req) => {
+      const who = whoOf(req);
+      const b = body(req);
+      if (!b.look || typeof b.look !== 'object') throw new EngineError('no look was sent', 400);
+      const look = characters.set(who.id, b.look);
+      engine.core.audit(who.id === 'owner' ? 'owner' : `member:${who.name}`, 'character.changed', who.id, {});
+      clients.lookChanged(who.id);
+      return { look };
+    });
+    api.delete('/me/character', async (req) => {
+      const who = whoOf(req);
+      characters.clear(who.id);
+      clients.lookChanged(who.id);
+      return { look: null };
+    });
     api.get('/me', async (req) => ({ kind: whoOf(req).kind, role: whoOf(req).role, name: whoOf(req).name, id: whoOf(req).id, office: engine.core.settings.companyName, hasPassword: logins.has(whoOf(req).id), passwordSession: logins.isSession(tokenOf(req)) }));
     api.get('/people', async () => clients.people());
     // A member's own computer: a one-time enrollment for the host agent their desktop app runs while they are here.

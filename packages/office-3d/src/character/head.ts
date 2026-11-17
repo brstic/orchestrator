@@ -281,11 +281,41 @@ function lidEdge(at: number, thick: number, nx = 10): THREE.BufferGeometry {
 /** Put a part made in an eye's own frame where that eye is in the head. */
 const atEye = (g: THREE.BufferGeometry, side: 1 | -1) => xf(g, side * EYE_C[0], EYE_C[1], EYE_C[2], 0, side * EYE_YAW, 0);
 
-const HEADS: (THREE.BufferGeometry | undefined)[] = [];
-/** The head for one of the faces: skull, face, ears and lower lids as one painted surface. */
-export function headGeo(face: number): THREE.BufferGeometry {
+const HEADS = new Map<string, THREE.BufferGeometry>();
+/**
+ * The head for one of the faces: skull, face, ears and lower lids as one painted surface. With facial hair, the
+ * triangles where it grows come last, as a second group (draw it with `[skin, hair]`).
+ */
+export function headGeo(face: number, facial: FacialHairKind | null = null): THREE.BufferGeometry {
   const i = ((face % FACES.length) + FACES.length) % FACES.length;
-  return (HEADS[i] ??= finish(buildHead(FACES[i]!)));
+  const key = `${i}|${facial ?? ''}`;
+  let g = HEADS.get(key);
+  if (!g) {
+    g = facial ? withFacialHair(headGeo(i).clone(), facial, i) : finish(buildHead(FACES[i]!));
+    HEADS.set(key, g);
+  }
+  return g;
+}
+
+function withFacialHair(g: THREE.BufferGeometry, kind: FacialHairKind, face: number): THREE.BufferGeometry {
+  const pos = g.getAttribute('position') as THREE.BufferAttribute;
+  const index = g.getIndex()!;
+  const skin: number[] = [];
+  const hair: number[] = [];
+  for (let t = 0; t < index.count; t += 3) {
+    const a = index.getX(t);
+    const b = index.getX(t + 1);
+    const c = index.getX(t + 2);
+    const x = (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3;
+    const y = (pos.getY(a) + pos.getY(b) + pos.getY(c)) / 3;
+    const z = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3;
+    (hasFacialHair(kind, x, y, z, face) ? hair : skin).push(a, b, c);
+  }
+  g.setIndex([...skin, ...hair]);
+  g.clearGroups();
+  g.addGroup(0, skin.length, 0);
+  g.addGroup(skin.length, hair.length, 1);
+  return g;
 }
 
 function buildHead(f: Face): THREE.BufferGeometry {
@@ -414,8 +444,14 @@ const BROWS: [number, number, number, number, number][] = [
   [0.0215, 0.0052, 0.55, 0.0045, 0.0072],
   [0.0225, 0.0022, 0.5, 0.0014, 0.0086],
   [0.0195, 0.0076, 0.66, 0.0062, 0.0068],
+  // Chosen in the character creator only (a look the office makes up uses the first three, as before):
+  // straight and full; fine and high-arched.
+  [0.022, 0.0012, 0.45, 0.0008, 0.0098],
+  [0.0205, 0.0098, 0.7, 0.0085, 0.0048],
 ];
 export const BROW_COUNT = BROWS.length;
+/** The brows a made-up look picks from: the first three (so that every look made before keeps its brows). */
+export const BROWS_MADE_UP = 3;
 const BROW_GEOS: (THREE.BufferGeometry | undefined)[] = [];
 export function browsGeo(kind: number): THREE.BufferGeometry {
   const i = ((kind % BROWS.length) + BROWS.length) % BROWS.length;
@@ -661,8 +697,71 @@ function curlyHair(underCap: boolean): THREE.BufferGeometry {
   });
 }
 
+/** Afro: a full round cloud of tight curls, well clear of the head. Under a cap, full only below the cap's edge. */
+function afroHair(underCap: boolean): THREE.BufferGeometry {
+  return shell({
+    line: (az) => keyed(CURLY_LINE, az) + deg(4),
+    thick: (az, pol) => {
+      const full = underCap ? smooth(-0.04, 0.14, pol - keyed(CAP_LINE, az)) : 1;
+      return 0.004 + full * (0.03 + 0.024 * topness(pol) + 0.012 * Math.sin(pol) + 0.012 * curl(az, pol));
+    },
+    azs: EVEN_AZ(72),
+    rows: 30,
+    lip: 0.7,
+  });
+}
+
+/** Mohawk: the sides and back shaved close, a tall crest from the forehead over the crown to the nape. */
+function mohawkHair(underCap: boolean): THREE.BufferGeometry {
+  if (underCap) return closeHair(SHORT_LINE, () => 0.0035);
+  return shell({
+    line: (az) => keyed(SHORT_LINE, az),
+    thick: (az, pol) => {
+      // How far from the middle of the head, across: the crest is a few centimetres wide wherever it runs.
+      const across = Math.abs(Math.sin(az)) * Math.sin(pol) * HEAD.a;
+      // Shaved either side: there the surface runs well under the skin (`base`), so the crest's edge is a clean
+      // line in it and nowhere does the surface lie on the skin.
+      const crest = bell(across / 0.019) * smooth(deg(124), deg(96), pol);
+      return 0.042 * smooth(0.3, 0.7, crest) + 0.006 * crest * Math.sin(9 * pol + 0.5);
+    },
+    azs: EVEN_AZ(96),
+    rows: 26,
+    lip: 0.8,
+    base: -0.007,
+  });
+}
+
+/** Ponytail: swept back close to the head and gathered at the back, the tail hanging to the nape and a little below. */
+function ponytailHair(underCap: boolean): THREE.BufferGeometry {
+  const back = closeHair(BUN_LINE, (az, pol) => (underCap ? 0.0055 : 0.006 + 0.006 * topness(pol) + 0.0012 * Math.sin(10 * az) * smooth(0.3, 0.7, pol)));
+  const at = underCap ? headPt(Math.PI, deg(110), 0.012) : headPt(Math.PI, deg(84), 0.012);
+  const tail = tube(
+    [
+      [at[0], at[1], at[2] + 0.004],
+      [at[0], at[1] - 0.03, at[2] - 0.03],
+      [at[0], at[1] - 0.09, at[2] - 0.035],
+      [at[0], at[1] - 0.15, at[2] - 0.02],
+      [at[0], at[1] - 0.19, at[2] - 0.006],
+    ],
+    (t) => 0.019 * (1 - 0.35 * t) * (t < 0.08 ? 0.75 + 3 * t : 1) * (1 - 0.6 * smooth(0.82, 1, t)),
+    12,
+    2,
+  );
+  const tie = xf(new THREE.TorusGeometry(0.016, 0.004, 6, 14), at[0], at[1] - 0.004, at[2] - 0.006, 1.1, 0, 0);
+  return fuse([back, tail, tie]);
+}
+
 function buildHair(style: HairStyle, underCap: boolean): THREE.BufferGeometry | null {
   switch (style) {
+    case 'buzz':
+      // Clipped all over, the same length everywhere.
+      return closeHair(SHORT_LINE, () => 0.0034);
+    case 'afro':
+      return clothUV(afroHair(underCap));
+    case 'mohawk':
+      return mohawkHair(underCap);
+    case 'ponytail':
+      return ponytailHair(underCap);
     case 'bald':
       return null;
     case 'short':
@@ -690,6 +789,45 @@ export function hairGeo(style: HairStyle, underCap: boolean, flip: boolean): THR
     HAIR_CACHE.set(key, g ? finish(flip ? mirrorX(g) : g) : g);
   }
   return HAIR_CACHE.get(key) ?? null;
+}
+
+// ───────────────────────────── facial hair ─────────────────────────────
+
+export type FacialHairKind = 'stubble' | 'mustache' | 'goatee' | 'beard';
+
+/** How thick the hair is over the skin at a point of the face (negative: none — the sheet runs under the skin there). */
+function facialThickness(kind: FacialHairKind, x: number, y: number, z: number, f: Face): number {
+  const ax = Math.abs(x);
+  const NONE = -0.0035;
+  // Round the lips, whatever is worn: the mouth stays clear.
+  const m = lips(x, y, f);
+  const mouth = (1 - smooth(1.05, 1.35, m.u)) * (1 - smooth(0.006, 0.011, Math.abs(m.d + 0.001)));
+  // Over the upper lip, under the nose.
+  const lipBand = (1 - smooth(f.mouthW * 1.2, f.mouthW * 1.6, ax)) * smooth(MOUTH_Y + 0.004, MOUTH_Y + 0.007, y) * (1 - smooth(-0.0525, -0.049, y));
+  // The chin, from under the lower lip down and under it.
+  // (Edges run along the face's own rows, which are level, and its columns, which are upright — clean lines.)
+  const chin = ax < 0.025 && y < MOUTH_Y - 0.012 ? 1 : 0;
+  // The whole lower face: jaw and cheeks below a level line, sideburns up to the ear, and under the chin.
+  // (Round the side of the head the columns go by the angle round it: the sideburn's edge is one of them.)
+  const round = Math.abs(Math.atan2(x, z));
+  const jaw = (y < -0.046 || (round > deg(66) && round < deg(100) && y < 0.002)) && round < deg(100) ? 1 : 0;
+  let t = NONE;
+  if (kind === 'stubble') t = jaw > 0.02 || lipBand > 0.02 ? lerp(NONE, 0.0011, Math.max(jaw, lipBand)) : NONE;
+  else if (kind === 'mustache') t = lerp(NONE, 0.0042, lipBand);
+  else if (kind === 'goatee') t = lerp(NONE, 0.0045, Math.max(lipBand, chin));
+  else t = lerp(NONE, 0.0028 + 0.0075 * smooth(-0.06, -0.11, y), Math.max(jaw, lipBand * 0.9));
+  // (Never over the mouth.)
+  return lerp(t, NONE, mouth);
+}
+
+/**
+ * Hair on the face is part of the head: the head's own triangles where it grows are drawn with a second material,
+ * in the colour of the hair (`headGeo(face, kind)` puts them in a group of their own). Nothing lies on the skin, so
+ * nothing can fight it for the same depth, and its edge is the face's own fine mesh (dense round the mouth).
+ */
+export function hasFacialHair(kind: FacialHairKind, x: number, y: number, z: number, face: number): boolean {
+  const f = FACES[((face % FACES.length) + FACES.length) % FACES.length]!;
+  return z > -0.075 && facialThickness(kind, x, y, z, f) > 0;
 }
 
 // ───────────────────────────── worn on the head ─────────────────────────────
@@ -744,7 +882,20 @@ const PHONES_CACHE = new Map<HairStyle, THREE.BufferGeometry>();
 export function headphonesGeo(style: HairStyle): THREE.BufferGeometry {
   let g = PHONES_CACHE.get(style);
   if (!g) {
-    g = style === 'curly' ? buildHeadphones(0.184, 0.133) : style === 'long' ? buildHeadphones(0.166, 0.128) : style === 'bald' ? buildHeadphones(0.137, 0.11) : style === 'bun' ? buildHeadphones(0.153, 0.113) : buildHeadphones(0.164, 0.114);
+    g =
+      style === 'curly'
+        ? buildHeadphones(0.184, 0.133)
+        : style === 'afro'
+          ? buildHeadphones(0.214, 0.163)
+          : style === 'long'
+            ? buildHeadphones(0.166, 0.128)
+            : style === 'bald' || style === 'buzz'
+              ? buildHeadphones(0.139, 0.111)
+              : style === 'bun' || style === 'ponytail'
+                ? buildHeadphones(0.153, 0.113)
+                : style === 'mohawk'
+                  ? buildHeadphones(0.168, 0.112)
+                  : buildHeadphones(0.164, 0.114);
     g = finish(g);
     PHONES_CACHE.set(style, g);
   }

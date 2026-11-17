@@ -2,6 +2,14 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-17 — A person's character is kept by the office, by who they are
+The owner asked that a character "stays every time they come in".
+- **On the server, by member id** (kv `characters`), not in the browser or the app's preferences: one person comes in from the desktop app, a browser and another computer, and is the same person in all of them; and everybody else has to see the same figure.
+- **The look is the existing `Appearance` with optional fields**, not a new type: employees and people are drawn by the same figure; a field that is absent is decided as before, so nothing already saved changes.
+- **Cleaned, not trusted**: a look comes from any signed-in person, visitors included; only known choices, colours and ranges are kept.
+- **Facial hair is painted onto the head's own triangles** (a second material group), not a surface over the face: a sheet over the skin either fights it for depth or shows a ragged edge where it dips under the skin.
+- **Without a character, one look everywhere**: the root owner's own window drew the boss in a suit while everybody else saw them in a look from their colour. `defaultLook` is now the one look for both.
+
 ## 2026-11-17 — A hem follows the thighs by morph targets, not by skinning the garment
 Seated and running, the thighs cut through what is worn over the hips (`addSeatedMorph` in `character/body.ts`).
 - **Three morph targets on every garment over the hips and what is sewn on it** (the loose torso, the jacket, the trims, lapels, buttons): the left half of the front onto the left thigh, the right half onto the right, the back onto the seat; driven every frame by each hip's bend and by sitting. Morphs cost a few uniforms and need no bones; the garment stays one rigid mesh on the chest as before.

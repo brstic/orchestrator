@@ -1,0 +1,136 @@
+/* My character (character.tsx): the figure on the left, what is chosen on the right — one size whatever the tab. */
+.chc {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  min-height: 540px;
+}
+.chc-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 16px 18px;
+  border-right: 1px solid var(--line);
+  background: radial-gradient(ellipse at 50% 42%, rgba(110, 168, 255, 0.1), transparent 68%);
+}
+.chc-canvas {
+  width: 100%;
+  height: 440px;
+  cursor: grab;
+  touch-action: none;
+}
+.chc-canvas:active {
+  cursor: grabbing;
+}
+.chc-previews {
+  justify-content: center;
+}
+.chc-hint {
+  text-align: center;
+}
+.chc-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.chc-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 20px 24px;
+  overflow-y: auto;
+}
+.chc-part {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.chc-note {
+  white-space: normal;
+}
+.chc-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chc-swatch {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.chc-swatch.chc-on {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.chc-swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Any colour: a ring with a plus until one is chosen, then that colour. */
+.chc-any {
+  display: grid;
+  place-items: center;
+  background: conic-gradient(#ff5d73, #ffb020, #f5c542, #3ddc84, #3fd0c9, #6ea8ff, #c792ea, #ff5d73);
+  overflow: hidden;
+}
+.chc-any input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.chc-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chc-choice {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 15px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.chc-choice:hover {
+  color: var(--text);
+}
+.chc-choice.chc-on {
+  border-color: transparent;
+  background: rgba(110, 168, 255, 0.18);
+  color: #cfe2ff;
+}
+.chc-range {
+  width: 100%;
+  max-width: 360px;
+  accent-color: var(--accent);
+}
+.chc-save {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--line);
+}
+.chc-grow {
+  flex: 1;
+}
+@media (max-width: 760px) {
+  .chc {
+    grid-template-columns: 1fr;
+  }
+  .chc-stage {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .chc-canvas {
+    height: 320px;
+  }
+}

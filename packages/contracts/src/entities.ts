@@ -165,14 +165,80 @@ export type CommunicationStyle =
 
 export type ExecutionMode = 'interactive_cli' | 'managed_sdk';
 
+export type HairStyle = 'short' | 'long' | 'bun' | 'bald' | 'curly' | 'buzz' | 'ponytail' | 'afro' | 'mohawk';
+export type Outfit = 'polo' | 'shirt' | 'tee' | 'sweater' | 'suit';
+export type FacialHair = 'none' | 'stubble' | 'mustache' | 'goatee' | 'beard';
+
+/**
+ * How a figure looks — an employee's (chosen in their profile, or made up when they are hired) or a person's own
+ * character (the character creator: `docs/CHARACTER.md`). The first seven are always there; the rest are chosen in
+ * the creator, and where one is absent the office decides it from the look as it always did (the outfit, the face,
+ * the eyes, the shoes…), so a look saved before they existed is drawn exactly as it was.
+ */
 export interface Appearance {
   skin: string;
   hair: string;
-  hairStyle: 'short' | 'long' | 'bun' | 'bald' | 'curly';
+  hairStyle: HairStyle;
   shirt: string;
   pants: string;
+  /** What is worn on the head or the face. With `glasses` true, glasses as well (e.g. a cap and glasses). */
   accessory: 'none' | 'glasses' | 'headphones' | 'cap';
   build: number; // 0.9 – 1.1 body scale
+  outfit?: Outfit;
+  glasses?: boolean;
+  facialHair?: FacialHair;
+  /** One of the faces (0 soft oval, 1 round, 2 longer with a firm jaw). */
+  face?: number;
+  /** One of the brows (0 … 4). */
+  brows?: number;
+  /** Eye colour. */
+  eyes?: string;
+  /** How broad the body is, 0.94 – 1.08 (`build` is how big all of it is). */
+  girth?: number;
+  shoes?: string;
+  /** The tie, with a suit. */
+  tie?: string;
+}
+
+/** A look to fill in what an incoming look leaves out (the office's own figures are each made up in full). */
+export const DEFAULT_LOOK: Appearance = { skin: '#e0ac69', hair: '#241c17', hairStyle: 'short', shirt: '#2b3c66', pants: '#2b3c66', accessory: 'none', build: 1 };
+
+export const HAIR_STYLES: readonly HairStyle[] = ['short', 'buzz', 'long', 'ponytail', 'bun', 'curly', 'afro', 'mohawk', 'bald'];
+export const OUTFITS: readonly Outfit[] = ['polo', 'shirt', 'tee', 'sweater', 'suit'];
+export const FACIAL_HAIR: readonly FacialHair[] = ['none', 'stubble', 'mustache', 'goatee', 'beard'];
+export const FACE_SHAPES = 3;
+export const BROW_SHAPES = 5;
+
+const HEX = /^#[0-9a-f]{6}$/i;
+const colourOr = (v: unknown, or: string): string => (typeof v === 'string' && HEX.test(v) ? v.toLowerCase() : or);
+const oneOf = <T extends string>(v: unknown, list: readonly T[], or: T): T => (list.includes(v as T) ? (v as T) : or);
+const within = (v: unknown, lo: number, hi: number, or: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : or);
+
+/**
+ * A look as it may be kept: every field of the right kind and within its range, anything else dropped. What is
+ * missing or wrong falls back to `base`. Used wherever a look comes in from outside (a person's own character).
+ */
+export function cleanAppearance(input: unknown, base: Appearance): Appearance {
+  const a = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const out: Appearance = {
+    skin: colourOr(a.skin, base.skin),
+    hair: colourOr(a.hair, base.hair),
+    hairStyle: oneOf(a.hairStyle, HAIR_STYLES, base.hairStyle),
+    shirt: colourOr(a.shirt, base.shirt),
+    pants: colourOr(a.pants, base.pants),
+    accessory: oneOf(a.accessory, ['none', 'glasses', 'headphones', 'cap'] as const, base.accessory),
+    build: Math.round(within(a.build, 0.9, 1.1, base.build) * 100) / 100,
+  };
+  if (a.outfit !== undefined) out.outfit = oneOf(a.outfit, OUTFITS, 'polo');
+  if (a.glasses !== undefined) out.glasses = a.glasses === true;
+  if (a.facialHair !== undefined) out.facialHair = oneOf(a.facialHair, FACIAL_HAIR, 'none');
+  if (a.face !== undefined) out.face = Math.round(within(a.face, 0, FACE_SHAPES - 1, 0));
+  if (a.brows !== undefined) out.brows = Math.round(within(a.brows, 0, BROW_SHAPES - 1, 0));
+  if (a.eyes !== undefined) out.eyes = colourOr(a.eyes, '#5a3a22');
+  if (a.girth !== undefined) out.girth = Math.round(within(a.girth, 0.94, 1.08, 1) * 100) / 100;
+  if (a.shoes !== undefined) out.shoes = colourOr(a.shoes, '#1b1c20');
+  if (a.tie !== undefined) out.tie = colourOr(a.tie, '#8f2738');
+  return out;
 }
 
 export interface WorkSchedule {

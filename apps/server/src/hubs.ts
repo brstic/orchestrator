@@ -4,6 +4,7 @@ import type { WebSocket } from 'ws';
 import { eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, mayReadRoutine, maySee, shownTo, stateFor } from './access.ts';
 import { VOICE_FRAMES_PER_SECOND, hears, validFrame } from './voice.ts';
 import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, OrchestratorEvent, PersonPresence, RadioNow, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
+import type { Characters } from './characters.ts';
 import { hueOf, type Who } from './guests.ts';
 import { AUTONOMY_LEVELS, PROTOCOL_VERSION, ROLE_CATALOGUE, isAutonomyLevel, isEmote, matchRole, nowIso, roleByKey } from '@orchestrator/contracts';
 import { EngineError, FOREMAN_ROLE, type AgentLink, type Engine } from '@orchestrator/orchestration';
@@ -451,7 +452,10 @@ export class ClientHub {
 
   /** Everyone present, for a client that asks over HTTP. */
   people(): PersonPresence[] {
-    return [...this.clients.values()].filter((c) => c.presence).map((c) => ({ id: c.id, name: c.who.name, role: c.who.role, memberId: c.who.id, hue: hueOf(c.who.id), ...c.presence! }));
+    return [...this.clients.values()].filter((c) => c.presence).map((c) => {
+      const look = this.characters?.get(c.who.id);
+      return { id: c.id, name: c.who.name, role: c.who.role, memberId: c.who.id, hue: hueOf(c.who.id), ...c.presence!, ...(look ? { look } : {}) };
+    });
   }
 
   /**
@@ -532,6 +536,19 @@ export class ClientHub {
   }
 
   /** Whose movement (or arrival, or leaving: '*') has not been passed on yet. */
+  /** Each person's own character (`characters.ts`): drawn for them in every window. Set by the server. */
+  characters: Characters | null = null;
+
+  /**
+   * Somebody changed their character: every window is told (their own ones too — another window of theirs draws
+   * them as well), and their own windows get it as theirs.
+   */
+  lookChanged(personId: string): void {
+    const look = this.characters?.get(personId) ?? null;
+    for (const c of this.clients.values()) if (c.who.id === personId) this.send(c.id, { t: 'me.look', look });
+    this.schedulePeople('*');
+  }
+
   private peopleMoved = new Set<string>();
   private peopleTimer: NodeJS.Timeout | null = null;
 
@@ -568,7 +585,7 @@ export class ClientHub {
     const conn: ClientConn = { id, ws, who, presence: null, said: [], ...(loginKey ? { loginKey } : {}) };
     this.clients.set(id, conn);
     const gateway = this.engine.core.gateway;
-    this.send(id, { t: 'ready', clientId: id, state: stateFor(this.engine, who, this.engine.state()), me: { kind: who.kind, role: who.role, name: who.name, id: who.id }, ...(this.showcase ? { showcase: true } : {}) });
+    this.send(id, { t: 'ready', clientId: id, state: stateFor(this.engine, who, this.engine.state()), me: { kind: who.kind, role: who.role, name: who.name, id: who.id, look: this.characters?.get(who.id) ?? null, hue: hueOf(who.id) }, ...(this.showcase ? { showcase: true } : {}) });
     // Everyone gets the live monitors of what they may see (`send` leaves out the rest: other members' own computers).
     gateway.registerClient(id);
     const actor = who.id === 'owner' ? `owner:${id.slice(0, 8)}` : `member:${who.name}`;

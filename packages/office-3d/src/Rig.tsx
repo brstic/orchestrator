@@ -1,3 +1,4 @@
+import { CEO_LOOK } from './looks.ts';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -17,8 +18,7 @@ import { vehicleAt } from './surroundings/traffic.ts';
 import { plateOf } from './surroundings/windows.ts';
 
 /** The owner: a navy two-piece suit, burgundy tie, dark brown oxfords. */
-const CEO_LOOK: Appearance = { skin: '#e0ac69', hair: '#241c17', hairStyle: 'short', shirt: '#2b3c66', pants: '#2b3c66', accessory: 'none', build: 1.03 };
-const CEO_DETAIL = { tie: '#8f2738', shoes: '#4a2c1c' };
+
 /** Standing at someone's desk, the third-person camera comes in to at most this distance. */
 const APPROACH_DIST = 4.2;
 /**
@@ -149,7 +149,10 @@ export function Rig({
   outside,
   onOutside,
   onOutsideHint,
+  look,
 }: {
+  /** The owner's own character (`docs/CHARACTER.md`); absent: the office's boss in a suit. */
+  look?: Appearance;
   world: World;
   mode: CameraMode;
   people: PersonView[];
@@ -1060,7 +1063,7 @@ export function Rig({
     <>
     <CityGear gear={gear} />
     <group ref={avatar}>
-      <PlayerBody motion={motion} jump={air} whipAt={whipAt} ouchAt={ouchAt} emote={emote} seated={seated} />
+      <PlayerBody look={look} motion={motion} jump={air} whipAt={whipAt} ouchAt={ouchAt} emote={emote} seated={seated} />
       <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <ringGeometry args={[0.34, 0.4, 32]} />
         <meshBasicMaterial color="#ffd166" transparent opacity={0.85} toneMapped={false} />
@@ -1073,10 +1076,10 @@ export function Rig({
 /** Back on the office's own terrace (its floor is at 0) once one stands this high over the street. */
 const DROP_HOME = 140;
 
-function PlayerBody({ motion, jump, whipAt, ouchAt, emote, seated }: { motion: { current: Motion }; jump: { current: number }; whipAt?: number; ouchAt?: number; emote?: { name: string; at: number } | null; seated: boolean }) {
+function PlayerBody({ look, motion, jump, whipAt, ouchAt, emote, seated }: { look?: Appearance; motion: { current: Motion }; jump: { current: number }; whipAt?: number; ouchAt?: number; emote?: { name: string; at: number } | null; seated: boolean }) {
   // The gait reads `motion` every frame, so walking never re-renders; only a whip crack, a flinch or a gesture does (twice: start and end).
   const act = useActs({ whipAt, ouchAt, emote });
   return (
-    <Character appearance={CEO_LOOK} detail={CEO_DETAIL} pose={seated ? (act.pose === 'ouch' ? 'ouch' : 'idle') : (act.pose ?? 'stand')} cue={act.cue ?? 0} level={10} motion={motion} jump={jump} whip />
+    <Character appearance={look ?? CEO_LOOK} pose={seated ? (act.pose === 'ouch' ? 'ouch' : 'idle') : (act.pose ?? 'stand')} cue={act.cue ?? 0} level={10} motion={motion} jump={jump} whip />
   );
 }
