@@ -221,7 +221,7 @@ export async function createHarness(opts: { timings?: Record<string, number>; ap
   const wrapper = path.join(tmp, 'fake-claude');
   fs.writeFileSync(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${FAKE_CLAUDE}" "$@"\n`, { mode: 0o755 });
   const dataDir = path.join(tmp, 'server');
-  const timings = { askBossWaitMs: 6000, meetingRoundMs: 12000, deliverySettleMs: 120, deliveryConfirmMs: 6000, verifyTimeoutMs: 30000, scheduleDebounceMs: 40, ...(opts.timings ?? {}) };
+  const timings = { askBossWaitMs: 6000, hostOfflineGraceMs: 300, meetingRoundMs: 12000, deliverySettleMs: 120, deliveryConfirmMs: 6000, verifyTimeoutMs: 30000, scheduleDebounceMs: 40, ...(opts.timings ?? {}) };
   let server = await startServer({ dataDir, host: '127.0.0.1', port: 0, quiet: true, timings, database: opts.database, memoryBin: opts.memoryBin ?? null, showcase: opts.showcase, telegramApi: opts.telegramApi, telegramPollSeconds: 1 });
   const url = server.url;
   const port = Number(new URL(url).port);

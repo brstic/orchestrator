@@ -266,6 +266,8 @@ export class HostRegistry {
     host.lastSeenAt = nowIso();
     this.core.put('host', host);
     this.core.event({ type: 'worker.connected', source: 'host', summary: `Host "${host.name}" connected`, hostId, data: { claude: info.claudeVersion, tmux: info.tmuxVersion } });
+    clearTimeout(this.offlineAlarms.get(hostId));
+    this.offlineAlarms.delete(hostId);
     this.eng.comms.resolveNotifications((n) => n.kind === 'host_disconnected' && n.hostId === hostId);
     // Who is signed in to its Claude accounts: asked now, so that each is known by its name.
     // (A moment after it has been welcomed, and once more if it did not answer: a machine that has just connected is
@@ -292,16 +294,27 @@ export class HostRegistry {
     this.core.saveCompany();
     this.core.event({ type: 'worker.disconnected', source: 'server', summary: `Host "${host.name}" disconnected`, hostId, data: { sessions: sessions.length } });
     // A member's own computer goes when they do: that is not a fault to report. (A server they shared is the office's to miss.)
+    // Nor is a machine that is back within a minute — the office restarting, a deploy, a connection that dropped and came
+    // back: that raised 86 alarms in one week of the live office. One that stays away is.
     if (sessions.length && host.status !== 'revoked' && !host.memberId) {
-      this.eng.comms.notify({
-        kind: 'host_disconnected',
-        severity: 'critical',
-        title: `Host "${host.name}" is offline`,
-        body: `${sessions.length} session${sessions.length === 1 ? '' : 's'} on it cannot be observed right now. They keep running in tmux and will reappear when the host reconnects.`,
-        hostId,
-      });
+      clearTimeout(this.offlineAlarms.get(hostId));
+      const t = setTimeout(() => {
+        this.offlineAlarms.delete(hostId);
+        if (this.core.hosts.get(hostId)?.status !== 'offline') return;
+        this.eng.comms.notify({
+          kind: 'host_disconnected',
+          severity: 'critical',
+          title: `Host "${host.name}" is offline`,
+          body: `It has been away for more than ${Math.round(this.core.timings.hostOfflineGraceMs / 1000)} seconds. ${sessions.length} session${sessions.length === 1 ? '' : 's'} on it cannot be observed right now. They keep running in tmux and will reappear when the host reconnects.`,
+          hostId,
+        });
+      }, this.core.timings.hostOfflineGraceMs);
+      t.unref?.();
+      this.offlineAlarms.set(hostId, t);
     }
   }
+  /** The alarm waiting for each machine that just dropped off (`disconnected`). */
+  private readonly offlineAlarms = new Map<string, ReturnType<typeof setTimeout>>();
 
   resources(hostId: string, r: HostResources): void {
     const host = this.core.hosts.get(hostId);

@@ -51,14 +51,26 @@ function connectPinned(office, fingerprint) {
 }
 
 /**
- * An HTTPS request to the office that is sent only once the certificate has been checked against the pinned one.
- * `send(req)` writes the body and ends the request.
+ * How long an answer from the office's tools is waited for, once the office is reached. Some of them wait for a person:
+ * `ask_boss`, a comment that asks and waits, waiting for a colleague — up to four minutes each, and Claude Code itself
+ * gives them ten (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`, registry.ts). It was 60 seconds: every such question asked on a
+ * member's computer failed after a minute, and the employee asked it again. Fifteen minutes, as the office's door
+ * behind a domain waits too.
  */
-function requestPinned(office, fingerprint, options, send, onResponse, onError) {
-  const req = https.request({ host: office.hostname, port: Number(office.port) || 443, ...sni(office.hostname), rejectUnauthorized: false, agent: false, timeout: 60000, ...options });
+const MCP_WAIT_MS = 15 * 60_000;
+/** How long reaching the office may take before it is said that it did not answer. */
+const CONNECT_WAIT_MS = 15_000;
+
+/**
+ * An HTTPS request to the office that is sent only once the certificate has been checked against the pinned one.
+ * `send(req)` writes the body and ends the request. `waitMs`: how long its answer is waited for once it is sent.
+ */
+function requestPinned(office, fingerprint, options, send, onResponse, onError, waitMs = 60_000) {
+  const req = https.request({ host: office.hostname, port: Number(office.port) || 443, ...sni(office.hostname), rejectUnauthorized: false, agent: false, timeout: CONNECT_WAIT_MS, ...options });
   req.on('socket', (socket) =>
     socket.once('secureConnect', () => {
       if (!trusted(socket, fingerprint)) return req.destroy(new Error('the certificate at that address is not the one from the invitation'));
+      req.setTimeout(waitMs);
       send(req);
     }),
   );
@@ -124,6 +136,7 @@ function startRelay(address, fingerprint, preferredPort = 0) {
           if (!res.headersSent) res.writeHead(502, { 'content-type': 'application/json' });
           res.end(JSON.stringify({ error: `this computer could not reach the office: ${e.message}` }));
         },
+        pathname === '/mcp' ? MCP_WAIT_MS : 60_000,
       ),
     );
   });
@@ -336,4 +349,4 @@ function startPersonalHost(opts) {
   };
 }
 
-module.exports = { startPersonalHost, startRelay, askOffice, homeFor };
+module.exports = { startPersonalHost, startRelay, askOffice, homeFor, MCP_WAIT_MS };

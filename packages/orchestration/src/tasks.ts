@@ -1276,6 +1276,13 @@ export class TaskManager {
 
       if (cwd && task.branch) {
         const st = await this.core.agents.rpc(hostId, { method: 'git.status', params: { cwd } });
+        if (st.branch !== task.branch && project.workspace === 'in_place' && st.branch && st.branch !== 'HEAD') {
+          // In place the office creates, switches and merges nothing: the branch is only where the work is looked for.
+          // A team that never commits on its main branch works on one of its own — the task follows it (it was refused
+          // on the live office, and the employee could only block).
+          this.history(task, `The work is on the branch "${st.branch}" (the task started on "${task.branch}")`, 'orchestrator');
+          task.branch = st.branch;
+        }
         if (st.branch !== task.branch) {
           return { text: `Not complete: your worktree is on branch "${st.branch}" but ${task.key} must be on "${task.branch}". Switch back with: git switch ${task.branch}`, isError: true };
         }
@@ -1310,7 +1317,7 @@ export class TaskManager {
         // Where the branch stands now: this is what is checked, reviewed and merged.
         task.evidence.headSha = task.evidence.commits[0]?.sha ?? null;
         if (!task.evidence.commits.length && codeTask && !args.no_code_changes) {
-          return { text: `Not complete: there are no commits on "${task.branch}" since the task started. Commit your work, or — only if the task truly needed no repository changes — call complete_task with no_code_changes=true and explain why in the summary.`, isError: true };
+          return { text: `Not complete: there are no commits on "${task.branch}" since the task started. Commit your work, or — only if the task truly needed no repository changes here, or the commits it needed were already made elsewhere (before it started, on another branch, by a colleague) — call complete_task with no_code_changes=true and say why in the summary, naming those commits.`, isError: true };
         }
         const diff = await this.core.agents.rpc(hostId, { method: 'git.diff', params: { cwd, base, maxBytes: 2000 } });
         task.evidence.filesChanged = diff.files ?? [];
@@ -2089,8 +2096,14 @@ export class TaskManager {
       this.eng.addArtifact({ kind: 'plan', title: `Plan by ${by.name} (${origin})`, content: `${rationale.trim()}\n\n${created.map((t) => `- **${t.key}** ${t.title}${t.roleHint ? ` _(${t.roleHint})_` : ''}${t.dependsOn.length ? ` — after ${t.dependsOn.map((d) => this.core.tasks.get(d)?.key).join(', ')}` : ''}`).join('\n')}`, projectId, employeeId: by.id });
     }
     if (!released) {
-      const waiting = created.filter((t) => !t.released);
-      this.eng.comms.notify({ kind: 'info', severity: 'warning', title: `${by.name} proposed ${waiting.length} tasks`, body: `They are in the backlog of ${project.name} until you release them.`, projectId, employeeId: by.id });
+      // One line per employee and project while it is unread: what they have proposed and is still waiting, counted
+      // anew — not a line for every proposal (the live office had 32 lines of "proposed 1 tasks" from one employee).
+      const waiting = this.core.tasks.filter((t) => t.projectId === projectId && !t.released && t.status === 'BACKLOG' && t.createdBy === `employee:${by.name}`).length || created.filter((t) => !t.released).length;
+      const title = `${by.name} proposed ${waiting === 1 ? 'a task' : `${waiting} tasks`}`;
+      const body = `${waiting === 1 ? 'It is' : 'They are'} in the backlog of ${project.name} until you release ${waiting === 1 ? 'it' : 'them'}.`;
+      const open = this.core.notifications.find((n) => n.kind === 'info' && n.employeeId === by.id && n.projectId === projectId && !n.readAt && !n.resolvedAt && / proposed (a task|\d+ tasks)$/.test(n.title));
+      if (open) this.core.put('notification', { ...open, title, body, createdAt: nowIso() });
+      else this.eng.comms.notify({ kind: 'info', severity: 'warning', title, body, projectId, employeeId: by.id });
     }
     return { created, existing };
   }

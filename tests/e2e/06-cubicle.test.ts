@@ -67,6 +67,26 @@ test('a task for them is done in place: no worktree, no branch switching, no mer
   assert.equal(h.git(folder, 'branch', '--list', 'orchestrator/*'), '', 'no integration branch either');
 });
 
+test('in place, the work may be on the branch the team works on: the task follows it instead of refusing it', async () => {
+  // Seen on the live office: a team that never commits on its main branch did the work on a branch of its own, and
+  // complete_task refused it ("must be on master", then "no commits on master") — the employee could only block.
+  await waitFor(async () => (await h.session(lena.id))!.inTurn === false, { label: 'idle' });
+  const task = await h.task({ projectId: lena.projectId, title: 'Add the receipt footer', assigneeId: lena.id, description: '@@fake: bash git switch -q -c feature/receipt-footer; write footer.txt thanks; commit add the receipt footer; complete footer added on our branch@@' });
+  // Lena is on Standard: switching the branch in the owner's folder is asked first, and the owner allows it.
+  const asked = await waitFor(() => h.openQuestion(lena.id, 'permission'), { label: 'the switch is asked' });
+  assert.match(String((asked.tool!.input as any).command), /git switch/);
+  await h.api('POST', `/questions/${asked.id}/answer`, { decision: 'allow' });
+  const done = await waitFor(async () => {
+    const t = await h.getTask(task.id);
+    return t.status === 'DONE' || t.status === 'BLOCKED' ? t : null;
+  }, { label: 'handed in', timeout: 20000 });
+  assert.equal(done.status, 'DONE', done.blockedReason ?? '');
+  assert.equal(done.branch, 'feature/receipt-footer', 'the task is where the work is');
+  assert.deepEqual(done.evidence.commits.map((c) => c.subject), ['add the receipt footer']);
+  assert.ok(done.history.some((x) => /feature\/receipt-footer/.test(x.note) && /main/.test(x.note)), 'the move is on its record');
+  h.git(folder, 'switch', '-q', 'main');
+});
+
 test("the owner's own uncommitted files in the folder never block a task and are never the employee's to tidy", async () => {
   await waitFor(async () => (await h.session(lena.id))!.inTurn === false, { label: 'idle' });
   // The owner is in the middle of something in their own folder.

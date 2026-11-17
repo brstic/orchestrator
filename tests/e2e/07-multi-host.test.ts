@@ -143,7 +143,8 @@ test('losing one machine only affects its own employees; it comes back with the 
   assert.equal(state.hosts.find((x) => x.id === linux.hostId)!.status, 'offline');
   assert.equal(state.sessions.find((s) => s.employeeId === ids.Alex)!.status, 'running');
   assert.equal(state.sessions.find((s) => s.employeeId === ids.Vera)!.status, 'running');
-  assert.ok(state.notifications.some((n) => n.kind === 'host_disconnected' && n.hostId === linux.hostId && !n.resolvedAt));
+  // The alarm, once it has been away for longer than a dropped connection would be.
+  await waitFor(async () => (await h.state()).notifications.some((n) => n.kind === 'host_disconnected' && n.hostId === linux.hostId && !n.resolvedAt), { label: 'the alarm for the machine that stays away' });
   // Work for the offline machine waits instead of failing or moving elsewhere.
   const emp = state.employees.find((e) => e.id === ids.Lin)!;
   const queued = await h.task({ projectId: emp.projectId, title: 'While offline', assigneeId: ids.Lin, description: '@@fake: write later.txt ok; commit later; complete later@@' });

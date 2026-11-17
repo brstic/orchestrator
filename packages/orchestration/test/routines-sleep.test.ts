@@ -261,13 +261,16 @@ test('what a repeating check finds is put on the board once, and waits for the o
   assert.match(first, /Created 1 tasks: T-\d+\. They wait in the backlog for the boss to release them\./);
   const task = eng.core.tasks.find((t) => t.dedupeKey === 'desk#4411')!;
   assert.deepEqual([task.status, task.released, task.assigneeId], ['BACKLOG', false, null], 'on the board, proposed, not started');
-  assert.ok(eng.core.notifications.find((n) => /Ben proposed 1 tasks/.test(n.title)));
+  assert.ok(eng.core.notifications.find((n) => /Ben proposed a task/.test(n.title)));
 
   // The next check sees the same ticket (and one new one).
   const second = await call({ tasks: [{ title: 'Ticket 4411 again', description: 'Still open.', dedupe_key: ' desk#4411 ' }, { title: 'Ticket 4412: export is slow', description: 'New.', dedupe_key: 'desk#4412' }] });
   assert.match(second, /Created 1 tasks: T-\d+\./);
   assert.match(second, new RegExp(`Already on the board, so not added again: ${task.key} \\[BACKLOG\\]`));
   assert.equal(eng.core.tasks.filter((t) => t.dedupeKey === 'desk#4411').length, 1);
+  // Still one line in the Inbox, counting what waits — not one more for every proposal.
+  const lines = eng.core.notifications.filter((n) => n.employeeId === ben.id && / proposed /.test(n.title));
+  assert.deepEqual(lines.map((n) => n.title), ['Ben proposed 2 tasks']);
   // Even once that task is long done.
   task.status = 'DONE';
   eng.core.put('task', task);

@@ -90,7 +90,7 @@ test('a routine is handed over again and again; what it finds is put on the task
   const tasks = (await h.state()).tasks.filter((t) => t.dedupeKey === 'desk#4411');
   assert.equal(tasks.length, 1, 'the same ticket is not added twice');
   assert.deepEqual([tasks[0]!.status, tasks[0]!.released, tasks[0]!.assigneeId, tasks[0]!.createdBy], ['BACKLOG', false, null, 'employee:Ava']);
-  assert.ok((await h.state()).notifications.some((n) => /Ava proposed 1 tasks/.test(n.title)));
+  assert.ok((await h.state()).notifications.some((n) => /Ava proposed a task/.test(n.title)));
   assert.equal((await h.session(ids.Ava!))!.id, s.id, 'the same session throughout');
 
   // In the feed like any message, and listed with what the last run came to.

@@ -47,6 +47,8 @@ export interface Timings {
   colleagueWaitMs: number;
   /** While someone waits for a colleague: how long that colleague may be without a session (it is being moved or started) before the wait is cut short. */
   waitGoneGraceMs: number;
+  /** A machine that drops off: the alarm is raised only when it has not come back within this long. */
+  hostOfflineGraceMs: number;
   /** How long each meeting round waits for contributions. */
   meetingRoundMs: number;
   /** Delay between a session becoming idle and Orchestrator typing into it. */
@@ -110,6 +112,7 @@ export const DEFAULT_TIMINGS: Timings = {
   askBossWaitMs: 240_000,
   colleagueWaitMs: 240_000,
   waitGoneGraceMs: 5000,
+  hostOfflineGraceMs: 60_000,
   meetingRoundMs: 8 * 60_000,
   deliverySettleMs: 350,
   deliveryConfirmMs: 20_000,

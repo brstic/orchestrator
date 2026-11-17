@@ -42,3 +42,17 @@ test('a remembered port that is not a usable one is ignored', async () => {
     relay.close();
   }
 });
+
+/**
+ * Seen on the live office: on a member's computer every `ask_boss` (and every comment that asks and waits) failed after
+ * exactly 60 seconds with "this computer could not reach the office: the office did not answer" — the relay gave up on
+ * an answer the office was still waiting for (up to four minutes), and the employee, told it had failed, asked again.
+ * The relay waits for the office's tools at least as long as Claude Code itself does (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`).
+ */
+test('the relay waits for the office\'s tools as long as the longest of them waits, and as long as Claude Code does', async () => {
+  const { MCP_WAIT_MS } = require('../electron/personal-host.cjs') as { MCP_WAIT_MS: number };
+  const { DEFAULT_TIMINGS } = await import('../../../packages/orchestration/src/core.ts');
+  const longest = Math.max(DEFAULT_TIMINGS.askBossWaitMs, DEFAULT_TIMINGS.colleagueWaitMs);
+  const claudeCode = Math.max(600_000, longest * 2); // as registry.ts gives every session
+  assert.ok(MCP_WAIT_MS >= claudeCode, `the relay waits ${MCP_WAIT_MS} ms, a tool may take ${claudeCode} ms`);
+});
