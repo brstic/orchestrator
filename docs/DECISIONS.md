@@ -2,6 +2,12 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-17 — The office is drawn into a render target, not straight into the canvas
+The owner: "the 3D still flickers a lot". Measured: the same still scene drawn straight into the canvas (antialias on) gave a different picture on edges from one draw to the next; drawn into a `WebGLRenderTarget` it was identical every time. On screen this showed as frames in which every edge jumped and came back, most often with name tags (HTML) over the canvas and in the city.
+- **A multisampled render target (4 samples, 0 on Low) and one full-screen draw** to the canvas, which has no antialiasing of its own. Tone mapping and the colour space are applied in that last draw, as three applies them to the canvas — the picture is the same (mean colour within 0.4 of 255), the frame rate the same (~140 on the test machine).
+- **Half floats where the GPU can draw into them** (`EXT_color_buffer_float`), else sRGB bytes: a linear picture in plain bytes would band in the dark before the tone mapping.
+- **Not chosen:** a post-processing library for one pass; turning antialiasing off (edges crawl); hiding name tags (they are how people are found).
+
 ## 2026-11-17 — Other models through Claude Code, not other runtimes (DeepSeek directly, OpenAI through a proxy)
 The owner wanted every agent to keep the same context "on another Claude account, on OpenAI, DeepSeek, Z.AI".
 - **The employee stays Claude Code**; only the model behind it changes (an account folder whose settings point Claude Code elsewhere). Everything the office gives — hooks, the fence, MCP tools, the context, approvals — is Claude Code's, so it holds on any of them with nothing new to keep in step. A second runtime (Codex CLI) would need all of that again, weaker (no compaction hook).

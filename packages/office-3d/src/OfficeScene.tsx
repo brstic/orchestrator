@@ -23,6 +23,7 @@ import { buildWorld } from './world.ts';
 import { STUDIO, Surroundings as SurroundingsPart } from './surroundings/index.tsx';
 import { CityWalkers } from './city/CityWalkers.tsx';
 import { usePacedLoop } from './pace.ts';
+import { StableFrame } from './stable-frame.tsx';
 
 // Each part of the office is gone through by React again only when what it shows has changed. The office's state
 // changes many times a second while people work (and something always does); without this every such change
@@ -199,7 +200,9 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       shadows={props.quality !== 'low'}
       dpr={dpr}
       camera={{ fov: 50, near: 0.1, far: 260, position: [world.spawn.x + 2, 9, world.spawn.z + 10] }}
-      gl={{ antialias: props.quality !== 'low', powerPreference: 'high-performance', preserveDrawingBuffer: false }}
+      // No antialiasing of the canvas's own: the office is drawn multisampled into a picture of its own and put on
+      // the canvas in one piece (`StableFrame`) — drawn straight in, its edges were not the same from frame to frame.
+      gl={{ antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false }}
       onCreated={({ gl, scene }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.05;
@@ -212,6 +215,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
         if (e.button === 0) props.onSelect(null);
       }}
     >
+      <StableFrame samples={props.quality === 'low' ? 0 : 4} />
       <Reflections />
       <PerfProbe />
       <Surroundings kind={surroundings} world={world} quality={props.quality} />
