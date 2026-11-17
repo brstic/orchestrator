@@ -142,3 +142,40 @@ test('the body is the size the furniture and the poses expect', () => {
   head.computeBoundingBox();
   assert.ok(HEAD_Y + (0.103 + head.boundingBox!.min.y) * HEAD_SCALE > SHOULDER_Y + 0.08, 'the chin is above the shoulders');
 });
+
+test('seated, a garment over the hips lies on the thighs, not through them; the jacket\'s back lies on the seat', () => {
+  // The owner: "clothes sometimes flicker from some angles" (2026-11-17) — the thighs and the seat cut through the hem.
+  const g = body();
+  const R = 0.092; // the trouser leg where it leaves the seat
+  const HIP = 0.078;
+  for (const [name, geo] of [['loose', g.torsoLoose], ['jacket', g.torsoJacket], ['sweater hem', g.trim.sweater]] as const) {
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+    const m = geo.morphAttributes.position;
+    assert.equal(m?.length, 3, `${name}: three morph targets (left lap, right lap, seat)`);
+    let under = 0;
+    let checked = 0;
+    for (let i = 0; i < pos.count; i++) {
+      // Both thighs up and on the seat: every target at 1.
+      let x = pos.getX(i);
+      let y = pos.getY(i);
+      let z = pos.getZ(i);
+      for (const t of m!) {
+        x += t.getX(i);
+        y += t.getY(i);
+        z += t.getZ(i);
+      }
+      const dx = Math.max(0, Math.abs(x) - HIP);
+      // Over a thigh, in front of the hip joint: the cloth must be above the top of the thigh.
+      if (z > 0.05 && dx < R * 0.9) {
+        checked++;
+        if (y < Math.sqrt(R * R - dx * dx) - 0.002) under++;
+      }
+      // Behind: never below the seat.
+      if (z < -0.06) assert.ok(y > -0.05, `${name}: a point of the back is below the seat (${y.toFixed(3)})`);
+    }
+    assert.ok(checked > 10, `${name}: points over the thighs were looked at`);
+    assert.equal(under, 0, `${name}: ${under} points of the hem are inside a thigh when seated`);
+  }
+  // Standing nothing moves: the targets are offsets, at 0 the garment is as it was.
+  assert.equal(g.torsoTucked.morphAttributes.position, undefined, 'a tucked-in shirt is inside the trousers and needs none');
+});

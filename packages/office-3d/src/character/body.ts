@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { HANDLE_LEN, SHIN, TAU, THIGH, UPPER_ARM, clamp01, lerp, smooth } from './motion.ts';
+import { HANDLE_LEN, HIP_X, SHIN, TAU, THIGH, UPPER_ARM, clamp01, lerp, smooth } from './motion.ts';
 import { STRIPE, type Sec, ball, clothUV, finish, frontPatch, fuse, jointed, loft, mirrorX, onBones, orient, paint, resample, ringGeo, secAt, sheet, spow, tube, xf } from './shape.ts';
 
 /**
@@ -684,6 +684,69 @@ export const PIN_Z = frontZ(TORSO_JACKET, 0.079, 0.412, 0.0125);
 export const BADGE_Z = frontZ(TORSO_TUCKED, 0.088, 0.36, 0.004);
 
 /** Built once, on first use, and shared by every character. */
+/** How high a short sleeve's cap rises over the shoulder joint, as a part of its radius (see `sleeveShort`). */
+const SLEEVE_CAP = 0.8;
+/** The trouser leg's radius where it leaves the seat (`jointed(0.092, …)` below), and the cloth's room above it. */
+const THIGH_TOP_R = 0.092;
+const LAP_ROOM = 0.016;
+/** Where the chair's seat is under someone sitting, from the hip centre (`SEAT_TOP` − `SIT_Y`), and the cloth's room above it. */
+const SEAT_FLOOR = -0.05 + 0.012;
+
+/**
+ * A garment worn over the hips moves with the thighs: they come forward at the height of the hip joint, and a hem
+ * that hangs over the hips standing is cut through by a thigh that rises (a stride, a run, sitting) — and seated, the
+ * jacket's back by the seat. The two surfaces passing through each other shimmered at the seam as the figure breathed
+ * (the owner: "clothes sometimes flicker from some angles", 2026-11-17). Three morph targets, in this order:
+ *   0  the left half of the front lifted onto the left thigh (character's left, +x) — driven by that hip's bend,
+ *   1  the right half onto the right thigh,
+ *   2  the back onto the seat — driven by sitting.
+ * In front of the hip joint, what is below the top of the thighs is lifted onto them, eased forward and outward, as
+ * cloth lies over a lap; behind it, what is below the seat is lifted onto the seat. With both thighs up the two
+ * halves make one lap. Everything sewn onto the same garment gets the same, so it stays on it.
+ */
+export function addSeatedMorph(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  const pos = g.getAttribute('position') as THREE.BufferAttribute;
+  const left = new Float32Array(pos.count * 3);
+  const right = new Float32Array(pos.count * 3);
+  const back = new Float32Array(pos.count * 3);
+  let moved = 0;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    // Cloth bridges the gap between the thighs: as high as the top of a thigh across the middle, falling off outside.
+    const dx = Math.max(0, Math.abs(x) - HIP_X);
+    const top = Math.sqrt(Math.max(0, THIGH_TOP_R * THIGH_TOP_R - dx * dx)) + LAP_ROOM;
+    // How much of this point is over the thighs rather than behind them: none at the back, all from the joint forward.
+    const front = smooth(-0.03, 0.03, z);
+    const lap = Math.max(0, top - y) * front;
+    const seat = Math.max(0, SEAT_FLOOR - y) * (1 - front);
+    if (lap <= 0 && seat <= 0) continue;
+    // Lifted (the rows below the lap close up into the hem's edge), carried forward a little as cloth lies over a
+    // lap, and eased outward so it stays clear of the seat of the trousers at the hips.
+    if (lap > 0) {
+      const l = smooth(-0.06, 0.06, x);
+      const out = x * 0.1 * Math.min(1, lap / 0.03);
+      for (const [d, k] of [[left, l], [right, 1 - l]] as const) {
+        d[i * 3] = out * k;
+        d[i * 3 + 1] = lap * k;
+        d[i * 3 + 2] = lap * 0.35 * k;
+      }
+    }
+    if (seat > 0) {
+      back[i * 3] = x * 0.1 * Math.min(1, seat / 0.03);
+      back[i * 3 + 1] = seat;
+      back[i * 3 + 2] = -seat * 0.5;
+    }
+    moved++;
+  }
+  if (moved) {
+    g.morphAttributes.position = [new THREE.BufferAttribute(left, 3), new THREE.BufferAttribute(right, 3), new THREE.BufferAttribute(back, 3)];
+    g.morphTargetsRelative = true;
+  }
+  return g;
+}
+
 export function body(): Body {
   if (BODY) return BODY;
   const tucked = resample(TORSO_TUCKED, 3);
@@ -765,10 +828,12 @@ export function body(): Body {
         [0.0556, -0.113],
         [0.0556, -0.06],
         [0.0556, 0],
-        [0.0556 * Math.cos(0.4), 0.0556 * Math.sin(0.4) * 0.62],
-        [0.0556 * Math.cos(0.8), 0.0556 * Math.sin(0.8) * 0.62],
-        [0.0556 * Math.cos(1.2), 0.0556 * Math.sin(1.2) * 0.62],
-        [0.0001, 0.0556 * 0.62],
+        // The cap stands clear of the arm's own rounded top (0.046 × 0.8 = 3.7 cm, `bareArm`): at 0.62 (3.45 cm) the
+        // skin of the shoulder showed through the top of a short sleeve, as a fleck that came and went with the light.
+        [0.0556 * Math.cos(0.4), 0.0556 * Math.sin(0.4) * SLEEVE_CAP],
+        [0.0556 * Math.cos(0.8), 0.0556 * Math.sin(0.8) * SLEEVE_CAP],
+        [0.0556 * Math.cos(1.2), 0.0556 * Math.sin(1.2) * SLEEVE_CAP],
+        [0.0001, 0.0556 * SLEEVE_CAP],
       ]),
     ),
     armL: onBones(bareArm, 4, 5),
@@ -811,5 +876,7 @@ export function body(): Body {
     if (!(g instanceof THREE.BufferGeometry)) for (const [o, t] of Object.entries(g)) g[o] = finish(t);
     else if (!g.getAttribute('skinIndex')) all[name] = finish(g);
   }
+  // What is worn on the trunk over the hips follows them when sitting (after `finish`, which would drop it).
+  for (const g of [BODY.torsoLoose, BODY.torsoJacket, BODY.suitLapels, BODY.suitButtons, ...Object.values(BODY.trim)]) addSeatedMorph(g);
   return BODY;
 }

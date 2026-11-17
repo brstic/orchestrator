@@ -224,7 +224,9 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
       brow: mat(appearance.hair, 0.8, offline, { shade: -0.25 }),
       shirt: mat(appearance.shirt, rough, offline, cloth),
       trim: mat(outfit === 'suit' ? '#f1f1ee' : appearance.shirt, outfit === 'suit' ? 0.7 : rough, offline, { ...trim, decal: true, painted: true }),
-      lapel: mat(appearance.shirt, 0.62, offline, { shade: 0.035, decal: true, stripe: true }),
+      // The jacket's own cloth (the same weave and stripe, a shade lighter): smoother and lighter, its collar and pocket
+      // flaps read as grey patches stuck on.
+      lapel: mat(appearance.shirt, 0.7, offline, { shade: 0.012, decal: true, stripe: true, grain: 'weave', depth: 0.35 }),
       tie: mat(detail?.tie ?? TIES[seed % TIES.length]!, 0.5, offline, { decal: true }),
       pants: outfit === 'suit' ? mat(appearance.pants, 0.74, offline, { stripe: true, grain: 'weave', depth: 0.35 }) : mat(appearance.pants, 0.86, offline, { grain: 'weave', depth: 0.7 }),
       belt: mat('#ffffff', 0.45, offline, { painted: true }),
@@ -433,6 +435,22 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
       lidL.current.rotation.x = lidR.current.rotation.x = lerp(1 - open, 1, lids) * LID_CLOSE;
     }
     if (chest.current) {
+      // A hem over the hips follows the thighs (`addSeatedMorph`): each half of the front its own thigh as it rises
+      // (a stride, a run, sitting), the back the seat.
+      const lapL = smooth(0.2, 1.35, -c.hL);
+      const lapR = smooth(0.2, 1.35, -c.hR);
+      const onSeat = smooth(0.45, 1.35, -(c.hL + c.hR) / 2);
+      for (const m of chest.current.children) {
+        const mesh = m as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.geometry.morphAttributes.position) continue;
+        if (!mesh.morphTargetInfluences || mesh.morphTargetInfluences.length !== 3) mesh.updateMorphTargets();
+        const k = mesh.morphTargetInfluences;
+        if (k && k.length === 3) {
+          k[0] = lapL;
+          k[1] = lapR;
+          k[2] = onSeat;
+        }
+      }
       const awake = 0.5 + 0.5 * Math.sin(t * 1.3 + phase * 1.9);
       const deep = 0.5 + 0.5 * Math.sin(t * SLEEP_BREATH + phase * 1.9);
       const girth = look3d.who.girth;

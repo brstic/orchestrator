@@ -2,6 +2,12 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-17 — A hem follows the thighs by morph targets, not by skinning the garment
+Seated and running, the thighs cut through what is worn over the hips (`addSeatedMorph` in `character/body.ts`).
+- **Three morph targets on every garment over the hips and what is sewn on it** (the loose torso, the jacket, the trims, lapels, buttons): the left half of the front onto the left thigh, the right half onto the right, the back onto the seat; driven every frame by each hip's bend and by sitting. Morphs cost a few uniforms and need no bones; the garment stays one rigid mesh on the chest as before.
+- **Not chosen:** skinning the torso garments to the hips and thighs — the right answer for real cloth, but a rebuild of every garment and of the bones it hangs from; shortening hems for everybody — standing figures would change.
+- How found: each part drawn in its own flat colour, twice, with the camera moved a fraction of a millimetre, counting pixels inside a surface that change owner (z-fighting), and the same between frames of moving figures; then pictures of the seated poses from the side.
+
 ## 2026-11-17 — The office is drawn into a render target, not straight into the canvas
 The owner: "the 3D still flickers a lot". Measured: the same still scene drawn straight into the canvas (antialias on) gave a different picture on edges from one draw to the next; drawn into a `WebGLRenderTarget` it was identical every time. On screen this showed as frames in which every edge jumped and came back, most often with name tags (HTML) over the canvas and in the city.
 - **A multisampled render target (4 samples, 0 on Low) and one full-screen draw** to the canvas, which has no antialiasing of its own. Tone mapping and the colour space are applied in that last draw, as three applies them to the canvas — the picture is the same (mean colour within 0.4 of 255), the frame rate the same (~140 on the test machine).
