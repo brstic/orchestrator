@@ -8,11 +8,13 @@
  *
  *   - not beyond `VOICE_RANGE` metres;
  *   - a meeting room keeps what is said in it: someone inside is heard only by those inside the same room, and
- *     hears nobody outside it. That is what a meeting room is for.
+ *     hears nobody outside it. That is what a meeting room is for;
+ *   - out in the city (docs/CITY.md, "Together") people hear each other by where they are there, and nobody in the
+ *     office hears the street, nor the street the office.
  *
  * The office keeps no sound: a frame is passed on and forgotten.
  */
-import type { OfficeLayout } from '@orchestrator/contracts';
+import { apart, type OfficeLayout } from '@orchestrator/contracts';
 
 /** Beyond this many metres a voice is not passed on. (Windows fade it out a little before that.) */
 export const VOICE_RANGE = 26;
@@ -24,6 +26,8 @@ export const VOICE_FRAMES_PER_SECOND = 45;
 export interface Spot {
   x: number;
   z: number;
+  /** Out in the city: where they are there. */
+  out?: { x: number; y: number; z: number } | null;
 }
 
 /** The meeting room a point is in (its id), or null: everywhere else is one open space as far as voices go. */
@@ -37,6 +41,7 @@ export function soundRoom(layout: Pick<OfficeLayout, 'rooms'> | null | undefined
 
 /** Does someone standing at `listener` hear someone speaking at `speaker`? */
 export function hears(layout: Pick<OfficeLayout, 'rooms'> | null | undefined, speaker: Spot, listener: Spot): boolean {
+  if (speaker.out || listener.out) return apart(speaker, listener) <= VOICE_RANGE;
   if (soundRoom(layout, speaker) !== soundRoom(layout, listener)) return false;
   return Math.hypot(speaker.x - listener.x, speaker.z - listener.z) <= VOICE_RANGE;
 }

@@ -6,3 +6,4 @@ export * from './util.ts';
 export * from './layout.ts';
 export * from './arcade.ts';
 export * from './context.ts';
+export * from './outside.ts';

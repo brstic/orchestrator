@@ -621,11 +621,22 @@ export function Prompt() {
   const moving = useOffice((s) => (s.movingEmployeeId ? s.employees[s.movingEmployeeId] : undefined));
   const outside = useOffice((s) => s.outside.on);
   const outsideHint = useOffice((s) => s.outsideHint);
+  // The others out in the city too (docs/CITY.md, "Together"): one can go to each of them.
+  // (As one string, so the prompt is drawn again only when who is out there changes, not as they move.)
+  const alsoOut = useOffice((s) => (s.outside.on ? s.people.filter((p) => p.out && p.id !== s.clientId).map((p) => `${p.id}\u0000${p.name}`).join('\n') : ''));
   if (outside && !panel)
-    // Out in the city: what the keys do just now, and the way back.
+    // Out in the city: what the keys do just now, who else is out here, and the way back.
     return (
       <div className="glass prompt prompt-outside" data-outside>
         {outsideHint && <span>{outsideHint}</span>}
+        {(alsoOut ? alsoOut.split('\n') : []).slice(0, 4).map((row) => {
+          const [id, name] = row.split('\u0000') as [string, string];
+          return (
+            <button key={id} type="button" className="btn btn-sm" data-go-to={name} onClick={() => useOffice.getState().joinOutside(id)} title={`Go to where ${name} is out here`}>
+              Go to {name}
+            </button>
+          );
+        })}
         <button type="button" className="btn btn-primary btn-sm" onClick={() => useOffice.getState().backToOffice()} title="Back to where you stood in the office">
           Back to Office
         </button>

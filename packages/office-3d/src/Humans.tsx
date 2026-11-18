@@ -1,13 +1,16 @@
 import { defaultLook } from './looks.ts';
 import { Html } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
-import { memo, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type * as THREE from 'three';
-import type { Appearance } from '@orchestrator/contracts';
+import type { Appearance, OutsideAt } from '@orchestrator/contracts';
 import { Character, type Motion } from './Character.tsx';
 import { RemoteTrack } from './remote-motion.ts';
 import { useActs } from './character/acts.ts';
-import { JUMP_HEIGHT, JUMP_SECONDS, jumpY } from './character/motion.ts';
+import { JUMP_AIR, JUMP_HEIGHT, JUMP_OFF, JUMP_SECONDS, jumpY } from './character/motion.ts';
+import { CityGear, type Gear } from './city/gear.tsx';
+import { STREET_Y } from './city/blocks.ts';
+import { othersOutside } from './city/together.ts';
 
 /** Another person in the office (the owner, or a guest), as the server reports them about ten times a second. */
 export interface HumanView {
@@ -39,14 +42,19 @@ export interface HumanView {
   memberId?: string;
   /** Their own character, when they made one (`docs/CHARACTER.md`). */
   look?: Appearance;
+  /** Out in the city (`docs/CITY.md`, "Together"): where they are there — drawn there, with their parachute or their car. */
+  out?: OutsideAt;
 }
+
+/** Farther than this from the camera (m) a name tag is not shown: somebody far down in the city is no label over the office. */
+const TAG_FAR = 320;
 
 /**
  * The newest report of each person, by id, and when it was seen here. Written whenever the list arrives (about ten
  * times a second while anybody moves) and read by each character every frame — so a report moves a character
  * without redrawing it.
  */
-const reports = new Map<string, { x: number; z: number; rot: number; moving: boolean; at?: number; seen: number }>();
+const reports = new Map<string, { x: number; z: number; rot: number; moving: boolean; at?: number; out?: OutsideAt; seen: number }>();
 
 /** Faster than this over the floor (m/s) is a run: between the pace a person walks at (3.8) and the pace they run at (7.4). */
 const RUNS_ABOVE = 5.6;
@@ -73,8 +81,13 @@ const Human = memo(function Human({ h }: { h: HumanView }) {
   // How long their jump has lasted (s; −1: on the floor): the character reads it every frame, as it reads `motion`.
   const air = useRef(-1);
   const ring = useRef<THREE.Mesh>(null);
+  const bodyGroup = useRef<THREE.Group>(null);
+  const tag = useRef<HTMLDivElement>(null);
+  // Out in the city: their parachute, their car and the car they left, where this window draws them (read by `CityGear`).
+  const gear = useRef<Gear>({ chute: null, car: null, parked: null });
+  useEffect(() => () => void othersOutside.delete(h.id), [h.id]);
   // Before the character animates (see `motion` in Character.tsx): its feet are then placed for this frame's position.
-  useFrame(() => {
+  useFrame((state) => {
     const g = group.current;
     if (!g) return;
     if (!drawn) setDrawn(true);
@@ -83,16 +96,18 @@ const Human = memo(function Human({ h }: { h: HumanView }) {
     const tr = (track.current ??= new RemoteTrack());
     if (r && r !== taken.current) {
       taken.current = r;
-      tr.push(r, r.seen);
+      // Out in the city they are drawn where they are there; in the office where they stand.
+      tr.push(r.out ? { x: r.out.x, y: r.out.y, z: r.out.z, rot: r.out.rot, moving: r.moving, at: r.at } : r, r.seen);
     }
     const p = tr.sample(now);
     if (!p) return;
+    const out = r?.out;
     const was = at.current;
     const m = motion.current;
     // By the time that really passed between the two places (the frame clock's own step can differ from it).
     const step = sampled.current === null ? 0 : (now - sampled.current) / 1000;
     sampled.current = now;
-    if (!was || step < 1e-4 || step > 0.25 || Math.hypot(p.x - was.x, p.z - was.z) > 3) {
+    if (!was || step < 1e-4 || step > 0.25 || Math.hypot(p.x - was.x, p.z - was.z) > 3 + 60 * step || (out && out.phase !== 'foot')) {
       // First sight of them, or they were put somewhere else: there, at once, standing.
       m.vx = m.vz = m.turn = 0;
       m.run = false;
@@ -114,21 +129,38 @@ const Human = memo(function Human({ h }: { h: HumanView }) {
       m.run = m.run ? speed > RUNS_ABOVE - 0.8 : speed > RUNS_ABOVE;
       if (speed < 0.02) m.vx = m.vz = 0;
     }
+    const bank = was && step > 1e-4 ? Math.max(-1.5, Math.min(1.5, (was.rot - p.rot) / step)) : 0;
     at.current = p;
     // A jump of theirs, as this window saw it begin: the body crouches, pushes off and lands by itself (the pose); here it is lifted.
     const since = jumpAt.current ? (now - jumpAt.current) / 1000 : -1;
-    air.current = since >= 0 && since < JUMP_SECONDS ? since : -1;
-    const lift = air.current >= 0 ? jumpY(air.current) : 0;
-    g.position.set(p.x, lift, p.z);
-    // Their ring stays on the floor under them, and draws in a little the higher they are.
+    air.current = out ? (out.phase === 'fall' ? JUMP_OFF + JUMP_AIR * 0.5 : -1) : since >= 0 && since < JUMP_SECONDS ? since : -1;
+    const lift = !out && air.current >= 0 ? jumpY(air.current) : 0;
+    g.position.set(p.x, out ? p.y : lift, p.z);
+    // Their ring stays on the floor under them, and draws in a little the higher they are. (Not out in the city.)
     if (ring.current) {
+      ring.current.visible = !out;
       ring.current.position.y = 0.02 - lift;
       ring.current.scale.setScalar(1 - 0.22 * (lift / JUMP_HEIGHT));
     }
     g.rotation.y = p.rot;
+    // At the wheel, or beside somebody who is: the car is what is seen.
+    if (bodyGroup.current) bodyGroup.current.visible = !out || (out.phase !== 'car' && out.phase !== 'ride');
+    gear.current = {
+      chute: out?.phase === 'chute' ? { x: p.x, y: p.y, z: p.z, rot: p.rot, open: out.chute ?? 1, bank } : null,
+      car: out?.phase === 'car' && out.car ? { x: p.x, y: p.y, z: p.z, rot: p.rot, paint: out.car.paint, speed: out.car.speed, steer: out.car.steer, kind: out.car.kind } : null,
+      parked: out?.parked ? { x: out.parked.x, y: STREET_Y, z: out.parked.z, rot: out.parked.rot, paint: out.parked.paint, speed: 0, steer: 0, kind: out.parked.kind } : null,
+    };
+    if (out) othersOutside.set(h.id, { name: h.name, phase: out.phase, x: p.x, y: p.y, z: p.z, rot: p.rot, speed: out.car?.speed ?? 0 });
+    else othersOutside.delete(h.id);
+    // A name far off (somebody down in the city, seen from the office) is not shown.
+    if (tag.current) {
+      const cam = state.camera.position;
+      const far = Math.hypot(cam.x - p.x, cam.y - g.position.y, cam.z - p.z) > TAG_FAR;
+      tag.current.style.display = far ? 'none' : '';
+    }
     // For the UI tests (see `window.__orchScene`): where each other person is drawn right now and how they move.
     const probe = ((window as unknown as { __orchScene?: Record<string, any> }).__orchScene ??= { detail: {} });
-    (probe.humans ??= {})[h.id] = { x: p.x, z: p.z, rot: p.rot, vx: m.vx, vz: m.vz, turn: m.turn, run: m.run, name: h.name, t: now, y: lift, sit: !!sitNow.current };
+    (probe.humans ??= {})[h.id] = { x: p.x, z: p.z, rot: p.rot, vx: m.vx, vz: m.vz, turn: m.turn, run: m.run, name: h.name, t: now, y: out ? p.y : lift, sit: !!sitNow.current, out: out ? out.phase : null, body: bodyGroup.current?.visible !== false, chute: !!gear.current.chute, car: !!gear.current.car, parked: !!gear.current.parked };
   }, -1);
   const body = useMemo(
     () => <Character appearance={look} pose={h.sit ? (act.pose === 'ouch' ? 'ouch' : 'idle') : (act.pose ?? 'stand')} cue={act.cue ?? 0} whip={act.whipping} level={h.role === 'owner' ? 9 : 1} motion={motion} jump={air} />,
@@ -137,25 +169,28 @@ const Human = memo(function Human({ h }: { h: HumanView }) {
   // (No position on the group itself: it is placed every frame above. A position given here would be put back on the
   // character at every report — a jump to where they are *now*, in the middle of walking to where they were.)
   return (
-    <group ref={group}>
-      {body}
-      <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <ringGeometry args={[0.36, 0.44, 32]} />
-        <meshBasicMaterial color={`hsl(${h.hue} 80% 60%)`} transparent opacity={0.9} toneMapped={false} />
-      </mesh>
-      {drawn && (
-      <Html position={[0, 2.02, 0]} center zIndexRange={[32, 0]} style={{ pointerEvents: 'none' }}>
-        <div className="human-tag" style={{ borderColor: `hsl(${h.hue} 70% 60%)` }}>
-          {h.saying && <div className="human-says">{h.saying}</div>}
-          <div className="human-name">
-            {h.speaking && <span className="human-speaking" aria-label="talking" />}
-            {h.name}
+    <>
+      <group ref={group}>
+        <group ref={bodyGroup}>{body}</group>
+        <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+          <ringGeometry args={[0.36, 0.44, 32]} />
+          <meshBasicMaterial color={`hsl(${h.hue} 80% 60%)`} transparent opacity={0.9} toneMapped={false} />
+        </mesh>
+        {drawn && (
+        <Html position={[0, 2.02, 0]} center zIndexRange={[32, 0]} style={{ pointerEvents: 'none' }}>
+          <div ref={tag} className="human-tag" style={{ borderColor: `hsl(${h.hue} 70% 60%)` }}>
+            {h.saying && <div className="human-says">{h.saying}</div>}
+            <div className="human-name">
+              {h.speaking && <span className="human-speaking" aria-label="talking" />}
+              {h.name}
+            </div>
+            <div className="human-role">{h.role === 'owner' ? 'owner' : h.role}</div>
           </div>
-          <div className="human-role">{h.role === 'owner' ? 'owner' : h.role}</div>
-        </div>
-      </Html>
-      )}
-    </group>
+        </Html>
+        )}
+      </group>
+      {h.out && <CityGear gear={gear} />}
+    </>
   );
 }, sameButForPlace);
 
@@ -163,7 +198,7 @@ const Human = memo(function Human({ h }: { h: HumanView }) {
 function sameButForPlace(a: { h: HumanView }, b: { h: HumanView }): boolean {
   const x = a.h;
   const y = b.h;
-  return x.id === y.id && x.look === y.look && x.memberId === y.memberId && x.name === y.name && x.role === y.role && x.hue === y.hue && x.saying === y.saying && !!x.sit === !!y.sit && x.jumpAt === y.jumpAt && x.whipAt === y.whipAt && x.ouchAt === y.ouchAt && x.emote?.at === y.emote?.at && x.emote?.name === y.emote?.name && !!x.speaking === !!y.speaking;
+  return x.id === y.id && x.look === y.look && x.memberId === y.memberId && x.name === y.name && x.role === y.role && x.hue === y.hue && x.saying === y.saying && !!x.sit === !!y.sit && x.jumpAt === y.jumpAt && x.whipAt === y.whipAt && x.ouchAt === y.ouchAt && x.emote?.at === y.emote?.at && x.emote?.name === y.emote?.name && !!x.speaking === !!y.speaking && !!x.out === !!y.out;
 }
 
 /** The other people in the office: real persons at their own computers, drawn where they say they are. */
@@ -174,7 +209,7 @@ export function Humans({ humans }: { humans: HumanView[] }) {
   for (const h of humans) {
     here.add(h.id);
     const r = reports.get(h.id);
-    if (!r || r.x !== h.x || r.z !== h.z || r.rot !== h.rot || r.moving !== h.moving || r.at !== h.at) reports.set(h.id, { x: h.x, z: h.z, rot: h.rot, moving: h.moving, at: h.at, seen: now });
+    if (!r || r.x !== h.x || r.z !== h.z || r.rot !== h.rot || r.moving !== h.moving || r.at !== h.at || r.out !== h.out) reports.set(h.id, { x: h.x, z: h.z, rot: h.rot, moving: h.moving, at: h.at, out: h.out, seen: now });
   }
   for (const id of reports.keys()) if (!here.has(id)) reports.delete(id);
   return (

@@ -13,6 +13,7 @@ import { JUMP_AIR, JUMP_OFF } from './character/motion.ts';
 import { STREET_Y, blocked, solidsNear, type Solid } from './city/blocks.ts';
 import { alight, board, leap, step as cityStep, type Explorer, type Keys as CityKeys } from './city/explorer.ts';
 import { CityGear, type CarAt, type Gear } from './city/gear.tsx';
+import { besideOf, othersOutside, ownerOutside, passengerSeat, rideNear } from './city/together.ts';
 import { CITY_GRID, cityLive, cityTraffic } from './surroundings/skyline.ts';
 import { vehicleAt } from './surroundings/traffic.ts';
 import { plateOf } from './surroundings/windows.ts';
@@ -149,6 +150,7 @@ export function Rig({
   outside,
   onOutside,
   onOutsideHint,
+  cityJoin,
   look,
 }: {
   /** The owner's own character (`docs/CHARACTER.md`); absent: the office's boss in a suit. */
@@ -192,6 +194,8 @@ export function Rig({
   onOutside?: (on: boolean) => void;
   /** What the keys do out there just now, for the HUD ("F — drive this car"), or null. */
   onOutsideHint?: (hint: string | null) => void;
+  /** Out in the city: go to somebody else out there (their window), each time `n` changes. */
+  cityJoin?: { id: string; n: number } | null;
 }) {
   const { camera, gl } = useThree();
   const avatar = useRef<THREE.Group>(null);
@@ -321,6 +325,8 @@ export function Rig({
     parked: null as { x: number; z: number; rot: number; paint: [number, number, number]; index: number } | null,
     hint: null as string | null,
     zoom: 1,
+    /** Riding in somebody else's car: whose (their window). */
+    ride: null as string | null,
   });
   const gear = useRef<Gear>({ chute: null, car: null, parked: null });
   const outsideRef = useRef(onOutside);
@@ -348,6 +354,8 @@ export function Rig({
     o.on = false;
     o.e = null;
     o.parked = null;
+    o.ride = null;
+    ownerOutside.at = null;
     cityLive.taken = -1;
     gear.current = { chute: null, car: null, parked: null };
     player.set(o.home.x, 0, o.home.z);
@@ -391,7 +399,28 @@ export function Rig({
     } else if (!outside.on && o.on) comeBack();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outside?.n]);
-  useEffect(() => () => void (cityLive.taken = -1), []);
+  useEffect(
+    () => () => {
+      cityLive.taken = -1;
+      ownerOutside.at = null;
+    },
+    [],
+  );
+  // Go to somebody out in the city: beside them, on foot, or in the air under a parachute of one's own.
+  useEffect(() => {
+    const o = out.current;
+    const t = cityJoin ? othersOutside.get(cityJoin.id) : undefined;
+    if (!o.on || !o.e || !t) return;
+    const e = o.e;
+    if (e.phase === 'car' && !o.ride) o.parked = { ...alight(e, solidsNear(e.x, e.z, [towerRef.current])), paint: e.paint, index: e.vehicle };
+    o.ride = null;
+    const at = besideOf(t, solidsNear(t.x, t.z, [towerRef.current]));
+    Object.assign(e, { ...at, vx: 0, vy: at.phase === 'chute' ? -3 : 0, vz: 0, vf: 0, vs: 0, time: 0, chute: at.phase === 'chute' ? 1 : 0 });
+    const s = st.current;
+    s.yaw = at.rot + Math.PI;
+    s.jump = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cityJoin?.n]);
   // For the UI tests: the terrace one may walk round the office (null where there is none).
   useEffect(() => {
     const probe = ((window as any).__orchPlayer ??= { x: 0, z: 0, rot: 0 });
@@ -421,10 +450,25 @@ export function Rig({
     const x0 = e.x;
     const z0 = e.z;
     const rot0 = e.rot;
-    cityStep(e, keysNow, dt, solids);
-    // Into a car (the one they left, or one of the traffic standing near), and out again.
+    // Riding with somebody: in the seat beside them, wherever they drive; out when F is pressed, when they get out or go home.
+    let pressed = fNow;
+    if (o.ride) {
+      const driver = othersOutside.get(o.ride);
+      if (driver && driver.phase === 'car' && !fNow) {
+        Object.assign(e, passengerSeat(driver), { phase: 'car', vf: driver.speed, vs: 0 });
+      } else {
+        if (driver) Object.assign(e, passengerSeat(driver));
+        e.phase = 'car';
+        alight(e, solids);
+        e.y = Math.max(STREET_Y, Math.min(e.y, STREET_Y + 0.01));
+        o.ride = null;
+        pressed = false;
+      }
+    } else cityStep(e, keysNow, dt, solids);
+    // Into a car (the one they left, somebody's who drives, or one of the traffic standing near), and out again.
     let nearCar: { x: number; z: number; heading: number; paint: [number, number, number]; index: number } | null = null;
-    if (e.phase === 'foot') {
+    const nearDriver = e.phase === 'foot' && e.y < STREET_Y + 0.5 ? rideNear(othersOutside, e.x, e.z) : null;
+    if (e.phase === 'foot' && !nearDriver) {
       if (o.parked && Math.hypot(o.parked.x - e.x, o.parked.z - e.z) < 4) nearCar = { x: o.parked.x, z: o.parked.z, heading: o.parked.rot, paint: o.parked.paint, index: o.parked.index };
       else if (e.y < STREET_Y + 0.5) {
         const list = cityTraffic(cityLive.quality);
@@ -441,9 +485,15 @@ export function Rig({
         }
       }
     }
-    if (fNow) {
-      if (e.phase === 'car') o.parked = { ...alight(e, solids), paint: e.paint, index: e.vehicle };
-      else if (nearCar) {
+    if (pressed) {
+      if (o.ride) {
+        // (Handled above.)
+      } else if (e.phase === 'car') o.parked = { ...alight(e, solids), paint: e.paint, index: e.vehicle };
+      else if (nearDriver) {
+        o.ride = nearDriver.id;
+        const driver = othersOutside.get(nearDriver.id)!;
+        Object.assign(e, passengerSeat(driver), { phase: 'car', vf: 0, vs: 0, time: 0 });
+      } else if (nearCar) {
         if (o.parked && o.parked.index !== nearCar.index) o.parked = null;
         if (o.parked) o.parked = null;
         board(e, nearCar);
@@ -458,7 +508,19 @@ export function Rig({
     }
     // What the keys do now.
     const hint =
-      e.phase === 'fall' ? 'SPACE — OPEN THE PARACHUTE' : e.phase === 'chute' ? 'W / S — FASTER, SLOWER · A / D — STEER' : e.phase === 'car' ? 'F — GET OUT · SHIFT — FASTER' : nearCar ? 'F — DRIVE THIS CAR' : 'WALK WITH W A S D · SHIFT TO RUN · SPACE TO JUMP';
+      e.phase === 'fall'
+        ? 'SPACE — OPEN THE PARACHUTE'
+        : e.phase === 'chute'
+          ? 'W / S — FASTER, SLOWER · A / D — STEER'
+          : o.ride
+            ? `RIDING WITH ${(othersOutside.get(o.ride)?.name ?? '').toUpperCase()} · F — GET OUT`
+            : e.phase === 'car'
+              ? 'F — GET OUT · SHIFT — FASTER'
+              : nearDriver
+                ? `F — RIDE WITH ${nearDriver.name.toUpperCase()}`
+                : nearCar
+                  ? 'F — DRIVE THIS CAR'
+                  : 'WALK WITH W A S D · SHIFT TO RUN · SPACE TO JUMP';
     if (hint !== o.hint) {
       o.hint = hint;
       hintRef.current?.(hint);
@@ -530,11 +592,25 @@ export function Rig({
     };
     gear.current = {
       chute: e.phase === 'chute' ? { x: e.x, y: e.y, z: e.z, rot: e.rot, open: e.chute, bank: THREE.MathUtils.clamp((rot0 - e.rot) / Math.max(dt, 1e-4), -1.5, 1.5) } : null,
-      car: e.phase === 'car' ? { x: e.x, y: e.y, z: e.z, rot: e.rot, paint: e.paint, speed: e.vf, steer: keysNow.turn, kind: bodyOf(e.vehicle) } : null,
+      // (Riding, the car is the driver's: drawn with them.)
+      car: e.phase === 'car' && !o.ride ? { x: e.x, y: e.y, z: e.z, rot: e.rot, paint: e.paint, speed: e.vf, steer: keysNow.turn, kind: bodyOf(e.vehicle) } : null,
       parked: o.parked ? { x: o.parked.x, y: STREET_Y, z: o.parked.z, rot: o.parked.rot, paint: o.parked.paint, speed: 0, steer: 0, kind: bodyOf(o.parked.index) } : null,
     };
     const probe = ((window as any).__orchPlayer ??= { x: 0, z: 0, rot: 0 });
-    probe.city = { phase: e.phase, x: e.x, y: e.y, z: e.z, rot: e.rot, chute: e.chute, speed: e.vf, near: nearCar ? nearCar.index : null, taken: cityLive.taken };
+    // What the others are told (with the presence): where this one is out here, and with what.
+    const parkedAt = o.parked;
+    ownerOutside.at = {
+      phase: o.ride ? 'ride' : e.phase,
+      x: e.x,
+      y: e.y,
+      z: e.z,
+      rot: e.rot,
+      ...(e.phase === 'chute' ? { chute: e.chute } : {}),
+      ...(e.phase === 'car' && !o.ride ? { car: { kind: bodyOf(e.vehicle), paint: e.paint, speed: e.vf, steer: keysNow.turn } } : {}),
+      ...(parkedAt ? { parked: { x: parkedAt.x, z: parkedAt.z, rot: parkedAt.rot, kind: bodyOf(parkedAt.index), paint: parkedAt.paint } } : {}),
+      ...(o.ride ? { with: o.ride } : {}),
+    };
+    probe.city = { phase: e.phase, x: e.x, y: e.y, z: e.z, rot: e.rot, chute: e.chute, speed: e.vf, near: nearCar ? nearCar.index : null, taken: cityLive.taken, ride: o.ride, nearDriver: nearDriver?.id ?? null };
     // (Tests may put the body somewhere out there: `__orchPlayer.cityGoto = { x, y, z, rot }`.)
     if (probe.cityGoto) {
       Object.assign(e, { vx: 0, vy: 0, vz: 0, vf: 0, vs: 0 }, probe.cityGoto);

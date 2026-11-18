@@ -36,6 +36,7 @@ import type {
 import type { OrchestratorEvent, RawHookEvent } from './events.ts';
 import type { ContextPack } from './context.ts';
 import type { ArcadeButton, ArcadeGame, ArcadeMediaKind, ArcadeTable } from './arcade.ts';
+import type { OutsideAt } from './outside.ts';
 
 export const PROTOCOL_VERSION = 1;
 
@@ -306,7 +307,7 @@ export type ClientToServer =
   | { t: 'control.release'; sessionId: ID }
   | { t: 'screens.focus'; sessionId: ID | null }
   /** Where this person's character is, so the others in the office can see them. */
-  | { t: 'presence'; x: number; z: number; rot: number; moving: boolean; at?: number; sit?: boolean }
+  | { t: 'presence'; x: number; z: number; rot: number; moving: boolean; at?: number; sit?: boolean; out?: OutsideAt }
   /** This person's character jumped (the interact key with nothing to act on in front of them): everyone sees it. */
   | { t: 'jump' }
   /** Something said out loud to the other people in the office (not to employees). */
@@ -377,6 +378,11 @@ export interface PersonPresence {
   hue: number;
   /** Their own character, when they made one (`docs/CHARACTER.md`). */
   look?: Appearance;
+  /**
+   * Out in the city (`docs/CITY.md`, "Together"): where they are there. `x` and `z` then stay where they stood in
+   * the office when they jumped.
+   */
+  out?: OutsideAt;
 }
 
 /** Someone at the office's door, asking to be let in (see the server's `knocks.ts`). */

@@ -44,3 +44,17 @@ test('a frame of voice is a short piece of base64 and nothing else', () => {
   assert.equal(validFrame('QUI='), true);
   for (const bad of ['', 'not base64!', 'QUJD\n', '=QUJD', 'A'.repeat(VOICE_FRAME_MAX + 1), 12, null, undefined, { data: 'QUJD' }, ['QUJD']]) assert.equal(validFrame(bad), false, JSON.stringify(bad)?.slice(0, 30));
 });
+
+test('out in the city people hear each other by where they are there, and the office does not hear the street', () => {
+  const street = (x: number, y = -150) => ({ x: 0, z: 0, out: { x, y, z: 0 } });
+  assert.equal(hears(null, street(4700), street(4710)), true);
+  assert.equal(hears(null, street(4700), street(4700 + VOICE_RANGE + 1)), false);
+  // Somebody under a parachute high over a friend in the street does not hear them.
+  assert.equal(hears(null, street(0, -20), street(0)), false);
+  // Standing at the same window, one of them in the office and the other down in the street: no.
+  assert.equal(hears(null, { x: 0, z: 0 }, street(0)), false);
+  assert.equal(hears(null, street(0), { x: 0, z: 0 }), false);
+  // A meeting room does not reach out into the city.
+  const layout = { rooms: [{ id: 'm', kind: 'meeting', x: -5, z: -5, w: 10, d: 10 }] } as never;
+  assert.equal(hears(layout, street(1), street(2)), true);
+});

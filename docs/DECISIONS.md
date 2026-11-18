@@ -2,6 +2,15 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-18 — Out in the city together: the place out there rides on the presence
+
+The owner asked for the jump off the terrace to be "multiplayer, so the other players see everything and we can go together".
+- **One more field on the presence (`out`), not a message of its own.** The presence already goes ten times a second, is batched, timed by the sender's clock and drawn evenly (`RemoteTrack`); a second stream would have needed all of that again. The office keeps only what `cleanOutside` lets through.
+- **`x` and `z` stay at the window they jumped from.** Whatever reads where somebody is in the office (lists, member rooms, the minimap) goes on reading the office; what is in the city is only in `out`. Rejected: moving `x`/`z` into the city — the office's own clamps (±500 m) and everything that measures by them would have had to learn the city.
+- **Sound does not cross between the street and the office** (`apart`): a person at the window and a person 150 m below in the street are not "near".
+- **The traffic stays each window's own.** Its clock is the window's own frame clock; sharing it would mean a common clock in the shaders, for a gain nobody would see (a car one takes is drawn as one's own wherever one drives it). The car a person took is therefore not hidden from the traffic in other windows.
+- **Riding is the passenger following the driver as drawn in their own window**, not a seat the office keeps: nothing new on the server, and the passenger is always exactly in the car they see.
+
 ## 2026-11-18 — A code reviewer before anybody else, across the office
 
 - **A review goes to a code reviewer first** (the owner: "the code reviewers have priority, and only then somebody else"), before a colleague the author named and before the reviewer of an earlier round who is not one. The author's choice used to win; it now holds only when no code reviewer can take it. Rejected: keeping the author's choice first — then the code reviewer the owner hired is passed over whenever the author names a friend.

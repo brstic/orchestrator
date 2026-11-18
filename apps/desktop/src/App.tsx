@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { surroundingsOf, unlockedUpgrades } from '@orchestrator/contracts';
-import { defaultLook, OfficeScene, ownerPosition } from '@orchestrator/office-3d';
+import { surroundingsOf, unlockedUpgrades, type OutsideAt } from '@orchestrator/contracts';
+import { defaultLook, OfficeScene, ownerOutside, ownerPosition } from '@orchestrator/office-3d';
 import { PeopleActs, myPlace, personInReach } from './hud/people-acts.tsx';
 import { Button } from '@orchestrator/ui';
 import { api, connection, serverBase, setToken } from './lib/api.ts';
@@ -134,22 +134,27 @@ function useStable<T extends Record<string, (...args: any[]) => any>>(fns: T): T
 
 function usePresence(): void {
   useEffect(() => {
-    let last = { x: NaN, z: NaN, rot: NaN, moving: false, sit: false };
+    let last = { x: NaN, z: NaN, rot: NaN, moving: false, sit: false, out: '', at: null as OutsideAt | null };
     let still = 0;
     const timer = window.setInterval(() => {
       const st = useOffice.getState();
       if (st.conn !== 'online') return;
       const { x, z, rot, sit } = ownerPosition;
+      // Out in the city (docs/CITY.md, "Together"): where this one is there, and with what. `x` and `z` stay where they jumped from.
+      const out = ownerOutside.at;
+      const outNow = out ? JSON.stringify(out) : '';
+      const was = last.at;
+      const outMoved = out && was ? Math.hypot(out.x - was.x, out.y - was.y, out.z - was.z) > 0.01 : !!out !== !!was;
       // Under way means going somewhere: looking around on the spot is reported (the others see the turn), but it is not walking.
-      const went = Math.abs(x - last.x) > 0.01 || Math.abs(z - last.z) > 0.01;
+      const went = Math.abs(x - last.x) > 0.01 || Math.abs(z - last.z) > 0.01 || outMoved;
       const turned = Math.abs(rot - last.rot) > 0.01;
       still = went ? 0 : still + 1;
       const moving = still < 3 && !Number.isNaN(last.x);
       // Also say so once when coming to a stop, and every few seconds so newcomers see everyone.
-      if (!went && !turned && moving === last.moving && sit === last.sit && still % 30 !== 3) return;
-      last = { x, z, rot, moving, sit };
+      if (!went && !turned && moving === last.moving && sit === last.sit && outNow === last.out && still % 30 !== 3) return;
+      last = { x, z, rot, moving, sit, out: outNow, at: out };
       // With this window's own clock: the others move the character evenly by it, however unevenly the reports reach them.
-      connection.send({ t: 'presence', x, z, rot, moving, at: Date.now(), ...(sit ? { sit: true } : {}) });
+      connection.send({ t: 'presence', x, z, rot, moving, at: Date.now(), ...(sit ? { sit: true } : {}), ...(out ? { out } : {}) });
     }, 100);
     return () => window.clearInterval(timer);
   }, []);
@@ -440,6 +445,7 @@ export function App() {
           onSeated={on.seated}
           onJumped={on.jumped}
           outside={s.outside}
+          cityJoin={s.cityJoin}
           onOutside={on.outside}
           onOutsideHint={on.outsideHint}
           walks={walks}

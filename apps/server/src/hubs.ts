@@ -3,10 +3,10 @@ import crypto from 'node:crypto';
 import type { WebSocket } from 'ws';
 import { eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, mayReadRoutine, maySee, shownTo, stateFor } from './access.ts';
 import { VOICE_FRAMES_PER_SECOND, hears, validFrame } from './voice.ts';
-import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, Notification, OrchestratorEvent, PersonPresence, RadioNow, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
+import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind, KnockView, Notification, OrchestratorEvent, OutsideAt, PersonPresence, RadioNow, ServerToAgent, ServerToClient } from '@orchestrator/contracts';
 import type { Characters } from './characters.ts';
 import { hueOf, type Who } from './guests.ts';
-import { AUTONOMY_LEVELS, PROTOCOL_VERSION, ROLE_CATALOGUE, isAutonomyLevel, isEmote, matchRole, notificationFor, nowIso, roleByKey } from '@orchestrator/contracts';
+import { AUTONOMY_LEVELS, PROTOCOL_VERSION, ROLE_CATALOGUE, apart, cleanOutside, isAutonomyLevel, isEmote, matchRole, notificationFor, nowIso, roleByKey } from '@orchestrator/contracts';
 import { EngineError, FOREMAN_ROLE, type AgentLink, type Engine } from '@orchestrator/orchestration';
 
 interface AgentConn {
@@ -343,7 +343,7 @@ interface ClientConn {
   /** This window is being closed by the office: nothing it still sends is acted on. */
   dropped?: boolean;
   /** Where their character is, once they have said so. */
-  presence: { x: number; z: number; rot: number; moving: boolean; at?: number; sit?: boolean } | null;
+  presence: { x: number; z: number; rot: number; moving: boolean; at?: number; sit?: boolean; out?: OutsideAt } | null;
   /** When their character last jumped (for the rate limit). */
   jumpedAt?: number;
   /** When this window last cracked the whip. */
@@ -620,7 +620,9 @@ export class ClientHub {
           case 'presence': {
             const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-500, Math.min(500, v)) : 0);
             const first = !conn.presence;
-            conn.presence = { x: n(msg.x), z: n(msg.z), rot: n(msg.rot), moving: msg.moving === true, ...(typeof msg.at === 'number' && Number.isFinite(msg.at) ? { at: msg.at } : {}), ...(msg.sit === true ? { sit: true } : {}) };
+            // Out in the city (docs/CITY.md, "Together"): where they are there, passed on to everybody as it is.
+            const out = cleanOutside(msg.out);
+            conn.presence = { x: n(msg.x), z: n(msg.z), rot: n(msg.rot), moving: msg.moving === true, ...(typeof msg.at === 'number' && Number.isFinite(msg.at) ? { at: msg.at } : {}), ...(msg.sit === true ? { sit: true } : {}), ...(out ? { out } : {}) };
             // The first report is news for everyone (the list each client keeps includes itself); after that, only for the others.
             this.schedulePeople(first ? '*' : id);
             break;
@@ -647,7 +649,7 @@ export class ClientHub {
               // At another person: only someone standing next to them (a whip is two metres long, not an office wide).
               const victim = this.clients.get(msg.personId);
               if (!victim || victim.id === id || !victim.presence || !conn.presence) break;
-              if (Math.hypot(victim.presence.x - conn.presence.x, victim.presence.z - conn.presence.z) > 4.5) break;
+              if (apart(victim.presence, conn.presence) > 4.5) break;
               conn.whippedAt = now;
               this.remember({ from, text: `cracks the whip at ${victim.who.name}`, ts, emote: true });
               this.broadcast({ t: 'whipped', from, personId: victim.id, ts });

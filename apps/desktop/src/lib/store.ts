@@ -39,15 +39,16 @@ import { b64decode } from '@orchestrator/contracts';
 import { api, connection, type ConnState } from './api.ts';
 import { SETTLE_MS, UNACKNOWLEDGED_MS, answerAmong, askState, type AskState } from './asks.ts';
 import { playKnock, playOuch, playReply, playWhip } from './sfx.ts';
-import { crackFalloff, ownerPosition } from '@orchestrator/office-3d';
+import { crackFalloff, ownerOutside, ownerPosition } from '@orchestrator/office-3d';
+import { apart, type OutsideAt } from '@orchestrator/contracts';
 
 /**
  * How loud somebody else's crack of the whip is here: by how far this person's character stands from whoever swung
  * it (or, when that one has no character, from the person it was meant for). Nobody to measure to: half.
  */
-function crackHeard(people: ReadonlyArray<{ id: string; x: number; z: number }>, fromId: string, atPersonId: string | null): number {
+function crackHeard(people: ReadonlyArray<{ id: string; x: number; z: number; out?: OutsideAt }>, fromId: string, atPersonId: string | null): number {
   const at = people.find((p) => p.id === fromId) ?? (atPersonId ? people.find((p) => p.id === atPersonId) : undefined);
-  return crackFalloff(at ? Math.hypot(at.x - ownerPosition.x, at.z - ownerPosition.z) : null);
+  return crackFalloff(at ? apart(at, { x: ownerPosition.x, z: ownerPosition.z, out: ownerOutside.at }) : null);
 }
 import { hearVoice, heardEnd, voiceHooks } from './voice.ts';
 
@@ -193,6 +194,9 @@ export interface OfficeState {
   outsideHint: string | null;
   goOutside: () => void;
   backToOffice: () => void;
+  /** Out in the city: go to somebody else out there (their window). `n` counts the asks. */
+  cityJoin: { id: string; n: number } | null;
+  joinOutside: (personId: string) => void;
   /** Told by the scene: the owner came back by themselves (landed on the office's terrace), or what the keys do now. */
   setOutside: (on: boolean) => void;
   setOutsideHint: (hint: string | null) => void;
@@ -498,6 +502,8 @@ export const useOffice = create<OfficeState>((set, get) => ({
   // Out there one sees oneself from behind: the camera that follows the character.
   goOutside: () => set((s) => (s.outside.on ? s : { outside: { on: true, n: s.outside.n + 1 }, cameraMode: 'ceo', workstationId: null, panel: null, nearby: null })),
   backToOffice: () => set((s) => (s.outside.on ? { outside: { on: false, n: s.outside.n + 1 }, outsideHint: null } : s)),
+  cityJoin: null,
+  joinOutside: (personId) => set((s) => (s.outside.on ? { cityJoin: { id: personId, n: (s.cityJoin?.n ?? 0) + 1 } } : s)),
   setOutside: (on) => set((s) => (s.outside.on === on ? s : { outside: { on, n: s.outside.n }, outsideHint: on ? s.outsideHint : null })),
   setOutsideHint: (hint) => set((s) => (s.outsideHint === hint ? s : { outsideHint: hint })),
   doEmote: (name) => {

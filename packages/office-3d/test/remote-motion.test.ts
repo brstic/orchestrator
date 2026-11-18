@@ -53,7 +53,7 @@ test('standing for a while and then setting off: no drifting during the wait', (
   track.push({ x: 1, z: 1, rot: 0, moving: false, at: 0 }, 100);
   // Five seconds later the first report of the walk, then the rest.
   for (let i = 1; i <= 6; i++) track.push({ x: 1 + 0.38 * i, z: 1, rot: 0, moving: true, at: 5000 + i * 100 }, 5100 + i * 100);
-  for (const now of [600, 2000, 4000, 5050 + REMOTE_DELAY]) assert.deepEqual(track.sample(now), { x: 1, z: 1, rot: 0 }, `still standing at ${now}`);
+  for (const now of [600, 2000, 4000, 5050 + REMOTE_DELAY]) assert.deepEqual(track.sample(now), { x: 1, y: 0, z: 1, rot: 0 }, `still standing at ${now}`);
   const mid = track.sample(5100 + 300 + REMOTE_DELAY)!;
   assert.ok(mid.x > 1.9 && mid.x < 2.3, `under way (${mid.x.toFixed(2)})`);
 });
@@ -83,6 +83,23 @@ test('a jump across the office is a jump, and a turn goes the short way round', 
   const half = track.sample(60 + REMOTE_DELAY)!.rot;
   assert.ok(Math.abs(half) > 3.0, `through ±π, not back through 0 (${half.toFixed(2)})`);
   track.push({ x: 40, z: 12, rot: 0, at: 200 }, 210);
-  assert.deepEqual(track.sample(215), { x: 40, z: 12, rot: 0 }, 'put there at once');
+  assert.deepEqual(track.sample(215), { x: 40, y: 0, z: 12, rot: 0 }, 'put there at once');
   assert.equal(new RemoteTrack().sample(0), null);
+});
+
+test('out in the city: a car at speed and a fall are followed evenly, height and all — not put somewhere at every report', () => {
+  const track = new RemoteTrack();
+  // 40 m/s along x and falling 50 m/s, reported every 100 ms, arriving in pairs 200 ms apart.
+  for (let i = 0; i < 20; i++) track.push({ x: 4 * i, y: -5 * i, z: 0, rot: 0, moving: true, at: 1_000_000 + i * 100 }, 5000 + Math.ceil((i + 1) / 2) * 200);
+  const a = track.sample(6000)!;
+  const b = track.sample(6100)!;
+  assert.ok(Math.abs(b.x - a.x - 4) < 0.5, `4 m in 100 ms (was ${(b.x - a.x).toFixed(2)})`);
+  assert.ok(Math.abs(b.y - a.y + 5) < 0.6, `5 m down in 100 ms (was ${(b.y - a.y).toFixed(2)})`);
+  // Standing still a while, then somewhere else a hundred metres off (gone to somebody): put there, not slid there.
+  track.push({ x: 176, y: -150, z: 0, rot: 0, moving: false, at: 1_005_000 }, 9100);
+  assert.equal(track.sample(9101)!.x, 176);
+  track.push({ x: 4000, y: -150, z: 0, rot: 0, moving: false, at: 1_008_000 }, 12100);
+  const c = track.sample(12101)!;
+  assert.equal(c.x, 4000);
+  assert.equal(c.y, -150);
 });

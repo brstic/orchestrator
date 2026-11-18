@@ -322,3 +322,40 @@ test('a crack at somebody who is not at work gets them up — for whoever may st
   const events = await h.api<any[]>('GET', `/events?limit=200&employeeId=${eve.id}`);
   assert.ok(events.some((e) => e.type === 'session.woken' && /Ana, who came to get them up/.test(e.summary)), JSON.stringify(events.filter((e) => /woken|started/.test(e.type)).map((e) => e.summary)));
 });
+
+test('out in the city together: where somebody is out there reaches everybody, cleaned — and voices and the whip go by the street, not by the window', async () => {
+  const [ana, jovan, mila] = await Promise.all([join('Ana'), join('Jovan'), join('Mila')]);
+  await ana.stand(-10, 2);
+  await jovan.stand(-9, 2);
+  await mila.stand(-8, 2);
+  // Ana jumps: her window keeps saying where she stood, and where she is now — with what the office does not take.
+  const out = { phase: 'car', x: 4700, y: -150, z: -3300, rot: 1, car: { kind: 'taxi', paint: [0.9, 0.7, 0.1], speed: 99, steer: 0 }, secret: 'x' };
+  ana.send({ t: 'presence', x: -10, z: 2, rot: 0, moving: true, out });
+  for (const p of [jovan, mila]) {
+    const m = await p.until('people', (x) => x.people.some((q) => q.id === ana.id && q.out?.phase === 'car'));
+    const seen = m.people.find((q) => q.id === ana.id)!;
+    assert.deepEqual([seen.x, seen.z], [-10, 2], 'still where she stood in the office');
+    assert.deepEqual(seen.out, { phase: 'car', x: 4700, y: -150, z: -3300, rot: 1, car: { kind: 'taxi', paint: [0.9, 0.7, 0.1], speed: 60, steer: 0 } });
+  }
+  // A metre from her window in the office, Jovan does not hear her in the street, nor can he reach her with the whip.
+  let n = { a: ana.got.length, j: jovan.got.length };
+  ana.send({ t: 'voice', seq: 0, data: frame() });
+  jovan.send({ t: 'whip', personId: ana.id });
+  await sleep(300);
+  assert.equal(voices(jovan.since(n.j), ana.id), 0, 'the office does not hear the street');
+  assert.ok(!jovan.since(n.j).some((m) => m.t === 'whipped'), 'no whip reaches down into the street');
+  // Jovan goes out too and rides beside her: they hear each other.
+  jovan.send({ t: 'presence', x: -9, z: 2, rot: 0, moving: true, out: { phase: 'ride', x: 4700.4, y: -150, z: -3300, rot: 1, with: ana.id } });
+  await mila.until('people', (x) => x.people.some((q) => q.id === jovan.id && q.out?.phase === 'ride' && q.out.with === ana.id));
+  n = { a: ana.got.length, j: jovan.got.length };
+  const m0 = mila.got.length;
+  ana.send({ t: 'voice', seq: 1, data: frame() });
+  await waitFor(() => voices(jovan.since(n.j), ana.id) === 1 || undefined, { label: 'Jovan hears Ana in the car' });
+  await sleep(250);
+  assert.equal(voices(mila.since(m0), ana.id), 0, 'Mila, in the office by their window, does not');
+  // Back in: the office forgets where they were out there.
+  ana.send({ t: 'presence', x: -10, z: 2, rot: 3, moving: false });
+  const back = await mila.until('people', (x) => x.people.some((q) => q.id === ana.id && q.rot === 3));
+  assert.equal(back.people.find((q) => q.id === ana.id)!.out, undefined);
+  for (const p of [ana, jovan, mila]) p.ws.close();
+});

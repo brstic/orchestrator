@@ -1,5 +1,6 @@
 import type { PersonPresence } from '@orchestrator/contracts';
-import { ownerPosition, voiceFalloff } from '@orchestrator/office-3d';
+import { ownerOutside, ownerPosition, voiceFalloff } from '@orchestrator/office-3d';
+import { apart } from '@orchestrator/contracts';
 import { connection } from './api.ts';
 import { routeOutput } from './sound-devices.ts';
 import { VOICE_FRAME, VOICE_RATE, decodeVoice, encodeVoice, fromBase64, loudness, toBase64 } from './voice-codec.ts';
@@ -316,7 +317,8 @@ const BEHIND = 0.6;
 function loudnessOf(clientId: string): number {
   const p = voiceHooks.people().find((x) => x.id === clientId);
   if (!p) return 0;
-  return voiceHooks.volume() * voiceFalloff(Math.hypot(p.x - ownerPosition.x, p.z - ownerPosition.z));
+  // In the office by where the two stand; out in the city by where they are there (and not at all between the two).
+  return voiceHooks.volume() * voiceFalloff(apart(p, { x: ownerPosition.x, z: ownerPosition.z, out: ownerOutside.at }));
 }
 
 /** A frame of someone's voice arrived. */

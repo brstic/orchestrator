@@ -47,7 +47,9 @@ async function theCity(owner, other) {
   const after = await owner.js(`({ x: window.__orchPlayer.x, z: window.__orchPlayer.z, near: window.__office.getState().nearby })`);
   const home = { x: after.x, z: after.z };
   const me = await owner.js(`window.__office.getState().clientId`);
-  const othersSee = () => other.js(`(() => { const p = window.__office.getState().people.find((x) => x.id === ${JSON.stringify(me)}); return p ? { x: p.x, z: p.z } : null; })()`);
+  const othersSee = () => other.js(`(() => { const p = window.__office.getState().people.find((x) => x.id === ${JSON.stringify(me)}); return p ? { x: p.x, z: p.z, out: p.out ?? null } : null; })()`);
+  // How the other window draws the owner right now (`Humans.tsx`): where, and with what.
+  const drawnThere = `window.__orchScene.humans && window.__orchScene.humans[${JSON.stringify(me)}]`;
   check('Skyline: walking out to the balustrade, the key says "jump off the edge" — and the balustrade stops the walk', before.x < after.x && after.x <= t.maxX - 0.25 && after.near?.kind === 'edge' && after.near?.label === 'JUMP OFF THE EDGE', JSON.stringify({ before, after }));
   await owner.press('Space');
   await owner.until('the jump out', `window.__office.getState().outside.on && ${city} && ${city}.phase === 'fall'`, 4000);
@@ -57,6 +59,10 @@ async function theCity(owner, other) {
   await owner.until('the parachute open', `${city}.chute >= 1`, 3000);
   const sink = await owner.js(`(async () => { const a = ${city}.y; await new Promise((r) => setTimeout(r, 2000)); return (a - ${city}.y) / 2; })()`);
   check('Skyline: the parachute opens by itself and one comes down slowly', sink > 3 && sink < 7, `${sink.toFixed(1)} m a second`);
+  await other.until('the other window drawing the owner under the parachute', `${drawnThere} && ${drawnThere}.out === 'chute' && ${drawnThere}.chute && ${drawnThere}.y < -5`, 5000).catch(() => {});
+  const chuteThere = await other.js(drawnThere);
+  const chuteHere = await owner.js(city);
+  check('Skyline: together — the other window sees the owner out there, under their parachute, where they are', chuteThere?.out === 'chute' && chuteThere.chute && Math.hypot(chuteThere.x - chuteHere.x, chuteThere.y - chuteHere.y, chuteThere.z - chuteHere.z) < 12, JSON.stringify({ there: chuteThere, here: { x: chuteHere.x, y: chuteHere.y, z: chuteHere.z } }));
   await owner.until('the landing', `${city}.phase === 'foot'`, 60000);
   await owner.hold('KeyW', false);
   const landed = await owner.js(city);
@@ -74,6 +80,8 @@ async function theCity(owner, other) {
   await sleep(3000);
   await owner.hold('KeyW', false);
   const went = await owner.js(city);
+  const carThere = await other.js(drawnThere);
+  check('Skyline: together — the other window sees the owner\'s car drive, and not the owner beside it', carThere?.out === 'car' && carThere.car && !carThere.body && Math.hypot(carThere.x - went.x, carThere.z - went.z) < 20, JSON.stringify(carThere));
   check('Skyline: it drives', Math.hypot(went.x - from.x, went.z - from.z) > 15 || went.speed > 8, `${Math.hypot(went.x - from.x, went.z - from.z).toFixed(0)} m, ${went.speed.toFixed(1)} m/s`);
   await owner.until('stopping', `Math.abs(${city}.speed) < 0.5`, 15000).catch(() => {});
   await owner.press('KeyF');
@@ -87,8 +95,10 @@ async function theCity(owner, other) {
   const far = await owner.js(`(() => { let boxes = 0; window.__orchScene.three.scene.traverse((o) => { if (o.isInstancedMesh && o.geometry.getAttribute('aLook') && o.count > boxes) boxes = o.count; }); const c = window.__orchScene.three.camera.position; return { boxes, x: c.x, z: c.z }; })()`);
   check('Skyline: the city has no end — kilometres away it is built up all round', far.boxes > 1500 && Math.hypot(far.x - 4700, far.z + 3300) < 40, JSON.stringify(far));
   const seen = await othersSee();
-  check('Skyline: meanwhile the others see the owner where they jumped from', !!seen && Math.hypot(seen.x - home.x, seen.z - home.z) < 1.5, JSON.stringify(seen));
-  await owner.click('[data-outside] button');
+  check('Skyline: the office still has the owner where they jumped from (the room they are in, for whoever looks at a list)', !!seen && Math.hypot(seen.x - home.x, seen.z - home.z) < 1.5, JSON.stringify(seen));
+  check('Skyline: … and says where they are out there, so the others draw them there', seen?.out?.phase === 'foot' && Math.hypot(seen.out.x - 4700, seen.out.z + 3300) < 5, JSON.stringify(seen?.out));
+  await together(owner, other, me);
+  await owner.click('[data-outside] .btn-primary');
   await owner.until('back in the office', `!window.__office.getState().outside.on && !document.querySelector('[data-outside]')`, 4000);
   await sleep(500);
   const back = await owner.js(`({ x: window.__orchPlayer.x, z: window.__orchPlayer.z, cam: window.__orchScene.three.camera.position.y })`);
@@ -97,6 +107,50 @@ async function theCity(owner, other) {
   await sleep(1500);
   await owner.js(`window.__office.getState().openPanel('settings', 'surroundings'); true`);
   await owner.until('the Surroundings page again', `document.querySelectorAll('[data-surroundings]').length === 6`, 8000);
+}
+
+/**
+ * Two out in the city: the other window goes out too, goes to the owner with the button, gets into the owner's car
+ * beside them, rides along, and is put out when the owner gets out. Then it goes back in.
+ */
+async function together(owner, other, me) {
+  const city = `window.__orchPlayer.city`;
+  await other.js(`window.__office.getState().openPanel(null); window.__office.getState().goOutside(); true`);
+  await other.until('the other window out of the office', `window.__office.getState().outside.on && ${city}`, 5000);
+  await other.until('the "Go to" button for the owner', `document.querySelector('[data-outside] [data-go-to]')`, 5000);
+  await owner.until('the owner\'s window offering to go to the other', `document.querySelector('[data-outside] [data-go-to]')`, 5000);
+  await other.click('[data-outside] [data-go-to]');
+  await other.until('beside the owner', `${city}.phase === 'foot' && Math.hypot(${city}.x - 4700, ${city}.z + 3300) < 6`, 5000).catch(() => {});
+  const there = await other.js(city);
+  check('Skyline: together — "Go to …" puts one on foot beside somebody else out there', there?.phase === 'foot' && Math.hypot(there.x - 4700, there.z + 3300) < 6, JSON.stringify(there));
+  // The owner takes a car of a queue; the other goes to them and gets in beside them.
+  await owner.js(`(() => { const P = 116; window.__orchPlayer.cityGoto = { x: 40.5 * P + 9.6, y: -150, z: -28 * P - 36, phase: 'foot', rot: Math.PI }; return true; })()`);
+  await owner.until('a car within the owner\'s reach', `${city}.near !== null && ${city}.phase === 'foot'`, 40000);
+  await owner.press('KeyF');
+  await owner.until('the owner at the wheel', `${city}.phase === 'car'`, 3000);
+  await other.until('the owner\'s car drawn in the other window', `window.__orchScene.humans[${JSON.stringify(me)}].car`, 5000);
+  await sleep(500);
+  await other.click('[data-outside] [data-go-to]');
+  await other.until('next to the owner\'s car', `${city}.nearDriver === ${JSON.stringify(me)}`, 5000).catch(() => {});
+  const hint = await other.js(`window.__office.getState().outsideHint`);
+  check('Skyline: together — next to somebody\'s car the key says "F — ride with …"', /^F — RIDE WITH /.test(hint ?? ''), hint);
+  await other.press('KeyF');
+  await other.until('riding', `${city}.ride === ${JSON.stringify(me)}`, 3000).catch(() => {});
+  const from = await other.js(city);
+  await owner.hold('KeyW', true);
+  await sleep(3000);
+  await owner.hold('KeyW', false);
+  const rode = await other.js(`({ me: ${city}, car: window.__orchScene.humans[${JSON.stringify(me)}] })`);
+  check('Skyline: together — riding along: the seat beside the driver goes where the car goes', rode.me.ride === me && Math.hypot(rode.me.x - from.x, rode.me.z - from.z) > 10 && Math.hypot(rode.me.x - rode.car.x, rode.me.z - rode.car.z) < 1, JSON.stringify({ from: { x: from.x, z: from.z }, now: { x: rode.me.x, z: rode.me.z }, car: { x: rode.car.x, z: rode.car.z } }));
+  const passenger = await owner.until('the passenger seen in the owner\'s window', `window.__orchScene.humans && Object.values(window.__orchScene.humans).some((h) => h.out === 'ride' && !h.body)`, 3000).then(() => true, () => false);
+  check('Skyline: together — the driver\'s window has the passenger in the car (only their name shows)', passenger);
+  await owner.until('the owner stopping', `Math.abs(${city}.speed) < 0.5`, 15000).catch(() => {});
+  await owner.press('KeyF');
+  await other.until('the passenger out when the driver gets out', `${city}.phase === 'foot' && !${city}.ride`, 4000).catch(() => {});
+  check('Skyline: together — when the driver gets out, so does the one beside them', await other.js(`${city}.phase === 'foot' && !${city}.ride`));
+  await other.click('[data-outside] .btn-primary');
+  await other.until('the other window back in the office', `!window.__office.getState().outside.on`, 4000);
+  await owner.until('nobody else out there', `!document.querySelector('[data-outside] [data-go-to]')`, 4000).catch(() => {});
 }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-surroundings-'));

@@ -18,6 +18,8 @@ Where the office stands over the city (*Settings → The office → Surroundings
 | At the wheel | W accelerate, S brake and reverse, A / D steer, **Shift** faster (40 m/s instead of 24) | Buildings stop it (it bounces back a little). **F** gets out on the driver's side; the car stays where it was left, and F next to it takes it again |
 | Anywhere outside | **Back to Office** (the button) | Back where one stood in the office, turned to face into it |
 | Landing on the office's own terrace | — | Back in the office, as with the button |
+| Next to somebody else's car while they drive (within 4.5 m) | **F** — "RIDE WITH …" | In the seat beside them: wherever they drive, you go. **F** gets out; when they get out (or go back in), so do you |
+| Anywhere outside, with others out there too | **Go to …** (a button for each, up to four) | Beside them: on foot next to them, next to their car, or — when they are in the air — under your own parachute nine metres to their side |
 
 While outside, the office's own meanings of Space, F, R and C wait (no jump-in-place, talk, whip or camera change); windows (M, T, …) still open. The mouse turns the camera; the wheel brings it nearer or further.
 
@@ -41,12 +43,21 @@ OfficeScene ── Surroundings ── buildSkyline (skyline.ts)     the blocks 
 - **`city/blocks.ts`** (pure): the grid (`PITCH` 116 m, streets 20 m wide, the street 150 m under the office floor), `blockAt`, `streetTrees`, `solidsNear`, `groundAt`, `blocked`.
 - **`city/explorer.ts`** (pure): one state (`Explorer`: phase `fall | chute | foot | car`, position, speeds, the parachute's opening) and one step (`step`) from the keys; `leap` (out of the window), `board` and `alight` (the car).
 - **`Rig.tsx`**: over the city the terrace (`plateOf(world)`, 25 cm inside its balustrade) is floor — `moveWithCollision(…, outdoor)` lets the owner walk there; within 1.1 m of its edge, outside the building, the prompt is "jump off the edge"; on going out it remembers where the owner stood (`home`) and starts a `leap` over the nearest edge. The terrace's paving is 1 cm under the office's floor, so one walks out of the door without a step. Each frame outside it runs `cityFrame` instead of the office's movement: the step, getting in and out of a car (the nearest vehicle of `cityTraffic`, found with `vehicleAt` from the same clock and the same origin the picture uses), the camera behind (pulled in front of any building between it and the body, kept under the trees on the street), the body's gait, and the gear. The office's own tower is one more solid with its top at 0: landing there is coming home.
+- **`city/together.ts`**: one's own place out there (`ownerOutside`, sent with the presence) and the others' as drawn here (`othersOutside`); `rideNear`, `passengerSeat`, `besideOf` (see "Together").
 - **Taking a car out of the traffic**: `cityLive.taken` (in `skyline.ts`) is the vehicle's index; the picture hides that instance (`aCar.w = -1`, and its lights) until another is taken or the owner is back.
 - **The HUD** (`apps/desktop`): `outside`, `goOutside`, `backToOffice`, `outsideHint` in the store; the prompt at the bottom shows what the keys do just now and **Back to Office** (`[data-outside]`); `interact()` turns the window prompt into `goOutside`.
 
-## Others, and the server
+## Together
 
-**Nothing of this reaches the server or the others.** While outside, the position the office reports for the owner (`ownerPosition`, the presence) stays where they jumped from: the others see them standing at the window. The city is the same for everybody (it is made from numbers), but nobody else sees anybody in it. A colleague and a visitor can go out too wherever they can walk the office (the window prompt is a thing of the scene, like a seat).
+_Built on 2026-11-18 on the owner's request: "make the balcony jump multiplayer too, so the other players see everything and we can go together"._
+
+Everybody sees everybody out there, and they can go about it together. A colleague and a visitor can go out too wherever they can walk the office (the window prompt is a thing of the scene, like a seat).
+
+- **What is sent.** With its place, ten times a second while it moves, a window that is out in the city also says where it is there (`presence.out`, the type `OutsideAt` in `packages/contracts/src/outside.ts`): falling, under the parachute (and how far open), on foot, at the wheel (the car's body, paint, speed and steering), or riding with somebody (whose car); and the car it left in the street. The office cleans it (`cleanOutside`: only those phases, numbers held to the city, nothing else kept) and passes it on in `people` like the rest of the place. `x` and `z` stay where they jumped from in the office.
+- **What is drawn.** `Humans.tsx` draws each other person where they are out there — the same world: the street is 150 m under the office's floor — so they are seen from the office falling past the windows and under their canopy, and from the street walking, driving, landing. Their parachute, their car and the car they left are `CityGear`, the very gear one's own window draws. At the wheel or riding, only the car is seen (and their name over it); no ring under them out there; their name tag is hidden when they are more than 320 m from the camera. `RemoteTrack` follows height as well, and takes what a car with Shift (40 m/s) or a fall covers between two reports as going, not as being put somewhere (`remote-motion.ts`).
+- **Riding together.** On foot in the street, next to somebody who drives, F is "ride with …" (`rideNear` in `city/together.ts`, which `Humans.tsx` keeps filled with where the others are drawn here). One is then in the seat beside the driver (`passengerSeat`), the camera behind the car; F gets out, and one is put out when the driver gets out or goes home.
+- **Going to somebody.** Out there, the bar at the bottom has **Go to …** for each other person out there (`joinOutside` in the store → `cityJoin` → `Rig.tsx`, `besideOf`). From the office one goes out first (the balustrade), then goes to them.
+- **Voices and the whip.** People out there hear each other by where they are there (also up and down: under a canopy over somebody in the street is out of earshot), and the office does not hear the street nor the street the office (`apart` in `outside.ts`, used by the server's `hears` and by the window's loudness and the whip's crack). The whip reaches only somebody within 4.5 m out there, as in the office.
 
 ## Testing it
 
@@ -54,12 +65,19 @@ OfficeScene ── Surroundings ── buildSkyline (skyline.ts)     the blocks 
 | --- | --- |
 | `packages/office-3d/test/explorer.test.ts` | a block the same every time and nothing on the office's; buildings kept off the streets far away; out of the window: the parachute after 1.2 s, sinking slowly, landing on the street; a short drop without a parachute; not walking into a building; landing on a roof and falling off its edge (the parachute again); driving, turning, stopping at a building, getting out beside the car |
 | `packages/office-3d/test/traffic.test.ts` | the traffic (see `SURROUNDINGS.md`) |
-| `tests/ui/surroundings.mjs` (the Skyline step) | with real keys in the app: walking out on the terrace to the balustrade (which stops the walk) and its prompt, Space over it, **Back to Office** at once, the parachute by itself and its sink rate, the landing, "F — drive this car" beside a queue, F takes that car out of the traffic, it drives, F gets out and the car stays, the people near by are characters, kilometres away the city is built up all round, the other window still sees the owner where they jumped from, the button brings them back where they stood |
+| `tests/ui/surroundings.mjs` (the Skyline step) | with real keys in the app: walking out on the terrace to the balustrade (which stops the walk) and its prompt, Space over it, **Back to Office** at once, the parachute by itself and its sink rate, the landing, "F — drive this car" beside a queue, F takes that car out of the traffic, it drives, F gets out and the car stays, the people near by are characters, kilometres away the city is built up all round, the button brings them back where they stood. **Together**, with a second window: it draws the owner under their parachute where they are, then their car driving (and not the owner beside it), and has where they are kilometres away; it goes out too, **Go to …** puts it beside the owner, "F — ride with …" next to the owner's car, riding along beside the driver, the owner's window shows the passenger in the car, out when the driver gets out, back in |
+| `packages/contracts/test/outside.test.ts` | what the office keeps of `presence.out`, and how far apart two people are (in, out, between) |
+| `packages/office-3d/test/together.test.ts` | whose car one can get into, the seat beside the driver, where "Go to" puts one (on foot, beside a car, in the air, on a roof, away from a wall) |
+| `packages/office-3d/test/remote-motion.test.ts` | a car at speed and a fall followed evenly with their height; standing a while and then far off is being put there |
+| `apps/server/test/voice.test.ts`, `tests/e2e/24-people-acts.test.ts` | voices by the street and not between the street and the office; through the door: `out` reaches the others cleaned, no voice or whip from the window down to the street, two in one car hear each other, back in clears it |
 
 ## Limits, plainly
 
-- **Alone out there.** Nobody else sees you in the city, and you see nobody of the office.
-- **Cars are not run into.** Your car drives through the traffic and through walkers; walkers walk through you. Only buildings stop anything.
+- **The traffic is each window's own.** Its clock is the window's own, so the cars of the traffic are not where they are in somebody else's window; a car somebody took is drawn as theirs, and the car of the traffic it was still drives on in the other windows. The city and its buildings are the same for all.
+- **One rides only in a car somebody drives**, one beside the driver (more riders sit in the same seat), and only somebody's car: not one they left standing.
+- **"Go to" is only from out in the city** (and shows four people at most); from the office one jumps first.
+- **Others are drawn some 300 ms behind** where they are (as in the office): beside a driver one sees the car as it was then — the seat goes with it — and their name tag in the air is a label that is not hidden by buildings.
+- **Cars are not run into.** Your car drives through the traffic, through walkers and through each other's cars; walkers, and the others out there, walk through you. Only buildings stop anything.
 - **Near people are chosen four times a second**: one crossing the 55 m line can show as the simple shape and the character for a moment, or neither.
 - **The traffic goes straight on** and all the lights change together (as before); vehicles of the pattern come round again far off.
 - **No damage, no falls that hurt.** A fall without a parachute lands on its feet.
