@@ -2,6 +2,11 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-18 — A code reviewer before anybody else, across the office
+
+- **A review goes to a code reviewer first** (the owner: "the code reviewers have priority, and only then somebody else"), before a colleague the author named and before the reviewer of an earlier round who is not one. The author's choice used to win; it now holds only when no code reviewer can take it. Rejected: keeping the author's choice first — then the code reviewer the owner hired is passed over whenever the author names a friend.
+- **A code reviewer is borrowed across projects, on the project's machine only.** An office may hire one reviewer for all its work; tying them to the first project they reviewed for (as anyone of no project is moved to the project of their first task) would make them the reviewer of that project alone. They are lent (`alsoProjectIds`), not moved. Only on the machine where the project's repository is: one elsewhere would review their own folder. Architects and QAs are not borrowed this way: the owner asked for code reviewers.
+
 ## 2026-11-17 — A person's character is kept by the office, by who they are
 The owner asked that a character "stays every time they come in".
 - **On the server, by member id** (kv `characters`), not in the browser or the app's preferences: one person comes in from the desktop app, a browser and another computer, and is the same person in all of them; and everybody else has to see the same figure.

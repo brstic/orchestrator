@@ -227,6 +227,10 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
         if (r && r.id !== employee.id) task.reviewerId = r.id;
       }
       core.put('task', task);
+      // Code reviewers come first: a colleague named who is not one is not asked while a code reviewer can take it.
+      const named = task.reviewerId ? core.employees.get(task.reviewerId) : undefined;
+      const code = named && eng.tasks.isCodeReviewer(named, task) ? undefined : eng.tasks.codeReviewerFor(task);
+      if (code) return `${task.key} will go to review by ${code.name}, the code reviewer, once you call complete_task and it passes verification${named ? ` (code reviewers come first: ${named.name} is not asked)` : ''}.${a.notes ? ' Put your notes for the reviewer in the complete_task summary.' : ''}`;
       return `${task.key} will go to review${task.reviewerId ? ` by ${core.employees.get(task.reviewerId)?.name}` : ''} once you call complete_task and it passes verification.${a.notes ? ' Put your notes for the reviewer in the complete_task summary.' : ''}`;
     },
 

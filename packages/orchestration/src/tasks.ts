@@ -1688,12 +1688,43 @@ export class TaskManager {
 
   // ───────────────────────────── review ────────────────────────────
 
-  private pickReviewer(task: Task): Employee | undefined {
+  /**
+   * Is this one a code reviewer for this task: the Code Reviewer, or for a security task the security reviewer too.
+   * They come first for every review (the owner, 2026-11-18: "for tasks, when there is a review, the code reviewers
+   * have priority, and only then somebody else").
+   */
+  isCodeReviewer(e: Pick<Employee, 'roleKey'>, task: Pick<Task, 'kind'>): boolean {
+    return e.roleKey === 'reviewer' || (task.kind === 'security' && e.roleKey === 'security');
+  }
+
+  /**
+   * Reviewers by trade who may take this task's review, best first: by trade (a code reviewer before an architect,
+   * a QA), then whoever is free, then the project's own before one from elsewhere. A code reviewer is found across
+   * the office — one of no project, or of another project on the machine the project lives on (lent to it for the
+   * review); an architect or a QA only on the project, as before. Never across the line to a member's own computer
+   * (the review would carry the task's text there, and its reviewer could not hand the review in).
+   */
+  private reviewersByTrade(task: Task): Employee[] {
     const preferred = task.kind === 'security' ? ['security', 'reviewer', 'architect'] : ['reviewer', 'architect', 'security', 'qa'];
-    // (Never across the line to a member's own computer, here either: the review would carry the task's text there,
-    // and its reviewer could not hand the review in.)
-    const pool = this.core.employees.filter((e) => !e.archived && e.id !== task.assigneeId && preferred.includes(e.roleKey) && !!e.hostId && e.schedule.available && this.canSee(e, task) && (e.projectId === task.projectId || e.projectId === null));
-    pool.sort((a, b) => preferred.indexOf(a.roleKey) - preferred.indexOf(b.roleKey));
+    const project = this.core.projects.get(task.projectId);
+    const tier = (e: Employee) => (e.projectId === task.projectId || e.alsoProjectIds?.includes(task.projectId) ? 0 : e.projectId === null ? 1 : 2);
+    const pool = this.core.employees.filter(
+      (e) =>
+        !e.archived && e.id !== task.assigneeId && preferred.includes(e.roleKey) && !!e.hostId && e.schedule.available && this.canSee(e, task) &&
+        (tier(e) < 2 || (this.isCodeReviewer(e, task) && (!project?.hostId || project.hostId === e.hostId))),
+    );
+    const rank = (e: Employee) => preferred.indexOf(e.roleKey) * 6 + (this.isFree(e) ? 0 : 3) + tier(e);
+    return pool.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  }
+
+  /** The code reviewer this task's review goes to, when there is one to take it. */
+  codeReviewerFor(task: Task): Employee | undefined {
+    const first = this.reviewersByTrade(task)[0];
+    return first && this.isCodeReviewer(first, task) ? first : undefined;
+  }
+
+  private pickReviewer(task: Task): Employee | undefined {
+    const pool = this.reviewersByTrade(task);
     if (pool[0] || this.core.settings.employeesManageBoard === false) return pool[0];
     // No reviewer by trade on the team. Where employees keep the board themselves, a colleague who does this kind of
     // work reviews it — a second pair of eyes from the team, instead of the task waiting for the boss. Never the
@@ -1740,6 +1771,15 @@ export class TaskManager {
       // Whoever was named: not the author, not the foreman, not somebody on the other side of the line.
       if (reviewer && (reviewer.id === task.assigneeId || directsOthers(reviewer.roleKey) || reviewer.archived || !this.canSee(reviewer, task))) reviewer = this.pickReviewer(task);
       if (reviewer && reviewer.id === task.assigneeId) reviewer = undefined;
+      // A code reviewer comes first: a colleague named by the author (or the one of an earlier round) who is not one
+      // gives way to a code reviewer who can take it.
+      const code = reviewer && this.isCodeReviewer(reviewer, task) ? undefined : this.codeReviewerFor(task);
+      if (code) {
+        if (reviewer) this.history(task, `${reviewer.name} was to review it; ${code.name}, the code reviewer, reviews it instead (code reviewers come first)`, 'orchestrator');
+        reviewer = code;
+      }
+      // One from another project is lent to this one for the review: they keep their own.
+      if (reviewer && reviewer.projectId && reviewer.projectId !== task.projectId && !reviewer.alsoProjectIds?.includes(task.projectId) && this.lend(reviewer, task.projectId)) reviewer = this.pickReviewer(task);
     }
     task.reviewStage = reviewer ? 'peer' : 'boss';
     this.core.company.reviewsRequested++;

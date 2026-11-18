@@ -52,6 +52,21 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   `evidence.peerReview`, the stage becomes `'boss'`, the boss is notified, and no colleague can approve it again.
   The boss's approval finishes it (merge included) at either stage. "Request changes" by anybody returns it to its
   author; the next hand-in starts with a colleague again.
+- **Who reviews: a code reviewer first** (the owner, 2026-11-18: "the code reviewers have priority, and only then
+  somebody else"; `TaskManager.reviewersByTrade`, `codeReviewerFor`, `isCodeReviewer`). A code reviewer is an
+  employee with the Code Reviewer role (`reviewer`), and for a security task one with the Security role too. Order:
+  1. **A code reviewer** — the project's own (or one lent to it), else one of no project, else one of another project
+     on the machine the project lives on (one on another machine could not open the repository). Among them, the
+     free one first. One from another project is **lent** to this one for the review (`lend`: they keep their own
+     project; the next review here is theirs as the team's). A colleague the author named in `request_review`, or the
+     reviewer of an earlier round, who is not a code reviewer gives way to one — the ticket's history says so, and
+     the author is told when they name somebody ("… by Rita, the code reviewer … Sarah is not asked").
+  2. **An architect, a security engineer or a QA of the project**, as before (only of the project or of no project).
+  3. **A colleague of the team** (where employees keep the board themselves: `pickReviewer`'s peers, ranked as
+     before), or one the author named.
+  4. **The boss**, when there is nobody.
+  Never the author, the foreman, a team lead, or somebody across the line to a member's own computer.
+  `packages/orchestration/test/review-goes-to-code-reviewer.test.ts`.
 - **What a reviewer is asked** (`reviewPrompt`, since 2026-11-16): one thing — does the diff do what the task asked,
   and is it safe to use. Changes are asked for only for what would make it wrong in use (a bug, a case the task
   names that does not work, a security hole, a test weakened so that it passes), each with its file. Style, naming,
