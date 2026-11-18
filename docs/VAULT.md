@@ -13,6 +13,7 @@ A credential gets a short **name** (`github-deploy-token`). The **value** is enc
 | Way | Who | Code |
 | --- | --- | --- |
 | Typed into the Vault window (Menu → Office → Vault, or Space at the safe in the Server Room) | an owner or a colleague | `POST /api/vault` → `Vault.put(…, 'added')` |
+| **A new value under the same name** (a changed password, a rolled key): *Put in a new value…* in the window | an owner | `PUT /api/vault/:id/value` → `Vault.replaceValue`; employees go on using the same name, the old value is deleted, `vault.changed` in the audit log. Refused when the value is already in the vault under another name |
 | `vault_store { name, value, … }` | an employee that was given, found or made one | `mcp-tools.ts` → `Vault.put(…, 'stored')` |
 | `… \| "$ORCH_VAULT" put name` | a command in an employee's session; the value never passes through the model | the helper → `vault_store` |
 | **By itself, out of a text somebody wrote**: a message to an employee, a task's description or acceptance criteria, an answer to a question, a note for the long memory | the office | `Vault.capture` — called from `comms.sendMessage`, `tasks.createTask`, `comms.answer`, the `remember` tool. The text goes on with `{{vault:name}}` where the value was |
@@ -49,16 +50,28 @@ Employees are told all of this in their system prompt (`prompts.ts`): what `{{va
 | Employees' tools | `VAULT_TOOLS` in `packages/integrations/src/mcp.ts`; handlers in `packages/orchestration/src/mcp-tools.ts` |
 | The helper | `vaultHelper` in `packages/execution/src/claude.ts`; written at launch in `apps/host-agent/src/agent.ts` |
 | For people | `GET`/`POST /api/vault`, `PATCH`/`DELETE /api/vault/:id`, `POST /api/vault/:id/reveal` in `apps/server/src/server.ts`; rules in `access.ts` |
-| The window | `apps/desktop/src/hud/panels/vault.tsx` |
+| The window | `apps/desktop/src/hud/panels/vault.tsx` (and `vault.css`); its words and shelves in `apps/desktop/src/lib/vault.ts` (`apps/desktop/test/vault.test.ts`) — see "The window" below |
 | The safe in the office | `packages/office-3d/src/Vault.tsx`, `vault()` in `models/rooms.ts`; `nearby.kind === 'vault'` → `openPanel('vault')` |
 | On disk | entries in the office's database (key `vault` of its key-value store), each value AES-256-GCM under the key in `<data folder>/vault.key` (mode 600, made at first use) or `ORCH_VAULT_KEY`. **The key belongs in the backup; without it nothing in the vault can be read** |
+
+## The window
+
+Built as a vault on the owner's word of 2026-11-18 ("make the vault's interface actually look like a vault, very clear and easy to use"), in the kit of `UI.md`:
+
+- **The head:** the vault's door as its emblem, how many credentials are under lock and how many times one was taken out (by an employee's command or an owner who looked). The one main button: *Add a credential*.
+- **Left — the boxes, on shelves by what they open** (`byService`: "github.com 2", "db.shop.example 1", what opens nothing named last as "Other"). A box is one line: a kind's sign on a metal tile, the name, the kind and the login, and how many times it was used ("3×", or "unused"). Above them: a box to find by (every word typed must be in its name, what it opens, the login, the note or the kind) and the kinds with how many of each.
+- **Right — the box that is open:** its door, a steel plate with the name, what it is and opens, the note, and **the slot** — the value as dots and its length. An owner presses *Show*: the slot opens for half a minute, says how many seconds are left ("locks in 27 s"), with *Copy* and *Hide*; that look is recorded. A colleague reads "Only an owner can open the value, change it or take it out of the vault". Under the plate: **how employees use it** — `$("$ORCH_VAULT" get name)` in a command and `{{vault:name}}` in a message or a task, each with *Copy* — and **on the record**: how it got here and when, how often it was used and by whom last, when it last changed.
+- **What an owner does with it,** at the bottom: *Edit details* (name, kind, what it opens, login, note — a rename says that employees told the old name will not find it), *Put in a new value…*, and last *Remove…*, which asks first.
+- **Putting one in** fills the right side: the kind as five buttons with their signs, what it opens and the login, the value in a slot of its own (hidden, *Show* to check it; a box for a private key), then the name (made from what it opens when left empty) and a note.
+- Nothing moves by itself; the colours are the app's, the steel is greys, and the gold of the dial is the only warm colour — on an open slot, which is the one thing to look at.
 
 ## Testing it
 
 - `packages/orchestration/test/vault.test.ts` — what is and is not recognised, naming, encryption (a restart with the same key reads it; another key says so), capture, noticing.
 - `tests/e2e/21-vault.test.ts` — real sessions with the scripted worker: kept by name, used through the helper, moved out of a message, stored through the tool and from a pipe, noticed in a file that was read, removed, across a restart. Each step also checks that the value is nowhere in the office's state, events or audit log, and not on the terminal.
 - `apps/server/test/access.test.ts` — who may list, add, look, change, remove.
-- A step of the UI suite adds one through the window, shows it, removes it.
+- `apps/desktop/test/vault.test.ts` — the window's words, shelves and search.
+- A step of the UI suite (`Vault: boxes on shelves…`, alone with `UI_ONLY='^Vault:'`): five credentials put in, the shelves and a kind's filter, a colleague's window (no value, nothing to change), one added through the window, opened with its seconds, given a new value, renamed and removed; pictures `vault.png`, `vault-add.png`, `vault-open.png`, `vault-colleague.png`.
 - In tests, remember that a message is captured before it is delivered: a value written into a scripted instruction (`@@fake: …@@`) is replaced by its name too.
 
 ## Limits, plainly

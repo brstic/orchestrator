@@ -13,6 +13,7 @@ import { registerLazyPanels } from './index.tsx';
 import './panels-work.css';
 import './panels-company.css';
 import './kit.css';
+import './vault.css';
 
 registerLazyPanels(['tasks', 'task'], () => import('./tasks.tsx'));
 registerLazyPanels(['projects'], () => import('./projects.tsx'));

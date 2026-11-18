@@ -271,6 +271,30 @@ export class Vault {
     return this.view(e);
   }
 
+  /**
+   * Put a new value in under the same name — a password that was changed, a key that was rolled: employees go on
+   * using it by the name they know. The old value is gone. Refused when the new value is already in the vault under
+   * another name (one value, one entry).
+   */
+  replaceValue(ref: string, value: string, by: VaultActor): VaultEntry {
+    const e = this.require(ref);
+    value = String(value ?? '');
+    if (!value.trim()) throw new EngineError('a credential needs a value');
+    if (value.length > MAX_VALUE) throw new EngineError('that is too long for one credential');
+    const fp = this.fingerprint(value);
+    const same = [...this.entries.values()].find((x) => x.fingerprint === fp);
+    if (same && same.id !== e.id) throw new EngineError(`that value is already in the vault as "${same.name}"`);
+    if (same) return this.view(e);
+    e.secret = this.encrypt(value, e.id);
+    e.fingerprint = fp;
+    e.length = value.length;
+    e.updatedAt = nowIso();
+    this.save();
+    this.core.audit(actorOf(by), 'vault.changed', e.id, { name: e.name });
+    this.core.event({ type: 'vault.stored', source: by.kind === 'employee' ? 'mcp' : 'owner', summary: `${by.kind === 'office' ? 'The office' : by.name} put a new value in "${e.name}"`, employeeId: by.kind === 'employee' ? by.id : null, data: { name: e.name, kind: e.kind, service: e.service, source: 'changed' } });
+    return this.view(e);
+  }
+
   remove(ref: string, by: VaultActor): VaultEntry {
     const e = this.require(ref);
     this.entries.delete(e.id);

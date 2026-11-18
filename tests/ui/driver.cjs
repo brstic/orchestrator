@@ -3000,11 +3000,60 @@ async function scenario() {
     return asked.replace(/\s+/g, ' ');
   });
 
-  await step('Vault: a credential is added through the window, listed by name without its value, shown to the owner on request, and removed', async () => {
+  await step('Vault: boxes on shelves by what they open; a credential is put in, opened by the owner for half a minute, given a new value, renamed and removed — its value never in the page until asked', async () => {
+    // (When this step runs alone, the office may still be opening.)
+    await waitFor(`!!window.__office && window.__t.store().ready && !!window.__t.store().me`, 60000);
     await close();
+    // A vault with something in it, as an office's is (made-up credentials).
+    const put = (body) => js(`(async () => (await fetch('/api/vault', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + ((window.orchestrator && window.orchestrator.token) || localStorage.getItem('orch.token') || '') }, body: JSON.stringify(${JSON.stringify(body)}) })).status)()`);
+    for (const b of [
+      { name: 'github-deploy-token', value: 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8', kind: 'token', service: 'github.com', username: 'deploy', description: 'Pushes releases from the build machine' },
+      { name: 'github-actions-key', value: 'Gh-Actions-K3y-7781', kind: 'api_key', service: 'github.com' },
+      { name: 'shop-db-admin', value: 'Sh0p-Db-Adm1n!2026', kind: 'password', service: 'db.shop.example', username: 'admin', description: 'Production database — careful' },
+      { name: 'staging-ssh', value: '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ\n-----END OPENSSH PRIVATE KEY-----', kind: 'ssh_key', service: 'staging.example', username: 'ops' },
+      { name: 'mail-relay', value: 'Ma1l-Relay-Pass-99', kind: 'password', service: 'mail.example' },
+    ]) await put(b);
     await js(`window.__t.store().openPanel('vault')`);
     await waitFor(`!!window.__t.scope().querySelector('.win-titles') && /^Vault/.test(window.__t.scope().querySelector('.win-titles').textContent.trim())`, 8000);
-    await waitFor(`!!window.__t.byText('Add a credential')`, 8000);
+    await waitFor(`window.__t.scope().querySelectorAll('[data-vault]').length >= 5`, 8000);
+    // Shelves by what they open, with how many on each; the first box is open.
+    const shelves = await js(`[...window.__t.scope().querySelectorAll('.vt-group-label')].map((l) => l.textContent.replace(/\\s+/g, ' ').trim()).join(' | ')`);
+    if (!/db\.shop\.example 1/.test(shelves) || !/github\.com 2/.test(shelves)) throw new Error(`the shelves read: ${shelves}`);
+    await clickText('shop-db-admin');
+    const box = `window.__t.scope().querySelector('[data-vault-box="shop-db-admin"]')`;
+    await waitFor(`!!(${box})`, 5000);
+    const reads = await js(`(${box}).textContent`);
+    if (!/Password · db\.shop\.example · login admin/.test(reads) || !/Production database/.test(reads) || !/\$\("\$ORCH_VAULT" get shop-db-admin\)/.test(reads) || !/\{\{vault:shop-db-admin\}\}/.test(reads) || !/18 characters/.test(reads) || !/Not used yet/.test(reads)) throw new Error(`the box reads: ${reads.slice(0, 300)}`);
+    await sleep(250);
+    await shot('vault');
+    // A kind narrows the boxes.
+    await click(`[...window.__t.scope().querySelectorAll('.k-filters button')].find((b) => b.textContent.startsWith('Tokens'))`, 'Tokens');
+    await waitFor(`[...window.__t.scope().querySelectorAll('[data-vault]')].map((b) => b.dataset.vault).join() === 'github-deploy-token'`, 4000);
+    await click(`[...window.__t.scope().querySelectorAll('.k-filters button')].find((b) => b.textContent.startsWith('All'))`, 'All');
+
+    // A colleague (the suite's member, at their own window) sees the boxes and how to use them — no value, nothing to change.
+    const other = new BrowserWindow({ width: 1600, height: 964, show: false, webPreferences: { backgroundThrottling: false, partition: 'vault-member' } });
+    const ojs = (code) => other.webContents.executeJavaScript(code, true);
+    const owait = async (code, timeout = 15000) => {
+      for (const end = Date.now() + timeout; Date.now() < end; await sleep(100)) if (await ojs(`(() => { try { return !!(${code}); } catch (e) { return false; } })()`).catch(() => false)) return;
+      throw new Error(`the member's window: timed out waiting for ${code.slice(0, 160)}`);
+    };
+    try {
+      other.webContents.setAudioMuted(true);
+      await other.loadURL(ctx.memberUrl);
+      await owait(`!!window.__office && !!window.__office.getState().me && window.__office.getState().me.name === ${JSON.stringify(ctx.memberName)}`, 30000);
+      await ojs(HELPERS);
+      await ojs(`window.__t.store().openPanel('vault')`);
+      await owait(`!!window.__t.scope().querySelector('[data-vault-box]')`);
+      const theirs = await ojs(`(() => { const b = window.__t.scope().querySelector('[data-vault-box]'); return { text: b.textContent, buttons: [...b.querySelectorAll('button')].map((x) => x.textContent.trim()) }; })()`);
+      if (theirs.buttons.some((b) => ['Show', 'Edit details', 'Put in a new value…', 'Remove…'].includes(b))) throw new Error(`a colleague is offered: ${theirs.buttons.join(', ')}`);
+      if (!/Only an owner can open the value/.test(theirs.text) || !/\$\("\$ORCH_VAULT" get /.test(theirs.text)) throw new Error(`a colleague's box reads: ${theirs.text.slice(0, 240)}`);
+      await sleep(300);
+      fs.writeFileSync(path.join(outDir, 'vault-colleague.png'), (await other.webContents.capturePage()).toPNG());
+    } finally {
+      other.destroy();
+    }
+
     const secret = 'Ui-Suite-S3cret!42';
     await clickText('Add a credential');
     await type(`window.__t.field('What it opens')`, 'registry.example.test');
@@ -3014,25 +3063,39 @@ async function scenario() {
     await sleep(250);
     await shot('vault-add');
     await click(`window.__t.submit('Put it in the vault')`, 'Put it in the vault');
-    const row = `window.__t.scope().querySelector('[data-vault="example-ci-password"]')`;
-    await waitFor(`!!(${row})`, 8000);
-    const text = await js(`(${row}).textContent`);
-    if (!/example-ci-password/.test(text) || !/Password/.test(text) || !/registry\.example\.test · login ci/.test(text) || !/Pulls images in the pipeline/.test(text) || !/added by .* · not used yet · 18 characters/.test(text)) throw new Error(`the row reads: ${text.slice(0, 260)}`);
+    const added = `window.__t.scope().querySelector('[data-vault-box="example-ci-password"]')`;
+    await waitFor(`!!(${added})`, 8000);
+    const text = await js(`(${added}).textContent`);
+    if (!/Password · registry\.example\.test · login ci/.test(text) || !/Pulls images in the pipeline/.test(text) || !/added by .*, just now/.test(text) || !/18 characters/.test(text)) throw new Error(`the new box reads: ${text.slice(0, 300)}`);
     if ((await js(`document.body.innerHTML.includes(${JSON.stringify(secret)})`)) || (await js(`JSON.stringify(window.__t.store()).includes(${JSON.stringify(secret)})`))) throw new Error('the value is in the page or in the office state without having been asked for');
-    // An owner asks to see it: the value appears, and can be put away again.
-    await click(`[...(${row}).querySelectorAll('button')].find((b) => b.textContent.trim() === 'Show')`, 'Show');
-    await waitFor(`(() => { const t = (${row}).querySelector('textarea'); return !!t && t.value === ${JSON.stringify(secret)}; })()`, 8000);
+    // An owner opens the slot: the value is there, with the seconds left, and it is put away again.
+    await click(`[...(${added}).querySelectorAll('button')].find((b) => b.textContent.trim() === 'Show')`, 'Show');
+    await waitFor(`(() => { const t = (${added}).querySelector('textarea'); return !!t && t.value === ${JSON.stringify(secret)}; })()`, 8000);
+    if (!/locks in \d+ s/.test(await js(`(${added}).textContent`))) throw new Error('the open slot does not say when it locks');
     await sleep(250);
-    await shot('vault');
-    await click(`[...(${row}).querySelectorAll('button')].find((b) => b.textContent.trim() === 'Hide')`, 'Hide');
-    await waitFor(`!(${row}).querySelector('textarea')`, 5000);
-    await js(`window.__confirms = []; true`);
-    await click(`[...(${row}).querySelectorAll('button')].find((b) => b.textContent.trim() === 'Remove…')`, 'Remove…');
-    await waitFor(`!(${row})`, 8000);
+    await shot('vault-open');
+    await click(`[...(${added}).querySelectorAll('button')].find((b) => b.textContent.trim() === 'Hide')`, 'Hide');
+    await waitFor(`!(${added}).querySelector('textarea')`, 5000);
+    // A new value under the same name.
+    const fresh = 'Ui-Suite-N3w!Value-77';
+    await click(`[...(${added}).querySelectorAll('button')].find((b) => b.textContent.trim() === 'Put in a new value…')`, 'Put in a new value…');
+    await type(`(${added}).querySelector('input[aria-label="The value"]')`, fresh);
+    await click(`window.__t.submit('Put the new value in')`, 'Put the new value in');
+    await waitFor(`/21 characters/.test((${added}).textContent)`, 8000);
+    // Renamed.
+    await click(`[...(${added}).querySelectorAll('button')].find((b) => b.textContent.trim() === 'Edit details')`, 'Edit details');
+    const nameBox = `[...(${added}).querySelectorAll('input.mono')][0]`;
+    await type(nameBox, 'registry-ci');
+    await click(`window.__t.submit('Save')`, 'Save');
+    const renamed = `window.__t.scope().querySelector('[data-vault-box="registry-ci"]')`;
+    await waitFor(`!!(${renamed})`, 8000);
+    await js(`window.__confirms = []; window.__orchConfirm = (m) => { window.__confirms.push(String(m)); return true; }; true`);
+    await click(`[...(${renamed}).querySelectorAll('button')].find((b) => b.textContent.trim() === 'Remove…')`, 'Remove…');
+    await waitFor(`!window.__t.scope().querySelector('[data-vault="registry-ci"]')`, 8000);
     const asked = await js(`(window.__confirms || []).slice(-1)[0] || ''`);
-    if (!/Remove example-ci-password from the vault\?/.test(asked) || !/cannot be brought back/.test(asked)) throw new Error(`removing asked: "${asked.replace(/\s+/g, ' ').slice(0, 200)}"`);
+    if (!/Remove registry-ci from the vault\?/.test(asked) || !/cannot be brought back/.test(asked)) throw new Error(`removing asked: "${asked.replace(/\s+/g, ' ').slice(0, 200)}"`);
     await close();
-    return 'example-ci-password: added, listed without its value, shown, hidden, removed';
+    return 'shelves by service; a kind narrows; a colleague sees no value and nothing to change; example-ci-password: put in, listed without its value, opened with its seconds, new value, renamed registry-ci, removed';
   });
 
   await step('the command bar opens with its shortcut and previews before doing anything', async () => {

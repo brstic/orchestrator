@@ -233,3 +233,23 @@ test('looking for credentials takes time in step with the text, not with its squ
   const real = `${'a'.repeat(5000)} DB_PASSWORD=Winter2026!ok ${'token'.repeat(1000)} "api_key": "Zx9-Qm27_Lp41-Rt88" ${' '.repeat(5000)}the password for staging is Jaka123!x`;
   assert.deepEqual(detectSecrets(real).map((f) => f.value), ['Winter2026!ok', 'Zx9-Qm27_Lp41-Rt88', 'Jaka123!x']);
 });
+
+test('a new value under the same name: employees keep using the name they know, the old value is gone, nothing says the new one', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-vault-'));
+  const f = fakeCore();
+  const vault = new Vault(f.core, path.join(dir, 'vault.key'));
+  const old = 'Old-Passw0rd-2025';
+  const fresh = 'N3w-Passw0rd-2026!';
+  const { entry } = vault.put({ name: 'mail-admin', value: old, service: 'mail.example' }, boss, 'added');
+  vault.put({ name: 'ci-token', value: 'Ci-T0ken-abcdef12' }, boss, 'added');
+  const changed = vault.replaceValue('mail-admin', fresh, boss);
+  assert.deepEqual([changed.id, changed.name, changed.length], [entry.id, 'mail-admin', fresh.length]);
+  assert.equal(vault.use('mail-admin', alex).value, fresh);
+  // The old value is not in the vault any more: put in again, it is a new entry.
+  assert.equal(vault.put({ name: 'x', value: old }, boss, 'added').created, true);
+  assert.throws(() => vault.replaceValue('mail-admin', 'Ci-T0ken-abcdef12', boss), /already in the vault as "ci-token"/);
+  assert.throws(() => vault.replaceValue('mail-admin', '   ', boss), /needs a value/);
+  assert.ok(f.audit.some(([actor, action, , d]) => actor === 'owner' && action === 'vault.changed' && d.name === 'mail-admin'));
+  assert.ok(!JSON.stringify([f.audit, f.events, vault.list()]).includes(fresh), 'the new value is not in the record');
+  fs.rmSync(dir, { recursive: true, force: true });
+});

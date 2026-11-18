@@ -1,0 +1,348 @@
+/* The vault (hud/panels/vault.tsx): built from the kit (docs/UI.md), in steel. Nothing moves by itself. */
+
+/* ── the door, as the window's emblem ── */
+.vt-door {
+  flex: none;
+  display: block;
+}
+.vt-door-frame {
+  fill: #1b2230;
+  stroke: rgba(255, 255, 255, 0.12);
+}
+.vt-door-plate {
+  fill: #2a3344;
+  stroke: #8d9ab0;
+  stroke-width: 1.4;
+}
+.vt-door-bolt {
+  fill: #b9c3d4;
+}
+.vt-door-dial {
+  fill: #1a2130;
+  stroke: #c9d3e2;
+  stroke-width: 1.2;
+}
+.vt-door-spoke {
+  stroke: #c9d3e2;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.vt-door-hub {
+  fill: #e6c36a;
+}
+
+/* ── the two halves ── */
+.vt.k-split {
+  grid-template-columns: 330px minmax(0, 1fr);
+  height: min(700px, calc(100vh - 190px));
+}
+.vt-side {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+}
+.vt-pad {
+  padding: 12px;
+}
+
+/* ── the boxes on the left, on shelves by what they open ── */
+.vt-group + .vt-group {
+  margin-top: 6px;
+}
+.vt-group-label {
+  display: flex;
+  gap: 6px;
+  padding: 10px 10px 4px;
+}
+.vt-group-label > span {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.vt-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.vt-box:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.vt-box-on,
+.vt-box-on:hover {
+  background: rgba(110, 168, 255, 0.1);
+  border-color: rgba(110, 168, 255, 0.28);
+}
+.vt-box:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.vt-box .k-main {
+  min-width: 0;
+  flex: 1;
+}
+.vt-box-name {
+  display: block;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vt-box .k-sub {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vt-box-uses {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.vt-box-new {
+  color: var(--faint);
+}
+
+/* ── a kind's sign on a small metal tile ── */
+.vt-tile {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 8px;
+  background: linear-gradient(160deg, #39445a 0%, #222a39 55%, #1a202c 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 1px 2px rgba(0, 0, 0, 0.4);
+  color: #c9d3e2;
+}
+.vt-tile-api_key {
+  color: #9fe0b8;
+}
+.vt-tile-token {
+  color: #f0d28a;
+}
+.vt-tile-ssh_key {
+  color: #f2a7b3;
+}
+.vt-tile-password {
+  color: #a9c8ff;
+}
+
+/* ── the box that is open ── */
+.vt-main {
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.vt-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 26px 26px;
+}
+.vt-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.vt-head .k-main {
+  min-width: 0;
+  flex: 1;
+}
+.vt-name {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.vt-name-plain {
+  font-family: var(--sans);
+  font-size: 16px;
+}
+.vt-note {
+  margin: -6px 0 0;
+  max-width: 68ch;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* The box's door: a steel plate with a rivet in each corner, holding the name and the slot. */
+.vt-plate {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 11px 11px, #aeb8c9 0 1.6px, rgba(0, 0, 0, 0.5) 2.2px, transparent 2.8px),
+    radial-gradient(circle at calc(100% - 11px) 11px, #aeb8c9 0 1.6px, rgba(0, 0, 0, 0.5) 2.2px, transparent 2.8px),
+    radial-gradient(circle at 11px calc(100% - 11px), #aeb8c9 0 1.6px, rgba(0, 0, 0, 0.5) 2.2px, transparent 2.8px),
+    radial-gradient(circle at calc(100% - 11px) calc(100% - 11px), #aeb8c9 0 1.6px, rgba(0, 0, 0, 0.5) 2.2px, transparent 2.8px), linear-gradient(165deg, #273041 0%, #1b222f 60%, #171d28 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 6px 18px rgba(0, 0, 0, 0.25);
+}
+.vt-plate .vt-note {
+  margin: -4px 0 0;
+}
+
+/* The slot: the value behind steel. */
+.vt-slot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 12px 10px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.012) 0 2px, transparent 2px 5px), linear-gradient(180deg, #1c2331 0%, #131924 100%);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+.vt-slot-open {
+  border-color: rgba(230, 195, 106, 0.45);
+}
+.vt-slot-lock {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(160deg, #3a4559, #20283a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  color: #c9d3e2;
+}
+.vt-slot-open .vt-slot-lock {
+  color: #e6c36a;
+}
+.vt-slot-dots {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 18px;
+  letter-spacing: 3px;
+  color: #8592a8;
+}
+.win .vt-slot-value {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #f4e7c2;
+  font-family: var(--mono);
+  font-size: 13px;
+  resize: none;
+}
+.win .vt-slot-input .vt-slot-value {
+  color: var(--text);
+}
+.vt-slot-side {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vt-slot-left {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* How employees use it: a phrase, the words to copy. */
+.vt-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.vt-use {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0b0f17;
+}
+.vt-use-what {
+  font-size: 12px;
+  color: var(--muted);
+}
+.vt-use-code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.vt-facts {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+.vt-actions {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.vt-remove:hover:not(:disabled) {
+  color: var(--bad);
+}
+
+/* ── putting one in ── */
+.vt-form {
+  gap: 16px;
+}
+.vt-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.vt-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.vt-kind:hover {
+  color: var(--text);
+}
+.vt-kind-on {
+  border-color: rgba(110, 168, 255, 0.45);
+  background: rgba(110, 168, 255, 0.12);
+  color: var(--text);
+}
+.vt-kind:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ── nothing here ── */
+.vt-empty {
+  margin: auto;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+.vt-empty .k-text {
+  max-width: 52ch;
+}

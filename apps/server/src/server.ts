@@ -742,6 +742,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
     api.patch('/vault/:id', async (req) => engine.vault.update(param(req, 'id'), body(req), vaultActor(req)));
     api.delete('/vault/:id', async (req) => engine.vault.remove(param(req, 'id'), vaultActor(req)));
+    // A new value under the same name (an owner's: not in access.ts's list of what others may do).
+    api.put('/vault/:id/value', async (req) => ({ entry: engine.vault.replaceValue(param(req, 'id'), String((body(req) as { value?: unknown }).value ?? ''), vaultActor(req)) }));
     api.post('/vault/:id/reveal', async (req, reply) => {
       void reply.header('cache-control', 'no-store');
       const { entry, value } = engine.vault.use(param(req, 'id'), vaultActor(req), 'revealed');

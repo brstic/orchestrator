@@ -110,7 +110,8 @@ Where it is: an employee's **Also works on** (Settings), a project's **Builds on
 | Company | 2026-11-13 | Its frame, and the *Now* tab: what needs you as lines, and "Everyone" with a word and a dot instead of a badge (it stays a table: this is where everybody is compared). Projects, Claude, History and Record: the new frame, their insides as they were |
 | Help | 2026-11-13 | The new frame, and a list of what each window is for |
 | Talk (its message box and its head) | 2026-11-14 | See below. The conversation itself is as it was |
-| Tasks, a task, New task, Meetings, Access, Vault, Settings, Map, Floor plan, Terminals, Hi-fi, TV, Arcade, a question, a desk | 2026-11-13 | **The new frame only** (the window's head, its air, hanging from the top): their insides are as they were. Tasks keeps the board the owner knows (`add-to-a-layout-do-not-replace-it`) |
+| Vault | 2026-11-18 | Its insides too: a library (`.k-split`) built as a vault — the boxes on shelves by what they open, the open box with its value behind a steel slot; `VAULT.md`, "The window" |
+| Tasks, a task, New task, Meetings, Access, Settings, Map, Floor plan, Terminals, Hi-fi, TV, Arcade, a question, a desk | 2026-11-13 | **The new frame only** (the window's head, its air, hanging from the top): their insides are as they were. Tasks keeps the board the owner knows (`add-to-a-layout-do-not-replace-it`) |
 
 ## Talk
 
