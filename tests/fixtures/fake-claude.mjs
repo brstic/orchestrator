@@ -844,6 +844,51 @@ if (fs.existsSync(path.join(cwd, '.fake-untrusted'))) {
   fs.rmSync(path.join(cwd, '.fake-untrusted'), { force: true });
   out('\x1b[6A\x1b[J');
 }
+// A newer Claude Code asks the same of a folder added to the session (`--add-dir`), with "No, exit" chosen — and it
+// can be caught half drawn: the words first, the answers a moment later. A test asks for this with a file named
+// `.fake-untrusted-dir` in the working folder (its content: how long, in ms, the answers take; 600 if empty).
+if (fs.existsSync(path.join(cwd, '.fake-untrusted-dir'))) {
+  const late = Number(fs.readFileSync(path.join(cwd, '.fake-untrusted-dir'), 'utf8').trim() || 600);
+  const dir = flag('--add-dir') ?? cwd;
+  say(' Adding a new directory:');
+  say('');
+  say(` ${dir}`);
+  say('');
+  say(" This session hasn't worked here before. Is this a directory you created or one you trust?");
+  say('');
+  say(' Security guide');
+  dialogOpen = true;
+  await sleep(late);
+  say('');
+  say(' ❯ No, exit');
+  say('   Yes, add it');
+  say('');
+  say(' Enter to confirm · Esc to cancel');
+  let onYes = false;
+  for (;;) {
+    const key = await nextKey();
+    if (key === '\x1b') {
+      const a = await Promise.race([nextKey(), sleep(150).then(() => null)]);
+      if (a === null) {
+        keyWaiter = null;
+        break;
+      }
+      const b = a === '[' || a === 'O' ? await nextKey() : '';
+      if (b === 'B') onYes = true;
+      else if (b === 'A') onYes = false;
+      continue;
+    }
+    if (key === '\r') break;
+  }
+  dialogOpen = false;
+  keyQueue.length = 0;
+  if (!onYes) {
+    say(' Exiting.');
+    process.exit(1);
+  }
+  fs.rmSync(path.join(cwd, '.fake-untrusted-dir'), { force: true });
+  out('\x1b[12A\x1b[J');
+}
 // The first start of an account in bypass mode: Claude Code's warning, which somebody has to accept — once.
 // (Remembered per Claude config folder, as the real one remembers it in that folder's settings.)
 if (permissionMode === 'bypassPermissions') {

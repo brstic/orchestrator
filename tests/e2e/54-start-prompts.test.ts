@@ -58,6 +58,32 @@ test('the warning about running without permission checks is accepted for somebo
   assert.ok((await h.api<any[]>('GET', '/events?limit=200')).some((e) => /warning about running without permission checks was accepted/.test(e.summary) && e.employeeId === ids.Una));
 });
 
+test('the question about a folder added to the session, caught while Claude Code is still drawing it, is answered by the office when its answers appear — nobody is asked', async () => {
+  // Seen on the live office: the words were on the screen a moment before "❯ No, exit / Yes, add it", the office
+  // could not read the answers yet, and asked the owner — every time a session started.
+  fs.writeFileSync(path.join(repo, '.fake-untrusted-dir'), '2500');
+  ids.Dora = (await h.employee('Dora', 'backend', { projectId: project, autonomy: 'standard' })).id;
+  await h.api('POST', `/employees/${ids.Dora}/start`, {});
+  await up('Dora');
+  assert.ok(!fs.existsSync(path.join(repo, '.fake-untrusted-dir')), '"Yes, add it" was chosen');
+  assert.deepEqual(await asked('Dora'), []);
+  const said = await audit('trust.auto_accepted', 'Dora');
+  assert.equal(said.length, 1);
+  assert.equal(said[0]!.detail.cwd, path.join(h.agentHome, 'files'), 'the added folder is the one on the record');
+});
+
+test('answers that are slow to appear: the owner is asked after a moment, and the question goes away when the office can answer it after all', async () => {
+  await h.api('POST', `/employees/${ids.Dora}/stop`, {});
+  fs.writeFileSync(path.join(repo, '.fake-untrusted-dir'), '7000');
+  await h.api('POST', `/employees/${ids.Dora}/start`, {});
+  const q = await waitFor(async () => (await asked('Dora')).find((x) => x.status === 'open'), { label: 'the owner is asked', timeout: 15000 });
+  assert.match(q.text, new RegExp(`trust the folder ${path.join(h.agentHome, 'files').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} `));
+  await up('Dora');
+  assert.ok(!fs.existsSync(path.join(repo, '.fake-untrusted-dir')), '"Yes, add it" was chosen');
+  assert.equal((await asked('Dora')).find((x) => x.id === q.id)?.status, 'superseded');
+  assert.equal((await audit('trust.auto_accepted', 'Dora')).length, 2);
+});
+
 test('switched off, the owner is asked as before: about the folder for somebody on Standard, and about the warning', async () => {
   await h.api('PATCH', '/settings', { acceptStartPrompts: false });
   // The folder, for somebody on Standard.

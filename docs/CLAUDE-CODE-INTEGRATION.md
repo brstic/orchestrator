@@ -90,6 +90,8 @@ Observed with Agent SDK 0.3.321 and Claude Code 2.1.321 (`pnpm test:real:sdk`):
 
 Claude Code asks whether to trust a folder the first time it starts there, before any hook can fire. Orchestrator notices the prompt in the pane's screen capture, raises it as a question, and — if you choose "Trust this folder" — navigates to the "Yes" option based on what the prompt actually shows before pressing Enter (in 2.1.321 the default selection is **"No, exit"**). It never presses keys blind.
 
+Since 2026-11-13 the office answers it by itself for whoever was put in the folder (`acceptStartPrompts`, on unless switched off; then only for Auto and Unrestricted), and a person is asked only when it may not. A newer Claude Code asks the same of a folder added to the session ("Adding a new directory: … Is this a directory you created or one you trust?" — the folder of the files said to employees, `--add-dir`), and it is answered the same way. The question can be caught half drawn, its words on the screen before its answers: the office then looks again at the next screens instead of asking at once, asks a person only if the answers still cannot be read after `terminalPromptMs` (5 s), and even then answers by itself once it can read them, taking the person's question back (`tests/e2e/54-start-prompts.test.ts`).
+
 ## Hooks
 
 Installed per session as `command` hooks:

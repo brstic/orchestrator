@@ -1949,37 +1949,74 @@ export class SessionRegistry {
     if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || !atStartDialog(s, screen)) return;
     const text = screen.lines.join('\n').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
     if (!TRUST_PROMPT.test(text)) return;
-    const asked = `${sessionId}|${trustKind(text)}`;
+    const kind = trustKind(text);
+    const asked = `${sessionId}|${kind}`;
     if (this.trustAsked.has(asked)) return;
-    this.trustAsked.add(asked);
     const employee = this.core.employees.get(s.employeeId) ?? null;
+    // The folder it asks about: the session's own, or one added to it (the folder of the files said to employees).
+    const folder = kind.startsWith('dir:') && kind.length > 4 ? kind.slice(4) : s.cwd;
     // Whoever put this employee in this folder chose the folder: the office answers "yes" for them, on the record —
     // at every level since 2026-11-13 (the owner: "say yes and trust the folder by itself, instead of getting stuck");
     // with that switched off, only for those on Auto and Unrestricted, as before.
-    if (employee && (this.core.settings.acceptStartPrompts !== false || employee.autonomy === 'auto' || employee.autonomy === 'unrestricted')) {
-      const keys = trustPromptKeys(screen.lines);
-      if (keys) {
-        void this.core.agents
-          .rpc(s.hostId, { method: 'session.keys', params: { sessionId: s.id, keys } })
-          .then(() => {
-            this.core.audit('system', 'trust.auto_accepted', s.id, { employee: employee.name, cwd: s.cwd });
-            this.core.event({ type: 'session.started', source: 'server', summary: `The folder ${s.cwd} was trusted for Claude Code without asking you (${employee.name} was put there)`, sessionId: s.id, employeeId: employee.id, hostId: s.hostId, data: { trust: 'auto', cwd: s.cwd } });
-          })
-          .catch(() => this.trustAsked.delete(asked));
-        return;
-      }
+    const mayAnswer = !!employee && (this.core.settings.acceptStartPrompts !== false || employee.autonomy === 'auto' || employee.autonomy === 'unrestricted');
+    const keys = mayAnswer ? trustPromptKeys(screen.lines) : null;
+    if (employee && keys) {
+      this.trustAsked.add(asked);
+      this.clearTrustWait(asked);
+      void this.core.agents
+        .rpc(s.hostId, { method: 'session.keys', params: { sessionId: s.id, keys } })
+        .then(() => {
+          this.core.audit('system', 'trust.auto_accepted', s.id, { employee: employee.name, cwd: folder });
+          this.core.event({ type: 'session.started', source: 'server', summary: `The folder ${folder} was trusted for Claude Code without asking you (${employee.name} was put there)`, sessionId: s.id, employeeId: employee.id, hostId: s.hostId, data: { trust: 'auto', cwd: folder } });
+          // Asked already while the question could not be read yet: answered now, nothing is left for anybody.
+          for (const q of this.core.questions.filter((x) => x.sessionId === s.id && x.kind === 'trust_prompt' && x.status === 'open' && !x.tool)) this.eng.comms.supersede(q.id, 'The office answered it by itself.');
+        })
+        .catch(() => this.trustAsked.delete(asked));
+      return;
     }
+    if (mayAnswer) {
+      // The question is on the screen but its answers cannot be read yet — Claude Code is still drawing it (the
+      // screen is taken 150 ms after the first output; seen on the live office, 2026-11-17: the question about the
+      // added folder was asked of the owner a second after the start, every time). Look again at the next screens;
+      // only if the answers still cannot be read after a moment is a person asked — and even then the office
+      // answers by itself once it can read them.
+      if (!this.trustWaits.has(asked)) {
+        const t = setTimeout(() => {
+          this.trustWaits.delete(asked);
+          const now = this.core.sessions.get(s.id);
+          if (this.trustAsked.has(asked) || !now || now.status !== 'running') return;
+          if (this.core.questions.find((x) => x.sessionId === s.id && x.kind === 'trust_prompt' && x.status === 'open' && !x.tool)) return;
+          this.askTrust(now, employee, folder);
+        }, this.core.timings.terminalPromptMs ?? 5000);
+        t.unref?.();
+        this.trustWaits.set(asked, t);
+      }
+      return;
+    }
+    this.trustAsked.add(asked);
+    this.askTrust(s, employee, folder);
+  }
+
+  /** Waits, per session and question, for a trust question's answers to become readable on the screen. */
+  private trustWaits = new Map<string, NodeJS.Timeout>();
+  private clearTrustWait(asked: string): void {
+    const t = this.trustWaits.get(asked);
+    if (t) clearTimeout(t);
+    this.trustWaits.delete(asked);
+  }
+
+  private askTrust(s: AgentSession, employee: Employee | null, folder: string): void {
     this.setActivity(s, 'needs_approval', 'Claude Code is asking whether to trust this folder');
     this.eng.comms.createQuestion({
       kind: 'trust_prompt',
       channel: 'terminal',
       employee,
       session: s,
-      text: `Claude Code is asking whether to trust the folder ${s.cwd} before ${employee?.name ?? 'this session'} can start.`,
+      text: `Claude Code is asking whether to trust the folder ${folder} before ${employee?.name ?? 'this session'} can start.`,
       context: 'This prompt comes from Claude Code itself and appears once per folder. Trusting lets Claude Code read project settings and run in that directory.',
       why: 'The session cannot start working until it is answered.',
       options: [
-        { label: 'Trust this folder', description: 'Press Enter on the prompt', consequence: 'Claude Code starts in this directory.' },
+        { label: 'Trust this folder', description: 'Choose "Yes" on the prompt', consequence: 'Claude Code starts in this directory.' },
         { label: 'Decide in the terminal', description: 'Leave the prompt for you to answer at the workstation' },
       ],
     });
@@ -2132,6 +2169,7 @@ export class SessionRegistry {
     session.resumed = resume;
     this.turnSince.delete(session.id);
     for (const k of [...this.trustAsked]) if (k.startsWith(`${session.id}|`)) this.trustAsked.delete(k);
+    for (const k of [...this.trustWaits.keys()]) if (k.startsWith(`${session.id}|`)) this.clearTrustWait(k);
     this.bypassAsked.delete(session.id);
     if (resume) this.resumeProbes.set(session.id, session.lastEventAt);
     else this.resumeProbes.delete(session.id);
