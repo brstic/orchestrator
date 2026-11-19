@@ -2,6 +2,13 @@
 
 Codex is a runtime for individual employees and team leads. Codex and Claude employees on the same team use the same conversations, task board, and review workflow.
 
+## TL;DR
+
+1. On the machine that will run the employee, install the Codex CLI and sign in as the host agent’s OS user. For a file-backed login, run `codex -c 'cli_auth_credentials_store="file"' login`.
+2. Restart the Orchestrator host agent. In **Machines**, confirm the selected host shows **Codex-managed workers**. If the agent can’t find Codex, set `codexBin` to its absolute path in the host agent’s `config.json` and restart again.
+3. Open **Team → Hire**, choose the machine and working folder, then select **More options → Runtime → Codex-managed**.
+4. Message the employee from the office. It can list, read, and edit text files in the selected workspace, subject to deny rules. Shell and Git commands are unavailable.
+
 ## Set up a host
 
 1. Install Codex on the machine running the Orchestrator host agent. Check that `codex --version` and `codex app-server --help` work as the account that runs the agent. If Codex lives outside that account's PATH, set `codexBin` to its absolute path in the host agent's configuration.
