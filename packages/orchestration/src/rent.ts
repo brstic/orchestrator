@@ -53,6 +53,8 @@ const RENT_TOOLS = new Set([
   'wait_for_answer',
   // (It waits for nothing, so also on a rental that never waits for the office; the rate limit keeps it rare.)
   'message_person',
+  // Their own clients only, on the portal (`write`).
+  'message_client',
   'comment_on_task',
   'report_blocker',
   'complete_task',
@@ -474,7 +476,8 @@ export class Rent {
           ? `Nothing you do waits for the office: the owner has given you leave for all of it, so decide yourself and go on — do not ask the boss. What is ${client.name}'s to decide, ask ${client.name} in your reply. `
           : '') +
         (others.length ? `Other clients rent you too (${others.join(', ')}): what each of them tells you is theirs — do not pass it on to ${client.name}, nor ${client.name}'s to them. ` : '') +
-        'What the boss tells you in the office is not for clients unless the boss says so.)',
+        'What the boss tells you in the office is not for clients unless the boss says so. ' +
+        `To write to ${client.name} later, not in answer to them — the boss asks you to tell or ask them something, or an answer they wait for comes in — use message_client: it is in their conversation at once, without waiting for them to write.)`,
       ...((facts) => (facts.length ? ['', `What the office knows about ${client.name} (the central context):`, ...facts.map((f) => `- **${f.title}** — ${f.text}`)] : []))(this.eng.context.clientFacts(client.id).filter((f) => f.always)),
     ].join('\n');
   }
@@ -530,6 +533,33 @@ export class Rent {
       clientId,
     });
     return this.add({ clientId, employeeId, from: 'client', text: words, messageId: message.id, ...(sent.files.length ? { files: sent.files } : {}) });
+  }
+
+  /**
+   * A rented employee writes to a client of theirs, not in answer to them (`message_client`): the boss asked them to tell
+   * or ask the client something, or news came that the client waits for (the boss's answer, a colleague's result). The
+   * line stands in that client's conversation at once — the portal shows it, marked new, without the client writing
+   * first. Throws in words for the employee when there is nobody to write to; nothing is written then.
+   */
+  write(employee: Employee, to: unknown, text: unknown): { client: RentClient; line: RentLine } {
+    const words = String(text ?? '').replace(/\r\n/g, '\n').trim().slice(0, RENT_LIMITS.text);
+    if (!words) throw new EngineError('Write the message in "message". Nothing was sent.');
+    const mine = this.rentalsOf(employee.id).map((r) => r.client);
+    if (!mine.length) throw new EngineError('No client rents you: there is nobody on the Rent portal to write to. For a person of the office use message_person; for an employee, send_message.');
+    const plain = (x: string) => clean(x, 200).toLowerCase();
+    const want = plain(String(to ?? '')).replace(/^@/, '');
+    const exact = want ? mine.filter((c) => plain(c.name) === want || (!!c.company && plain(c.company) === want)) : [];
+    const first = exact.length ? exact : want ? mine.filter((c) => plain(c.name).split(' ')[0] === want) : mine;
+    if (first.length !== 1) {
+      const names = mine.map((c) => c.name).join(', ');
+      throw new EngineError(`${want ? (first.length ? `More than one client is called "${clean(to, 60)}"` : `No client of yours is called "${clean(to, 60)}"`) : 'Several clients rent you; say which one in "to"'}. You can write to: ${names}. Nothing was sent.`);
+    }
+    const client = first[0]!;
+    // Answering that very client now: the reply goes to them anyway, and a second copy of it would only be noise.
+    if (this.clientOfTurn(employee.id) === client.id) throw new EngineError(`You are answering ${client.name} right now: your reply goes to them on the portal by itself. Put it in your reply. Nothing was sent.`);
+    const line = this.add({ clientId: client.id, employeeId: employee.id, from: 'agent', text: words });
+    this.core.event({ type: 'rent.agent_wrote', source: 'mcp', summary: `${employee.name} wrote to ${client.name} on the Rent portal`, employeeId: employee.id, data: { clientId: client.id } });
+    return { client, line };
   }
 
   /** Rented employees on this machine who have a client's words waiting and no session: started, so the words reach them. */

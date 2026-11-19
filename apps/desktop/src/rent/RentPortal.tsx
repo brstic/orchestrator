@@ -16,6 +16,7 @@ import { Avatar, Markdown } from '@orchestrator/ui';
 import { serverBase } from '../lib/api.ts';
 import logo from '../entrance/logo.svg';
 import type { StageMood, StageReaction } from './AgentStage.tsx';
+import { isNew, landOn } from './landing.ts';
 import './rent.css';
 
 // The 3D (three.js) is loaded only when it is shown: the portal opens with faces and the figures follow.
@@ -332,6 +333,15 @@ function Portal({ token, onOut, onToken }: { token: string; onOut: () => void; o
     const t = window.setInterval(() => void load(), 5000);
     return () => window.clearInterval(t);
   }, [load]);
+  // Coming in: a conversation where something new waits (an employee wrote while they were away) is the one opened —
+  // unless the one they came back to has something new itself. Once, on the first look; after that they choose.
+  const landed = useRef(false);
+  useEffect(() => {
+    if (!me || landed.current) return;
+    landed.current = true;
+    const to = landOn(me.agents, seen, open);
+    if (to) setOpen(to);
+  }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
   const agent = me?.agents.find((a) => a.id === open) ?? me?.agents[0] ?? null;
   useEffect(() => {
     if (agent && window.location.hash.slice(1) !== agent.id) window.history.replaceState({}, '', `/rent#${agent.id}`);
@@ -366,7 +376,7 @@ function Portal({ token, onOut, onToken }: { token: string; onOut: () => void; o
         <nav className="rp-agents">
           {me.agents.length === 0 && <p className="rp-empty-side">Nobody is assigned to you yet.</p>}
           {me.agents.map((a) => {
-            const unread = !!a.last && a.last.from !== 'client' && seen[a.id] !== a.last.id && a.id !== agent?.id;
+            const unread = isNew(a, seen) && a.id !== agent?.id;
             return (
               <button
                 key={a.id}

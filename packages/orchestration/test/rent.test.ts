@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { Host } from '@orchestrator/contracts';
 import { RENT_PERMS_DEFAULT } from '@orchestrator/contracts';
 import { Store } from '@orchestrator/database';
+import { handleMcpPost } from '@orchestrator/integrations';
 import { Engine, type AgentLink } from '../src/index.ts';
 import { permsFrom } from '../src/rent.ts';
 
@@ -254,4 +255,52 @@ test('one employee, several clients: each conversation its own, told to keep eac
   eng.rent.revoke(ana.id, 'owner');
   assert.deepEqual(eng.rent.rentalsOf(kira.id).map((r) => r.client.name), ['Ivo']);
   assert.equal(eng.rent.perms(kira.id)!.commands, false);
+});
+
+test('message_client: a rented employee writes to a client of theirs when not answering them — the line is in that conversation at once; nobody else is reachable', async () => {
+  const { eng, kira, lea, bob } = office();
+  const call = async (who: typeof kira, args: Record<string, unknown>) => {
+    const res: any = await handleMcpPost({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'message_client', arguments: args } }, eng.mcp, { employee: who, session: { id: `s-${who.id}`, employeeId: who.id, hostId: who.hostId } as any });
+    return { text: String(res.body.result?.content?.[0]?.text ?? JSON.stringify(res.body)), isError: res.body.result?.isError === true };
+  };
+  const listed = (who: typeof kira) => eng.mcp.tools.filter((t) => eng.mcp.listed?.(t, { employee: who, session: null as never }) ?? true).map((t) => t.name);
+  const ana = eng.rent.create({ name: 'Ana Client', company: 'Acme', employeeIds: [kira.id] }, 'owner', never);
+  const heard: string[] = [];
+  eng.core.bus.on('event', (e) => e.type === 'rent.agent_wrote' && heard.push(e.summary));
+
+  // Shown only to somebody a client rents; anybody else is told there is nobody to write to.
+  assert.ok(listed(kira).includes('message_client'));
+  assert.ok(!listed(bob).includes('message_client'));
+  assert.match((await call(bob, { message: 'hi' })).text, /No client rents you/);
+
+  // One client: "to" may be left out. The boss asked on Telegram (an office turn): the line is in Ana's conversation, from the employee.
+  eng.rent.turnStarted(kira.id, eng.comms.sendMessage({ from: { kind: 'owner', id: null, name: 'the boss' }, toEmployeeId: kira.id, body: 'ask them where the idea came from', channel: 'telegram' }).id);
+  const r = await call(kira, { message: 'One question from the boss: where did this come from?' });
+  assert.equal(r.isError, false, r.text);
+  assert.match(r.text, /Sent to Ana Client/);
+  assert.deepEqual(
+    eng.rent.lines(ana.id, kira.id).map((l) => [l.from, l.text]),
+    [['agent', 'One question from the boss: where did this come from?']],
+  );
+  assert.deepEqual(heard, ['Kira wrote to Ana Client on the Rent portal']);
+
+  // While answering Ana herself, the reply goes to her anyway: no second copy.
+  eng.rent.turnStarted(kira.id, eng.comms.sendMessage({ from: { kind: 'owner', id: null, name: 'Ana Client (a client who rents you)' }, toEmployeeId: kira.id, body: 'hi', channel: 'rent', clientId: ana.id }).id);
+  assert.match((await call(kira, { message: 'again' })).text, /answering Ana Client right now/);
+  eng.rent.turnStarted(kira.id, null);
+
+  // Several clients: by name, first name or company; a client not theirs is refused with whom they can write to.
+  const ivo = eng.rent.create({ name: 'Ivo', employeeIds: [kira.id, lea.id] }, 'owner', never);
+  assert.match((await call(kira, { message: 'x' })).text, /Several clients rent you.*Ana Client, Ivo/);
+  assert.equal((await call(kira, { to: 'acme', message: 'For Acme.' })).isError, false);
+  assert.equal((await call(kira, { to: 'ivo', message: 'For Ivo.' })).isError, false);
+  assert.match((await call(kira, { to: 'Zed', message: 'x' })).text, /No client of yours is called "Zed". You can write to: Ana Client, Ivo/);
+  assert.match((await call(lea, { to: 'Ana', message: 'x' })).text, /No client of yours/, "Lea is not rented to Ana");
+  assert.deepEqual(eng.rent.lines(ivo.id, kira.id).map((l) => l.text), ['For Ivo.']);
+  assert.equal(eng.rent.lines(ana.id, kira.id).at(-1)!.text, 'For Acme.');
+  assert.match((await call(kira, { to: 'Ivo', message: '  ' })).text, /Write the message/);
+
+  // The employee is told of it in every client message.
+  const told = (eng.rent as any).body(ana, kira, ana.rentals[0], 'hello') as string;
+  assert.match(told, /To write to Ana Client later, not in answer to them .* use message_client/);
 });

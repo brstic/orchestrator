@@ -2,6 +2,14 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-19 — A rented employee writes to its client with a tool, not by holding the answer for their next message
+
+The owner, after the rented project manager could only put the owner's question to its client into its answer to the client's next message: "let it send it through that conversation, and let them see it as soon as they come in".
+- **A tool (`message_client`) that writes a line into the conversation**, not a turn of the office's that is made to count as the client's. Which turn is whose stays as it was (the message that began it); the boss's own turn — on Telegram, in Talk — still answers the boss, and the client sees only what the employee chose to write to them.
+- **Only to the employee's own clients, and never as a second copy of an answer** to the client being answered: their reply goes there by itself.
+- **Not a notification outside the portal** (no e-mail, no push): a client has only the portal. They see it there when they come in — the portal opens that conversation — or within seconds while it is open.
+- Rejected: letting `message_person` reach clients too. A client is not a person of the office (no Inbox, no Telegram, a different door), and one tool that sometimes writes into an Inbox and sometimes into a client's conversation would make it easy to send the office's words to a client by a slip of a name.
+
 ## 2026-11-18 — Out in the city together: the place out there rides on the presence
 
 The owner asked for the jump off the terrace to be "multiplayer, so the other players see everything and we can go together".

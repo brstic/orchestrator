@@ -206,6 +206,22 @@ test('two clients, one employee: each has their own conversation — the answer 
   await h.api('DELETE', `/rent/clients/${made.client.id}`);
 });
 
+test('the boss tells a rented employee to ask the client something: it is in the client\'s conversation at once, before they write (message_client)', async () => {
+  const before = (await linesOf(kira.id)).length;
+  await h.api('POST', `/employees/${kira.id}/message`, { body: 'Ask Ana where the idea came from @@fake: mcp message_client {"message":"A question from the boss: where did this idea come from?"}; result to-client.txt; say asked-client-5252@@' });
+  await waitFor(async () => (await h.api<any[]>('GET', `/events?employeeId=${kira.id}&limit=200`)).find((e) => e.type === 'agent.turn_finished' && /asked-client-5252/.test(e.data.lastMessage)), { label: 'the office turn', timeout: 40_000 });
+  assert.match(fs.readFileSync(path.join(kira.workingDir!, 'to-client.txt'), 'utf8'), /Sent to Ana Client/);
+  const lines = (await linesOf(kira.id)).slice(before);
+  // Only what was written to the client: not the boss's words, not the answer of the office's turn.
+  assert.deepEqual(
+    lines.map((l) => [l.from, l.text]),
+    [['agent', 'A question from the boss: where did this idea come from?']],
+  );
+  // The owner's feed says who wrote to whom, not what.
+  const events = await h.api<any[]>('GET', `/events?employeeId=${kira.id}&limit=200`);
+  assert.ok(events.some((e) => e.type === 'rent.agent_wrote' && e.summary === 'Kira wrote to Ana Client on the Rent portal'));
+});
+
 test('when the client is no longer a client, everything they came in with ends, and their employees are the office\'s again', async () => {
   await h.api('DELETE', `/rent/clients/${clientId}`);
   assert.equal((await portal('GET', '/me')).status, 401);

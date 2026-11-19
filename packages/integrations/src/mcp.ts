@@ -284,6 +284,19 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
     },
   },
   {
+    name: 'message_client',
+    description:
+      'Write to a client who rents you, in your conversation with them on the Rent portal, when you are not answering a message of theirs: the boss asks you to tell or ask them something, or news comes that they wait for (the boss\'s answer, a colleague\'s result). It is there at once, marked new, without waiting for them to write first. When you are answering their message, just reply — that already goes to them. Only what is for the client: nothing of the office they should not see.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to: str('The client\'s name (or company); may be left out when only one client rents you'),
+        message: str('What they should read — whole, written to them'),
+      },
+      required: ['message'],
+    },
+  },
+  {
     name: 'request_collaboration',
     description:
       'Ask a teammate for something you need from them (an endpoint, a contract, a fix, information). They must respond: incorporate it, turn it into a task, report a dependency, or escalate. If you cannot go on without their answer, set wait to true: the call then stays open until they answer (a few minutes at most) and returns their answer.',

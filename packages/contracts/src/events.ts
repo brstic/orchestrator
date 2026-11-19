@@ -78,6 +78,8 @@ export type EventType =
   | 'agent.file_given'
   /** A client of the Rent portal, or what they rent, changed (rent.ts). */
   | 'rent.changed'
+  // A rented employee wrote to a client of theirs on the Rent portal, not in answer to them (`message_client`): data { clientId }. Only who, not what.
+  | 'rent.agent_wrote'
   | 'meeting.created'
   | 'meeting.round_started'
   | 'meeting.contribution'

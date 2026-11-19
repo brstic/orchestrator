@@ -287,6 +287,17 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       return `Sent to ${to.name}: it is in their Inbox${urgent ? ', marked urgent' : ''}, and on Telegram if they talk to you there. If they answer, it comes to you as a message — carry on meanwhile.`;
     },
 
+    message_client: async (a, { employee }) => {
+      const many = tooMany(employee, 'message to a client', 20);
+      if (many) return err(many);
+      try {
+        const { client } = eng.rent.write(employee, a.to, a.message);
+        return `Sent to ${client.name}: it is in your conversation with them on the Rent portal now, marked new. When they answer, it comes to you as their message — carry on meanwhile.`;
+      } catch (e) {
+        return err((e as Error).message);
+      }
+    },
+
     send_message: async (a, { employee }) => {
       const to = eng.comms.resolveTeammate(employee, String(a.to));
       if (!to) return { text: `No teammate matches "${a.to}". Use get_team.`, isError: true };
@@ -722,6 +733,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     handlers,
     // Only a foreman is shown the foreman's tools; everyone else's tool list (and prompt) stays as small as before.
     // The board tools are shown while the owner leaves the board to the employees (a foreman assigns with its own tool).
-    listed: (tool, { employee }) => eng.rent.toolAllowed(employee, tool.name) !== false && (employee.roleKey === LEAD_ROLE ? leadTools.has(tool.name) || LEAD_ALSO.has(tool.name) : !leadTools.has(tool.name)) && tool.name !== 'vault_read' && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
+    listed: (tool, { employee }) => eng.rent.toolAllowed(employee, tool.name) !== false && (employee.roleKey === LEAD_ROLE ? leadTools.has(tool.name) || LEAD_ALSO.has(tool.name) : !leadTools.has(tool.name)) && tool.name !== 'vault_read' && (tool.name !== 'message_client' || eng.rent.isRented(employee.id)) && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
   };
 }
