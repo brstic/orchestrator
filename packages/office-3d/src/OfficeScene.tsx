@@ -196,7 +196,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
   }, [props.quality]);
   const surroundings = props.surroundings ?? 'studio';
   const dpr: [number, number] = props.quality === 'low' ? [1, 1] : props.quality === 'medium' ? [1, 1.5] : [1, 2];
-  usePacedLoop();
+  usePacedLoop(props.quality === 'high');
 
   return (
     <Canvas

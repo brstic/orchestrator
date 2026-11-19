@@ -18,11 +18,19 @@ export interface Pace {
  * terminals need it), and then the page is never told it was minimized or hidden — the app is (`main.cjs`).
  */
 export const paceView = { shown: true };
+/** Whether the office follows the display in full while worked in (the High setting); read by the loop as it runs. */
+const fullRef = { full: false };
 
 /** Without a touch of the mouse or the keyboard for this long, a window in front is drawn as one in the background. */
 export const IDLE_AFTER = 90_000;
 /** Behind another window, a touch (the mouse over it) brings it to full pace for this long. */
 export const HOVER_FOR = 5_000;
+/**
+ * The most it is drawn at while somebody works in it, on the Low and Medium settings. A 144 Hz display drew it 144 times
+ * a second — a whole core of the computer, for motion nobody tells from 72. Drawn on every second refresh there (72),
+ * every second on 120 Hz (60), every one on 60 Hz: always an even rhythm. On High it follows the display.
+ */
+export const WORKING_FPS = 75;
 /** Frames a second for an office nobody is working in: still smooth to watch, a third to a quarter of the work. */
 export const RESTING_FPS = 30;
 
@@ -31,10 +39,10 @@ export const RESTING_FPS = 30;
  * cannot be seen (minimized, hidden, a tab in the background); at a resting pace while another window has the focus
  * (unless the mouse moves over it) or nobody has touched it for a while; in full while somebody works in it.
  */
-export function drawCap(v: { shown: boolean; focused: boolean; idleMs: number }): number {
+export function drawCap(v: { shown: boolean; focused: boolean; idleMs: number; full?: boolean }): number {
   if (!v.shown) return 0;
   // (The mouse moving over it, or a key, counts even without the focus: somebody is looking at it.)
-  if (v.idleMs < (v.focused ? IDLE_AFTER : HOVER_FOR)) return Infinity;
+  if (v.idleMs < (v.focused ? IDLE_AFTER : HOVER_FOR)) return v.full ? Infinity : WORKING_FPS;
   return RESTING_FPS;
 }
 
@@ -47,12 +55,13 @@ export function drawCap(v: { shown: boolean; focused: boolean; idleMs: number })
  * holds; every second refresh when it does not; and back, after the office has been comfortably fast for a while
  * (trying again less and less often if it keeps failing). A 60 Hz display is always drawn on every refresh.
  *
- * And no faster than it is looked at (`drawCap`): the office drawn 60–120 times a second behind another window, or
+ * And no faster than it is looked at, nor faster than the eye gains from (`drawCap`): the office drawn 60–120 times a second behind another window, or
  * minimized, was most of what the app cost the computer.
  *
  * The canvas must be mounted with `frameloop="never"`: this is its loop.
  */
-export function usePacedLoop(): void {
+export function usePacedLoop(full = false): void {
+  fullRef.full = full;
   useEffect(() => {
     let raf = 0;
     let start = 0;
@@ -106,7 +115,7 @@ export function usePacedLoop(): void {
       }
       tick++;
       if (tick % every !== 0) return;
-      const cap = drawCap({ shown: paceView.shown && !document.hidden, focused, idleMs: t - touched });
+      const cap = drawCap({ shown: paceView.shown && !document.hidden, focused, idleMs: t - touched, full: fullRef.full });
       pace.cap = cap === Infinity ? null : cap;
       if (cap < Infinity) {
         // (Half a refresh of slack, so that 30 on a 60 Hz display is every second refresh, not every third.)
