@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Build, M, at, cyl, lathe, once, slab, softBox, sphere, tint, torus, tube, type Model } from './kit.ts';
+import { Build, M, at, cyl, lathe, keyed, once, slab, softBox, sphere, tint, torus, tube, type Model } from './kit.ts';
 import { deskPlant, mug } from './decor.ts';
 import { keyboard, monitor } from './workplace.ts';
 
@@ -114,7 +114,7 @@ export const executiveDesk = once((): Model => {
  * The kitchen run, `L` long along X with its doors toward +Z: floor cabinets under a stone top, a sink and
  * tap, a coffee machine, a rack of cups, a bowl of fruit.
  */
-export function kitchen(L: number): Model {
+export const kitchen = keyed((L: number): Model => {
   const b = new Build();
   const white = M.paint('#f4f5f7', 0.5);
   const carcass = M.paint('#dfe3e9', 0.6);
@@ -173,7 +173,7 @@ export function kitchen(L: number): Model {
   const fruit = M.varied(0.5);
   [['#d9483b', -0.05, 0.02], ['#e8a33c', 0.05, 0.03], ['#8fb84a', 0.0, -0.06], ['#d9483b', 0.02, 0.0]].forEach(([c, dx, dz], i) => b.add(fruit, tint(at(sphere(0.042, 12, 8), fx + (dx as number), top + (i === 3 ? 0.11 : 0.06), dz as number), c as string), { cast: false }));
   return b.done();
-}
+});
 
 /** A tall fridge-freezer in brushed steel, its doors toward +Z. */
 export const fridge = once((): Model => {

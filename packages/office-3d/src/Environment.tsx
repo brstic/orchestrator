@@ -10,6 +10,7 @@ import { SMALL_RACK, memberRoomTitle, type MemberRoom } from './member-rooms.ts'
 import { ON_SURFACE } from './surface.ts';
 import { glazed, hasWindows, lookOf } from './surroundings/index.tsx';
 import { InstancedModel, Model } from './models/Model.tsx';
+import { INSTANCED_DEPTH, instancedTwin } from './twins.ts';
 import { DESK_TOP, desk as deskModel, divider as dividerModel, lampDome, taskChair } from './models/workplace.ts';
 import { arcade, awardStand, bookshelf, coffeeTable, deskPlant, floorLamp, mug, neonBoard, notebook, plant, rug, sofa, trophyCase } from './models/decor.ts';
 import { carpetMaterial, ceilingTexture, floorMaterial } from './models/surfaces.ts';
@@ -91,7 +92,7 @@ function Instanced({ geometry, material, matrices, castShadow = true, receiveSha
   }, [matrices]);
   if (!matrices.length) return null;
   // Keyed by count: an instanced mesh cannot grow, so a longer list gets a new one.
-  return <instancedMesh key={matrices.length} ref={ref} args={[geometry, material, matrices.length]} castShadow={castShadow} receiveShadow={receiveShadow} frustumCulled />;
+  return <instancedMesh key={matrices.length} ref={ref} args={[geometry, instancedTwin(material), matrices.length]} customDepthMaterial={INSTANCED_DEPTH} castShadow={castShadow} receiveShadow={receiveShadow} frustumCulled />;
 }
 
 const tmpM = new THREE.Matrix4();

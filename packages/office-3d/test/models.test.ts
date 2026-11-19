@@ -135,3 +135,13 @@ test('room furniture fits the floor the office keeps free for it', () => {
   fits('coffee table', coffeeTable(1.3, 0.7), 1.3, 0.7, 1500);
   fits('armchair', sofa(1.0, '#8a5230', { leather: true }), 1.1, 0.9, 3400);
 });
+
+test('a model asked for again with the same measures is the same model — a scene that renders again makes nothing new (the break room leaked three shapes a second)', async () => {
+  const { coffeeTable, rug } = await import('../src/models/decor.ts');
+  const { kitchen } = await import('../src/models/rooms.ts');
+  assert.equal(coffeeTable(1.3, 0.7), coffeeTable(1.3, 0.7));
+  assert.equal(coffeeTable(), coffeeTable());
+  assert.notEqual(coffeeTable(0.9, 0.55), coffeeTable(1.3, 0.7));
+  assert.equal(kitchen(4.6), kitchen(4.6));
+  assert.equal(rug(4.6, 3.4, '#3b4a63', '#27324a'), rug(4.6, 3.4, '#3b4a63', '#27324a'));
+});

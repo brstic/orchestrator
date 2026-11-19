@@ -308,6 +308,21 @@ export class Build {
 }
 
 /** A model built the first time it is asked for, and the same one ever after. */
+/**
+ * One model per set of arguments, made the first time it is asked for. A builder called while a scene renders is called
+ * again at every render: without this it made a new model each time and the old one's geometry was never let go of
+ * (the break room's kitchen and coffee table, three new shapes a second in a busy office, for as long as it ran).
+ */
+export function keyed<A extends unknown[], T>(make: (...a: A) => T): (...a: A) => T {
+  const made = new Map<string, T>();
+  return (...a: A) => {
+    const key = JSON.stringify(a);
+    let v = made.get(key);
+    if (v === undefined) made.set(key, (v = make(...a)));
+    return v;
+  };
+}
+
 export function once<T>(make: () => T): () => T {
   let v: T | undefined;
   return () => (v ??= make());

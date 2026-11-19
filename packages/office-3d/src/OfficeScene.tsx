@@ -133,6 +133,35 @@ export interface OfficeSceneProps {
 }
 
 /** Soft image-based lighting generated in code, so nothing is fetched at runtime. */
+/**
+ * The sun's shadows are drawn again at most about forty times a second, not at every frame: the sun and everything
+ * but the people stand still, and at 72 frames a second a person's shadow a frame behind is not to be seen. The shadow
+ * pass draws every caster in the office once more (some four hundred draws) — every second frame of it was for nothing.
+ */
+export const SHADOW_EVERY = 1 / 40;
+/** Whether the shadows were drawn in the frame before this one (`prev`) and are in this one (`now`): for `PerfProbe`. */
+const shadowFrames = { prev: true, now: true };
+function ShadowPace() {
+  const { gl } = useThree();
+  const last = useRef(-Infinity);
+  useEffect(() => {
+    gl.shadowMap.autoUpdate = false;
+    gl.shadowMap.needsUpdate = true;
+    return () => {
+      gl.shadowMap.autoUpdate = true;
+    };
+  }, [gl]);
+  useFrame((s) => {
+    const t = s.clock.elapsedTime;
+    shadowFrames.prev = shadowFrames.now;
+    shadowFrames.now = !(t - last.current < SHADOW_EVERY && t >= last.current);
+    if (!shadowFrames.now) return;
+    last.current = t;
+    gl.shadowMap.needsUpdate = true;
+  });
+  return null;
+}
+
 function Reflections() {
   const { gl, scene } = useThree();
   useEffect(() => {
@@ -196,7 +225,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
   }, [props.quality]);
   const surroundings = props.surroundings ?? 'studio';
   const dpr: [number, number] = props.quality === 'low' ? [1, 1] : props.quality === 'medium' ? [1, 1.5] : [1, 2];
-  usePacedLoop(props.quality === 'high');
+  usePacedLoop();
 
   return (
     <Canvas
@@ -220,6 +249,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       }}
     >
       <StableFrame samples={props.quality === 'low' ? 0 : 4} />
+      <ShadowPace />
       <Reflections />
       <PerfProbe />
       <Surroundings kind={surroundings} world={world} quality={props.quality} />
@@ -281,16 +311,22 @@ function SceneProbe({ zones, surroundings }: { zones: ZoneView[]; surroundings: 
  * (shown in Settings, and checked by the UI test).
  */
 function PerfProbe() {
-  const acc = useRef({ start: 0, frames: 0, worst: 0 });
+  const acc = useRef({ start: 0, frames: 0, worst: 0, calls: 0, triangles: 0 });
   useFrame(({ gl }, dt) => {
     const now = performance.now();
     const a = acc.current;
     if (!a.start) a.start = now;
     a.frames++;
     a.worst = Math.max(a.worst, dt * 1000);
+    // (What the frame before this one drew — the last one with its shadow pass: the shadows are not drawn again at every
+    // frame (`ShadowPace`), and every frame drew them before.)
+    if (shadowFrames.prev) {
+      a.calls = gl.info.render.calls;
+      a.triangles = gl.info.render.triangles;
+    }
     if (now - a.start >= 2000) {
-      // Draw calls and triangles of the last frame (shadow pass included): what the lazily mounted rooms save.
-      (window as any).__orchPerf = { fps: Math.round((a.frames * 10000) / (now - a.start)) / 10, worstFrameMs: Math.round(a.worst * 10) / 10, calls: gl.info.render.calls, triangles: gl.info.render.triangles, geometries: gl.info.memory.geometries, textures: gl.info.memory.textures, at: Date.now() };
+      // Draw calls and triangles of a frame (shadow pass included): what the lazily mounted rooms save.
+      (window as any).__orchPerf = { fps: Math.round((a.frames * 10000) / (now - a.start)) / 10, worstFrameMs: Math.round(a.worst * 10) / 10, calls: a.calls, triangles: a.triangles, geometries: gl.info.memory.geometries, textures: gl.info.memory.textures, at: Date.now() };
       a.start = now;
       a.frames = 0;
       a.worst = 0;

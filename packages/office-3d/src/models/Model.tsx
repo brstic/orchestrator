@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 import * as THREE from 'three';
+import { INSTANCED_DEPTH, instancedTwin } from '../twins.ts';
 import type { Model as ModelData } from './kit.ts';
 
 /** One model, standing where the group is put. */
@@ -22,7 +23,7 @@ function InstancedPart({ geometry, material, matrices, cast }: { geometry: THREE
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingSphere();
   }, [matrices]);
-  return <instancedMesh ref={ref} args={[geometry, material, matrices.length]} castShadow={cast} receiveShadow frustumCulled />;
+  return <instancedMesh ref={ref} args={[geometry, instancedTwin(material), matrices.length]} customDepthMaterial={INSTANCED_DEPTH} castShadow={cast} receiveShadow frustumCulled />;
 }
 
 /** Many copies of one model: one draw call per material, however many copies there are. */

@@ -6,6 +6,7 @@ import type { Appearance } from '@orchestrator/contracts';
 import { BADGE_Z, PIN_Z, body } from './character/body.ts';
 import { EYE_AT, EYE_YAW, LID_CLOSE, browsGeo, capGeo, eyesGeo, glassesGeo, hairGeo, headGeo, headphonesGeo, lidGeo } from './character/head.ts';
 import { SHOES, SKINNED_DEPTH, TIES, badgeMat, eyeMat, mat, skinned, sparkMat, traitsOf, zTexture, type MatOptions } from './character/look.ts';
+import { bentProps } from './twins.ts';
 import {
   HEAD_SCALE,
   HEAD_Y,
@@ -572,12 +573,13 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
         </group>
         <group ref={spine}>
           <group ref={chest}>
-            <mesh geometry={look3d.torso} material={look3d.shirt} castShadow />
-            <mesh geometry={g.trim[look3d.outfit]} material={look3d.trim} />
-            <mesh geometry={look3d.tucked ? g.neckOpen : g.neck} material={look3d.skin} />
-            {suit && <mesh geometry={g.tie} material={look3d.tie} />}
-            {suit && <mesh geometry={g.suitLapels} material={look3d.lapel} />}
-            {suit && <mesh geometry={g.suitButtons} material={look3d.dark} />}
+            {/* (What bends with the hem gets materials of its own: `bentProps`.) */}
+            <mesh geometry={look3d.torso} {...bentProps(look3d.torso, look3d.shirt)} castShadow />
+            <mesh geometry={g.trim[look3d.outfit]} {...bentProps(g.trim[look3d.outfit], look3d.trim)} />
+            <mesh geometry={look3d.tucked ? g.neckOpen : g.neck} {...bentProps(look3d.tucked ? g.neckOpen : g.neck, look3d.skin)} />
+            {suit && <mesh geometry={g.tie} {...bentProps(g.tie, look3d.tie)} />}
+            {suit && <mesh geometry={g.suitLapels} {...bentProps(g.suitLapels, look3d.lapel)} />}
+            {suit && <mesh geometry={g.suitButtons} {...bentProps(g.suitButtons, look3d.dark)} />}
             {suit ? (
               <mesh geometry={g.badge} material={look3d.badge} position={[0.079, 0.412, PIN_Z]} rotation={[-0.08, 0.3, 0.5]} scale={0.5} />
             ) : (

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Build, M, at, cyl, lathe, once, slab, softBox, sphere, tint, torus, tube, type Model } from './kit.ts';
+import { Build, M, at, cyl, lathe, keyed, once, slab, softBox, sphere, tint, torus, tube, type Model } from './kit.ts';
 
 /**
  * What makes an office a place: plants, sofas, shelves of books, lamps, and the things a company earns.
@@ -208,7 +208,7 @@ export function sofa(w: number, color = '#4f6d8f', o: { leather?: boolean; seat?
 }
 
 /** A low table: an oak top with rounded corners on a black steel frame, a few things left on it. */
-export function coffeeTable(w = 1.3, d = 0.7, h = 0.33): Model {
+export const coffeeTable = keyed((w: number = 1.3, d: number = 0.7, h: number = 0.33): Model => {
   const b = new Build();
   const steel = M.steel('#22262e', 0.45);
   b.add(M.wood('#a67c52'), at(slab(w, 0.03, d, 0.06, 0.006), 0, h - 0.015, 0));
@@ -225,7 +225,7 @@ export function coffeeTable(w = 1.3, d = 0.7, h = 0.33): Model {
   b.add(mags, tint(at(softBox(0.2, 0.008, 0.27, 0.003, { round: 1 }), -w * 0.21, h + 0.012, 0.02, 0, -0.1), '#c96f4a'), { cast: false });
   b.put(mug('#f2f0ea'), w * 0.24, h, -0.08, 0.6);
   return b.done();
-}
+});
 
 const mugs = new Map<string, Model>();
 /** A coffee mug. */
@@ -342,12 +342,12 @@ export const floorLamp = once((): Model => {
 });
 
 /** A flat rug with a darker border, `w` × `d`, lying on the floor. */
-export function rug(w: number, d: number, color = '#39465c', border = '#2a3446'): Model {
+export const rug = keyed((w: number, d: number, color: string = '#39465c', border: string = '#2a3446'): Model => {
   const b = new Build();
   b.add(M.fabric(border), at(slab(w, 0.012, d, 0.05, 0.004), 0, 0.012, 0), { cast: false });
   b.add(M.fabric(color), at(slab(w - 0.3, 0.012, d - 0.3, 0.03, 0.003), 0, 0.016, 0), { cast: false });
   return b.done();
-}
+});
 
 // ───────────────────────────── earned ─────────────────────────────
 

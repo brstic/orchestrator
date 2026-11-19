@@ -9,6 +9,8 @@ export interface Pace {
   every: number;
   /** Frames a second the office is being drawn at. */
   fps: number;
+  /** Milliseconds one drawing of the office took, on average over the last second (the main thread's share). */
+  cost: number;
   /** The most it may be drawn at now (`drawCap`): 0 while nobody can see it, null when as fast as the display goes. */
   cap: number | null;
 }
@@ -18,31 +20,29 @@ export interface Pace {
  * terminals need it), and then the page is never told it was minimized or hidden — the app is (`main.cjs`).
  */
 export const paceView = { shown: true };
-/** Whether the office follows the display in full while worked in (the High setting); read by the loop as it runs. */
-const fullRef = { full: false };
 
 /** Without a touch of the mouse or the keyboard for this long, a window in front is drawn as one in the background. */
 export const IDLE_AFTER = 90_000;
-/** Behind another window, a touch (the mouse over it) brings it to full pace for this long. */
+/** Behind another window, a touch (the mouse over it) brings it to the working pace for this long. */
 export const HOVER_FOR = 5_000;
 /**
- * The most it is drawn at while somebody works in it, on the Low and Medium settings. A 144 Hz display drew it 144 times
- * a second — a whole core of the computer, for motion nobody tells from 72. Drawn on every second refresh there (72),
- * every second on 120 Hz (60), every one on 60 Hz: always an even rhythm. On High it follows the display.
+ * The most it is drawn at while somebody works in it, on every setting (High is more detail, not more frames). A 144 Hz
+ * display drew it 144 times a second — a whole core of the computer, for motion nobody tells from 72. Drawn on every
+ * second refresh there (72), every second on 120 Hz (60), every one on 60 Hz: always an even rhythm.
  */
 export const WORKING_FPS = 75;
 /** Frames a second for an office nobody is working in: still smooth to watch, a third to a quarter of the work. */
 export const RESTING_FPS = 30;
 
 /**
- * How fast the office may be drawn now (frames a second; Infinity: as fast as the display goes): not at all while it
+ * How fast the office may be drawn now (frames a second): not at all while it
  * cannot be seen (minimized, hidden, a tab in the background); at a resting pace while another window has the focus
- * (unless the mouse moves over it) or nobody has touched it for a while; in full while somebody works in it.
+ * (unless the mouse moves over it) or nobody has touched it for a while; at the working pace while somebody works in it.
  */
-export function drawCap(v: { shown: boolean; focused: boolean; idleMs: number; full?: boolean }): number {
+export function drawCap(v: { shown: boolean; focused: boolean; idleMs: number }): number {
   if (!v.shown) return 0;
   // (The mouse moving over it, or a key, counts even without the focus: somebody is looking at it.)
-  if (v.idleMs < (v.focused ? IDLE_AFTER : HOVER_FOR)) return v.full ? Infinity : WORKING_FPS;
+  if (v.idleMs < (v.focused ? IDLE_AFTER : HOVER_FOR)) return WORKING_FPS;
   return RESTING_FPS;
 }
 
@@ -60,8 +60,7 @@ export function drawCap(v: { shown: boolean; focused: boolean; idleMs: number; f
  *
  * The canvas must be mounted with `frameloop="never"`: this is its loop.
  */
-export function usePacedLoop(full = false): void {
-  fullRef.full = full;
+export function usePacedLoop(): void {
   useEffect(() => {
     let raf = 0;
     let start = 0;
@@ -77,8 +76,9 @@ export function usePacedLoop(full = false): void {
     let retryAfter = 4000;
     let slowSince = 0;
     let drawn = 0;
+    let spent = 0;
     let fpsFrom = 0;
-    const pace: Pace = ((window as unknown as { __orchPace?: Pace }).__orchPace = { display, every, fps: 0, cap: null });
+    const pace: Pace = ((window as unknown as { __orchPace?: Pace }).__orchPace = { display, every, fps: 0, cost: 0, cap: null });
     // Is anybody looking, and working in it?
     let focused = document.hasFocus();
     let touched = performance.now();
@@ -115,11 +115,12 @@ export function usePacedLoop(full = false): void {
       }
       tick++;
       if (tick % every !== 0) return;
-      const cap = drawCap({ shown: paceView.shown && !document.hidden, focused, idleMs: t - touched, full: fullRef.full });
+      const cap = drawCap({ shown: paceView.shown && !document.hidden, focused, idleMs: t - touched });
       pace.cap = cap === Infinity ? null : cap;
       if (cap < Infinity) {
-        // (Half a refresh of slack, so that 30 on a 60 Hz display is every second refresh, not every third.)
-        if (cap === 0 || t - drewAt < 1000 / cap - display / 2) {
+        // (A fifth of slack, so that 30 on a 60 Hz display is every second refresh and 75 on 144 Hz every second one —
+        // not every third: a refresh comes a little early or late.)
+        if (cap === 0 || t - drewAt < (1000 / cap) * 0.8) {
           if (cap === 0) pace.fps = 0;
           return;
         }
@@ -133,8 +134,11 @@ export function usePacedLoop(full = false): void {
       advance((t - start) / 1000);
       const cost = performance.now() - before;
       drawn++;
+      spent += cost;
       if (t - fpsFrom >= 1000) {
         pace.fps = Math.round((drawn * 1000) / (t - fpsFrom));
+        pace.cost = Math.round((spent / drawn) * 100) / 100;
+        spent = 0;
         drawn = 0;
         fpsFrom = t;
       }

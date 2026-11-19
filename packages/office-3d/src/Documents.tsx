@@ -77,7 +77,8 @@ function Stack({ x, z, rot, view, onOpen }: { x: number; z: number; rot: number;
           <group key={i} position={[0, 0.012 + i * 0.024, 0]} rotation={[0, (i % 2 ? -1 : 1) * 0.09 * (i + 1) * 0.5, 0]}>
             <mesh geometry={paperGeo} material={paper} position={[0, 0.006, 0]} />
             <mesh geometry={folderGeo} material={mats[i % mats.length]} position={[0, 0.014, 0]} castShadow receiveShadow />
-            <mesh geometry={tabGeo} material={mats[i % mats.length]} position={[0.06 - i * 0.03, 0.014, 0.17]} />
+            {/* (Receiving shadows like the folder it is part of: one material, drawn one way.) */}
+            <mesh geometry={tabGeo} material={mats[i % mats.length]} position={[0.06 - i * 0.03, 0.014, 0.17]} receiveShadow />
           </group>
         ))}
         {view.count >= 3 && (
