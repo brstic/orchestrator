@@ -768,6 +768,7 @@ export class TaskManager {
     if (this.startingEmployees.has(e.id) || this.currentTask(e.id)) return false;
     if (this.awaitingAnswer(e.id)) return false;
     if (!e.hostId || !this.core.agents.isOnline(e.hostId)) return false;
+    if (e.executionMode === 'codex_managed' && this.eng.sessions.cannotStart(e)) return false;
     if (this.eng.hosts.exhausted(e.hostId)) return false;
     const s = this.core.runningSessionOf(e.id);
     if (s && this.core.gateway.isPaused(s.id)) return false;
@@ -1050,7 +1051,7 @@ export class TaskManager {
       let text: string;
       if (task.kind === 'review' && task.reviewOf) {
         const target = this.core.tasks.require(task.reviewOf);
-        text = reviewPrompt(task, target, project, this.core.employees.get(target.assigneeId)?.name ?? 'a teammate');
+        text = reviewPrompt(task, target, project, this.core.employees.get(target.assigneeId)?.name ?? 'a teammate', employee.executionMode === 'codex_managed');
         // (First task on this project: what the team has learned, once, ahead of the lessons chosen for this task.)
         const playbook = [this.eng.improver.capture.onboardingBlock(employee, project), this.eng.improver.playbookBlock(employee, project.id, true, task)].filter(Boolean).join('\n\n');
         if (playbook) text += `\n\n${playbook}`;
@@ -1089,7 +1090,7 @@ export class TaskManager {
     this.core.put('task', task);
     const emp = this.core.employees.get(task.assigneeId);
     if (state.status === 'sent' && was !== 'sent') {
-      this.core.event({ type: 'task.delivered', source: 'server', summary: `${task.key} was handed to ${emp?.name ?? 'employee'} (${state.via === 'stop_hook' ? 'via Stop hook' : state.via === 'sdk' ? 'through the Agent SDK' : 'typed into the terminal'})`, taskId, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, via: state.via, quiet: true } });
+      this.core.event({ type: 'task.delivered', source: 'server', summary: `${task.key} was handed to ${emp?.name ?? 'employee'} (${state.via === 'stop_hook' ? 'via Stop hook' : state.via === 'codex' ? 'through Codex' : state.via === 'sdk' ? 'through the Agent SDK' : 'typed into the terminal'})`, taskId, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, via: state.via, quiet: true } });
     } else if (state.status === 'confirmed' && was !== 'confirmed') {
       this.core.event({ type: 'task.started', source: 'hook', summary: `${emp?.name ?? 'Employee'} started ${task.key}: ${task.title}`, taskId, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, via: state.via } });
     } else if (state.status === 'failed') {
@@ -1711,6 +1712,7 @@ export class TaskManager {
     const pool = this.core.employees.filter(
       (e) =>
         !e.archived && e.id !== task.assigneeId && preferred.includes(e.roleKey) && !!e.hostId && e.schedule.available && this.canSee(e, task) &&
+        (e.executionMode !== 'codex_managed' || !this.eng.sessions.cannotStart(e)) &&
         (tier(e) < 2 || (this.isCodeReviewer(e, task) && (!project?.hostId || project.hostId === e.hostId))),
     );
     const rank = (e: Employee) => preferred.indexOf(e.roleKey) * 6 + (this.isFree(e) ? 0 : 3) + tier(e);

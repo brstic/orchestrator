@@ -43,7 +43,7 @@ export function WhoUsesWhat() {
   const everyone = useMemo(
     () =>
       Object.values(employeesById)
-        .filter((e) => !e.archived && !!e.hostId && !!hosts[e.hostId])
+        .filter((e) => !e.archived && e.executionMode !== 'codex_managed' && !!e.hostId && !!hosts[e.hostId])
         .sort((a, b) => a.name.localeCompare(b.name)),
     [employeesById, hosts],
   );

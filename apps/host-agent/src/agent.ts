@@ -57,22 +57,33 @@ import {
   commitWip,
 } from '@orchestrator/execution';
 import { AGENT_VERSION, type AgentConfig, paths, readJson, saveConfig, toWsUrl, writePrivate } from './config.ts';
+import type { CodexSpec } from './codex-runner.ts';
 import type { ManagedSpec } from './managed-runner.ts';
 import { locateSdk } from './sdk.ts';
 
-/** What the office can send to an SDK-managed worker without touching its terminal. */
+/** What the office can send to a managed worker without touching its terminal. */
 type ManagedItem = { type: 'prompt'; text: string } | { type: 'interrupt' } | { type: 'exit' };
 
 /** Hook events an SDK-managed worker reports (SDK hook callbacks plus the runner's own lifecycle and approval events). */
 const MANAGED_HOOK_EVENTS = ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Notification', 'Stop', 'SubagentStart', 'SubagentStop', 'PermissionRequest'];
+const CODEX_HOOK_EVENTS = ['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'Notification', 'Stop', 'StopFailure'];
+
+function codexVersion(bin: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(bin, ['--version'], { timeout: 3000 }, (error, stdout) => {
+      resolve(error ? null : stdout.trim() || null);
+    });
+  });
+}
 
 /** How to start this same program again as a worker runner (bundle: itself; sources: cli.ts next to this file). */
-function runnerCommand(): string[] {
+function runnerCommand(command: 'managed-run' | 'codex-run' = 'managed-run'): string[] {
   const self = fileURLToPath(import.meta.url);
   const entry = path.basename(self) === 'agent.ts' ? path.join(path.dirname(self), 'cli.ts') : self;
   // The office's own MCP tools are pre-approved by an allow rule, as they are for interactive
   // workers; the SDK's notice that such rules bypass the permission callback is expected here.
-  return [process.execPath, '--disable-warning=CLAUDE_SDK_CAN_USE_TOOL_SHADOWED', entry, 'managed-run'];
+  const flags = command === 'managed-run' ? ['--disable-warning=CLAUDE_SDK_CAN_USE_TOOL_SHADOWED'] : [];
+  return [process.execPath, ...flags, entry, command];
 }
 
 interface Tracked {
@@ -88,6 +99,7 @@ interface Tracked {
   paneId: string;
   cwd: string;
   claudeSessionId: string | null;
+  codexThreadId?: string | null;
   hookToken: string | null;
   spec: LaunchSpec | null;
   /** A rented employee's fence as the office last sent it (`session.fence`); absent: the one in `spec`. */
@@ -120,6 +132,7 @@ interface Runtime {
   /** SDK-managed workers: prompts and interrupts waiting for the runner to collect. */
   inbox: ManagedItem[];
   inboxWaiter: (() => void) | null;
+  codexContextPreview?: { launch: string; pack: ContextPack };
   /** SDK-managed workers: the running cost estimate last reported by the SDK. */
   costUsdEstimate: number | null;
   /** Exact tool calls the owner allowed once after Claude Code refused them (see `session.grant`). */
@@ -291,6 +304,9 @@ export class HostAgent {
   }
 
   private async collectInfo(): Promise<HostInfo> {
+    const runtimes: ExecutionMode[] = ['interactive_cli'];
+    if (locateSdk(this.cfg, this.p.home)) runtimes.push('managed_sdk');
+    if (await codexVersion(this.cfg.codexBin ?? 'codex')) runtimes.push('codex_managed');
     return {
       hostname: os.hostname(),
       platform: process.platform,
@@ -306,8 +322,7 @@ export class HostAgent {
       cpus: os.cpus().length,
       totalMemBytes: os.totalmem(),
       user: os.userInfo().username,
-      // Capability detection: SDK-managed workers are offered only where the Agent SDK is installed.
-      runtimes: locateSdk(this.cfg, this.p.home) ? ['interactive_cli', 'managed_sdk'] : ['interactive_cli'],
+      runtimes,
     };
   }
 
@@ -581,6 +596,7 @@ export class HostAgent {
   private capabilities(t: Tracked): SessionCapabilities {
     const hooks = t.origin === 'managed' ? t.hookEvents.length > 0 : t.hooksSeen;
     if (t.mode === 'managed_sdk') return { terminal: !t.gone, hooks: true, mcp: !!t.spec?.mcp, structuredApproval: true, structuredMessaging: true, usage: true };
+    if (t.mode === 'codex_managed') return { terminal: !t.gone, hooks: true, mcp: !!t.spec?.mcp, structuredApproval: false, structuredMessaging: true, usage: false };
     return {
       terminal: !t.gone,
       hooks,
@@ -608,6 +624,7 @@ export class HostAgent {
       cols: t.cols,
       rows: t.rows,
       claudeSessionId: t.claudeSessionId,
+      ...(t.mode === 'codex_managed' ? { codexThreadId: t.codexThreadId ?? null } : {}),
       capabilities: this.capabilities(t),
       permissionMode: t.permissionMode,
       // (A session started before this agent knew of versions runs with the first ones.)
@@ -700,6 +717,9 @@ export class HostAgent {
   }
 
   private async launchSession(sessionId: string, spec: LaunchSpec): Promise<AgentSessionReport> {
+    const codex = spec.mode === 'codex_managed';
+    const codexBin = this.cfg.codexBin ?? 'codex';
+    if (codex && spec.fence) throw new Error('Codex-managed workers do not support rental fences');
     // Workers reach the office the way this agent does. That matters when the office is only
     // reachable from here through a tunnel (an SSH link): its own address means nothing on this machine.
     if (spec.mcp && this.cfg.serverUrl) {
@@ -709,7 +729,7 @@ export class HostAgent {
       if (mine.origin !== theirs.origin) spec = { ...spec, mcp: { ...spec.mcp, url: `${mine.origin}${theirs.pathname}` } };
     }
     // A Claude account of its own: the config folder must be this user's, and Claude Code must have been logged in there.
-    if (spec.env?.CLAUDE_CONFIG_DIR) {
+    if (!codex && spec.env?.CLAUDE_CONFIG_DIR) {
       const raw = spec.env.CLAUDE_CONFIG_DIR;
       const dir = path.resolve(raw.startsWith('~/') ? path.join(os.homedir(), raw.slice(2)) : raw);
       if (dir !== os.homedir() && !dir.startsWith(os.homedir() + path.sep)) throw new Error(`the Claude account folder must be inside your home folder on this machine (${dir})`);
@@ -729,9 +749,12 @@ export class HostAgent {
     }
     const sdk = spec.mode === 'managed_sdk' ? locateSdk(this.cfg, this.p.home) : null;
     if (spec.mode === 'managed_sdk' && !sdk) throw new Error('the Claude Agent SDK is not installed on this host (run `orchestrator-agent sdk install`, then restart the agent)');
-    if (spec.mode !== 'interactive_cli' && spec.mode !== 'managed_sdk') throw new Error(`execution mode ${spec.mode} is not supported by this host agent`);
-    const version = this.info?.claudeVersion ?? (await claudeVersion(this.cfg.claudeBin));
-    if (!version) throw new Error(`Claude Code CLI not found (${this.cfg.claudeBin}); install it or set claudeBin in the agent config`);
+    if (!codex && spec.mode !== 'interactive_cli' && spec.mode !== 'managed_sdk') throw new Error(`execution mode ${spec.mode} is not supported by this host agent`);
+    const version = codex ? await codexVersion(codexBin) : this.info?.claudeVersion ?? (await claudeVersion(this.cfg.claudeBin));
+    if (!version) {
+      if (codex) throw new Error(`Codex CLI not found (${codexBin}); install it or set codexBin in the agent config`);
+      throw new Error(`Claude Code CLI not found (${this.cfg.claudeBin}); install it or set claudeBin in the agent config`);
+    }
 
     const existing = this.tracked.get(sessionId);
     const panes = await this.tmux.listPanes();
@@ -744,7 +767,9 @@ export class HostAgent {
     // This start's own name: hooks of the process started now carry it, and hooks that carry another one come from
     // a process of an earlier start (see `onHook`).
     const hookLaunch = crypto.randomBytes(9).toString('hex');
-    const plan = sdk
+    const plan = codex
+      ? this.planCodexLaunch({ ...spec, cwd }, sessionId, sessionDir, hookToken, hookLaunch)
+      : sdk
       ? this.planManagedLaunch({ ...spec, cwd }, sessionId, sessionDir, hookToken, sdk.entry)
       : planClaudeLaunch({
           claudeBin: this.cfg.claudeBin,
@@ -798,19 +823,20 @@ export class HostAgent {
       tmuxSession,
       paneId,
       cwd,
-      claudeSessionId: spec.claudeSessionId,
+      claudeSessionId: codex ? null : spec.claudeSessionId,
+      ...(codex ? { codexThreadId: spec.resume ? spec.codexThreadId ?? null : null } : {}),
       hookToken,
       spec: { ...spec, cwd },
       hooksVersion: HOOKS_VERSION,
       hookLaunch: sdk ? null : hookLaunch,
       startedAt: new Date().toISOString(),
-      transcriptPath: existing?.transcriptPath ?? null,
+      transcriptPath: codex ? null : existing?.transcriptPath ?? null,
       hooksSeen: false,
       hookEvents: plan.hookEvents,
-      permissionMode: spec.permissionMode,
+      permissionMode: codex ? 'read-only' : spec.permissionMode,
       alive: true,
       pid: null,
-      command: this.cfg.claudeBin,
+      command: codex ? codexBin : this.cfg.claudeBin,
       cols: spec.cols,
       rows: spec.rows,
       branch: insp.branch,
@@ -824,8 +850,40 @@ export class HostAgent {
     const pane = (await this.tmux.listPanes()).find((p) => p.paneId === paneId);
     t.pid = pane?.panePid ?? null;
     t.alive = !!pane && !pane.dead;
-    this.log('info', `started ${spec.resume ? 'resumed ' : ''}${sdk ? 'SDK-managed' : 'interactive'} Claude Code worker "${spec.displayName}" in tmux session ${tmuxSession} (${cwd})`);
+    const worker = codex ? 'Codex-managed' : `${sdk ? 'SDK-managed' : 'interactive'} Claude Code`;
+    this.log('info', `started ${spec.resume ? 'resumed ' : ''}${worker} worker "${spec.displayName}" in tmux session ${tmuxSession} (${cwd})`);
     return this.report(t);
+  }
+
+  private planCodexLaunch(spec: LaunchSpec, sessionId: string, sessionDir: string, hookToken: string, hookLaunch: string): ClaudeLaunchPlan {
+    const specPath = path.join(sessionDir, 'codex.json');
+    const managed: CodexSpec = {
+      sessionId,
+      codexBin: this.cfg.codexBin ?? 'codex',
+      cwd: spec.cwd,
+      displayName: spec.displayName,
+      model: this.cfg.codexModel?.trim() || spec.model,
+      effort: this.cfg.codexEffort?.trim() || null,
+      fileDeny: spec.permissions.deny,
+      appendSystemPrompt: spec.appendSystemPrompt,
+      mcp: spec.mcp,
+      codexThreadId: spec.resume ? spec.codexThreadId ?? null : null,
+      socketPath: this.p.socket,
+      hookToken,
+      hookLaunch,
+      env: { ORCH_SESSION_ID: sessionId },
+    };
+    // A preexisting tmux server can have an older PATH or a different Codex home.
+    const hostEnv = ['PATH', 'CODEX_HOME', 'ELECTRON_RUN_AS_NODE'];
+    const unset = [...NESTED_SESSION_ENV, ...hostEnv].flatMap((k) => ['-u', k]);
+    const passthrough = hostEnv.flatMap((key) =>
+      process.env[key] !== undefined ? [`${key}=${process.env[key]}`] : [],
+    );
+    return {
+      argv: ['/usr/bin/env', ...unset, ...passthrough, ...runnerCommand('codex-run'), '--spec', specPath],
+      files: [{ path: specPath, content: JSON.stringify(managed, null, 2) }],
+      hookEvents: CODEX_HOOK_EVENTS,
+    };
   }
 
   /**
@@ -886,6 +944,10 @@ export class HostAgent {
     if (!candidates.length) throw new Error(`no tmux session named "${tmuxSession}" on this host`);
     const pane = tmuxPane ? candidates.find((p) => p.paneId === tmuxPane) : (candidates.find((p) => p.active && p.windowIndex === candidates[0]!.windowIndex) ?? candidates[0]);
     if (!pane) throw new Error(`pane ${tmuxPane} not found in tmux session "${tmuxSession}"`);
+    const codexCommand = path.basename(this.cfg.codexBin ?? 'codex');
+    if (pane.currentCommand === codexCommand || /(?:^|[\s/"'])codex(?:-run|\.exe)?(?:$|[\s"'])/.test(pane.startCommand)) {
+      throw new Error('existing Codex sessions cannot be attached');
+    }
     for (const other of this.tracked.values()) {
       if (other.paneId === pane.paneId && other.tmuxSession === tmuxSession && !other.gone) throw new Error(`that pane is already connected (session ${other.sessionId})`);
     }
@@ -1107,25 +1169,29 @@ export class HostAgent {
         void this.tick();
         return { ok: true };
       }
-      case 'session.interrupt':
-        if (this.tracked.get(rpc.params.sessionId)?.mode === 'managed_sdk') {
-          // SDK-managed worker: the SDK's own interrupt, not a keypress.
+      case 'session.interrupt': {
+        const { mode } = this.requireTracked(rpc.params.sessionId);
+        if (mode === 'managed_sdk' || mode === 'codex_managed') {
           this.toManaged(rpc.params.sessionId, { type: 'interrupt' });
-          return { ok: true, via: 'sdk' };
+          return { ok: true, via: mode === 'codex_managed' ? 'codex' : 'sdk' };
         }
         // Escape is Claude Code's own interrupt key: it stops the current turn without ending the process.
         await this.requireStream(rpc.params.sessionId).keys(['Escape']);
         return { ok: true, via: 'terminal' };
-      case 'session.paste':
-        if (this.tracked.get(rpc.params.sessionId)?.mode === 'managed_sdk' && rpc.params.submit) {
-          // SDK-managed worker: the prompt is handed to the SDK as structured input.
+      }
+      case 'session.paste': {
+        const { mode } = this.requireTracked(rpc.params.sessionId);
+        if (mode === 'codex_managed' && !rpc.params.submit) throw new Error('Codex-managed workers accept submitted prompts only');
+        if ((mode === 'managed_sdk' || mode === 'codex_managed') && rpc.params.submit) {
           this.toManaged(rpc.params.sessionId, { type: 'prompt', text: rpc.params.text });
-          return { ok: true, via: 'sdk' };
+          return { ok: true, via: mode === 'codex_managed' ? 'codex' : 'sdk' };
         }
         await this.requireStream(rpc.params.sessionId).paste(rpc.params.text, rpc.params.submit);
         return { ok: true, via: 'terminal' };
+      }
       case 'session.grant': {
         const t = this.requireTracked(rpc.params.sessionId);
+        if (t.mode === 'codex_managed') throw new Error('Codex-managed workers do not accept tool grants');
         const rt = this.rt(t.sessionId);
         const now = Date.now();
         rt.grants = [...(rt.grants ?? []).filter((g) => g.until > now), { key: grantKey(rpc.params.tool, rpc.params.input), until: now + Math.max(10_000, Math.min(Number(rpc.params.ttlMs) || 0, 30 * 60_000)) }].slice(-20);
@@ -1142,11 +1208,13 @@ export class HostAgent {
       case 'session.fence': {
         // A rental changed: what this session may reach changes now, not at its next start (docs/RENT.md).
         const t = this.requireTracked(rpc.params.sessionId);
+        if (t.mode === 'codex_managed' && rpc.params.fence) throw new Error('Codex-managed workers do not support rental fences');
         t.fence = rpc.params.fence ?? null;
         this.saveState();
         return { ok: true };
       }
       case 'session.keys':
+        if (this.requireTracked(rpc.params.sessionId).mode === 'codex_managed') throw new Error('Codex-managed terminals are read-only');
         await this.requireStream(rpc.params.sessionId).keys(rpc.params.keys);
         return { ok: true };
       case 'term.subscribe': {
@@ -1162,6 +1230,7 @@ export class HostAgent {
         this.rt(rpc.params.sessionId).subscribed = false;
         return { ok: true };
       case 'term.input':
+        if (this.requireTracked(rpc.params.sessionId).mode === 'codex_managed') throw new Error('Codex-managed terminals are read-only');
         await this.requireStream(rpc.params.sessionId).input(rpc.params.data);
         return { ok: true };
       case 'term.resize':
@@ -1395,15 +1464,30 @@ export class HostAgent {
     res.end();
   }
 
-  /** Endpoints used by an SDK-managed worker's runner, authenticated with that session's own token. */
+  /** Endpoints used by managed workers, authenticated with each session's own token. */
   private async onManaged(url: URL, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const t = this.tracked.get(String(req.headers['x-orch-session'] ?? ''));
-    if (!t?.hookToken || t.mode !== 'managed_sdk' || !safeEqual(String(req.headers['x-orch-token'] ?? ''), t.hookToken)) {
+    const launch = String(req.headers['x-orch-launch'] ?? '');
+    if (!t?.hookToken || (t.mode !== 'managed_sdk' && t.mode !== 'codex_managed') || !safeEqual(String(req.headers['x-orch-token'] ?? ''), t.hookToken)
+      || (t.mode === 'codex_managed' && launch !== t.hookLaunch)) {
       res.writeHead(403);
       res.end();
       return;
     }
+    if (t.mode === 'codex_managed' && url.pathname === '/managed/ready' && req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ready: !this.launching.has(t.sessionId) }));
+      return;
+    }
     const rt = this.rt(t.sessionId);
+    if (t.mode === 'codex_managed' && url.pathname === '/managed/context' && req.method === 'GET') {
+      const pack = t.context !== undefined ? t.context : (t.spec?.context ?? null);
+      const text = pack ? renderContextChange(t.contextGiven ?? null, pack) : null;
+      rt.codexContextPreview = pack && text ? { launch, pack } : undefined;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ text: text ?? '', rev: text ? pack!.rev : null }));
+      return;
+    }
     if (url.pathname === '/managed/inbox' && req.method === 'GET') {
       if (!rt.inbox.length) {
         const waitMs = Math.min(60, Math.max(1, Number(url.searchParams.get('wait')) || 25)) * 1000;
@@ -1419,12 +1503,17 @@ export class HostAgent {
         });
       }
       if (res.destroyed) return;
+      if (t.mode === 'codex_managed' && (this.tracked.get(t.sessionId) !== t || launch !== t.hookLaunch)) {
+        res.writeHead(403);
+        res.end();
+        return;
+      }
       const item = rt.inbox.shift();
       res.writeHead(item ? 200 : 204, { 'content-type': 'application/json' });
       res.end(item ? JSON.stringify(item) : undefined);
       return;
     }
-    if (url.pathname === '/managed/usage' && req.method === 'POST') {
+    if (t.mode === 'managed_sdk' && url.pathname === '/managed/usage' && req.method === 'POST') {
       const body = JSON.parse((await this.readBody(req, 64 * 1024)) || '{}');
       if (typeof body.costUsdEstimate === 'number' && Number.isFinite(body.costUsdEstimate)) rt.costUsdEstimate = body.costUsdEstimate;
       this.scheduleUsage(t);
@@ -1635,7 +1724,7 @@ export class HostAgent {
   private async onStatusLine(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const tracked = this.tracked.get(String(req.headers['x-orch-session'] ?? ''));
     const body = await this.readBody(req);
-    res.writeHead(tracked?.hookToken && safeEqual(String(req.headers['x-orch-token'] ?? ''), tracked.hookToken) ? 200 : 403);
+    res.writeHead(tracked?.hookToken && tracked.mode !== 'codex_managed' && safeEqual(String(req.headers['x-orch-token'] ?? ''), tracked.hookToken) ? 200 : 403);
     res.end();
     if (res.statusCode !== 200 || !tracked) return;
     let input: any;
@@ -2000,15 +2089,20 @@ export class HostAgent {
       tracked.hooksSeen = true;
       reportChanged = true;
     }
-    if (payload.transcript_path && payload.transcript_path !== tracked.transcriptPath) {
+    if (tracked.mode !== 'codex_managed' && payload.transcript_path && payload.transcript_path !== tracked.transcriptPath) {
       tracked.transcriptPath = payload.transcript_path;
       reportChanged = true;
     }
-    if (payload.session_id && payload.session_id !== tracked.claudeSessionId) {
+    if (tracked.mode === 'codex_managed') {
+      if (payload.hook_event_name === 'SessionStart' && payload.session_id && payload.session_id !== tracked.codexThreadId) {
+        tracked.codexThreadId = payload.session_id;
+        reportChanged = true;
+      }
+    } else if (payload.session_id && payload.session_id !== tracked.claudeSessionId) {
       tracked.claudeSessionId = payload.session_id;
       reportChanged = true;
     }
-    if (payload.permission_mode && payload.permission_mode !== tracked.permissionMode) {
+    if (tracked.mode !== 'codex_managed' && payload.permission_mode && payload.permission_mode !== tracked.permissionMode) {
       tracked.permissionMode = payload.permission_mode;
       reportChanged = true;
     }
@@ -2035,6 +2129,7 @@ export class HostAgent {
       hostSeq: ++this.hostSeq,
       sessionId: tracked.sessionId,
       tmuxPane: pane ?? tracked.paneId,
+      ...(tracked.mode === 'codex_managed' ? { launchId: tracked.launchId ?? undefined } : {}),
       payload,
     };
 
@@ -2061,7 +2156,16 @@ export class HostAgent {
     // The office's central context: whole when a session starts, is resumed or was compacted (what it held is gone),
     // and the change since what it was last given at a prompt. Answered here, from what this machine holds: nothing
     // waits on the office (docs/CONTEXT.md).
-    if (held === null && (payload.hook_event_name === 'SessionStart' || payload.hook_event_name === 'UserPromptSubmit')) {
+    if (tracked.mode === 'codex_managed' && payload.hook_event_name === 'UserPromptSubmit') {
+      const rt = this.rt(tracked.sessionId);
+      const preview = rt.codexContextPreview;
+      rt.codexContextPreview = undefined;
+      if (preview && preview.launch === tracked.hookLaunch && preview.pack.rev === payload.orch_codex_context_rev) {
+        tracked.contextGiven = preview.pack;
+        event.payload = { ...payload, orch_context: preview.pack.rev };
+        this.saveState();
+      }
+    } else if (held === null && (payload.hook_event_name === 'SessionStart' || payload.hook_event_name === 'UserPromptSubmit')) {
       const pack = tracked.context !== undefined ? tracked.context : (tracked.spec?.context ?? null);
       const whole = payload.hook_event_name === 'SessionStart';
       const text = pack ? (whole ? renderContext(pack) : renderContextChange(tracked.contextGiven ?? null, pack)) : null;

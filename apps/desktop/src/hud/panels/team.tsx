@@ -49,22 +49,30 @@ import {
 } from './company-shared.tsx';
 
 /** The worker runtime choice, with what the chosen machine can actually provide. */
-function RuntimeField({ value, onChange, host }: { value: ExecutionMode; onChange: (v: ExecutionMode) => void; host: Host | undefined }) {
+function RuntimeField({ value, onChange, host, allowCodex }: { value: ExecutionMode; onChange: (v: ExecutionMode) => void; host: Host | undefined; allowCodex: boolean }) {
   const runtimes = host?.info?.runtimes;
   const sdkHere = !!runtimes?.includes('managed_sdk');
+  const codexHere = !!runtimes?.includes('codex_managed');
   const hint =
-    value === 'managed_sdk'
-      ? !host
-        ? 'Driven through the Claude Agent SDK: prompts, approvals and interrupts are structured calls; the terminal shows a transcript.'
-        : sdkHere
-          ? `Driven through the Claude Agent SDK on ${host.name}: prompts, approvals and interrupts are structured calls; the terminal shows a transcript and still takes typed prompts.`
-          : `${host.name} does not report the Agent SDK${runtimes ? '' : ' (its agent has not reported its runtimes yet)'}. Until it is installed there (orchestrator-agent sdk install), this employee starts as an interactive worker and the office says so.`
-      : 'The real Claude Code terminal UI in tmux. Messages are typed into it; approvals go through hooks.';
+    value === 'codex_managed'
+      ? codexHere
+        ? 'Uses this machine’s Codex login and scoped file tools for the selected folder.'
+        : 'Choose a machine that reports support for Codex-managed workers.'
+      : value === 'managed_sdk'
+        ? !host
+          ? 'Driven through the Claude Agent SDK: prompts, approvals and interrupts are structured calls; the terminal shows a transcript.'
+          : sdkHere
+            ? `Driven through the Claude Agent SDK on ${host.name}: prompts, approvals and interrupts are structured calls; the terminal shows a transcript and still takes typed prompts.`
+            : `${host.name} does not report the Agent SDK${runtimes ? '' : ' (its agent has not reported its runtimes yet)'}. Until it is installed there (orchestrator-agent sdk install), this employee starts as an interactive worker and the office says so.`
+        : 'The real Claude Code terminal UI in tmux. Messages are typed into it; approvals go through hooks.';
   return (
     <Field label="Runtime" hint={hint}>
       <select value={value} onChange={(ev) => onChange(ev.target.value as ExecutionMode)}>
         <option value="interactive_cli">Interactive Claude Code (terminal)</option>
         <option value="managed_sdk">SDK-managed (Claude Agent SDK){host && !sdkHere ? ' — not available on this machine' : ''}</option>
+        {(allowCodex || value === 'codex_managed') && (
+          <option value="codex_managed" disabled={!allowCodex || !codexHere}>Codex-managed (OpenAI Codex){codexHere ? '' : ' — not available on this machine'}</option>
+        )}
       </select>
     </Field>
   );
@@ -229,12 +237,15 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
   const existingForeman = useOffice((s) => Object.values(s.employees).find((e) => !e.archived && e.roleKey === 'foreman'));
   // Default: they work on their own and come to the owner only for decisions.
   // The owner's default since 2026-11-11: everybody runs Unrestricted unless put back on Auto. It is an owner's to give; a colleague's hires start on Auto.
-  const effectiveAutonomy = autonomy ?? (can.admin ? 'unrestricted' : 'auto');
+  const codex = executionMode === 'codex_managed';
+  const effectiveAutonomy = codex ? 'standard' : autonomy ?? (can.admin ? 'unrestricted' : 'auto');
   const host = hostId ? hostsById[hostId] : undefined;
   const project = projectId ? projectsById[projectId] : undefined;
   const hasCwd = !!workingDir.trim() || !!project?.repoPath;
   const canStart = !!host && host.status === 'online' && hasCwd;
-  const valid = !!name.trim() && (!custom || !!title.trim()) && (!self || hasCwd);
+  const allowCodex = !self && roleKey !== 'foreman';
+  const valid = !!name.trim() && (!custom || !!title.trim()) && (!self || hasCwd)
+    && (!codex || (allowCodex && !!host?.info?.runtimes?.includes('codex_managed')));
 
   const submit = async () => {
     if (!valid) return;
@@ -251,9 +262,8 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
         workingDir: projectId ? null : workingDir.trim() || null,
         autonomy: effectiveAutonomy,
         style,
-        model: model.trim() || null,
-        effort: effort || null,
-        ...(claudeConfigDir.trim() ? { claudeConfigDir: claudeConfigDir.trim() } : {}),
+        ...(!codex ? { model: model.trim() || null, effort: effort || null } : {}),
+        ...(!codex && claudeConfigDir.trim() ? { claudeConfigDir: claudeConfigDir.trim() } : {}),
         executionMode,
         instructions,
         ...(self ? { selfDriven: true } : {}),
@@ -287,7 +297,7 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
           <Field label="Role">
             <select value={roleKey} onChange={(ev) => setRoleKey(ev.target.value)}>
               {ROLE_CATALOGUE.map((r) => (
-                <option key={r.key} value={r.key}>
+                <option key={r.key} value={r.key} disabled={codex && r.key === 'foreman'}>
                   {r.title}
                 </option>
               ))}
@@ -297,10 +307,10 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
         )}
       </div>
       {/* What they think with: which Claude account of that machine, which model, how hard. */}
-      <div className="grid3" data-hire-claude>
+      {!codex && <div className="grid3" data-hire-claude>
         <AccountField hostId={hostId} host={host} value={claudeConfigDir} onChange={setClaudeConfigDir} />
         <ModelEffortFields model={model} effort={effort} onModel={setModel} onEffort={setEffort} host={host} />
-      </div>
+      </div>}
       {custom && (
         <div className="grid2">
           <Field label="Title">
@@ -348,7 +358,7 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
           </>
         ) : (
           <>
-            {!hasCwd ? 'Without a folder they cannot be started yet.' : startNow && canStart ? 'Their session starts right away.' : 'Their session starts when you first talk to them or give them a task.'} {autonomyInfo(effectiveAutonomy).label}: {autonomyInfo(effectiveAutonomy).text}{' '}
+            {!hasCwd ? 'Without a folder they cannot be started yet.' : startNow && canStart ? 'Their session starts right away.' : 'Their session starts when you first talk to them or give them a task.'} {codex ? 'Codex works in the selected folder with scoped file tools.' : `${autonomyInfo(effectiveAutonomy).label}: ${autonomyInfo(effectiveAutonomy).text}`}{' '}
           </>
         )}
         <button type="button" className="fp-link" style={{ display: 'inline' }} onClick={() => setMore((m) => !m)}>
@@ -370,10 +380,10 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
               </select>
             </Field>
           </div>
-          <div>
+          {!codex && <div>
             <div className="section-title">How much they may do without asking</div>
             <AutonomyPicker name="hire-autonomy" value={effectiveAutonomy} onChange={setAutonomy} />
-          </div>
+          </div>}
           <div className="grid2">
             <Field label="Communication style">
               <select value={style} onChange={(ev) => setStyle(ev.target.value as CommunicationStyle)}>
@@ -384,7 +394,7 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
                 ))}
               </select>
             </Field>
-            <RuntimeField value={executionMode} onChange={setExecutionMode} host={host} />
+            <RuntimeField value={executionMode} onChange={setExecutionMode} host={host} allowCodex={allowCodex} />
             <Field label="Standing instructions" hint="Added to the system prompt of every session they start." wide>
               <textarea value={instructions} onChange={(ev) => setInstructions(ev.target.value)} placeholder="Anything this employee should always keep in mind." />
             </Field>
@@ -482,7 +492,7 @@ function TeamPanel({ arg, onClose }: PanelProps) {
       <Window
         kit
         title={self ? 'Sit here with your own Claude Code' : hiring === 'many' ? 'Hire one employee per project folder' : atDesk ? 'Hire someone for this desk' : 'Hire an employee'}
-        subtitle={self ? 'A session of your own at this desk: you type, the office only shows it' : 'An employee is a Claude Code session with a name, a folder and a desk'}
+        subtitle={self ? 'A session of your own at this desk: you type, the office only shows it' : 'An employee runs in a folder on their assigned machine'}
         onClose={onClose}
         width={hiring === 'many' ? 1080 : 860}
       >
@@ -637,7 +647,7 @@ function TeamPanel({ arg, onClose }: PanelProps) {
         {active.length === 0 ? (
           <div className="k-empty">
             <div className="k-title">Nobody works here yet</div>
-            <div className="k-text">An employee is a Claude Code session with a name, a folder and a desk. Hire the first one, and give them a project.</div>
+            <div className="k-text">Hire an employee and give them a project.</div>
             {!visitor && (
               <Button variant="primary" onClick={() => setHiring('one')}>
                 Hire
@@ -764,18 +774,19 @@ function patchOf(e: Employee, d: Draft, projects: Record<string, Project>): Reco
   if (role || d.specialization.trim() !== e.specialization) p.specialization = d.specialization.trim();
   if (role || skills.join('\n') !== e.skills.join('\n')) p.skills = skills;
   if (d.style !== e.style) p.style = d.style;
-  if ((d.model.trim() || null) !== e.model) p.model = d.model.trim() || null;
-  if ((d.effort || null) !== (e.effort ?? null)) p.effort = d.effort || null;
+  const codex = d.executionMode === 'codex_managed';
+  if (!codex && (d.model.trim() || null) !== e.model) p.model = d.model.trim() || null;
+  if (!codex && (d.effort || null) !== (e.effort ?? null)) p.effort = d.effort || null;
   if (d.instructions !== e.instructions) p.instructions = d.instructions;
-  if (parseRules(d.allowedTools).join('\n') !== e.allowedTools.join('\n')) p.allowedTools = parseRules(d.allowedTools);
-  if (parseRules(d.disallowedTools).join('\n') !== e.disallowedTools.join('\n')) p.disallowedTools = parseRules(d.disallowedTools);
-  if (d.autonomy !== e.autonomy) p.autonomy = d.autonomy;
+  if (!codex && parseRules(d.allowedTools).join('\n') !== e.allowedTools.join('\n')) p.allowedTools = parseRules(d.allowedTools);
+  if (!codex && parseRules(d.disallowedTools).join('\n') !== e.disallowedTools.join('\n')) p.disallowedTools = parseRules(d.disallowedTools);
+  if (!codex && d.autonomy !== e.autonomy) p.autonomy = d.autonomy;
   if (d.executionMode !== e.executionMode) p.executionMode = d.executionMode;
   if ([...d.alsoProjectIds].sort().join() !== [...(e.alsoProjectIds ?? [])].sort().join()) p.alsoProjectIds = d.alsoProjectIds.filter((x) => x !== d.projectId);
   if ((d.hostId || null) !== e.hostId) p.hostId = d.hostId || null;
   // Their folder, or the shared project they are on: asked for the way hiring asks (`folder`), or as a project.
   Object.assign(p, homePatch(e, projects, { shared: d.projectId, folder: d.workingDir }));
-  if ((d.claudeConfigDir.trim() || null) !== (e.claudeConfigDir ?? null)) p.claudeConfigDir = d.claudeConfigDir.trim() || null;
+  if (!codex && (d.claudeConfigDir.trim() || null) !== (e.claudeConfigDir ?? null)) p.claudeConfigDir = d.claudeConfigDir.trim() || null;
   return p;
 }
 
@@ -943,7 +954,8 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setD((cur) => ({ ...cur, [key]: value }));
   const patch = patchOf(e, d, projectsById);
   const dirty = Object.keys(patch).length > 0;
-  const valid = !!d.name.trim() && !!d.title.trim();
+  const codex = d.executionMode === 'codex_managed';
+  const allowCodex = !e.selfDriven && d.roleKey !== 'foreman';
   const session = sessionOfEmployee(sessions, e.id);
   const live = isLive(session);
   const role = roleByKey(d.roleKey);
@@ -958,6 +970,9 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
     .sort(byName);
 
   const host = d.hostId ? hostsById[d.hostId] : undefined;
+  const switchingCodex = codex && (d.executionMode !== e.executionMode || d.hostId !== e.hostId);
+  const valid = !!d.name.trim() && !!d.title.trim() && (!codex || allowCodex)
+    && (!switchingCodex || !!host?.info?.runtimes?.includes('codex_managed'));
   // The projects one can be put on as a shared project: not the one that is only their own folder.
   const ownId = homeOf(e, projectsById).shared ? null : e.projectId;
   const sharedProjects = projects.filter((p) => p.id !== ownId && !!p.repoPath);
@@ -999,7 +1014,7 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
           <Field label="Role">
             <select value={role ? d.roleKey : 'custom'} onChange={(ev) => pickRole(ev.target.value)}>
               {ROLE_CATALOGUE.map((r) => (
-                <option key={r.key} value={r.key}>
+                <option key={r.key} value={r.key} disabled={codex && r.key === 'foreman'}>
                   {r.title}
                 </option>
               ))}
@@ -1069,18 +1084,18 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
         )}
       </div>
 
-      <div data-settings-claude>
+      {!codex && <div data-settings-claude>
         <div className="k-label">Claude</div>
         <div className="grid3">
           <AccountField hostId={d.hostId} host={host} value={d.claudeConfigDir} onChange={(v) => set('claudeConfigDir', v)} />
           <ModelEffortFields model={d.model} effort={d.effort} onModel={(v) => set('model', v)} onEffort={(v) => set('effort', v)} host={host} />
         </div>
-      </div>
+      </div>}
 
-      <div>
+      {!codex && <div>
         <div className="k-label">How much they may do without asking</div>
         <AutonomyPicker name={`autonomy-${e.id}`} value={d.autonomy} onChange={(v) => set('autonomy', v)} />
-      </div>
+      </div>}
       {/* What is rarely changed stays folded away, unless something in it is set. */}
       <details className="pc-more k-more" open={more} onToggle={(ev) => setMore((ev.currentTarget as HTMLDetailsElement).open)}>
         <summary>More settings: what they know, instructions, tools</summary>
@@ -1104,7 +1119,7 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
                 ))}
               </select>
             </Field>
-            <RuntimeField value={d.executionMode} onChange={(v) => set('executionMode', v)} host={host} />
+            <RuntimeField value={d.executionMode} onChange={(v) => set('executionMode', v)} host={host} allowCodex={allowCodex} />
           </div>
       {role && (
         <div className="small faint">
@@ -1114,14 +1129,14 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
       <Field label="Standing instructions" hint="Appended to the system prompt of every session they start.">
         <textarea value={d.instructions} onChange={(ev) => set('instructions', ev.target.value)} placeholder="Anything this employee should always keep in mind." />
       </Field>
-          <div className="grid2">
+          {!codex && <div className="grid2">
         <Field label="Always allowed tools" hint="Claude Code permission rules, one per line — e.g. Bash(npm run lint:*) or WebFetch. Added to what the project and autonomy level already allow.">
           <textarea className="mono" value={d.allowedTools} onChange={(ev) => set('allowedTools', ev.target.value)} placeholder="Bash(npm run lint:*)" spellCheck={false} style={{ minHeight: 64 }} />
         </Field>
         <Field label="Never allowed tools" hint="Rules this employee may never use, one per line — e.g. WebSearch or Bash(docker:*). A denied rule wins over an allowed one.">
           <textarea className="mono" value={d.disallowedTools} onChange={(ev) => set('disallowedTools', ev.target.value)} placeholder="Bash(docker:*)" spellCheck={false} style={{ minHeight: 64 }} />
         </Field>
-          </div>
+          </div>}
         </div>
       </details>
       <div>
@@ -1155,7 +1170,7 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
       <div className="pf-save" data-profile-save>
         <div className={`pf-save-note ${restartSensitive || restartsNow ? 'k-warn' : ''}`}>
           {!dirty
-            ? live
+            ? live && !codex
               ? 'Nothing is changed. A change of level, model or account starts their session again by itself; role, instructions and tools reach a session at its next start.'
               : 'Nothing is changed. Changes take effect the next time their session is started.'
             : !live
@@ -1163,7 +1178,7 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
               : restartsNow
                 ? `Unsaved: ${changedWords(patch)}. Saving starts ${e.name}'s session again with the same conversation — now if they are between turns, otherwise when their turn ends.${restartSensitive ? ' Role, instructions and tools come with that start too.' : ''}`
                 : restartSensitive
-                  ? `Unsaved: ${changedWords(patch)}. Role, instructions and tools reach a session when it starts: stop and start theirs to apply those.`
+                  ? `Unsaved: ${changedWords(patch)}. Stop and start their session to apply these changes.`
                   : `Unsaved: ${changedWords(patch)}.`}
         </div>
         <Button variant="ghost" className="k-quiet" disabled={!dirty || busy} onClick={() => setD(draftOf(e, projectsById))}>
@@ -1343,6 +1358,8 @@ function SessionTab({ e }: { e: Employee }) {
   const paused = control === 'PAUSED';
   const attached = session?.origin === 'attached';
   const host = e.hostId ? hosts[e.hostId] : undefined;
+  const codex = (session?.mode ?? e.executionMode) === 'codex_managed';
+  const codexUnavailable = e.executionMode === 'codex_managed' && !host?.info?.runtimes?.includes('codex_managed');
   const st = useOffice.getState();
   const run = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true);
@@ -1354,7 +1371,7 @@ function SessionTab({ e }: { e: Employee }) {
   return (
     <div className="k-stack" data-profile-session>
       <div className="k-text">
-        A session is {e.name}'s Claude Code, running in a terminal on their machine. It starts by itself when they are given work or spoken to; here it is started, paused and stopped by hand.
+        {codex ? `${e.name} runs in Codex and has a read-only transcript.` : `A session is ${e.name}'s Claude Code, running in a terminal on their machine.`} It starts when they receive work or a message.
       </div>
       <div className="k-actions">
         {live ? (
@@ -1373,12 +1390,12 @@ function SessionTab({ e }: { e: Employee }) {
             </Button>
           </>
         ) : (
-          <Button variant="success" small disabled={busy || !e.hostId || e.archived} onClick={() => run(() => api('POST', `/employees/${e.id}/start`, {}), `${e.name}'s session is starting`)} title={!e.hostId ? 'Assign a machine first' : undefined}>
+          <Button variant="success" small disabled={busy || !e.hostId || e.archived || codexUnavailable} onClick={() => run(() => api('POST', `/employees/${e.id}/start`, {}), `${e.name}'s session is starting`)} title={!e.hostId ? 'Assign a machine first' : codexUnavailable ? 'The machine does not report Codex support' : undefined}>
             {session?.lastEventAt ? 'Resume session' : 'Start session'}
           </Button>
         )}
         <Button small onClick={() => st.enterWorkstation(e.id)} disabled={!session}>
-          Open terminal
+          {codex ? 'Open transcript' : 'Open terminal'}
         </Button>
         {!live && host && host.status !== 'online' && <span className="k-sub">{host.name} is {host.status}; a session cannot start there right now.</span>}
         {!live && !e.hostId && <span className="k-sub">No machine assigned.</span>}
@@ -1386,7 +1403,7 @@ function SessionTab({ e }: { e: Employee }) {
 
       {confirmStop && live && (
         <ConfirmBox
-          title={attached ? `Detach ${e.name}'s session from the office?` : `Stop ${e.name}'s Claude Code session?`}
+          title={attached ? `Detach ${e.name}'s session from the office?` : `Stop ${e.name}'s session?`}
           confirmLabel={attached ? 'Detach session' : 'Stop session'}
           busy={busy}
           onCancel={() => setConfirmStop(false)}
@@ -1397,7 +1414,7 @@ function SessionTab({ e }: { e: Employee }) {
         >
           {attached
             ? 'This session was not started by Orchestrator, so it is only detached: the tmux session keeps running on the machine and the office stops observing it.'
-            : 'The Claude Code process in tmux is ended and any turn in progress is cut off. The conversation is kept and can be resumed later.'}
+            : 'The worker and any active turn stop. The conversation can be resumed later.'}
         </ConfirmBox>
       )}
 
@@ -1439,9 +1456,9 @@ function SessionTab({ e }: { e: Employee }) {
               <span className="k-main">
                 <span className="k-title k-title-sm">
                   {controlInfo?.label ?? humanize(control)}
-                  {controlMap[session.id]?.you && <span className="k-title-note k-warn">you hold the keyboard</span>}
+                  {!codex && controlMap[session.id]?.you && <span className="k-title-note k-warn">you hold the keyboard</span>}
                 </span>
-                {controlInfo && <span className="k-sub" style={{ whiteSpace: 'normal' }}>{controlInfo.text}</span>}
+                {controlInfo && <span className="k-sub" style={{ whiteSpace: 'normal' }}>{codex ? 'The office sends work to Codex and shows its transcript.' : controlInfo.text}</span>}
               </span>
             </div>
           </div>
@@ -1456,7 +1473,7 @@ function SessionTab({ e }: { e: Employee }) {
             <div>
               <dt>Thinks with</dt>
               <dd>
-                {session.model ?? 'the default model'}
+                {session.model ?? (codex ? 'Codex model set on the machine' : 'the default model')}
                 {session.effort ? ` · ${session.effort} effort` : ''}
               </dd>
             </div>
@@ -1901,6 +1918,7 @@ function OverviewTab({ e, onTab }: { e: Employee; onTab: (tab: TabId) => void })
   const host = e.hostId ? st.hosts[e.hostId] : undefined;
   const gamification = st.settings?.gamification !== false;
   const info = levelInfo(e.xp, e.level);
+  const codex = e.executionMode === 'codex_managed';
   const autonomy = autonomyInfo(e.autonomy);
   const waiting = Object.values(st.tasks).filter((t) => t.assigneeId === e.id && t.kind !== 'review' && (t.status === 'READY' || t.status === 'BACKLOG')).length;
   const whose = whoseEmployee(st.hosts, me, e);
@@ -1984,16 +2002,16 @@ function OverviewTab({ e, onTab }: { e: Employee; onTab: (tab: TabId) => void })
             <div>
               <dt>Thinks with</dt>
               <dd data-thinks-with>
-                {e.model ?? 'the default model'}
-                {e.effort ? ` · ${e.effort} effort` : ''}
+                {codex ? 'Codex · model set on the machine' : e.model ?? 'the default model'}
+                {!codex && e.effort ? ` · ${e.effort} effort` : ''}
                 {/* Their own model's limit is reached on their account: the office runs them on the next one until it lifts. */}
-                {live && session?.model && e.model && session.model !== e.model && <span className="k-warn"> · now on {session.model} (a limit of {e.model})</span>}
+                {!codex && live && session?.model && e.model && session.model !== e.model && <span className="k-warn"> · now on {session.model} (a limit of {e.model})</span>}
               </dd>
             </div>
-            <div title={`${autonomy.text}\n${autonomy.maps}`}>
+            <div title={codex ? undefined : `${autonomy.text}\n${autonomy.maps}`}>
               <dt>May do without asking</dt>
               <dd>
-                {autonomy.label} <span className="muted">— {autonomy.text}</span>
+                {codex ? 'Selected-folder file tools, subject to deny rules' : <>{autonomy.label} <span className="muted">— {autonomy.text}</span></>}
               </dd>
             </div>
             <div>

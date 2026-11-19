@@ -138,7 +138,7 @@ test('it finds where things are on its member’s machines, and hires there — 
   assert.ok(!hired.isError && /Hired Cy as Senior Backend Engineer on .*, project billing-api\. Fenix has been told\..* You may hire 4 more\./.test(hired.text), hired.text);
   const state = await h.state();
   const cy = state.employees.find((e) => e.name === 'Cy')!;
-  assert.deepEqual([cy.hostId, cy.hiredBy, cy.autonomy === 'unrestricted', state.projects.find((p) => p.id === cy.projectId)?.name], [mine.hostId, ids.Lea, false, 'billing-api']);
+  assert.deepEqual([cy.hostId, cy.hiredBy, cy.autonomy === 'unrestricted', cy.executionMode, state.projects.find((p) => p.id === cy.projectId)?.name], [mine.hostId, ids.Lea, false, 'interactive_cli', 'billing-api']);
   assert.ok(state.notifications.some((n) => n.title === 'Lea hired Cy (Senior Backend Engineer)' && /Nobody on the team works on billing/.test(n.body)), 'the member is told, with the reason');
   assert.ok((await h.api<any[]>('GET', '/audit?limit=50')).some((a) => a.action === 'lead.hired' && a.actor === 'lead:Lea'));
   // Up to the limit, and not one more — until somebody the lead hired is gone.
@@ -150,7 +150,22 @@ test('it finds where things are on its member’s machines, and hires there — 
   ids.Dee = (await h.api<any>('POST', '/employees', { name: 'Dee', roleKey: 'docs', hostId: mine.hostId, projectId: cy.projectId })).id;
   const extra = (await h.state()).employees.find((e) => e.name === 'Extra 2')!;
   await h.api('PATCH', `/employees/${extra.id}`, { archived: true });
-  assert.ok(!(await call('Lea', 'team_hire', { name: 'In their place', role: 'qa', project: 'billing-api', why: 'a place came free' })).isError);
+  const engine = h.server.engine;
+  const host = engine.core.hosts.require(mine.hostId);
+  const codexHire = { name: 'In their place', role: 'qa', project: 'billing-api', why: 'a place came free', executionMode: 'codex_managed' };
+  const info = host.info!;
+  engine.core.put('host', { ...host, info: { ...info, runtimes: ['interactive_cli'] } });
+  try {
+    const unavailable = await call('Lea', 'team_hire', codexHire);
+    assert.ok(unavailable.isError && /does not currently report support for codex_managed/.test(unavailable.text), unavailable.text);
+    engine.core.put('host', { ...host, info: { ...info, runtimes: ['interactive_cli', 'codex_managed'] } });
+    assert.match((await call('Lea', 'team_overview')).text, /Codex-managed available/);
+    const replacement = await call('Lea', 'team_hire', codexHire);
+    assert.ok(!replacement.isError, replacement.text);
+    assert.equal((await h.state()).employees.find((e) => e.name === codexHire.name)?.executionMode, 'codex_managed');
+  } finally {
+    engine.core.put('host', host);
+  }
 });
 
 test('asked to, it directs the office’s shared employees too — on their own projects, as its member may', async () => {

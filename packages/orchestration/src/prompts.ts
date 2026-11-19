@@ -149,7 +149,7 @@ export function systemPromptFor(employee: Employee, project: Project | undefined
   const lines: string[] = [];
   lines.push(`# Orchestrator workplace context`);
   lines.push(
-    `You are ${employee.name}, ${employee.title} at ${companyName}. You are one of several AI engineers working in ORCHESTRATOR, a virtual office run by a human owner ("the boss"). Your terminal is your real workstation: the boss can watch it, and can sit down and type into it.`,
+    `You are ${employee.name}, ${employee.title} at ${companyName}. You are one of several AI engineers working in ORCHESTRATOR, a virtual office run by a human owner ("the boss"). ${employee.executionMode === 'codex_managed' ? 'The boss can watch your turn transcript and speak to you through the office.' : 'Your terminal is your real workstation: the boss can watch it, and can sit down and type into it.'}`,
   );
   if (role) lines.push(`Role: ${role.instructions}`);
   if (employee.specialization) lines.push(`Specialisation: ${employee.specialization}.`);
@@ -157,7 +157,8 @@ export function systemPromptFor(employee: Employee, project: Project | undefined
   lines.push(STYLE_GUIDE[employee.style] ?? '');
   // A foreman's limits are the role's, not the autonomy level's (see below): it never edits files.
   // Where the owner switched the high-risk hold off for Unrestricted, nothing "still goes to the boss by itself".
-  if (employee.roleKey !== 'foreman' && employee.roleKey !== 'lead') lines.push(employee.autonomy === 'unrestricted' && !heldHighRisk ? UNRESTRICTED_UNHELD : AUTONOMY_GUIDE[employee.autonomy]);
+  if (employee.executionMode === 'codex_managed') lines.push('Use workspace tools to list, read and edit text files inside the selected working directory. Check the tools available to you before reporting a limitation. Shell commands, Git commands, browser and credential access are unavailable. Report any checks or commits you could not make.');
+  else if (employee.roleKey !== 'foreman' && employee.roleKey !== 'lead') lines.push(employee.autonomy === 'unrestricted' && !heldHighRisk ? UNRESTRICTED_UNHELD : AUTONOMY_GUIDE[employee.autonomy]);
   if (project) lines.push(`Current project: ${project.name}${project.description ? ` — ${project.description}` : ''}.`);
   if (employee.instructions.trim()) lines.push(`Standing instructions from the boss:\n${employee.instructions.trim()}`);
   if (employee.roleKey === 'foreman') {
@@ -294,13 +295,17 @@ export function taskPrompt(task: Task, project: Project, deps: Task[], feedback:
   return lines.join('\n');
 }
 
-export function reviewPrompt(review: Task, target: Task, project: Project, authorName: string): string {
+export function reviewPrompt(review: Task, target: Task, project: Project, authorName: string, suppliedContextOnly = false): string {
   return [
     `${correlationMarker('TASK', review.id)} Review request — ${review.key}: review ${target.key} "${target.title}" by ${authorName}`,
     '',
-    `The work is on branch "${target.branch ?? '(unknown)'}" of project ${project.name}. Inspect it without modifying it:`,
-    `  git diff ${project.integrationBranch}...${target.branch ?? 'HEAD'}`,
-    `  git log ${project.integrationBranch}..${target.branch ?? 'HEAD'} --oneline`,
+    ...(suppliedContextOnly
+      ? ['Review the patch or other evidence supplied in the task conversation. If it is missing, ask the author for the relevant diff or ask the boss for it before giving a verdict.']
+      : [
+          `The work is on branch "${target.branch ?? '(unknown)'}" of project ${project.name}. Inspect it without modifying it:`,
+          `  git diff ${project.integrationBranch}...${target.branch ?? 'HEAD'}`,
+          `  git log ${project.integrationBranch}..${target.branch ?? 'HEAD'} --oneline`,
+        ]),
     '',
     `What it was supposed to do: ${target.description.trim() || target.title}`,
     target.acceptance.trim() ? `Acceptance criteria: ${target.acceptance.trim()}` : '',

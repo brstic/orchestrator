@@ -163,7 +163,7 @@ export type CommunicationStyle =
   | 'highly-independent'
   | 'review-focused';
 
-export type ExecutionMode = 'interactive_cli' | 'managed_sdk';
+export type ExecutionMode = 'interactive_cli' | 'managed_sdk' | 'codex_managed';
 
 export type HairStyle = 'short' | 'long' | 'bun' | 'bald' | 'curly' | 'buzz' | 'ponytail' | 'afro' | 'mohawk';
 export type Outfit = 'polo' | 'shirt' | 'tee' | 'sweater' | 'suit';
@@ -439,6 +439,7 @@ export interface AgentSession {
   repoRoot: string | null;
   branch: string | null;
   claudeSessionId: string | null;
+  codexThreadId?: string | null;
   status: SessionStatus;
   activity: ActivityState;
   /** Short human-readable detail, e.g. "Edit src/auth.ts". Sourced from hooks. */
@@ -916,7 +917,7 @@ export type DeliveryStatus = 'none' | 'queued' | 'sent' | 'confirmed' | 'failed'
 
 export interface DeliveryState {
   status: DeliveryStatus;
-  via: 'terminal_paste' | 'stop_hook' | 'mcp_pull' | 'sdk' | null;
+  via: 'terminal_paste' | 'stop_hook' | 'mcp_pull' | 'sdk' | 'codex' | null;
   ts: ISODate | null;
   detail: string | null;
 }

@@ -47,6 +47,7 @@ export const CONTROL_STATES: Array<{ id: ControlState; label: string; text: stri
 
 export function runtimeLabel(session: AgentSession): string {
   if (session.origin !== 'managed') return 'Attached — an existing tmux session Orchestrator did not start';
+  if (session.mode === 'codex_managed') return 'Codex-managed · read-only transcript';
   return session.mode === 'managed_sdk' ? 'SDK-managed — started by Orchestrator and driven through the Claude Agent SDK' : 'Interactive Claude Code — started by Orchestrator in tmux';
 }
 

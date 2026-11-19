@@ -1388,7 +1388,10 @@ export function Workstation() {
   if (!e) return null;
   const ctl = session ? s.control[session.id] : undefined;
   const controlState = ctl?.control ?? session?.control ?? 'DISCONNECTED';
-  const mine = ctl?.you === true;
+  const codex = session?.mode === 'codex_managed';
+  const codexUnavailable = e.executionMode === 'codex_managed' && !s.hosts[e.hostId ?? '']?.info?.runtimes?.includes('codex_managed');
+  const mine = !codex && ctl?.you === true;
+  const mayTakeKeyboard = !codex && may(s.me, 'work', memberOfEmployee(s.hosts, e));
   const live = !!session && (session.status === 'running' || session.status === 'starting');
   const task = currentTaskOf(s.tasks, e.id);
   const questions = openQuestionsOf(s.questions, e.id);
@@ -1405,11 +1408,11 @@ export function Workstation() {
           <Avatar appearance={e.appearance} size={28} offline={!live} />
           <div className="strong">{e.name}</div>
           <span className="muted small truncate grow mono">{session ? `${session.cwd}${session.branch ? ` · ${session.branch}` : ''}` : 'no session'}</span>
-          <span className={`ws-state ws-state-${controlState}`} title={CONTROL_TIP[controlState] ?? undefined}>
+          <span className={`ws-state ws-state-${controlState}`} title={codex ? undefined : CONTROL_TIP[controlState]}>
             {mine ? 'You are typing' : (CONTROL_LABEL[controlState] ?? controlState.replace(/_/g, ' ').toLowerCase())}
           </span>
-          {session && live && !mine && !may(s.me, 'work', memberOfEmployee(s.hosts, e)) && <span className="small muted">watching only</span>}
-          {session && live && !mine && may(s.me, 'work', memberOfEmployee(s.hosts, e)) && (
+          {session && live && !mine && !mayTakeKeyboard && <span className="small muted">{codex ? 'Read-only transcript' : 'watching only'}</span>}
+          {session && live && !mine && mayTakeKeyboard && (
             <Button variant="primary" small onClick={() => connection.send({ t: 'control.acquire', sessionId: session.id })} title="Type into their terminal yourself. Orchestrator sends them nothing while you do.">
               Take the keyboard
             </Button>
@@ -1429,7 +1432,7 @@ export function Workstation() {
           </Button>
         </div>
         {session ? (
-          <TerminalView key={session.id} sessionId={session.id} fitPane={fit} widen />
+          <TerminalView key={session.id} sessionId={session.id} interactive={!codex} fitPane={!codex && fit} widen={!codex} />
         ) : (
           <div className="term">
             <div className="term-overlay">
@@ -1503,11 +1506,11 @@ export function Workstation() {
               Profile
             </Button>
             {live ? (
-              <Button small variant="danger" onClick={() => void ask({ title: `Stop ${e.name}'s session?`, body: 'Claude Code is closed. It continues where it was when started again.', ok: 'Stop session', danger: true }).then((yes) => { if (yes) void act(() => api('POST', `/employees/${e.id}/stop`, {}), `${e.name}'s session stopped`); })}>
+              <Button small variant="danger" onClick={() => void ask({ title: `Stop ${e.name}'s session?`, body: 'The session stops and can be resumed later.', ok: 'Stop session', danger: true }).then((yes) => { if (yes) void act(() => api('POST', `/employees/${e.id}/stop`, {}), `${e.name}'s session stopped`); })}>
                 {session?.origin === 'attached' ? 'Detach' : 'Stop session'}
               </Button>
             ) : (
-              <Button small variant="success" onClick={() => act(() => api('POST', `/employees/${e.id}/start`, {}), 'Session starting')} disabled={!e.hostId}>
+              <Button small variant="success" onClick={() => act(() => api('POST', `/employees/${e.id}/start`, {}), 'Session starting')} disabled={!e.hostId || codexUnavailable} title={codexUnavailable ? 'The machine does not report Codex support' : undefined}>
                 {session?.lastEventAt ? 'Resume session' : 'Start session'}
               </Button>
             )}

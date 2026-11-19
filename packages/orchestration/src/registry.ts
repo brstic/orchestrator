@@ -587,6 +587,9 @@ export class EmployeeRegistry {
     if (input.deskId && personal && !this.sameRoom(seat?.hostId, input.hostId)) throw new EngineError('that seat is not in this member\'s room');
     if (input.deskId && this.core.employees.find((e) => !e.archived && e.deskId === input.deskId)) throw new EngineError('that desk is taken');
     this.assertSameComputer(input.hostId ?? null, [input.projectId, ...(input.alsoProjectIds ?? [])]);
+    if (input.executionMode === 'codex_managed' && (foreman || input.selfDriven)) {
+      throw new EngineError('Codex is available for managed employees and team leads');
+    }
     const employee: Employee = {
       id: newId(),
       name,
@@ -683,6 +686,9 @@ export class EmployeeRegistry {
     if (patch.model !== undefined) patch = { ...patch, model: cleanModel(patch.model) };
     if (patch.effort !== undefined) e.effort = cleanEffort(patch.effort);
     if (patch.autonomy !== undefined && !isAutonomyLevel(patch.autonomy)) throw new EngineError(notALevel(patch.autonomy));
+    if ((patch.executionMode ?? e.executionMode) === 'codex_managed' && (e.roleKey === 'foreman' || (patch.selfDriven ?? e.selfDriven) || this.eng.rent.rentalOf(e.id))) {
+      throw new EngineError('Codex requires a managed, non-rented employee or team lead');
+    }
     for (const key of ['title', 'department', 'specialization', 'skills', 'style', 'model', 'workingDir', 'instructions', 'allowedTools', 'disallowedTools', 'autonomy', 'executionMode', 'schedule'] as const) {
       if (patch[key] !== undefined) (e as any)[key] = patch[key];
     }
@@ -732,9 +738,10 @@ export class EmployeeRegistry {
     const was = this.core.employees.require(id);
     const LEVEL: Record<string, string> = { standard: 'Standard', auto: 'Auto', unrestricted: 'Unrestricted' };
     const changed = [
-      was.autonomy !== e.autonomy ? `your level is now ${LEVEL[e.autonomy] ?? e.autonomy}` : '',
-      (was.claudeConfigDir ?? null) !== (e.claudeConfigDir ?? null) ? 'you were put on another Claude account' : '',
-      (was.model ?? null) !== (e.model ?? null) || (was.effort ?? null) !== (e.effort ?? null) ? 'your model or effort was changed' : '',
+      was.executionMode !== e.executionMode && (e.executionMode === 'codex_managed' || was.executionMode === 'codex_managed') ? 'your runtime was changed' : '',
+      e.executionMode !== 'codex_managed' && was.autonomy !== e.autonomy ? `your level is now ${LEVEL[e.autonomy] ?? e.autonomy}` : '',
+      e.executionMode !== 'codex_managed' && (was.claudeConfigDir ?? null) !== (e.claudeConfigDir ?? null) ? 'you were put on another Claude account' : '',
+      e.executionMode !== 'codex_managed' && ((was.model ?? null) !== (e.model ?? null) || (was.effort ?? null) !== (e.effort ?? null)) ? 'your model or effort was changed' : '',
     ].filter(Boolean);
     this.core.put('employee', e);
     if (changed.length && !e.archived) this.eng.sessions.restartForChange(id, changed.join(', and '));
@@ -994,6 +1001,7 @@ export class SessionRegistry {
         repoRoot: r.repoRoot,
         branch: r.branch,
         claudeSessionId: r.claudeSessionId,
+        ...(r.codexThreadId ? { codexThreadId: r.codexThreadId } : {}),
         status: 'starting',
         activity: 'unknown',
         activityDetail: null,
@@ -1042,7 +1050,10 @@ export class SessionRegistry {
     s.permissionMode = r.permissionMode ?? s.permissionMode;
     if (typeof r.hooksVersion === 'number') s.hooksVersion = r.hooksVersion;
     s.model = r.model ?? s.model;
-    s.claudeSessionId = r.claudeSessionId ?? s.claudeSessionId;
+    if (r.mode === 'codex_managed') {
+      s.codexThreadId = r.codexThreadId ?? s.codexThreadId ?? null;
+      s.claudeSessionId = null;
+    } else s.claudeSessionId = r.claudeSessionId ?? s.claudeSessionId;
     s.startedAt = r.startedAt;
     const employee = this.core.employees.get(s.employeeId);
     if (r.alive) {
@@ -1329,6 +1340,7 @@ export class SessionRegistry {
    *    hour; its people go to another account (`failover`).
    */
   onLimitHit(session: AgentSession, error: string): void {
+    if (session.mode === 'codex_managed') return;
     const e = this.core.employees.get(session.employeeId ?? '');
     if (!e || !e.hostId) return;
     const last = this.refusedAt.get(session.id);
@@ -1390,7 +1402,7 @@ export class SessionRegistry {
   private switchModels(key: string, family: string, until: string | null): void {
     const [hostId] = key.split('|');
     const when = until ? new Date(until).toUTCString().replace(/:00 GMT$/, ' UTC').replace(/^\w+, /, '') : 'it resets';
-    for (const s of this.core.sessions.filter((x) => x.hostId === hostId && x.status === 'running' && x.origin === 'managed')) {
+    for (const s of this.core.sessions.filter((x) => x.hostId === hostId && x.status === 'running' && x.origin === 'managed' && x.mode !== 'codex_managed')) {
       const e = this.core.employees.get(s.employeeId ?? '');
       if (!e || e.archived) continue;
       const dir = s.claudeConfigDir !== undefined ? s.claudeConfigDir : (e.claudeConfigDir ?? null);
@@ -1446,7 +1458,7 @@ export class SessionRegistry {
   accountUsage(): AccountUsage[] {
     this.loadAccounts();
     const out = new Map<string, AccountUsage>();
-    for (const e of this.core.employees.filter((x) => !x.archived && !!x.hostId)) {
+    for (const e of this.core.employees.filter((x) => !x.archived && !!x.hostId && x.executionMode !== 'codex_managed')) {
       const key = `${e.hostId}|${e.claudeConfigDir ?? 'default'}`;
       const known = this.accounts.get(key);
       const row = out.get(key) ?? { ...(known ?? { key, hostId: e.hostId!, configDir: e.claudeConfigDir ?? null, email: null, organization: null, fiveHour: null, sevenDay: null, reportedAt: null, reportedBy: null }), employeeIds: [] };
@@ -1568,7 +1580,7 @@ export class SessionRegistry {
    * of it until it is started again — so it is, between turns, like for any other change of what it runs with.
    */
   highRiskSwitched(): void {
-    for (const s of this.core.sessions.filter((x) => x.status === 'running' && x.origin === 'managed')) {
+    for (const s of this.core.sessions.filter((x) => x.status === 'running' && x.origin === 'managed' && x.mode !== 'codex_managed')) {
       const e = s.employeeId ? this.core.employees.get(s.employeeId) : undefined;
       if (!e) continue;
       if (s.highRiskHeld === false && asksHighRisk(this.core.settings, e.autonomy)) this.restartForChange(e.id, 'the boss wants to be asked before high-risk commands again');
@@ -2064,29 +2076,31 @@ export class SessionRegistry {
     const project = this.core.projects.get(employee.projectId);
     const host = this.core.hosts.get(session.hostId);
     // An SDK-managed worker is not run in bypass mode (the SDK asks for a separate, explicit switch for it): it gets Auto.
+    const codex = mode === 'codex_managed';
     const perms = permissionsFor(employee.autonomy === 'unrestricted' && mode === 'managed_sdk' ? 'auto' : employee.autonomy, project, employee, host?.info?.claudeVersion ?? null);
     return {
       displayName: employee.name,
       cwd,
       mode,
       // Their own model — or, where its limit is reached on their account, the one they go on with (`modelFor`).
-      model: this.modelFor(employee, session.hostId, employee.claudeConfigDir ?? null).model,
+      model: codex ? null : this.modelFor(employee, session.hostId, employee.claudeConfigDir ?? null).model,
       // Only an effort that machine's Claude Code has (its agent says which); otherwise Claude Code's own default.
-      effort: employee.effort && host?.info?.claudeEffortLevels?.includes(employee.effort) ? employee.effort : null,
-      permissionMode: perms.permissionMode,
+      effort: !codex && employee.effort && host?.info?.claudeEffortLevels?.includes(employee.effort) ? employee.effort : null,
+      permissionMode: codex ? 'read-only' : perms.permissionMode,
       // A rented employee: the tools the owner did not allow are not there at all (rent.ts; the fence below does the rest).
       permissions: { allow: perms.allow, deny: [...perms.deny, ...this.eng.rent.denyRulesFor(employee)], ask: perms.ask },
       allowedTools: [],
       disallowedTools: [],
-      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available(), this.eng.attachments.available(), this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser, asksHighRisk(this.core.settings, employee.autonomy)),
+      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available(), !codex && this.eng.attachments.available(), !codex && this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser, asksHighRisk(this.core.settings, employee.autonomy)),
       mcp: { url: `${this.core.publicUrl}/mcp`, token: mcpToken },
-      browser: this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser,
+      browser: !codex && this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser,
       strictMcp: !this.core.settings.workersInheritMcp,
       // On `auto` the owner can choose to leave even these to Claude Code's auto mode, and on `unrestricted` to
       // have nothing held at all (`asksHighRisk`).
       // (A rented employee whom the owner let never wait for the office is not held by it either — rent.ts.)
       highRiskPatterns: (session.highRiskHeld = asksHighRisk(this.core.settings, employee.autonomy) && !this.eng.rent.autonomous(employee.id)) ? [...DEFAULT_HIGH_RISK_PATTERNS, ...(project?.policy.highRiskPatterns ?? [])] : [],
-      claudeSessionId: session.claudeSessionId!,
+      claudeSessionId: session.claudeSessionId ?? session.id,
+      ...(codex ? { codexThreadId: resume ? session.codexThreadId ?? null : null } : {}),
       resume,
       // A project's other repositories, when they are on the machine this employee works on.
       addDirs: [...new Set([...(project && (!project.hostId || project.hostId === session.hostId) ? (project.extraRepos ?? []).map((x) => x.path) : []), ...this.eng.rent.extraDirsFor(employee)])].filter((p) => p !== cwd),
@@ -2097,7 +2111,7 @@ export class SessionRegistry {
       env: {
         ORCH_EMPLOYEE: slugify(employee.name),
         // Their own Claude login, if they were given one.
-        ...(employee.claudeConfigDir ? { CLAUDE_CONFIG_DIR: employee.claudeConfigDir } : {}),
+        ...(!codex && employee.claudeConfigDir ? { CLAUDE_CONFIG_DIR: employee.claudeConfigDir } : {}),
         // Let ask_boss hold a tool call open while the owner decides, and a wait for a colleague while they work.
         CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: String(Math.max(600_000, Math.max(this.core.timings.askBossWaitMs, this.core.timings.colleagueWaitMs) * 2)),
         MCP_TOOL_TIMEOUT: String(Math.max(900_000, Math.max(this.core.timings.askBossWaitMs, this.core.timings.colleagueWaitMs) * 3)),
@@ -2133,24 +2147,29 @@ export class SessionRegistry {
     const cwd = opts.cwd ?? employee.workingDir ?? project?.repoPath ?? null;
     if (!cwd) throw new EngineError(`${employee.name} has no working directory: assign a project with a repository, or set a working directory`);
 
+    const codex = employee.executionMode === 'codex_managed';
+    if (codex) {
+      const why = this.cannotStartCodex(employee, host);
+      if (why) throw new EngineError(why);
+    }
     const current = this.core.runningSessionOf(employeeId);
     if (current) {
-      if (path.resolve(current.cwd) === path.resolve(cwd)) return current;
+      if (path.resolve(current.cwd) === path.resolve(cwd) && (current.mode === 'codex_managed') === codex) return current;
       if (current.origin !== 'managed') throw new EngineError(`${employee.name} is attached to an existing session in ${current.cwd}; detach it before starting a managed one elsewhere`);
       await this.stop(employeeId, { actor: opts.actor ?? 'system', reason: 'moving to another working directory' });
     }
     const previous = this.core.sessions
-      .filter((s) => s.employeeId === employeeId && s.origin === 'managed' && s.hostId === hostId && (s.status === 'exited' || s.status === 'lost') && path.resolve(s.cwd) === path.resolve(cwd))
+      .filter((s) => s.employeeId === employeeId && s.origin === 'managed' && s.hostId === hostId && (s.mode === 'codex_managed') === codex && (s.status === 'exited' || s.status === 'lost') && path.resolve(s.cwd) === path.resolve(cwd))
       .sort((a, b) => (b.startedAt > a.startedAt ? 1 : -1))[0];
-    const resume = opts.resume !== false && !!previous && !!previous.claudeSessionId && !!previous.lastEventAt;
+    const resume = opts.resume !== false && !!previous && !!(codex ? previous.codexThreadId : previous.claudeSessionId) && !!previous.lastEventAt;
     // A previous attempt that never got as far as a first event (it exited right away) is retried in the
     // same record and the same tmux session, with a fresh Claude session id — not piled up as new ones.
     const retry = !resume && !!previous && !previous.lastEventAt;
-    if (retry) previous!.claudeSessionId = this.newSessionRecord(employee, hostId, cwd).claudeSessionId;
+    if (retry && !codex) previous!.claudeSessionId = this.newSessionRecord(employee, hostId, cwd).claudeSessionId;
     const session = resume || retry ? previous! : this.newSessionRecord(employee, hostId, cwd);
     // Capability detection with an explicit fallback: a host without the Agent SDK only provides
     // the interactive CLI runtime, so the employee runs as one — and the office says so.
-    const mode: Employee['executionMode'] = employee.executionMode === 'managed_sdk' && host.info?.runtimes?.includes('managed_sdk') ? 'managed_sdk' : 'interactive_cli';
+    const mode: Employee['executionMode'] = codex ? 'codex_managed' : employee.executionMode === 'managed_sdk' && host.info?.runtimes?.includes('managed_sdk') ? 'managed_sdk' : 'interactive_cli';
     if (employee.executionMode === 'managed_sdk' && mode !== 'managed_sdk') {
       this.core.event({ type: 'session.started', source: 'server', summary: `${employee.name} is configured for the SDK-managed runtime, which host "${host.name}" does not provide; starting as an interactive Claude Code worker instead`, employeeId, hostId, data: { requested: 'managed_sdk', actual: 'interactive_cli', fallback: true } });
       this.eng.comms.notify({ kind: 'info', severity: 'warning', title: `${employee.name}: runtime fallback`, body: `The SDK-managed runtime is not available on "${host.name}" (install it there with \`orchestrator-agent sdk install\` and restart the agent). ${employee.name} was started as an interactive Claude Code worker (full terminal takeover; approvals and messages go through hooks and the terminal).`, employeeId, hostId });
@@ -2158,10 +2177,11 @@ export class SessionRegistry {
     session.status = 'starting';
     session.activity = 'unknown';
     session.mode = mode;
-    session.activityDetail = mode === 'managed_sdk' ? (resume ? 'Resuming the SDK-managed worker' : 'Starting the SDK-managed worker') : resume ? 'Resuming Claude Code session' : 'Starting Claude Code';
+    if (codex) session.claudeSessionId = null;
+    session.activityDetail = codex ? (resume ? 'Resuming Codex thread' : 'Starting Codex') : mode === 'managed_sdk' ? (resume ? 'Resuming the SDK-managed worker' : 'Starting the SDK-managed worker') : resume ? 'Resuming Claude Code session' : 'Starting Claude Code';
     session.activitySince = nowIso();
     session.inTurn = null;
-    session.claudeConfigDir = employee.claudeConfigDir ?? null;
+    session.claudeConfigDir = codex ? null : employee.claudeConfigDir ?? null;
     session.endedAt = null;
     session.exitReason = null;
     session.lastEventAt = resume ? session.lastEventAt : null;
@@ -2244,12 +2264,24 @@ export class SessionRegistry {
     if (!employee.hostId) return `${employee.name} is not assigned to a machine`;
     const host = this.core.hosts.get(employee.hostId);
     if (!host || !this.core.agents.isOnline(employee.hostId)) return `${host?.name ?? 'their machine'} is offline`;
+    if (employee.executionMode === 'codex_managed') {
+      const why = this.cannotStartCodex(employee, host);
+      if (why) return why;
+    }
     // A session that was running when its machine dropped off is still running there: it is reported again in a
     // moment, and a second one must not be started beside it meanwhile.
     if (this.core.sessions.find((x) => x.employeeId === employee.id && x.status === 'host_offline')) return `${employee.name}'s session is still running on ${host.name}, which is reconnecting`;
     const pressure = this.eng.hosts.exhausted(employee.hostId);
     if (pressure) return `${host.name} is out of resources (${pressure})`;
     if (!employee.workingDir && !this.core.projects.get(employee.projectId)?.repoPath && !this.wakeCwd(employee)) return `${employee.name} has no folder to work in`;
+    return null;
+  }
+
+  private cannotStartCodex(employee: Employee, host: Host): string | null {
+    if (employee.selfDriven || employee.roleKey === 'foreman' || this.eng.rent.rentalOf(employee.id)) {
+      return 'Codex requires a managed, non-rented employee or team lead';
+    }
+    if (!host.info?.runtimes?.includes('codex_managed')) return `Codex is unavailable on "${host.name}". Install Codex there and restart the host agent.`;
     return null;
   }
 
@@ -2333,6 +2365,7 @@ export class SessionRegistry {
   bind(sessionId: string, employeeId: string, actor = 'owner'): AgentSession {
     const s = this.core.sessions.require(sessionId);
     const employee = this.core.employees.require(employeeId);
+    if (s.mode === 'codex_managed' || employee.executionMode === 'codex_managed') throw new EngineError('Codex employees use sessions started by the office');
     const other = this.core.runningSessionOf(employeeId);
     if (other && other.id !== sessionId) throw new EngineError(`${employee.name} already has a running session; stop or detach it first`);
     s.employeeId = employee.id;
@@ -2368,7 +2401,7 @@ export class SessionRegistry {
     this.setActivity(s, 'paused', 'Interrupted by the owner');
     const emp = this.core.employees.get(employeeId);
     this.core.audit(actor, 'session.interrupted', s.id, { employee: emp?.name });
-    this.core.event({ type: 'terminal.interrupt', source: 'owner', summary: `Boss interrupted ${emp?.name ?? 'the session'} (${sent?.via === 'sdk' ? 'through the Agent SDK' : 'Escape sent to the terminal'})`, sessionId: s.id, employeeId, hostId: s.hostId, data: { via: sent?.via ?? 'terminal' } });
+    this.core.event({ type: 'terminal.interrupt', source: 'owner', summary: `Boss interrupted ${emp?.name ?? 'the session'} (${sent?.via === 'codex' ? 'through Codex' : sent?.via === 'sdk' ? 'through the Agent SDK' : 'Escape sent to the terminal'})`, sessionId: s.id, employeeId, hostId: s.hostId, data: { via: sent?.via ?? 'terminal' } });
   }
 
   async resume(employeeId: string, actor = 'owner'): Promise<void> {

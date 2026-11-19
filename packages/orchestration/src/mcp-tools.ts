@@ -387,6 +387,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       const to = name ? eng.comms.resolveTeammate(employee, name) : employee;
       if (!to || to.archived) return err(`No teammate matches "${name}". Use get_team.`);
       const self = to.id === employee.id;
+      if (to.executionMode === 'codex_managed') return err(`${to.name} uses the Codex runtime’s default model and effort.`);
       if (!self && to.roleKey === FOREMAN_ROLE) return err(`${to.name} is the foreman: what it thinks with is the owner's to set.`);
       if (!self && to.roleKey === LEAD_ROLE) return err(`${to.name} is a member's team lead: what it thinks with is that member's to set.`);
       if (!sameSide(employee, to)) return err(`${to.name} works on ${personal(to.hostId) ? "a member's own computer" : 'the shared office'} and you do not: their settings are not yours to change.`);
@@ -701,10 +702,18 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     ...eng.lead.handlers(),
   };
 
+  const codexUnavailable = new Set(['attach_file', 'vault_read']);
+
   // A rented employee is given the office's tools only as far as its rental lets it (rent.ts, `toolAllowed`): the rest
   // is neither listed nor answered.
   for (const [name, handler] of Object.entries(handlers)) {
-    handlers[name] = async (a, ctx) => (eng.rent.toolAllowed(ctx.employee, name) === false ? err(`While you are rented to ${eng.rent.rentalOf(ctx.employee.id)?.client.name ?? 'a client'}, ${name} is not yours to use. Work with what you have, or ask the boss (ask_boss).`) : handler(a, ctx));
+    handlers[name] = async (a, ctx) => {
+      if (ctx.session.mode === 'codex_managed' && (codexUnavailable.has(name) || (name === 'comment_on_task' && a.files?.length))) {
+        return err('This Codex session cannot access host files or vault secrets.');
+      }
+      if (eng.rent.toolAllowed(ctx.employee, name) === false) return err(`While you are rented to ${eng.rent.rentalOf(ctx.employee.id)?.client.name ?? 'a client'}, ${name} is not yours to use. Work with what you have, or ask the boss (ask_boss).`);
+      return handler(a, ctx);
+    };
   }
   const foremanTools = new Set(FOREMAN_TOOLS.map((t) => t.name));
   const leadTools = new Set(LEAD_TOOLS.map((t) => t.name));
@@ -722,6 +731,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     handlers,
     // Only a foreman is shown the foreman's tools; everyone else's tool list (and prompt) stays as small as before.
     // The board tools are shown while the owner leaves the board to the employees (a foreman assigns with its own tool).
-    listed: (tool, { employee }) => eng.rent.toolAllowed(employee, tool.name) !== false && (employee.roleKey === LEAD_ROLE ? leadTools.has(tool.name) || LEAD_ALSO.has(tool.name) : !leadTools.has(tool.name)) && tool.name !== 'vault_read' && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
+    listed: (tool, { employee, session }) => (session.mode !== 'codex_managed' || !codexUnavailable.has(tool.name)) && eng.rent.toolAllowed(employee, tool.name) !== false && (employee.roleKey === LEAD_ROLE ? leadTools.has(tool.name) || LEAD_ALSO.has(tool.name) : !leadTools.has(tool.name)) && tool.name !== 'vault_read' && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
   };
 }

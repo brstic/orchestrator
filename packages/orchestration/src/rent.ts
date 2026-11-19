@@ -226,6 +226,7 @@ export class Rent {
    */
   rentable(e: Employee, by: string | null, clientId: string | null = null): string | null {
     if (e.archived) return `${e.name} is archived.`;
+    if (e.executionMode === 'codex_managed' || this.core.runningSessionOf(e.id)?.mode === 'codex_managed') return `${e.name} runs Codex and cannot be rented.`;
     if (e.roleKey === 'foreman') return `${e.name} is the foreman: it supervises the office and is not rented out.`;
     if (e.roleKey === LEAD_ROLE) return `${e.name} is a member's team lead.`;
     const member = this.eng.hosts.memberOfHost(e.hostId);

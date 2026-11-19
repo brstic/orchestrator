@@ -2,6 +2,12 @@
 
 Newest first. One line per change that someone using or developing the office would notice.
 
+## 2026-11-19
+
+- **Codex workspace tools.** Codex employees can list, read and write text files in their selected folder. Shell execution remains disabled.
+
+- **Codex-managed employees.** Hire Codex on an enrolled host that has the CLI, including a joined colleague’s own computer. Codex connects to office conversations, team tools and reviews. The workstation shows a transcript and the host keeps the Codex login. [Setup and scope](CODEX.md).
+
 ## 2026-11-18
 - **Out in the city together** (the owner: "make the balcony jump multiplayer too, so the other players see everything and we can go together"). Everybody sees everybody who jumped: falling past the windows, under their parachute, walking, driving their car, the car they left — from the office and from the street. Next to somebody who drives, **F — ride with …** puts you in the seat beside them; out when they get out. **Go to …** in the bar at the bottom brings you beside anybody else out there (in the air under your own canopy if they are flying). Voices and the whip go by where people are out there, and not between the street and the office. Before, nobody saw anybody in the city: the others saw you standing at the window. `presence.out`; CITY.md, "Together".
 - **The vault looks like a vault** (the owner: "make the vault's interface actually look like a vault, very clear and easy to use"). The door as its emblem; on the left the boxes on shelves by what they open, with a box to find by and the kinds with their counts; on the right the open box — a steel plate with its name, the value behind a slot that an owner opens for half a minute (it counts down), how employees use it (`$("$ORCH_VAULT" get …)`, `{{vault:…}}`, each to copy), where it came from and how it was used. New: **edit its details** and **put in a new value under the same name** (a changed password: employees keep using the name they know; owners only, `PUT /vault/:id/value`, on the record) — neither was in the window before. VAULT.md, "The window".

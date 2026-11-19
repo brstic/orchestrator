@@ -174,7 +174,10 @@ export class Lead {
       const tasks = core.tasks.filter((t) => t.projectId === p.id && t.kind !== 'review' && OPEN.includes(t.status));
       lines.push(`- ${p.name} · ${this.whose(lead, p.hostId)}${p.repoPath ? ` · ${p.repoPath}` : ''}${p.description ? ` · ${truncate(oneLine(p.description), 80)}` : ''} · ${tasks.length} open task${tasks.length === 1 ? '' : 's'}`);
     }
-    lines.push('', `Machines you can hire onto: ${this.machines(lead).map((h) => `${h.name}${core.agents.isOnline(h.id) ? '' : ' (not here now)'}`).join(', ') || 'none'}. You may hire ${Math.max(0, left)} more (${LEAD_HIRE_LIMIT} at most at a time).`);
+    lines.push('', `Machines you can hire onto: ${this.machines(lead).map((h) => {
+      if (!core.agents.isOnline(h.id)) return `${h.name} (not here now)`;
+      return h.info?.runtimes?.includes('codex_managed') ? `${h.name} (Codex-managed available)` : h.name;
+    }).join(', ') || 'none'}. You may hire ${Math.max(0, left)} more (${LEAD_HIRE_LIMIT} at most at a time).`);
     return lines.join('\n');
   }
 
@@ -303,6 +306,13 @@ export class Lead {
         const ref = String(a.machine ?? '').trim().toLowerCase();
         const host = ref ? machines.find((h) => h.name.toLowerCase() === ref || h.id === ref) ?? machines.find((h) => h.name.toLowerCase().includes(ref)) : (machines.find((h) => h.id === employee.hostId) ?? machines[0]);
         if (!host) return err(`You hire onto ${boss}'s own machines only: ${machines.map((h) => h.name).join(', ') || 'none are here'}.`);
+        const executionMode = a.executionMode ?? 'interactive_cli';
+        if (executionMode !== 'interactive_cli' && executionMode !== 'managed_sdk' && executionMode !== 'codex_managed') {
+          return err('Choose interactive_cli, managed_sdk or codex_managed.');
+        }
+        if (executionMode !== 'interactive_cli' && (!core.agents.isOnline(host.id) || !host.info?.runtimes?.includes(executionMode))) {
+          return err(`${host.name} does not currently report support for ${executionMode}. Choose a machine that supports it.`);
+        }
         const project = a.project ? this.findProject(employee, String(a.project)) : undefined;
         if (a.project && !project) return err(`No project of yours matches "${a.project}".`);
         if (project && project.hostId !== host.id) return err(`${project.name} is not on ${host.name}. Someone works on the projects of the machine they are on.`);
@@ -314,13 +324,13 @@ export class Lead {
         if (!why) return err('Say in "why" what you need them for: it is what your boss reads.');
         const hiredOne = await this.eng.hire(
           // (Never Unrestricted, never a model of the lead's choosing above what the role starts with: both are the member's to give.)
-          { name, roleKey: role.key, hostId: host.id, ...(project ? { projectId: project.id } : { workingDir: folder }), ...(a.instructions ? { instructions: truncate(String(a.instructions), 2000) } : {}) },
+          { name, roleKey: role.key, hostId: host.id, executionMode, ...(project ? { projectId: project.id } : { workingDir: folder }), ...(a.instructions ? { instructions: truncate(String(a.instructions), 2000) } : {}) },
           actor(employee),
           { hiredBy: employee.id },
         );
         const left = LEAD_HIRE_LIMIT - this.hired(employee).length;
         this.eng.comms.notify({ kind: 'info', severity: 'info', title: `${employee.name} hired ${hiredOne.name} (${hiredOne.title})`, body: `${why}\n\nOn ${host.name}, ${project ? `project ${project.name}` : `folder ${hiredOne.workingDir ?? folder}`}. ${employee.name} may hire ${left} more.`, employeeId: employee.id, sessionId: null, taskId: null, projectId: hiredOne.projectId, questionId: null, hostId: host.id });
-        core.audit(actor(employee), 'lead.hired', hiredOne.id, { name: hiredOne.name, role: role.key, host: host.id, why });
+        core.audit(actor(employee), 'lead.hired', hiredOne.id, { name: hiredOne.name, role: role.key, host: host.id, executionMode, why });
         return `Hired ${hiredOne.name} as ${hiredOne.title} on ${host.name}, project ${core.projects.get(hiredOne.projectId ?? '')?.name ?? 'none'}. ${boss} has been told. They start when you give them work (team_task or team_tell). You may hire ${left} more.`;
       },
     };

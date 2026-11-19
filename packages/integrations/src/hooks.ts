@@ -223,6 +223,7 @@ export function interpretHook(payload: HookPayload, ctx: HookContext): HookInter
     sessionStarted: null,
   };
   const who = ctx.employeeName;
+  const runtime = payload.orch_runtime === 'codex' ? 'Codex' : 'Claude Code';
   const cwd = payload.cwd;
   const tool = payload.tool_name ?? '';
   const input = payload.tool_input;
@@ -245,15 +246,15 @@ export function interpretHook(payload: HookPayload, ctx: HookContext): HookInter
     case 'SessionStart': {
       const source = (payload.source as HookInterpretation['sessionStarted']) ?? 'startup';
       out.sessionStarted = source;
-      if (source === 'resume') out.events.push({ type: 'session.resumed', summary: `${who} resumed their Claude Code session`, data: { source } });
-      else if (source === 'startup') out.events.push({ type: 'session.started', summary: `${who} started a Claude Code session`, data: { source } });
+      if (source === 'resume') out.events.push({ type: 'session.resumed', summary: `${who} resumed their ${runtime} session`, data: { source } });
+      else if (source === 'startup') out.events.push({ type: 'session.started', summary: `${who} started a ${runtime} session`, data: { source } });
       else out.events.push({ type: 'session.started', summary: `${who}'s session context was reset (${source})`, data: { source }, quiet: true });
       if (source === 'startup' || source === 'resume') out.activity = { state: 'idle', detail: null };
       break;
     }
     case 'SessionEnd':
       out.sessionEnded = true;
-      out.events.push({ type: 'session.stopped', summary: `${who}'s Claude Code session ended (${payload.reason ?? 'unknown'})`, data: { reason: payload.reason ?? null } });
+      out.events.push({ type: 'session.stopped', summary: `${who}'s ${runtime} session ended (${payload.reason ?? 'unknown'})`, data: { reason: payload.reason ?? null } });
       // "clear" and "resume" end one conversation but the process keeps going.
       if (payload.reason !== 'clear' && payload.reason !== 'resume') out.activity = { state: 'offline', detail: null };
       break;

@@ -106,7 +106,7 @@ export function elapsedWords(etime: string): string {
 export function missingOn(info: HostInfo | null | undefined): string[] {
   if (!info?.platform) return [];
   const out: string[] = [];
-  if (!info.claudeVersion) out.push('Claude Code was not found on this machine');
+  if (!info.claudeVersion && !info.runtimes?.includes('codex_managed')) out.push('Claude Code was not found on this machine');
   if (!info.tmuxVersion) out.push('tmux was not found on this machine');
   return out;
 }

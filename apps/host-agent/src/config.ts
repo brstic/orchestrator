@@ -20,6 +20,11 @@ export interface AgentConfig {
   /** Optional tmux `-L` socket name. Null = the user's default tmux server. */
   tmuxSocketName: string | null;
   claudeBin: string;
+  /** Local Codex CLI executable, using this host user's authentication. */
+  codexBin?: string;
+  /** Model and reasoning effort supported by this host’s Codex account. */
+  codexModel?: string;
+  codexEffort?: string;
   /** How long a permission/question hook may wait for the owner before falling back to the terminal dialog. */
   approvalWaitSeconds: number;
   /** How long a request for a decision goes on waiting after the office is lost (its restart), before Claude Code's own prompt is let through. Default 90; 0: not at all. */
@@ -41,7 +46,7 @@ export interface AgentConfig {
   /**
    * Where the Claude Agent SDK lives, for SDK-managed workers: the package directory or its
    * sdk.mjs. Null = look in <agent home>/node_modules and next to the agent. Install it with
-   * `orchestrator-agent sdk install`. Without it, this host offers only interactive CLI workers.
+   * `orchestrator-agent sdk install`. It adds the SDK-managed runtime on this host.
    */
   sdkPath: string | null;
   /** Override the hook events to install (null = detect from the Claude Code version). */
@@ -76,6 +81,7 @@ export function defaultConfig(): AgentConfig {
     allowedRoots: [os.homedir()],
     tmuxSocketName: null,
     claudeBin: 'claude',
+    codexBin: 'codex',
     approvalWaitSeconds: 1800,
     allowVerify: true,
     allowHeadless: true,

@@ -2,6 +2,10 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-19 — Codex as a managed employee runtime
+
+The office keeps team routing and assigns each employee a runtime on their enrolled host. Codex App Server supplies the thread lifecycle, turn acknowledgement and interrupt. The first release limits Codex to the office’s MCP tools and supplied text. Workspace access needs its own enforcement for project rules, the office’s files and high-risk operations. The host keeps the login under its existing OS user.
+
 ## 2026-11-18 — Out in the city together: the place out there rides on the presence
 
 The owner asked for the jump off the terrace to be "multiplayer, so the other players see everything and we can go together".
