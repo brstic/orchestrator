@@ -2,6 +2,13 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-19 — The office is drawn no faster than it is looked at
+
+The owner: "something eats a lot of CPU and memory". The app's renderer and GPU processes were most of it (with the system's window server drawing what they sent): the office drawn on every refresh, also behind other windows and minimized — `backgroundThrottling: false` keeps the terminals' streams alive in the background, and with it the page is never told it cannot be seen.
+- **Three paces, by being looked at** (`drawCap`): in full while somebody works in it (the focus with a touch in the last 90 s, or the mouse over it without the focus in the last 5 s); **30 a second** otherwise — still smooth to watch people at work, a quarter of the work on a 120 Hz display; **not drawn** while minimized or hidden (the app tells the page on `minimize`/`restore`/`hide`/`show`) or a browser tab in the background. Time in the scene goes by the clock, so nothing slows down — it is only drawn less often.
+- **Background throttling stays off**: the terminals' streams and timers need it; only the drawing is held back, by the office's own loop.
+- **Not chosen:** capping the full pace at 60 on a 120 Hz display (the even-rhythm decision stands: in full while worked in); drawing only on change (`frameloop="demand"`) — the office is never still (people at work, the clocks, the weather).
+
 ## 2026-11-19 — A rented employee writes to its client with a tool, not by holding the answer for their next message
 
 The owner, after the rented project manager could only put the owner's question to its client into its answer to the client's next message: "let it send it through that conversation, and let them see it as soon as they come in".

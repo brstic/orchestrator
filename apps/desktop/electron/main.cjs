@@ -728,6 +728,10 @@ async function openOffice(target) {
       webviewTag: true,
     },
   });
+  // Whether the window can be seen: with background throttling off the page is never told that it was minimized or
+  // hidden, and would go on drawing the office for nobody (`pace.ts`, `paceView`).
+  const shown = () => !next.isDestroyed() && next.webContents.send('orch:window-shown', next.isVisible() && !next.isMinimized());
+  for (const ev of ['minimize', 'restore', 'hide', 'show']) next.on(ev, shown);
   // The new window exists before the old ones close, so the app does not quit in between.
   const old = [win, connectWin].filter(Boolean);
   // Leaving an office takes this computer out of it.

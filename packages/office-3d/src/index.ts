@@ -14,3 +14,4 @@ export type { TvFrames, TvView } from './TV.tsx';
 export type { HumanView } from './Humans.tsx';
 export type { TalkMark } from './TalkMarks.tsx';
 export { CEO_LOOK, defaultLook, filledLook } from './looks.ts';
+export { paceView } from './pace.ts';

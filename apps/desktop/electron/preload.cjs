@@ -51,6 +51,12 @@ contextBridge.exposeInMainWorld(
         return () => ipcRenderer.removeListener('orch:servers-changed', fn);
       },
     }),
+    /** Told when the window is minimized or hidden (false) and shown again (true). */
+    onShown: (cb) => {
+      const fn = (_e, shown) => cb(!!shown);
+      ipcRenderer.on('orch:window-shown', fn);
+      return () => ipcRenderer.removeListener('orch:window-shown', fn);
+    },
     /** The office TV (an embedded browser): its page state and picture, and forgetting what it stored. */
     tv: Object.freeze({
       partition: String(boot.tvPartition || 'persist:orch-tv'),

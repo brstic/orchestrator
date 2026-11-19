@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { surroundingsOf, unlockedUpgrades, type OutsideAt } from '@orchestrator/contracts';
-import { defaultLook, OfficeScene, ownerOutside, ownerPosition } from '@orchestrator/office-3d';
+import { defaultLook, OfficeScene, ownerOutside, ownerPosition, paceView } from '@orchestrator/office-3d';
 import { PeopleActs, myPlace, personInReach } from './hud/people-acts.tsx';
 import { Button } from '@orchestrator/ui';
 import { api, connection, serverBase, setToken } from './lib/api.ts';
@@ -169,6 +169,8 @@ export function App() {
   useAccounts();
   // The office's hi-fi is heard in this window too, from where this person's character stands.
   useEffect(() => startRadio(), []);
+  // Minimized or hidden, the office is not drawn (the app says so: the page itself is not told).
+  useEffect(() => (window as unknown as { orchestrator?: { onShown?: (cb: (shown: boolean) => void) => () => void } }).orchestrator?.onShown?.((shown) => void (paceView.shown = shown)), []);
   const [saying, setSaying] = useState(false);
   // Speech bubbles fade on their own: look again a moment after someone spoke.
   const [sayTick, setSayTick] = useState(0);

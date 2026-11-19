@@ -9,6 +9,33 @@ export interface Pace {
   every: number;
   /** Frames a second the office is being drawn at. */
   fps: number;
+  /** The most it may be drawn at now (`drawCap`): 0 while nobody can see it, null when as fast as the display goes. */
+  cap: number | null;
+}
+
+/**
+ * Whether the window can be seen at all, as the app tells it. Electron's window keeps running in the background (the
+ * terminals need it), and then the page is never told it was minimized or hidden — the app is (`main.cjs`).
+ */
+export const paceView = { shown: true };
+
+/** Without a touch of the mouse or the keyboard for this long, a window in front is drawn as one in the background. */
+export const IDLE_AFTER = 90_000;
+/** Behind another window, a touch (the mouse over it) brings it to full pace for this long. */
+export const HOVER_FOR = 5_000;
+/** Frames a second for an office nobody is working in: still smooth to watch, a third to a quarter of the work. */
+export const RESTING_FPS = 30;
+
+/**
+ * How fast the office may be drawn now (frames a second; Infinity: as fast as the display goes): not at all while it
+ * cannot be seen (minimized, hidden, a tab in the background); at a resting pace while another window has the focus
+ * (unless the mouse moves over it) or nobody has touched it for a while; in full while somebody works in it.
+ */
+export function drawCap(v: { shown: boolean; focused: boolean; idleMs: number }): number {
+  if (!v.shown) return 0;
+  // (The mouse moving over it, or a key, counts even without the focus: somebody is looking at it.)
+  if (v.idleMs < (v.focused ? IDLE_AFTER : HOVER_FOR)) return Infinity;
+  return RESTING_FPS;
 }
 
 /**
@@ -19,6 +46,9 @@ export interface Pace {
  * even at 80–100 frames a second. A steady 60 looks far smoother than an unsteady 90. So: every refresh while that
  * holds; every second refresh when it does not; and back, after the office has been comfortably fast for a while
  * (trying again less and less often if it keeps failing). A 60 Hz display is always drawn on every refresh.
+ *
+ * And no faster than it is looked at (`drawCap`): the office drawn 60–120 times a second behind another window, or
+ * minimized, was most of what the app cost the computer.
  *
  * The canvas must be mounted with `frameloop="never"`: this is its loop.
  */
@@ -39,7 +69,25 @@ export function usePacedLoop(): void {
     let slowSince = 0;
     let drawn = 0;
     let fpsFrom = 0;
-    const pace: Pace = ((window as unknown as { __orchPace?: Pace }).__orchPace = { display, every, fps: 0 });
+    const pace: Pace = ((window as unknown as { __orchPace?: Pace }).__orchPace = { display, every, fps: 0, cap: null });
+    // Is anybody looking, and working in it?
+    let focused = document.hasFocus();
+    let touched = performance.now();
+    let drewAt = -Infinity;
+    const touch = () => {
+      touched = performance.now();
+    };
+    const onFocus = () => {
+      focused = true;
+      touch();
+    };
+    const onBlur = () => {
+      focused = false;
+    };
+    const INPUT = ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
+    for (const ev of INPUT) window.addEventListener(ev, touch, { capture: true, passive: true });
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
 
     const loop = (t: number) => {
       raf = requestAnimationFrame(loop);
@@ -58,6 +106,19 @@ export function usePacedLoop(): void {
       }
       tick++;
       if (tick % every !== 0) return;
+      const cap = drawCap({ shown: paceView.shown && !document.hidden, focused, idleMs: t - touched });
+      pace.cap = cap === Infinity ? null : cap;
+      if (cap < Infinity) {
+        // (Half a refresh of slack, so that 30 on a 60 Hz display is every second refresh, not every third.)
+        if (cap === 0 || t - drewAt < 1000 / cap - display / 2) {
+          if (cap === 0) pace.fps = 0;
+          return;
+        }
+        // Frames skipped on purpose are not frames that came late.
+        late = 0;
+        seen = 0;
+      }
+      drewAt = t;
 
       const before = performance.now();
       advance((t - start) / 1000);
@@ -100,6 +161,11 @@ export function usePacedLoop(): void {
       }
     };
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      for (const ev of INPUT) window.removeEventListener(ev, touch, { capture: true });
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+    };
   }, []);
 }
