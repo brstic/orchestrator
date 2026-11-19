@@ -24,6 +24,7 @@ import { STUDIO, Surroundings as SurroundingsPart } from './surroundings/index.t
 import { CityWalkers } from './city/CityWalkers.tsx';
 import { usePacedLoop } from './pace.ts';
 import { StableFrame } from './stable-frame.tsx';
+import { PartBatches } from './batch.tsx';
 
 // Each part of the office is gone through by React again only when what it shows has changed. The office's state
 // changes many times a second while people work (and something always does); without this every such change
@@ -252,6 +253,8 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       <ShadowPace />
       <Reflections />
       <PerfProbe />
+      {/* People's rigid parts drawn together, everybody's hands in one draw and so on (`batch.tsx`). */}
+      <PartBatches>
       <Surroundings kind={surroundings} world={world} quality={props.quality} />
       {surroundings === 'skyline' && <CityWalkers quality={props.quality} />}
       <Lights quality={props.quality} world={world} surroundings={surroundings} />
@@ -279,6 +282,7 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
         <Foreman key={lead.id} foreman={lead} people={props.people} world={world} selected={props.selectedId === lead.id} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />
       ))}
       <Rig positions={positions} walkers={walkers} moving={!!props.freeSeats} whipAt={props.whipAt} ouchAt={props.ouchAt} emote={props.emote} approachZoom={props.approachZoom} seatAsk={props.seatAsk} jumpAsk={props.jumpAsk} onSeated={props.onSeated} onJumped={props.onJumped} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} city={surroundings === 'skyline'} outside={props.outside} cityJoin={props.cityJoin} onOutside={props.onOutside} onOutsideHint={props.onOutsideHint} look={props.selfLook} />
+      </PartBatches>
     </Canvas>
   );
 });

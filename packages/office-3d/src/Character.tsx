@@ -7,6 +7,7 @@ import { BADGE_Z, PIN_Z, body } from './character/body.ts';
 import { EYE_AT, EYE_YAW, LID_CLOSE, browsGeo, capGeo, eyesGeo, glassesGeo, hairGeo, headGeo, headphonesGeo, lidGeo } from './character/head.ts';
 import { SHOES, SKINNED_DEPTH, TIES, badgeMat, eyeMat, mat, skinned, sparkMat, traitsOf, zTexture, type MatOptions } from './character/look.ts';
 import { bentProps } from './twins.ts';
+import { useBatcher } from './batch.tsx';
 import {
   HEAD_SCALE,
   HEAD_Y,
@@ -105,6 +106,8 @@ const SLEEP_FOLLOW = 0.3;
 const ARM_KEY = POSE_KEYS.map((k) => k === 'sLx' || k === 'sLz' || k === 'tL' || k === 'eL' || k === 'sRx' || k === 'sRz' || k === 'tR' || k === 'eR' || k === 'wrL' || k === 'wfL' || k === 'wrR' || k === 'wfR');
 const sleeping = (p: PoseName | null) => p === 'offline' || p === 'doze';
 const NO_RAYCAST = () => null;
+/** Shown and hidden by the character itself: never drawn together with others (`batch.tsx`). */
+const OWN = { own: true };
 /** How many letters are in the air over a sleeper at once, how long each one lives (seconds) and how far it rises (metres). */
 const Z_COUNT = 3;
 const Z_LIFE = 3.6;
@@ -246,6 +249,19 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
     };
   // (By every field of the look — `lookKey` — so that each choice of the character creator shows at once.)
   }, [lookKey(appearance), offline, level, detail?.tie, detail?.shoes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // In the office, this person's rigid parts are drawn together with everybody else's (`batch.tsx`): looked at again
+  // after every render (a part may have come, gone or changed), let go of when the character goes.
+  const batcher = useBatcher();
+  useLayoutEffect(() => {
+    if (batcher && outer.current) batcher.scan(outer.current);
+  });
+  useLayoutEffect(() => {
+    const node = outer.current;
+    return () => {
+      if (batcher && node) batcher.drop(node);
+    };
+  }, [batcher]);
 
   // Arms and legs are each one skinned surface; the joints of this rig are their bones.
   useLayoutEffect(() => {
@@ -586,7 +602,7 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
               <mesh geometry={g.badge} material={look3d.badge} position={[0.088, 0.36, BADGE_Z]} rotation={[-0.05, 0.38, 0]} />
             )}
           </group>
-          {whip && <mesh ref={coil} geometry={g.coil} material={look3d.leather} position={[-0.145, -0.015, -0.112]} rotation={[0, -0.93, 0]} castShadow />}
+          {whip && <mesh ref={coil} userData={OWN} geometry={g.coil} material={look3d.leather} position={[-0.145, -0.015, -0.112]} rotation={[0, -0.93, 0]} castShadow />}
           <group ref={head} position={[0, HEAD_Y, -0.002]}>
             <group position={[0, 0.103 * HEAD_SCALE, 0.014 * HEAD_SCALE]} scale={[HEAD_SCALE * who.headW, HEAD_SCALE, HEAD_SCALE * who.headD]}>
               <mesh geometry={look3d.head} material={look3d.bearded ? [look3d.face, look3d.beard] : look3d.face} castShadow />
@@ -612,7 +628,7 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
             </sprite>
           ))}
       </group>
-      {lashGeo && <mesh ref={lash} geometry={lashGeo} material={look3d.leather} visible={false} frustumCulled={false} />}
+      {lashGeo && <mesh ref={lash} userData={OWN} geometry={lashGeo} material={look3d.leather} visible={false} frustumCulled={false} />}
       {lashGeo && <mesh ref={spark} geometry={g.spark} material={sparkMat()} visible={false} />}
     </group>
   );

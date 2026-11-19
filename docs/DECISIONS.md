@@ -2,6 +2,14 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-20 — People's parts are drawn together, not merged and not simplified
+
+Continuing the work for a colleague's overheating MacBook Air; two thirds of the draws were people.
+- **Instanced across people, by part and finish** (`part-batch.ts`): the same shape with the same material finish in different colours is one draw; the colour goes to the instance. The look is the same to the bit in colour and light (a white material times the person's colour is the person's colour).
+- **Rejected: merging a person's parts into one mesh with vertex colours.** Their materials differ in more than colour (roughness, the cloth's grain, the suit's stripe, decals), so a merged person would either look different or still need a draw per finish; and the hands, head and lids move on their own.
+- **Rejected for now: simpler heads, fewer parts, people far away drawn coarser.** They save GPU work but change how people look; the owner's to decide.
+- **The originals stay, hidden**, so that the character's animation, clicks (three's raycasting ignores `visible`) and the UI tests find them where they were. The scene's world matrices are updated once, by the batcher, before it copies them — not again by the renderer.
+
 ## 2026-11-20 — On battery, warm, or behind a window of its own: the office is drawn less often
 
 A colleague's MacBook Air (no fan) overheated with the office open.

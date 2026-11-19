@@ -51,6 +51,14 @@ The creator starts from what you wear now, with everything the office used to de
 
 `Appearance` keeps its seven fields; the new ones (`outfit`, `glasses`, `facialHair`, `face`, `brows`, `eyes`, `girth`, `shoes`, `tie`) are optional. Where one is absent the office decides it as it always did (`traitsOf`), so every look saved before — every employee's — is drawn exactly as it was. Employees can wear the new hair styles too (their profile → Appearance).
 
+## How the office draws people
+
+In the office (not in the creator or the other small stages) the rigid parts of all people — hands, shoes, heads without a beard, eyes, lids, hair, glasses, cuffs, badges — are drawn **together**: the same part with the same finish (everything about the material but its colour) is one instanced draw for everybody, each person's colour as the instance's colour on a white copy of the material (`part-batch.ts`, `batch.tsx`). The parts themselves stay in the scene: the character moves them, and clicks land on them as before; they are only not drawn (`visible` false), and each frame their world matrices and colours are copied into the instances. Left to draw themselves: skinned limbs, what bends with the hem (morph targets), a head with a beard (two materials), anything transparent, a mirrored part, and what the character shows and hides itself (`userData.own`: the coiled whip, the lash).
+- **Why:** two thirds of the office's draws were people (~24 parts each), and the frame's cost goes with the number of draws. Measured on a development office of 41 employees: 1 807 → 1 106 draws a frame, the main thread's ~4.0–4.4 → ~3.2–3.4 ms a frame.
+- **Same picture:** drawn both ways at one instant, 89 of 1.28 million pixels differed — single pixels where two surfaces of a far hand meet, decided by which is drawn first (now always the same order).
+- **A part out of view** is left out of its draw, with 2 m to spare for one that casts a shadow (its shadow may be in view).
+- The world matrices are brought up to date once a frame by the batcher (the scene's `matrixWorldAutoUpdate` is off while it runs), before the copies are made.
+
 ## Who may do what
 
 | | sees others' characters | makes their own |
