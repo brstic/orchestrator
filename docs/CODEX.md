@@ -9,6 +9,8 @@ Codex is a runtime for individual employees and team leads. Codex and Claude emp
 3. Open **Team → Hire**, choose the machine and working folder, then select **More options → Runtime → Codex-managed**.
 4. Message the employee from the office. It can list, read, and edit text files in the selected workspace, subject to deny rules. Shell and Git commands are unavailable.
 
+**If the first turn fails with `model_not_found`**, check [CLI and model compatibility](#cli-and-model-compatibility).
+
 ## Set up a host
 
 1. Install Codex on the machine running the Orchestrator host agent. Check that `codex --version` and `codex app-server --help` work as the account that runs the agent. If Codex lives outside that account's PATH, set `codexBin` to its absolute path in the host agent's configuration.
@@ -17,6 +19,14 @@ Codex is a runtime for individual employees and team leads. Codex and Claude emp
 4. Talk to the employee in the office. Its workstation shows a transcript. Pause interrupts the active turn. Stop and Start resume the existing Codex thread when its history is available.
 
 Team leads can request `executionMode: "codex_managed"` in `team_hire` on their eligible machines. An unavailable Codex runtime produces a start error. Installations with existing Claude employees keep their Claude runtime selections.
+
+## CLI and model compatibility
+
+The host agent uses the executable configured as `codexBin`, or resolves `codex` from its own PATH. A machine can have several Codex installations. Run `--version` and `app-server --help` against the exact executable the host agent uses. The host capability shown in **Machines** confirms detection. To confirm model compatibility, send a short message through the office and check that the worker replies.
+
+If a signed-in worker gets `model_not_found` or “model is not supported when using Codex with a ChatGPT account,” update the CLI on the worker host or set `codexBin` to a newer installed executable. On macOS, the CLI bundled with the ChatGPT app can be used by pointing `codexBin` at the executable inside the app bundle. If you override the model, set `codexModel` to a model supported by that host’s account and optionally set `codexEffort`.
+
+After changing the host agent’s `config.json`, restart the host agent, then stop and start the employee so its next turn uses the new executable and settings.
 
 ## First release scope
 
