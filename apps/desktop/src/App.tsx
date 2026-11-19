@@ -6,6 +6,7 @@ import { Button } from '@orchestrator/ui';
 import { api, connection, serverBase, setToken } from './lib/api.ts';
 import { askStateOf, loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
 import { loadPrefs, usePrefs } from './lib/prefs.ts';
+import { useCoveredOffice, usePowerSaving } from './lib/power.ts';
 import { awardView } from './lib/award.ts';
 import { boardView, ceoView, foremanView, leadViews, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
 import { ChatBox, CommandBar, ConfirmDialog, DoorBell, Replies, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
@@ -171,6 +172,10 @@ export function App() {
   useEffect(() => startRadio(), []);
   // Minimized or hidden, the office is not drawn (the app says so: the page itself is not told).
   useEffect(() => (window as unknown as { orchestrator?: { onShown?: (cb: (shown: boolean) => void) => () => void } }).orchestrator?.onShown?.((shown) => void (paceView.shown = shown)), []);
+  // On battery, or while the computer runs warm, the office is drawn at the saving pace (Settings → Graphics, “Power”).
+  usePowerSaving(prefs.power);
+  // Behind a window of the app's own (Tasks, a terminal at a desk) the office is drawn at the resting pace.
+  useCoveredOffice(`${s.panel}:${s.cameraMode}`);
   const [saying, setSaying] = useState(false);
   // Speech bubbles fade on their own: look again a moment after someone spoke.
   const [sayTick, setSayTick] = useState(0);

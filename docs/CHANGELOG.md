@@ -2,6 +2,10 @@
 
 Newest first. One line per change that someone using or developing the office would notice.
 
+## 2026-11-20
+- **The office saves power on a laptop that runs on its battery or gets warm** (the owner: a colleague's MacBook Air overheats while the office is open). It is then drawn half as often: 30 frames a second while somebody works in it, 15 while nobody does (instead of ~72 and 30). The desktop app asks the system (`powerMonitor`: on battery, the thermal state — from *fair* up counts as warm, and it stays saving two minutes after the computer cooled down); a browser tab knows the battery where the browser tells it. **Settings → Graphics → Power**: *Save on battery and when warm* (the default), *Always save*, *Always the full pace*; under it, whether it saves right now and why. Measured on a development office of 41 employees (the app's own processes, macOS's energy impact): worked in 60 → 45, untouched 42 → 30.
+- **Behind a window of the app's own the office is drawn at the resting pace**: Tasks, Settings, any window with its dimmed backdrop, the terminal at a desk — they cover nearly all of it, and the person works in them, not in the office. 30 a second instead of ~72 (15 when saving); full again the moment the window closes. Measured with Tasks open: 58 → 42.
+
 ## 2026-11-19
 - **Each frame of the office costs less, and the office no longer grows while it runs** (the owner: "keep optimising until it is excellent"). Measured on a development office of 41 employees (`pace.cost`, the main thread's milliseconds per frame): 4.6 → 3.8 ms.
   - **Fixed: the break room leaked.** Its kitchen and coffee table (and a rug) were built anew at every render of the rooms, and the old shapes were never let go of — about three a second in a busy office, for as long as it ran (GPU memory with them). Built once now (`keyed`, as the other furniture already was). This was also the UI suite's "everything a place was made of is let go of" failing by eleven shapes.

@@ -14,6 +14,8 @@ import { GATE_DEFAULT, cleanGate } from './voice-gate.ts';
  */
 export interface ClientPrefs {
   quality: 'low' | 'medium' | 'high';
+  /** How often the 3D office may be drawn: 'auto' saves on battery and while the computer runs warm, 'save' always, 'full' never (`pace.ts`). */
+  power: 'auto' | 'save' | 'full';
   keybindings: Record<string, string>;
   /** Mark each project's desks on the floor. */
   projectZones: boolean;
@@ -59,7 +61,7 @@ export const DEFAULT_KEYS: Record<string, string> = {
   exit: 'Escape',
 };
 
-export const DEFAULT_PREFS: ClientPrefs = { quality: 'medium', keybindings: DEFAULT_KEYS, projectZones: false, approachZoom: false, radioVolume: 0.6, radioMuted: false, voiceVolume: 1, voiceMuted: false, voiceMode: 'hold', micGate: GATE_DEFAULT, micDevice: '', outputDevice: '' };
+export const DEFAULT_PREFS: ClientPrefs = { quality: 'medium', power: 'auto', keybindings: DEFAULT_KEYS, projectZones: false, approachZoom: false, radioVolume: 0.6, radioMuted: false, voiceVolume: 1, voiceMuted: false, voiceMode: 'hold', micGate: GATE_DEFAULT, micDevice: '', outputDevice: '' };
 
 export type PrefsPatch = Partial<ClientPrefs>;
 
@@ -82,6 +84,7 @@ function clean(raw: unknown, base: ClientPrefs = DEFAULT_PREFS): ClientPrefs | n
   }
   return {
     quality: r.quality === 'low' || r.quality === 'medium' || r.quality === 'high' ? r.quality : base.quality,
+    power: r.power === 'auto' || r.power === 'save' || r.power === 'full' ? r.power : base.power,
     keybindings: keys,
     projectZones: typeof r.projectZones === 'boolean' ? r.projectZones : base.projectZones,
     approachZoom: typeof r.approachZoom === 'boolean' ? r.approachZoom : base.approachZoom,

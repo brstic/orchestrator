@@ -2,6 +2,14 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-20 — On battery, warm, or behind a window of its own: the office is drawn less often
+
+A colleague's MacBook Air (no fan) overheated with the office open.
+- **What it costs follows how often it is drawn, nearly one for one; not how many pixels.** Measured on a development office of 41 employees in a window the size of a 13" Air's: the app's own processes (macOS's energy impact, `top -stats power`) ~66 at 72 frames a second, ~44 at 36, ~13 not drawn; the GPU's own time per frame (WebGL timer queries) 4.2 ms at 1× resolution, 4.4 at 1.5×, 5.2 at 2× — the scene is bound by how many things are drawn (some 1 500 draws, two thirds of them people: ~24 parts each), not by the pixels. So the lever is the pace, not the resolution. The GPU's "utilisation" (`ioreg`) is no measure of this: the GPU slows its clock and stays as busy.
+- **Half of each pace (30 / 15) on battery, while warm, or when its person chose it** (`powerSaving`, `SAVING_FPS`). Warm is the system's thermal state from *fair* up (Electron's `powerMonitor`), not a guess from frame times; two minutes after it cooled down it stays saving, so it does not go back and forth. A choice in Settings → Graphics → Power, per computer, default *auto*; *Always the full pace* for whoever wants it.
+- **Behind a window of the app's own, the resting pace** (`paceView.covered`): what is on top at 25 points of the window is looked at each second (`officeShows`); under 30% of it showing the office counts as covered. Not a list of windows: a new window is counted by what it covers, and one that leaves the office in sight does not slow it.
+- **Not chosen:** a lower resolution when saving (the measurements: little gain on Apple's GPUs, a softer picture); shadows drawn less often when saving (a walking person's shadow would lag visibly at 30 frames); fewer parts per person or simpler heads (the most that is left — two thirds of the draws and of the triangles are people — but it changes how people look, which is the owner's to decide).
+
 ## 2026-11-19 — The office is drawn no faster than it is looked at
 
 The owner: "something eats a lot of CPU and memory". The app's renderer and GPU processes were most of it (with the system's window server drawing what they sent): the office drawn on every refresh, also behind other windows and minimized — `backgroundThrottling: false` keeps the terminals' streams alive in the background, and with it the page is never told it cannot be seen.

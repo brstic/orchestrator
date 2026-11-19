@@ -200,6 +200,7 @@ function GraphicsSection() {
         {fresh && fresh.fps < 30 && settings.quality !== 'low' && <span className="muted"> — a lower quality will help.</span>}
       </div>
       <div className="small faint">Only the 3D office is affected. Terminals and panels always render at full resolution.</div>
+      <PowerChoice />
       <div className="section-title" style={{ marginTop: 10 }}>
         Office extras
       </div>
@@ -219,6 +220,35 @@ function GraphicsSection() {
           <span className="field-hint">When you stand next to an employee, the camera eases in towards their monitor.</span>
         </span>
       </label>
+    </div>
+  );
+}
+
+/** How often the office may be drawn: saving on battery and while the computer runs warm, always, or never (`pace.ts`). */
+function PowerChoice() {
+  const power = usePrefs((p) => p.prefs.power);
+  const pick = (value: ClientPrefs['power']) => savePrefs({ power: value }, value === 'auto' ? 'Power: saves on battery and when warm' : value === 'save' ? 'Power: always saving' : 'Power: always the full pace');
+  useTick(2000);
+  const saving = (window as unknown as { __orchPace?: { saving: string | null } }).__orchPace?.saving ?? null;
+  const why = saving === 'battery' ? 'the computer runs on its battery' : saving === 'warm' ? 'the computer runs warm' : saving === 'chosen' ? 'you chose it' : null;
+  return (
+    <div className="col" style={{ gap: 8 }} role="radiogroup" aria-label="Power" data-settings-power={power}>
+      <div className="section-title" style={{ marginTop: 10 }}>
+        Power
+      </div>
+      <Choice name="power" value="auto" current={power} onPick={pick} title="Save on battery and when warm">
+        The office is drawn half as often (30 frames a second while you work in it, 15 while you do not) when the computer runs on its battery or gets warm — a laptop without a fan stays cool. Otherwise up to about 72 and 30.
+      </Choice>
+      <Choice name="power" value="save" current={power} onPick={pick} title="Always save">
+        Always half as often, plugged in too. For a laptop that still gets hot, or a computer busy with other work.
+      </Choice>
+      <Choice name="power" value="full" current={power} onPick={pick} title="Always the full pace">
+        Never slowed down for the battery or the heat.
+      </Choice>
+      <div className="small" aria-live="off" data-power-saving={saving ?? 'none'}>
+        <span className="muted">Right now: </span>
+        {why ? <span>saving, because {why}.</span> : <span className="faint">the full pace.</span>}
+      </div>
     </div>
   );
 }

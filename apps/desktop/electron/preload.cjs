@@ -51,6 +51,15 @@ contextBridge.exposeInMainWorld(
         return () => ipcRenderer.removeListener('orch:servers-changed', fn);
       },
     }),
+    /** What the computer says about its power: { battery, thermal } now, and each time it changes. */
+    power: Object.freeze({
+      get: () => ipcRenderer.invoke('orch:power-get'),
+      onChange: (cb) => {
+        const fn = (_e, state) => cb(state);
+        ipcRenderer.on('orch:power', fn);
+        return () => ipcRenderer.removeListener('orch:power', fn);
+      },
+    }),
     /** Told when the window is minimized or hidden (false) and shown again (true). */
     onShown: (cb) => {
       const fn = (_e, shown) => cb(!!shown);

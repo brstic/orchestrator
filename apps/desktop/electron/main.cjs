@@ -12,7 +12,7 @@
  * is newer than the Node inside Electron, so it runs as a normal `node`
  * process next to the app rather than inside it.
  */
-const { app, BrowserWindow, shell, dialog, Menu, ipcMain, safeStorage, session } = require('electron');
+const { app, BrowserWindow, shell, dialog, Menu, ipcMain, safeStorage, session, powerMonitor } = require('electron');
 const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -461,6 +461,28 @@ ipcMain.handle('orch:pick-folders', async (event) => {
 // This computer's preferences (graphics, keys, extras, how loud the hi-fi is here), the same in every office opened
 // from here. The page that asks may be another office's, so only these fields are kept, and only in their expected shapes.
 const prefsFile = () => path.join(app.getPath('userData'), 'prefs.json');
+// What the computer says about its power, for the office's saving pace (`pace.ts`, `powerSaving`): whether it runs on
+// its battery, and its thermal state ('nominal' | 'fair' | 'serious' | 'critical'; null where the system does not say).
+const powerState = () => {
+  let thermal = null;
+  try {
+    const t = powerMonitor.getCurrentThermalState?.();
+    thermal = t && t !== 'unknown' ? t : null;
+  } catch {}
+  return { battery: !!powerMonitor.isOnBatteryPower?.(), thermal };
+};
+ipcMain.handle('orch:power-get', () => powerState());
+app.whenReady().then(() => {
+  const tell = (thermal) => {
+    const state = powerState();
+    if (thermal) state.thermal = thermal === 'unknown' ? null : thermal;
+    for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('orch:power', state);
+  };
+  powerMonitor.on('on-battery', () => tell());
+  powerMonitor.on('on-ac', () => tell());
+  powerMonitor.on('thermal-state-change', (e) => tell(e && typeof e === 'object' ? e.state : e));
+});
+
 ipcMain.handle('orch:prefs-get', () => {
   try {
     return JSON.parse(fs.readFileSync(prefsFile(), 'utf8'));

@@ -13,13 +13,20 @@ export interface Pace {
   cost: number;
   /** The most it may be drawn at now (`drawCap`): 0 while nobody can see it, null when as fast as the display goes. */
   cap: number | null;
+  /** Why it is drawn at the saving pace, or null when it is not (`paceView.saving`). */
+  saving: PowerSaving;
 }
 
+/** Why the office is drawn at the saving pace: the computer runs on its battery, it runs warm, or its person chose it. */
+export type PowerSaving = 'battery' | 'warm' | 'chosen' | null;
+
 /**
- * Whether the window can be seen at all, as the app tells it. Electron's window keeps running in the background (the
+ * Whether the window can be seen at all, as the app tells it (`shown`); whether a window of the app's own covers most
+ * of the office (`covered`, `App.tsx`); why it is drawn at the saving pace (`saving`).
+ * Electron's window keeps running in the background (the
  * terminals need it), and then the page is never told it was minimized or hidden — the app is (`main.cjs`).
  */
-export const paceView = { shown: true };
+export const paceView: { shown: boolean; covered: boolean; saving: PowerSaving } = { shown: true, covered: false, saving: null };
 
 /** Without a touch of the mouse or the keyboard for this long, a window in front is drawn as one in the background. */
 export const IDLE_AFTER = 90_000;
@@ -33,18 +40,49 @@ export const HOVER_FOR = 5_000;
 export const WORKING_FPS = 75;
 /** Frames a second for an office nobody is working in: still smooth to watch, a third to a quarter of the work. */
 export const RESTING_FPS = 30;
+/**
+ * On battery, on a computer that runs warm, or when its person chose it (`paceView.saving`): half of each. A fanless
+ * laptop (a MacBook Air) drawing the office 60 times a second all day got hot; what the office costs follows how
+ * often it is drawn almost one for one (measured 2026-11-20: the app's own processes ~66 % of a core at 72 a second,
+ * ~44 % at 36, ~13 % not drawn at all).
+ */
+export const SAVING_FPS = 30;
+export const SAVING_RESTING_FPS = 15;
 
 /**
  * How fast the office may be drawn now (frames a second): not at all while it
  * cannot be seen (minimized, hidden, a tab in the background); at a resting pace while another window has the focus
  * (unless the mouse moves over it) or nobody has touched it for a while; at the working pace while somebody works in it.
  */
-export function drawCap(v: { shown: boolean; focused: boolean; idleMs: number }): number {
+export function drawCap(v: { shown: boolean; focused: boolean; idleMs: number; covered?: boolean; saving?: PowerSaving }): number {
   if (!v.shown) return 0;
-  // (The mouse moving over it, or a key, counts even without the focus: somebody is looking at it.)
-  if (v.idleMs < (v.focused ? IDLE_AFTER : HOVER_FOR)) return WORKING_FPS;
-  return RESTING_FPS;
+  // (The mouse moving over it, or a key, counts even without the focus: somebody is looking at it. Not while a window
+  // of the app covers it — Tasks, a terminal: then they work in that window, and the office is a dim edge around it.)
+  const working = !v.covered && v.idleMs < (v.focused ? IDLE_AFTER : HOVER_FOR);
+  if (v.saving) return working ? SAVING_FPS : SAVING_RESTING_FPS;
+  return working ? WORKING_FPS : RESTING_FPS;
 }
+
+/** Thermal states of the computer (as macOS names them) at which it runs warm enough to save. */
+const WARM = new Set(['fair', 'serious', 'critical']);
+/** After the computer has cooled down, it is still drawn at the saving pace for this long: no going back and forth. */
+export const COOL_FOR = 120_000;
+
+/**
+ * Whether, and why, the office is drawn at the saving pace now. `power` is what the computer says (on battery, its
+ * thermal state); `warmAt` when it was last warm (ms, or -Infinity). 'auto' saves on battery and while warm; 'save'
+ * always; 'full' never.
+ */
+export function powerSaving(pref: 'auto' | 'save' | 'full', power: { battery: boolean; thermal: string | null }, warmAt: number, now: number): PowerSaving {
+  if (pref === 'save') return 'chosen';
+  if (pref === 'full') return null;
+  if ((power.thermal && WARM.has(power.thermal)) || now - warmAt < COOL_FOR) return 'warm';
+  if (power.battery) return 'battery';
+  return null;
+}
+
+/** Whether a thermal state counts as warm (for `powerSaving`'s `warmAt`). */
+export const isWarm = (thermal: string | null): boolean => !!thermal && WARM.has(thermal);
 
 /**
  * Draws the office at an even rhythm.
@@ -78,7 +116,7 @@ export function usePacedLoop(): void {
     let drawn = 0;
     let spent = 0;
     let fpsFrom = 0;
-    const pace: Pace = ((window as unknown as { __orchPace?: Pace }).__orchPace = { display, every, fps: 0, cost: 0, cap: null });
+    const pace: Pace = ((window as unknown as { __orchPace?: Pace }).__orchPace = { display, every, fps: 0, cost: 0, cap: null, saving: null });
     // Is anybody looking, and working in it?
     let focused = document.hasFocus();
     let touched = performance.now();
@@ -115,8 +153,9 @@ export function usePacedLoop(): void {
       }
       tick++;
       if (tick % every !== 0) return;
-      const cap = drawCap({ shown: paceView.shown && !document.hidden, focused, idleMs: t - touched });
+      const cap = drawCap({ shown: paceView.shown && !document.hidden, focused, idleMs: t - touched, covered: paceView.covered, saving: paceView.saving });
       pace.cap = cap === Infinity ? null : cap;
+      pace.saving = paceView.saving;
       if (cap < Infinity) {
         // (A fifth of slack, so that 30 on a 60 Hz display is every second refresh and 75 on 144 Hz every second one —
         // not every third: a refresh comes a little early or late.)
