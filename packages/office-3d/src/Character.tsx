@@ -43,6 +43,7 @@ import {
   whipArm,
   carryBox,
   packArms,
+  breakArms,
   wrapPi,
   type Loco,
   type Motion,
@@ -93,6 +94,9 @@ interface CharacterProps {
   carrying?: boolean;
   /** Packs the desk into a box, standing at it (`packArms`); eased in and out. */
   packing?: boolean;
+  /** Doing something in the break room, standing (`breakArms`); `speaking` while talking. Eased in and out. */
+  breakAct?: 'coffee' | 'sink' | 'fridge' | 'chat' | null;
+  speaking?: boolean;
   /** Overrides for details the appearance does not cover. */
   detail?: { tie?: string; shoes?: string };
 }
@@ -158,7 +162,11 @@ interface Anim {
   air: number;
 }
 
-export function Character({ appearance, pose, offline = false, look, level = 1, phase = 0, frozen, motion, jump, cue, whip = false, detail, carrying = false, packing = false }: CharacterProps) {
+export function Character({ appearance, pose, offline = false, look, level = 1, phase = 0, frozen, motion, jump, cue, whip = false, detail, carrying = false, packing = false, breakAct = null, speaking = false }: CharacterProps) {
+  const breakRef = useRef({ act: breakAct, speaking, last: breakAct, w: breakAct ? 1 : 0 });
+  breakRef.current.act = breakAct;
+  breakRef.current.speaking = speaking;
+  if (breakAct) breakRef.current.last = breakAct;
   const carryingRef = useRef(carrying);
   carryingRef.current = carrying;
   const carryW = useRef(carrying ? 1 : 0);
@@ -387,6 +395,9 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
     if (carryW.current > 0.01) carryBox(TARGET, carryW.current);
     packW.current += ((packingRef.current ? 1 : 0) - packW.current) * Math.min(1, dt * 3);
     if (packW.current > 0.01) packArms(TARGET, t, packW.current);
+    const B = breakRef.current;
+    B.w += ((B.act ? 1 : 0) - B.w) * Math.min(1, dt * 3);
+    if (B.w > 0.01 && B.last) breakArms(TARGET, t, phase, B.last, B.speaking, B.w);
     if (name === 'ouch') ouch(TARGET, A.since);
     else if (name === 'whip') whipArm(TARGET, A.since);
     else if (gesture) emote(TARGET, name, A.since);

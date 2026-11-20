@@ -59,6 +59,17 @@ In the office (not in the creator or the other small stages) the rigid parts of 
 - **A part out of view** is left out of its draw, with 2 m to spare for one that casts a shadow (its shadow may be in view).
 - The world matrices are brought up to date once a frame by the batcher (the scene's `matrixWorldAutoUpdate` is off while it runs), before the copies are made.
 
+## In the break room
+
+The owner, 2026-11-20: "when the agents are in the break room, let something actually happen, not only standing still — make coffee, look in the fridge, watch TV, talk among themselves". Somebody who has had nothing to do for a while goes to the break room (as before: idle a minute or two, about three in five people), and there every place is for something (`break-room.ts`, `world.breakSpots`):
+- **Coffee** — at the machine: the right hand to its button, then both hands on the counter while it pours (a thin stream into the cup, steam going up), then a sip with the cup at the mouth (`breakArms`, `COFFEE_CYCLE`).
+- **The sink** — washing a cup with both hands while the tap runs.
+- **The fridge** — its upper door swings open on a lit inside with glass shelves and things on them; one hand on the door, the other reaching in, looking along the shelves. The door closes when they go (`BreakThings.tsx`; the door is drawn apart from the rest of the fridge, `fridge()` in `models/rooms.ts`).
+- **TV** — on the sofa, leaning back with the arms folded, watching.
+- **Talking** — two of them, standing face to face: they take turns, the one who speaks with a hand going with the words and a word now and then over the head (😄, ☕, haha, right?…), the other listening, a nod now and then. Only ever two together: nobody talks to the air.
+
+Every half a minute or so each of them goes on to something else (`breakPlan`: a turn of `BREAK_TURN_MS`, different for each person; a place each, never shared; two talk in about two turns of three when there are two or more). The things move only while somebody is at them (`markInUse` / `inUse`). Seen in a development office on 2026-11-20 with nine idle people: one at the fridge with its door open, two talking, one making coffee and then washing his cup at the sink, one on the sofa. Tests: `packages/office-3d/test/break-room.test.ts`.
+
 ## Moving to another machine
 
 While an employee is moved to another machine (`MOVE.md`) they stand beside their desk and pack it: a cardboard moving box open on the desk (`MoveBox.tsx`), the things of the desk going into it one by one, bent over the desk, turning to the things and back to the box (`packArms` in `character/motion.ts`), **📦 n %** over their head. At 100 % the flaps close and the tape goes on, and they carry it in both hands (`Character`'s `carrying`: `carryBox` in `character/motion.ts` puts both upper arms forward, the forearms up under it, over whatever the legs do) to their new desk, and it is put away when they sit. Seen in a development office on 2026-11-20 (packing, carrying across the floor, into a member's room).

@@ -15,6 +15,7 @@ import { DESK_TOP, desk as deskModel, divider as dividerModel, lampDome, taskCha
 import { arcade, awardStand, bookshelf, coffeeTable, deskPlant, floorLamp, mug, neonBoard, notebook, plant, rug, sofa, trophyCase } from './models/decor.ts';
 import { carpetMaterial, ceilingTexture, floorMaterial } from './models/surfaces.ts';
 import { executiveDesk, fridge, kitchen, mediaConsole, meetingTable, opsConsole, rack as rackModel, receptionDesk } from './models/rooms.ts';
+import { BreakThings } from './BreakThings.tsx';
 
 /** What the scene reports about itself for the UI tests (like `window.__orchPerf`): which room interiors are mounted, what the whiteboard says. */
 export function sceneProbe(): Record<string, any> {
@@ -1981,6 +1982,8 @@ export function Rooms({
         <group>
           <Model model={kitchen(4.6)} position={[br.x + br.w - 0.55, 0, br.z + 3.2]} rotation={[0, -Math.PI / 2, 0]} />
           {near.break && <Model model={fridge()} position={[br.x + br.w - 0.5, 0, br.z + 5.95]} rotation={[0, -Math.PI / 2, 0]} />}
+          {/* What moves in it while somebody uses it: coffee, the tap, the fridge's door (BreakThings.tsx). */}
+          {near.break && world.breakProps && <BreakThings props={world.breakProps} />}
           <Model model={sofa(2.6, '#c96f4a', { seat: 0.5 })} position={[br.x + br.w / 2 - 0.8, 0, br.z + br.d - 1.0]} />
           <Model model={coffeeTable(1.3, 0.7)} position={[br.x + br.w / 2 - 0.8, 0, br.z + br.d - 2.5]} />
         </group>

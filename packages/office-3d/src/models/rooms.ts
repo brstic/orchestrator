@@ -175,18 +175,14 @@ export const kitchen = keyed((L: number): Model => {
   return b.done();
 });
 
-/** A tall fridge-freezer in brushed steel, its doors toward +Z. */
+/** A tall fridge-freezer in brushed steel, its doors toward +Z. Its upper door is drawn on its own, to open (`BreakThings.tsx`). */
 export const fridge = once((): Model => {
   const b = new Build();
   const steel = M.metal('#c9ced6', 0.42);
   b.add(M.steel('#3a3f48', 0.5), at(softBox(0.76, 1.86, 0.7, 0.015, { round: 1 }), 0, 0.95, -0.03));
-  b.add(steel, at(softBox(0.78, 1.16, 0.05, 0.016, { round: 2 }), 0, 1.3, 0.345));
   b.add(steel, at(softBox(0.78, 0.66, 0.05, 0.016, { round: 2 }), 0, 0.37, 0.345));
   const dark = M.steel('#2a2f38', 0.35);
-  b.add(dark, at(softBox(0.022, 0.62, 0.03, 0.008, { round: 1 }), -0.31, 1.18, 0.39), { cast: false });
   b.add(dark, at(softBox(0.022, 0.3, 0.03, 0.008, { round: 1 }), -0.31, 0.5, 0.39), { cast: false });
-  b.add(M.gloss('#0b0d11'), at(softBox(0.16, 0.1, 0.004, 0.002, { round: 1 }), 0.12, 1.5, 0.372), { cast: false });
-  b.add(M.glow('#6ea8ff', 1.1), at(softBox(0.06, 0.02, 0.002, 0.001, { round: 1 }), 0.12, 1.5, 0.375), { cast: false });
   return b.done();
 });
 

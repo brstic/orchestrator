@@ -1,6 +1,7 @@
 import type { Desk, OfficeLayout, RoomDef } from '@orchestrator/contracts';
 import { DESK_SIZE, decorationBox, decorationKind, deskSeat } from '@orchestrator/contracts';
 import type { EffectiveLayout, MemberRoom } from './member-rooms.ts';
+import type { BreakPlace } from './break-room.ts';
 
 /**
  * Everything spatial that is derived from the layout data: walls, obstacles,
@@ -71,7 +72,10 @@ export interface World {
   /** The desks that stand in member rooms. */
   memberDesks: Desk[];
   meeting: { x: number; z: number; w: number; d: number; seats: Spot[] } | null;
-  breakSpots: Spot[];
+  /** The break room's places, each for something (`break-room.ts`). */
+  breakSpots: BreakPlace[];
+  /** Where the break room's things are, for what they do while somebody uses them (`BreakProps` in `BreakThings.tsx`). */
+  breakProps: { coffee: { x: number; y: number; z: number }; tap: { x: number; y: number; z: number }; fridge: { x: number; z: number } } | null;
   ceoDesk: { x: number; z: number; rot: number } | null;
   /** The office hi-fi (against the break room's west wall, facing into the room). */
   hifi: { x: number; z: number; rot: number } | null;
@@ -514,7 +518,8 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
   let hifi: World['hifi'] = null;
   let tv: World['tv'] = null;
   // Break room: sofa, counter, a few places to stand.
-  const breakSpots: Spot[] = [];
+  const breakSpots: BreakPlace[] = [];
+  let breakProps: World['breakProps'] = null;
   const br = room('break');
   if (br) {
     const cx = br.x + br.w / 2;
@@ -522,8 +527,17 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
     obstacles.push(rect(br.x + br.w - 0.5, br.z + 5.95, 0.8, 0.8)); // the fridge at the end of it
     obstacles.push(rect(cx - 0.8, br.z + br.d - 1.0, 2.6, 0.95)); // sofa
     obstacles.push(rect(cx - 0.8, br.z + br.d - 2.5, 1.3, 0.7)); // coffee table
-    breakSpots.push({ x: cx - 1.5, z: br.z + br.d - 1.05, rot: Math.PI, sit: true }, { x: cx - 0.1, z: br.z + br.d - 1.05, rot: Math.PI, sit: true });
-    breakSpots.push({ x: br.x + br.w - 1.5, z: br.z + 2.2, rot: Math.PI / 2, sit: false }, { x: br.x + br.w - 1.5, z: br.z + 4.2, rot: Math.PI / 2, sit: false }, { x: cx - 2.6, z: br.z + 3.4, rot: 0.6, sit: false }, { x: cx - 1.2, z: br.z + 3.0, rot: -0.7, sit: false });
+    // Each place is for something (break-room.ts): the sofa for the TV, the counter for coffee and the sink, the
+    // fridge, and two places to stand and talk, facing each other. (The kitchen run is 4.6 m along the east wall,
+    // centred 3.2 m in: its coffee machine 1.0 m before the centre, its sink 1.3 m after; the fridge at its end.)
+    const counter = br.x + br.w - 0.55;
+    const kz = br.z + 3.2;
+    breakSpots.push({ x: cx - 1.5, z: br.z + br.d - 1.05, rot: Math.PI, sit: true, act: 'tv' }, { x: cx - 0.1, z: br.z + br.d - 1.05, rot: Math.PI, sit: true, act: 'tv' });
+    breakSpots.push({ x: counter - 0.9, z: kz - 1.0, rot: Math.PI / 2, sit: false, act: 'coffee' }, { x: counter - 0.9, z: kz + 1.3, rot: Math.PI / 2, sit: false, act: 'sink' }, { x: br.x + br.w - 1.62, z: br.z + 5.78, rot: Math.PI / 2, sit: false, act: 'fridge' });
+    const ta = { x: cx - 2.55, z: br.z + 3.45 };
+    const tb = { x: cx - 1.45, z: br.z + 3.05 };
+    breakSpots.push({ ...ta, rot: Math.atan2(tb.x - ta.x, tb.z - ta.z), sit: false, act: 'chat' }, { ...tb, rot: Math.atan2(ta.x - tb.x, ta.z - tb.z), sit: false, act: 'chat' });
+    breakProps = { coffee: { x: counter - 0.15, y: 0.94, z: kz - 1.0 }, tap: { x: counter + 0.08, y: 0.94 + 0.24, z: kz + 1.3 }, fridge: { x: br.x + br.w - 0.5, z: br.z + 5.95 } };
     onSofa('break-sofa', cx - 0.8, br.z + br.d - 1.0, 0, 2.6);
     interactables.push({ kind: 'break', id: 'break', label: 'BREAK ROOM — WHO IS IDLE', x: cx - 0.8, z: br.z + 3.6, radius: 2.4 });
     // The hi-fi: a sideboard with the stereo and two floor speakers against the west wall.
@@ -669,7 +683,7 @@ function buildCore(layout: OfficeLayout, unlocked: Set<string>): World {
   const spawn = rr ? { x: rr.x + rr.w / 2, z: rr.z + rr.d - 1.6, rot: Math.PI } : { x: 0, z: bounds.maxZ - 2, rot: Math.PI };
   const solids = obstacles;
   const all = [...wallBoxes, ...solids];
-  const world = { layout, rooms, walls, obstacles: all, solids, bounds, memberRooms: NO_ROOMS, memberDesks: NO_DESKS, meeting, breakSpots, ceoDesk, hifi, tv, reception, board, boardSpots, whiteboard, opsWall, racks, vault, team, interactables, seats: places, spawn, nav: new NavGrid(bounds, all), room } as unknown as World;
+  const world = { layout, rooms, walls, obstacles: all, solids, bounds, memberRooms: NO_ROOMS, memberDesks: NO_DESKS, meeting, breakSpots, breakProps, ceoDesk, hifi, tv, reception, board, boardSpots, whiteboard, opsWall, racks, vault, team, interactables, seats: places, spawn, nav: new NavGrid(bounds, all), room } as unknown as World;
   world.base = world;
   return world;
 }

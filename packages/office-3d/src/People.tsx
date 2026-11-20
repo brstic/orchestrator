@@ -8,6 +8,8 @@ import { Lineup } from './character/Lineup.tsx';
 import type { PersonView, WalkRequest } from './types.ts';
 import { deskSeat, type World } from './world.ts';
 import { MoveBox, PACKED, Thing } from './MoveBox.tsx';
+import { CHAT_WORDS, breakPlan, markInUse, type BreakAct } from './break-room.ts';
+import { coffeeAt, sipping } from './character/motion.ts';
 
 interface Dest {
   key: string;
@@ -16,6 +18,8 @@ interface Dest {
   rot: number;
   sit: boolean;
   place: 'desk' | 'meeting' | 'break' | 'visit' | 'lobby' | 'board' | 'pack';
+  /** In the break room: what they do at this place (`break-room.ts`). */
+  act?: BreakAct;
   /** Sent back with the whip: at a run. */
   run?: boolean;
 }
@@ -192,6 +196,10 @@ const Person = memo(function Person({
   const [closing, setClosing] = useState(false);
   const closingUntil = useRef(0);
   const [closeTick, setCloseTick] = useState(0);
+  // Talking in the break room: the two take turns (by the clock, so both see the same), a word now and then.
+  const [speaking, setSpeaking] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const mug = useRef<THREE.Group>(null);
   // The share shown counts up to what has been done rather than jumping there (a small folder goes in a blink).
   const [shownPct, setShownPct] = useState(0);
   const targetPct = v.moving && v.moving.phase !== 'failed' ? v.moving.percent : 0;
@@ -352,13 +360,30 @@ const Person = memo(function Person({
       const isFar = camera.position.distanceToSquared(g.position) > limit * limit;
       if (isFar !== far) setFar(isFar);
     }
+    // In the break room: what they use is told so (the machine pours, the door opens), and talk goes by turns.
+    if (dest.place === 'break' && dest.act && r.arrived) {
+      markInUse(dest.act);
+      if (dest.act === 'chat') {
+        const turn = Math.floor(_s.clock.elapsedTime / 3.6);
+        const mine = Number(dest.key.split(':')[1] ?? 0) % 2 === turn % 2;
+        if (mine !== speaking) setSpeaking(mine);
+        const word = mine && turn % 3 !== 2 ? CHAT_WORDS[(hash(v.id) + turn) % CHAT_WORDS.length]! : null;
+        if (word !== said) setSaid(word);
+      }
+    } else {
+      if (speaking) setSpeaking(false);
+      if (said) setSaid(null);
+    }
+    if (mug.current) mug.current.visible = dest.place === 'break' && dest.act === 'coffee' && r.arrived && sipping(coffeeAt(_s.clock.elapsedTime, phase));
     // Before the character animates (see `motion` in Character.tsx): its feet are then placed for this frame's position.
   }, -1);
 
   // No session and no desk to sleep at: dozing on their feet.
   // (Packing their desk: busy with the hands at it, whatever the session is doing — it is stopped meanwhile.)
   const atBox = packing && !carrying && !moving && dest.place === 'pack';
-  const usual: PoseName = moving ? 'walk' : dest.sit ? seatedPose(v, dest.place) : v.live || carrying || packing ? 'stand' : 'doze';
+  // At something in the break room (`break-room.ts`): standing at the counter, the fridge, or talking; or on the sofa.
+  const act = dest.place === 'break' && !moving ? dest.act : undefined;
+  const usual: PoseName = moving ? 'walk' : dest.sit ? (act === 'tv' ? 'watching' : seatedPose(v, dest.place)) : v.live || carrying || packing ? 'stand' : 'doze';
   const pose: PoseName = ouch && !moving ? 'ouch' : usual;
   const cls = STATE_CLASS[v.activity] ?? 'unknown';
   const labelY = moving || !dest.sit ? 1.95 : 1.62;
@@ -378,13 +403,29 @@ const Person = memo(function Person({
         onPointerOver={() => (document.body.style.cursor = 'pointer')}
         onPointerOut={() => (document.body.style.cursor = '')}
       >
-        <Character appearance={v.appearance} pose={pose} cue={whippedAt} offline={!v.live && !packing && !carrying} look={look} level={v.level} phase={phase} frozen={() => far} carrying={carrying && !closing && (moving || !dest.sit)} packing={atBox} />
+        <Character appearance={v.appearance} pose={pose} cue={whippedAt} offline={!v.live && !packing && !carrying} look={look} level={v.level} phase={phase} frozen={() => far} carrying={carrying && !closing && (moving || !dest.sit)} packing={atBox} breakAct={act && act !== 'tv' ? act : null} speaking={speaking} />
       </group>
       {(atBox || (carrying && (closing || moving || !dest.sit))) && (
         // One box: on the desk in front of them, open and filling, then closed there; then in both hands in front of the chest.
         <group position={atBox || closing ? PACK_BOX : [0, 0.86, 0.36]}>
           <MoveBox fill={carrying ? 1 : shownPct / 100} closed={carrying} name={v.name} />
         </group>
+      )}
+      {dest.place === 'break' && dest.act === 'coffee' && (
+        // The cup, in the right hand while they drink from it.
+        <group ref={mug} position={[-0.1, 1.38, 0.2]} visible={false}>
+          <mesh>
+            <cylinderGeometry args={[0.038, 0.034, 0.09, 14]} />
+            <meshStandardMaterial color="#f2f0ea" roughness={0.4} />
+          </mesh>
+        </group>
+      )}
+      {said && !hideLabels && (
+        <Html position={[0, labelY, 0]} center zIndexRange={[38, 0]} style={{ pointerEvents: 'none' }}>
+          <div className="chat-wrap">
+            <div className="chat-bubble">{said}</div>
+          </div>
+        </Html>
       )}
       {atBox &&
         // What is still to go in, beside the box to their right.
@@ -554,6 +595,18 @@ export function People({
     const breakTaken = new Set<number>();
     let boardTaken = 0;
     const t = Date.now();
+    // Who is on a break now (idle for a while, and nothing else to be at), and where in the break room each of them is
+    // (`breakPlan`: a place for something each, two of them talking together, on to something else every half minute).
+    const onBreak = people
+      .filter((v) => {
+        if (!v.live || v.activity !== 'idle' || !v.idleSince || !world.breakSpots.length || (v.moving && v.moving.phase !== 'failed')) return false;
+        if (walks.some((w) => w.fromId === v.id) || v.meetingSeat != null || v.atBoard) return false;
+        const h = hash(v.id);
+        return now - v.idleSince > 70_000 + (h % 60) * 1000 && h % 5 < 3;
+      })
+      .map((v) => v.id)
+      .sort();
+    const plan = breakPlan(onBreak, world.breakSpots, now);
     for (const v of people) {
       const desk = v.deskId ? desks.get(v.deskId) : undefined;
       const home: Dest = desk
@@ -586,18 +639,12 @@ export function People({
         // Spots are handed out centre first, so several planners stand side by side.
         const i = boardTaken++;
         dest = { ...world.boardSpots[i]!, place: 'board', key: `board:${i}` };
-      } else if (v.live && v.activity === 'idle' && v.idleSince && world.breakSpots.length) {
-        // Genuinely idle for a while → a visit to the break room (staggered so the floor never empties at once).
-        const h = hash(v.id);
-        const wait = 70_000 + (h % 60) * 1000;
-        if (now - v.idleSince > wait && (h % 5) < 3) {
-          let i = h % world.breakSpots.length;
-          for (let n = 0; n < world.breakSpots.length && breakTaken.has(i); n++) i = (i + 1) % world.breakSpots.length;
-          if (!breakTaken.has(i)) {
-            breakTaken.add(i);
-            dest = { ...world.breakSpots[i]!, place: 'break', key: `break:${i}` };
-          }
-        }
+      } else if ((plan.get(v.id) ?? -1) >= 0) {
+        // Genuinely idle for a while → the break room, doing something there (staggered so the floor never empties at once).
+        const i = plan.get(v.id)!;
+        const spot = world.breakSpots[i]!;
+        breakTaken.add(i);
+        dest = { x: spot.x, z: spot.z, rot: spot.rot, sit: spot.sit, act: spot.act, place: 'break', key: `break:${i}` };
       }
       // Away from the chair for something that can wait — a break, the board, a word with a colleague.
       const away = !!desk && dest !== home && dest.place !== 'meeting';

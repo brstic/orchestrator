@@ -3844,3 +3844,36 @@ button.ops-row:hover {
   color: #1f6b33;
   border-color: #8fd19e;
 }
+
+/* Talking in the break room: a word over whoever speaks (break-room.ts), clear of the name tag. */
+.chat-wrap {
+  transform: translateY(-70px);
+}
+.chat-bubble {
+  position: relative;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #1c2230;
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  animation: chat-pop 0.25s ease-out;
+}
+.chat-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  margin-left: -5px;
+  border: 5px solid transparent;
+  border-top-color: #ffffff;
+  border-bottom: 0;
+}
+@keyframes chat-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}

@@ -1588,6 +1588,116 @@ export function packArms(o: Pose, t: number, w: number): void {
   to('wrR', -0.3);
 }
 
+/** How long one round of making a coffee takes (s): pressing the button, waiting for it to pour, a sip. */
+export const COFFEE_CYCLE = 9;
+/** Where in the round of making a coffee somebody is (0…1), the same in the figure and the cup in their hand. */
+export const coffeeAt = (t: number, ph: number): number => ((t + ph * 3) % COFFEE_CYCLE) / COFFEE_CYCLE;
+/** The part of the round in which the cup is up at the mouth. */
+export const sipping = (c: number): boolean => c > 0.7 && c < 0.94;
+
+/**
+ * Doing something in the break room (`break-room.ts`), over the standing body: at the coffee machine (press the
+ * button, wait with the hands on the counter while it pours, a sip); at the sink (both hands at it, washing a cup);
+ * at the fridge (one hand holding the door, the other reaching in, looking along the shelves); talking (one hand
+ * going with the words, the head too) or listening (a nod now and then). `w` 0…1 eases it in and out.
+ */
+export function breakArms(o: Pose, t: number, ph: number, act: 'coffee' | 'sink' | 'fridge' | 'chat', speaking: boolean, w: number): void {
+  if (w <= 0) return;
+  const s = Math.sin;
+  const to = (k: keyof Pose, v: number) => (o[k] += (v - o[k]) * w);
+  switch (act) {
+    case 'coffee': {
+      const c = coffeeAt(t, ph);
+      if (c < 0.22) {
+        // Reaching to the machine: the right hand to its button.
+        const r = Math.sin((c / 0.22) * Math.PI);
+        to('sRx', -0.55 - 0.5 * r);
+        to('sRz', 0.08);
+        to('tR', 0.3);
+        to('eR', -0.5 - 0.3 * (1 - r));
+        to('sLx', -0.05);
+        to('eL', -0.25);
+        o.headPitch += 0.18 * w;
+      } else if (!sipping(c)) {
+        // Waiting while it pours: both hands on the edge of the counter, looking at the cup.
+        to('sLx', -0.78);
+        to('sLz', -0.08);
+        to('eL', -0.55);
+        to('sRx', -0.78);
+        to('sRz', 0.08);
+        to('eR', -0.55);
+        o.lean += 0.12 * w;
+        o.headPitch += (0.28 + s(t * 0.7 + ph) * 0.04) * w;
+      } else {
+        // A sip: the cup up to the mouth with the right hand, the head back a little.
+        to('sRx', -1.05);
+        to('sRz', 0.22);
+        to('tR', 0.75);
+        to('eR', -2.15);
+        to('sLx', -0.1);
+        to('eL', -0.3);
+        o.headPitch += -0.12 * w;
+      }
+      break;
+    }
+    case 'sink': {
+      // Washing a cup: both hands down in the sink, going round.
+      const r = s(t * 4.2 + ph);
+      to('sLx', -0.78 + 0.08 * r);
+      to('sLz', -0.06);
+      to('tL', 0.4);
+      to('eL', -0.95 - 0.12 * r);
+      to('sRx', -0.78 - 0.08 * r);
+      to('sRz', 0.06);
+      to('tR', 0.4);
+      to('eR', -0.95 + 0.12 * r);
+      o.lean += 0.26 * w;
+      o.headPitch += 0.38 * w;
+      break;
+    }
+    case 'fridge': {
+      // The left hand on the open door, the right reaching in now and then; looking along the shelves.
+      const reach = Math.max(0, s(t * 0.9 + ph));
+      to('sLx', -0.95);
+      to('sLz', -0.42);
+      to('tL', 0.2);
+      to('eL', -0.35);
+      to('sRx', -0.5 - 0.55 * reach);
+      to('sRz', 0.12);
+      to('eR', -0.75 + 0.35 * reach);
+      o.lean += (0.14 + 0.1 * reach) * w;
+      o.headPitch += (0.1 + 0.12 * reach) * w;
+      o.headYaw += s(t * 0.55 + ph) * 0.3 * w;
+      break;
+    }
+    case 'chat': {
+      if (speaking) {
+        // The right hand goes with the words, the left a little; the head moves as one talks.
+        to('sRx', -0.5 + s(t * 2.3 + ph) * 0.22);
+        to('sRz', 0.18);
+        to('tR', 0.35);
+        to('eR', -1.15 + s(t * 3.1 + ph) * 0.3);
+        to('sLx', -0.25 + s(t * 1.7 + ph) * 0.1);
+        to('eL', -0.6);
+        o.headYaw += s(t * 0.9 + ph) * 0.18 * w;
+        o.headPitch += s(t * 2.1 + ph) * 0.05 * w;
+      } else {
+        // Listening: the arms loose, a hand on the other wrist; a nod now and then.
+        to('sLx', -0.3);
+        to('sLz', 0.18);
+        to('tL', 0.9);
+        to('eL', -0.9);
+        to('sRx', -0.3);
+        to('sRz', -0.18);
+        to('tR', 0.9);
+        to('eR', -0.9);
+        o.headPitch += Math.max(0, s(t * 1.6 + ph)) ** 6 * 0.18 * w;
+      }
+      break;
+    }
+  }
+}
+
 /** Whip timeline, seconds from the start of the pose: wound up, arm snapped forward, and (a moment later, as the wave reaches the tip) the crack. */
 export const WHIP_WIND = 0.15;
 export const WHIP_SNAP = 0.25;
