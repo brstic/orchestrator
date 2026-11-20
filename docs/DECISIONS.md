@@ -2,6 +2,10 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-20 — A task can be a person's
+
+The owner: a task must be assignable to an owner or a colleague, a real person, who is told in their Inbox. A separate field (`Task.personId`) rather than a person's id in `assigneeId`: everything that reads `assigneeId` — the scheduler, delivery, sessions, reviews, XP — means an employee, and a person in it would be handed to the machinery. Exclusive with an employee. The office does nothing with a person's task but tell them and show it; they move it on themselves (IN_PROGRESS by hand is allowed for it alone). Only people who are here and may work (owners, colleagues — `Comms.people`), never a visitor. Rejected: a task for several people at once (one person, as one employee leads a task).
+
 ## 2026-11-20 — Sleep on members' computers too; never a second session while a machine reconnects
 
 The owner, after an employee was found with six sessions on their laptop: "find out why there were six at all", and "sessions should switch off by themselves after 30 minutes when nothing happens".

@@ -91,6 +91,8 @@ export interface TaskInput {
   parentId?: string | null;
   /** Colleagues put on the task with its assignee. */
   helperIds?: string[];
+  /** A person of the office it is for, instead of an employee (`Task.personId`). */
+  personId?: string | null;
 }
 
 /** A key as it is compared: trimmed, case-insensitive, bounded. */
@@ -362,10 +364,12 @@ export class TaskManager {
   }
 
   createTask(input: TaskInput, by = 'owner'): Task {
-    shaped(input as unknown as Record<string, unknown>, { title: 'text', description: 'string', acceptance: 'string', roleHint: 'string?', dependsOn: 'list', verifyCommand: 'string?' });
+    shaped(input as unknown as Record<string, unknown>, { title: 'text', description: 'string', acceptance: 'string', roleHint: 'string?', dependsOn: 'list', verifyCommand: 'string?', personId: 'string?' });
     const project = this.core.projects.require(input.projectId);
     const title = input.title?.trim();
     if (!title) throw new EngineError('a task needs a title');
+    if (input.assigneeId && input.personId) throw new EngineError('a task is for an employee or for a person, not both');
+    const person = input.personId ? this.personOf(input.personId) : null;
     if (input.assigneeId) this.mayTake(this.core.employees.require(input.assigneeId), { projectId: project.id, key: 'this task', kind: input.kind ?? 'feature' });
     for (const dep of input.dependsOn ?? []) if (!this.core.tasks.get(dep)) throw new EngineError(`unknown dependency ${dep}`);
     const kind = input.kind && TASK_KINDS.includes(input.kind) ? input.kind : 'feature';
@@ -413,8 +417,9 @@ export class TaskManager {
       delivery: { status: 'none', via: null, ts: null, detail: null },
       ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
       ...(parent ? { parentId: parent.id } : {}),
+      ...(person ? { personId: person.id, personName: person.name } : {}),
     };
-    if (input.helperIds?.length) this.eng.talk.setHelpers(task, input.helperIds, by);
+    if (input.helperIds?.length && !person) this.eng.talk.setHelpers(task, input.helperIds, by);
     if (task.released && this.depsDone(task)) task.status = 'READY';
     this.history(task, 'Created', by);
     this.core.put('task', task);
@@ -428,6 +433,11 @@ export class TaskManager {
       data: { key: task.key, kind, by, released: task.released },
     });
     if (task.assigneeId) this.emitAssigned(task, by);
+    if (person) {
+      this.history(task, `Assigned to ${person.name} (a person)`, by);
+      this.tellPerson(task, person, by);
+      this.core.put('task', task);
+    }
     this.schedule();
     return task;
   }
@@ -474,10 +484,32 @@ export class TaskManager {
   updateTask(id: string, patch: Partial<TaskInput> & { status?: TaskStatus }, actor = 'owner'): Task {
     const task = this.core.tasks.require(id);
     // Before anything is changed: a change that is refused changes nothing.
-    shaped(patch as Record<string, unknown>, { title: 'text', description: 'string', acceptance: 'string', kind: 'text', priority: 'text', roleHint: 'string?', dependsOn: 'list', requiresReview: 'boolean', reviewBy: 'text', reviewerId: 'string?', verifyCommand: 'string?', released: 'boolean', assigneeId: 'string?', status: 'text', helperIds: 'list' });
+    shaped(patch as Record<string, unknown>, { title: 'text', description: 'string', acceptance: 'string', kind: 'text', priority: 'text', roleHint: 'string?', dependsOn: 'list', requiresReview: 'boolean', reviewBy: 'text', reviewerId: 'string?', verifyCommand: 'string?', released: 'boolean', assigneeId: 'string?', personId: 'string?', status: 'text', helperIds: 'list' });
     if (patch.reviewBy !== undefined && !REVIEW_BY.includes(patch.reviewBy)) throw new EngineError(`reviewBy is one of ${REVIEW_BY.join(', ')}`);
+    if (patch.personId !== undefined && (patch.personId ?? null) !== (task.personId ?? null)) {
+      if (task.status === 'IN_PROGRESS' && !task.personId) throw new EngineError(`${task.key} is in progress; block or finish it before reassigning`);
+      if (patch.personId) {
+        const person = this.personOf(patch.personId);
+        task.personId = person.id;
+        task.personName = person.name;
+        task.assigneeId = null;
+        if (task.helperIds?.length) this.eng.talk.setHelpers(task, [], actor);
+        this.history(task, `Assigned to ${person.name} (a person)`, actor);
+        this.tellPerson(task, person, actor);
+      } else {
+        this.history(task, `No longer ${task.personName ?? 'a person'}'s`, actor);
+        task.personId = null;
+        task.personName = null;
+      }
+    }
     if (patch.assigneeId !== undefined && patch.assigneeId !== task.assigneeId) {
-      if (task.status === 'IN_PROGRESS') throw new EngineError(`${task.key} is in progress; block or finish it before reassigning`);
+      if (task.status === 'IN_PROGRESS' && !task.personId) throw new EngineError(`${task.key} is in progress; block or finish it before reassigning`);
+      // An employee now, not a person.
+      if (patch.assigneeId && task.personId) {
+        task.personId = null;
+        task.personName = null;
+        if (task.status === 'IN_PROGRESS') task.status = 'READY';
+      }
       if (patch.assigneeId) this.mayTake(this.core.employees.require(patch.assigneeId), task);
       task.assigneeId = patch.assigneeId;
       this.history(task, patch.assigneeId ? `Assigned to ${this.core.employees.get(patch.assigneeId)?.name}` : 'Unassigned', actor);
@@ -502,10 +534,34 @@ export class TaskManager {
     return task;
   }
 
+  /** A person of the office a task may be for: an owner or a colleague who is still here (`Comms.people`). */
+  private personOf(id: string): { id: string; name: string; owner: boolean } {
+    const person = this.eng.comms.people().find((p) => p.id === id);
+    if (!person) throw new EngineError('that person is not in the office (an owner or a colleague who is still here)');
+    return person;
+  }
+
+  /** Told in their Inbox, and only theirs: a task is theirs now. */
+  private tellPerson(task: Task, person: { id: string; name: string }, actor: string): void {
+    const project = this.core.projects.get(task.projectId);
+    const by = actor === 'owner' ? (this.core.settings.ownerName || 'The boss') : actor.replace(/^[a-z]+:/, '');
+    this.eng.comms.notify({
+      kind: 'task_assigned',
+      severity: 'info',
+      title: `A new task for you: ${task.key} ${task.title}`,
+      body: `${by === person.name ? 'You' : by} assigned ${task.key} to you${project ? ` (${project.name})` : ''}.${task.description.trim() ? `\n\n${task.description.trim().slice(0, 600)}` : ''}`,
+      taskId: task.id,
+      projectId: task.projectId,
+      for: [person.id],
+    });
+    this.core.event({ type: 'task.assigned', source: 'owner', summary: `${task.key} was assigned to ${person.name}`, taskId: task.id, projectId: task.projectId, data: { key: task.key, person: person.id } });
+  }
+
   /** Manual board moves by the owner. DONE is never set by hand without saying so in the record. */
   private moveByOwner(task: Task, status: TaskStatus, actor: string): void {
     const from = task.status;
-    if (status === 'IN_PROGRESS') throw new EngineError('tasks start when they are delivered to an employee; move the task to READY and assign it');
+    // A person's task is moved on by the person: "I am on it" is theirs to say. An employee's starts when it is delivered.
+    if (status === 'IN_PROGRESS' && !task.personId) throw new EngineError('tasks start when they are delivered to an employee; move the task to READY and assign it');
     if (from === 'IN_PROGRESS' && (status === 'READY' || status === 'BACKLOG')) {
       this.eng.comms.cancelFor({ kind: 'task', id: task.id });
       task.delivery = { status: 'none', via: null, ts: null, detail: null };
@@ -830,6 +886,8 @@ export class TaskManager {
       }
       const ready = tasks.filter((t) => t.status === 'READY').sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || (a.createdAt < b.createdAt ? -1 : 1));
       for (const t of ready) {
+        // A person's task: theirs to do, never handed to an employee.
+        if (t.personId) continue;
         let assignee = this.core.employees.get(t.assigneeId);
         if (assignee && !this.isFree(assignee)) continue;
         if (!assignee) {

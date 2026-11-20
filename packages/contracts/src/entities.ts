@@ -776,6 +776,14 @@ export interface Task {
   priority: TaskPriority;
   status: TaskStatus;
   assigneeId: ID | null;
+  /**
+   * Assigned to a person of the office instead of an employee (an owner or a colleague; `'owner'` for the root
+   * owner): they are told in their Inbox, and they move it on themselves. The office never hands it to an employee,
+   * starts it or checks it. Null (or absent): not a person's. Exclusive with `assigneeId`.
+   */
+  personId?: string | null;
+  /** Their name when it was assigned (kept: a member who has left still shows who it was). */
+  personName?: string | null;
   /** Preferred role when unassigned (used by the scheduler). */
   roleHint: string | null;
   dependsOn: ID[];
@@ -1144,6 +1152,8 @@ export type NotificationKind =
   | 'improvement'
   /** An employee wrote to a person (`message_person`): addressed — see `Notification.for`. */
   | 'message'
+  /** A task was assigned to a person (`Task.personId`): addressed to them. */
+  | 'task_assigned'
   | 'info';
 
 /** `Notification.for`: every owner of the office (what an employee writes "to the boss"). */

@@ -7,6 +7,7 @@ import { api } from '../../lib/api.ts';
 import { useOffice } from '../../lib/store.ts';
 import { PendingFiles, uploadFile } from './task-files.tsx';
 import { REVIEW_CHOICES, STATUS_META, activeEmployees, useAction } from './task-shared.tsx';
+import { AssigneePicker, patchOf } from './assignee-picker.tsx';
 
 /** Review tasks are created by Orchestrator for a specific task under review, never by hand. */
 const CREATABLE_KINDS: TaskKind[] = ['feature', 'bug', 'test', 'research', 'planning', 'security', 'docs', 'ops', 'refactor', 'chore'];
@@ -32,7 +33,10 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
   const [acceptance, setAcceptance] = useState('');
   const [kind, setKind] = useState<TaskKind>('feature');
   const [priority, setPriority] = useState<TaskPriority>('normal');
-  const [assigneeId, setAssigneeId] = useState(preset?.id ?? '');
+  // Whom it is for: an employee ('e:<id>') or a person of the office ('p:<id>'), chosen in one searchable field.
+  const [who, setWho] = useState(preset?.id ? `e:${preset.id}` : '');
+  const { assigneeId: chosenEmployee, personId } = patchOf(who);
+  const assigneeId = chosenEmployee ?? '';
   const [helperIds, setHelperIds] = useState<string[]>([]);
   const [roleHint, setRoleHint] = useState('');
   const [dependsOn, setDependsOn] = useState<string[]>([]);
@@ -67,8 +71,9 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
         kind,
         priority,
         assigneeId: assigneeId || null,
+        ...(personId ? { personId } : {}),
         helperIds: assigneeId ? helperIds.filter((id) => id !== assigneeId) : [],
-        roleHint: assigneeId ? null : roleHint || null,
+        roleHint: assigneeId || personId ? null : roleHint || null,
         dependsOn,
         reviewBy,
         // With files, the task is held until they are in the office: the employee gets them with it, not after.
@@ -126,24 +131,20 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
               ))}
             </select>
           </Field>
-          <Field label="Assignee" hint={assigneeId ? undefined : 'Whoever fits and is free takes it.'}>
-            <select
-              value={assigneeId}
-              onChange={(e) => {
-                setAssigneeId(e.target.value);
-                setHelperIds((list) => list.filter((id) => id !== e.target.value));
-                // Choosing a person with no project chosen yet means "their project".
-                const theirs = s.employees[e.target.value]?.projectId;
+          <Field label="Assignee" hint={personId ? 'A person of the office: they are told in their Inbox, and move it on themselves.' : assigneeId ? undefined : 'Whoever fits and is free takes it.'}>
+            <AssigneePicker
+              value={who}
+              employees={everyone}
+              none="Unassigned (route by role)"
+              onChange={(v) => {
+                setWho(v);
+                const { assigneeId: emp } = patchOf(v);
+                setHelperIds((list) => list.filter((id) => id !== emp));
+                // Choosing an employee with no project chosen yet means "their project".
+                const theirs = emp ? s.employees[emp]?.projectId : undefined;
                 if (!projectId && theirs && projects.some((p) => p.id === theirs)) setProjectId(theirs);
               }}
-            >
-              <option value="">Unassigned (route by role)</option>
-              {everyone.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.name} — {e.title}
-                </option>
-              ))}
-            </select>
+            />
           </Field>
         </div>
         {assigneeId && (
@@ -204,7 +205,7 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
                 ))}
               </select>
             </Field>
-            {!assigneeId && (
+            {!assigneeId && !personId && (
               <Field label="Role hint" wide>
                 <select value={roleHint} onChange={(e) => setRoleHint(e.target.value)}>
                   <option value="">Any role that handles this kind of work</option>

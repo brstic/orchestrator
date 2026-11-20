@@ -13,6 +13,7 @@ import { EmployeeChanges } from './task-work.tsx';
 import { scoped, taskIsMine } from '../../lib/mine.ts';
 import { ScopeSwitch, useScope } from '../mine.tsx';
 import './panels-work.css';
+import { AssigneeLabel, AssigneePicker } from './assignee-picker.tsx';
 
 // (Other panels take these from here, as they always did.)
 export { Person, STATUS_META, TASK_STATUSES, TaskChip, activeEmployees, plural, stamp, useAction } from './task-shared.tsx';
@@ -96,7 +97,9 @@ function TaskCard({ task, onDrag }: { task: Task; onDrag: (id: string | null) =>
       {task.progress.percent != null && task.status !== 'BLOCKED' && <Progress value={task.progress.percent} tone={task.status === 'DONE' ? 'good' : 'info'} />}
       <div className="row spread small" style={{ marginTop: 4 }}>
         <span className="row" style={{ gap: 6, minWidth: 0 }}>
-          {assignee ? (
+          {task.personId ? (
+            <AssigneeLabel task={task} />
+          ) : assignee ? (
             <>
               <Avatar appearance={assignee.appearance} size={18} />
               <span className="truncate">{assignee.name}</span>
@@ -143,8 +146,13 @@ function TasksPanel({ onClose }: PanelProps) {
     (t) =>
       (showReviews || t.kind !== 'review' || reviewFound(t, needle)) &&
       (!onlyMine || mine.has(t.id)) &&
-      (!assignee || (assignee === 'none' ? !t.assigneeId : t.assigneeId === assignee || (t.helperIds ?? []).includes(assignee))) &&
-      (!needle || `${t.key} ${t.title} ${t.description} ${t.kind} ${t.branch ?? ''} ${s.employees[t.assigneeId ?? '']?.name ?? ''}`.toLowerCase().includes(needle)),
+      (!assignee ||
+        (assignee === 'none'
+          ? !t.assigneeId && !t.personId
+          : assignee.startsWith('p:')
+            ? t.personId === assignee.slice(2)
+            : t.assigneeId === assignee.slice(2) || (t.helperIds ?? []).includes(assignee.slice(2)))) &&
+      (!needle || `${t.key} ${t.title} ${t.description} ${t.kind} ${t.branch ?? ''} ${s.employees[t.assigneeId ?? '']?.name ?? ''} ${t.personName ?? ''}`.toLowerCase().includes(needle)),
   );
 
   return (
@@ -162,15 +170,9 @@ function TasksPanel({ onClose }: PanelProps) {
               </option>
             ))}
           </select>
-          <select aria-label="Employee" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-            <option value="">Everyone</option>
-            <option value="none">Unassigned</option>
-            {activeEmployees(s.employees).map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name}
-              </option>
-            ))}
-          </select>
+          <div style={{ width: 200 }}>
+            <AssigneePicker value={assignee} onChange={setAssignee} employees={activeEmployees(s.employees)} none="Everyone" filter label="Whose tasks" />
+          </div>
           <label className={`check small ${mine.size ? 'tk-needs-me' : ''}`} title="Only the tasks that wait for you: to review, to answer, to unblock, to release">
             <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} /> Needs me ({mine.size})
           </label>

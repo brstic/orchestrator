@@ -58,7 +58,9 @@ export function whoseTask(hosts: Hosts, me: Me | null, t: Pick<Task, 'projectId'
 export const madeByMe = (me: Me | null, t: Pick<Task, 'createdBy'>): boolean => !!me && me.role !== 'visitor' && !!t.createdBy && t.createdBy === actorOf(me);
 
 /** Is this task one of mine to look at first: on my machines, with my employee, or made by me? */
-export function taskIsMine(hosts: Hosts, me: Me | null, t: Pick<Task, 'projectId' | 'assigneeId' | 'createdBy'>, projects: Record<string, Project>, employees: Record<string, Employee>): boolean {
+export function taskIsMine(hosts: Hosts, me: Me | null, t: Pick<Task, 'projectId' | 'assigneeId' | 'createdBy'> & { personId?: string | null }, projects: Record<string, Project>, employees: Record<string, Employee>): boolean {
+  // A task for me, the person (`Task.personId`; the root owner is 'owner').
+  if (t.personId && me && t.personId === (me.id ?? 'owner')) return true;
   return whoseTask(hosts, me, t, projects, employees).kind === 'mine' || madeByMe(me, t);
 }
 

@@ -10,6 +10,7 @@ import { act, ask } from '../core.tsx';
 import { FileLinks, Pictures, TaskFiles, isPicture, uploadFile } from './task-files.tsx';
 import { REVIEW_CHOICES, STATUS_META, TASK_STATUSES, activeEmployees, needOf, openQuestionOf, stamp, useAction } from './task-shared.tsx';
 import { Delivery, GitChanges, TaskEvidence, TaskHistory } from './task-work.tsx';
+import { AssigneeLabel, AssigneePicker, patchOf, useAssignablePeople, valueOfTask } from './assignee-picker.tsx';
 
 export type TicketTab = 'talk' | 'work' | 'changes' | 'history';
 
@@ -18,7 +19,7 @@ const PRIORITIES: TaskPriority[] = ['urgent', 'high', 'normal', 'low'];
 /** A manual move. The office decides what is legal; marking DONE by hand is spelled out first. */
 async function moveTask(task: Task, status: TaskStatus): Promise<void> {
   if (task.status === status) return;
-  if (status === 'DONE' && !(await ask({ title: `Mark ${task.key} as done by hand?`, body: 'Nobody will have checked it. The record will say it was marked done by hand, not verified.', ok: 'Mark as done' }))) return;
+  if (status === 'DONE' && !task.personId && !(await ask({ title: `Mark ${task.key} as done by hand?`, body: 'Nobody will have checked it. The record will say it was marked done by hand, not verified.', ok: 'Mark as done' }))) return;
   void act(() => api('PATCH', `/tasks/${task.id}`, { status }), `${task.key} moved to ${STATUS_META[status].label}`);
 }
 
@@ -439,9 +440,11 @@ function People({ task }: { task: Task }) {
   const patch = (body: Record<string, unknown>, ok: string) => run(() => api('PATCH', `/tasks/${task.id}`, body), ok);
   const assignee = task.assigneeId ? s.employees[task.assigneeId] : undefined;
   // A finished task keeps who it was done by; one in progress is not moved from under them.
-  const editable = mayWork && task.status !== 'IN_PROGRESS' && task.status !== 'DONE';
+  // (A person's task in progress is theirs to hand on: nothing runs that a change would cut off.)
+  const editable = mayWork && task.status !== 'DONE' && (task.status !== 'IN_PROGRESS' || !!task.personId);
   const helpers = (task.helperIds ?? []).map((id) => s.employees[id]).filter((e): e is Employee => !!e);
   const everyone = activeEmployees(s.employees).filter((e) => e.roleKey !== 'foreman');
+  const people = useAssignablePeople();
   const canHelp = mayWork && task.status !== 'DONE' && !task.parentId && task.kind !== 'review' && !!task.assigneeId;
   const review = reviewByOf(task);
   return (
@@ -450,16 +453,19 @@ function People({ task }: { task: Task }) {
         <span className="tk-meta-label">{helpers.length ? 'Leads it' : 'Assignee'}</span>
         {editable ? (
           <span className="row" style={{ gap: 6 }}>
-            {assignee && <Avatar appearance={assignee.appearance} size={20} />}
-            <select aria-label="Assignee" className="tk-select" value={task.assigneeId ?? ''} disabled={busy} onChange={(e) => patch({ assigneeId: e.target.value || null }, e.target.value ? `${task.key} assigned to ${s.employees[e.target.value]?.name}` : `${task.key} unassigned`)}>
-              <option value="">Unassigned</option>
-              {everyone.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.name}
-                </option>
-              ))}
-            </select>
+            <AssigneePicker
+              value={valueOfTask(task)}
+              employees={everyone}
+              disabled={busy}
+              onChange={(v) => {
+                const next = patchOf(v);
+                const name = next.personId ? (people.find((p) => p.id === next.personId)?.name ?? 'a person') : next.assigneeId ? s.employees[next.assigneeId]?.name : null;
+                patch(next.personId ? { personId: next.personId } : { assigneeId: next.assigneeId, ...(task.personId ? { personId: null } : {}) }, name ? `${task.key} assigned to ${name}` : `${task.key} unassigned`);
+              }}
+            />
           </span>
+        ) : task.personId ? (
+          <AssigneeLabel task={task} size={20} />
         ) : assignee ? (
           <button type="button" className="tk-person" onClick={() => s.focusEmployee(assignee.id)} title={`${assignee.title} — go to their desk`}>
             <Avatar appearance={assignee.appearance} size={20} />
@@ -469,6 +475,22 @@ function People({ task }: { task: Task }) {
           <span className="muted">unassigned{task.roleHint ? ` · ${task.roleHint}` : ''}</span>
         )}
       </label>
+      {task.personId && mayWork && task.status !== 'DONE' && (
+        // A person's task is moved on by the person: on it, and done.
+        <div className="tk-meta-item" data-person-task>
+          <span className="tk-meta-label">{task.personName ? `${task.personName}'s task` : 'Their task'}</span>
+          <span className="row" style={{ gap: 6 }}>
+            {task.status !== 'IN_PROGRESS' && (
+              <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void moveTask(task, 'IN_PROGRESS')} data-person-start>
+                On it
+              </button>
+            )}
+            <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => void moveTask(task, 'DONE')} data-person-done>
+              Done
+            </button>
+          </span>
+        </div>
+      )}
       {(helpers.length > 0 || canHelp) && (
         <div className="tk-meta-item">
           <span className="tk-meta-label">With</span>
@@ -550,7 +572,7 @@ function More({ task, onEdit }: { task: Task; onEdit: () => void }) {
   const close = () => menu.current?.removeAttribute('open');
   const remove = async () => {
     close();
-    const working = task.status === 'IN_PROGRESS';
+    const working = task.status === 'IN_PROGRESS' && !task.personId;
     if (!(await ask({ title: `${working ? 'Stop and delete' : 'Delete'} ${task.key}?`, body: `"${task.title}"\n\n${working ? `${who} is interrupted and told to leave it; the` : 'The'} task and its record are removed. This cannot be undone. Its branch and folder on the machine are left as they are.`, ok: working ? 'Stop and delete' : 'Delete', danger: true }))) return;
     const res = await run(() => (working ? api('POST', `/tasks/${task.id}/stop`, { then: 'delete' }) : api('DELETE', `/tasks/${task.id}`)), `${task.key} deleted`);
     if (res !== undefined) s.openPanel('tasks');
@@ -566,12 +588,12 @@ function More({ task, onEdit }: { task: Task; onEdit: () => void }) {
             Change the task's text…
           </button>
         )}
-        {task.status === 'IN_PROGRESS' && (
+        {task.status === 'IN_PROGRESS' && !task.personId && (
           <button type="button" className="tk-pop-item" disabled={busy} onClick={() => (close(), void run(() => api('POST', `/tasks/${task.id}/stop`, { then: 'hold' }), `${task.key} stopped and put on hold`))} title={`${who} is interrupted and told to leave it. The task waits, with its branch, until you release it again.`}>
             Stop — put on hold
           </button>
         )}
-        {task.status !== 'IN_PROGRESS' && (
+        {(task.status !== 'IN_PROGRESS' || !!task.personId) && (
           <label className="tk-pop-item tk-pop-select">
             Move to
             <select
@@ -583,10 +605,10 @@ function More({ task, onEdit }: { task: Task; onEdit: () => void }) {
               }}
             >
               <option value="">…</option>
-              {TASK_STATUSES.filter((st) => st !== task.status && st !== 'IN_PROGRESS').map((st) => (
+              {TASK_STATUSES.filter((st) => st !== task.status && (st !== 'IN_PROGRESS' || !!task.personId)).map((st) => (
                 <option key={st} value={st}>
                   {STATUS_META[st].label}
-                  {st === 'DONE' ? ' (by hand, unverified)' : ''}
+                  {st === 'DONE' && !task.personId ? ' (by hand, unverified)' : ''}
                 </option>
               ))}
             </select>

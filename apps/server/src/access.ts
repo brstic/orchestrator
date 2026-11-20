@@ -70,6 +70,7 @@ const RULES: Rule[] = [
   rule('POST', '/logout', 'read'),
   rule('GET', '/state', 'read'),
   rule('GET', '/people', 'read'),
+  rule('GET', '/people/assignable', 'work'),
   rule('GET', '/roles', 'read'),
   rule('GET', '/events', 'read'),
   rule('GET', '/performance', 'detail'),

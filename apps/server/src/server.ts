@@ -573,6 +573,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
     api.get('/me', async (req) => ({ kind: whoOf(req).kind, role: whoOf(req).role, name: whoOf(req).name, id: whoOf(req).id, office: engine.core.settings.companyName, hasPassword: logins.has(whoOf(req).id), passwordSession: logins.isSession(tokenOf(req)) }));
     api.get('/people', async () => clients.people());
+    // Whom a task can be for besides an employee: the owners and colleagues who are still here (`Task.personId`).
+    api.get('/people/assignable', async () => engine.comms.people());
     // A member's own computer: a one-time enrollment for the host agent their desktop app runs while they are here.
     api.post('/me/host', async (req) => {
       const who = whoOf(req);
@@ -1056,7 +1058,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     // Who made it is written down (`owner`, or `member:<name>`), so a member finds the tasks they made.
     api.post('/tasks', async (req) => engine.tasks.createTask(body(req) as any, actorOf(req)));
     api.post('/tasks/release', async (req) => engine.tasks.release(body(req).ids ?? []));
-    api.patch('/tasks/:id', async (req) => engine.tasks.updateTask(param(req, 'id'), body(req)));
+    api.patch('/tasks/:id', async (req) => engine.tasks.updateTask(param(req, 'id'), body(req), actorOf(req)));
     api.delete('/tasks/:id', async (req) => {
       engine.tasks.deleteTask(param(req, 'id'));
       return { ok: true };

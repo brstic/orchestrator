@@ -194,6 +194,15 @@ comment.
   project uses branches the lead is told to merge the integration branch first: the parts were merged there.
 - Deleting a ticket leaves its parts as tickets of their own; deleting a part counts as that part being settled.
 
+## 4b. A task for a person
+
+The owner, 2026-11-20: "the assignee fields in tasks, everywhere — making, editing, looking at a task — must be searchable; and a task must be assignable to an owner or a colleague, a real person, and then they get a notification in their Inbox that they have a new task".
+- **Whom a task is for** is one searchable field wherever it is chosen — the new task, the task's own window, the board's filter (`assignee-picker.tsx`): a few letters of a name, a title or a role, arrows and Enter; employees with their faces, then **People** — the owners and the colleagues who are still here (`GET /people/assignable`, `Comms.people`: no visitors).
+- **A person's task** (`Task.personId`, its name kept in `personName`): exclusive with an employee — choosing one clears the other. The office **never hands it to an employee**, starts it, makes a branch for it or checks it (the scheduler skips it, `TaskManager.runSchedule`); auto-assign leaves it alone.
+- **They are told, and only they**: a notification of kind `task_assigned` addressed to them (`Notification.for`), under *Needs you* in their Inbox — "A new task for you: T-12 …", who assigned it and the beginning of the text; a click opens it. When it is reassigned to another person, the other is told.
+- **They move it on themselves**: in the task's window *On it* (IN_PROGRESS — for a person's task the board allows it by hand) and *Done* (marked done, as theirs: no "unverified" question). It is theirs among *Mine* (`taskIsMine`). The board shows their initials and name where an employee's face would be.
+- Tests: `packages/orchestration/test/person-task.test.ts` (made for a colleague: she alone is told, the scheduler leaves it, she moves it on; reassigned person ↔ employee; nobody who is not in the office; not both at once). Seen in a development office: the picker found Mike, Mil-1 and the colleague Mila for "mi"; a task made for Mila was in her Inbox under *Needs you* and not in the owner's.
+
 ## 5. The windows
 
 The first version of this work replaced the board with one window that listed tickets by "what they need". The owner
