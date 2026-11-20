@@ -62,6 +62,29 @@ export class Moves {
     return this.eng.core;
   }
 
+  /**
+   * Records a move left half way before failed moves were taken back (2026-11-20): the project of an employee's own
+   * folder recorded on the machine they were to go to, while they stayed — every later move then asked their machine
+   * for a folder of the other one. Put back where they work: their machine and their folder. Only for an employee whose
+   * last move failed, of a project only theirs, in place, with their folder known. Returns how many were put right.
+   */
+  heal(): number {
+    let n = 0;
+    for (const e of this.core.employees.filter((x) => !x.archived && x.moving?.phase === 'failed' && !!x.hostId && !!x.workingDir)) {
+      const p = this.core.projects.get(e.projectId ?? '');
+      if (!p || p.hostId === e.hostId || p.workspace !== 'in_place' || p.copiedFrom || (p.ownerEmployeeId && p.ownerEmployeeId !== e.id)) continue;
+      if (this.core.employees.find((x) => !x.archived && x.id !== e.id && (x.projectId === p.id || (x.alsoProjectIds ?? []).includes(p.id)))) continue;
+      const was = { hostId: p.hostId, repoPath: p.repoPath };
+      p.hostId = e.hostId;
+      p.repoPath = e.workingDir;
+      this.core.put('project', p);
+      this.core.audit('system', 'project.healed', p.id, { employee: e.name, was, now: { hostId: p.hostId, repoPath: p.repoPath } });
+      this.core.log('warn', `${p.name} was recorded on another machine than ${e.name} after a failed move: put back to ${p.repoPath}`);
+      n++;
+    }
+    return n;
+  }
+
   /** Whether they are being moved right now (a failed move does not count: it only stays to be read). */
   isMoving(e: Employee): boolean {
     return !!e.moving && e.moving.phase !== 'failed';
@@ -99,6 +122,10 @@ export class Moves {
     if (e.selfDriven) return no('A desk somebody sits at with their own Claude Code is theirs, not the office’s: it is not moved.');
     if (this.eng.rent.rentalOf(e.id)) return no(`${e.name} is rented out: end the rental first.`);
     if (this.isMoving(e)) return no(`${e.name} is being moved already.`);
+    // Their project is recorded on another machine than they are (a move that went half way before this was fixed):
+    // its folder is not where they work, and must be put right first.
+    const proj = this.core.projects.get(e.projectId ?? '');
+    if (proj?.hostId && proj.hostId !== from.id && !proj.copiedFrom && (proj.ownerEmployeeId === e.id || proj.workspace === 'in_place') && e.workingDir) return no(`${proj.name} is recorded on ${this.core.hosts.get(proj.hostId)?.name ?? 'another machine'}, but ${e.name} works in ${e.workingDir} on ${from.name}: the office has to put that right before they can be moved.`);
     if (!this.core.agents.isOnline(from.id)) return no(`${from.name} is not connected now: both machines must be, while ${e.name} is moved.`);
     if (!this.core.agents.isOnline(to.id)) return no(`${to.name} is not connected now: both machines must be, while ${e.name} is moved.`);
     for (const h of [from, to]) if (!h.info?.moves) return no(`${h.name} runs an older office program that cannot move employees: update it there (${h.memberId ? 'the app on that computer' : 'orchestrator-agent'}) first.`);
@@ -206,8 +233,11 @@ export class Moves {
     const from = core.hosts.require(fromId);
     const to = core.hosts.require(toId);
     const rpc = <T>(hostId: string, call: any, ms: number) => core.agents.rpc<T>(hostId, call, ms);
+    /** What has been changed in the office's records so far, to take back if the move cannot be finished. */
+    const undo: Array<() => void> = [];
+    let madeThere = false;
     try {
-      if (plan.stopsSession) await this.eng.sessions.stop(e.id, { actor: 'system', reason: `moving to ${to.name}` });
+      await this.stopAll(e, to);
       const project = core.projects.get(e.projectId ?? '');
       const session = this.lastSession(e);
       const slug = slugify(e.name);
@@ -244,11 +274,13 @@ export class Moves {
       if (plan.kind === 'back') {
         const original = core.projects.require(project!.copiedFrom!.projectId);
         await showFor();
+        madeThere = true;
         const back = await rpc<{ branches: string[]; claudeFiles: number }>(toId, { method: 'move.fetchBack', params: { moveId, files: packed.files, repo: original.repoPath!, prefix: `moved/${slug}`, claude: packed.claudeFiles ? { configDir: null, cwd: original.repoPath!, rewrite: rewrite.map((r) => ({ from: r.from, to: original.repoPath! })) } : null } }, 60 * 60_000);
-        this.rehome(e, { hostId: toId, projectId: original.id, workingDir: null, deskId }, original.repoPath!, back.claudeFiles > 0 ? session : undefined);
+        this.rehome(e, { hostId: toId, projectId: original.id, workingDir: null, deskId }, original.repoPath!, back.claudeFiles > 0 ? session : undefined, undo);
         this.done(e, from, to, actor, `${e.name} is back on ${to.name}, in ${original.name}: their branches are there as moved/${slug}/… (${back.branches.length}).`, plan.stopsSession);
       } else {
         const rel = plan.folder && oldStart.startsWith(plan.folder + path.sep) ? path.relative(plan.folder, oldStart) : '';
+        madeThere = true;
         const got = await rpc<MoveUnpacked>(
           toId,
           { method: 'move.unpack', params: { moveId, files: packed.files, kind: plan.kind === 'own' ? 'folder' : 'bundle', parent: parent!, name: plan.name!, branch: plan.kind === 'copy' ? `orch/${slug}/home` : null, claude: packed.claudeFiles ? { configDir: null, rel, rewrite: rewrite.map((r) => ({ from: r.from, to: r.from === oldStart || r.from === session?.cwd ? (rel ? `<dest>/${rel}` : '<dest>') : '<dest>' })) } : null } },
@@ -257,26 +289,38 @@ export class Moves {
         await showFor();
         if (plan.kind === 'own') {
           if (project && project.repoPath === plan.folder) {
+            const was = structuredClone(project);
+            undo.push(() => core.put('project', was));
             project.hostId = toId;
             project.repoPath = got.path;
             project.extraRepos = [];
             delete project.integration;
             core.put('project', project);
-            this.rehome(e, { hostId: toId, projectId: project.id, workingDir: e.workingDir ? got.cwd : null, deskId }, got.cwd, packed.claudeFiles ? session : undefined);
-          } else this.rehome(e, { hostId: toId, projectId: e.projectId, workingDir: got.cwd, deskId }, got.cwd, packed.claudeFiles ? session : undefined);
+            this.rehome(e, { hostId: toId, projectId: project.id, workingDir: e.workingDir ? got.cwd : null, deskId }, got.cwd, packed.claudeFiles ? session : undefined, undo);
+          } else this.rehome(e, { hostId: toId, projectId: e.projectId, workingDir: got.cwd, deskId }, got.cwd, packed.claudeFiles ? session : undefined, undo);
           this.done(e, from, to, actor, `${e.name} moved to ${to.name}, with their folder (${got.path}).`, plan.stopsSession);
         } else {
           const copy = await this.copyOf(project!, toId, got.path, e, actor);
-          const released = this.release(e, project!, actor, to);
-          this.rehome(e, { hostId: toId, projectId: copy.id, workingDir: e.workingDir ? got.cwd : null, deskId }, got.cwd, packed.claudeFiles ? session : undefined);
+          undo.push(() => core.remove('project', copy.id));
+          const released = this.release(e, project!, actor, to, undo);
+          this.rehome(e, { hostId: toId, projectId: copy.id, workingDir: e.workingDir ? got.cwd : null, deskId }, got.cwd, packed.claudeFiles ? session : undefined, undo);
           this.done(e, from, to, actor, `${e.name} moved to ${to.name}, with a copy of ${project!.name} (${got.path}) as a project of their own.${released ? ` ${released} open task${released === 1 ? '' : 's'} of theirs went back on ${project!.name}'s board.` : ''}`, plan.stopsSession);
         }
       }
     } catch (err) {
       const message = (err as Error).message;
+      // Everything put back as it was: the records here (latest change first), and what was made on the other machine.
+      for (const step of undo.reverse()) {
+        try {
+          step();
+        } catch (e2) {
+          core.log('warn', `moving ${e.name}: could not take back a change: ${(e2 as Error).message}`);
+        }
+      }
+      if (madeThere) await rpc(toId, { method: 'move.undo', params: { moveId } }, 120_000).catch((e2: Error) => core.log('warn', `moving ${e.name}: what was made on ${to.name} could not be taken back: ${e2.message}`));
       const now = core.employees.get(employeeId);
-      if (now?.moving?.id === moveId) {
-        now.moving = { ...now.moving, phase: 'failed', error: message };
+      if (now) {
+        now.moving = { ...(now.moving ?? { id: moveId, fromHostId: fromId, toHostId: toId, sent: 0, total: 0, startedAt: nowIso(), by: actor, error: null }), phase: 'failed', error: message };
         core.put('employee', now);
       }
       core.event({ type: 'employee.move_failed', source: 'server', summary: `Moving ${e.name} to ${to.name} failed: ${message}`, employeeId, hostId: fromId, data: { to: toId, error: message } });
@@ -287,9 +331,11 @@ export class Moves {
   }
 
   /** The records, moved: the employee onto the new machine (desk, room and project as for any change of machine), and their conversation with them. */
-  private rehome(e: Employee, patch: { hostId: string; projectId: string | null; workingDir: string | null; deskId: string | null }, cwd: string, session: AgentSession | undefined): void {
+  private rehome(e: Employee, patch: { hostId: string; projectId: string | null; workingDir: string | null; deskId: string | null }, cwd: string, session: AgentSession | undefined, undo: Array<() => void>): void {
     const core = this.core;
     const to = core.hosts.require(patch.hostId);
+    const was = structuredClone(core.employees.require(e.id));
+    undo.push(() => core.put('employee', was));
     // (No account folder there: an account belongs to one machine. Kept by a member: not any more, on a member's own computer.)
     // Done with the move in the same change that seats them there: in the office they are seen to finish and leave at once.
     e.moving = null;
@@ -307,7 +353,27 @@ export class Moves {
       // The conversation's record on the new machine, as one that has ended: their next start continues it (`SessionRegistry.start`).
       const moved: AgentSession = { ...session, id: newId(), hostId: patch.hostId, cwd, repoRoot: null, branch: null, tmuxSession: '', tmuxPane: null, pid: null, status: 'exited', activity: 'offline', activityDetail: `Moved from another machine`, inTurn: false, launchId: null, claudeConfigDir: null, endedAt: nowIso(), exitReason: 'moved to another machine', usage: null };
       core.put('session', moved);
+      undo.push(() => core.remove('session', moved.id));
     }
+  }
+
+  /**
+   * Every session of theirs the office holds as running, stopped — not only one: an employee can be held with more
+   * than one (2026-11-20: six on a member's laptop), and their records cannot move while any is. One the machine no
+   * longer knows of is only marked as ended.
+   */
+  private async stopAll(e: Employee, to: Host): Promise<void> {
+    for (let i = 0; i < 20; i++) {
+      const s = this.core.sessions.find((x) => x.employeeId === e.id && (x.status === 'running' || x.status === 'starting'));
+      if (!s) return;
+      try {
+        await this.eng.sessions.stopSession(s, { actor: 'system', reason: `moving to ${to.name}` });
+      } catch (err) {
+        const still = this.core.sessions.get(s.id);
+        if (still && (still.status === 'running' || still.status === 'starting')) this.eng.sessions.onGone(s.hostId, s.id, `not there any more (found while moving to ${to.name}: ${(err as Error).message})`);
+      }
+    }
+    throw new Error('their sessions could not all be stopped');
   }
 
   private async copyOf(project: Project, hostId: string, repoPath: string, e: Employee, actor: string): Promise<Project> {
@@ -337,9 +403,11 @@ export class Moves {
   }
 
   /** Their open tasks of the project they leave, back on its board. */
-  private release(e: Employee, project: Project, actor: string, to: Host): number {
+  private release(e: Employee, project: Project, actor: string, to: Host, undo: Array<() => void>): number {
     let n = 0;
     for (const t of this.core.tasks.filter((x) => x.assigneeId === e.id && x.projectId === project.id && OPEN.includes(x.status))) {
+      const was = structuredClone(t);
+      undo.push(() => this.core.put('task', was));
       this.eng.comms.cancelFor({ kind: 'task', id: t.id });
       t.assigneeId = null;
       t.history.push({ ts: nowIso(), status: t.status, note: `${e.name} moved to ${to.name}; back on the board for someone else`, by: actor });

@@ -231,6 +231,8 @@ export class Engine {
     this.foreman.start();
     this.routines.start();
     this.sleeper.start();
+    // (A move that went half way before failed moves were taken back: put right, once, at start — `Moves.heal`.)
+    this.moves.heal();
     this.work.start();
     this.tasks.schedule();
   }

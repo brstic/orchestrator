@@ -2,6 +2,13 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-20 — Sleep on members' computers too; never a second session while a machine reconnects
+
+The owner, after an employee was found with six sessions on their laptop: "find out why there were six at all", and "sessions should switch off by themselves after 30 minutes when nothing happens".
+- **Why six**: a member's laptop that sleeps or loses its network drops off the office for a moment; its sessions are then held as `host_offline` — still running there, unseen. A start in that moment (here: a rent client's message, three times in six minutes) found no running session and started a new one beside it; when the laptop came back it reported both. `SessionRegistry.start` now refuses while a session of theirs is `host_offline` (the same rule `cannotStart` already had); the client's words wait and are delivered when the machine is back (`Rent.wakeWaiting`).
+- **Sleep everywhere**: a session with nothing to do for `sleepAfterMinutes` (30) is stopped on members' own computers too, not only on the office's machines. Rejected before (2026-11-10, "Sleep and wake": what runs on a member's own computer is theirs to keep or stop); the owner's word overrides it. Its conversation is kept, as on the office's machines.
+- **A second session sleeps at once**: an employee held with more than one running session keeps the one they work in; the others are stopped as soon as they are between turns, without waiting the half hour.
+
 ## 2026-11-20 — Moving an employee to another machine: everything of theirs goes, the old folder stays
 
 The owner: "so I can move agents from the office to my computer and back: a complete transfer — files, .md, memory, everything", and to see it happen ("percent over their head, they pack at their desk, at 100 % they take the box and go and sit at the new place"). How (`MOVE.md`):

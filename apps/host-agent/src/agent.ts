@@ -1284,6 +1284,8 @@ export class HostAgent {
         return mover.unpack(this.home, { ...rpc.params, parent: this.assertAllowed(rpc.params.parent) }, this.claudeBase(rpc.params.claude?.configDir ?? null));
       case 'move.fetchBack':
         return mover.fetchBack(this.home, { ...rpc.params, repo: this.movable(rpc.params.repo) }, this.claudeBase(rpc.params.claude?.configDir ?? null));
+      case 'move.undo':
+        return mover.undo(this.home, rpc.params.moveId);
       case 'move.drop':
         mover.drop(this.home, rpc.params.moveId);
         return { ok: true };

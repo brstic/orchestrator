@@ -622,7 +622,7 @@ function SleepSetting({ settings }: { settings: OwnerSettings }) {
   return (
     <Field
       label="Put idle sessions to sleep after (minutes)"
-      hint="An idle Claude Code session still holds memory. On the office's own machines, a session with no work for this long is stopped and its employee is shown as sleeping. A message, a task, a routine or a meeting wakes it, in the same folder and the same conversation. 0 = never; otherwise at least 5."
+      hint="An idle Claude Code session still holds memory. A session with no work for this long is stopped — on the office's machines and on members' own computers — and its employee is shown as sleeping; a second session of the same employee is stopped as soon as it rests. A message, a task, a routine or a meeting wakes it, in the same folder and the same conversation. 0 = never; otherwise at least 5."
     >
       <input type="number" min={0} max={1440} step={5} value={minutes} style={{ maxWidth: 120 }} aria-label="Put idle sessions to sleep after (minutes)" onChange={(ev) => setMinutes(ev.target.value)} onBlur={commit} onKeyDown={(ev) => ev.key === 'Enter' && (ev.target as HTMLInputElement).blur()} />
     </Field>

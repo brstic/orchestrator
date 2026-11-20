@@ -191,6 +191,8 @@ export type AgentRpc =
   | { method: 'move.write'; params: { moveId: string; file: MoveFileName; offset: number; dataBase64: string } }
   | { method: 'move.unpack'; params: MoveUnpackParams }
   | { method: 'move.fetchBack'; params: MoveFetchBackParams }
+  /** The office could not finish the move: what `move.unpack`/`move.fetchBack` made on this machine is taken back. */
+  | { method: 'move.undo'; params: { moveId: string } }
   | { method: 'move.drop'; params: { moveId: string } }
   /** Make one new, empty folder inside an existing one of the allowed roots (for an employee about to be hired into it). */
   | { method: 'fs.mkdir'; params: { parent: string; name: string } }

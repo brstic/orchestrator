@@ -320,7 +320,6 @@ test('a session with no work for long enough is put to sleep — and only when n
   const task = eng.tasks.createTask({ projectId: id.shop!, title: 'Something in hand', assigneeId: dee.id, released: false });
   await keeps(/a task in hand/, () => eng.core.put('task', { ...task, status: 'IN_PROGRESS' }), () => eng.core.put('task', { ...task, status: 'BACKLOG' }));
   await keeps(/sleep is switched off/, () => eng.core.updateSettings({ sleepAfterMinutes: 0 }), () => eng.core.updateSettings({ sleepAfterMinutes: 30 }));
-  await keeps(/member's own computer/, () => eng.core.put('session', { ...s, hostId: 'pc' }), () => eng.core.put('session', { ...s, hostId: id.host! }));
   s = eng.core.runningSessionOf(dee.id)!;
   await keeps(/did not start this session/, () => eng.core.put('session', { ...s, origin: 'attached' }), () => eng.core.put('session', { ...s, origin: 'managed' }));
   s = eng.core.runningSessionOf(dee.id)!;
@@ -344,6 +343,37 @@ test('a session with no work for long enough is put to sleep — and only when n
   eng.sessions.onHostReportedGone(id.host!, s.id, 'the tmux session ended', s.launchId);
   assert.equal(eng.core.sessions.require(s.id).exitReason, 'asleep after 30 min without work');
   assert.equal(eng.core.company.sessionsLost, lost);
+});
+
+test("on a member's own computer too (the owner, 2026-11-20); and a second session of the same employee sleeps as soon as it rests", async () => {
+  const eli = eng.employees.create({ name: 'Eli', roleKey: 'backend', hostId: 'pc', workingDir: '/work/eli' } as any);
+  const s = rested(await eng.sessions.start(eli.id));
+  assert.equal(s.hostId, 'pc');
+  const later = Date.now() + 31 * MIN;
+  assert.equal(eng.sleeper.keptAwake(eli, s, later), null, "a member's computer is no reason to keep it running any more");
+  // A second session of theirs the office holds as running (one started while the first could not be seen): it goes now.
+  const second = eng.core.put('session', rested({ ...s, id: `${s.id}-second`, tmuxSession: 'orch-second', startedAt: new Date(Date.now() - 86_400_000).toISOString() }));
+  const k = kills().length;
+  assert.equal(await eng.sleeper.tick(Date.now()), 1, 'not idle for half an hour, but a second one');
+  assert.deepEqual(kills().slice(k).map((c) => c.params.sessionId), [second.id]);
+  assert.equal(eng.core.sessions.require(second.id).status, 'exited');
+  assert.equal(eng.core.runningSessionOf(eli.id)?.id, s.id, 'the one they work in stays');
+  assert.equal(await eng.sleeper.tick(later), 1);
+  assert.equal(eng.core.sessions.require(s.id).status, 'exited');
+  eng.employees.update(eli.id, { archived: true } as any);
+});
+
+test('no second session is started while their machine reconnects and the first one may still be running there', async () => {
+  const fay = eng.employees.create({ name: 'Fay', roleKey: 'backend', hostId: id.host!, workingDir: '/work/fay' } as any);
+  const s = rested(await eng.sessions.start(fay.id));
+  // The machine dropped off for a moment: the office cannot see the session, but it runs on there.
+  eng.core.put('session', { ...s, status: 'host_offline' });
+  const n = starts().length;
+  await assert.rejects(eng.sessions.start(fay.id), /reconnecting/);
+  assert.equal(starts().length, n, 'nothing was started beside it');
+  eng.core.put('session', { ...s, status: 'running' });
+  await eng.sessions.stop(fay.id);
+  eng.employees.update(fay.id, { archived: true } as any);
 });
 
 test('whatever a sleeping employee is needed for wakes them, where they left off — once', async () => {

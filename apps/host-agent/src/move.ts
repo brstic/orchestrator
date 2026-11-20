@@ -256,6 +256,8 @@ export async function unpack(home: string, p: MoveUnpackParams, claudeBase: stri
   if (!fs.statSync(p.parent, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`${p.parent} is not a folder on this machine`);
   const dest = freeFolder(p.parent, p.name);
   fs.mkdirSync(dest, { recursive: false });
+  // What this move made here, so that it can be taken back if the office cannot finish the move (`undo`).
+  fs.writeFileSync(path.join(moveDir(home, p.moveId), 'made.json'), JSON.stringify({ folder: dest }));
   try {
     if (p.kind === 'bundle') {
       const bundle = fileOf(home, p.moveId, 'repo.bundle');
@@ -292,10 +294,34 @@ export async function fetchBack(home: string, p: MoveFetchBackParams, claudeBase
   await verified(home, p.moveId, p.files);
   const prefix = p.prefix.replace(/[^a-zA-Z0-9/_.-]/g, '-').replace(/^\/+|\/+$/g, '') || 'moved';
   const bundle = fileOf(home, p.moveId, 'repo.bundle');
+  const had = new Set((await run('git', ['-C', p.repo, 'for-each-ref', '--format=%(refname)', `refs/heads/${prefix}`])).split('\n').filter(Boolean));
   await run('git', ['-C', p.repo, 'fetch', '-q', bundle, `+refs/heads/*:refs/heads/${prefix}/*`]);
+  const now = (await run('git', ['-C', p.repo, 'for-each-ref', '--format=%(refname)', `refs/heads/${prefix}`])).split('\n').filter(Boolean);
+  fs.writeFileSync(path.join(moveDir(home, p.moveId), 'made.json'), JSON.stringify({ repo: p.repo, refs: now.filter((r) => !had.has(r)) }));
   const branches = (await run('git', ['-C', p.repo, 'for-each-ref', '--format=%(refname:short)', `refs/heads/${prefix}`])).split('\n').filter(Boolean);
   const claudeFiles = p.claude && p.files.some((f) => f.name === 'claude.tgz') ? placeConversation(home, p.moveId, claudeBase, p.claude.cwd, p.claude.rewrite) : 0;
   return { branches, claudeFiles };
+}
+
+/**
+ * The office could not finish the move: what it made here is taken back — the new folder, or the branches it brought
+ * into a project that were not there before. Only what this move itself recorded (`made.json`); nothing else.
+ */
+export async function undo(home: string, moveId: string): Promise<{ undone: string | null }> {
+  const file = path.join(moveDir(home, moveId), 'made.json');
+  if (!fs.existsSync(file)) return { undone: null };
+  const made = JSON.parse(fs.readFileSync(file, 'utf8')) as { folder?: string; repo?: string; refs?: string[] };
+  if (made.folder) {
+    fs.rmSync(made.folder, { recursive: true, force: true });
+    fs.rmSync(file, { force: true });
+    return { undone: made.folder };
+  }
+  if (made.repo && made.refs?.length) {
+    for (const ref of made.refs) if (ref.startsWith('refs/heads/')) await run('git', ['-C', made.repo, 'update-ref', '-d', ref]).catch(() => '');
+    fs.rmSync(file, { force: true });
+    return { undone: `${made.refs.length} branches in ${made.repo}` };
+  }
+  return { undone: null };
 }
 
 export function drop(home: string, moveId: string): void {

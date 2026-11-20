@@ -210,6 +210,75 @@ test("onto a member's own computer they get a seat in that member's room, never 
   assert.ok(fs.existsSync(path.join(theirs.root, 'roomward', 'README.md')));
 });
 
+test('every session the office still holds as running is stopped first, not only one', async () => {
+  // (As on a member's computer where earlier sessions of theirs were never seen to end: the office held six as running.)
+  const folder = path.join(a.root, 'many-sessions');
+  fs.mkdirSync(folder);
+  fs.writeFileSync(path.join(folder, 'README.md'), '# m\n');
+  const gus = await h.employee('Gus', 'backend', { hostId: a.hostId, workingDir: folder });
+  await h.api('POST', `/employees/${gus.id}/start`, {});
+  const live = await waitFor(async () => {
+    const x = await h.session(gus.id);
+    return x?.status === 'running' && x.lastEventAt && x.inTurn !== true ? x : null;
+  }, { label: 'his session is up' });
+  const core = h.server.engine.core;
+  for (const n of [1, 2]) core.put('session', { ...live, id: `stale-${n}-${live.id}`, tmuxSession: `orch-stale-${n}`, tmuxPane: null, startedAt: new Date(Date.parse(live.startedAt) - n * 86_400_000).toISOString() });
+  await h.api('POST', `/employees/${gus.id}/move`, { to: b.hostId, parent: b.root });
+  const now = await moved(gus);
+  assert.equal(now.hostId, b.hostId);
+  assert.ok(!core.sessions.find((x) => x.employeeId === gus.id && x.hostId === a.hostId && (x.status === 'running' || x.status === 'starting')), 'none of them is held as running on the old machine');
+});
+
+test('a move that fails at the very end leaves everything as it was, and nothing half made on the other machine', async () => {
+  const folder = path.join(a.root, 'undone');
+  fs.mkdirSync(folder);
+  fs.writeFileSync(path.join(folder, 'README.md'), '# u\n');
+  const hal = await h.employee('Hal', 'backend', { hostId: a.hostId, workingDir: folder });
+  const engine = h.server.engine;
+  const before = structuredClone(engine.core.projects.require(engine.core.employees.require(hal.id).projectId!));
+  const update = engine.employees.update.bind(engine.employees);
+  engine.employees.update = ((id: string, patch: any, actor?: string) => {
+    if (id === hal.id && patch.hostId) throw new Error('refused at the end, for the test');
+    return update(id, patch, actor);
+  }) as typeof engine.employees.update;
+  try {
+    await h.api('POST', `/employees/${hal.id}/move`, { to: b.hostId, parent: b.root });
+    const failed = await waitFor(async () => {
+      const x = (await h.state()).employees.find((e) => e.id === hal.id)!;
+      return x.moving?.phase === 'failed' ? x : null;
+    }, { label: 'the move failed', timeout: 60_000 });
+    assert.match(failed.moving!.error!, /refused at the end/);
+    assert.equal(failed.hostId, a.hostId, 'he is where he was');
+    const project = engine.core.projects.require(failed.projectId!);
+    assert.deepEqual([project.hostId, project.repoPath], [before.hostId, before.repoPath], 'his project too');
+    assert.ok(!fs.existsSync(path.join(b.root, 'undone')), 'the folder made on the other machine is gone again');
+    assert.ok(fs.existsSync(path.join(folder, 'README.md')));
+  } finally {
+    engine.employees.update = update;
+  }
+  // And it can be done again, from where he is.
+  assert.equal((await h.api('POST', `/employees/${hal.id}/move/plan`, { to: b.hostId })).why, null);
+});
+
+test('a project left on the other machine by a move that went half way (before moves were undone) is put back where they work', () => {
+  const engine = h.server.engine;
+  const core = engine.core;
+  const folder = path.join(a.root, 'half-way');
+  fs.mkdirSync(folder);
+  const ivy = engine.employees.create({ name: 'Ivy', roleKey: 'backend', hostId: a.hostId, workingDir: folder } as any);
+  const project = engine.tasks.createProject({ name: 'half-way', repoPath: folder, hostId: a.hostId, workspace: 'in_place', ownerEmployeeId: ivy.id } as any, 'owner');
+  return Promise.resolve(project).then((p) => {
+    engine.employees.update(ivy.id, { projectId: p.id } as any, 'owner');
+    // As the old code left it: the project's records moved, the employee did not, and the move is marked failed.
+    core.put('project', { ...core.projects.require(p.id), hostId: b.hostId, repoPath: path.join(b.root, 'half-way') });
+    core.put('employee', { ...core.employees.require(ivy.id), moving: { id: 'old', fromHostId: a.hostId, toHostId: b.hostId, phase: 'failed', sent: 0, total: 0, startedAt: new Date().toISOString(), by: 'owner', error: 'stop the running session before moving this employee to another machine' } });
+    assert.equal(engine.moves.heal(), 1);
+    const healed = core.projects.require(p.id);
+    assert.deepEqual([healed.hostId, healed.repoPath], [a.hostId, folder]);
+    assert.equal(engine.moves.heal(), 0, 'once');
+  });
+});
+
 test('it is refused while they work on a task, while a machine is away, and for whom it cannot be done', async () => {
   const folder = path.join(a.root, 'busy');
   fs.mkdirSync(folder);

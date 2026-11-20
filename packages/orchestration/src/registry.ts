@@ -2167,6 +2167,11 @@ export class SessionRegistry {
     if (!hostId) throw new EngineError(`${employee.name} is not assigned to a machine`);
     const host = this.core.hosts.require(hostId);
     if (!this.core.agents.isOnline(hostId)) throw new EngineError(`host "${host.name}" is offline`);
+    // Their machine dropped off and is coming back: the session it had is very likely still running there, unseen. One
+    // started now would run beside it — two Claude Code processes on one conversation's folder (2026-11-20: six of one
+    // employee on a member's laptop that slept and woke, each started by a client's message meanwhile).
+    const unseen = this.core.sessions.find((x) => x.employeeId === employee.id && x.status === 'host_offline');
+    if (unseen) throw new EngineError(`${employee.name}'s session is still running on ${this.core.hosts.get(unseen.hostId)?.name ?? 'their machine'}, which is reconnecting`, 409);
     const project = this.core.projects.get(employee.projectId);
     const cwd = opts.cwd ?? employee.workingDir ?? project?.repoPath ?? null;
     if (!cwd) throw new EngineError(`${employee.name} has no working directory: assign a project with a repository, or set a working directory`);
@@ -2251,9 +2256,14 @@ export class SessionRegistry {
   }
 
   async stop(employeeId: string, opts: { actor?: string; reason?: string; asleep?: boolean } = {}): Promise<void> {
-    const employee = this.core.employees.require(employeeId);
     const s = this.core.runningSessionOf(employeeId);
     if (!s) return;
+    return this.stopSession(s, opts);
+  }
+
+  /** Stop this one session (an employee can be held with more than one running: see `Sleeper`, `Moves`). */
+  async stopSession(s: AgentSession, opts: { actor?: string; reason?: string; asleep?: boolean } = {}): Promise<void> {
+    const employee = this.core.employees.require(s.employeeId!);
     if (!this.core.agents.isOnline(s.hostId)) throw new EngineError('the host is offline; the session cannot be stopped from here');
     if (opts.asleep && s.origin !== 'managed') throw new EngineError('only a session the office started can be put to sleep');
     this.core.audit(opts.actor ?? 'owner', opts.asleep ? 'session.asleep' : s.origin === 'managed' ? 'session.stopped' : 'session.detached', s.id, { employee: employee.name, reason: opts.reason ?? null });
