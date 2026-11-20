@@ -844,6 +844,47 @@ if (fs.existsSync(path.join(cwd, '.fake-untrusted'))) {
   fs.rmSync(path.join(cwd, '.fake-untrusted'), { force: true });
   out('\x1b[6A\x1b[J');
 }
+// The project's CLAUDE.md imports a file from outside the folder: Claude Code asks before it reads it, with "No"
+// chosen. A test asks for this with a file named `.fake-external-imports` in the working folder (its content: the file
+// imported). "Yes" leaves `.fake-imports-allowed` there; "No" goes on without the imports.
+if (fs.existsSync(path.join(cwd, '.fake-external-imports'))) {
+  const imported = fs.readFileSync(path.join(cwd, '.fake-external-imports'), 'utf8').trim() || '/home/office/AGENTS.md';
+  say(' Allow external CLAUDE.md file imports?');
+  say('');
+  say(" This project's CLAUDE.md or .claude/rules imports files outside the current working directory. Never allow this for third-party repositories.");
+  say('');
+  say(' External imports:');
+  say(`   ${imported}`);
+  say('');
+  say(' Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security');
+  say('');
+  say(' ❯ No, disable external imports');
+  say('   Yes, allow external imports');
+  say('');
+  say(' Enter to confirm · Esc to cancel');
+  let onYes = false;
+  dialogOpen = true;
+  for (;;) {
+    const key = await nextKey();
+    if (key === '\x1b') {
+      const a = await Promise.race([nextKey(), sleep(150).then(() => null)]);
+      if (a === null) {
+        keyWaiter = null;
+        break;
+      }
+      const b = a === '[' || a === 'O' ? await nextKey() : '';
+      if (b === 'B') onYes = true;
+      else if (b === 'A') onYes = false;
+      continue;
+    }
+    if (key === '\r') break;
+  }
+  dialogOpen = false;
+  keyQueue.length = 0;
+  fs.rmSync(path.join(cwd, '.fake-external-imports'), { force: true });
+  if (onYes) fs.writeFileSync(path.join(cwd, '.fake-imports-allowed'), imported);
+  out('\x1b[16A\x1b[J');
+}
 // A newer Claude Code asks the same of a folder added to the session (`--add-dir`), with "No, exit" chosen — and it
 // can be caught half drawn: the words first, the answers a moment later. A test asks for this with a file named
 // `.fake-untrusted-dir` in the working folder (its content: how long, in ms, the answers take; 600 if empty).

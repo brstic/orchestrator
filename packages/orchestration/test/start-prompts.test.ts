@@ -52,3 +52,22 @@ test('no keys are pressed blind: words of the question without its answers, or a
   assert.equal(trustPromptKeys(['❯ Yes, I accept']), null, 'one answer is not a choice');
   assert.equal(trustPromptKeys([]), null);
 });
+
+test('the question about files a CLAUDE.md imports from outside the folder, as it looked on the live office: "No" marked', () => {
+  const asked = [
+    ' Allow external CLAUDE.md file imports?',
+    '',
+    "  This project's CLAUDE.md or .claude/rules imports files outside the current working directory. Never allow this for third-party repositories.",
+    '',
+    '  External imports:',
+    '    /home/office/AGENTS.md',
+    '',
+    '  Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security',
+    '',
+    '  ❯ No, disable external imports',
+    '    Yes, allow external imports',
+    '',
+    '  Enter to confirm · Esc to cancel',
+  ];
+  assert.deepEqual(trustPromptKeys(asked), ['Down', 'Enter']);
+});

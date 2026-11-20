@@ -58,6 +58,21 @@ test('the warning about running without permission checks is accepted for somebo
   assert.ok((await h.api<any[]>('GET', '/events?limit=200')).some((e) => /warning about running without permission checks was accepted/.test(e.summary) && e.employeeId === ids.Una));
 });
 
+test("the question about the project's CLAUDE.md importing files from outside its folder is answered \"Yes\" by the office, on the record", async () => {
+  // (Seen on the live office, 2026-11-20: a project's CLAUDE.md imports a shared AGENTS.md from the home folder.)
+  fs.writeFileSync(path.join(repo, '.fake-external-imports'), '/home/office/AGENTS.md');
+  ids.Imo = (await h.employee('Imo', 'backend', { projectId: project, autonomy: 'standard' })).id;
+  await h.api('POST', `/employees/${ids.Imo}/start`, {});
+  await up('Imo');
+  assert.equal(fs.readFileSync(path.join(repo, '.fake-imports-allowed'), 'utf8'), '/home/office/AGENTS.md', '"Yes, allow external imports" was chosen');
+  fs.rmSync(path.join(repo, '.fake-imports-allowed'));
+  assert.deepEqual(await asked('Imo'), []);
+  const said = await audit('imports.auto_accepted', 'Imo');
+  assert.equal(said.length, 1);
+  assert.deepEqual(said[0]!.detail.imports, ['/home/office/AGENTS.md']);
+  assert.ok((await h.api<any[]>('GET', '/events?limit=200')).some((e) => /imports files from outside its folder/.test(e.summary) && e.employeeId === ids.Imo));
+});
+
 test('the question about a folder added to the session, caught while Claude Code is still drawing it, is answered by the office when its answers appear — nobody is asked', async () => {
   // Seen on the live office: the words were on the screen a moment before "❯ No, exit / Yes, add it", the office
   // could not read the answers yet, and asked the owner — every time a session started.
@@ -105,6 +120,16 @@ test('switched off, the owner is asked as before: about the folder for somebody 
   assert.equal((await audit('bypass.auto_accepted', 'Una')).length, 1, 'only the one from before');
   await h.api('POST', `/questions/${w.id}/answer`, { answer: 'Yes, I accept' });
   await up('Una');
+  // The question about files imported from outside the folder, for somebody on Standard: asked, and answered from the office.
+  await h.api('POST', `/employees/${ids.Imo}/stop`, {});
+  fs.writeFileSync(path.join(repo, '.fake-external-imports'), '/home/office/AGENTS.md');
+  await h.api('POST', `/employees/${ids.Imo}/start`, {});
+  const i = await waitFor(async () => (await asked('Imo')).find((x) => x.status === 'open' && x.tool?.name === 'external_imports'), { label: 'the owner is asked about the imports', timeout: 30000 });
+  assert.match(i.text, /import files from outside its folder: \/home\/office\/AGENTS\.md/);
+  assert.ok(!fs.existsSync(path.join(repo, '.fake-imports-allowed')), 'nothing was answered for them');
+  await h.api('POST', `/questions/${i.id}/answer`, { answer: 'Yes, allow external imports' });
+  await up('Imo');
+  assert.equal(fs.readFileSync(path.join(repo, '.fake-imports-allowed'), 'utf8'), '/home/office/AGENTS.md');
   // Only an owner changes the switch.
   const { mayCall } = await import('../../apps/server/src/access.ts');
   assert.equal(mayCall(h.server.engine, { kind: 'guest', id: 'm1', name: 'M', role: 'colleague' }, 'PATCH', '/settings', { acceptStartPrompts: true }).ok, false);

@@ -823,6 +823,21 @@ export const SESSION_ROWS = 44;
 
 /** Claude Code's warning at the first start in bypass mode (its wording, as in the installed program). */
 const BYPASS_WARNING = /Bypass Permissions mode/i;
+// (The project's CLAUDE.md, or `.claude/rules`, imports a file from outside the folder — seen on the live office,
+// 2026-11-20, a project importing a shared AGENTS.md from the home folder: "Allow external CLAUDE.md file imports?".)
+const EXTERNAL_IMPORTS = /Allow external CLAUDE\.md file imports/i;
+/** The files the question names, as it lists them under "External imports:". */
+const importsOf = (lines: string[]): string[] => {
+  const out: string[] = [];
+  let inList = false;
+  for (const line of lines) {
+    const t = line.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').replace(/[│┃|]/g, ' ').trim();
+    if (/^External imports:/i.test(t)) inList = true;
+    else if (inList && /^[/~]/.test(t)) out.push(t.slice(0, 400));
+    else if (inList && out.length) break;
+  }
+  return out.slice(0, 20);
+};
 // (A newer Claude Code asks it of a folder added to the session as well: "Adding a new directory: … Is this a directory
 // you created or one you trust?" — seen with the folder of the files said to employees, 2026-11-17.)
 const TRUST_PROMPT = /(do you trust the files in this folder|trust this folder|is this a (project|directory) you (created|trust)|accessing workspace)/i;
@@ -1975,6 +1990,7 @@ export class SessionRegistry {
   onScreen(sessionId: string, screen: TerminalScreen): void {
     this.promptOnScreen(sessionId, false, screen);
     this.bypassWarningOnScreen(sessionId, screen);
+    this.externalImportsOnScreen(sessionId, screen);
     this.limitMenuOnScreen(sessionId, screen);
     const s = this.core.sessions.get(sessionId);
     // Only the interactive CLI shows a trust prompt; an SDK-managed worker's pane is a transcript.
@@ -2029,6 +2045,53 @@ export class SessionRegistry {
     }
     this.trustAsked.add(asked);
     this.askTrust(s, employee, folder);
+  }
+
+  /**
+   * Claude Code asks before it reads files the project's CLAUDE.md (or `.claude/rules`) imports from outside the
+   * folder. Like the folder itself, they are what the folder the employee was put in asks for: whoever put them there
+   * chose it, so the office answers "Yes, allow external imports" itself, on the record — under the same rule and the
+   * same switch as the question about the folder (`acceptStartPrompts`; with it off, for Auto and Unrestricted). The
+   * owner's word, 2026-11-20: "this must go to yes by itself". Otherwise, or when its answers cannot be read, the
+   * owner is asked (a `trust_prompt` question, answered with the keys the screen shows).
+   */
+  private importsAsked = new Set<string>();
+  private externalImportsOnScreen(sessionId: string, screen: TerminalScreen): void {
+    if (this.importsAsked.has(sessionId)) return;
+    const s = this.core.sessions.get(sessionId);
+    if (!s || s.status !== 'running' || s.origin !== 'managed' || s.mode !== 'interactive_cli' || !atStartDialog(s, screen)) return;
+    const text = screen.lines.join('\n').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+    if (!EXTERNAL_IMPORTS.test(text) || !/Yes, allow external imports/i.test(text)) return;
+    const employee = this.core.employees.get(s.employeeId) ?? null;
+    const imports = importsOf(screen.lines);
+    const mayAnswer = !!employee && (this.core.settings.acceptStartPrompts !== false || employee.autonomy === 'auto' || employee.autonomy === 'unrestricted');
+    const keys = mayAnswer ? trustPromptKeys(screen.lines) : null;
+    this.importsAsked.add(sessionId);
+    if (employee && keys) {
+      void this.core.agents
+        .rpc(s.hostId, { method: 'session.keys', params: { sessionId: s.id, keys } })
+        .then(() => {
+          this.core.audit('system', 'imports.auto_accepted', s.id, { employee: employee.name, cwd: s.cwd, imports });
+          this.core.event({ type: 'session.started', source: 'server', summary: `${employee.name}'s project's CLAUDE.md imports files from outside its folder (${imports.join(', ') || 'named on the screen'}): allowed for Claude Code without asking you`, sessionId: s.id, employeeId: employee.id, hostId: s.hostId, data: { imports: 'auto', files: imports } });
+        })
+        .catch(() => this.importsAsked.delete(sessionId));
+      return;
+    }
+    this.setActivity(s, 'needs_approval', 'Claude Code asks whether the project may import files from outside its folder');
+    this.eng.comms.createQuestion({
+      kind: 'trust_prompt',
+      channel: 'terminal',
+      employee,
+      session: s,
+      text: `Claude Code asks whether ${employee?.name ?? 'this session'}'s project may import files from outside its folder: ${imports.join(', ') || 'see the terminal'}.`,
+      context: "Claude Code's own question: \"This project's CLAUDE.md or .claude/rules imports files outside the current working directory. Never allow this for third-party repositories.\"",
+      why: 'The session waits at this question until it is answered.',
+      tool: { name: 'external_imports', input: { cwd: s.cwd, imports } },
+      options: [
+        { label: 'Yes, allow external imports', description: 'Choose "Yes, allow external imports" on the question' },
+        { label: 'Decide in the terminal', description: 'Leave the question for you to answer at the workstation' },
+      ],
+    });
   }
 
   /** Waits, per session and question, for a trust question's answers to become readable on the screen. */
@@ -2220,6 +2283,7 @@ export class SessionRegistry {
     for (const k of [...this.trustAsked]) if (k.startsWith(`${session.id}|`)) this.trustAsked.delete(k);
     for (const k of [...this.trustWaits.keys()]) if (k.startsWith(`${session.id}|`)) this.clearTrustWait(k);
     this.bypassAsked.delete(session.id);
+    this.importsAsked.delete(session.id);
     if (resume) this.resumeProbes.set(session.id, session.lastEventAt);
     else this.resumeProbes.delete(session.id);
 
