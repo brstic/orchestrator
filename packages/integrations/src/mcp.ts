@@ -521,6 +521,11 @@ export const BOARD_TOOLS: McpToolSpec[] = [
     inputSchema: { type: 'object', properties: { task: str('Task key, e.g. "T-7"'), employee: str('Employee name') }, required: ['task', 'employee'] },
   },
   {
+    name: 'cancel_task',
+    description: 'Cancel a task that is no longer wanted — a duplicate, overtaken by other work, or not worth doing. It is closed, not deleted: it stays on the board as cancelled with your reason, and the boss is told and can reopen it. Your own task, or one nobody is in the middle of; not one in review, not one the boss blocked, not a person\'s. When it is a matter of direction or priority, ask the boss instead.',
+    inputSchema: { type: 'object', properties: { task: str('Task key, e.g. "T-7"'), reason: str('Why it is no longer wanted, in full: the boss reads this') }, required: ['task', 'reason'] },
+  },
+  {
     name: 'wake_colleague',
     description: 'Start the session of a teammate who is not at their desk (asleep, or never started) because they are needed now. Say what for: it is delivered to them as your message when they are up. Not needed for someone who is at work; not possible for someone the owner paused.',
     inputSchema: { type: 'object', properties: { employee: str('Employee name'), reason: str('What they are needed for — they read this first') }, required: ['employee', 'reason'] },

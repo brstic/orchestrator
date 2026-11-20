@@ -94,6 +94,11 @@ function TaskCard({ task, onDrag }: { task: Task; onDrag: (id: string | null) =>
         </div>
       )}
       {need.group === 'waiting' && <div className="small muted tcard-wait">{need.line}</div>}
+      {task.cancelled && (
+        <div className="small muted tcard-wait" title={task.cancelled.reason} data-card-cancelled>
+          <b>Cancelled</b> by {task.cancelled.by}
+        </div>
+      )}
       {task.progress.percent != null && task.status !== 'BLOCKED' && <Progress value={task.progress.percent} tone={task.status === 'DONE' ? 'good' : 'info'} />}
       <div className="row spread small" style={{ marginTop: 4 }}>
         <span className="row" style={{ gap: 6, minWidth: 0 }}>

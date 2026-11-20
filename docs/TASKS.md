@@ -203,6 +203,10 @@ The owner, 2026-11-20: "the assignee fields in tasks, everywhere — making, edi
 - **They move it on themselves**: in the task's window *On it* (IN_PROGRESS — for a person's task the board allows it by hand) and *Done* (marked done, as theirs: no "unverified" question). It is theirs among *Mine* (`taskIsMine`). The board shows their initials and name where an employee's face would be.
 - Tests: `packages/orchestration/test/person-task.test.ts` (made for a colleague: she alone is told, the scheduler leaves it, she moves it on; reassigned person ↔ employee; nobody who is not in the office; not both at once). Seen in a development office: the picker found Mike, Mil-1 and the colleague Mila for "mi"; a task made for Mila was in her Inbox under *Needs you* and not in the owner's.
 
+## 4c. Cancelling a task
+
+The owner, 2026-11-20: "in the agents' tools there is no cancelling a task; we must have that too". `cancel_task { task, reason }`, one of the board tools (shown while employees manage the board): the task is **closed as cancelled, not deleted** — DONE, with who cancelled it and why (`Task.cancelled`), in its history and in the feed; what was on its way to anybody for it is taken back; **the boss is told** (a notification) and can **reopen** it by moving it back on the board (it is then no longer cancelled). The board and the task's window say *Cancelled by … : why*. Refused: a reason that says nothing, a task somebody else is in the middle of (tell them, or the boss), one in review (its review decides), one being checked, one the boss blocked, a person's task (`Task.personId`: theirs to close). The foreman is not offered it: it escalates to the boss instead. Test: `tests/e2e/20-employees-manage.test.ts` ("an employee cancels a task that is no longer wanted…").
+
 ## 5. The windows
 
 The first version of this work replaced the board with one window that listed tickets by "what they need". The owner

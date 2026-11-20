@@ -599,6 +599,25 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       return `${task.key} is unblocked: ${done.status === 'IN_PROGRESS' ? `${core.employees.get(done.assigneeId)?.name ?? 'its assignee'} was told and continues it` : 'it is back in the queue with your note and is handed out as soon as someone is free'}.`;
     },
 
+    cancel_task: async (a, { employee }) => {
+      if (employee.roleKey === FOREMAN_ROLE) return err('Cancelling work is not a foreman\'s to do: tell the boss what is no longer wanted and why (escalate_to_owner).');
+      if (!managing()) return OFF;
+      const task = seen(employee, a.task);
+      if (!task) return noTask(a.task);
+      const held = heldProject(task);
+      if (held) return held;
+      if (task.status === 'DONE') return `${task.key} is already closed (DONE).`;
+      if (task.personId) return err(`${task.key} is a person's task (${task.personName ?? 'theirs'}): it is theirs to close. Tell the boss if it is no longer wanted.`);
+      if (task.status === 'REVIEW') return err(`${task.key} is in review. Its review decides what happens next.`);
+      if (task.blockedReason === 'Blocked by the owner') return err(`The boss blocked ${task.key}. It is the boss's to decide (ask_boss if it matters now).`);
+      if (task.status === 'IN_PROGRESS' && task.assigneeId !== employee.id) return err(`${core.employees.get(task.assigneeId)?.name ?? 'Somebody'} is in the middle of ${task.key}. Tell them (send_message) or the boss; it is not yours to stop.`);
+      if (eng.tasks.isVerifying(task.id)) return err(`${task.key} is being checked right now. Let that finish first.`);
+      const reason = String(a.reason ?? '').trim();
+      if (reason.length < 12) return err('Say in "reason" why the task is no longer wanted — a duplicate of what, overtaken by what, not worth it because of what. The boss reads this.');
+      eng.tasks.cancel(task.id, truncate(reason, 2000), by(employee), employee.name);
+      return `${task.key} "${truncate(task.title, 80)}" is cancelled: closed, not deleted. The boss is told and can reopen it.`;
+    },
+
     give_task: async (a, { employee }) => {
       if (!managing()) return OFF;
       const task = seen(employee, a.task);
@@ -742,6 +761,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     handlers,
     // Only a foreman is shown the foreman's tools; everyone else's tool list (and prompt) stays as small as before.
     // The board tools are shown while the owner leaves the board to the employees (a foreman assigns with its own tool).
-    listed: (tool, { employee, session }) => (session?.mode !== 'codex_managed' || !codexUnavailable.has(tool.name)) && eng.rent.toolAllowed(employee, tool.name) !== false && (employee.roleKey === LEAD_ROLE ? leadTools.has(tool.name) || LEAD_ALSO.has(tool.name) : !leadTools.has(tool.name)) && tool.name !== 'vault_read' && (tool.name !== 'message_client' || eng.rent.isRented(employee.id)) && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && tool.name === 'give_task') : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
+    listed: (tool, { employee, session }) => (session?.mode !== 'codex_managed' || !codexUnavailable.has(tool.name)) && eng.rent.toolAllowed(employee, tool.name) !== false && (employee.roleKey === LEAD_ROLE ? leadTools.has(tool.name) || LEAD_ALSO.has(tool.name) : !leadTools.has(tool.name)) && tool.name !== 'vault_read' && (tool.name !== 'message_client' || eng.rent.isRented(employee.id)) && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && (tool.name === 'give_task' || tool.name === 'cancel_task')) : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
   };
 }

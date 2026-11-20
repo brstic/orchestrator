@@ -90,6 +90,7 @@ export type EventType =
   | 'account.switched'
   | 'task.attachment_added'
   | 'task.stopped'
+  | 'task.cancelled'
   | 'task.corrected'
   | 'task.commented'
   | 'task.reopened'

@@ -534,6 +534,33 @@ export class TaskManager {
     return task;
   }
 
+  /**
+   * Closed without being done (`cancel_task`, the owner's wish of 2026-11-20 that employees can cancel a task): DONE,
+   * with who and why on it, its deliveries taken back, the boss told. Nothing is deleted; moved back on the board it
+   * is not cancelled any more (`moveByOwner`). `by`: who, in words.
+   */
+  cancel(id: string, reason: string, actor: string, by: string): Task {
+    const task = this.core.tasks.require(id);
+    if (task.status === 'DONE') throw new EngineError(`${task.key} is already closed (DONE).`);
+    this.eng.comms.cancelFor({ kind: 'task', id: task.id });
+    task.status = 'DONE';
+    task.cancelled = { at: nowIso(), by, reason };
+    task.completedAt = nowIso();
+    task.blockedReason = null;
+    task.waitingFor = null;
+    task.reviewStage = null;
+    task.delivery = { status: 'none', via: null, ts: null, detail: null };
+    task.updatedAt = nowIso();
+    this.history(task, `Cancelled by ${by}: ${reason}`, actor);
+    this.core.put('task', task);
+    if (task.parentId) this.eng.talk.partSettled(task, 'removed');
+    this.core.audit(actor, 'task.cancelled', task.id, { key: task.key, reason });
+    this.core.event({ type: 'task.cancelled', source: actor.startsWith('employee:') ? 'mcp' : 'owner', summary: `${by} cancelled ${task.key} "${truncate(task.title, 80)}": ${truncate(reason, 160)}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId, data: { key: task.key, reason, by } });
+    this.eng.comms.notify({ kind: 'info', severity: 'info', title: `${by} cancelled ${task.key}: ${truncate(task.title, 80)}`, body: `${reason}\n\nIt is closed, not deleted. Move it back on the board to reopen it.`, taskId: task.id, projectId: task.projectId });
+    this.schedule();
+    return task;
+  }
+
   /** A person of the office a task may be for: an owner or a colleague who is still here (`Comms.people`). */
   private personOf(id: string): { id: string; name: string; owner: boolean } {
     const person = this.eng.comms.people().find((p) => p.id === id);
@@ -577,6 +604,11 @@ export class TaskManager {
       task.waitingFor = null;
     }
     if (status !== 'REVIEW') task.reviewStage = null;
+    // Moved back by hand: it is wanted again.
+    if (status !== 'DONE' && task.cancelled) {
+      task.cancelled = null;
+      task.completedAt = null;
+    }
     task.status = status;
     if (status === 'DONE') {
       task.completedAt = nowIso();

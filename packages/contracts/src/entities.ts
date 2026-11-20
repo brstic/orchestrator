@@ -784,6 +784,11 @@ export interface Task {
   personId?: string | null;
   /** Their name when it was assigned (kept: a member who has left still shows who it was). */
   personName?: string | null;
+  /**
+   * Closed without being done: no longer wanted (`cancel_task`). The task stays, DONE, with who and why; moved back
+   * on the board by a person, it is not cancelled any more. Null (or absent): not cancelled.
+   */
+  cancelled?: { at: ISODate; by: string; reason: string } | null;
   /** Preferred role when unassigned (used by the scheduler). */
   roleHint: string | null;
   dependsOn: ID[];

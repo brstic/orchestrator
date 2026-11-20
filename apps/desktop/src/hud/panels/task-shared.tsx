@@ -112,6 +112,8 @@ export function needOf(task: Task, employees: Record<string, Employee>, tasks: R
   const forBoss = !!question && (question.mentions.length === 0 || question.mentions.some((m) => m.kind === 'boss'));
   switch (task.status) {
     case 'DONE':
+      // Closed without being done (`cancel_task`): said so, and why.
+      if (task.cancelled) return { ...base, label: 'Cancelled', tone: 'neutral', color: 'var(--muted)', group: 'done', line: `Cancelled by ${task.cancelled.by}: ${first(task.cancelled.reason)}` };
       return { ...base, group: 'done', line: task.evidence.summary ? first(task.evidence.summary) : 'Finished.' };
     case 'REVIEW': {
       const stage = task.reviewStage ?? (task.reviewerId && !task.evidence.peerReview ? 'peer' : 'boss');

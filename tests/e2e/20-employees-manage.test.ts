@@ -7,6 +7,7 @@
  *   give       a task is given to whoever fits
  *   review     a teammate who was not appointed reviews finished work — never the author
  *   wake       a teammate who was never started is started because they are needed, and reads why first
+ *   cancel     a task that is no longer wanted is closed as cancelled, with why — never deleted; the boss can reopen it
  *   switched off: every one of these is refused in words and the tools are not offered
  */
 import { test, before, after } from 'node:test';
@@ -133,10 +134,32 @@ test('an employee starts a colleague who was never started, and the colleague re
   assert.match(await call('Alex', 'wake_colleague', { employee: 'Mila', reason: 'One more thing about the checkout tests.' }, 'awake'), /^Mila is at their desk already \(/);
 });
 
+test('an employee cancels a task that is no longer wanted, saying why: closed as cancelled, on the record, the boss told — and the boss can reopen it', async () => {
+  const t = await h.task({ projectId, title: 'Add a second health endpoint', released: false });
+  assert.match(await call('Alex', 'cancel_task', { task: t.key }, 'cancel-noreason'), /^ERROR .*reason/);
+  assert.match(await call('Alex', 'cancel_task', { task: t.key, reason: 'dup' }, 'cancel-short'), /^ERROR Say in "reason" why/);
+  const said = await call('Alex', 'cancel_task', { task: t.key, reason: 'The first health endpoint already covers this, it would be a duplicate' }, 'cancel');
+  assert.equal(said, `${t.key} "Add a second health endpoint" is cancelled: closed, not deleted. The boss is told and can reopen it.`);
+  const after = await h.getTask(t.id);
+  assert.equal(after.status, 'DONE');
+  assert.deepEqual([after.cancelled?.by, after.cancelled?.reason], ['Alex', 'The first health endpoint already covers this, it would be a duplicate']);
+  assert.ok(after.history.some((x) => /^Cancelled by Alex: The first health endpoint/.test(x.note) && x.by === 'employee:Alex'));
+  assert.ok((await h.state()).notifications.some((n) => n.taskId === t.id && /Alex cancelled/.test(n.title)), 'the boss is told');
+  assert.equal(await call('Alex', 'cancel_task', { task: t.key, reason: 'once more, it is still not wanted' }, 'cancel-again'), `${t.key} is already closed (DONE).`);
+  // The boss does not agree: back on the board, and it is not "cancelled" any more.
+  await h.api('PATCH', `/tasks/${t.id}`, { status: 'BACKLOG' });
+  const back = await h.getTask(t.id);
+  assert.deepEqual([back.status, back.cancelled ?? null], ['BACKLOG', null]);
+  // A person's task is theirs.
+  const people = await h.api<any[]>('GET', '/people/assignable');
+  const forBoss = await h.task({ projectId, title: 'Sign the contract', personId: people[0].id });
+  assert.match(await call('Alex', 'cancel_task', { task: forBoss.key, reason: 'it does not seem needed any more' }, 'cancel-person'), /^ERROR .* is a person's task/);
+});
+
 test('switched off by the owner, the board is the owner\'s again: each tool says so and changes nothing', async () => {
   await h.api('PATCH', '/settings', { employeesManageBoard: false });
   const t = await h.task({ projectId, title: 'Waits for the boss', released: false });
-  for (const [tool, args] of [['release_task', { task: t.key }], ['give_task', { task: t.key, employee: 'Sarah' }], ['unblock_task', { task: t.key, note: 'it is fine, go ahead with it' }], ['wake_colleague', { employee: 'Sarah', reason: 'something to look at' }]] as const) {
+  for (const [tool, args] of [['release_task', { task: t.key }], ['give_task', { task: t.key, employee: 'Sarah' }], ['unblock_task', { task: t.key, note: 'it is fine, go ahead with it' }], ['wake_colleague', { employee: 'Sarah', reason: 'something to look at' }], ['cancel_task', { task: t.key, reason: 'it is not wanted any more' }]] as const) {
     assert.match(await call('Alex', tool, args, `off-${tool}`), /^ERROR The owner keeps the task board to themselves in this office/, tool);
   }
   const after = await h.getTask(t.id);
