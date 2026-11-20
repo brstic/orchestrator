@@ -44,6 +44,11 @@ export interface MovePlan {
 }
 
 const PIECE = 2 * 1024 * 1024;
+/**
+ * A move is never done sooner than this after it began: a small folder goes in a blink, and in the office the
+ * employee is seen to pack, reach 100 % and carry the box (`docs/MOVE.md`, "In the office") — not to vanish.
+ */
+export const MOVE_SHOWN_MS = 5000;
 const OPEN: Task['status'][] = ['BACKLOG', 'READY', 'BLOCKED'];
 const BUSY: Task['status'][] = ['IN_PROGRESS', 'REVIEW'];
 
@@ -154,10 +159,16 @@ export class Moves {
   }
 
   /** Begins the move (it goes on by itself; `Employee.moving` says how far it is). */
-  start(employeeId: string, toHostId: string, opts: { parent?: string | null; actor: string }): Employee {
+  start(employeeId: string, toHostId: string, opts: { parent?: string | null; deskId?: string | null; actor: string }): Employee {
     const plan = this.plan(employeeId, toHostId);
     if (plan.why) throw new EngineError(plan.why, 409);
     if (plan.kind !== 'back' && !opts.parent?.trim()) throw new EngineError('choose the folder on the other machine to put them in');
+    // Where they will sit there: the one chosen, checked now (not after the files have gone); none chosen, one is found when they arrive.
+    const deskId = opts.deskId?.trim() || null;
+    if (deskId) {
+      const why = this.eng.employees.deskProblem(deskId, toHostId, employeeId);
+      if (why) throw new EngineError(why, 409);
+    }
     const e = this.core.employees.require(employeeId);
     const moving: EmployeeMoving = { id: newId().replace(/[^a-zA-Z0-9]/g, '').slice(0, 24), fromHostId: e.hostId!, toHostId, phase: 'packing', sent: 0, total: 0, startedAt: nowIso(), by: opts.actor, error: null };
     e.moving = moving;
@@ -165,7 +176,7 @@ export class Moves {
     const to = this.core.hosts.require(toHostId);
     this.core.event({ type: 'employee.moving', source: 'owner', summary: `${e.name} is being moved to ${to.name}`, employeeId: e.id, hostId: e.hostId, data: { to: toHostId, kind: plan.kind } });
     this.core.audit(opts.actor, 'employee.move_started', e.id, { name: e.name, from: e.hostId, to: toHostId, kind: plan.kind, folder: plan.folder });
-    void this.run(e.id, moving.id, plan, opts.parent?.trim() ?? null, opts.actor);
+    void this.run(e.id, moving.id, plan, opts.parent?.trim() ?? null, opts.actor, deskId);
     return e;
   }
 
@@ -187,7 +198,7 @@ export class Moves {
   }
   private lastPut = new Map<string, number>();
 
-  private async run(employeeId: string, moveId: string, plan: MovePlan, parent: string | null, actor: string): Promise<void> {
+  private async run(employeeId: string, moveId: string, plan: MovePlan, parent: string | null, actor: string, deskId: string | null): Promise<void> {
     const core = this.core;
     const e = core.employees.require(employeeId);
     const fromId = e.moving!.fromHostId;
@@ -224,13 +235,17 @@ export class Moves {
         }
       }
       this.progress(e, { phase: 'unpacking', sent: total });
+      const started = Date.parse(e.moving?.startedAt ?? '') || Date.now();
       // Old paths in the conversation, and what they become there.
       const rewrite = [...new Set([plan.folder!, session?.cwd, oldStart].filter((x): x is string => !!x))].map((p) => ({ from: p, to: '' }));
 
+      // (Seen packing for a moment at least, whatever the size: the records move after it.)
+      const showFor = (): Promise<void> => new Promise((r) => setTimeout(r, Math.max(0, started + MOVE_SHOWN_MS - Date.now())));
       if (plan.kind === 'back') {
         const original = core.projects.require(project!.copiedFrom!.projectId);
+        await showFor();
         const back = await rpc<{ branches: string[]; claudeFiles: number }>(toId, { method: 'move.fetchBack', params: { moveId, files: packed.files, repo: original.repoPath!, prefix: `moved/${slug}`, claude: packed.claudeFiles ? { configDir: null, cwd: original.repoPath!, rewrite: rewrite.map((r) => ({ from: r.from, to: original.repoPath! })) } : null } }, 60 * 60_000);
-        this.rehome(e, { hostId: toId, projectId: original.id, workingDir: null }, original.repoPath!, back.claudeFiles > 0 ? session : undefined);
+        this.rehome(e, { hostId: toId, projectId: original.id, workingDir: null, deskId }, original.repoPath!, back.claudeFiles > 0 ? session : undefined);
         this.done(e, from, to, actor, `${e.name} is back on ${to.name}, in ${original.name}: their branches are there as moved/${slug}/… (${back.branches.length}).`, plan.stopsSession);
       } else {
         const rel = plan.folder && oldStart.startsWith(plan.folder + path.sep) ? path.relative(plan.folder, oldStart) : '';
@@ -239,6 +254,7 @@ export class Moves {
           { method: 'move.unpack', params: { moveId, files: packed.files, kind: plan.kind === 'own' ? 'folder' : 'bundle', parent: parent!, name: plan.name!, branch: plan.kind === 'copy' ? `orch/${slug}/home` : null, claude: packed.claudeFiles ? { configDir: null, rel, rewrite: rewrite.map((r) => ({ from: r.from, to: r.from === oldStart || r.from === session?.cwd ? (rel ? `<dest>/${rel}` : '<dest>') : '<dest>' })) } : null } },
           60 * 60_000,
         );
+        await showFor();
         if (plan.kind === 'own') {
           if (project && project.repoPath === plan.folder) {
             project.hostId = toId;
@@ -246,13 +262,13 @@ export class Moves {
             project.extraRepos = [];
             delete project.integration;
             core.put('project', project);
-            this.rehome(e, { hostId: toId, projectId: project.id, workingDir: e.workingDir ? got.cwd : null }, got.cwd, packed.claudeFiles ? session : undefined);
-          } else this.rehome(e, { hostId: toId, projectId: e.projectId, workingDir: got.cwd }, got.cwd, packed.claudeFiles ? session : undefined);
+            this.rehome(e, { hostId: toId, projectId: project.id, workingDir: e.workingDir ? got.cwd : null, deskId }, got.cwd, packed.claudeFiles ? session : undefined);
+          } else this.rehome(e, { hostId: toId, projectId: e.projectId, workingDir: got.cwd, deskId }, got.cwd, packed.claudeFiles ? session : undefined);
           this.done(e, from, to, actor, `${e.name} moved to ${to.name}, with their folder (${got.path}).`, plan.stopsSession);
         } else {
           const copy = await this.copyOf(project!, toId, got.path, e, actor);
           const released = this.release(e, project!, actor, to);
-          this.rehome(e, { hostId: toId, projectId: copy.id, workingDir: e.workingDir ? got.cwd : null }, got.cwd, packed.claudeFiles ? session : undefined);
+          this.rehome(e, { hostId: toId, projectId: copy.id, workingDir: e.workingDir ? got.cwd : null, deskId }, got.cwd, packed.claudeFiles ? session : undefined);
           this.done(e, from, to, actor, `${e.name} moved to ${to.name}, with a copy of ${project!.name} (${got.path}) as a project of their own.${released ? ` ${released} open task${released === 1 ? '' : 's'} of theirs went back on ${project!.name}'s board.` : ''}`, plan.stopsSession);
         }
       }
@@ -271,14 +287,22 @@ export class Moves {
   }
 
   /** The records, moved: the employee onto the new machine (desk, room and project as for any change of machine), and their conversation with them. */
-  private rehome(e: Employee, patch: { hostId: string; projectId: string | null; workingDir: string | null }, cwd: string, session: AgentSession | undefined): void {
+  private rehome(e: Employee, patch: { hostId: string; projectId: string | null; workingDir: string | null; deskId: string | null }, cwd: string, session: AgentSession | undefined): void {
     const core = this.core;
     const to = core.hosts.require(patch.hostId);
     // (No account folder there: an account belongs to one machine. Kept by a member: not any more, on a member's own computer.)
+    // Done with the move in the same change that seats them there: in the office they are seen to finish and leave at once.
+    e.moving = null;
     e.claudeConfigDir = null;
     if (to.memberId) e.keptBy = null;
     core.put('employee', e);
     this.eng.employees.update(e.id, { hostId: patch.hostId, projectId: patch.projectId, alsoProjectIds: [], workingDir: patch.workingDir } as any, 'system');
+    // A desk there, never none: the one chosen if it is still free, else one found for them (a seat of the room, or an office desk near their project).
+    const chosen = patch.deskId && !this.eng.employees.deskProblem(patch.deskId, patch.hostId, e.id) ? patch.deskId : null;
+    const now = core.employees.require(e.id);
+    const keep = now.deskId && !this.eng.employees.deskProblem(now.deskId, patch.hostId, e.id) ? now.deskId : null;
+    const desk = chosen ?? (patch.deskId ? null : keep) ?? this.eng.employees.deskOn(patch.hostId, e.id, patch.projectId);
+    if (desk && desk !== now.deskId) this.eng.employees.update(e.id, { deskId: desk } as any, 'system');
     if (session?.claudeSessionId) {
       // The conversation's record on the new machine, as one that has ended: their next start continues it (`SessionRegistry.start`).
       const moved: AgentSession = { ...session, id: newId(), hostId: patch.hostId, cwd, repoRoot: null, branch: null, tmuxSession: '', tmuxPane: null, pid: null, status: 'exited', activity: 'offline', activityDetail: `Moved from another machine`, inTurn: false, launchId: null, claudeConfigDir: null, endedAt: nowIso(), exitReason: 'moved to another machine', usage: null };

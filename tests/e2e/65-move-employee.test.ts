@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import type { Employee } from '@orchestrator/contracts';
+import { memberSeatOf } from '@orchestrator/contracts';
 import { createHarness, startedWith, waitFor, type Harness } from './harness.ts';
 
 /**
@@ -73,8 +75,14 @@ test('their own folder goes whole, and their next session there continues their 
   assert.equal(plan.why, null, plan.why);
   assert.equal(plan.kind, 'own');
   assert.equal(plan.conversation, true);
-  await h.api('POST', `/employees/${ana.id}/move`, { to: b.hostId, parent: b.root });
+  // The desk she will sit at there, chosen with the move.
+  const engine = h.server.engine;
+  const taken = new Set(engine.core.employees.filter((x) => !x.archived).map((x) => x.deskId));
+  const desk = engine.core.layout.desks.find((d) => !taken.has(d.id) && d.kind !== 'executive')!.id;
+  await assert.rejects(h.api('POST', `/employees/${ana.id}/move`, { to: b.hostId, parent: b.root, deskId: 'no-such-desk' }), /not a desk/);
+  await h.api('POST', `/employees/${ana.id}/move`, { to: b.hostId, parent: b.root, deskId: desk });
   const now = await moved(ana);
+  assert.equal(now.deskId, desk, 'she sits at the desk chosen for her');
 
   assert.equal(now.hostId, b.hostId);
   const project = (await h.state()).projects.find((p) => p.id === now.projectId)!;
@@ -171,6 +179,35 @@ test('one whose session was running goes on there by itself, in the same convers
   assert.equal(after.claudeSessionId, before.claudeSessionId);
   assert.match(startedWith(b.tmux, after.tmuxPane!), new RegExp(`--resume ${before.claudeSessionId}`));
   await h.api('POST', `/employees/${eve.id}/stop`, {});
+});
+
+test("onto a member's own computer they get a seat in that member's room, never no desk", async () => {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  const port = await new Promise<number>((resolve) => {
+    const l = net.createServer();
+    l.listen(0, '127.0.0.1', () => {
+      const p = (l.address() as net.AddressInfo).port;
+      l.close(() => resolve(p));
+    });
+  });
+  await h.api('POST', '/sharing', { open: true, port });
+  const door = `https://127.0.0.1:${port}`;
+  const invitation = await h.api('POST', '/guests', { name: 'A Colleague', role: 'colleague' });
+  const { t } = JSON.parse(Buffer.from(invitation.invite.replace(/^orch-invite-v1\./, ''), 'base64url').toString('utf8'));
+  const enrollment = (await (await fetch(`${door}/api/me/host`, { method: "POST", headers: { authorization: `Bearer ${t}`, "content-type": "application/json" }, body: "{}" })).json()) as { token: string };
+  const theirs = await h.addHost('colleague-laptop', { claudeHome: path.join(h.tmp, 'c-claude') }, { serverUrl: door, enrollToken: enrollment.token });
+  const folder = path.join(a.root, 'roomward');
+  fs.mkdirSync(folder);
+  fs.writeFileSync(path.join(folder, 'README.md'), '# r\n');
+  const fay = await h.employee('Fay', 'backend', { hostId: a.hostId, workingDir: folder });
+  assert.ok((await h.state()).employees.find((e) => e.id === fay.id)!.deskId, 'she has an office desk now');
+  await h.api('POST', `/employees/${fay.id}/move`, { to: theirs.hostId, parent: theirs.root });
+  const now = await moved(fay);
+  assert.equal(now.hostId, theirs.hostId);
+  const seat = memberSeatOf(now.deskId);
+  assert.ok(seat, `a seat of the room, not ${now.deskId}`);
+  assert.equal(seat!.n, 1);
+  assert.ok(fs.existsSync(path.join(theirs.root, 'roomward', 'README.md')));
 });
 
 test('it is refused while they work on a task, while a machine is away, and for whom it cannot be done', async () => {

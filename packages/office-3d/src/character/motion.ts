@@ -1557,6 +1557,37 @@ export function carryBox(o: Pose, w: number): void {
   o.headPitch += 0.04 * w;
 }
 
+/**
+ * Packing a desk into a box, standing at it: bent over the desk, turning to the things beside the box (to the right),
+ * taking one up, turning back and putting it in, again and again — a cycle of `PACK_CYCLE` seconds, over the standing
+ * body. `w` 0…1 eases it in and out.
+ */
+export const PACK_CYCLE = 2.4;
+export function packArms(o: Pose, t: number, w: number): void {
+  if (w <= 0) return;
+  const to = (k: keyof Pose, v: number) => (o[k] += (v - o[k]) * w);
+  const c = (t % PACK_CYCLE) / PACK_CYCLE;
+  // 0 → 0.45: turned to the things and reaching down for one; 0.45 → 1: back over the box and lowering it in.
+  const atThings = c < 0.45 ? Math.sin((c / 0.45) * Math.PI) : 0;
+  const atBox = c >= 0.45 ? Math.sin(((c - 0.45) / 0.55) * Math.PI) : 0;
+  const reach = Math.max(atThings, atBox);
+  o.lean += (0.32 + 0.12 * reach) * w;
+  o.twist += -0.42 * atThings * w;
+  o.headPitch += (0.25 + 0.1 * reach) * w;
+  o.headYaw += -0.35 * atThings * w;
+  // Both arms forward and down to the desk; the right one further toward the things, both together over the box.
+  to('sLx', -0.55 - 0.45 * reach);
+  to('sLz', -0.12 + 0.06 * atThings);
+  to('tL', 0.45);
+  to('eL', -0.55 - 0.35 * (1 - reach));
+  to('sRx', -0.6 - 0.5 * reach);
+  to('sRz', 0.12 + 0.12 * atThings);
+  to('tR', 0.45);
+  to('eR', -0.5 - 0.35 * (1 - reach));
+  to('wrL', 0.3);
+  to('wrR', -0.3);
+}
+
 /** Whip timeline, seconds from the start of the pose: wound up, arm snapped forward, and (a moment later, as the wave reaches the tip) the crack. */
 export const WHIP_WIND = 0.15;
 export const WHIP_SNAP = 0.25;

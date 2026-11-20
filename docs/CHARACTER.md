@@ -61,7 +61,7 @@ In the office (not in the creator or the other small stages) the rigid parts of 
 
 ## Moving to another machine
 
-While an employee is moved to another machine (`MOVE.md`) they pack at their desk: an open cardboard box beside them fills up (`MoveBox` in `People.tsx`), their hands busy at the desk, **📦 n %** over their head. At 100 % the box closes and they carry it in both hands (`Character`'s `carrying`: `carryBox` in `character/motion.ts` puts both upper arms forward, the forearms up under it, over whatever the legs do) to their new desk, and it is put away when they sit. Seen in a development office on 2026-11-20 (packing, carrying across the floor, into a member's room).
+While an employee is moved to another machine (`MOVE.md`) they stand beside their desk and pack it: a cardboard moving box open on the desk (`MoveBox.tsx`), the things of the desk going into it one by one, bent over the desk, turning to the things and back to the box (`packArms` in `character/motion.ts`), **📦 n %** over their head. At 100 % the flaps close and the tape goes on, and they carry it in both hands (`Character`'s `carrying`: `carryBox` in `character/motion.ts` puts both upper arms forward, the forearms up under it, over whatever the legs do) to their new desk, and it is put away when they sit. Seen in a development office on 2026-11-20 (packing, carrying across the floor, into a member's room).
 
 ## Who may do what
 

@@ -17,7 +17,7 @@ import type {
   ActivityState,
 } from '@orchestrator/contracts';
 import type { ServiceProvider } from '@orchestrator/contracts';
-import { AUTONOMY_LEVELS, EFFORT_CHOICES, HOOKS_VERSION, isAutonomyLevel, memberSeatOf, modelFamily, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, directsOthers, LEAD_ROLE, LEAD_MODEL, LEAD_EFFORT, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd } from '@orchestrator/contracts';
+import { AUTONOMY_LEVELS, EFFORT_CHOICES, HOOKS_VERSION, isAutonomyLevel, memberSeatOf, modelFamily, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, directsOthers, LEAD_ROLE, LEAD_MODEL, LEAD_EFFORT, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd, MEMBER_ROOM_LIMITS, memberSeatId } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
 import { inputBox, menuKeys, permissionPrompt, plainScreen, trustPromptKeys } from './comms.ts';
 import { EngineError, within } from './core.ts';
@@ -464,6 +464,28 @@ export class EmployeeRegistry {
   private sameRoom(seatHostId: string | null | undefined, hostId: string | null | undefined): boolean {
     const member = this.eng.hosts.memberOfHost(hostId);
     return !!member && !!seatHostId && this.eng.hosts.memberOfHost(seatHostId) === member;
+  }
+
+  /** Why that desk cannot be this employee's on that machine (a seat of that member's room, or a desk of the office), or null. */
+  deskProblem(deskId: string, hostId: string, employeeId: string): string | null {
+    const personal = !!this.eng.hosts.memberOfHost(hostId);
+    const seat = memberSeatOf(deskId);
+    if (personal ? !this.sameRoom(seat?.hostId, hostId) : !this.core.layout.desks.find((d) => d.id === deskId && d.kind !== 'executive')) return personal ? "that seat is not in that member's room" : 'that is not a desk of the office';
+    const who = this.core.employees.find((x) => x.id !== employeeId && !x.archived && x.deskId === deskId);
+    return who ? `${who.name} sits at that desk` : null;
+  }
+
+  /**
+   * A desk for an employee on that machine, so that nobody arrives without one: the first free seat of the member's
+   * room (named after the machine the room already goes by), or a free desk of the office near their project.
+   */
+  deskOn(hostId: string, employeeId: string, projectId: string | null): string | null {
+    if (!this.eng.hosts.memberOfHost(hostId)) return this.deskFor(projectId, employeeId);
+    const seats = this.core.employees.filter((x) => x.id !== employeeId && !x.archived).map((x) => memberSeatOf(x.deskId)).filter((s): s is { hostId: string; n: number } => !!s && this.sameRoom(s.hostId, hostId));
+    const anchor = seats[0]?.hostId ?? hostId;
+    const taken = new Set(seats.map((s) => s.n));
+    for (let n = 1; n <= MEMBER_ROOM_LIMITS.desks; n++) if (!taken.has(n)) return memberSeatId(anchor, n);
+    return null;
   }
 
   freeDesk(preferZone?: string): string | null {

@@ -7,6 +7,7 @@ import { useOffice } from '../../lib/store.ts';
 import { moveLine, movePercent } from '../../lib/move.ts';
 import { act } from '../core.tsx';
 import { FolderField } from './folder-picker.tsx';
+import { DeskPicker } from './hire-where.tsx';
 
 /** What the office answers when asked what a move would do (`Moves.plan`). */
 interface MovePlan {
@@ -33,6 +34,8 @@ export function MoveSection({ e }: { e: Employee }) {
   const [open, setOpen] = useState(false);
   const [to, setTo] = useState('');
   const [parent, setParent] = useState('');
+  /** The desk they sit at there (null: one is found for them — they never arrive without one). */
+  const [deskId, setDeskId] = useState<string | null>(null);
   const [plan, setPlan] = useState<MovePlan | null>(null);
   const [busy, setBusy] = useState(false);
   const target = to ? hosts[to] : undefined;
@@ -40,6 +43,7 @@ export function MoveSection({ e }: { e: Employee }) {
 
   useEffect(() => {
     setPlan(null);
+    setDeskId(null);
     if (!to) return;
     let gone = false;
     api<MovePlan>('POST', `/employees/${e.id}/move/plan`, { to })
@@ -69,7 +73,7 @@ export function MoveSection({ e }: { e: Employee }) {
     .sort((a, b) => a.name.localeCompare(b.name));
   const start = async () => {
     setBusy(true);
-    const ok = await act(() => api('POST', `/employees/${e.id}/move`, { to, parent: plan?.kind === 'back' ? null : parent.trim() }), `${e.name} is being moved to ${toName(to)}`);
+    const ok = await act(() => api('POST', `/employees/${e.id}/move`, { to, parent: plan?.kind === 'back' ? null : parent.trim(), deskId }), `${e.name} is being moved to ${toName(to)}`);
     setBusy(false);
     if (ok !== undefined) setOpen(false);
   };
@@ -123,6 +127,13 @@ export function MoveSection({ e }: { e: Employee }) {
                     <li key={n}>{n}</li>
                   ))}
                 </ul>
+              )}
+              {target && (
+                <Field label={target.memberId ? `Their seat in ${target.memberName ?? 'that member'}'s room` : 'Their desk in the office'} hint="Where they sit down when they get there. Automatic: a free seat of the room, or a free desk near their project's people — never none.">
+                  <div data-move-desk>
+                    <DeskPicker place={{ host: target, mine: !!target.memberId, problem: null }} value={deskId} onChange={setDeskId} room={target.memberId && target.memberId !== can.me?.id ? `${target.memberName ?? 'that member'}'s room` : 'your room'} />
+                  </div>
+                </Field>
               )}
               {plan.kind !== 'back' && (
                 <Field label={`Put the folder inside, on ${toName(to)}`} hint={`A new folder "${plan.name}" is made there (or "${plan.name}-2" if that name is taken).`}>

@@ -7,6 +7,7 @@ import { Character, type PoseName } from './Character.tsx';
 import { Lineup } from './character/Lineup.tsx';
 import type { PersonView, WalkRequest } from './types.ts';
 import { deskSeat, type World } from './world.ts';
+import { MoveBox, PACKED, Thing } from './MoveBox.tsx';
 
 interface Dest {
   key: string;
@@ -14,7 +15,7 @@ interface Dest {
   z: number;
   rot: number;
   sit: boolean;
-  place: 'desk' | 'meeting' | 'break' | 'visit' | 'lobby' | 'board';
+  place: 'desk' | 'meeting' | 'break' | 'visit' | 'lobby' | 'board' | 'pack';
   /** Sent back with the whip: at a run. */
   run?: boolean;
 }
@@ -146,7 +147,7 @@ const Person = memo(function Person({
 }) {
   const group = useRef<THREE.Group>(null);
   const { camera } = useThree();
-  const rt = useRef({ x: dest.x, z: dest.z, rot: dest.rot, v: 0, path: [] as Array<[number, number]>, key: dest.key, tx: dest.x, tz: dest.z, arrived: true });
+  const rt = useRef({ x: dest.x, z: dest.z, rot: dest.rot, v: 0, path: [] as Array<[number, number]>, key: dest.key, tx: dest.x, tz: dest.z, trot: dest.rot, arrived: true });
   const [moving, setMoving] = useState(false);
   const [far, setFar] = useState(false);
   const look = useRef(0);
@@ -161,7 +162,12 @@ const Person = memo(function Person({
   // simply missing); they are added once this person has been drawn.
   const [drawn, setDrawn] = useState(false);
   // Gone from the office (let go, or their member left): nothing is left standing where they were — a mark over their head would hang in the air.
-  useEffect(() => () => void positions.delete(v.id), [v.id, positions]);
+  useEffect(() => {
+    // (For the UI tests: how many times this person was put into the scene — once, unless they left it and came back.)
+    const probe = ((window as any).__orchScene ??= {});
+    (probe.personMounts ??= {})[v.id] = (probe.personMounts[v.id] ?? 0) + 1;
+    return () => void positions.delete(v.id);
+  }, [v.id, positions]);
   // Whipped: flinch for a moment, then carry on exactly as before.
   const [ouch, setOuch] = useState<string | null>(null);
   useEffect(() => {
@@ -182,6 +188,21 @@ const Person = memo(function Person({
   const packedAt = useRef<string | null>(null);
   const [carrying, setCarrying] = useState(false);
   const [arrived100, setArrived100] = useState(false);
+  /** At 100 %: a moment at the desk while the box is closed, before they pick it up and go. */
+  const [closing, setClosing] = useState(false);
+  const closingUntil = useRef(0);
+  const [closeTick, setCloseTick] = useState(0);
+  // The share shown counts up to what has been done rather than jumping there (a small folder goes in a blink).
+  const [shownPct, setShownPct] = useState(0);
+  const targetPct = v.moving && v.moving.phase !== 'failed' ? v.moving.percent : 0;
+  useEffect(() => {
+    if (!v.moving || v.moving.phase === 'failed') {
+      setShownPct(0);
+      return;
+    }
+    const t = window.setInterval(() => setShownPct((p) => (p >= targetPct ? targetPct : Math.min(targetPct, p + 3))), 90);
+    return () => window.clearInterval(t);
+  }, [targetPct, v.moving]);
   useEffect(() => {
     if (packing) {
       if (packedAt.current === null) packedAt.current = v.deskId ?? '';
@@ -191,9 +212,15 @@ const Person = memo(function Person({
     const from = packedAt.current;
     packedAt.current = null;
     if (v.moving?.phase === 'failed') return;
-    // Done: 100 %, and off with the box — to a new desk, or (the same desk on another machine of the office) only a moment.
+    // Done: 100 %, the box closed at the desk, and off with it — to a new desk, or (the same desk on another machine of the office) only a moment.
     setArrived100(true);
     setCarrying(true);
+    setClosing(true);
+    closingUntil.current = Date.now() + 1400;
+    window.setTimeout(() => {
+      setClosing(false);
+      setCloseTick((n) => n + 1);
+    }, 1450);
     if ((v.deskId ?? '') === from) {
       const t = window.setTimeout(() => {
         setCarrying(false);
@@ -202,10 +229,6 @@ const Person = memo(function Person({
       return () => window.clearTimeout(t);
     }
   }, [packing, v.moving?.phase, v.deskId]);
-  // A new desk while the box is still being filled (its record moves a moment before the move is called done): up already.
-  useEffect(() => {
-    if (packing && packedAt.current !== null && (v.deskId ?? '') !== packedAt.current) setCarrying(true);
-  }, [packing, v.deskId]);
   useEffect(() => {
     // Sat down at the new place: the box is put away.
     if (carrying && !moving && !packing && rt.current.arrived && rt.current.key === dest.key) {
@@ -219,15 +242,18 @@ const Person = memo(function Person({
 
   useEffect(() => {
     const r = rt.current;
+    // (The box is being closed: they set off when it is.)
+    if (Date.now() < closingUntil.current) return;
     // A new place to be — or the same place moved (the owner rearranged the desks): walk there.
     if (r.key === dest.key && Math.abs(r.tx - dest.x) < 1e-3 && Math.abs(r.tz - dest.z) < 1e-3) return;
     r.key = dest.key;
     r.tx = dest.x;
     r.tz = dest.z;
+    r.trot = dest.rot;
     r.path = world.nav.path(r.x, r.z, dest.x, dest.z);
     r.arrived = false;
     setMoving(true);
-  }, [dest.key, dest.x, dest.z, world]);
+  }, [dest.key, dest.x, dest.z, world, closeTick]);
 
   useFrame((_s, rawDt) => {
     const r = rt.current;
@@ -236,13 +262,14 @@ const Person = memo(function Person({
     if (!r.arrived) {
       const dt = Math.min(rawDt, 0.05);
       if (!r.path.length) {
-        // There: turn to face the way this place is used before sitting down (or standing) at it.
-        r.x = dest.x;
-        r.z = dest.z;
+        // There: turn to face the way this place is used before sitting down (or standing) at it. (The place this walk
+        // was to — not a newer one they have not set off for yet: they are not put there.)
+        r.x = r.tx;
+        r.z = r.tz;
         r.v = 0;
-        if (turnToward(r, dest.rot, dt) < 0.04) {
+        if (turnToward(r, r.trot, dt) < 0.04) {
           r.arrived = true;
-          r.rot = dest.rot;
+          r.rot = r.trot;
           setMoving(false);
         }
       } else {
@@ -330,7 +357,8 @@ const Person = memo(function Person({
 
   // No session and no desk to sleep at: dozing on their feet.
   // (Packing their desk: busy with the hands at it, whatever the session is doing — it is stopped meanwhile.)
-  const usual: PoseName = moving ? 'walk' : dest.sit ? (packing && !carrying ? 'typing' : seatedPose(v, dest.place)) : v.live || carrying ? 'stand' : 'doze';
+  const atBox = packing && !carrying && !moving && dest.place === 'pack';
+  const usual: PoseName = moving ? 'walk' : dest.sit ? seatedPose(v, dest.place) : v.live || carrying || packing ? 'stand' : 'doze';
   const pose: PoseName = ouch && !moving ? 'ouch' : usual;
   const cls = STATE_CLASS[v.activity] ?? 'unknown';
   const labelY = moving || !dest.sit ? 1.95 : 1.62;
@@ -350,18 +378,29 @@ const Person = memo(function Person({
         onPointerOver={() => (document.body.style.cursor = 'pointer')}
         onPointerOut={() => (document.body.style.cursor = '')}
       >
-        <Character appearance={v.appearance} pose={pose} cue={whippedAt} offline={!v.live && !packing && !carrying} look={look} level={v.level} phase={phase} frozen={() => far} carrying={carrying && (moving || !dest.sit)} />
+        <Character appearance={v.appearance} pose={pose} cue={whippedAt} offline={!v.live && !packing && !carrying} look={look} level={v.level} phase={phase} frozen={() => far} carrying={carrying && !closing && (moving || !dest.sit)} packing={atBox} />
       </group>
-      {(packing || carrying) && (
-        // On the desk beside them while it is filled; in their hands, in front of the chest, while they carry it.
-        <MoveBox fill={carrying ? 1 : (v.moving?.percent ?? 0) / 100} closed={carrying} position={carrying && (moving || !dest.sit) ? [0, 0.98, 0.34] : [0.52, DESK_TOP, 0.72]} />
+      {(atBox || (carrying && (closing || moving || !dest.sit))) && (
+        // One box: on the desk in front of them, open and filling, then closed there; then in both hands in front of the chest.
+        <group position={atBox || closing ? PACK_BOX : [0, 0.86, 0.36]}>
+          <MoveBox fill={carrying ? 1 : shownPct / 100} closed={carrying} name={v.name} />
+        </group>
       )}
+      {atBox &&
+        // What is still to go in, beside the box to their right.
+        PACKED.map((p, i) =>
+          shownPct / 100 < p.at ? (
+            <group key={p.kind} position={PACK_THINGS[i]}>
+              <Thing kind={p.kind} />
+            </group>
+          ) : null,
+        )}
       {drawn && (packing || arrived100) && !hideLabels && (
         <Html position={[0, labelY, 0]} center zIndexRange={[40, 0]} style={{ pointerEvents: 'none' }}>
           <div className="move-wrap" data-move-badge={v.id}>
             <div className={`move-badge ${arrived100 ? 'move-badge-done' : ''}`}>
               <span className="move-badge-box">📦</span>
-              {arrived100 ? '100' : (v.moving?.percent ?? 0)}
+              {arrived100 ? '100' : shownPct}
               <span className="move-badge-pct">%</span>
             </div>
           </div>
@@ -426,71 +465,17 @@ const Person = memo(function Person({
  */
 /** Height of a desk top (`DESK_SIZE.h`). */
 const DESK_TOP = 0.74;
-const CARDBOARD = '#b98a55';
-const CARDBOARD_DARK = '#8e6538';
-
-/**
- * A cardboard box (a move to another machine, `docs/MOVE.md`): open, filling up with what is on the desk as the move
- * goes (`fill` 0…1); closed when it is carried.
- */
-function MoveBox({ fill, closed, position }: { fill: number; closed: boolean; position: [number, number, number] }) {
-  const w = 0.42;
-  const h = 0.28;
-  const d = 0.32;
-  const t = 0.012;
-  const level = Math.max(0.02, Math.min(1, fill)) * (h - 0.04);
-  return (
-    <group position={position}>
-      {/* Bottom and the four sides. */}
-      <mesh position={[0, t / 2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[w, t, d]} />
-        <meshStandardMaterial color={CARDBOARD} roughness={0.95} />
-      </mesh>
-      {([[0, d / 2, w, t], [0, -d / 2, w, t]] as const).map(([x, z, sw, sd], i) => (
-        <mesh key={`fb${i}`} position={[x, h / 2, z]} castShadow>
-          <boxGeometry args={[sw, h, sd]} />
-          <meshStandardMaterial color={CARDBOARD} roughness={0.95} />
-        </mesh>
-      ))}
-      {([[w / 2, 0], [-w / 2, 0]] as const).map(([x, z], i) => (
-        <mesh key={`lr${i}`} position={[x, h / 2, z]} castShadow>
-          <boxGeometry args={[t, h, d]} />
-          <meshStandardMaterial color={CARDBOARD_DARK} roughness={0.95} />
-        </mesh>
-      ))}
-      {/* What is in it: papers, a mug, a notebook — as high as the move has come. */}
-      <mesh position={[-0.08, t + level / 2, 0]}>
-        <boxGeometry args={[0.2, level, d - 0.06]} />
-        <meshStandardMaterial color="#e9e4d8" roughness={0.9} />
-      </mesh>
-      <mesh position={[0.11, t + level * 0.45, -0.04]}>
-        <boxGeometry args={[0.13, level * 0.9, 0.18]} />
-        <meshStandardMaterial color="#3f6fb5" roughness={0.8} />
-      </mesh>
-      {closed ? (
-        <mesh position={[0, h + t / 2, 0]} castShadow>
-          <boxGeometry args={[w + t, t, d + t]} />
-          <meshStandardMaterial color={CARDBOARD} roughness={0.95} />
-        </mesh>
-      ) : (
-        // Open: the two long flaps folded out.
-        ([1, -1] as const).map((s) => (
-          <mesh key={s} position={[0, h + 0.05, s * (d / 2 + 0.07)]} rotation={[s * 1.1, 0, 0]}>
-            <boxGeometry args={[w, t, 0.16]} />
-            <meshStandardMaterial color={CARDBOARD} roughness={0.95} />
-          </mesh>
-        ))
-      )}
-      {/* The tape across the top. */}
-      {closed && (
-        <mesh position={[0, h + t + 0.001, 0]}>
-          <boxGeometry args={[0.06, 0.002, d + t + 0.002]} />
-          <meshStandardMaterial color="#d8c39a" roughness={0.6} />
-        </mesh>
-      )}
-    </group>
-  );
-}
+/** Where someone stands to pack their desk (`docs/MOVE.md`), in their seat's frame: beside the chair, at the desk's front edge. */
+const PACK_SPOT = { x: 0.5, z: 0.02 };
+/** The box on the desk in front of them, and the things still to go in beside it (to their right), in their own frame. */
+const PACK_BOX: [number, number, number] = [0.02, DESK_TOP, 0.56];
+const PACK_THINGS: Array<[number, number, number]> = [
+  [-0.36, DESK_TOP, 0.5],
+  [-0.5, DESK_TOP, 0.66],
+  [-0.3, DESK_TOP, 0.72],
+  [-0.46, DESK_TOP, 0.42],
+  [-0.22, DESK_TOP, 0.6],
+];
 
 export function People({
   people,
@@ -575,6 +560,16 @@ export function People({
         ? { ...deskSeat(desk), sit: true, place: 'desk', key: `desk:${desk.id}` }
         : { x: world.spawn.x - 3 + (lobby % 6) * 1.1, z: world.spawn.z - 3 - Math.floor(lobby++ / 6), rot: 0, sit: false, place: 'lobby', key: `lobby:${lobby}` };
       let dest = home;
+      // Being moved to another machine: up from the chair, packing at the desk beside it (`docs/MOVE.md`).
+      if (desk && v.moving && v.moving.phase !== 'failed') {
+        const seat = deskSeat(desk);
+        const c = Math.cos(seat.rot);
+        const sn = Math.sin(seat.rot);
+        dest = { x: seat.x + PACK_SPOT.x * c + PACK_SPOT.z * sn, z: seat.z - PACK_SPOT.x * sn + PACK_SPOT.z * c, rot: seat.rot, sit: false, place: 'pack', key: `pack:${desk.id}` };
+        out.set(v.id, dest);
+        awayRef.current.set(v.id, false);
+        continue;
+      }
       const walk = walks.find((w) => w.fromId === v.id);
       const target = walk ? people.find((p) => p.id === walk.toId) : undefined;
       const targetDesk = target?.deskId ? desks.get(target.deskId) : undefined;

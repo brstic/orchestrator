@@ -83,7 +83,7 @@ const tableOf = (deskId: string): string => deskId.replace(/-[a-z]$/, '');
  * Which desk they get. In the shared office: any free desk, shown table by table as they stand. In one's own room:
  * a seat there (the room grows to hold it). "Automatic" is always there: next to their project's people, or the next free seat.
  */
-export function DeskPicker({ place, value, onChange }: { place: HirePlace; value: string | null; onChange: (deskId: string | null) => void }) {
+export function DeskPicker({ place, value, onChange, room = 'your room' }: { place: HirePlace; value: string | null; onChange: (deskId: string | null) => void; room?: string }) {
   const layout = useOffice((s) => s.layout);
   const employees = useOffice((s) => s.employees);
   const active = useMemo(() => Object.values(employees).filter((e) => !e.archived), [employees]);
@@ -109,7 +109,7 @@ export function DeskPicker({ place, value, onChange }: { place: HirePlace; value
       <div className="col" style={{ gap: 8 }}>
         <div className="row row-wrap" style={{ gap: 6 }}>
           {auto}
-          <span className="small faint">or a seat in your room — it grows when you pick one beyond its last desk</span>
+          <span className="small faint">or a seat in {room} — it grows when you pick one beyond its last desk</span>
         </div>
         <div className="desk-tables">
           {Array.from({ length: Math.ceil(seats / 4) }, (_x, pod) => (
