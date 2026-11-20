@@ -75,7 +75,7 @@ test('a lead is a member’s: on their own computer, one each, on the lightest m
 test('a lead is shown its own tools and how to ask; nobody else is shown a lead’s', () => {
   const server = buildMcpServer(h.server.engine);
   const shown = (as: string) => server.tools.filter((t) => server.listed!(t, { employee: h.server.engine.core.employees.require(ids[as]!), session: {} as any })).map((t) => t.name);
-  assert.deepEqual(shown('Lea').sort(), ['ask_boss', 'check_messages', 'report_status', 'respond_to_request', 'send_message', 'team_assign', 'team_folders', 'team_hire', 'team_look', 'team_overview', 'team_task', 'team_tell', 'wait_for_answer']);
+  assert.deepEqual(shown('Lea').sort(), ['ask_boss', 'check_messages', 'message_person', 'report_status', 'respond_to_request', 'send_message', 'team_assign', 'team_folders', 'team_hire', 'team_look', 'team_overview', 'team_task', 'team_tell', 'wait_for_answer']);
   assert.ok(!shown('Ana').some((t) => t.startsWith('team_')) && shown('Ana').includes('complete_task'));
 });
 
