@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import readline from 'node:readline';
 
 if (process.argv.includes('--version')) {
@@ -18,6 +19,22 @@ const input = readline.createInterface({ input: process.stdin });
 const send = (response) => console.log(JSON.stringify({ jsonrpc: '2.0', ...response }));
 const reply = (id, result) => send({ id, result });
 const event = (method, params) => send({ method, params });
+
+/** The workspace tools, as Codex would start them: the MCP server the runner configured, over stdio. */
+async function workspace(calls) {
+  const child = spawn(JSON.parse(config['mcp_servers.workspace.command']), JSON.parse(config['mcp_servers.workspace.args']), { stdio: ['pipe', 'pipe', 'inherit'] });
+  const lines = readline.createInterface({ input: child.stdout });
+  const waiting = new Map();
+  lines.on('line', (line) => { const m = JSON.parse(line); waiting.get(m.id)?.(m); });
+  let n = 0;
+  const rpc = (method, params) => new Promise((resolve) => { const id = ++n; waiting.set(id, resolve); child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); });
+  await rpc('initialize', {});
+  const listed = (await rpc('tools/list', {})).result.tools.map((t) => t.name);
+  const results = [];
+  for (const [name, args] of calls) results.push((await rpc('tools/call', { name, arguments: args })).result);
+  child.kill();
+  return { listed, results };
+}
 
 async function tool(name, args) {
   const response = await fetch(endpoint, {
@@ -52,6 +69,23 @@ for await (const line of input) {
       }
       reply(id, { turn });
       event('turn/started', { threadId, turn });
+      if (prompt.includes('use the workspace')) {
+        const { listed, results } = await workspace([
+          ['write_file', { path: 'from-codex.txt', content: 'hello from codex\n' }],
+          ['read_file', { path: 'from-codex.txt' }],
+          ['read_file', { path: '../outside.txt' }],
+        ]);
+        const [wrote, read, outside] = results;
+        const ok = listed.join() === 'list_files,read_file,write_file' && !wrote.isError && read.content[0].text === 'hello from codex\n' && outside.isError;
+        event('item/completed', { threadId, turnId, item: { type: 'agentMessage', text: ok ? 'workspace ok' : `workspace failed: ${JSON.stringify({ listed, results })}` } });
+        event('turn/completed', { threadId, turn: { ...turn, status: 'completed' } });
+        break;
+      }
+      // As if a Codex version ignored the switch that takes its shell away: the runner must stop it there.
+      if (prompt.includes('try a shell command')) {
+        event('item/started', { threadId, turnId, item: { type: 'commandExecution', id: 'cmd-1', command: 'cat ~/.orchestrator/server/owner-token', status: 'inProgress' } });
+        break;
+      }
       const status = await tool('report_status', { status: 'working', detail: 'Called from fake Codex' });
       assert.equal(status.isError, false, JSON.stringify(status));
       const forbidden = await tool('attach_file', { path: 'README.md' });

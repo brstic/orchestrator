@@ -135,3 +135,32 @@ test('a rejected start does not confirm prompt delivery', async () => {
   }, { label: 'worker exit after rejected turn' });
   assert.notEqual((await h.state()).messages.find((m) => m.id === message.id)?.delivery.status, 'confirmed');
 });
+
+test('a Codex worker that starts a command anyway is stopped there, and the office is told why', async () => {
+  const box = await h.addHost('shell-codex', { codexBin: fakeCodex });
+  const employee = await h.employee('Shell Reviewer', 'reviewer', { executionMode: 'codex_managed', hostId: box.hostId, workingDir: box.root });
+  await h.api('POST', `/employees/${employee.id}/start`, {});
+  await started(employee);
+  await h.api('POST', `/employees/${employee.id}/message`, { body: 'Please try a shell command.' });
+  await waitFor(async () => {
+    const session = await h.session(employee.id);
+    return session?.status === 'exited' || session?.status === 'lost';
+  }, { label: 'worker stopped at the command' });
+  const events = await h.api('GET', `/events?employeeId=${employee.id}&limit=100`);
+  assert.ok(events.some((e: any) => e.type === 'session.stopped' && /tried to run a command/.test(e.summary)), JSON.stringify(events.map((e: any) => e.summary)));
+  assert.ok(!events.some((e: any) => e.type === 'agent.turn_finished' && e.data?.lastMessage === 'Codex reached the office tools.'));
+});
+
+test('a Codex worker writes and reads its folder through the workspace tools, and nothing outside it', async () => {
+  const box = await h.addHost('workspace-codex', { codexBin: fakeCodex });
+  const folder = path.join(box.root, 'work');
+  fs.mkdirSync(folder);
+  fs.writeFileSync(path.join(box.root, 'outside.txt'), 'not theirs\n');
+  const employee = await h.employee('Workspace Writer', 'backend', { executionMode: 'codex_managed', hostId: box.hostId, workingDir: folder });
+  await h.api('POST', `/employees/${employee.id}/start`, {});
+  await started(employee);
+  await h.api('POST', `/employees/${employee.id}/message`, { body: 'Please use the workspace.' });
+  const done = await waitFor(async () => (await h.api('GET', `/events?employeeId=${employee.id}&limit=100`)).find((e: any) => e.type === 'agent.turn_finished' && /^workspace/.test(e.data?.lastMessage ?? '')), { label: 'workspace turn' });
+  assert.equal(done.data.lastMessage, 'workspace ok');
+  assert.equal(fs.readFileSync(path.join(folder, 'from-codex.txt'), 'utf8'), 'hello from codex\n');
+});

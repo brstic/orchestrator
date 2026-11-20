@@ -14,6 +14,8 @@ export interface CodexSpec {
   model: string | null;
   effort?: string | null;
   fileDeny?: string[];
+  /** The office's own folders on this machine, fenced off from the file tools (`codex-files.ts`). */
+  officeRoots?: string[];
   appendSystemPrompt: string;
   mcp: { url: string; token: string } | null;
   codexThreadId?: string | null;
@@ -180,6 +182,28 @@ class AppServer {
   }
 }
 
+/**
+ * Why an item Codex started is not allowed, or null. Its shell, web search and image viewer are switched off by the
+ * runner's configuration, and its own file changes may only be in its scratch folder (its sandbox holds it there too);
+ * the selected folder is reached through the workspace tools alone (`codex-files.ts`).
+ */
+export function forbidden(item: JsonObject, scratch: string | string[]): string | null {
+  const roots = Array.isArray(scratch) ? scratch : [scratch];
+  const type = string(item.type);
+  if (type === 'commandExecution') return 'it tried to run a command, which Codex employees may not run';
+  if (type === 'webSearch') return 'it tried to search the web, which Codex employees may not do';
+  if (type === 'imageView') return 'it tried to open a file outside its workspace tools';
+  if (type === 'fileChange') {
+    const changes = Array.isArray(item.changes) ? item.changes : [];
+    const outside = changes.some((c) => {
+      const p = path.resolve(roots[0]!, string(object(c).path));
+      return !roots.some((root) => p === root || p.startsWith(root + path.sep));
+    });
+    if (outside) return 'it tried to change a file outside its workspace tools';
+  }
+  return null;
+}
+
 function workerHome(specPath: string): string {
   const home = path.join(path.dirname(specPath), 'codex-home');
   fs.mkdirSync(home, { recursive: true, mode: 0o700 });
@@ -208,6 +232,7 @@ export async function runCodex(specPath: string): Promise<void> {
   let startContext = '';
   let stopping = false;
   let failure: Error | undefined;
+  let endReason = 'other';
   let finished: () => void = () => {};
   const done = new Promise<void>((resolve) => { finished = resolve; });
   let events = Promise.resolve();
@@ -215,6 +240,8 @@ export async function runCodex(specPath: string): Promise<void> {
   const emptyThread = path.join(home, 'empty-thread');
   const scratch = path.join(path.dirname(specPath), 'codex-scratch');
   fs.mkdirSync(scratch, { recursive: true, mode: 0o700 });
+  // (As Codex may name it: through a link in its path or not — /tmp and /private/tmp on a Mac.)
+  const scratchRoots = [...new Set([scratch, fs.realpathSync(scratch)])];
   const env: NodeJS.ProcessEnv = { ...process.env, ...spec.env, CODEX_HOME: home };
   delete env[TOKEN_ENV];
   if (spec.mcp) env[TOKEN_ENV] = spec.mcp.token;
@@ -251,6 +278,7 @@ export async function runCodex(specPath: string): Promise<void> {
     );
   }
   const app = new AppServer(spec.codexBin, scratch, env, config.flatMap((entry) => ['-c', entry]), (method, params) => {
+    if (stopIfForbidden(method, params)) return;
     events = events.then(() => onEvent(method, params)).catch(fail);
   });
   const hook = (event: string, data: JsonObject = {}) => callHost(spec, 'POST', '/hook', {
@@ -346,6 +374,22 @@ export async function runCodex(specPath: string): Promise<void> {
     } finally {
       accepted();
     }
+  }
+
+  /**
+   * What Codex was told it does not have (the switches above) and still started: the worker stops there, whatever turn
+   * it belongs to, as the event arrives (not behind the events still being handled). A newer Codex that ignored a
+   * switch must not get a shell that asks nobody.
+   */
+  function stopIfForbidden(method: string, params: JsonObject): boolean {
+    if (stopping || (method !== 'item/started' && method !== 'item/completed')) return false;
+    const why = forbidden(object(params.item), scratchRoots);
+    if (!why) return false;
+    if (active?.id) void app.request('turn/interrupt', { threadId, turnId: active.id }).catch(() => undefined);
+    say(`Stopped: ${why}.`);
+    endReason = why;
+    fail(new Error(why));
+    return true;
   }
 
   async function onEvent(method: string, params: JsonObject): Promise<void> {
@@ -455,6 +499,6 @@ The native Codex working directory is private scratch space. The employee’s se
   } finally {
     stopWorker();
     app.close();
-    if (threadId) await hook('SessionEnd', { reason: 'other' });
+    if (threadId) await hook('SessionEnd', { reason: endReason });
   }
 }

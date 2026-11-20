@@ -2,6 +2,16 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-20 — Codex as a third runtime: no shell, its folder through the office's own file tools
+
+A contributor's pull request added OpenAI's Codex CLI as a runtime beside interactive Claude Code and the SDK-managed worker; the owner had it merged ("do what it takes for it to be good, then deploy").
+- **Codex runs through its App Server** (a runner in the tmux pane, as the SDK worker's), which gives threads, acknowledged turns and interrupts as structured calls. The office keeps everything else: messages, tasks, reviews, the team tools.
+- **Codex's own approvals are off, and so is what would need them**: no shell, no web search, no browser, no network, its sandbox writes only to a private scratch folder. It is not Claude Code's bypass mode and not tied to an autonomy level: there is nothing left that it could be asked about. Its working folder is reached only through the workspace tools (`codex-files.ts`): list, read and write text, refusing what is outside the folder, links, hidden and key-like names, the office's own files, and a whole tool where a deny rule names it.
+- **Switches are not trusted alone.** That Codex has no shell rests on configuration keys a newer Codex could rename or ignore; with approvals off such a command would ask nobody, and its sandbox reads the whole disk. So the runner stops the worker at the first command, web search, image from the disk or file change outside its scratch folder (`forbidden`, added at the merge), and the office says why.
+- **The office's own files are fenced off from it** as from everybody (`HostAgent.officeFiles`), and the session's own folder too (it holds its tokens) — added at the merge; the pull request relied on hidden names alone, which holds for the default places only.
+- Not for a foreman, a self-driven desk or a rented employee; no Claude account, model or autonomy level (the machine's Codex login and its `codexModel`).
+- Rejected for now: shell and git for Codex (they need structured approvals and the high-risk gate first, `plans/CODEX-runtime.md`); reading deny rules path by path (a rule that names some paths takes the whole tool away: refusing more, never less).
+
 ## 2026-11-20 — People's parts are drawn together, not merged and not simplified
 
 Continuing the work for a colleague's overheating MacBook Air; two thirds of the draws were people.
@@ -36,10 +46,6 @@ The owner, after the rented project manager could only put the owner's question 
 - **Only to the employee's own clients, and never as a second copy of an answer** to the client being answered: their reply goes there by itself.
 - **Not a notification outside the portal** (no e-mail, no push): a client has only the portal. They see it there when they come in — the portal opens that conversation — or within seconds while it is open.
 - Rejected: letting `message_person` reach clients too. A client is not a person of the office (no Inbox, no Telegram, a different door), and one tool that sometimes writes into an Inbox and sometimes into a client's conversation would make it easy to send the office's words to a client by a slip of a name.
-## 2026-11-19 — Codex as a managed employee runtime
-
-The office keeps team routing and assigns each employee a runtime on their enrolled host. Codex App Server supplies the thread lifecycle, turn acknowledgement and interrupt. The first release limits Codex to the office’s MCP tools and supplied text. Workspace access needs its own enforcement for project rules, the office’s files and high-risk operations. The host keeps the login under its existing OS user.
-
 ## 2026-11-18 — Out in the city together: the place out there rides on the presence
 
 The owner asked for the jump off the terrace to be "multiplayer, so the other players see everything and we can go together".

@@ -865,6 +865,8 @@ export class HostAgent {
       model: this.cfg.codexModel?.trim() || spec.model,
       effort: this.cfg.codexEffort?.trim() || null,
       fileDeny: spec.permissions.deny,
+      // The office's own files, as for every employee (`officeFiles`) — but the session's own folder too: it holds its tokens.
+      officeRoots: [path.dirname(this.p.sessions), ...this.officeServers()],
       appendSystemPrompt: spec.appendSystemPrompt,
       mcp: spec.mcp,
       codexThreadId: spec.resume ? spec.codexThreadId ?? null : null,
@@ -1664,7 +1666,7 @@ export class HostAgent {
     const home = path.dirname(this.p.sessions);
     const real = (p: string) => realpathOfDeepestExisting(path.resolve(p));
     const mine = [real(this.filesRoot()), real(path.join(this.p.sessions, t.sessionId))];
-    const servers = [process.env.ORCH_SERVER_HOME, path.join(os.homedir(), '.orchestrator', 'server'), path.join(path.dirname(home), 'server')].filter((d): d is string => !!d && fs.existsSync(path.join(d, 'owner-token')));
+    const servers = this.officeServers();
     const closed = [real(home), ...servers.map(real)];
     /** The same places as somebody would write them, a link in their path or not. */
     const written = [...new Set([...closed, path.resolve(home), ...servers.map((d) => path.resolve(d))])];
@@ -1758,6 +1760,12 @@ export class HostAgent {
     if (this.lastLimits.get(tracked.sessionId) === key) return;
     this.lastLimits.set(tracked.sessionId, key);
     this.send(msg);
+  }
+
+  /** The office's servers' homes on this machine (where one keeps its owner token). */
+  private officeServers(): string[] {
+    const home = path.dirname(this.p.sessions);
+    return [process.env.ORCH_SERVER_HOME, path.join(os.homedir(), '.orchestrator', 'server'), path.join(path.dirname(home), 'server')].filter((d): d is string => !!d && fs.existsSync(path.join(d, 'owner-token')));
   }
 
   /** Where the files attached to tasks stand on this machine: a folder of the agent's own, outside every repository. */
