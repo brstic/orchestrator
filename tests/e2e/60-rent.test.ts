@@ -90,6 +90,37 @@ test('a client reaches the portal and nothing else of the office', async () => {
   assert.equal((await raw('GET', '/rent/api/me')).status, 401);
 });
 
+test('on a phone: the client signs in at the portal and uses it; the office itself stays closed to a phone', async () => {
+  const PHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+  const phone = async (method: string, pathname: string, body?: unknown, bearer?: string) => {
+    const res = await fetch(`${h.url}${pathname}`, { method, headers: { 'user-agent': PHONE, ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined });
+    const text = await res.text();
+    let json: any = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      /* a page */
+    }
+    return { status: res.status, body: json, text };
+  };
+  // The portal's page, and signing in from it — the way the page signs in.
+  const page = await phone('GET', '/rent');
+  assert.equal(page.status, 200);
+  const signed = await phone('POST', '/rent/login', { username: 'Ana Client', password: 'a good password 42' });
+  assert.equal(signed.status, 200, JSON.stringify(signed.body));
+  assert.equal((await phone('GET', '/rent/api/me', undefined, signed.body.token)).status, 200);
+  // Only a client signs in there: a member's name is not let in by the portal's door.
+  assert.equal((await phone('POST', '/rent/login', { username: 'Owner', password: 'whatever it is 42' })).status, 401);
+  // It can be put on the home screen as an app: it opens at the portal.
+  const manifest = await phone('GET', '/rent/manifest.webmanifest');
+  assert.equal(manifest.status, 200);
+  assert.deepEqual([manifest.body.start_url, manifest.body.scope, manifest.body.display], ['/rent', '/rent', 'standalone']);
+  // The office: its page, its API and its sign-in are for a computer.
+  assert.equal((await phone('GET', '/')).status, 403);
+  assert.equal((await phone('GET', '/api/state', undefined, h.token)).status, 403);
+  assert.equal((await phone('POST', '/login', { username: 'Ana Client', password: 'a good password 42' })).status, 403);
+});
+
 test('what the client writes reaches the session, and the answer comes back to their conversation — not to the owner', async () => {
   const sent = await portal('POST', `/chats/${kira.id}`, { text: 'Hello Kira, how is the shop? @@fake: say client-answer-1188@@' });
   assert.equal(sent.status, 200, JSON.stringify(sent.body));

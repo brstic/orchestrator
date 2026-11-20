@@ -118,6 +118,29 @@ export class RentDoor {
     };
     app.get('/rent', page);
     app.get('/r/:code', page);
+    // On a phone the portal can be put on the home screen as an app of its own (`rent/phone.ts`): what it is called
+    // there, where it opens, and its icons (`public/rent/`).
+    app.get('/rent/manifest.webmanifest', async (_req, reply) => {
+      const office = engine.core.settings.companyName || 'Orchestrator';
+      void reply.header('cache-control', 'no-cache');
+      return reply.type('application/manifest+json').send(
+        JSON.stringify({
+          name: `${office} — Rent portal`,
+          short_name: office.length > 12 ? 'Rent portal' : office,
+          description: `Talk to the AI employees ${office} rents you.`,
+          start_url: '/rent',
+          scope: '/rent',
+          display: 'standalone',
+          orientation: 'portrait',
+          background_color: '#0b0f17',
+          theme_color: '#0b0f17',
+          icons: [
+            { src: '/rent/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: '/rent/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          ],
+        }),
+      );
+    });
 
     app.get('/rent/join/:code', async (req) => {
       const client = engine.rent.active(this.invites.peek(String((req.params as Record<string, string>).code).split('.')[0], this.deps.addressOf(req)));

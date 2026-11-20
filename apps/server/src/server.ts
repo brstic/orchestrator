@@ -409,6 +409,14 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     return { token, name: guest.name, role: guest.role, office: engine.core.settings.companyName, expiresAt, days: SESSION_DAYS };
   });
 
+  // The Rent portal's own sign-in: clients only (a member's name is not known here), and open to a phone like the rest
+  // of the portal — the front door's `/login` is the office's, and a phone is turned away there.
+  app.post('/rent/login', { bodyLimit: 2048 }, async (req, reply) => {
+    void reply.header('cache-control', 'no-store');
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    return rentDoor.signIn(b.username, b.password, addressOf(req));
+  });
+
   // An invitation link. In a browser it is a page that says what to do with it; the app exchanges its code, once,
   // for what it keeps: the office's addresses, the certificate to trust and the member's own credential.
   app.get('/join/:code', async (req, reply) => {

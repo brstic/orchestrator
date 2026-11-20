@@ -18,6 +18,7 @@ import logo from '../entrance/logo.svg';
 import type { StageMood, StageReaction } from './AgentStage.tsx';
 import { isNew, landOn } from './landing.ts';
 import './rent.css';
+import { phoneReady } from './phone.ts';
 
 // The 3D (three.js) is loaded only when it is shown: the portal opens with faces and the figures follow.
 const AgentStage = lazy(() => import('./AgentStage.tsx').then((m) => ({ default: m.AgentStage })));
@@ -121,6 +122,7 @@ export function RentPortal() {
   };
   useEffect(() => {
     document.title = 'Rent portal';
+    return phoneReady('');
   }, []);
   if (joining && code) return <Join code={code} onIn={signedIn} onSignIn={() => (setJoining(false), window.history.replaceState({}, '', '/rent'))} />;
   if (!token) return <SignIn onIn={signedIn} />;
@@ -266,7 +268,7 @@ function SignIn({ onIn }: { onIn: (token: string) => void }) {
           setBusy(true);
           setError('');
           try {
-            const r = await call<{ token: string; kind?: string }>('POST', '/login', { username: name.trim(), password });
+            const r = await call<{ token: string; kind?: string }>('POST', '/rent/login', { username: name.trim(), password });
             if (r.kind !== 'client') {
               setError('That is a member of the office, not a client: members go in at the office itself.');
               setBusy(false);
@@ -482,6 +484,8 @@ function Chat({ agent, me, ask, onBack, onSeen, onSent }: { agent: Agent; me: st
   const [bubble, setBubble] = useState<string | null>(null);
   const [readingUntil, setReadingUntil] = useState(0);
   const [stageOn, setStageOn] = useState(() => read(STAGE) !== 'off');
+  // Writing on a phone: the desk steps aside so that the conversation has the room the keyboard leaves (rent.css).
+  const [typing, setTyping] = useState(false);
   const seenIds = useRef<Set<string> | null>(null);
   const say = useCallback((text: string, pose: StageReaction['pose']) => {
     setReaction({ pose, at: Date.now() });
@@ -655,7 +659,7 @@ function Chat({ agent, me, ask, onBack, onSeen, onSent }: { agent: Agent; me: st
           </button>
         )}
       </header>
-      <div className={`rp-chat-body ${show3d && stageOn ? 'rp-with-stage' : ''}`}>
+      <div className={`rp-chat-body ${show3d && stageOn ? 'rp-with-stage' : ''} ${typing ? 'rp-typing' : ''}`}>
       {show3d && stageOn && (
         <aside className="rp-stage" data-rent-stage={mood}>
           <Suspense fallback={<div className="rp-stage-canvas rp-stage-wait"><Avatar appearance={live.appearance} size={64} /></div>}>
@@ -784,6 +788,9 @@ function Chat({ agent, me, ask, onBack, onSeen, onSent }: { agent: Agent; me: st
             value={text}
             placeholder={`Message ${live.name}…`}
             onChange={(e) => setText(e.target.value)}
+            onFocus={() => setTyping(true)}
+            onBlur={() => setTyping(false)}
+            enterKeyHint="send"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && window.matchMedia('(pointer: fine)').matches) {
                 e.preventDefault();

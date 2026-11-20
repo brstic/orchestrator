@@ -26,7 +26,11 @@
   --body: 'Inter', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --code: 'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace;
   position: fixed;
-  inset: 0;
+  /* (Sized to what can be seen: on a phone, the keyboard takes the bottom of the screen without the page knowing — phone.ts.) */
+  top: var(--rp-vvtop, 0px);
+  left: 0;
+  right: 0;
+  height: var(--rp-vvh, 100%);
   background: var(--night);
   color: var(--text);
   font: 15px/1.55 var(--body);
@@ -1208,7 +1212,18 @@
 @media (max-width: 760px) {
   .rp-stage,
   .rp-stage-canvas {
-    height: 160px;
+    height: 132px;
+  }
+  /* Writing: the desk steps aside, the conversation and the box get the screen the keyboard leaves. */
+  .rp-typing .rp-stage {
+    display: none;
+  }
+  .rp-lines {
+    overscroll-behavior: contain;
+  }
+  .rp-icon {
+    min-width: 44px;
+    min-height: 44px;
   }
   .rp-team-canvas {
     height: 170px;
