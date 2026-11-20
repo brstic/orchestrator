@@ -107,20 +107,42 @@ async function enrollAgent(token) {
   if (login.status !== 0) throw new Error('enrolling the local host agent failed');
 }
 
+/** When the host agent fell over lately (ms): it is started again, unless it keeps falling over. */
+const agentFalls = [];
+/** At most this many falls in `AGENT_FALL_WINDOW` before the office gives up and stops (systemd then starts it again). */
+const AGENT_FALLS = 5;
+const AGENT_FALL_WINDOW = 10 * 60_000;
+
 function startAgent(token, retried = false) {
   const started = Date.now();
   const agent = run(agentEntry, ['connect', ...(json ? ['--quiet'] : [])]);
-  agent.on('exit', async (code) => {
+  agent.on('exit', async (code, signal) => {
     if (stopping) return;
+    // (No longer one of the children to wait for when the office stops.)
+    const i = children.indexOf(agent);
+    if (i >= 0) children.splice(i, 1);
     // Exit code 2 = the server does not know this host (fresh database). Enroll again, once.
     if (code === 2 && !retried && Date.now() - started < 15000) {
       say('The server does not recognise this host; enrolling it again…');
       await enrollAgent(token).catch((e) => console.error(e.message));
       startAgent(token, true);
-    } else {
-      console.error(`host agent exited (${code}).`);
-      shutdown(1);
+      return;
     }
+    // The agent fell over (an error nothing caught): the office stays up and the agent is started again. Its
+    // sessions run on in tmux meanwhile and are found again (they outlive the agent by design). Before 2026-11-20 the
+    // whole office stopped here — and every client lost it for a while — for an error in one tmux connection.
+    const now = Date.now();
+    agentFalls.push(now);
+    while (agentFalls.length && now - agentFalls[0] > AGENT_FALL_WINDOW) agentFalls.shift();
+    if (agentFalls.length > AGENT_FALLS) {
+      console.error(`host agent exited (${code ?? signal}) ${agentFalls.length} times in ${AGENT_FALL_WINDOW / 60_000} minutes; stopping the office.`);
+      shutdown(1);
+      return;
+    }
+    console.error(`host agent exited (${code ?? signal}); starting it again (${agentFalls.length} of ${AGENT_FALLS} in ${AGENT_FALL_WINDOW / 60_000} minutes).`);
+    setTimeout(() => {
+      if (!stopping) startAgent(token, true);
+    }, 1000 * agentFalls.length);
   });
 }
 

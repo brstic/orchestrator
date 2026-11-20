@@ -2,6 +2,10 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-20 — The office stays up when its machine's agent falls over
+
+The office on the server fell over three times in an hour: its own host agent died on an error in one tmux connection (an EPIPE nobody listened for), and the launcher (`scripts/start-local.mjs`) then stopped the server too, by design — "if the agent exits, everything exits", so that systemd would start both again. The error itself is fixed (`ControlClient` ends the one connection), but the rule was the bigger harm: one agent error cut every client off for the seconds systemd takes, and every session's office link with it. Now the launcher starts the agent again (after 1 s, 2 s, … per fall) and keeps the server up; the agent's sessions run on in tmux and are found again, as they are after any agent restart. More than five falls in ten minutes is not a passing error: then the office stops as before and systemd takes over.
+
 ## 2026-11-20 — A task can be a person's
 
 The owner: a task must be assignable to an owner or a colleague, a real person, who is told in their Inbox. A separate field (`Task.personId`) rather than a person's id in `assigneeId`: everything that reads `assigneeId` — the scheduler, delivery, sessions, reviews, XP — means an employee, and a person in it would be handed to the machinery. Exclusive with an employee. The office does nothing with a person's task but tell them and show it; they move it on themselves (IN_PROGRESS by hand is allowed for it alone). Only people who are here and may work (owners, colleagues — `Comms.people`), never a visitor. Rejected: a task for several people at once (one person, as one employee leads a task).

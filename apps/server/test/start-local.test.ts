@@ -93,3 +93,50 @@ test('a server that ends while it is being waited for is not waited for any long
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+/**
+ * Seen on the office's server (2026-11-20): the host agent fell over on an error in one tmux connection, and the
+ * launcher then stopped the whole office — every client lost it for a while, three times in an hour. Now the agent
+ * is started again and the office stays up.
+ */
+test('a host agent that falls over is started again, and the office stays up', { skip, timeout: 60_000 }, async () => {
+  const port = await freePort();
+  const { dir } = office(`import http from 'node:http';
+const port = Number(process.argv[process.argv.indexOf('--port') + 1]);
+fs.mkdirSync(process.env.ORCH_SERVER_HOME, { recursive: true });
+fs.writeFileSync(process.env.ORCH_SERVER_HOME + '/owner-token', 'orch_owner_test');
+http.createServer((req, res) => res.end('ok')).listen(port, '127.0.0.1');`);
+  // An agent that is enrolled already, and falls over the first two times it is started.
+  const agentHome = path.join(dir, 'home/agent');
+  fs.mkdirSync(agentHome, { recursive: true });
+  fs.writeFileSync(path.join(agentHome, 'config.json'), JSON.stringify({ credential: 'c', serverUrl: `http://127.0.0.1:${port}` }));
+  const starts = path.join(dir, 'agent-starts');
+  fs.writeFileSync(path.join(dir, 'apps/host-agent/dist/orchestrator-agent.mjs'), `import fs from 'node:fs';
+fs.appendFileSync(${JSON.stringify(starts)}, process.pid + '\\n');
+const n = fs.readFileSync(${JSON.stringify(starts)}, 'utf8').trim().split('\\n').length;
+if (n <= 2) setTimeout(() => { throw new Error('write EPIPE (as in a tmux connection)'); }, 200);
+else setInterval(() => {}, 1000);
+`);
+  const child = spawn(process.execPath, [path.join(dir, 'scripts/start-local.mjs'), '--port', String(port)], { env: { ...process.env, ORCH_SERVER_HOME: path.join(dir, 'home/server'), ORCH_AGENT_HOME: agentHome }, stdio: ['ignore', 'pipe', 'pipe'] });
+  let err = '';
+  child.stderr.on('data', (d) => (err += d));
+  try {
+    const began = Date.now();
+    while (Date.now() - began < 30_000) {
+      if (fs.existsSync(starts) && fs.readFileSync(starts, 'utf8').trim().split('\n').length >= 3) break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const pids = fs.readFileSync(starts, 'utf8').trim().split('\n').map(Number);
+    assert.equal(pids.length, 3, `the agent was started again after each fall: ${err}`);
+    assert.equal(child.exitCode, null, 'the launcher — the office — is still up');
+    assert.ok((await fetch(`http://127.0.0.1:${port}/healthz`)).ok, 'and its server answers');
+    assert.ok(alive(pids[2]!), 'the third agent runs');
+    assert.match(err, /host agent exited \(1\); starting it again \(1 of 5/);
+  } finally {
+    child.kill('SIGTERM');
+    await new Promise((r) => child.on('exit', r));
+    child.stdout.destroy();
+    child.stderr.destroy();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

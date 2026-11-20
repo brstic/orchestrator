@@ -119,7 +119,11 @@ export class Tmux {
           } else resolve(stdout);
         },
       );
-      if (opts.input !== undefined) child.stdin?.end(opts.input);
+      if (opts.input !== undefined) {
+        // (A tmux that exits before it has read its input — EPIPE — fails in the callback above; it must not throw here.)
+        child.stdin?.on('error', () => undefined);
+        child.stdin?.end(opts.input);
+      }
     });
   }
 
@@ -330,6 +334,10 @@ export class ControlClient extends EventEmitter<ControlClientEvents> {
       const onFirst = () => ready();
       this.readyHook = onFirst;
       child.stdout.on('data', (d: Buffer) => this.onData(d));
+      // tmux stopped reading (its session just ended: put to sleep, stopped, moved) while a command was on its way:
+      // the write fails (EPIPE). That ends this client — its commands are refused — and nothing else: unheard, the
+      // error took the whole agent down, and on the server the office with it (2026-11-20).
+      child.stdin.on('error', (err) => this.finish(`its input closed: ${err.message}`));
       child.stderr.on('data', (d: Buffer) => {
         stderr += d.toString('utf8');
       });
@@ -380,7 +388,7 @@ export class ControlClient extends EventEmitter<ControlClientEvents> {
     if (!this.child || this.closed) return Promise.reject(new Error('tmux control client is not running'));
     return new Promise((resolve, reject) => {
       this.queue.push({ resolve, reject, cmd });
-      this.child!.stdin.write(cmd + '\n');
+      this.send(cmd + '\n');
     });
   }
 
@@ -407,8 +415,22 @@ export class ControlClient extends EventEmitter<ControlClientEvents> {
           });
         }),
     );
-    this.child.stdin.write(cmds.join('\n') + '\n');
+    this.send(cmds.join('\n') + '\n');
     return Promise.all(promises);
+  }
+
+  /** Written to tmux; a write that cannot be made ends the client (`finish`), it never throws. */
+  private send(text: string): void {
+    const stdin = this.child?.stdin;
+    if (!stdin || this.closed || stdin.destroyed || !stdin.writable) {
+      this.finish('its input is closed');
+      return;
+    }
+    try {
+      stdin.write(text);
+    } catch (err) {
+      this.finish(`its input closed: ${(err as Error).message}`);
+    }
   }
 
   private onData(chunk: Buffer): void {

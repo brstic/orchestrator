@@ -108,6 +108,8 @@ function ignoredOf(root: string, rels: string[]): Promise<Set<string>> {
       // (Exit 1 when none of them is ignored; what it printed is the answer either way.)
       resolve(new Set(String(stdout ?? '').split('\n').map((l) => l.trim().replace(/\/$/, '')).filter(Boolean)));
     });
+    // (git exiting before it has read them — EPIPE — must not take the agent down; its answer comes in the callback.)
+    child.stdin?.on('error', () => undefined);
     child.stdin?.end(rels.map((r) => `${r}/`).join('\n') + '\n');
   });
 }
