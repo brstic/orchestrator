@@ -176,6 +176,47 @@ const Person = memo(function Person({
     };
   }, [whippedAt]);
 
+  // Moved to another machine (`docs/MOVE.md`): their desk goes into a box while it is under way (the share over their
+  // head); when it is done the box shows 100 % and they carry it to their new place, and put it down when they sit.
+  const packing = !!v.moving && v.moving.phase !== 'failed';
+  const packedAt = useRef<string | null>(null);
+  const [carrying, setCarrying] = useState(false);
+  const [arrived100, setArrived100] = useState(false);
+  useEffect(() => {
+    if (packing) {
+      if (packedAt.current === null) packedAt.current = v.deskId ?? '';
+      return;
+    }
+    if (packedAt.current === null) return;
+    const from = packedAt.current;
+    packedAt.current = null;
+    if (v.moving?.phase === 'failed') return;
+    // Done: 100 %, and off with the box — to a new desk, or (the same desk on another machine of the office) only a moment.
+    setArrived100(true);
+    setCarrying(true);
+    if ((v.deskId ?? '') === from) {
+      const t = window.setTimeout(() => {
+        setCarrying(false);
+        setArrived100(false);
+      }, 2500);
+      return () => window.clearTimeout(t);
+    }
+  }, [packing, v.moving?.phase, v.deskId]);
+  // A new desk while the box is still being filled (its record moves a moment before the move is called done): up already.
+  useEffect(() => {
+    if (packing && packedAt.current !== null && (v.deskId ?? '') !== packedAt.current) setCarrying(true);
+  }, [packing, v.deskId]);
+  useEffect(() => {
+    // Sat down at the new place: the box is put away.
+    if (carrying && !moving && !packing && rt.current.arrived && rt.current.key === dest.key) {
+      const t = window.setTimeout(() => {
+        setCarrying(false);
+        setArrived100(false);
+      }, 600);
+      return () => window.clearTimeout(t);
+    }
+  }, [carrying, moving, packing, dest.key]);
+
   useEffect(() => {
     const r = rt.current;
     // A new place to be — or the same place moved (the owner rearranged the desks): walk there.
@@ -288,7 +329,8 @@ const Person = memo(function Person({
   }, -1);
 
   // No session and no desk to sleep at: dozing on their feet.
-  const usual: PoseName = moving ? 'walk' : dest.sit ? seatedPose(v, dest.place) : v.live ? 'stand' : 'doze';
+  // (Packing their desk: busy with the hands at it, whatever the session is doing — it is stopped meanwhile.)
+  const usual: PoseName = moving ? 'walk' : dest.sit ? (packing && !carrying ? 'typing' : seatedPose(v, dest.place)) : v.live || carrying ? 'stand' : 'doze';
   const pose: PoseName = ouch && !moving ? 'ouch' : usual;
   const cls = STATE_CLASS[v.activity] ?? 'unknown';
   const labelY = moving || !dest.sit ? 1.95 : 1.62;
@@ -308,8 +350,23 @@ const Person = memo(function Person({
         onPointerOver={() => (document.body.style.cursor = 'pointer')}
         onPointerOut={() => (document.body.style.cursor = '')}
       >
-        <Character appearance={v.appearance} pose={pose} cue={whippedAt} offline={!v.live} look={look} level={v.level} phase={phase} frozen={() => far} />
+        <Character appearance={v.appearance} pose={pose} cue={whippedAt} offline={!v.live && !packing && !carrying} look={look} level={v.level} phase={phase} frozen={() => far} carrying={carrying && (moving || !dest.sit)} />
       </group>
+      {(packing || carrying) && (
+        // On the desk beside them while it is filled; in their hands, in front of the chest, while they carry it.
+        <MoveBox fill={carrying ? 1 : (v.moving?.percent ?? 0) / 100} closed={carrying} position={carrying && (moving || !dest.sit) ? [0, 0.98, 0.34] : [0.52, DESK_TOP, 0.72]} />
+      )}
+      {drawn && (packing || arrived100) && !hideLabels && (
+        <Html position={[0, labelY, 0]} center zIndexRange={[40, 0]} style={{ pointerEvents: 'none' }}>
+          <div className="move-wrap" data-move-badge={v.id}>
+            <div className={`move-badge ${arrived100 ? 'move-badge-done' : ''}`}>
+              <span className="move-badge-box">📦</span>
+              {arrived100 ? '100' : (v.moving?.percent ?? 0)}
+              <span className="move-badge-pct">%</span>
+            </div>
+          </div>
+        </Html>
+      )}
       {selected && (
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
           <ringGeometry args={[0.5, 0.58, 40]} />
@@ -367,6 +424,74 @@ const Person = memo(function Person({
  * room when genuinely idle, or a walk to a colleague's desk when a real
  * collaboration request was sent.
  */
+/** Height of a desk top (`DESK_SIZE.h`). */
+const DESK_TOP = 0.74;
+const CARDBOARD = '#b98a55';
+const CARDBOARD_DARK = '#8e6538';
+
+/**
+ * A cardboard box (a move to another machine, `docs/MOVE.md`): open, filling up with what is on the desk as the move
+ * goes (`fill` 0…1); closed when it is carried.
+ */
+function MoveBox({ fill, closed, position }: { fill: number; closed: boolean; position: [number, number, number] }) {
+  const w = 0.42;
+  const h = 0.28;
+  const d = 0.32;
+  const t = 0.012;
+  const level = Math.max(0.02, Math.min(1, fill)) * (h - 0.04);
+  return (
+    <group position={position}>
+      {/* Bottom and the four sides. */}
+      <mesh position={[0, t / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[w, t, d]} />
+        <meshStandardMaterial color={CARDBOARD} roughness={0.95} />
+      </mesh>
+      {([[0, d / 2, w, t], [0, -d / 2, w, t]] as const).map(([x, z, sw, sd], i) => (
+        <mesh key={`fb${i}`} position={[x, h / 2, z]} castShadow>
+          <boxGeometry args={[sw, h, sd]} />
+          <meshStandardMaterial color={CARDBOARD} roughness={0.95} />
+        </mesh>
+      ))}
+      {([[w / 2, 0], [-w / 2, 0]] as const).map(([x, z], i) => (
+        <mesh key={`lr${i}`} position={[x, h / 2, z]} castShadow>
+          <boxGeometry args={[t, h, d]} />
+          <meshStandardMaterial color={CARDBOARD_DARK} roughness={0.95} />
+        </mesh>
+      ))}
+      {/* What is in it: papers, a mug, a notebook — as high as the move has come. */}
+      <mesh position={[-0.08, t + level / 2, 0]}>
+        <boxGeometry args={[0.2, level, d - 0.06]} />
+        <meshStandardMaterial color="#e9e4d8" roughness={0.9} />
+      </mesh>
+      <mesh position={[0.11, t + level * 0.45, -0.04]}>
+        <boxGeometry args={[0.13, level * 0.9, 0.18]} />
+        <meshStandardMaterial color="#3f6fb5" roughness={0.8} />
+      </mesh>
+      {closed ? (
+        <mesh position={[0, h + t / 2, 0]} castShadow>
+          <boxGeometry args={[w + t, t, d + t]} />
+          <meshStandardMaterial color={CARDBOARD} roughness={0.95} />
+        </mesh>
+      ) : (
+        // Open: the two long flaps folded out.
+        ([1, -1] as const).map((s) => (
+          <mesh key={s} position={[0, h + 0.05, s * (d / 2 + 0.07)]} rotation={[s * 1.1, 0, 0]}>
+            <boxGeometry args={[w, t, 0.16]} />
+            <meshStandardMaterial color={CARDBOARD} roughness={0.95} />
+          </mesh>
+        ))
+      )}
+      {/* The tape across the top. */}
+      {closed && (
+        <mesh position={[0, h + t + 0.001, 0]}>
+          <boxGeometry args={[0.06, 0.002, d + t + 0.002]} />
+          <meshStandardMaterial color="#d8c39a" roughness={0.6} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
 export function People({
   people,
   whips,

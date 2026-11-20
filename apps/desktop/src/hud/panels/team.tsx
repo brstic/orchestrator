@@ -20,6 +20,7 @@ import { GoalRow } from './goal.tsx';
 import { homeOf, homePatch } from '../../lib/employee-home.ts';
 import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { FolderField } from './folder-picker.tsx';
+import { MoveSection } from './move-employee.tsx';
 import { registerPanel } from './index.tsx';
 import {
   ActivityBadge,
@@ -1400,6 +1401,8 @@ function SessionTab({ e }: { e: Employee }) {
         {!live && host && host.status !== 'online' && <span className="k-sub">{host.name} is {host.status}; a session cannot start there right now.</span>}
         {!live && !e.hostId && <span className="k-sub">No machine assigned.</span>}
       </div>
+
+      <MoveSection e={e} />
 
       {confirmStop && live && (
         <ConfirmBox

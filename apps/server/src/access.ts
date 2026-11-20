@@ -110,6 +110,10 @@ const RULES: Rule[] = [
   rule('PATCH', '/employees/:id', 'work', path('employee'), inBody('host', 'hostId'), inBody('project', 'projectId')),
   // Taking a shared employee among one's own, and giving them back: whoever works here (which one, the route checks).
   rule('POST', '/employees/:id/keep', 'work', path('employee')),
+  // Moving an employee to another machine with their folder and conversation (docs/MOVE.md): work on them, and on the machine they go to.
+  rule('POST', '/employees/:id/move/plan', 'work', path('employee'), inBody('host', 'to')),
+  rule('POST', '/employees/:id/move', 'work', path('employee'), inBody('host', 'to')),
+  rule('POST', '/employees/:id/move/dismiss', 'work', path('employee')),
   rule('POST', '/employees/:id/give-back', 'work', path('employee')),
   rule('POST', '/employees/:id/start', 'work', path('employee')),
   rule('POST', '/employees/:id/stop', 'work', path('employee')),
@@ -407,7 +411,7 @@ export function mayReadRoutine(engine: Engine, who: Who, r: Pick<Routine, 'emplo
 const forVisitor = {
   host: (h: Host): Host => ({ id: h.id, name: h.name, status: h.status, info: null, resources: null, enrolledAt: h.enrolledAt, lastSeenAt: null, revokedAt: h.revokedAt, local: h.local, claudeAccounts: [], memberId: h.memberId ?? null, memberName: h.memberName ?? null, room: h.room ?? null, ownerId: h.ownerId ?? null, ownerName: h.ownerName ?? null }),
   // (`autonomy` has no empty value: a visitor's page does not show it, and what is sent says nothing about the real one.)
-  employee: (e: Employee): Employee => ({ ...e, model: null, effort: null, claudeConfigDir: null, workingDir: null, instructions: '', allowedTools: [], disallowedTools: [], autonomy: 'standard', captureOnboarded: [], captureSkills: [], keptBy: null, hiredBy: null, goal: null }),
+  employee: (e: Employee): Employee => ({ ...e, model: null, effort: null, claudeConfigDir: null, workingDir: null, instructions: '', allowedTools: [], disallowedTools: [], autonomy: 'standard', captureOnboarded: [], captureSkills: [], keptBy: null, hiredBy: null, goal: null, moving: e.moving ? { ...e.moving, by: '', error: null } : null }),
   session: (s: AgentSession): AgentSession => ({ ...s, launchId: null, tmuxSession: '', tmuxPane: null, cwd: '', repoRoot: null, branch: null, claudeSessionId: null, codexThreadId: null, permissionMode: null, claudeConfigDir: null, saying: null, model: null, effort: null, pid: null, usage: null, exitReason: null }),
   project: (p: Project): Project => ({ id: p.id, name: p.name, description: p.description, goals: '', requirements: '', docs: '', hostId: p.hostId, repoPath: null, baseBranch: '', integrationBranch: '', workspace: p.workspace, ownerEmployeeId: p.ownerEmployeeId, verifyCommand: null, verifyTimeoutSec: 0, extraRepos: [], dependsOn: p.dependsOn ?? [], color: p.color, status: p.status, policy: { ...p.policy, allow: [], deny: [], highRiskPatterns: [] }, milestones: p.milestones, deliveredAt: p.deliveredAt, createdAt: p.createdAt }),
   // Named field by field, unlike the others: a task is where the work is talked about, and what it is given later

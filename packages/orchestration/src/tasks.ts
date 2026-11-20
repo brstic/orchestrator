@@ -766,6 +766,7 @@ export class TaskManager {
   isFree(e: Employee): boolean {
     if (e.archived || !this.withinSchedule(e)) return false;
     if (this.startingEmployees.has(e.id) || this.currentTask(e.id)) return false;
+    if (this.eng.moves.isMoving(e)) return false;
     if (this.awaitingAnswer(e.id)) return false;
     if (!e.hostId || !this.core.agents.isOnline(e.hostId)) return false;
     if (e.executionMode === 'codex_managed' && this.eng.sessions.cannotStart(e)) return false;

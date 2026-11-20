@@ -20,6 +20,11 @@ export interface AgentConfig {
   /** Optional tmux `-L` socket name. Null = the user's default tmux server. */
   tmuxSocketName: string | null;
   claudeBin: string;
+  /**
+   * Where Claude Code keeps its conversations on this machine for an employee with no account folder of their own
+   * (`~/.claude`, or `CLAUDE_CONFIG_DIR`). Only for a move (`docs/MOVE.md`); the tests point it elsewhere.
+   */
+  claudeHome?: string;
   /** Local Codex CLI executable, using this host user's authentication. */
   codexBin?: string;
   /** Model and reasoning effort supported by this host’s Codex account. */

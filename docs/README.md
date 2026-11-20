@@ -12,6 +12,7 @@
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Processes, packages, protocols, data | Structure changes |
 | [ACCESS.md](ACCESS.md) | Members, roles, shared vs personal: who may do what | A permission changes |
 | [MEMORY.md](MEMORY.md) | The long memory (MemPalace): what is remembered, how employees ask it, how the program is run, installed, tested and extended | Anything about the memory changes |
+| [MOVE.md](MOVE.md) | Moving an employee to another machine (the office's ↔ a member's computer) with their folder, .md files, conversation and its memory; what is copied, refused, shown in the office | Anything about moving employees between machines changes |
 | [CODEX.md](CODEX.md) | Set up a managed Codex employee on a shared or personal host | Codex runtime and setup changes |
 | [ACCOUNTS.md](ACCOUNTS.md) | Several Claude accounts on one machine: adding one and signing in to it from the office, an account of another service (Z.AI), how accounts are named, when an account counts as used up, how employees are moved, what is not verified | Anything about accounts or limits changes |
 | [ATTACHMENTS.md](ATTACHMENTS.md) | Files on tasks (for the employee, and evidence from them), how an employee sees a picture, the employees' browser and how to install it on a machine | Anything about files, screenshots or the browser changes |

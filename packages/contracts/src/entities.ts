@@ -37,6 +37,8 @@ export interface HostInfo {
   cpus: number;
   totalMemBytes: number;
   user: string;
+  /** This machine's agent can move an employee's folder and conversation to or from another machine (`docs/MOVE.md`). */
+  moves?: boolean;
   /** Worker runtimes this host can actually provide (capability detection). */
   runtimes?: ExecutionMode[];
 }
@@ -162,6 +164,20 @@ export type CommunicationStyle =
   | 'architecture-focused'
   | 'highly-independent'
   | 'review-focused';
+
+/** An employee's move to another machine as it goes (`docs/MOVE.md`). */
+export interface EmployeeMoving {
+  id: string;
+  fromHostId: ID;
+  toHostId: ID;
+  /** packing → sending → unpacking; `failed` keeps the reason in `error` (the employee stayed where they were). */
+  phase: 'packing' | 'sending' | 'unpacking' | 'failed';
+  sent: number;
+  total: number;
+  startedAt: ISODate;
+  by: string;
+  error: string | null;
+}
 
 export type ExecutionMode = 'interactive_cli' | 'managed_sdk' | 'codex_managed';
 
@@ -320,6 +336,8 @@ export interface Employee {
   captureSkills?: MeasuredSkill[];
   /** What they keep working toward until it holds (`EmployeeGoal`), or the last one, met or stopped. Absent: never had one. */
   goal?: EmployeeGoal | null;
+  /** Being moved to another machine, with their folder and conversation (`docs/MOVE.md`); kept with `error` when it failed. */
+  moving?: EmployeeMoving | null;
 }
 
 /**
@@ -597,6 +615,8 @@ export interface Project {
   /** Command executed on the host to verify completed work, e.g. "npm test". */
   verifyCommand: string | null;
   verifyTimeoutSec: number;
+  /** A copy made when an employee was moved to another machine out of this project (`docs/MOVE.md`): moved back, their branches go back into it. */
+  copiedFrom?: { projectId: ID; hostId: ID } | null;
   /** Further repositories of this project on the same machine: sessions get them as additional working directories. */
   extraRepos?: Array<{ name: string; path: string }>;
   /** Projects this one builds on (shown to the owner and given to employees as context). */

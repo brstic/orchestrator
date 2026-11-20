@@ -41,6 +41,7 @@ import {
   stepLoco,
   upright,
   whipArm,
+  carryBox,
   wrapPi,
   type Loco,
   type Motion,
@@ -87,6 +88,8 @@ interface CharacterProps {
   cue?: number;
   /** Carries a whip: coiled at the right hip, in the right hand during the 'whip' pose. */
   whip?: boolean;
+  /** Holds a box in front with both hands (the move to another machine: `docs/MOVE.md`); eased in and out. */
+  carrying?: boolean;
   /** Overrides for details the appearance does not cover. */
   detail?: { tie?: string; shoes?: string };
 }
@@ -152,7 +155,10 @@ interface Anim {
   air: number;
 }
 
-export function Character({ appearance, pose, offline = false, look, level = 1, phase = 0, frozen, motion, jump, cue, whip = false, detail }: CharacterProps) {
+export function Character({ appearance, pose, offline = false, look, level = 1, phase = 0, frozen, motion, jump, cue, whip = false, detail, carrying = false }: CharacterProps) {
+  const carryingRef = useRef(carrying);
+  carryingRef.current = carrying;
+  const carryW = useRef(carrying ? 1 : 0);
   const outer = useRef<THREE.Group>(null);
   const root = useRef<THREE.Group>(null);
   const hips = useRef<THREE.Group>(null);
@@ -370,6 +376,9 @@ export function Character({ appearance, pose, offline = false, look, level = 1, 
       }
       poseAt(base, t, phase, TARGET, build);
     }
+    // Arms round a box, over the legs: eased in and out over a fifth of a second.
+    carryW.current += ((carryingRef.current ? 1 : 0) - carryW.current) * Math.min(1, dt * 5);
+    if (carryW.current > 0.01) carryBox(TARGET, carryW.current);
     if (name === 'ouch') ouch(TARGET, A.since);
     else if (name === 'whip') whipArm(TARGET, A.since);
     else if (gesture) emote(TARGET, name, A.since);

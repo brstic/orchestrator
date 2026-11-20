@@ -823,6 +823,10 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.patch('/employees/:id', async (req) => engine.updateEmployee(param(req, 'id'), body(req), actorOf(req)));
     // For good, with what is theirs (see Engine.deleteEmployee). `?tasks=delete` takes their tasks too; otherwise they go back on the board.
     api.delete('/employees/:id', async (req) => engine.deleteEmployee(param(req, 'id'), { tasks: query(req).tasks === 'delete' ? 'delete' : 'keep' }, actorOf(req)));
+    // To another machine with their folder and conversation (docs/MOVE.md): what it would do, doing it, putting away a failed one.
+    api.post('/employees/:id/move/plan', async (req) => engine.moves.plan(param(req, 'id'), String(body(req).to ?? '')));
+    api.post('/employees/:id/move', async (req) => engine.moves.start(param(req, 'id'), String(body(req).to ?? ''), { parent: typeof body(req).parent === 'string' ? body(req).parent : null, actor: actorOf(req) }));
+    api.post('/employees/:id/move/dismiss', async (req) => engine.moves.dismiss(param(req, 'id')));
     // A member takes a shared employee among their own, or gives them back. Listing only: who may use them does not change.
     api.post('/employees/:id/keep', async (req) => {
       const who = whoOf(req);

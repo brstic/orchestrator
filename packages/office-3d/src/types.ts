@@ -43,6 +43,11 @@ export interface PersonView {
   background?: { count: number; what: string } | null;
   /** What they keep working toward until it holds (their goal, while it stands). Null: none. */
   goal?: string | null;
+  /**
+   * Being moved to another machine (`docs/MOVE.md`): how far, over their head; their desk is packed into a box while it
+   * goes, and when it is done they carry the box to their new place. `failed`: it did not happen (nothing is shown).
+   */
+  moving?: { percent: number; phase: 'packing' | 'sending' | 'unpacking' | 'failed' } | null;
 }
 
 /** What is written on the meeting-room whiteboard: the meeting that is running, or the last decision. */

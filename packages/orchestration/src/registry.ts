@@ -2139,6 +2139,8 @@ export class SessionRegistry {
   private async doStart(employeeId: string, opts: { cwd?: string | null; resume?: boolean; continueLast?: boolean; actor?: string }): Promise<AgentSession> {
     const employee = this.core.employees.require(employeeId);
     if (employee.archived) throw new EngineError(`${employee.name} is archived`);
+    // Their folder and conversation are on their way to another machine (`move.ts`): nothing is started meanwhile.
+    if (this.eng.moves.isMoving(employee)) throw new EngineError(`${employee.name} is being moved to another machine: their session starts there when that is done`, 409);
     const hostId = employee.hostId;
     if (!hostId) throw new EngineError(`${employee.name} is not assigned to a machine`);
     const host = this.core.hosts.require(hostId);
@@ -2262,6 +2264,7 @@ export class SessionRegistry {
   cannotStart(employee: Employee | undefined): string | null {
     if (!employee || employee.archived) return 'they are no longer employed here';
     if (!employee.hostId) return `${employee.name} is not assigned to a machine`;
+    if (this.eng.moves.isMoving(employee)) return `${employee.name} is being moved to another machine`;
     const host = this.core.hosts.get(employee.hostId);
     if (!host || !this.core.agents.isOnline(employee.hostId)) return `${host?.name ?? 'their machine'} is offline`;
     if (employee.executionMode === 'codex_managed') {

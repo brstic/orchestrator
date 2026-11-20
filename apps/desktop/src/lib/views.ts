@@ -1,6 +1,7 @@
 import { ACTIVITY_LABEL, formatDuration, memberSeatOf, roleByKey, type Host } from '@orchestrator/contracts';
 import { deskPods, withMemberRooms, type ForemanView, type MemberOffice, type BoardView, type CeoView, type HostView, type UsageClockView, type PersonView, type WalkRequest, type WallView, type WhiteboardView, type ZoneView } from '@orchestrator/office-3d';
 import { activityOf, currentTaskOf, sessionOfEmployee, type OfficeState } from './store.ts';
+import { movePercent } from './move.ts';
 
 /**
  * Real orchestration state → the view models the 3D scene renders.
@@ -134,6 +135,7 @@ export function personViews(s: OfficeState, office?: OfficeWithRooms | null): Pe
       atBoard: live && task?.kind === 'planning' && AWAY_FROM_KEYBOARD.has(activity) && !meetingSeats.has(e.id),
       background: live && session?.background?.length ? { count: session.background.length, what: session.background[0]!.what } : null,
       goal: e.goal?.status === 'active' ? e.goal.condition : null,
+      moving: e.moving ? { percent: movePercent(e.moving) ?? 0, phase: e.moving.phase } : null,
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));

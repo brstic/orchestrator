@@ -20,6 +20,15 @@ Unauthenticated requests get `401`; a client WebSocket without the owner token i
 
 Codex uses a private per-session home and a reference to the local host account’s file-backed login. The host confines native Codex writes to private scratch space and disables approval elevation. Plain-text files can be listed, read and written through a separate tool service scoped to the selected directory. It refuses paths outside the folder, hidden paths, likely credential names, symbolic and hard links, and the office's own files on the machine (the agent's and the server's homes, the session's own folder included — `officeRoots`); a deny rule for reading or editing takes the whole corresponding tool away. Native shell, web search and permission elevation are switched off by configuration — and because that rests on configuration keys a Codex version could ignore, the runner stops the worker at the first command, web search, image from the disk or file change outside its scratch folder (`forbidden` in `codex-runner.ts`; tests: `apps/host-agent/test/codex-files.test.ts`, `codex-runner.test.ts`, `tests/e2e/64-codex-runtime.test.ts`). The office also rejects file attachments by path and vault secret reads using the session’s MCP credential. A Codex worker on a personal host uses the existing member-room access checks. See [Codex workers](CODEX.md).
 
+## Moving an employee between machines
+
+`MOVE.md`. A move lets the office read a folder off one machine and write a new one on another, through `move.*` RPCs of the machine's agent. What bounds it, on each machine (`HostAgent.movable`, `apps/host-agent/src/move.ts`):
+- Packed only from inside the machine's allowed roots, never a whole allowed root or the home folder, never a folder that holds or is inside the office's own files (the agent's home, a server's home). That is no more than the office could already have an employee there read; on a member's computer the member's allowed roots are the fence, as for everything else.
+- The conversation taken along: only the files of the conversations named (by id, of the employee's own sessions) and the folder's `memory/`, from the Claude account folder of the employee (inside the home folder, as for a launch).
+- Written only as a new folder inside an allowed root (never over one that exists) and as conversation files that are not there yet; a move's own files only in `<agent home>/moves/<id>/`, by fixed names; pieces only in order; every file checked by SHA-256 before anything is unpacked. A failure removes what was half made.
+- Nothing of the move is kept on the server; its files are removed on both machines when it ends.
+- `.env` and other secrets in the folder go along: that is what was asked for ("everything"). The vault is the office's and does not move.
+
 ## Network
 
 - The server listens on `127.0.0.1` by default. It refuses a non-loopback address without TLS (`--tls-cert/--tls-key`) unless `--allow-insecure-remote` is given for a TLS-terminating proxy.

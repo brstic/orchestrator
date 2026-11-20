@@ -59,6 +59,10 @@ In the office (not in the creator or the other small stages) the rigid parts of 
 - **A part out of view** is left out of its draw, with 2 m to spare for one that casts a shadow (its shadow may be in view).
 - The world matrices are brought up to date once a frame by the batcher (the scene's `matrixWorldAutoUpdate` is off while it runs), before the copies are made.
 
+## Moving to another machine
+
+While an employee is moved to another machine (`MOVE.md`) they pack at their desk: an open cardboard box beside them fills up (`MoveBox` in `People.tsx`), their hands busy at the desk, **📦 n %** over their head. At 100 % the box closes and they carry it in both hands (`Character`'s `carrying`: `carryBox` in `character/motion.ts` puts both upper arms forward, the forearms up under it, over whatever the legs do) to their new desk, and it is put away when they sit. Seen in a development office on 2026-11-20 (packing, carrying across the floor, into a member's room).
+
 ## Who may do what
 
 | | sees others' characters | makes their own |

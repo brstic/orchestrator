@@ -1536,6 +1536,27 @@ export function emote(o: Pose, name: EmotePose, tau: number): void {
   }
 }
 
+/**
+ * Carrying a box in front, over whatever the legs are doing: both upper arms forward and a little out, the forearms
+ * bent up under it, the hands at its sides; the back leaning a little against the weight. `w` 0…1 eases it in and out.
+ */
+export function carryBox(o: Pose, w: number): void {
+  if (w <= 0) return;
+  const to = (k: keyof Pose, v: number) => (o[k] += (v - o[k]) * w);
+  to('sLx', -0.62);
+  to('sLz', -0.2);
+  to('tL', 0.55);
+  to('eL', -1.2);
+  to('sRx', -0.62);
+  to('sRz', 0.2);
+  to('tR', 0.55);
+  to('eR', -1.2);
+  to('wrL', 0.5);
+  to('wrR', -0.5);
+  o.lean += -0.05 * w;
+  o.headPitch += 0.04 * w;
+}
+
 /** Whip timeline, seconds from the start of the pose: wound up, arm snapped forward, and (a moment later, as the wave reaches the tip) the crack. */
 export const WHIP_WIND = 0.15;
 export const WHIP_SNAP = 0.25;

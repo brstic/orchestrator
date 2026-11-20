@@ -3811,3 +3811,36 @@ button.ops-row:hover {
   white-space: nowrap;
   font-weight: 600;
 }
+
+/* Moving to another machine (docs/MOVE.md): how far, over their head, lifted clear of the name tag. */
+.move-wrap {
+  transform: translateY(-86px);
+}
+.move-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 3px 10px 3px 7px;
+  border-radius: 12px;
+  background: #fff8ec;
+  color: #6b4a22;
+  border: 1px solid #d9b98a;
+  font-weight: 800;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+.move-badge-box {
+  font-size: 14px;
+  align-self: center;
+}
+.move-badge-pct {
+  font-size: 11px;
+  font-weight: 700;
+}
+.move-badge-done {
+  background: #eaf8ec;
+  color: #1f6b33;
+  border-color: #8fd19e;
+}

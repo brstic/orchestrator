@@ -179,6 +179,19 @@ export type AgentRpc =
   /** A piece of a file an employee on this machine leaves as evidence. Read only from the allowed roots, the agent's own folders and the temp folder. */
   | { method: 'files.get'; params: { path: string; cwd?: string | null; sessionId?: ID | null; offset: number; length: number } }
   | { method: 'fs.browse'; params: { path?: string | null } }
+  /**
+   * Moving an employee to another machine (`docs/MOVE.md`). `move.pack` makes the files of a move here (their folder
+   * — or their project as a git bundle — and their Claude conversation with its memory); `move.read` gives a piece of
+   * one, `move.write` takes a piece of one on the other machine; `move.unpack` makes the new folder there and puts the
+   * conversation where that machine's Claude Code looks for it; `move.fetchBack` brings a moved copy's branches back
+   * into the project it was copied from; `move.drop` removes what a move left in the agent's own folder.
+   */
+  | { method: 'move.pack'; params: MovePackParams }
+  | { method: 'move.read'; params: { moveId: string; file: MoveFileName; offset: number; length: number } }
+  | { method: 'move.write'; params: { moveId: string; file: MoveFileName; offset: number; dataBase64: string } }
+  | { method: 'move.unpack'; params: MoveUnpackParams }
+  | { method: 'move.fetchBack'; params: MoveFetchBackParams }
+  | { method: 'move.drop'; params: { moveId: string } }
   /** Make one new, empty folder inside an existing one of the allowed roots (for an employee about to be hired into it). */
   | { method: 'fs.mkdir'; params: { parent: string; name: string } }
   | { method: 'fs.docs.list'; params: { cwd: string } }
@@ -199,6 +212,60 @@ export type AgentRpc =
   | { method: 'claude.headless'; params: { cwd: string; prompt: string; jsonSchema?: unknown; timeoutMs: number } };
 
 export type AgentRpcMethod = AgentRpc['method'];
+
+/** The files a move is made of: the folder (`folder.tgz`) or the project as a git bundle (`repo.bundle`), and the conversation (`claude.tgz`). */
+export type MoveFileName = 'folder.tgz' | 'repo.bundle' | 'claude.tgz';
+export interface MoveFile {
+  name: MoveFileName;
+  size: number;
+  sha256: string;
+}
+export interface MovePackParams {
+  moveId: string;
+  /** `folder`: the folder itself, without what is made again by an install or a build; `bundle`: the git repository with every branch (a project others work in too). */
+  kind: 'folder' | 'bundle';
+  path: string;
+  /** The Claude conversation to take along: where its account keeps it (null: this machine's default) and the folder it was had in. */
+  claude: { configDir: string | null; cwd: string; sessionIds: string[] } | null;
+}
+export interface MovePacked {
+  files: MoveFile[];
+  /** Folders left out because they are made again (`node_modules`, `.venv`, a git-ignored `dist`…), relative to the folder. */
+  skipped: string[];
+  /** Files of the conversation taken along (0: none was found on this machine). */
+  claudeFiles: number;
+}
+export interface MoveUnpackParams {
+  moveId: string;
+  files: MoveFile[];
+  kind: 'folder' | 'bundle';
+  /** The new folder is made inside `parent`, named `name` (or `name-2`… if that is taken). */
+  parent: string;
+  name: string;
+  /** A bundle: the branch to have checked out (theirs), if it is there. */
+  branch?: string | null;
+  claude: {
+    configDir: string | null;
+    /** Where their session ran, relative to the new folder ('' : the folder itself). */
+    rel: string;
+    /** Paths of the old machine written in the conversation, and what each becomes (the new folder). */
+    rewrite: Array<{ from: string; to: string }>;
+  } | null;
+}
+export interface MoveFetchBackParams {
+  moveId: string;
+  files: MoveFile[];
+  repo: string;
+  prefix: string;
+  /** The conversation, put where Claude Code looks for it in `cwd` (the project's folder) on this machine. */
+  claude?: { configDir: string | null; cwd: string; rewrite: Array<{ from: string; to: string }> } | null;
+}
+export interface MoveUnpacked {
+  /** The new folder, and the folder their session is to start in. */
+  path: string;
+  cwd: string;
+  claudeFiles: number;
+}
 
 export type AgentToServer =
   | {

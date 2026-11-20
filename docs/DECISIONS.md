@@ -2,6 +2,17 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-20 — Moving an employee to another machine: everything of theirs goes, the old folder stays
+
+The owner: "so I can move agents from the office to my computer and back: a complete transfer — files, .md, memory, everything", and to see it happen ("percent over their head, they pack at their desk, at 100 % they take the box and go and sit at the new place"). How (`MOVE.md`):
+- **What the office keeps follows by itself; what is on the machine is carried**: their folder (or project), their Claude conversations in it and Claude Code's memory of it — placed where the new machine's Claude Code looks for them, with the old path written as the new one, and a record of their last session on the new machine with the same conversation id, so that their next start continues it.
+- **A project others work in too is copied, not taken** (the owner's choice of three, 2026-11-20): the repository with every branch becomes a project of theirs there; the project and the others stay; moved back, their branches go into it as `moved/<them>/…` and nothing of it is overwritten. Rejected: allowing only employees with a folder of their own (most of the office works in shared projects), and moving the project itself (the others would lose it).
+- **Without what an install or a build makes again** (the owner's choice): `node_modules` and the like always; `dist`, `build`, `out`, `target`, `coverage`, `.cache` only where git ignores them — a project's own `build/` folder is its files. Rejected: everything byte for byte (gigabytes for nothing).
+- **The old folder stays** as a copy to fall back on (the owner's choice); nothing on the old machine is deleted.
+- **Through the office, both machines connected, nothing kept on the server**: pieces of 2 MiB read from one agent and written to the other, every file checked by SHA-256. Rejected: staging the move on the server (a member's computer is online only while their app is open, but a copy of somebody's folder on the server is more than the office should hold), and a direct connection between the machines (a member's computer is reachable only through the door).
+- **Refused while they work on a task** (its worktree is on the old machine) or are in the middle of a turn; a running session between turns is stopped and started again there. Not for the foreman, a team lead, a self-driven desk or a rented employee. What may be packed on a machine: inside what it lets the office into, not a whole allowed root or the home folder, nothing of the office's own (`HostAgent.movable`) — no more than the office could already have an employee there read.
+- **An account folder is not taken along**: an account belongs to one machine (`ACCOUNTS.md`); they use the new machine's default account.
+
 ## 2026-11-20 — Codex as a third runtime: no shell, its folder through the office's own file tools
 
 A contributor's pull request added OpenAI's Codex CLI as a runtime beside interactive Claude Code and the SDK-managed worker; the owner had it merged ("do what it takes for it to be good, then deploy").
@@ -505,7 +516,7 @@ The owner: "agents must be able to work in the same folder without waiting for e
 - **Two signals for "used up": the status line's percentages and a refused turn.** The percentages are exact but do not cover every limit and arrive only at the end of a turn; `StopFailure` covers the rest. A refused turn marks the account for an hour (or until a known reset) because nothing says when that limit ends.
 - **Moved, never moved back.** Moving back at a reset would restart sessions twice for nothing and ping-pong between two nearly-full accounts. Ten minutes between two moves of one employee for the same reason.
 - **The conversation follows through a shared `projects` folder (a link), not by copying transcripts.** One place for conversations means `--resume` works on any account and nothing has to be kept in step. If Claude Code will not continue it, the existing "could not be continued → new conversation" path applies. Not tried with real Claude Code — written down as such in `ACCOUNTS.md`.
-- **Same machine only.** Moving an employee to another machine means moving their folder and their conversation; that is a different feature.
+- **Same machine only.** Moving an employee to another machine means moving their folder and their conversation; that is a different feature (built 2026-11-20: `MOVE.md`).
 - **Deleting an employee is a second act beside archiving, not a replacement.** Archive keeps everything and can be undone; delete removes the employee and what is theirs and cannot. The tasks are a choice in the dialog (ticked by default, as the owner asked for "everything they have"): with them, or back on the board. The feed, the audit log, meetings and the long memory keep what happened; nothing on disk is touched — the same line `deleteProject` draws. Like a project, an owner's act on what is shared, a member's on their own computer.
 
 ## 2026-11-11 — `check:changed`, the first idea taken from T3 Code
@@ -940,7 +951,7 @@ The owner: "agents must be able to work in the same folder without waiting for e
 - **Two signals for "used up": the status line's percentages and a refused turn.** The percentages are exact but do not cover every limit and arrive only at the end of a turn; `StopFailure` covers the rest. A refused turn marks the account for an hour (or until a known reset) because nothing says when that limit ends.
 - **Moved, never moved back.** Moving back at a reset would restart sessions twice for nothing and ping-pong between two nearly-full accounts. Ten minutes between two moves of one employee for the same reason.
 - **The conversation follows through a shared `projects` folder (a link), not by copying transcripts.** One place for conversations means `--resume` works on any account and nothing has to be kept in step. If Claude Code will not continue it, the existing "could not be continued → new conversation" path applies. Not tried with real Claude Code — written down as such in `ACCOUNTS.md`.
-- **Same machine only.** Moving an employee to another machine means moving their folder and their conversation; that is a different feature.
+- **Same machine only.** Moving an employee to another machine means moving their folder and their conversation; that is a different feature (built 2026-11-20: `MOVE.md`).
 - **Deleting an employee is a second act beside archiving, not a replacement.** Archive keeps everything and can be undone; delete removes the employee and what is theirs and cannot. The tasks are a choice in the dialog (ticked by default, as the owner asked for "everything they have"): with them, or back on the board. The feed, the audit log, meetings and the long memory keep what happened; nothing on disk is touched — the same line `deleteProject` draws. Like a project, an owner's act on what is shared, a member's on their own computer.
 
 ## 2026-11-11 — `check:changed`, the first idea taken from T3 Code

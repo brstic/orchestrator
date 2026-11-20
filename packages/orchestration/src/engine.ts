@@ -25,6 +25,7 @@ import { Waits } from './waits.ts';
 import { Background } from './background.ts';
 import { Goals } from './goals.ts';
 import { Rent } from './rent.ts';
+import { Moves } from './move.ts';
 import { CentralContext } from './context.ts';
 
 /**
@@ -64,6 +65,7 @@ export class Engine {
   readonly background: Background;
   readonly goals: Goals;
   /** Employees rented out to clients who talk to them on the Rent portal (rent.ts, `docs/RENT.md`). */
+  readonly moves: Moves;
   readonly rent: Rent;
   /** What every employee always knows (context.ts, `docs/CONTEXT.md`). */
   readonly context: CentralContext;
@@ -94,6 +96,7 @@ export class Engine {
     this.waits = new Waits(this);
     this.background = new Background(this);
     this.goals = new Goals(this);
+    this.moves = new Moves(this);
     this.rent = new Rent(this);
     this.context = new CentralContext(this);
     this.vault = new Vault(this.core, opts.vaultKeyFile ?? null);

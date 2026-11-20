@@ -60,6 +60,7 @@ import { AGENT_VERSION, type AgentConfig, paths, readJson, saveConfig, toWsUrl, 
 import type { CodexSpec } from './codex-runner.ts';
 import type { ManagedSpec } from './managed-runner.ts';
 import { locateSdk } from './sdk.ts';
+import * as mover from './move.ts';
 
 /** What the office can send to a managed worker without touching its terminal. */
 type ManagedItem = { type: 'prompt'; text: string } | { type: 'interrupt' } | { type: 'exit' };
@@ -323,6 +324,7 @@ export class HostAgent {
       totalMemBytes: os.totalmem(),
       user: os.userInfo().username,
       runtimes,
+      moves: true,
     };
   }
 
@@ -690,6 +692,30 @@ export class HostAgent {
     const t = this.tracked.get(sessionId);
     if (!t) throw new Error(`unknown session ${sessionId}`);
     return t;
+  }
+
+  /**
+   * A folder that may be moved off or into: inside what this machine lets the office into, and narrower than it — not
+   * a whole allowed root or the home folder (an employee who lives there is given a folder of their own first) — and
+   * nothing of the office's own.
+   */
+  private movable(p: string): string {
+    const abs = this.assertAllowed(p);
+    const real = realpathOfDeepestExisting(abs);
+    const wide = [os.homedir(), ...this.cfg.allowedRoots].map((r) => realpathOfDeepestExisting(path.resolve(r)));
+    if (wide.includes(real)) throw new Error(`${abs} is a whole folder of this machine (${real === realpathOfDeepestExisting(os.homedir()) ? 'the home folder' : 'an allowed root'}): give the employee a folder of their own before moving them`);
+    const office = [this.home, ...this.officeServers()].map((r) => realpathOfDeepestExisting(path.resolve(r)));
+    if (office.some((o) => real === o || real.startsWith(o + path.sep) || o.startsWith(real + path.sep))) throw new Error(`${abs} holds the office's own files on this machine`);
+    if (!fs.statSync(real, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`${abs} is not a folder on this machine`);
+    return real;
+  }
+
+  /** Where Claude Code keeps conversations for an account folder (null: this machine's default). Only inside the home folder, as for a launch. */
+  private claudeBase(configDir: string | null): string {
+    if (!configDir) return this.cfg.claudeHome ?? process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude');
+    const dir = path.resolve(configDir.startsWith('~/') ? path.join(os.homedir(), configDir.slice(2)) : configDir);
+    if (dir !== os.homedir() && !dir.startsWith(os.homedir() + path.sep)) throw new Error(`the Claude account folder must be inside your home folder on this machine (${dir})`);
+    return dir;
   }
 
   /** Refuse to operate outside the directories this host was told to allow. */
@@ -1248,6 +1274,19 @@ export class HostAgent {
         const panes = await this.discover();
         return { panes: policy === 'any' ? panes : policy === 'none' ? panes.filter((p) => p.connectedAs) : panes.filter((p) => p.looksLikeClaude || p.connectedAs), policy };
       }
+      case 'move.pack':
+        return mover.pack(this.home, { ...rpc.params, path: this.movable(rpc.params.path) }, this.claudeBase(rpc.params.claude?.configDir ?? null));
+      case 'move.read':
+        return mover.readPiece(this.home, rpc.params);
+      case 'move.write':
+        return mover.writePiece(this.home, rpc.params);
+      case 'move.unpack':
+        return mover.unpack(this.home, { ...rpc.params, parent: this.assertAllowed(rpc.params.parent) }, this.claudeBase(rpc.params.claude?.configDir ?? null));
+      case 'move.fetchBack':
+        return mover.fetchBack(this.home, { ...rpc.params, repo: this.movable(rpc.params.repo) }, this.claudeBase(rpc.params.claude?.configDir ?? null));
+      case 'move.drop':
+        mover.drop(this.home, rpc.params.moveId);
+        return { ok: true };
       case 'files.put':
         return this.putFile(rpc.params);
       case 'files.get':
