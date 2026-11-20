@@ -4,7 +4,7 @@ Orchestrator is three layers with a strict direction of truth:
 
 | Layer | What it is | Owns |
 | --- | --- | --- |
-| **A. Execution** | Real Claude Code processes in tmux panes on enrolled machines, observed and driven by `orchestrator-agent` | The actual work |
+| **A. Execution** | Managed Claude Code and Codex processes in tmux panes on enrolled machines, observed and driven by `orchestrator-agent` | The actual work |
 | **B. Orchestration** | The server: registries, hook receiver, scheduler, approvals, collaboration, persistence | The truth about that work |
 | **C. Office** | The 3D scene and HUD | Nothing. It renders B and sends the owner's intent back |
 
@@ -20,6 +20,8 @@ The office is never a source of execution state. `packages/office-3d` receives v
 An employee whose session ends stays in the office, shown `OFFLINE`, until the session is resumed (same Claude conversation, same tmux session) or replaced.
 
 ## Layer A — execution (`packages/execution`, `apps/host-agent`)
+
+Codex workers launch App Server over stdio from a runner in the tmux pane. The runner translates accepted turns and lifecycle events into the existing office protocol. The session record tracks the Codex thread ID separately. See [Codex workers](CODEX.md).
 
 ### Terminals: tmux control mode
 

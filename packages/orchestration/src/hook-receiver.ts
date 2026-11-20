@@ -162,7 +162,7 @@ export class HookReceiver {
         return;
       }
       case 'Stop': {
-        const output = this.stopDecision(session, employee, payload, requestId);
+        const output = session.mode === 'codex_managed' && payload.is_interrupt === true ? null : this.stopDecision(session, employee, payload, requestId);
         respond(output);
         if (!output) this.afterTurn(session, employee, payload);
         return;
@@ -292,14 +292,17 @@ export class HookReceiver {
     const payload = raw.payload;
     if (!payload || typeof payload.hook_event_name !== 'string' || !raw.sessionId) return null;
     const session = this.core.sessions.get(raw.sessionId);
-    if (!session || session.hostId !== hostId) return null;
+    if (!session || session.hostId !== hostId || (raw.launchId && raw.launchId !== session.launchId)) return null;
     const employee = this.core.employees.get(session.employeeId) ?? null;
     const task = employee ? this.eng.tasks.currentTask(employee.id) : undefined;
     const rt = this.runtime(session.id);
     const interp = interpretHook(payload, { employeeName: employee?.name ?? session.tmuxSession, debugging: rt.debugging, taskKind: task?.kind ?? null, activeSubagents: rt.activeSubagents });
 
     session.lastEventAt = raw.ts;
-    if (payload.session_id) session.claudeSessionId = payload.session_id;
+    if (payload.session_id) {
+      if (session.mode === 'codex_managed') session.codexThreadId = payload.session_id;
+      else session.claudeSessionId = payload.session_id;
+    }
     if (payload.permission_mode) session.permissionMode = payload.permission_mode;
     if (!session.capabilities.hooks) session.capabilities = { ...session.capabilities, hooks: true, structuredApproval: true, structuredMessaging: true };
     if (session.status === 'starting') session.status = 'running';
@@ -491,7 +494,7 @@ export class HookReceiver {
     // that — the office is away for some seconds at every update, and a call made just then fails on its own.
     if (payload.hook_event_name === 'PostToolUseFailure' && /^mcp__orchestrator__/.test(String(payload.tool_name ?? '')) && /not connected/i.test(String(payload.error ?? ''))) this.eng.sessions.onOfficeUnreachable(session);
     // Claude refused the turn for the account's limit: its people go to another account, if the machine has one.
-    if (payload.hook_event_name === 'StopFailure') {
+    if (session.mode !== 'codex_managed' && payload.hook_event_name === 'StopFailure') {
       // Everything the refusal says — first the words Claude Code showed ("You've hit your Fable limit · resets Nov 19,
       // 1pm (UTC)"): which limit it was (one model's, or the account's) and until when are read from them.
       const said = [payload.last_assistant_message, payload.error_details, payload.message].filter((x) => typeof x === 'string' && x).join(' — ');

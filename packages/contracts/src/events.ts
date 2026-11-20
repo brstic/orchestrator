@@ -164,6 +164,7 @@ export interface RawHookEvent {
   hostSeq: number;
   sessionId: ID | null;
   tmuxPane: string | null;
+  launchId?: string;
   payload: HookPayload;
 }
 

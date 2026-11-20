@@ -3,6 +3,9 @@
 _Last updated: 2026-11-13. Update this file with every piece of work (see `CLAUDE.md`)._
 
 ## Now
+
+**Codex runtime.** Managed Codex employees and team leads can run on shared and joined-user hosts. Codex also has scoped text-file tools for the selected workspace. See [setup](CODEX.md) and the [plan](plans/CODEX-runtime.md).
+
 **Plan:** [UPDATE — central office](plans/UPDATE-central-office.md) — **finished**: built, tested, running on the owner's server, and tried there with two members at once and real Claude Code doing a small real task on the server and on a member's computer. The plan is closed. Follow-up, outside the plan: the collaborator builds the client from the repository and joins with their invitation.
 
 **The office on the server ("Sparkcan", Ubuntu 22.04):**

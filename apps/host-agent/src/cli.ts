@@ -410,6 +410,20 @@ async function cmdManagedRun(argv: string[]): Promise<void> {
   }
 }
 
+/** Internal: the process inside a Codex-managed worker's tmux pane. */
+async function cmdCodexRun(argv: string[]): Promise<void> {
+  const { values } = parseArgs({ args: argv, options: { spec: { type: 'string' } } });
+  if (!values.spec) die('codex-run needs --spec <file>');
+  const { runCodex } = await import('./codex-runner.ts');
+  try {
+    await runCodex(values.spec);
+    process.exit(0);
+  } catch (e) {
+    process.stdout.write(`\r\n\x1b[31mCodex-managed worker stopped: ${(e as Error).message}\x1b[0m\r\n`);
+    process.exit(1);
+  }
+}
+
 export async function main(argv: string[]): Promise<void> {
   const [cmd, ...rest] = argv;
   try {
@@ -418,6 +432,14 @@ export async function main(argv: string[]): Promise<void> {
         return await cmdSdk(rest);
       case 'managed-run':
         return await cmdManagedRun(rest);
+      case 'codex-files': {
+        const { values } = parseArgs({ args: rest, options: { spec: { type: 'string' } } });
+        if (!values.spec) die('codex-files needs --spec <file>');
+        const { runCodexFiles } = await import('./codex-files.ts');
+        return await runCodexFiles(values.spec);
+      }
+      case 'codex-run':
+        return await cmdCodexRun(rest);
       case 'login':
         return await cmdLogin(rest);
       case 'connect':

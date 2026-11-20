@@ -653,6 +653,7 @@ export const LEAD_TOOLS: McpToolSpec[] = [
         project: str('One of your projects (or give a folder)'),
         folder: str('A folder on the machine: it becomes their project'),
         machine: str('Machine name (optional: yours)'),
+        executionMode: { type: 'string', enum: ['interactive_cli', 'managed_sdk', 'codex_managed'], description: 'Worker runtime (optional: interactive_cli). Choose a managed runtime when asked and the machine supports it.' },
         instructions: str('Standing instructions for them (optional)'),
         why: str('One line for your boss: what you need them for'),
       },

@@ -91,6 +91,7 @@ export interface AgentSessionReport {
   cols: number;
   rows: number;
   claudeSessionId: string | null;
+  codexThreadId?: string | null;
   capabilities: SessionCapabilities;
   permissionMode: string | null;
   /** Which version of the hook commands this session was started with (`HOOKS_VERSION`); absent from an agent that does not say. */
@@ -100,7 +101,7 @@ export interface AgentSessionReport {
   exitReason: string | null;
 }
 
-/** Everything the agent needs to launch a managed Claude Code worker. */
+/** Everything the agent needs to launch a managed worker. */
 export interface LaunchSpec {
   /**
    * Issued by the server for every start. A session keeps its id (and tmux name) across restarts,
@@ -126,6 +127,7 @@ export interface LaunchSpec {
   highRiskPatterns: string[];
   /** Fixed Claude session id so the conversation can be resumed after a crash. */
   claudeSessionId: string;
+  codexThreadId?: string | null;
   resume: boolean;
   /** Further directories the session may read and change (other repositories of the same project). */
   addDirs?: string[];

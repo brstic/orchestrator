@@ -344,6 +344,11 @@ function Machine({ host, link, reload, startOpen }: { host: Host; link: Link | n
                     {info!.runtimes.includes('managed_sdk') ? 'available' : <span className="muted">not installed</span>}
                   </Fact>
                 )}
+                {info!.runtimes && (
+                  <Fact name="Codex-managed workers" title="The machine reports this runtime when its host agent can find the Codex CLI.">
+                    {info!.runtimes.includes('codex_managed') ? 'available' : <span className="muted">unavailable</span>}
+                  </Fact>
+                )}
                 <Fact name="Browser for employees" title="A browser of their own to look at what they build (Settings → Employees)">
                   {info!.browser ? info!.browser.engine : <span className="muted">not installed</span>}
                 </Fact>

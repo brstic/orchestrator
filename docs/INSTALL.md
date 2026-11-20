@@ -5,7 +5,9 @@
 | Where | Needs |
 | --- | --- |
 | Server machine | Node.js **22.18+** |
-| Every machine that runs employees | Node.js 22.18+, **tmux** (3.2+), **git**, **curl**, the **Claude Code CLI** logged in for that user |
+| Every machine that runs employees | Node.js 22.18+, **tmux** (3.2+), **git**, **curl** |
+| Interactive Claude Code workers | The **Claude Code CLI** logged in for the host account |
+| Codex-managed workers | The **Codex CLI** and a local login. See [Codex workers](CODEX.md). |
 | SDK-managed workers (optional) | additionally the Claude Agent SDK on that machine: `orchestrator-agent sdk install` |
 | PostgreSQL storage (optional) | a PostgreSQL database for the server (tested with 17); the default is a local SQLite file |
 | Building from source | pnpm 9+ |

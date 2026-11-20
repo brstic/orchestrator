@@ -16,6 +16,10 @@ Unauthenticated requests get `401`; a client WebSocket without the owner token i
 
 **Enrollment** is explicit: a one-time token (expiring, single-use, hashed at rest) is created by the owner and traded for a host credential. **Revocation** is immediate: the credential is invalidated and the connection is cut; the host's tmux sessions are untouched.
 
+## Codex workers
+
+Codex uses a private per-session home and a reference to the local host account’s file-backed login. The host confines native Codex writes to private scratch space and disables approval elevation. Plain-text files can be listed, read and written through a separate tool service scoped to the selected directory. It refuses hidden paths, likely credential names, and symlinks, and applies file-tool deny rules. Native shell and permission elevation remain disabled. The office also rejects file attachments by path and vault secret reads using the session’s MCP credential. A Codex worker on a personal host uses the existing member-room access checks. See [Codex workers](CODEX.md).
+
 ## Network
 
 - The server listens on `127.0.0.1` by default. It refuses a non-loopback address without TLS (`--tls-cert/--tls-key`) unless `--allow-insecure-remote` is given for a TLS-terminating proxy.

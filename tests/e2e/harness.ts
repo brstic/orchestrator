@@ -212,7 +212,7 @@ export function startedWith(tmux: (...args: string[]) => string, pane?: string):
   return lines.map(([name, , start]) => `${name} ${command(start).replace(/\n/g, ' ')}`).join('\n');
 }
 
-export async function createHarness(opts: { timings?: Record<string, number>; approvalWaitSeconds?: number; database?: string; memoryBin?: string | null; reviewDefault?: 'both' | 'boss' | 'peer' | 'none'; showcase?: boolean; telegramApi?: string } = {}): Promise<Harness> {
+export async function createHarness(opts: { timings?: Record<string, number>; approvalWaitSeconds?: number; database?: string; memoryBin?: string | null; reviewDefault?: 'both' | 'boss' | 'peer' | 'none'; showcase?: boolean; telegramApi?: string; codexBin?: string } = {}): Promise<Harness> {
   let base = os.tmpdir();
   // Unix socket paths are limited to ~104 bytes on macOS; keep the root short.
   if (base.length > 40) base = '/tmp';
@@ -229,7 +229,8 @@ export async function createHarness(opts: { timings?: Record<string, number>; ap
   await fetch(`${url}/api/settings`, { method: 'PATCH', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ reviewDefault: opts.reviewDefault ?? 'none' }) });
 
   const agentHome = path.join(tmp, 'agent');
-  const cfg: AgentConfig = { ...defaultConfig(), serverUrl: url, name: 'test-host', allowedRoots: [fs.realpathSync(tmp)], tmuxSocketName: tmuxSocket, claudeBin: wrapper, approvalWaitSeconds: opts.approvalWaitSeconds ?? 20, remoteAttach: 'any' };
+  const codexBin = opts.codexBin ?? path.join(tmp, 'codex-not-installed');
+  const cfg: AgentConfig = { ...defaultConfig(), serverUrl: url, name: 'test-host', allowedRoots: [fs.realpathSync(tmp)], tmuxSocketName: tmuxSocket, claudeBin: wrapper, codexBin, approvalWaitSeconds: opts.approvalWaitSeconds ?? 20, remoteAttach: 'any' };
   const info = { hostname: 'test-host', platform: process.platform, arch: process.arch, agentVersion: 'test', tmuxVersion: 'test', claudeVersion: '2.1.321', cpus: 1, totalMemBytes: 1, user: 'test' };
   const enrolled = await enroll(url, server.localEnrollToken(), 'test-host', info);
   cfg.hostId = enrolled.hostId;
@@ -337,7 +338,7 @@ export async function createHarness(opts: { timings?: Record<string, number>; ap
       const root = path.join(fs.realpathSync(tmp), `machine-${name}`);
       fs.mkdirSync(root, { recursive: true });
       const socket = `${tmuxSocket}-${name}`;
-      const hostCfg: AgentConfig = { ...defaultConfig(), serverUrl: via.serverUrl ?? url, name, allowedRoots: [root], tmuxSocketName: socket, claudeBin: wrapper, approvalWaitSeconds: 20, remoteAttach: 'any', ...overrides };
+      const hostCfg: AgentConfig = { ...defaultConfig(), serverUrl: via.serverUrl ?? url, name, allowedRoots: [root], tmuxSocketName: socket, claudeBin: wrapper, codexBin, approvalWaitSeconds: 20, remoteAttach: 'any', ...overrides };
       const enrolledHost = await enroll(via.serverUrl ?? url, via.enrollToken ?? server.localEnrollToken(), name, { ...info, hostname: name });
       hostCfg.hostId = enrolledHost.hostId;
       hostCfg.credential = enrolledHost.credential;

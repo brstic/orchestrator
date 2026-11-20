@@ -44,7 +44,7 @@ for (const [bin, why] of [['tmux', 'employees run inside tmux sessions'], ['git'
     process.exit(1);
   }
 }
-if (spawnSync('claude', ['--version'], { stdio: 'ignore' }).status !== 0) say('warning: the "claude" CLI was not found on PATH; employees cannot start until Claude Code is installed.');
+if (spawnSync('claude', ['--version'], { stdio: 'ignore' }).status !== 0) say('warning: the "claude" CLI was not found on PATH; Claude Code employees require it.');
 
 const serverHome = process.env.ORCH_SERVER_HOME ?? path.join(os.homedir(), '.orchestrator', 'server');
 const agentHome = process.env.ORCH_AGENT_HOME ?? path.join(os.homedir(), '.orchestrator', 'agent');

@@ -154,7 +154,7 @@ export interface Delivery {
   createdAt: number;
   attempts: number;
   sentAt: number | null;
-  via: 'terminal_paste' | 'stop_hook' | 'sdk' | null;
+  via: 'terminal_paste' | 'stop_hook' | 'sdk' | 'codex' | null;
   /** Stop-hook request this delivery rode on, until the host settles it. */
   stopRequestId: string | null;
   /** Start the employee's session for this if they have none (a routine that is due), as talking to them does. */
@@ -1313,7 +1313,7 @@ export class Comms {
     if (this.blockedReason(session)) return;
     // A session that was only just started: what is typed before its input box is up arrives without its Enter.
     // (Only where the office sees the screen; and not for ever — a terminal it cannot read is typed into as before.)
-    if (session.mode !== 'managed_sdk' && session.capabilities.hooks && Date.now() - Date.parse(session.startedAt) < 20_000) {
+    if (session.mode === 'interactive_cli' && session.capabilities.hooks && Date.now() - Date.parse(session.startedAt) < 20_000) {
       const screen = this.core.gateway.screens.get(session.id);
       if (screen && !inputBox(screen.lines)) return this.schedulePump(employeeId, 700);
     }
@@ -1325,7 +1325,7 @@ export class Comms {
     d.attempts++;
     const hooks = session!.capabilities.hooks;
     // An SDK-managed worker takes the prompt as structured input; nothing is typed into its terminal.
-    d.via = session!.mode === 'managed_sdk' ? 'sdk' : 'terminal_paste';
+    d.via = session!.mode === 'codex_managed' ? 'codex' : session!.mode === 'managed_sdk' ? 'sdk' : 'terminal_paste';
     d.sentAt = Date.now();
     // Tracked before it is sent: the acknowledging hook can arrive in the same network read as the
     // host's reply to the send, i.e. before the code after the await below has run.
@@ -1334,7 +1334,8 @@ export class Comms {
       const sent = await this.core.agents.rpc<{ via?: string }>(session!.hostId, { method: 'session.paste', params: { sessionId: session!.id, text: d.text, submit: true } }, 15000);
       d.sentAt = Date.now();
       this.wakes.delete(employeeId);
-      if (sent?.via === 'sdk' || sent?.via === 'terminal') d.via = sent.via === 'sdk' ? 'sdk' : 'terminal_paste';
+      if (sent?.via === 'terminal') d.via = 'terminal_paste';
+      else if (sent?.via === 'sdk' || sent?.via === 'codex') d.via = sent.via;
       if (hooks) {
         // Still waiting for the acknowledgement? Then it is "sent". (If the hook already came, it is confirmed.)
         if (this.inflight.get(employeeId) === d) {
@@ -1422,7 +1423,7 @@ export class Comms {
     } else if (d.ref.kind === 'question') {
       const q = this.core.questions.get(d.ref.id);
       if (q) {
-        if (status === 'sent' && q.status === 'answered') this.setStatus(q, 'delivered', via === 'stop_hook' ? 'Handed to the agent through the Stop hook' : via === 'sdk' ? 'Handed to the agent through the Agent SDK' : 'Typed into the terminal');
+        if (status === 'sent' && q.status === 'answered') this.setStatus(q, 'delivered', via === 'stop_hook' ? 'Handed to the agent through the Stop hook' : via === 'codex' ? 'Handed to Codex' : via === 'sdk' ? 'Handed to the agent through the Agent SDK' : 'Typed into the terminal');
         else if (status === 'confirmed' && (q.status === 'answered' || q.status === 'delivered')) this.setStatus(q, 'confirmed', detail);
         else if (status === 'failed') this.setStatus(q, 'failed', detail);
       }
@@ -1434,7 +1435,7 @@ export class Comms {
   }
 
   private markSent(d: Delivery, session: AgentSession): void {
-    const detail = d.via === 'stop_hook' ? 'Handed to Claude Code as Stop-hook feedback' : d.via === 'sdk' ? 'Handed to the worker as structured input through the Agent SDK; waiting for it to acknowledge' : session.capabilities.hooks ? 'Typed into the terminal; waiting for Claude Code to acknowledge' : 'Typed into the terminal (this session has no hooks, so receipt cannot be confirmed)';
+    const detail = d.via === 'stop_hook' ? 'Handed to Claude Code as Stop-hook feedback' : d.via === 'codex' ? 'Handed to Codex as structured input; waiting for turn acceptance' : d.via === 'sdk' ? 'Handed to the worker as structured input through the Agent SDK; waiting for it to acknowledge' : session.capabilities.hooks ? 'Typed into the terminal; waiting for Claude Code to acknowledge' : 'Typed into the terminal (this session has no hooks, so receipt cannot be confirmed)';
     this.applyState(d, 'sent', d.via, detail);
   }
 
@@ -1450,7 +1451,7 @@ export class Comms {
    * never at a dialog, never while a person holds the keyboard. Returns whether something was done.
    */
   private async recover(d: Delivery, session: AgentSession): Promise<boolean> {
-    if (d.via !== 'terminal_paste' || !session.capabilities.hooks || session.mode === 'managed_sdk' || session.status !== 'running' || session.inTurn !== false) return false;
+    if (d.via !== 'terminal_paste' || !session.capabilities.hooks || session.mode !== 'interactive_cli' || session.status !== 'running' || session.inTurn !== false) return false;
     if (this.core.gateway.isHumanControlled(session.id) || this.core.gateway.isPaused(session.id) || !this.core.agents.isOnline(session.hostId)) return false;
     const screen = this.core.gateway.screens.get(session.id);
     const box = screen ? inputBox(screen.lines) : null;
@@ -1497,16 +1498,17 @@ export class Comms {
     const flying = this.inflight.get(employeeId);
     if (flying && flying.marker === kind && flying.markerId === id) {
       this.inflight.delete(employeeId);
-      this.markConfirmed(flying, 'Claude Code acknowledged the prompt (UserPromptSubmit)');
+      this.markConfirmed(flying, 'The worker acknowledged the prompt');
       return;
     }
     // Confirmation for something we no longer track in memory (e.g. after a restart).
-    const ghost: Delivery = { id: newId(), employeeId, marker: kind as Delivery['marker'], markerId: id, ref: { kind: 'message', id }, text: '', createdAt: Date.now(), attempts: 1, sentAt: Date.now(), via: this.core.runningSessionOf(employeeId)?.mode === 'managed_sdk' ? 'sdk' : 'terminal_paste', stopRequestId: null };
+    const mode = this.core.runningSessionOf(employeeId)?.mode;
+    const ghost: Delivery = { id: newId(), employeeId, marker: kind as Delivery['marker'], markerId: id, ref: { kind: 'message', id }, text: '', createdAt: Date.now(), attempts: 1, sentAt: Date.now(), via: mode === 'codex_managed' ? 'codex' : mode === 'managed_sdk' ? 'sdk' : 'terminal_paste', stopRequestId: null };
     if (kind === 'TASK') ghost.ref = { kind: 'task', id };
     else if (kind === 'ANSWER') ghost.ref = { kind: 'question', id };
     else if (kind === 'MSG') ghost.ref = { kind: 'message', id };
     else return;
-    this.markConfirmed(ghost, 'Claude Code acknowledged the prompt (UserPromptSubmit)');
+    this.markConfirmed(ghost, 'The worker acknowledged the prompt');
   }
 
   /** Drop everything queued for a session that no longer exists. */

@@ -36,6 +36,9 @@ The owner, after the rented project manager could only put the owner's question 
 - **Only to the employee's own clients, and never as a second copy of an answer** to the client being answered: their reply goes there by itself.
 - **Not a notification outside the portal** (no e-mail, no push): a client has only the portal. They see it there when they come in — the portal opens that conversation — or within seconds while it is open.
 - Rejected: letting `message_person` reach clients too. A client is not a person of the office (no Inbox, no Telegram, a different door), and one tool that sometimes writes into an Inbox and sometimes into a client's conversation would make it easy to send the office's words to a client by a slip of a name.
+## 2026-11-19 — Codex as a managed employee runtime
+
+The office keeps team routing and assigns each employee a runtime on their enrolled host. Codex App Server supplies the thread lifecycle, turn acknowledgement and interrupt. The first release limits Codex to the office’s MCP tools and supplied text. Workspace access needs its own enforcement for project rules, the office’s files and high-risk operations. The host keeps the login under its existing OS user.
 
 ## 2026-11-18 — Out in the city together: the place out there rides on the presence
 
