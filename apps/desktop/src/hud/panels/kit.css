@@ -2113,3 +2113,52 @@ button.k-row:focus-visible {
   flex: 1;
   white-space: normal;
 }
+/* Searching the Rent tab: clients and every conversation, and one conversation (rent.tsx, docs/RENT.md "Search"). */
+.rent-find {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+}
+.rent-find::placeholder {
+  color: var(--faint);
+}
+.rent-convo-wrap {
+  margin: 0 16px 14px 58px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rent-convo-wrap .rent-convo {
+  margin: 0;
+}
+.rent-convo-find {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rent-convo-find .rent-find {
+  flex: 1;
+  height: 32px;
+}
+.rent-convo-find .k-sub {
+  flex: none;
+  white-space: nowrap;
+}
+.rent-line-found {
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 209, 102, 0.7);
+}
+[data-rent-tab] mark {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: rgba(255, 209, 102, 0.28);
+  color: inherit;
+}
+::highlight(rent-tab-found) {
+  background-color: rgba(255, 209, 102, 0.32);
+}

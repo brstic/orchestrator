@@ -94,3 +94,21 @@ test('choices written into a question ("A) … B) … C) …") are read out of i
   optionsIn('A) ' + 'x'.repeat(15000) + ' B) y');
   assert.ok(Date.now() - t0 < 200, `took ${Date.now() - t0} ms`);
 });
+
+test('search words: every word, any case or accent; ranges are of the text as written', async () => {
+  const { searchWords, matchesWords, matchRanges, snippetOf } = await import('../src/index.ts');
+  assert.deepEqual(searchWords('  Račun  RAČUN novembar '), ['racun', 'novembar']);
+  assert.equal(matchesWords('Ćao, evo računa za novembar', searchWords('novembar cao')), true);
+  assert.equal(matchesWords('Ćao, evo računa', searchWords('novembar cao')), false);
+  assert.equal(matchesWords('anything', []), false);
+  const text = 'Đorđe sent the Résumé; résumé again';
+  assert.deepEqual(
+    matchRanges(text, searchWords('resume dorde')).map(([a, b]) => text.slice(a, b)),
+    ['Đorđe', 'Résumé', 'résumé'],
+  );
+  assert.deepEqual(matchRanges('emoji 😄 then word', ['word']).map(([a, b]) => 'emoji 😄 then word'.slice(a, b)), ['word']);
+  const long = `${'x '.repeat(100)}the needle here ${'y '.repeat(100)}`;
+  const s = snippetOf(long, ['needle'], 60);
+  assert.match(s, /^….*needle.*…$/);
+  assert.ok(s.length <= 62);
+});

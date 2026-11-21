@@ -21,7 +21,7 @@
  * Stop-hook delivery), and the end of that turn carries the client (`clientOfTurn`).
  */
 import { RENT_PERMS_DEFAULT, RENT_PERM_KEYS, newId, nowIso, truncate, type Employee, type OrchestratorEvent, type RentClient, type RentFence, type RentLine, type RentPerms, type Rental, type SaidFile } from '@orchestrator/contracts';
-import { LEAD_ROLE } from '@orchestrator/contracts';
+import { LEAD_ROLE, matchesWords, searchWords } from '@orchestrator/contracts';
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
 
@@ -623,6 +623,25 @@ export class Rent {
     const busy = !!s && (s.inTurn === true || ['thinking', 'reading', 'coding', 'testing', 'debugging', 'running_command', 'researching', 'planning', 'reviewing', 'delegating'].includes(s.activity));
     const state = !s ? 'away' : s.activity === 'paused' ? 'paused' : busy ? 'working' : 'available';
     return { id: e.id, name: e.name, title: e.title, appearance: e.appearance, state: offline ? 'away' : state, busy: !offline && busy, files: rental.perms.files, since: rental.since, offline, doing: !offline && s ? (DOING[s.activity] ?? (busy ? 'thinking' : null)) : null };
+  }
+
+  /**
+   * Lines of a client's conversations that have every word of `q` in them — in what was written or in a file's name
+   * (`docs/RENT.md`, "Search"). Over the whole kept conversation, not only what a page has loaded. `employeeIds`: only
+   * those conversations (else every employee the client rents now). Newest first, at most `limit`; the office's own
+   * notes ("could not deliver…") are not searched.
+   */
+  search(clientId: string, q: unknown, opts: { employeeIds?: string[]; limit?: number } = {}): { hits: RentLine[]; more: boolean; words: string[] } {
+    const words = searchWords(q);
+    const client = this.get(clientId);
+    if (!client || !words.length) return { hits: [], more: false, words };
+    const limit = Math.max(1, Math.min(500, opts.limit ?? 50));
+    const ids = client.rentals.map((r) => r.employeeId).filter((id) => !opts.employeeIds || opts.employeeIds.includes(id));
+    const found: RentLine[] = [];
+    for (const id of ids)
+      for (const l of this.lines(client.id, id)) if (l.from !== 'note' && matchesWords(`${l.text}\n${(l.files ?? []).map((f) => f.name).join('\n')}`, words)) found.push(l);
+    found.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
+    return { hits: found.slice(0, limit), more: found.length > limit, words };
   }
 
   /** A short line for the owner's lists: who, what for, and the conversation's last word. */

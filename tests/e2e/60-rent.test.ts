@@ -253,6 +253,26 @@ test('the boss tells a rented employee to ask the client something: it is in the
   assert.ok(events.some((e) => e.type === 'rent.agent_wrote' && e.summary === 'Kira wrote to Ana Client on the Rent portal'));
 });
 
+test('search: the client finds earlier answers in their own conversations — the whole kept conversation, never another client\'s; the owner searches every client\'s', async () => {
+  // (By now Ana's conversation with Kira has the boss's question, and Bea — no longer a client — had her own answer.)
+  const mine = await portal('POST', '/search', { q: 'IDEA come' });
+  assert.equal(mine.status, 200);
+  assert.ok(mine.body.hits.some((l: any) => l.employeeId === kira.id && /where did this idea come from/.test(l.text)), JSON.stringify(mine.body));
+  assert.deepEqual(mine.body.words, ['idea', 'come']);
+  assert.equal((await portal('POST', '/search', { q: 'bea-answer-3131' })).body.hits.length, 0, "another client's conversation is not searched");
+  assert.equal((await portal('POST', '/search', { q: 'idea', eid: mila.id })).body.hits.some((l: any) => l.employeeId !== mila.id), false, 'one conversation only');
+  assert.equal((await portal('POST', '/search', { q: 'idea', eid: bob.id })).status, 404, 'not an employee they rent');
+  // Going to an old line: the whole conversation, not only its last 200 lines.
+  const all = await portal('GET', `/chats/${kira.id}?all=1`);
+  assert.equal(all.body.whole, true);
+  assert.equal(all.body.more, false);
+  // The owner: every client's conversations (ended ones too), or one client's.
+  const bea = await h.api<any>('POST', '/rent/search', { q: 'bea-answer-3131' });
+  assert.ok(bea.hits.length >= 1 && bea.hits.every((l: any) => l.clientId !== clientId), JSON.stringify(bea));
+  const ana = await h.api<any>('POST', '/rent/search', { q: 'idea', client: clientId });
+  assert.ok(ana.hits.length >= 1 && ana.hits.every((l: any) => l.clientId === clientId));
+});
+
 test('when the client is no longer a client, everything they came in with ends, and their employees are the office\'s again', async () => {
   await h.api('DELETE', `/rent/clients/${clientId}`);
   assert.equal((await portal('GET', '/me')).status, 401);

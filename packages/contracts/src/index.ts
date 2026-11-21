@@ -7,3 +7,4 @@ export * from './layout.ts';
 export * from './arcade.ts';
 export * from './context.ts';
 export * from './outside.ts';
+export * from './search.ts';

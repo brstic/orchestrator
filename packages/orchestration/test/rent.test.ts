@@ -304,3 +304,28 @@ test('message_client: a rented employee writes to a client of theirs when not an
   const told = (eng.rent as any).body(ana, kira, ana.rentals[0], 'hello') as string;
   assert.match(told, /To write to Ana Client later, not in answer to them .* use message_client/);
 });
+
+test('search: a client finds what was said in their own conversations — every word, any case or accent, file names too, newest first; never another client\'s', () => {
+  const { eng, kira, lea } = office();
+  const ana = eng.rent.create({ name: 'Ana', employeeIds: [kira.id, lea.id] }, 'owner', never);
+  const ivo = eng.rent.create({ name: 'Ivo', employeeIds: [kira.id] }, 'owner', never);
+  const add = (clientId: string, employeeId: string, from: 'client' | 'agent' | 'note', text: string, ts: string, files?: Array<{ id: string; name: string }>) =>
+    (eng.rent as any).add({ clientId, employeeId, from, text, ts, files });
+  add(ana.id, kira.id, 'client', 'Where is the invoice draft?', '2026-11-01T10:00:00.000Z');
+  add(ana.id, kira.id, 'agent', 'The Invoice draft is ready — see the attached file.', '2026-11-01T10:05:00.000Z', [{ id: 'f1', name: 'račun-novembar.pdf' }]);
+  add(ana.id, lea.id, 'agent', 'Ćao! The landing page copy is in.', '2026-11-02T09:00:00.000Z');
+  add(ana.id, kira.id, 'note', 'Could not deliver the invoice note', '2026-11-03T09:00:00.000Z');
+  add(ivo.id, kira.id, 'client', 'My own invoice question', '2026-11-04T09:00:00.000Z');
+
+  const texts = (r: { hits: Array<{ text: string }> }) => r.hits.map((h) => h.text);
+  assert.deepEqual(texts(eng.rent.search(ana.id, 'INVOICE')), ['The Invoice draft is ready — see the attached file.', 'Where is the invoice draft?'], 'newest first; the office\'s notes and Ivo\'s lines are not hers');
+  assert.deepEqual(texts(eng.rent.search(ana.id, 'draft ready')), ['The Invoice draft is ready — see the attached file.'], 'every word, in any order');
+  assert.deepEqual(texts(eng.rent.search(ana.id, 'cao')), ['Ćao! The landing page copy is in.'], 'accents do not matter');
+  assert.deepEqual(texts(eng.rent.search(ana.id, 'racun')), ['The Invoice draft is ready — see the attached file.'], "a file's name is searched too");
+  assert.deepEqual(texts(eng.rent.search(ana.id, 'invoice', { employeeIds: [lea.id] })), [], 'one conversation only');
+  assert.deepEqual(texts(eng.rent.search(ivo.id, 'invoice')), ['My own invoice question']);
+  assert.deepEqual(eng.rent.search(ana.id, '   ').hits, [], 'no words, nothing found');
+  const few = eng.rent.search(ana.id, 'invoice', { limit: 1 });
+  assert.equal(few.hits.length, 1);
+  assert.equal(few.more, true);
+});

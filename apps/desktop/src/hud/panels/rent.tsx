@@ -6,11 +6,12 @@
  * employees with what each may do (switched live), another employee for them, the conversation they have with each
  * (read-only), a new link, and ending it all.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Appearance, RentLine, RentPerms } from '@orchestrator/contracts';
-import { RENT_PERMS_DEFAULT } from '@orchestrator/contracts';
+import { RENT_PERMS_DEFAULT, matchesWords, searchWords, snippetOf } from '@orchestrator/contracts';
 import { Avatar, Button, Markdown, clock, timeAgo } from '@orchestrator/ui';
 import { api, apiBlob } from '../../lib/api.ts';
+import { Marked, useFoundMarks, useSettled } from '../../lib/found.tsx';
 import { act, ask } from '../core.tsx';
 import { copyText, onActivate } from './company-shared.tsx';
 import { PickMany } from './kit.tsx';
@@ -193,8 +194,11 @@ function NewClient({ view, onMade, onClose }: { view: RentView; onMade: (m: Made
 }
 
 /** One client: a line, and on a click their employees, the conversations, a new link, the end. */
-function ClientRow({ c, view, open, onToggle, reload, onLink }: { c: Client; view: RentView; open: boolean; onToggle: () => void; reload: () => void; onLink: (m: { name: string; link: string; expiresAt: string }) => void }) {
+function ClientRow({ c, view, open, onToggle, reload, onLink, focus }: { c: Client; view: RentView; open: boolean; onToggle: () => void; reload: () => void; onLink: (m: { name: string; link: string; expiresAt: string }) => void; focus: Focus | null }) {
   const [reading, setReading] = useState<string | null>(null);
+  useEffect(() => {
+    if (focus) setReading(focus.employeeId);
+  }, [focus?.at]); // eslint-disable-line react-hooks/exhaustive-deps
   const [adding, setAdding] = useState('');
   const [note, setNote] = useState(c.note);
   useEffect(() => setNote(c.note), [c.note]);
@@ -267,7 +271,7 @@ function ClientRow({ c, view, open, onToggle, reload, onLink }: { c: Client; vie
                     <div className="rent-agent-perms">
                       <Perms value={a.perms} name={a.name} onChange={(perms) => void run(() => api('PATCH', `/rent/clients/${c.id}/agents/${a.employeeId}`, { perms }), `${a.name}: changed now`)} />
                     </div>
-                    {reading === a.employeeId && <Conversation clientId={c.id} employeeId={a.employeeId} client={c.name} agent={a.name} />}
+                    {reading === a.employeeId && <Conversation clientId={c.id} employeeId={a.employeeId} client={c.name} agent={a.name} focus={focus?.employeeId === a.employeeId ? focus : null} />}
                   </div>
                 ))}
               </div>
@@ -326,22 +330,53 @@ function ClientRow({ c, view, open, onToggle, reload, onLink }: { c: Client; vie
   );
 }
 
-/** What a client and an employee said to each other, read by the owner. */
-function Conversation({ clientId, employeeId, client, agent }: { clientId: string; employeeId: string; client: string; agent: string }) {
+/** A line a search of the Rent tab found: its conversation opens on it, with the same words searched. */
+interface Focus {
+  clientId: string;
+  employeeId: string;
+  lineId: string;
+  q: string;
+  at: number;
+}
+
+/**
+ * What a client and an employee said to each other, read by the owner: the last 80 lines — or, searched (the box over
+ * it, or a hit of the tab's search), every line of the whole conversation that has the words, marked.
+ */
+function Conversation({ clientId, employeeId, client, agent, focus }: { clientId: string; employeeId: string; client: string; agent: string; focus?: Focus | null }) {
   const [lines, setLines] = useState<RentLine[] | null>(null);
+  const [q, setQ] = useState(focus?.q ?? '');
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focus) setQ(focus.q);
+  }, [focus?.at]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const load = () => api<{ lines: RentLine[] }>('GET', `/rent/clients/${clientId}/chats/${employeeId}`).then((r) => setLines(r.lines), () => undefined);
     void load();
     const t = window.setInterval(load, 4000);
     return () => window.clearInterval(t);
   }, [clientId, employeeId]);
+  const words = searchWords(q);
+  const shown = !lines ? [] : words.length ? lines.filter((l) => l.from !== 'note' && matchesWords(`${l.text}\n${(l.files ?? []).map((f) => f.name).join('\n')}`, words)) : lines.slice(-80);
+  useFoundMarks(box, words, 'rent-tab-found', [shown.length, lines]);
+  const focusId = focus?.lineId ?? null;
+  useLayoutEffect(() => {
+    if (focusId) box.current?.querySelector(`[data-line-id="${CSS.escape(focusId)}"]`)?.scrollIntoView({ block: 'center' });
+  }, [focusId, focus?.at, !!lines]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!lines) return <div className="k-text rent-convo">Loading…</div>;
   if (!lines.length) return <div className="k-text rent-convo">{client} has not written to {agent} yet.</div>;
   return (
-    <div className="rent-convo" data-rent-convo>
-      {lines.slice(-80).map((l) => (
-        <div key={l.id} className={`rent-line rent-line-${l.from}`}>
-          <div className="rent-line-who">
+    <div className="rent-convo-wrap">
+      <div className="rent-convo-find">
+        <input className="rent-find" type="search" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && q && (e.stopPropagation(), setQ(''))} placeholder={`Search what ${client} and ${agent} said`} aria-label={`Search what ${client} and ${agent} said`} data-rent-convo-find />
+        <span className="k-sub" data-rent-convo-count>
+          {words.length ? (shown.length ? `${shown.length} line${shown.length === 1 ? '' : 's'} of ${lines.length}` : 'nothing found') : lines.length > 80 ? `the last 80 of ${lines.length} lines` : ''}
+        </span>
+      </div>
+    <div className="rent-convo" data-rent-convo ref={box}>
+      {shown.map((l) => (
+        <div key={l.id} className={`rent-line rent-line-${l.from} ${focusId === l.id ? 'rent-line-found' : ''}`} data-line-id={l.id}>
+          <div className="rent-line-who" data-found-skip>
             {l.from === 'client' ? client : l.from === 'agent' ? agent : 'The office'} <span>{clock(l.ts)}</span>
           </div>
           {l.files?.map((f) => (
@@ -365,12 +400,16 @@ function Conversation({ clientId, employeeId, client, agent }: { clientId: strin
         </div>
       ))}
     </div>
+    </div>
   );
 }
 
 /** A rental that ended: who it was, and what was said — to read. */
-function EndedRow({ c }: { c: Client }) {
+function EndedRow({ c, focus }: { c: Client; focus: Focus | null }) {
   const [reading, setReading] = useState<string | null>(null);
+  useEffect(() => {
+    if (focus) setReading(focus.employeeId);
+  }, [focus?.at]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div>
       <div className="k-row k-row-sm">
@@ -389,7 +428,7 @@ function EndedRow({ c }: { c: Client }) {
           </Button>
         ))}
       </div>
-      {reading && <Conversation clientId={c.id} employeeId={reading} client={c.name} agent={c.agents.find((a) => a.employeeId === reading)?.name ?? ''} />}
+      {reading && <Conversation clientId={c.id} employeeId={reading} client={c.name} agent={c.agents.find((a) => a.employeeId === reading)?.name ?? ''} focus={focus?.employeeId === reading ? focus : null} />}
     </div>
   );
 }
@@ -400,6 +439,22 @@ export function RentTab() {
   const [link, setLink] = useState<{ name: string; link: string; expiresAt: string } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [showEnded, setShowEnded] = useState(false);
+  // Searching: the clients (name, company, note, whom they rent) here, and what was said in every conversation on the server.
+  const [q, setQ] = useState('');
+  const settled = useSettled(q.trim());
+  const [found, setFound] = useState<{ q: string; hits: RentLine[]; words: string[]; more: boolean } | null>(null);
+  const [focus, setFocus] = useState<Focus | null>(null);
+  useEffect(() => {
+    if (settled.length < 2) return setFound(null);
+    let gone = false;
+    api<{ hits: RentLine[]; words: string[]; more: boolean }>('POST', '/rent/search', { q: settled, limit: 30 }).then(
+      (r) => !gone && setFound({ q: settled, ...r }),
+      () => undefined,
+    );
+    return () => {
+      gone = true;
+    };
+  }, [settled]);
   const load = () => api<RentView>('GET', '/rent').then(setView, () => undefined);
   useEffect(() => {
     void load();
@@ -407,8 +462,17 @@ export function RentTab() {
     return () => window.clearInterval(t);
   }, []);
   if (!view) return <div className="k-text">Loading…</div>;
-  const active = view.clients.filter((c) => !c.revokedAt);
-  const ended = view.clients.filter((c) => c.revokedAt);
+  const words = searchWords(q);
+  // (A client whose conversation has the words is shown too: a hit opens it there.)
+  const withHits = new Set([...(found?.hits.map((h) => h.clientId) ?? []), ...(focus ? [focus.clientId] : [])]);
+  const fits = (c: Client) => !words.length || withHits.has(c.id) || matchesWords(`${c.name} ${c.company ?? ''} ${c.note} ${c.agents.map((a) => a.name).join(' ')}`, words);
+  const active = view.clients.filter((c) => !c.revokedAt && fits(c));
+  const ended = view.clients.filter((c) => c.revokedAt && fits(c));
+  const anyClients = view.clients.length > 0;
+  const nameOf = (clientId: string, employeeId: string) => {
+    const c = view.clients.find((x) => x.id === clientId);
+    return { client: c?.name ?? 'a client', agent: c?.agents.find((a) => a.employeeId === employeeId)?.name ?? 'an employee', ended: !!c?.revokedAt };
+  };
   return (
     <div className="k-stack" data-rent-tab>
       <div className="rent-top">
@@ -435,7 +499,53 @@ export function RentTab() {
         />
       )}
       {link && <LinkSheet made={link} onDone={() => setLink(null)} />}
-      {active.length === 0 && !creating ? (
+      {anyClients && (
+        <input className="rent-find" type="search" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && q && (e.stopPropagation(), setQ(''))} placeholder="Search clients and what was said with them" aria-label="Search clients and what was said with them" data-rent-tab-search />
+      )}
+      {settled.length >= 2 && (
+        <div className="k-section" data-rent-tab-found>
+          <span className="k-label">In conversations{found && found.q === settled ? ` · ${found.hits.length}${found.more ? '+' : ''}` : ''}</span>
+          {!found || found.q !== settled ? (
+            <div className="k-text">Searching…</div>
+          ) : found.hits.length === 0 ? (
+            <div className="k-text">No line has “{found.q}” in it.</div>
+          ) : (
+            <div className="k-group">
+              {found.hits.map((h) => {
+                const n = nameOf(h.clientId, h.employeeId);
+                const text = h.text || (h.files ?? []).map((f) => `📎 ${f.name}`).join(' ');
+                return (
+                  <div
+                    key={h.id}
+                    className="k-row k-row-sm k-row-click"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      if (n.ended) setShowEnded(true);
+                      else setOpen(h.clientId);
+                      setFocus({ clientId: h.clientId, employeeId: h.employeeId, lineId: h.id, q: found.q, at: Date.now() });
+                    }}
+                    onKeyDown={(ev) => ev.target === ev.currentTarget && onActivate(() => (n.ended ? setShowEnded(true) : setOpen(h.clientId), setFocus({ clientId: h.clientId, employeeId: h.employeeId, lineId: h.id, q: found.q, at: Date.now() })))(ev)}
+                    data-rent-tab-hit={h.id}
+                  >
+                    <div className="k-main">
+                      <div className="k-title-sm">
+                        {h.from === 'client' ? `${n.client} → ${n.agent}` : `${n.agent} → ${n.client}`}
+                        <span className="k-title-note"> {day(h.ts)}{n.ended ? ' · ended' : ''}</span>
+                      </div>
+                      <div className="k-sub">
+                        <Marked text={snippetOf(text, found.words, 160)} words={found.words} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      {words.length > 0 && active.length === 0 && ended.length === 0 && <div className="k-text">No client fits “{q.trim()}”.</div>}
+      {active.length === 0 && !creating && !words.length ? (
         <div className="k-empty">
           <div className="k-title">No clients yet</div>
           <div className="k-text">Make one, give them an employee or two, and send them the link.</div>
@@ -448,7 +558,7 @@ export function RentTab() {
             </span>
             <div className="k-group">
               {active.map((c) => (
-                <ClientRow key={c.id} c={c} view={view} open={open === c.id} onToggle={() => setOpen((o) => (o === c.id ? null : c.id))} reload={() => void load()} onLink={setLink} />
+                <ClientRow key={c.id} c={c} view={view} open={open === c.id} onToggle={() => setOpen((o) => (o === c.id ? null : c.id))} reload={() => void load()} onLink={setLink} focus={focus?.clientId === c.id ? focus : null} />
               ))}
             </div>
           </div>
@@ -462,7 +572,7 @@ export function RentTab() {
           {showEnded && (
             <div className="k-group" style={{ marginTop: 8 }}>
               {ended.map((c) => (
-                <EndedRow key={c.id} c={c} />
+                <EndedRow key={c.id} c={c} focus={focus?.clientId === c.id ? focus : null} />
               ))}
             </div>
           )}

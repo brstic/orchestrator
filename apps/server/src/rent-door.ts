@@ -192,13 +192,26 @@ export class RentDoor {
           const after = String((req.query as Record<string, string>).after ?? '');
           const all = engine.rent.lines(client.id, employee.id);
           const seen = after ? all.findIndex((l) => l.id === after) : -1;
-          const from = seen >= 0 ? seen + 1 : Math.max(0, all.length - 200);
+          // (`all`: the whole kept conversation — to go to an old line a search found.)
+          const whole = String((req.query as Record<string, string>).all ?? '') === '1';
+          const from = seen >= 0 ? seen + 1 : whole ? 0 : Math.max(0, all.length - 200);
           const rental = client.rentals.find((r) => r.employeeId === employee.id)!;
           const fresh = all.slice(from);
           // How far the client's last lines got (sent, then seen) is told again each time: it changes after they were shown.
           const pending = all.filter((l) => l.from === 'client' && l.messageId).slice(-12);
           // (The client's lines not yet taken in are sent again with how far they got; `whole`: these are all the lines from the start, not an addition.)
           return { agent: engine.rent.agentView(employee, rental), lines: this.shown(fresh), pending: this.shown(pending), whole: seen < 0, more: seen < 0 && from > 0 };
+        });
+        // Searching their conversations: every one, or one (`eid`) — the whole kept conversation, newest first.
+        // (A POST: what they look for is not put in an address, where logs keep it.)
+        api.post('/search', { bodyLimit: 4096 }, async (req) => {
+          const client = clientOf(req);
+          const q = (req.body ?? {}) as Record<string, string>;
+          const eid = String(q.eid ?? '');
+          const live = client.rentals.map((r) => r.employeeId).filter((id) => { const e = engine.core.employees.get(id); return !!e && !e.archived; });
+          if (eid && !live.includes(eid)) throw new EngineError('no such employee', 404);
+          const r = engine.rent.search(client.id, q.q, { employeeIds: eid ? [eid] : live, limit: Number(q.limit) || 50 });
+          return { hits: this.shown(r.hits), more: r.more, words: r.words };
         });
         api.post('/chats/:eid', { bodyLimit: 64 * 1024 }, async (req) => {
           const { client, employee } = rented(req);
@@ -309,6 +322,25 @@ export class RentDoor {
     api.post('/rent/clients/:id/agents', async (req) => this.view(engine.rent.rent(param(req, 'id'), String(body(req).employeeId ?? ''), body(req).perms, actorOf(req), memberOf(req))));
     api.patch('/rent/clients/:id/agents/:eid', async (req) => this.view(engine.rent.setPerms(param(req, 'id'), param(req, 'eid'), body(req).perms, actorOf(req))));
     api.delete('/rent/clients/:id/agents/:eid', async (req) => this.view(engine.rent.release(param(req, 'id'), param(req, 'eid'), actorOf(req))));
+    // Searching what clients and employees said: one client's conversations (`client`), or every client's.
+    // (A POST, as the client's: what is looked for is not put in an address.)
+    api.post('/rent/search', { bodyLimit: 4096 }, async (req) => {
+      const q = (req.body ?? {}) as Record<string, string>;
+      const clients = q.client ? [engine.rent.get(String(q.client))].filter((c): c is RentClient => !!c) : engine.rent.list();
+      if (q.client && !clients.length) throw new EngineError('unknown client', 404);
+      const limit = Math.max(1, Math.min(200, Number(q.limit) || 60));
+      let words: string[] = [];
+      const hits: RentLine[] = [];
+      let more = false;
+      for (const c of clients) {
+        const r = engine.rent.search(c.id, q.q, { employeeIds: q.eid ? [String(q.eid)] : undefined, limit });
+        words = r.words;
+        hits.push(...r.hits);
+        more ||= r.more;
+      }
+      hits.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
+      return { hits: this.shown(hits.slice(0, limit)), more: more || hits.length > limit, words };
+    });
     api.get('/rent/clients/:id/chats/:eid', async (req) => {
       if (!engine.rent.get(param(req, 'id'))) throw new EngineError('unknown client', 404);
       return { lines: this.shown(engine.rent.lines(param(req, 'id'), param(req, 'eid'))) };

@@ -11,9 +11,10 @@
  * `orch.rent-token`). The office answers nothing else to it.
  */
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Appearance, RentLine, SaidFile } from '@orchestrator/contracts';
+import { matchesWords, searchWords, snippetOf, type Appearance, type RentLine, type SaidFile } from '@orchestrator/contracts';
 import { Avatar, Markdown } from '@orchestrator/ui';
 import { serverBase } from '../lib/api.ts';
+import { Marked, useFoundMarks, useSettled } from '../lib/found.tsx';
 import logo from '../entrance/logo.svg';
 import type { StageMood, StageReaction } from './AgentStage.tsx';
 import { isNew, landOn } from './landing.ts';
@@ -314,6 +315,12 @@ function Portal({ token, onOut, onToken }: { token: string; onOut: () => void; o
   const [showChat, setShowChat] = useState(!!window.location.hash.slice(1));
   const [menu, setMenu] = useState(false);
   const [changing, setChanging] = useState(false);
+  // Searching (the side bar): the team by name, and every conversation by what was said in it.
+  const [q, setQ] = useState('');
+  const settled = useSettled(q.trim());
+  const [found, setFound] = useState<{ q: string; hits: Line[]; words: string[]; more: boolean } | null>(null);
+  /** A line a search found, to be shown in its conversation (`at` makes the same line again a new jump). */
+  const [jump, setJump] = useState<Jump | null>(null);
   const [seen, setSeen] = useState<Record<string, string>>(() => {
     try {
       return JSON.parse(read(SEEN) || '{}');
@@ -344,6 +351,17 @@ function Portal({ token, onOut, onToken }: { token: string; onOut: () => void; o
     const to = landOn(me.agents, seen, open);
     if (to) setOpen(to);
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (settled.length < 2) return setFound(null);
+    let gone = false;
+    ask<{ hits: Line[]; words: string[]; more: boolean }>('POST', '/search', { q: settled, limit: 40 }).then(
+      (r) => !gone && setFound({ q: settled, ...r }),
+      () => undefined,
+    );
+    return () => {
+      gone = true;
+    };
+  }, [settled, ask]);
   const agent = me?.agents.find((a) => a.id === open) ?? me?.agents[0] ?? null;
   useEffect(() => {
     if (agent && window.location.hash.slice(1) !== agent.id) window.history.replaceState({}, '', `/rent#${agent.id}`);
@@ -374,10 +392,36 @@ function Portal({ token, onOut, onToken }: { token: string; onOut: () => void; o
             <small>Rent portal</small>
           </div>
         </header>
-        <div className="rp-side-label">Your team</div>
+        {me.agents.length > 0 && (
+          <div className="rp-side-find" role="search">
+            <SearchIcon />
+            <input
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => e.key === 'Escape' && setQ('')}
+              placeholder="Search your team and messages"
+              aria-label="Search your team and messages"
+              enterKeyHint="search"
+              data-rent-search
+            />
+            {q && (
+              <button type="button" className="rp-find-clear" aria-label="Clear the search" onClick={() => setQ('')}>
+                ×
+              </button>
+            )}
+          </div>
+        )}
+        {(() => {
+          // (Searching: the people who fit, if any — then the messages; nobody fitting is said only when nothing else is shown.)
+          const fit = me.agents.some((a) => matchesWords(`${a.name} ${a.title}`, searchWords(q)));
+          if (!q.trim()) return <div className="rp-side-label">Your team</div>;
+          if (fit) return <div className="rp-side-label">People</div>;
+          return q.trim().length < 2 ? <p className="rp-empty-side rp-empty-find">Nobody by that name.</p> : null;
+        })()}
         <nav className="rp-agents">
           {me.agents.length === 0 && <p className="rp-empty-side">Nobody is assigned to you yet.</p>}
-          {me.agents.map((a) => {
+          {me.agents.filter((a) => !q.trim() || matchesWords(`${a.name} ${a.title}`, searchWords(q))).map((a) => {
             const unread = isNew(a, seen) && a.id !== agent?.id;
             return (
               <button
@@ -405,6 +449,41 @@ function Portal({ token, onOut, onToken }: { token: string; onOut: () => void; o
               </button>
             );
           })}
+          {q.trim().length >= 2 && (
+            <div className="rp-found" data-rent-found>
+              <div className="rp-side-label">Messages</div>
+              {!found || found.q !== settled ? (
+                <p className="rp-empty-side">Searching…</p>
+              ) : found.hits.length === 0 ? (
+                <p className="rp-empty-side">No message has “{found.q}” in it.</p>
+              ) : (
+                found.hits.map((h) => {
+                  const who = me.agents.find((a) => a.id === h.employeeId);
+                  const text = h.text || (h.files ?? []).map((f) => `📎 ${f.name}`).join(' ');
+                  return (
+                    <button
+                      key={h.id}
+                      type="button"
+                      className={`rp-hit ${jump?.lineId === h.id ? 'rp-hit-on' : ''}`}
+                      onClick={() => {
+                        setOpen(h.employeeId);
+                        setShowChat(true);
+                        setJump({ employeeId: h.employeeId, lineId: h.id, q: found.q, at: Date.now() });
+                      }}
+                      data-rent-hit={h.id}
+                    >
+                      <span className="rp-hit-top">
+                        <b>{h.from === 'client' ? `You → ${who?.name ?? ''}` : who?.name}</b>
+                        <small>{dayOf(h.ts)}</small>
+                      </span>
+                      <Marked className="rp-hit-text" text={snippetOf(text, found.words, 110)} words={found.words} />
+                    </button>
+                  );
+                })
+              )}
+              {found?.more && found.q === settled && <p className="rp-empty-side">Only the newest are shown — add a word to find fewer.</p>}
+            </div>
+          )}
         </nav>
         <footer className="rp-me">
           <span className="rp-initial rp-initial-me" aria-hidden>
@@ -442,7 +521,7 @@ function Portal({ token, onOut, onToken }: { token: string; onOut: () => void; o
       </aside>
       <section className="rp-main">
         {agent ? (
-          <Chat key={agent.id} agent={agent} me={me.name} ask={ask} onBack={() => setShowChat(false)} onSeen={markSeen} onSent={() => void load()} />
+          <Chat key={agent.id} agent={agent} me={me.name} ask={ask} jump={jump?.employeeId === agent.id ? jump : null} onBack={() => setShowChat(false)} onSeen={markSeen} onSent={() => void load()} />
         ) : (
           <div className="rp-blank">
             <img src={logo} alt="" width={56} height={56} />
@@ -456,6 +535,23 @@ function Portal({ token, onOut, onToken }: { token: string; onOut: () => void; o
   );
 }
 
+/** A line a search found, to be shown in its conversation. */
+interface Jump {
+  employeeId: string;
+  lineId: string;
+  q: string;
+  at: number;
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden className="rp-search-icon">
+      <circle cx="10.5" cy="10.5" r="6.2" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M15.2 15.2L20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 interface Pending {
   key: string;
   name: string;
@@ -465,7 +561,7 @@ interface Pending {
   error: string | null;
 }
 
-function Chat({ agent, me, ask, onBack, onSeen, onSent }: { agent: Agent; me: string; ask: <T>(method: string, path: string, body?: unknown) => Promise<T>; onBack: () => void; onSeen: (eid: string, lineId: string) => void; onSent: () => void }) {
+function Chat({ agent, me, ask, jump, onBack, onSeen, onSent }: { agent: Agent; me: string; ask: <T>(method: string, path: string, body?: unknown) => Promise<T>; jump: Jump | null; onBack: () => void; onSeen: (eid: string, lineId: string) => void; onSent: () => void }) {
   const [lines, setLines] = useState<Line[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [live, setLive] = useState(agent);
@@ -506,6 +602,93 @@ function Chat({ agent, me, ask, onBack, onSeen, onSent }: { agent: Agent; me: st
     });
     setLoaded(true);
   }, [agent.id, ask]);
+  /** The whole kept conversation, not only its last 200 lines: to go to an old line a search found. */
+  const whole = useRef(false);
+  const pullAll = useCallback(async () => {
+    const r = await ask<{ agent: Agent; lines: Line[]; pending: Line[] }>('GET', `/chats/${agent.id}?all=1`);
+    whole.current = true;
+    setLive((a) => ({ ...a, ...r.agent }));
+    setLines((prev) => {
+      const byId = new Map(r.lines.map((l) => [l.id, l] as const));
+      for (const l of [...prev, ...r.pending]) byId.set(l.id, { ...byId.get(l.id), ...l });
+      const next = [...byId.values()].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+      if (next.length) last.current = next[next.length - 1]!.id;
+      return next;
+    });
+  }, [agent.id, ask]);
+
+  // Searching this conversation (the magnifier, or Ctrl/⌘ F): the whole of it, on the server; ↑ older, ↓ newer.
+  const [finding, setFinding] = useState(false);
+  const [fq, setFq] = useState('');
+  const fSettled = useSettled(fq.trim());
+  const [hits, setHits] = useState<{ q: string; ids: string[]; words: string[]; more: boolean } | null>(null);
+  const [hitAt, setHitAt] = useState(0);
+  const [focus, setFocus] = useState<string | null>(null);
+  const wantId = useRef<string | null>(null);
+  const findBox = useRef<HTMLInputElement>(null);
+  const linesIn = useRef<HTMLDivElement>(null);
+  const closeFind = () => {
+    setFinding(false);
+    setFq('');
+    setHits(null);
+    setFocus(null);
+  };
+  useEffect(() => {
+    if (!finding || fSettled.length < 1) return setHits(null);
+    let gone = false;
+    ask<{ hits: Line[]; words: string[]; more: boolean }>('POST', '/search', { q: fSettled, eid: agent.id, limit: 500 }).then(
+      (r) => {
+        if (gone) return;
+        const ids = r.hits.map((h) => h.id);
+        const want = wantId.current ? ids.indexOf(wantId.current) : -1;
+        wantId.current = null;
+        setHits({ q: fSettled, ids, words: r.words, more: r.more });
+        setHitAt(Math.max(0, want));
+      },
+      () => undefined,
+    );
+    return () => {
+      gone = true;
+    };
+  }, [finding, fSettled, agent.id, ask]);
+  // Going to the line found: the whole conversation is fetched first when it is older than what is shown.
+  const goTo = useCallback(
+    async (id: string) => {
+      stick.current = false;
+      if (!whole.current && !lines.some((l) => l.id === id)) await pullAll().catch(() => undefined);
+      setFocus(id);
+    },
+    [lines, pullAll],
+  );
+  const hitId = hits?.ids[hitAt] ?? null;
+  useEffect(() => {
+    if (loaded && hitId) void goTo(hitId);
+  }, [hitId, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    if (!focus) return;
+    scroller.current?.querySelector(`[data-line-id="${CSS.escape(focus)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [focus, lines.length]);
+  // A line found in the side bar: this conversation's search opens with the same words, on that line.
+  useEffect(() => {
+    if (!jump || !loaded) return;
+    wantId.current = jump.lineId;
+    setFinding(true);
+    setFq(jump.q);
+    void goTo(jump.lineId);
+  }, [jump?.at, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setFinding(true);
+        window.setTimeout(() => findBox.current?.select(), 0);
+      }
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, []);
+  useFoundMarks(linesIn, finding ? (hits?.words ?? []) : [], 'rent-found', [lines, finding, hits]);
+
   useEffect(() => {
     last.current = '';
     void pull().catch(() => undefined);
@@ -642,6 +825,17 @@ function Chat({ agent, me, ask, onBack, onSeen, onSent }: { agent: Agent; me: st
             {live.title} · <span className={`rp-state rp-state-${live.state}`} data-rent-state>{stateWord}</span>
           </small>
         </div>
+        <button
+          type="button"
+          className={`rp-icon rp-find-toggle ${finding ? 'rp-stage-toggle-on' : ''}`}
+          aria-pressed={finding}
+          title={`Search the conversation with ${live.name}`}
+          aria-label={`Search the conversation with ${live.name}`}
+          onClick={() => (finding ? closeFind() : (setFinding(true), window.setTimeout(() => findBox.current?.focus(), 0)))}
+          data-rent-find-open
+        >
+          <SearchIcon />
+        </button>
         {show3d && (
           <button
             type="button"
@@ -659,6 +853,44 @@ function Chat({ agent, me, ask, onBack, onSeen, onSent }: { agent: Agent; me: st
           </button>
         )}
       </header>
+      {finding && (
+        <div className="rp-find" role="search">
+          <SearchIcon />
+          <input
+            ref={findBox}
+            type="search"
+            value={fq}
+            autoFocus
+            onChange={(e) => setFq(e.target.value)}
+            onKeyDown={(e) => {
+              const n = hits?.ids.length ?? 0;
+              if (e.key === 'Escape') (e.preventDefault(), closeFind());
+              else if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'ArrowUp') (e.preventDefault(), n && setHitAt((i) => Math.min(n - 1, i + 1)));
+              else if ((e.key === 'Enter' && e.shiftKey) || e.key === 'ArrowDown') (e.preventDefault(), n && setHitAt((i) => Math.max(0, i - 1)));
+            }}
+            placeholder={`Search the conversation with ${live.name}`}
+            aria-label={`Search the conversation with ${live.name}`}
+            enterKeyHint="search"
+            data-rent-find
+          />
+          <span className="rp-find-count" aria-live="polite" data-rent-find-count>
+            {!fq.trim() ? '' : !hits || hits.q !== fSettled ? '…' : hits.ids.length === 0 ? 'Nothing found' : `${hitAt + 1} of ${hits.ids.length}${hits.more ? '+' : ''}`}
+          </span>
+          <button type="button" className="rp-icon rp-find-step" aria-label="Older" title="Older (Enter)" disabled={!hits || hitAt >= hits.ids.length - 1} onClick={() => setHitAt((i) => i + 1)} data-rent-find-older>
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
+              <path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button type="button" className="rp-icon rp-find-step" aria-label="Newer" title="Newer (Shift+Enter)" disabled={!hits || hitAt <= 0} onClick={() => setHitAt((i) => i - 1)} data-rent-find-newer>
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
+              <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button type="button" className="rp-icon rp-find-step" aria-label="Close the search" onClick={closeFind}>
+            ×
+          </button>
+        </div>
+      )}
       <div className={`rp-chat-body ${show3d && stageOn ? 'rp-with-stage' : ''} ${typing ? 'rp-typing' : ''}`}>
       {show3d && stageOn && (
         <aside className="rp-stage" data-rent-stage={mood}>
@@ -697,7 +929,7 @@ function Chat({ agent, me, ask, onBack, onSeen, onSent }: { agent: Agent; me: st
         }}
         data-rent-lines
       >
-        <div className="rp-lines-in">
+        <div className="rp-lines-in" ref={linesIn}>
           {loaded && lines.length === 0 && (
             <div className="rp-hello">
               <Avatar appearance={live.appearance} size={72} />
@@ -720,7 +952,7 @@ function Chat({ agent, me, ask, onBack, onSeen, onSent }: { agent: Agent; me: st
                 <span>{r.day}</span>
               </div>
             ) : (
-              <Bubble key={r.key} line={r.line} first={r.first} agent={live} ask={ask} fresh={!!seenIds.current && !seenIds.current.has(r.line.id)} />
+              <Bubble key={r.key} line={r.line} first={r.first} agent={live} ask={ask} fresh={!!seenIds.current && !seenIds.current.has(r.line.id)} found={finding && focus === r.line.id} />
             ),
           )}
           {thinking && (
@@ -822,24 +1054,24 @@ function Chat({ agent, me, ask, onBack, onSeen, onSent }: { agent: Agent; me: st
   );
 }
 
-function Bubble({ line, first, agent, ask, fresh }: { line: Line; first: boolean; agent: Agent; ask: <T>(method: string, path: string, body?: unknown) => Promise<T>; fresh?: boolean }) {
+function Bubble({ line, first, agent, ask, fresh, found }: { line: Line; first: boolean; agent: Agent; ask: <T>(method: string, path: string, body?: unknown) => Promise<T>; fresh?: boolean; found?: boolean }) {
   if (line.from === 'note')
     return (
-      <div className="rp-note" role="status">
+      <div className="rp-note" role="status" data-found-skip>
         {line.text}
       </div>
     );
   const mine = line.from === 'client';
   const tick = mine ? (line.delivery === 'failed' ? 'Not delivered' : line.delivery === 'confirmed' ? 'Seen' : 'Sent') : null;
   return (
-    <div className={`rp-row ${mine ? 'rp-row-me' : 'rp-row-agent'} ${first ? 'rp-row-first' : ''} ${fresh ? 'rp-row-new' : ''}`} data-rent-line={line.from}>
+    <div className={`rp-row ${mine ? 'rp-row-me' : 'rp-row-agent'} ${first ? 'rp-row-first' : ''} ${fresh ? 'rp-row-new' : ''} ${found ? 'rp-row-found' : ''}`} data-rent-line={line.from} data-line-id={line.id}>
       {!mine && <span className="rp-row-face">{first && <Avatar appearance={agent.appearance} size={28} />}</span>}
       <div className={`rp-bubble ${mine ? 'rp-bubble-me' : 'rp-bubble-agent'}`}>
         {line.files?.map((f) => (
           <FileView key={f.id} file={f} employeeId={line.employeeId} ask={ask} />
         ))}
         {line.text && (mine ? <div className="rp-text">{line.text}</div> : <Markdown text={line.text} className="rp-md" />)}
-        <div className="rp-meta">
+        <div className="rp-meta" data-found-skip>
           {time(line.ts)}
           {tick && <span className={`rp-tick ${line.delivery === 'failed' ? 'rp-tick-bad' : ''}`}> · {tick}</span>}
         </div>
