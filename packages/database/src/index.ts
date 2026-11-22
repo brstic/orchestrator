@@ -142,6 +142,8 @@ export interface EventQuery {
   types?: string[];
   excludeTypes?: string[];
   since?: string;
+  /** Only events older than this moment (ts <). */
+  before?: string;
   beforeSeq?: number;
   limit?: number;
   /** Only events whose type starts with this, e.g. "learning." */
@@ -391,6 +393,7 @@ export class Store implements Storage {
     if (q.projectId) (where.push('project_id = ?'), args.push(q.projectId));
     if (q.since) (where.push('ts >= ?'), args.push(q.since));
     if (q.beforeSeq) (where.push('seq < ?'), args.push(q.beforeSeq));
+    if (q.before) (where.push('ts < ?'), args.push(q.before));
     if (q.types?.length) (where.push(`type IN (${q.types.map(() => '?').join(',')})`), args.push(...q.types));
     if (q.excludeTypes?.length) (where.push(`type NOT IN (${q.excludeTypes.map(() => '?').join(',')})`), args.push(...q.excludeTypes));
     if (q.typePrefix) (where.push('substr(type, 1, ?) = ?'), args.push(q.typePrefix.length, q.typePrefix));

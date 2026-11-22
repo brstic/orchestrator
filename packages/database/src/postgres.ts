@@ -275,6 +275,7 @@ export class PgStore implements Storage {
       const e = this.events[i]!;
       if (q.beforeSeq && e.seq >= q.beforeSeq) continue;
       if (q.since && e.ts < q.since) continue;
+      if (q.before && e.ts >= q.before) continue;
       if (q.employeeId && e.employeeId !== q.employeeId) continue;
       if (q.taskId && e.taskId !== q.taskId) continue;
       if (q.sessionId && e.sessionId !== q.sessionId) continue;

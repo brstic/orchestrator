@@ -93,6 +93,9 @@ const RULES: Rule[] = [
   rule('GET', '/employees/:id/docs/file', 'detail', path('employee')),
   rule('GET', '/employees/:id/git', 'detail', path('employee')),
   rule('GET', '/employees/:id/xp', 'read', path('employee')),
+  // Talk's whole conversation, and searching it (talk-history.ts): whoever may read the employee in detail.
+  rule('GET', '/employees/:id/talk', 'detail', path('employee')),
+  rule('POST', '/employees/:id/talk/search', 'detail', path('employee')),
   rule('GET', '/tasks/:id/git', 'detail', path('task')),
   // Files on a task: whoever works here and may see the task may open them; whoever may work with it may add and remove them.
   rule('GET', '/tasks/:id/attachments/:id', 'detail', path('task')),

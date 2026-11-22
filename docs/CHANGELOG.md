@@ -2,6 +2,9 @@
 
 Newest first. One line per change that someone using or developing the office would notice.
 
+## 2026-11-22
+- **Talk shows the whole conversation, and searches it** (the owner: "in Talk (F) I must see the whole history of the conversation, and search through it — now it shows only as much as the current session"). The window showed only what the office's state still carried (the newest 300 messages of the whole office, 400 events of the employee, at most 120 lines), so a busy office cut it to a day or so. Now it reads from where everything is kept: the newest 200 lines, and the ones before as you scroll up, back to the first; a line for each day. *Search* (or Ctrl/⌘ F) finds words in the whole of it — what you said, their answers, files, notes — and goes to the line, older ones too. UI.md, "Talk"
+
 ## 2026-11-21
 - **Search everywhere in Rent** (asked for a client's support: "add search to the chat on the Rent portal, so they can find earlier answers"; the owner: "search must be everywhere in Rent"). On the portal: one box over the team finds the employees and every message of every conversation, a click opens the conversation on that line; in a conversation the magnifier (or Ctrl/⌘ F) searches the whole kept conversation — older lines too — with *2 of 7*, Enter/Shift+Enter, the words marked. In the office's Access → Rent: clients and every client's conversations (ended ones too), and a box in each conversation read there. Every word, any order, case and accents ignored ("cao" finds "Ćao"), file names too. RENT.md, "Search"
 

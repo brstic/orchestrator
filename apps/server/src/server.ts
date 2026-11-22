@@ -5,7 +5,8 @@ import { Invites, inviteLink, invitePage } from './invites.ts';
 import { PHONE_MESSAGE, isPhone, phonePage } from './phone.ts';
 import { Logins, SESSION_DAYS } from './logins.ts';
 import { Knocks, type Admission } from './knocks.ts';
-import { allowed, closedTo, eventFor, mayCall, mayReadRoutine, memberOf, outcomesScopeFor, stateFor } from './access.ts';
+import { allowed, closedTo, eventFor, mayCall, mayReadMessage, mayReadRoutine, memberOf, outcomesScopeFor, stateFor } from './access.ts';
+import { talkPage, talkSearch, type TalkDeps } from './talk-history.ts';
 import { Telegram } from './telegram.ts';
 import { RentDoor, pageAt } from './rent-door.ts';
 import { renderContext } from '@orchestrator/contracts';
@@ -861,6 +862,24 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/employees/:id/resume', async (req) => {
       await engine.sessions.resume(param(req, 'id'));
       return { ok: true };
+    });
+    // Talk: the whole conversation with an employee, a page at a time going back, and searched as a whole (talk-history.ts).
+    const talkOf = (req: FastifyRequest): TalkDeps => {
+      const who = whoOf(req);
+      return { store, messages: () => engine.core.messages.all(), canMessage: (m) => mayReadMessage(engine, who, m), canEvent: (e) => eventFor(engine, who, e) };
+    };
+    api.get('/employees/:id/talk', async (req) => {
+      const e = engine.core.employees.get(param(req, 'id'));
+      if (!e) throw new EngineError('unknown employee', 404);
+      const q = query(req);
+      return talkPage(talkOf(req), e.id, { before: q.before || undefined, since: q.since || undefined, limit: q.limit ? Number(q.limit) : undefined });
+    });
+    // (A POST: what is looked for is not put in an address.)
+    api.post('/employees/:id/talk/search', { bodyLimit: 4096 }, async (req) => {
+      const e = engine.core.employees.get(param(req, 'id'));
+      if (!e) throw new EngineError('unknown employee', 404);
+      const b = body(req);
+      return talkSearch(talkOf(req), e.id, b.q, Number(b.limit) || 300);
     });
     api.post('/employees/:id/message', async (req) => {
       const b = body(req);

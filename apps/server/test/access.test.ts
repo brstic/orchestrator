@@ -46,9 +46,13 @@ test('requests: shared work for colleagues, a member’s computer for that membe
   // Documents, code and the accounts are for those who work here (what a visitor is sent: visitor.test.ts).
   assert.ok(!call(mila, 'GET', '/employees/e-shared/docs') && !call(mila, 'GET', '/usage') && call(ana, 'GET', '/employees/e-shared/docs') && call(ana, 'GET', '/usage'));
   assert.ok(!call(mila, 'POST', '/employees/e-shared/message') && !call(mila, 'GET', '/employees/e-jovan/docs') && !call(mila, 'POST', '/me/host'));
+  // Talk's whole conversation and its search: for those who work here, not a visitor.
+  assert.ok(!call(mila, 'GET', '/employees/e-shared/talk') && !call(mila, 'POST', '/employees/e-shared/talk/search') && call(ana, 'GET', '/employees/e-shared/talk') && call(ana, 'POST', '/employees/e-shared/talk/search'));
   assert.ok(call(ana, 'POST', '/employees/e-shared/stop') && call(ana, 'POST', '/questions/q-shared/answer') && call(ana, 'PATCH', '/tasks/t-shared'));
   for (const [m, r, b] of [
     ['GET', '/employees/e-jovan/docs'],
+    ['GET', '/employees/e-jovan/talk'],
+    ['POST', '/employees/e-jovan/talk/search'],
     ['POST', '/employees/e-jovan/message'],
     ['POST', '/questions/q-jovan/answer'],
     ['PATCH', '/tasks/t-jovan'],
@@ -282,7 +286,7 @@ test('a closed room: what is on the member\'s own computers is theirs alone — 
     for (const sid of ['s-jovan']) assert.deepEqual(others.map((who) => maySee(engine, who, sid) || mayDrive(engine, who, sid)), [false, false, false, false]);
     assert.deepEqual([maySee(engine, jovan, 's-jovan'), mayDrive(engine, jovan, 's-jovan')], [true, true]);
     // Requests that reach into his computers: refused for owners, in words.
-    for (const [m, r, b] of [['POST', '/employees/e-jovan/message'], ['POST', '/employees/e-jovan/start'], ['GET', '/employees/e-jovan/docs'], ['PATCH', '/employees/e-on-server'], ['GET', '/sessions/s-jovan/history'], ['POST', '/tasks', { projectId: 'p-jovan' }], ['DELETE', '/projects/p-jovan'], ['POST', '/questions/q-jovan/answer'], ['POST', '/routines', { employeeId: 'e-jovan' }], ['GET', '/hosts/h-jovan/browse']] as Array<[string, string, Record<string, unknown>?]>) {
+    for (const [m, r, b] of [['POST', '/employees/e-jovan/message'], ['POST', '/employees/e-jovan/start'], ['GET', '/employees/e-jovan/docs'], ['GET', '/employees/e-jovan/talk'], ['PATCH', '/employees/e-on-server'], ['GET', '/sessions/s-jovan/history'], ['POST', '/tasks', { projectId: 'p-jovan' }], ['DELETE', '/projects/p-jovan'], ['POST', '/questions/q-jovan/answer'], ['POST', '/routines', { employeeId: 'e-jovan' }], ['GET', '/hosts/h-jovan/browse']] as Array<[string, string, Record<string, unknown>?]>) {
       assert.deepEqual([call(root, m, r, b), call(vera, m, r, b)], [false, false], `the owners: ${m} ${r}`);
       assert.equal(call(jovan, m, r, b), true, `Jovan: ${m} ${r}`);
     }
