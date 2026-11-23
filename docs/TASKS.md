@@ -114,6 +114,24 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   The owner sees it in **Your verdict** — since the owner's "too much text, I cannot tell what it is about" the same evening, as short lines under the two buttons: *Tests* (a green, amber or grey dot: the project's command passed, only parsed, nothing run), the colleague (*checked it* ▸, opened for what they wrote, or *said nothing of checks*), and *Release* ▸ (the plan's first line, opened for all of it) —, and in the Inbox line "T-… needs your review" ("Checked: …", or that the colleague did not say and the office ran no tests): what the office ran ("The changed files parse — the office
   ran no tests"; "`npm test` passed"; "Nothing") and what the colleague says they ran — or that they approved it
   without saying. `packages/orchestration/test/review-checked.test.ts`, `tests/e2e/68-office-checks.test.ts`.
+- **A manager gives the boss's verdict in the boss's place** (the owner, 2026-11-23: "the project manager may approve
+  from review itself, and when it is not sure it asks me — autonomy"; `TaskManager.managerFor`, `waitForBoss`,
+  `escalateReview`; `OwnerSettings.managersApprove`, on unless switched off in Settings → Employees). When work reaches
+  the boss's stage — handed in for the boss alone, or approved by a colleague first — and a **Project Manager** (role
+  `pm`) put it on the board (`createdBy`), or manages its project (`Project.ownerEmployeeId`), it waits for that
+  manager's verdict instead (`Task.approverId`): the manager is told in its session what to do, approves it
+  (`submit_review`, held to the same "checked" as any reviewer) or sends it back, and when not sure calls
+  **`escalate_review`** with why (`Task.escalated`) — then it is the boss's, and the Inbox line says who asks and why.
+  Nobody else may give that verdict; the boss still may, at any time. **Still the boss's:** work with a release plan
+  while the release gate is on (a release is an owner's to open), work colleagues could not agree on, and work the
+  manager wrote or helped with. The board shows "*<manager>* gives the verdict for you"; the operations wall's "waits
+  for you" leaves it out. (Also closed then: a colleague finishing work that waited for the boss alone.)
+- **The one who put work on the board hears how it went** (`follow-up.ts`): when a task an employee made is done or
+  blocked, that employee is told — with what is still open of the work it put on the board, and to take the next step
+  (or that all of it is done, and to tell the boss). Not for a task it does itself, reviews, or parts of a divided
+  ticket. With the Project Manager's role text ("you own what the boss asks you for until it is delivered…") this is
+  how a manager drives a job from a request to its delivery. `packages/orchestration/test/manager-approves.test.ts`,
+  `tests/e2e/72-manager-drives.test.ts`.
 - **Two rounds between colleagues, then the boss** (`REVIEW_SEND_BACKS` = 2, `TaskManager.contest`): a colleague
   may send the same task back twice (`friction.reviewRejections`). The next "request changes" from a colleague does
   not send it back and is not counted as a rejection: the task stays in REVIEW with stage `'boss'`, what was asked

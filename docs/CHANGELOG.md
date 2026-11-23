@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-23
+- **Autonomy: a project manager approves its team's work, and drives the job** (the owner: "I tell the project manager what I need, it breaks it down and builds it with the others — it may approve from review itself, and asks me when it is not sure"). Work a Project Manager put on the board waits for its verdict instead of yours (it says what it checked); unsure, it hands it to you with `escalate_review` and why. It is told when each task it put on the board is done or blocked, with what is still open, and its role is to own a request until it is delivered. Releases with the gate on stay yours. Settings → Employees → *Project managers approve their team's work for me*.
 - **The release gate shows what it refused lately** (Settings → Employees): who, why, when, the command on a click.
 - **The feed no longer says at every start that an employee "was put" in the office's files folder**: the folder added to a session for the files given to employees is trusted by the office as before, said truthfully, and kept out of the feed (on the live office it appeared at every wake of some employees).
 - **Fixed: in a folder worked in place, a ticket showed colleagues' commits as its own** — on the live office 45% of the commits recorded on tickets (315 of 707) were another ticket's, so the reviewer and the owner read the wrong changes. A task now records the commits its own session makes; its evidence, files changed and Changes tab show only those.

@@ -266,6 +266,11 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
     inputSchema: { type: 'object', properties: { reviewer: str('Teammate name or role, optional'), notes: str('What the reviewer should focus on') } },
   },
   {
+    name: 'escalate_review',
+    description: "Hand the verdict on a task that waits for yours, in the boss's place, to the boss: you are not sure it is what the boss wants. Say why — the boss reads it and decides.",
+    inputSchema: { type: 'object', properties: { task: str('Key of the task, e.g. "T-12"'), why: str('Why the boss should decide it: what you are unsure of') }, required: ['task', 'why'] },
+  },
+  {
     name: 'submit_review',
     description: 'Give your verdict on a task that is waiting for review: one you were asked to review, or — where employees manage the board — any teammate\'s finished work. Never your own. Read the change before you approve it; "approve" lets it be merged.',
     inputSchema: {

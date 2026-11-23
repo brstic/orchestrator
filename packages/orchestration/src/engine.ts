@@ -26,6 +26,7 @@ import { Background } from './background.ts';
 import { Goals } from './goals.ts';
 import { Rent } from './rent.ts';
 import { Moves } from './move.ts';
+import { FollowUp } from './follow-up.ts';
 import { Release } from './release.ts';
 import { CentralContext } from './context.ts';
 
@@ -69,6 +70,7 @@ export class Engine {
   readonly moves: Moves;
   readonly rent: Rent;
   readonly release: Release;
+  readonly followUp: FollowUp;
   /** What every employee always knows (context.ts, `docs/CONTEXT.md`). */
   readonly context: CentralContext;
   readonly vault: Vault;
@@ -101,6 +103,7 @@ export class Engine {
     this.moves = new Moves(this);
     this.rent = new Rent(this);
     this.release = new Release(this);
+    this.followUp = new FollowUp(this);
     this.context = new CentralContext(this);
     this.vault = new Vault(this.core, opts.vaultKeyFile ?? null);
     this.vault.onCaptureFailed = (why) =>

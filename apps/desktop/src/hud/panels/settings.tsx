@@ -1053,6 +1053,9 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                     all responsibility…"). With this on, the office answers yes to both by itself — the folder for whoever you put there, the warning for whoever an owner put on Unrestricted, on the office's own machines — and says so in the feed.
                     Off: the folder is still trusted for employees on Auto and Unrestricted, and everything else waits for your answer in the Inbox.
                   </Toggle>
+                  <Toggle checked={settings.managersApprove !== false} onChange={(managersApprove) => void save({ managersApprove })} title="Project managers approve their team's work for me">
+                    Work a <b>Project Manager</b> put on the board waits for its verdict instead of yours: it approves it or sends it back, and hands it to you when it is not sure. Releases with the gate on stay yours. Off: you decide all of it.
+                  </Toggle>
                   <div className="field" data-review-default>
                     <span className="field-label">Finished work is reviewed by</span>
                     <select aria-label="Finished work is reviewed by" value={reviewDefaultOf(settings)} onChange={(e) => void save({ reviewDefault: e.target.value as ReviewBy })} style={{ width: 'auto', alignSelf: 'flex-start' }}>

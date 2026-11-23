@@ -46,7 +46,7 @@ export function checkHealth(tasks: Record<string, Task> | Task[], now = Date.now
   const out: CheckHealth = { days, handedIn: 0, tested: 0, syntaxOnly: 0, unchecked: 0, peerApprovals: 0, peerChecked: 0, sentBack: 0, ownerApprovals: 0, ownerSaid: 0, waiting: [] };
   for (const t of all) {
     if (NOT_CODE.has(t.kind) || t.cancelled) continue;
-    if (t.status === 'REVIEW' && (t.reviewStage === 'boss' || (!t.reviewStage && !t.reviewerId))) out.waiting.push({ id: t.id, key: t.key, title: t.title, since: waitsSince(t) });
+    if (t.status === 'REVIEW' && !t.approverId && (t.reviewStage === 'boss' || (!t.reviewStage && !t.reviewerId))) out.waiting.push({ id: t.id, key: t.key, title: t.title, since: waitsSince(t) });
     const at = handedAt(t);
     if (!at || at < from || !(t.status === 'REVIEW' || t.status === 'DONE')) continue;
     out.handedIn++;

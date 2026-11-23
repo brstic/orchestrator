@@ -2,6 +2,19 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-23 — Autonomy: a project manager approves in the boss's place, and hears how its work went
+
+The owner: "the orchestrator must be autonomous, that is the main point: I tell an agent — the project manager — what
+I need, and it breaks it down, uses the other agents and builds the whole of what it planned by itself, as I asked";
+"the project manager may approve from review itself, and when it is not sure it asks me — autonomy, autonomy, autonomy".
+Decided: the boss's verdict on work a Project Manager put on the board goes to that manager (on by default, a switch to
+turn it off), held to the same evidence rule as any reviewer, with `escalate_review` for when it is unsure; the employee
+who put work on the board is told when it is done or blocked, with what is still open. Kept the boss's: releases while
+the gate is on (the owner's earlier choice), disagreements between colleagues, and anything the manager did itself.
+Not chosen: a manager that runs on a timer or a goal while it waits (each turn costs usage; being told of each event
+wakes it when there is something to do), and letting any colleague give the boss's verdict (only the manager who owns
+the work).
+
 ## 2026-11-23 — In the office means in front of a window and using it, not a window open
 
 The owner asked that employees not write to their Telegram while they are in the office. Their desktop app is open all

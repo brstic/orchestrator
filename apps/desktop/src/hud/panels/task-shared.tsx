@@ -117,6 +117,8 @@ export function needOf(task: Task, employees: Record<string, Employee>, tasks: R
       return { ...base, group: 'done', line: task.evidence.summary ? first(task.evidence.summary) : 'Finished.' };
     case 'REVIEW': {
       const stage = task.reviewStage ?? (task.reviewerId && !task.evidence.peerReview ? 'peer' : 'boss');
+      // Given to its manager in the boss's place: theirs to decide (the boss still may).
+      if (stage === 'boss' && task.approverId) return { ...base, label: 'In review', group: 'waiting', line: `${name(task.approverId)} gives the verdict for you` };
       if (stage === 'boss') return { ...base, label: 'Your review', group: 'you', line: task.evidence.peerReview ? `${name(task.evidence.peerReview.reviewerId)} approved it — now you` : `${name(task.authorId ?? task.assigneeId)} handed it in` };
       return { ...base, label: 'In review', group: 'waiting', line: `${name(task.reviewerId)} is reviewing it${reviewByOf(task) === 'both' ? ', then you' : ''}` };
     }

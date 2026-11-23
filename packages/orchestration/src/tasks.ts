@@ -1553,6 +1553,8 @@ export class TaskManager {
         // Whoever handed it in is its author for this review, also if the task is given to somebody else meanwhile.
         task.authorId = task.assigneeId;
         task.evidence.review = null;
+        task.approverId = null;
+        task.escalated = null;
         task.evidence.peerReview = null;
         this.history(task, 'Verified; waiting for review', 'orchestrator');
         this.eng.talk.add(task, { from: { kind: 'employee', id: employee.id, name: employee.name }, body: args.summary, kind: 'handed_in', mentions: [] }, { store: false, quiet: true });
@@ -1997,8 +1999,7 @@ export class TaskManager {
       data: { key: task.key, reviewerId: reviewer?.id ?? null, fromEmployeeId: task.assigneeId, toEmployeeId: reviewer?.id ?? null },
     });
     if (!reviewer) {
-      this.core.put('task', task);
-      this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your review`, body: `${author?.name ?? 'An employee'} finished "${task.title}". ${bossOnly ? 'It' : 'No colleague can review it, so it'} is waiting for you.`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
+      this.waitForBoss(task, `${author?.name ?? 'An employee'} finished "${task.title}". ${bossOnly ? 'It' : 'No colleague can review it, so it'} is waiting for you.`);
       return null;
     }
     task.reviewerId = reviewer.id;
@@ -2023,6 +2024,66 @@ export class TaskManager {
     return reviewer;
   }
 
+  /**
+   * The manager who gives the boss's verdict on this task in the boss's place: the Project Manager who put it on the
+   * board, else the project's own manager — never its author, a helper, or one who cannot see it. Not for work with a
+   * release plan while the release gate is on (a release is an owner's to open), nor for work colleagues could not agree
+   * on, nor once the manager handed it to the boss. Null: the boss.
+   */
+  managerFor(task: Task): Employee | null {
+    if (this.core.settings.managersApprove === false) return null;
+    if ((task.release?.plan && this.eng.release.on()) || task.evidence.contested || task.escalated) return null;
+    const project = this.core.projects.get(task.projectId);
+    const maker = /^employee:/.test(task.createdBy ?? '') ? this.core.employees.find((e) => e.name === task.createdBy!.slice('employee:'.length) && !e.archived) : undefined;
+    const candidates = [maker, project?.ownerEmployeeId ? this.core.employees.get(project.ownerEmployeeId) : undefined];
+    return (
+      candidates.find(
+        (e): e is Employee =>
+          !!e && !e.archived && e.roleKey === 'pm' && !!e.hostId && e.id !== task.assigneeId && e.id !== task.authorId && !task.helperIds?.includes(e.id) && this.canSee(e, task),
+      ) ?? null
+    );
+  }
+
+  /**
+   * The work waits for the boss's verdict: given to its manager in the boss's place (told what to do, and that it may
+   * hand it to the boss), or else to the boss (`body` in their Inbox).
+   */
+  private waitForBoss(task: Task, body: string): void {
+    const manager = this.managerFor(task);
+    task.reviewStage = 'boss';
+    task.approverId = manager?.id ?? null;
+    this.core.put('task', task);
+    if (!manager) {
+      this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your review`, body, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
+      return;
+    }
+    this.history(task, `${manager.name} gives the verdict, in the boss's place (and hands it to the boss when unsure)`, 'orchestrator');
+    this.eng.comms.sendMessage({
+      from: { kind: 'system', id: null, name: 'the office' },
+      toEmployeeId: manager.id,
+      kind: 'system',
+      taskId: task.id,
+      body: `${task.key} "${truncate(task.title, 100)}" — work you put on the board — waits for your verdict, in the boss's place. ${body}\nLook at it (get_task ${task.key}: the summary, the change, what was checked) against what the boss asked for. Then submit_review: approve — with "checked", what you looked at or ran — or request_changes, saying what to change. If you are not sure it is what the boss wants, call escalate_review with why: the boss decides it then.`,
+    });
+  }
+
+  /** The manager hands the verdict to the boss: not sure it is what the boss wants. */
+  escalateReview(by: Employee, taskRef: string, why: string): Task {
+    const task = this.taskByKey(taskRef, by.projectId) ?? this.core.tasks.get(taskRef);
+    if (!task || !this.canSee(by, task)) throw new EngineError(`no task "${taskRef}"`);
+    if (task.status !== 'REVIEW' || task.reviewStage !== 'boss' || task.approverId !== by.id) throw new EngineError(`${task.key} is not waiting for your verdict`);
+    const reason = String(why ?? '').trim();
+    if (reason.length < 8) throw new EngineError('say why the boss should decide it (a sentence)');
+    task.approverId = null;
+    task.escalated = { by: by.name, why: truncate(reason, 600), ts: nowIso() };
+    this.history(task, `${by.name} handed the verdict to the boss: ${truncate(reason, 200)}`, by.name);
+    this.eng.talk.add(task, { from: { kind: 'employee', id: by.id, name: by.name }, body: `For the boss to decide: ${reason}`, kind: 'note', mentions: [] }, { store: false, quiet: true });
+    this.core.put('task', task);
+    this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your review`, body: `${by.name}, who manages it, asks you to decide: ${truncate(reason, 300)}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
+    this.core.event({ type: 'task.updated', source: 'mcp', summary: `${by.name} handed ${task.key} to the boss to decide`, taskId: task.id, projectId: task.projectId, employeeId: by.id, data: { key: task.key, escalated: true } });
+    return task;
+  }
+
   /** `who`: the person, when it is one (their name stands on the verdict; `by` is then 'owner'). */
   async submitReview(by: Employee | 'owner', taskRef: string, verdict: 'approve' | 'request_changes', comments: string, who?: Person, opts: { checked?: string | null } = {}): Promise<Task> {
     const task = this.taskByKey(taskRef, by === 'owner' ? null : by.projectId);
@@ -2030,16 +2091,20 @@ export class TaskManager {
     if (task.status !== 'REVIEW') throw new EngineError(`${task.key} is not waiting for review (status ${task.status})`);
     if (by !== 'owner') {
       if (by.id === task.assigneeId || by.id === task.authorId) throw new EngineError('you cannot review your own task');
+      // Waiting for the boss's verdict: only the manager given it in the boss's place may give it.
+      if (task.reviewStage === 'boss' && task.approverId && by.id !== task.approverId) throw new EngineError(`${task.key} waits for ${this.core.employees.get(task.approverId)?.name ?? 'its manager'}'s verdict, in the boss's place`);
+      // (And with nobody given it, it is the boss's: a colleague finishing it here would be a verdict nobody gave them.)
+      if (task.reviewStage === 'boss' && !task.approverId && !task.evidence.peerReview && !task.evidence.contested && reviewByOf(task) === 'boss') throw new EngineError(`${task.key} waits for the boss's verdict`);
       // Measured on the live office: reviewers who had done part of the work themselves approved it ("not an
       // independent review", in their own words). Who worked on it does not judge it.
       if (task.helperIds?.includes(by.id)) throw new EngineError(`you worked on ${task.key} with its author: somebody who did not do the work reviews it`);
-      const assigned = task.reviewerId === by.id || !!this.core.tasks.find((t) => t.reviewOf === task.id && t.assigneeId === by.id);
+      const assigned = task.reviewerId === by.id || task.approverId === by.id || !!this.core.tasks.find((t) => t.reviewOf === task.id && t.assigneeId === by.id);
       // With the board in the employees' hands, any colleague may review finished work — never its own author.
       if (!assigned && this.core.settings.employeesManageBoard === false) throw new EngineError(`you were not asked to review ${task.key}`);
       if (!this.canSee(by, task)) throw new EngineError(`no task "${taskRef}"`);
       // A colleague has approved it already: what it waits for now is the boss.
       if (task.reviewStage === 'boss' && task.evidence.contested) throw new EngineError(`${task.key} was sent back ${REVIEW_SEND_BACKS} times already and now waits for the boss`);
-      if (task.reviewStage === 'boss' && task.evidence.peerReview) throw new EngineError(`${task.key} was approved by ${this.core.employees.get(task.evidence.peerReview.reviewerId)?.name ?? 'a colleague'} and now waits for the boss`);
+      if (task.reviewStage === 'boss' && task.evidence.peerReview && by.id !== task.approverId) throw new EngineError(`${task.key} was approved by ${this.core.employees.get(task.evidence.peerReview.reviewerId)?.name ?? 'a colleague'} and now waits for the boss`);
     }
     const approved = verdict === 'approve';
     if (!approved && !comments.trim()) throw new EngineError('say what should change: it is what the author reads');
@@ -2072,20 +2137,19 @@ export class TaskManager {
     });
     this.eng.comms.resolveNotifications((n) => n.kind === 'review' && n.taskId === task.id);
     if (by !== 'owner') this.awardXp(xpForReview(by.id, task));
-    if (approved && by !== 'owner' && reviewByOf(task) === 'both') {
+    const inBossPlace = by !== 'owner' && task.reviewStage === 'boss' && task.approverId === by.id;
+    if (approved && by !== 'owner' && reviewByOf(task) === 'both' && !inBossPlace) {
       // A colleague's approval is the first of two: the work goes on to the boss.
       task.evidence.peerReview = { reviewerId: by.id, comments, ts: nowIso(), checked };
       task.evidence.review = null;
-      task.reviewStage = 'boss';
       this.history(task, `Approved by ${reviewerName}; waiting for the boss`, reviewerName);
       this.eng.talk.add(task, { from, body: said(comments.trim() || 'Approved.'), kind: 'approved', mentions: [] }, { store: false, quiet: true });
-      this.core.put('task', task);
-      this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your review`, body: `${this.core.employees.get(task.authorId ?? task.assigneeId)?.name ?? 'An employee'} finished "${task.title}" and ${reviewerName} approved it${comments.trim() ? `: ${truncate(comments, 200)}` : '.'}${checked ? `\nChecked: ${truncate(checked, 120)}` : testedByOffice(task) || NON_CODE_KINDS.has(task.kind) ? '' : `\n${reviewerName} did not say what they checked, and the office ran no tests on it.`}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
+      this.waitForBoss(task, `${this.core.employees.get(task.authorId ?? task.assigneeId)?.name ?? 'An employee'} finished "${task.title}" and ${reviewerName} approved it${comments.trim() ? `: ${truncate(comments, 200)}` : '.'}${checked ? `\nChecked: ${truncate(checked, 120)}` : testedByOffice(task) || NON_CODE_KINDS.has(task.kind) ? '' : `\n${reviewerName} did not say what they checked, and the office ran no tests on it.`}`);
       this.closeStaleReviews();
       return task;
     }
     if (approved) {
-      this.history(task, `Review approved by ${reviewerName}`, reviewerName);
+      this.history(task, `Review approved by ${reviewerName}${inBossPlace ? ", the manager, in the boss's place" : ''}`, reviewerName);
       this.eng.talk.add(task, { from, body: said(comments.trim() || 'Approved.'), kind: 'approved', mentions: [] }, { store: false, quiet: true });
       await this.finalize(task);
       // A person approved it: the gate opens for those who release it (release.ts). A colleague's approval does not.

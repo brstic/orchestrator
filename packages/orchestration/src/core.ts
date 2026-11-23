@@ -490,6 +490,7 @@ export class Core {
       // A switch is on or off (anything that is not a plain "off" keeps the hold).
       ...(patch.unrestrictedAsksHighRisk === undefined ? {} : { unrestrictedAsksHighRisk: patch.unrestrictedAsksHighRisk !== false }),
       ...(patch.acceptStartPrompts === undefined ? {} : { acceptStartPrompts: patch.acceptStartPrompts !== false }),
+      ...(patch.managersApprove === undefined ? {} : { managersApprove: patch.managersApprove !== false }),
       // The release gate: on or off, the protected branches and the production servers, as `releaseRulesOf` reads them.
       ...(patch.releaseGate === undefined ? {} : { releaseGate: releaseRulesOf({ releaseGate: { ...releaseRulesOf(this._settings), ...(patch.releaseGate ?? {}) } }) }),
       // A place the office knows, or the one it had.

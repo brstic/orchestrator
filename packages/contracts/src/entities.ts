@@ -863,6 +863,14 @@ export interface Task {
    * colleagues committed on the same branch meanwhile is not taken for this task's work (`TaskManager.noteCommit`).
    */
   ownCommits?: string[];
+  /**
+   * While it waits for the boss's verdict (`reviewStage: 'boss'`): the manager who gives it in the boss's place — the
+   * Project Manager who put the work on the board (the owner, 2026-11-23: "the project manager may approve from review
+   * itself, and when it is not sure it asks me"). Null: the boss. `TaskManager.managerFor`.
+   */
+  approverId?: string | null;
+  /** The manager handed the verdict to the boss (`escalate_review`): why. Cleared at the next hand-in. */
+  escalated?: { by: string; why: string; ts: ISODate } | null;
   /** Files on the task (see `TaskAttachment`). Absent: none. */
   attachments?: TaskAttachment[];
   requiresReview: boolean;
@@ -2117,6 +2125,11 @@ export interface OwnerSettings {
    * accept in the office.
    */
   acceptStartPrompts?: boolean;
+  /**
+   * A Project Manager gives the boss's verdict on work it put on the board, and hands it to the boss when unsure
+   * (`Task.approverId`). Absent or true: on. False: every such verdict is the boss's, as before.
+   */
+  managersApprove?: boolean;
   /**
    * Where the office stands: what is seen around the building, from above and through its windows. The office's own
    * (the same for everybody in it), chosen by an owner. Not set: `studio`, the building by itself in the dark, as it
