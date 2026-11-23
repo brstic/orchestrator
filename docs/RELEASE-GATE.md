@@ -88,5 +88,8 @@ Not for a rented employee while rented (a client's work has its own terms, `docs
   this build or newer (`session.release`); a member's computer with an older app does not hold anything until it is
   updated. A session gets the instructions at its next start (the refusal itself tells it the rest).
 - Production servers that are not listed are not protected; read-only work on listed ones stays free.
-- Tried with the scripted stand-in for Claude Code and a real Git remote, not yet with real Claude Code on the live
-  office.
+- Tried with the scripted stand-in for Claude Code and a real Git remote, and **seen on the live office with real
+  Claude Code** (2026-11-23): an employee writing a helper into a folder of its own on the production server was
+  refused, and 18 seconds later put the same helper on the development server and went on. Before the rule read only
+  what runs there, one false refusal was seen there too: a file of the team's own repository being written here
+  merely mentioned a production site.
