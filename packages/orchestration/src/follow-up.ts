@@ -36,7 +36,7 @@ export class FollowUp {
     const left = open.length ? ` Of the work you put on the board, ${open.length} ${open.length === 1 ? 'task is' : 'tasks are'} still open: ${open.slice(0, 6).map((t) => `${t.key} (${t.status.toLowerCase().replace('_', ' ')})`).join(', ')}${open.length > 6 ? ', …' : ''}.` : ' Everything you put on the board is done.';
     const body =
       e.type === 'task.completed'
-        ? `${task.key} "${truncate(task.title, 100)}", which you put on the board, is done (${who}): ${truncate(task.evidence.summary ?? 'finished', 400)}${left} Take the next step of the job: what now can start, what is still missing against what the boss asked for — and when all of it is there, tell the boss.`
+        ? `${task.key} "${truncate(task.title, 100)}", which you put on the board, is done (${who}): ${truncate(task.evidence.summary ?? 'finished', 400)}${left} Take the next step of the job: what now can start, what is still missing against what the boss asked for — and when all of it is there, report it to the boss with message_person (what was delivered, how it was checked).`
         : `${task.key} "${truncate(task.title, 100)}", which you put on the board, is blocked (${who}): ${truncate(String(e.data?.reason ?? task.blockedReason ?? ''), 400)} If you know how it goes on, unblock_task and say how; if it needs the boss, ask_boss.`;
     this.eng.comms.sendMessage({ from: { kind: 'system', id: null, name: 'the office' }, toEmployeeId: maker.id, kind: 'system', taskId: task.id, body });
   }

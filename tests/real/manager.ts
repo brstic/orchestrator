@@ -112,8 +112,13 @@ try {
     const mine = s.tasks.filter((t) => t.createdBy === 'employee:Mia' && !t.reviewOf);
     const line = mine.map((t) => `${t.key}:${t.status}${t.approverId ? '(Mia)' : ''}`).join(' ') || 'no tasks yet';
     if (line !== lastLine) log(`board: ${(lastLine = line)}`);
+    // Told the boss: in their Inbox (message_person), or in the conversation the request came in (Talk).
     const note = s.notifications.find((n) => n.kind === 'message' && n.employeeId === mia.id);
-    if (note) told = note.body;
+    if (note) told = `Inbox: ${note.body}`;
+    else if (mine.length && mine.every((t) => t.status === 'DONE')) {
+      const last = (await api<any[]>('GET', `/events?employeeId=${mia.id}&limit=50`)).filter((e) => e.type === 'agent.turn_finished').at(-1);
+      if (last && /done|deliver|complete|nothing is missing|passes/i.test(String(last.data?.lastMessage ?? ''))) told = `Talk: ${last.data.lastMessage}`;
+    }
     if (told && mine.length && mine.every((t) => t.status === 'DONE')) break;
     if (Date.now() > deadline) throw new Error('time is up');
     await sleep(5000);

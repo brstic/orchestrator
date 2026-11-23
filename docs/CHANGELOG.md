@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-23
+- **A project manager drove a request end to end with real Claude Code**: one message from the boss; it planned two tasks, gave them to two colleagues, approved both in the boss's place, checked the merged result and reported to the Inbox — in about five minutes (`tests/real/manager.ts`, 7/7). It now reports with `message_person`.
 - **Fixed: a person's message did not start an employee who was not at their desk** unless the office had put them to sleep — found in the first real run of a project manager: the boss's request waited thirty minutes for nobody. Whatever a person says to an employee now starts them; a colleague's message still wakes only someone asleep, as before.
 - **A project manager answers its team's questions first**: a question an employee asks about work the manager put on the board goes to the manager, not your Inbox or Telegram; it answers in your place or passes it to you with why. Deployments stay yours.
 - **A project manager's plan starts at once**: what it puts on the board is released and staffed without waiting for you to release it (where employees keep the board); other employees' proposals wait as before.

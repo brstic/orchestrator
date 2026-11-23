@@ -143,6 +143,17 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   ticket. With the Project Manager's role text ("you own what the boss asks you for until it is delivered…") this is
   how a manager drives a job from a request to its delivery. `packages/orchestration/test/manager-approves.test.ts`,
   `tests/e2e/72-manager-drives.test.ts`.
+
+  **Seen with real Claude Code** (`tests/real/manager.ts`, 2026-11-23 — spends usage, run only when asked): one message
+  from the boss to a manager (Sonnet) — "a small static site: two pages with these headings and a link, and a test that
+  checks them; give the parts to Alex and Bo, see it through, tell me" — and in about five minutes, with the boss doing
+  nothing but trusting folders: the manager put two tasks on the board in order (the pages for one colleague, the test
+  after it for the other, both on Haiku); each was verified by the office and approved by the manager in the boss's
+  place; the manager heard of each; it ran the test on the merged work itself (and broke a heading, the link and a
+  page in a scratch copy to see the test fail); everything was merged and passed; and it reported to the boss's Inbox
+  what was delivered and how it was checked. 7 of 7 checks. The first two runs found what this needed: a person's
+  message now starts an employee not at their desk, and the manager is told to report with `message_person` (it had
+  answered only in the conversation the request came in).
 - **Two rounds between colleagues, then the boss** (`REVIEW_SEND_BACKS` = 2, `TaskManager.contest`): a colleague
   may send the same task back twice (`friction.reviewRejections`). The next "request changes" from a colleague does
   not send it back and is not counted as a rejection: the task stays in REVIEW with stage `'boss'`, what was asked
