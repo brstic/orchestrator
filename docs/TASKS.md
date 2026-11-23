@@ -96,6 +96,8 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
      / `evidence.review.checked`, and on the ticket ("Checked: …"). Sending back needs no "checked". A session started
      before the field existed has `submit_review` without it (Claude Code reads the tools at start): a last line
      "Checked: …" in the comments counts the same, and the refusal says so.
+  3. **Who worked on a ticket does not review it**: its helpers (`helperIds`) are never picked, a named one gives way,
+     and their `submit_review` is refused ("you worked on T-… with its author").
   4. **Which command, and does it work** (`detectChecks` in `packages/execution/src/checks.ts`, RPC `repo.checks`;
      `GET /api/projects/:id/checks`, `POST /api/projects/:id/checks/try` — owners only; `check-finder.tsx`). Beside the
      verification command (Project → Policy, and the Growth suggestion to set one) an owner sees what the repository
@@ -104,8 +106,6 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
      one click puts it in the field; **Try** runs what is in the field once in the project's folder and says in one line
      whether it passed and how long it took (the output on a click when it failed). Nothing is set by trying.
      `packages/execution/test/checks.test.ts`, `tests/e2e/70-project-checks.test.ts`.
-  3. **Who worked on a ticket does not review it**: its helpers (`helperIds`) are never picked, a named one gives way,
-     and their `submit_review` is refused ("you worked on T-… with its author").
 
   *Seen on the live office the same evening:* a code reviewer's first approval without "checked" was refused; nine
   seconds later it approved with what it had run — DNS lookups, the sites fetched publicly and from the team's own
