@@ -997,7 +997,10 @@ export class Comms {
         via: null,
         stopRequestId: null,
         // A run of a routine, and a request whose sender cannot go on without the answer, start the session of someone who has none.
-        wake: wake || !!msg.routineId || (msg.kind === 'collab_request' && !!collab?.waited),
+        // So does whatever a person says to them: they are spoken to because they are wanted (found in a real run,
+        // 2026-11-23: the boss's request to a manager who had never been started waited thirty minutes for nobody). A
+        // colleague's word still starts only someone the office put to sleep, as before.
+        wake: wake || !!msg.routineId || (msg.kind === 'collab_request' && !!collab?.waited) || msg.from.kind === 'owner',
         ...(this.gathered(msg) ? { holdUntil: Date.now() + this.gathered(msg) * 1000 } : {}),
       },
       pump,

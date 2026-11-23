@@ -96,3 +96,12 @@ test("a colleague's question about the manager's work is the manager's to answer
   assert.notEqual(after.status, 'open');
   assert.equal(after.answeredBy?.kind, 'manager');
 });
+
+test("the boss's word starts an employee who was never started (a real run: a request waited half an hour for nobody)", async () => {
+  const nia = await h.employee('Nia', 'pm', { projectId: shop });
+  assert.equal((await h.state()).sessions.filter((s) => s.employeeId === nia.id).length, 0, 'never started');
+  await h.api('POST', `/employees/${nia.id}/message`, { body: 'Plan the next release. @@fake: say on-it@@' });
+  await waitFor(async () => (await h.api<any[]>('GET', `/events?employeeId=${nia.id}&limit=100`)).find((e) => e.type === 'agent.turn_finished' && e.data.lastMessage === 'on-it'), { label: 'started and told', timeout: 30_000 });
+  const woke = (await h.api<any[]>('GET', `/events?employeeId=${nia.id}&limit=100`)).find((e) => e.type === 'session.woken');
+  assert.match(woke?.summary ?? '', /Nia was started for/);
+});
