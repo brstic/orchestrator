@@ -21,6 +21,8 @@ interface View {
   pairing: { until: string } | null;
   groups: Array<{ chatId: number; title: string; as: string; mode: 'addressed' | 'all'; since: string }>;
   hearsAll: boolean;
+  /** The office counts you as in the office now: questions and messages to you stay here (`docs/TELEGRAM.md`). */
+  here?: boolean;
 }
 interface Links {
   link: string;
@@ -329,6 +331,11 @@ export function TelegramTab({ e }: { e: Employee }) {
           <div className="k-main">
             <div className="k-title-sm">Questions and approvals</div>
             <div className="k-sub">Sent to the people above, with buttons to answer. Never to a group.</div>
+            <div className="k-sub" data-tg-here={view.here ? 'yes' : 'no'}>
+              {view.here
+                ? 'You are in the office now, so they — and what employees write to you — stay here. If you leave this window (another one in front, or 10 minutes untouched) while one is still open, it comes to Telegram then.'
+                : 'While you are in the office (this window in front and used) they stay here, and come to Telegram only if you leave with one still open.'}
+            </div>
           </div>
           <input type="checkbox" role="switch" checked={view.questions} onChange={(ev) => void act(() => api<View>('PATCH', `/employees/${e.id}/telegram`, { questions: ev.target.checked }).then(setView))} />
         </label>

@@ -32,7 +32,7 @@ The tab is shown to whoever may *work* with that employee (an owner; a colleague
   a question is still open, or a message still unread (and under two hours old), it is sent to their Telegram then
   (looked at every 30 s, `Telegram.sendHeld`); answered or read in the office, it is not. Per person: somebody else
   paired with the same bot who is not here gets it at once. **Not held back:** the answer to something you wrote *on
-  Telegram* — you asked there, it comes back there.
+  Telegram* — you asked there, it comes back there. The bot's tab says whether the office counts *you* as here right now (`here` in `GET /api/employees/:id/telegram`).
 - **In a group**, set per group:
   - **When talked to** (the default): the employee answers when somebody mentions the bot (`@bot`), says the employee's **name as a word** (any alphabet: "Đorđe, look" counts, "Đorđević" does not), **replies** to one of the bot's messages, or writes a **follow-up** within three minutes of being answered by it. Everything else is only remembered.
   - **Everything (they decide)**: every message goes to them. What is said is gathered until the conversation pauses (8 s), then handed over at once with the instruction to answer only if it is for them or they have something useful to add — otherwise to reply exactly `NO_REPLY`, which the office does not post. Each pause is a turn of their Claude: this costs usage in a busy group.

@@ -997,7 +997,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/routines/:id/run', async (req) => engine.routines.runNow(param(req, 'id'), actorOf(req)));
     // The employee's own Telegram bot (docs/TELEGRAM.md). Whoever may work with them may set it up; the token never comes back.
     const telegramBy = (req: FastifyRequest) => ({ id: whoOf(req).id, name: whoOf(req).name, owner: whoOf(req).kind === 'owner' });
-    api.get('/employees/:id/telegram', async (req) => telegram.view(engine.core.employees.require(param(req, 'id')).id));
+    // `here`: whether the office counts the one asking as in the office now — while so, nothing goes to their Telegram.
+    api.get('/employees/:id/telegram', async (req) => ({ ...telegram.view(engine.core.employees.require(param(req, 'id')).id), here: clients.isHere(whoOf(req).id) }));
     api.put('/employees/:id/telegram', async (req) => {
       const id = engine.core.employees.require(param(req, 'id')).id;
       const view = await telegram.connect(id, String(body(req).token ?? ''), telegramBy(req));
