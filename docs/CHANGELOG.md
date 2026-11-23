@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-23
+- **Your verdict is short again** (the owner: "too much text in Your verdict, I cannot tell what it is about — the interface is bad"): the two buttons first, then one line each — *Tests* with a coloured dot, the colleague (*checked it* ▸ or *said nothing of checks*), *Release* ▸ with the plan's first line; the full texts open on a click. The hint about talking it over moved into the title's tooltip.
 - **`scripts/measure-work.mjs`**: how the office's work went, read-only from its database — tickets, how the office checked them, what colleagues said they checked, owners' approvals, times, merges, releases, what waits — for all projects and any named one.
 - **Branches of their own, with the release gate**: in a project of worktrees with the gate on, employees push their task branch to try it on the development server, and release approved work by moving the base branch to the integration branch and pushing it — told so in their instructions and with each task (`docs/plans/BRANCHES-FOR-A-TEAM-IN-PLACE.md`).
 - **A ticket waiting for your Approve comes to Telegram when you are away** (the owner: "yes, when I am not there"): through its author's bot, or a colleague's on the project (the one who leads first), with what the colleague checked; not while you are in the office.

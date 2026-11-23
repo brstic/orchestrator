@@ -364,26 +364,41 @@ function Checks({ task }: { task: Task }) {
   const s = useOffice();
   const v = task.evidence.verification;
   const peer = task.evidence.peerReview;
-  const office =
+  // One short line each, its state at a glance; what was said in full only when asked (the owner, 2026-11-23: "too much
+  // text — I cannot tell at a glance what it is about").
+  const tests =
     v?.provenance === 'measured' && v.passed === true
       ? v.kind === 'syntax'
-        ? 'The changed files parse — the office ran no tests (the project has no verification command).'
-        : `${v.command} passed.`
+        ? { tone: 'warn', text: 'only parsed', title: 'The office checked that the changed files parse. The project has no verification command, so no tests ran.' }
+        : { tone: 'good', text: `${v.command} passed`, title: `The office ran "${v.command}" on the work, and it passed.` }
       : v?.provenance === 'measured' && v.passed === false
-        ? `${v.command} failed.`
-        : 'Nothing: the project has no verification command, and nothing could be checked.';
+        ? { tone: 'bad', text: `${v.command} failed`, title: `The office ran "${v.command}" and it failed.` }
+        : { tone: 'muted', text: 'nothing run', title: 'The project has no verification command, and nothing could be checked.' };
+  const reviewer = peer ? (s.employees[peer.reviewerId]?.name ?? 'Colleague') : null;
   return (
     <div className="tk-checks" data-checks>
-      <div className="small muted">What was checked</div>
-      <div className="small" data-checks-office>
-        <b>The office:</b> {office}
+      <div className="tk-check" data-checks-office title={tests.title}>
+        <span className={`tk-check-dot tk-${tests.tone}`} aria-hidden />
+        <span className="tk-check-who">Tests</span>
+        <span className="tk-check-what">{tests.text}</span>
       </div>
-      {peer && (
-        <div className="small" data-checks-peer>
-          <b>{s.employees[peer.reviewerId]?.name ?? 'The colleague'}:</b>{' '}
-          {peer.checked ? <span className="pre">{peer.checked}</span> : <span className="muted">approved it without saying what they ran.</span>}
-        </div>
-      )}
+      {peer &&
+        (peer.checked ? (
+          <details className="tk-check tk-check-more" data-checks-peer>
+            <summary>
+              <span className="tk-check-dot tk-good" aria-hidden />
+              <span className="tk-check-who">{reviewer}</span>
+              <span className="tk-check-what">checked it</span>
+            </summary>
+            <div className="tk-check-full">{peer.checked}</div>
+          </details>
+        ) : (
+          <div className="tk-check" data-checks-peer title={`${reviewer} approved it without saying what they ran.`}>
+            <span className="tk-check-dot tk-warn" aria-hidden />
+            <span className="tk-check-who">{reviewer}</span>
+            <span className="tk-check-what">said nothing of checks</span>
+          </div>
+        ))}
     </div>
   );
 }
@@ -417,17 +432,11 @@ function Verdict({ task }: { task: Task }) {
   };
   return (
     <section className="tk-verdict" data-verdict={mode ?? 'closed'} aria-label="Your verdict">
-      <div className="tk-meta-label">Your verdict</div>
-      <Checks task={task} />
-      {task.release?.plan && (
-        <div className="tk-release-plan" data-release-plan>
-          <div className="small muted">Where it goes once you approve it</div>
-          <div className="pre small">{task.release.plan}</div>
-        </div>
-      )}
+      <div className="tk-meta-label" title={`Talk it over with ${who} in the conversation; decide here once it is settled.`}>
+        Your verdict
+      </div>
       {mode === null && (
         <>
-          <div className="small muted">Talk it over with {who} in the conversation first; decide here once it is settled.</div>
           <div className="tk-verdict-row">
             <Button variant="success" small disabled={busy} onClick={() => open('approve')}>
               Approve…
@@ -437,6 +446,16 @@ function Verdict({ task }: { task: Task }) {
             </Button>
           </div>
         </>
+      )}
+      <Checks task={task} />
+      {task.release?.plan && (
+        <details className="tk-check tk-check-more tk-release-plan" data-release-plan>
+          <summary title="Where it goes once you approve it">
+            <span className="tk-check-who">Release</span>
+            <span className="tk-check-what">{task.release.plan.split('\n')[0]}</span>
+          </summary>
+          <div className="tk-check-full">{task.release.plan}</div>
+        </details>
       )}
       {mode !== null && (
         <>
