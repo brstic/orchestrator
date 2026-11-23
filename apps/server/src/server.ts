@@ -893,7 +893,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     });
     // The release gate (docs/RELEASE-GATE.md): who may release now, and an owner letting one employee release by hand.
     // (Not in access.ts's rules: owners only.)
-    api.get('/release', async () => ({ rules: engine.release.rules(), passes: engine.release.passes() }));
+    api.get('/release', async () => ({ rules: engine.release.rules(), passes: engine.release.passes(), held: engine.release.recentHeld(10) }));
     api.post('/employees/:id/release', async (req) => engine.release.grant(param(req, 'id'), Number(body(req).minutes) || 60, whoOf(req).name || 'The boss'));
     api.delete('/employees/:id/release', async (req) => {
       engine.release.close({ employeeId: param(req, 'id') }, whoOf(req).name || 'The boss');

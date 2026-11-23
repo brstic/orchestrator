@@ -214,6 +214,17 @@ export class Release {
     ].join(' ');
   }
 
+  /** What the gate refused lately, newest first: who, why, the command (for an owner to see whether it errs). */
+  recentHeld(limit = 10): Array<{ ts: string; employeeId: string | null; employee: string; why: string; what: string }> {
+    return this.core.store.queryEvents({ types: ['release.held'], limit: Math.max(1, Math.min(50, limit)) }).reverse().slice(0, limit).map((e) => ({
+      ts: e.ts,
+      employeeId: e.employeeId,
+      employee: this.core.employees.get(e.employeeId ?? '')?.name ?? 'an employee',
+      why: String(e.data?.why ?? ''),
+      what: String(e.data?.what ?? ''),
+    }));
+  }
+
   /** The rules changed: every running session has them from its next command (machines that know the gate). */
   push(): void {
     for (const s of this.core.sessions.filter((x) => x.status === 'running' || x.status === 'starting')) {

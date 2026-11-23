@@ -1,7 +1,8 @@
 import { useTick } from './company-shared.tsx';
 import { useEffect, useState, type ReactNode } from 'react';
 import { releaseRulesOf, ACTIVITY_LABEL, SURROUNDINGS, reviewDefaultOf, surroundingsOf, type AuditEntry, type ForemanSettings, type ForemanStatus, type OwnerSettings, type ReviewBy, type SelfImprovementSettings, type Surroundings } from '@orchestrator/contracts';
-import { Badge, Button, Field, Window } from '@orchestrator/ui';
+import { Badge, Button, Field, Window, timeAgo } from '@orchestrator/ui';
+import './panels-work.css';
 import { api, forgetToken } from '../../lib/api.ts';
 import { DEFAULT_KEYS, setPrefs, usePrefs, type ClientPrefs, type PrefsPatch } from '../../lib/prefs.ts';
 import { canChooseOutput, soundChoices } from '../../lib/sound-devices.ts';
@@ -640,9 +641,41 @@ function ReleaseGateSetting({ settings }: { settings: OwnerSettings }) {
           <Field label="Production servers" hint="One per line: a host name, an address, or a folder on one (app.example.com, 203.0.113.7, /var/www/app). A command that names one and changes something there is a release; reading is free. Development servers do not go here.">
             <textarea rows={3} value={hosts} aria-label="Production servers" onChange={(ev) => setHosts(ev.target.value)} onBlur={() => commit('hosts', hosts)} style={{ maxWidth: 360 }} />
           </Field>
+          <RecentlyHeld />
         </>
       )}
     </div>
+  );
+}
+
+/** What the gate refused lately: one line each, the command on a click — to see whether it errs. */
+function RecentlyHeld() {
+  const [held, setHeld] = useState<Array<{ ts: string; employee: string; why: string; what: string }> | null>(null);
+  useEffect(() => {
+    let gone = false;
+    api<{ held?: Array<{ ts: string; employee: string; why: string; what: string }> }>('GET', '/release')
+      .then((r) => !gone && setHeld(r.held ?? []))
+      .catch(() => !gone && setHeld([]));
+    return () => {
+      gone = true;
+    };
+  }, []);
+  if (!held?.length) return null;
+  return (
+    <Field label="Refused lately" hint="What the gate held, newest first. One that should have gone through tells what to change above.">
+      <div className="col" style={{ gap: 2 }} data-release-held>
+        {held.map((h, i) => (
+          <details key={`${h.ts}-${i}`} className="tk-check tk-check-more">
+            <summary>
+              <span className="tk-check-who">{h.employee}</span>
+              <span className="tk-check-what">{h.why}</span>
+              <span className="small faint" style={{ flex: 'none' }}>{timeAgo(h.ts)}</span>
+            </summary>
+            <div className="tk-check-full mono">{h.what}</div>
+          </details>
+        ))}
+      </div>
+    </Field>
   );
 }
 

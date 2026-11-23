@@ -96,3 +96,11 @@ test('a project of worktrees with the gate on: the task says how it is tried (it
   assert.match(systemPromptFor(emp('Ava'), eng.core.projects.require(p.id), 'Co', true), /Never push, never switch/);
   assert.match(taskPrompt(t, eng.core.projects.require(p.id), [], null, '', [], [], true), /push only this branch, and do not switch branches/);
 });
+
+test('what the gate refused lately, newest first, for an owner to see whether it errs', () => {
+  const held = eng.release.recentHeld(10);
+  assert.ok(held.length >= 1);
+  assert.equal(held[0]!.employee, 'Zed');
+  assert.match(held.at(-1)!.why, /pushes to master/);
+  assert.ok(held.every((h, i) => i === 0 || h.ts <= held[i - 1]!.ts));
+});

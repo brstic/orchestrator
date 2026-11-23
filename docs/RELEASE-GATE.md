@@ -63,6 +63,8 @@ With **Settings → Employees → "Nothing is released before I approve it (the 
 - **No separate release tickets:** employees are told not to open a ticket only to release work that is handed in or
   approved — its release is the `release_plan` of the ticket whose work it is (on the live office a manager made
   "release … to production" tickets, which were done first and reviewed afterwards).
+- **What it refused lately** — Settings → Employees, under the gate's fields: one line each (who, why, when), the
+  command on a click (`Release.recentHeld`, `held` in `GET /api/release`), to see whether it errs.
 - **By hand:** in an employee's Talk, an owner has **Let release** (an hour, for a fix that cannot wait for a ticket);
   while it stands open the button reads *Release open · 14:20*, and a click closes it. On the record
   (`release.granted`, `release.closed`).

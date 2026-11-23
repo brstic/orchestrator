@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-23
+- **The release gate shows what it refused lately** (Settings → Employees): who, why, when, the command on a click.
 - **The feed no longer says at every start that an employee "was put" in the office's files folder**: the folder added to a session for the files given to employees is trusted by the office as before, said truthfully, and kept out of the feed (on the live office it appeared at every wake of some employees).
 - **Fixed: in a folder worked in place, a ticket showed colleagues' commits as its own** — on the live office 45% of the commits recorded on tickets (315 of 707) were another ticket's, so the reviewer and the owner read the wrong changes. A task now records the commits its own session makes; its evidence, files changed and Changes tab show only those.
 - **Fixed: two tasks started at the same moment in one folder did not know they shared it** — so each one's uncommitted files could refuse the other's hand-in. A task being handed over counts in its folder at once.
