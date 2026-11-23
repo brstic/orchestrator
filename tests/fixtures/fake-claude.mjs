@@ -731,8 +731,16 @@ async function drain() {
   while (queue.length && !busy) await handlePrompt(queue.shift());
 }
 
+/** An Escape at the very end of what arrived: the start of a paste or a key's sequence split across reads, or a real one. */
+let escHeld = null;
+
 function onInput(chunk) {
   let s = chunk.toString('utf8');
+  if (escHeld) {
+    clearTimeout(escHeld);
+    escHeld = null;
+    s = `\x1b${s}`;
+  }
   while (s.length) {
     if (!inPaste && s.startsWith('\x1b[200~')) {
       inPaste = true;
@@ -767,6 +775,20 @@ function onInput(chunk) {
     }
     if (ch === '\x03') return shutdown('other');
     if (ch === '\x1b') {
+      // The start of a paste (ESC [200~) or of a key's sequence split from the rest of it: not an Escape. Whether one
+      // at the end of a read is followed by more is seen at the next read, or after a moment.
+      if (!s.length) {
+        escHeld = setTimeout(() => {
+          escHeld = null;
+          if (busy) interrupted = true;
+        }, 50);
+        continue;
+      }
+      if (s[0] === '[') {
+        const end = s.slice(1).search(/[@-~]/);
+        s = end === -1 ? '' : s.slice(end + 2);
+        continue;
+      }
       // Escape interrupts the current turn, like the real CLI.
       if (busy) interrupted = true;
       continue;

@@ -858,6 +858,11 @@ export interface Task {
   sharedWith?: string[];
   /** Files this task's session wrote or edited (relative to `repoRoot`), as its hooks reported them. Kept only while the folder is shared. */
   touched?: string[];
+  /**
+   * In a folder worked in place: the commits this task's session made (read at each of its `git commit`s), so that what
+   * colleagues committed on the same branch meanwhile is not taken for this task's work (`TaskManager.noteCommit`).
+   */
+  ownCommits?: string[];
   /** Files on the task (see `TaskAttachment`). Absent: none. */
   attachments?: TaskAttachment[];
   requiresReview: boolean;

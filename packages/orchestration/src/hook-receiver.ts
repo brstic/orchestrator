@@ -495,6 +495,10 @@ export class HookReceiver {
       const file = payload.tool_input?.file_path ?? payload.tool_input?.notebook_path;
       if (typeof file === 'string' && file) this.eng.tasks.noteTouched(task, file);
     }
+    // A commit this session made: remembered on its task (in place, colleagues commit on the same branch meanwhile).
+    if (payload.hook_event_name === 'PostToolUse' && task && payload.tool_name === 'Bash' && /\bgit\b[^|;&\n]*\s(?:commit|cherry-pick|revert)\b/.test(String(payload.tool_input?.command ?? ''))) {
+      void this.eng.tasks.noteCommit(task, session.hostId, String(payload.tool_input.command), payload.cwd ?? session.cwd);
+    }
     // One of the office's own tools could not be reached from this session and Claude Code has given the connection
     // up ("not connected"): the session is started again when this turn ends. A single refused connection is not
     // that — the office is away for some seconds at every update, and a call made just then fails on its own.

@@ -203,7 +203,7 @@ export type AgentRpc =
   | { method: 'fs.docs.list'; params: { cwd: string } }
   | { method: 'fs.docs.read'; params: { cwd: string; path: string } }
   | { method: 'git.status'; params: { cwd: string } }
-  | { method: 'git.diff'; params: { cwd: string; base?: string | null; maxBytes?: number } }
+  | { method: 'git.diff'; params: { cwd: string; base?: string | null; maxBytes?: number; /** Only these commits (a task's own, in a shared folder), not everything since `base`. */ commits?: string[] } }
   | { method: 'git.log'; params: { cwd: string; range: string; max?: number } }
   | { method: 'git.worktree.ensure'; params: { repo: string; path: string; branch: string; base: string } }
   | { method: 'git.branch.start'; params: { cwd: string; branch: string; base: string } }

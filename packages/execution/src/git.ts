@@ -101,7 +101,11 @@ export interface GitDiff {
 }
 
 /** Committed changes since `base` plus the uncommitted working tree state. */
-export async function gitDiff(cwd: string, base: string | null, maxBytes = 400_000): Promise<GitDiff> {
+/**
+ * `commits`: only what these commits changed (a task's own commits in a folder colleagues commit in too), oldest first,
+ * instead of everything since `base`.
+ */
+export async function gitDiff(cwd: string, base: string | null, maxBytes = 400_000, commits?: string[]): Promise<GitDiff> {
   const out: GitDiff = { base, stat: '', diff: '', truncated: false, uncommitted: '', untracked: [], files: [] };
   const cap = (s: string) => {
     if (s.length > maxBytes) {
@@ -110,7 +114,22 @@ export async function gitDiff(cwd: string, base: string | null, maxBytes = 400_0
     }
     return s;
   };
-  if (base) {
+  const shas = (commits ?? []).filter((c) => /^[0-9a-f]{7,40}$/i.test(c));
+  if (shas.length) {
+    // Oldest first, as they were made. (Only commits the repository has: a rewritten one is passed over.)
+    const known: string[] = [];
+    for (const sha of shas) if ((await git(cwd, ['cat-file', '-e', `${sha}^{commit}`], { allowFail: true })).code === 0) known.push(sha);
+    if (known.length) {
+      const ordered = (await git(cwd, ['log', '--no-walk=sorted', '--reverse', '--format=%H', ...known], { allowFail: true })).stdout.split('\n').filter(Boolean);
+      const list = ordered.length ? ordered : known;
+      const stat = await git(cwd, ['show', '--stat', '--format=%h %s', ...list], { allowFail: true });
+      out.stat = stat.stdout.trim();
+      const d = await git(cwd, ['show', '--format=commit %H%n%s%n', ...list], { allowFail: true, maxBuffer: 64 * 1024 * 1024 });
+      out.diff = cap(d.stdout);
+      const names = await git(cwd, ['show', '--name-only', '--format=', ...list], { allowFail: true });
+      out.files = [...new Set(names.stdout.split('\n').filter(Boolean))];
+    }
+  } else if (base) {
     const range = `${base}...HEAD`;
     const stat = await git(cwd, ['diff', '--stat', range], { allowFail: true });
     out.stat = stat.stdout.trim();

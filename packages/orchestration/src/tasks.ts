@@ -975,11 +975,19 @@ export class TaskManager {
   private sharing(task: Task, employee: Employee, cwd: string): Task[] {
     const here = path.resolve(cwd);
     return this.core.tasks.filter((t) => {
-      if (t.id === task.id || t.status !== 'IN_PROGRESS' || t.assigneeId === employee.id || !t.worktree || NON_CODE_KINDS.has(t.kind)) return false;
+      // A task being handed over in a folder right now counts there already (two started at the same moment in one
+      // folder did not see each other: neither knew the folder was shared, and each one's stray files blocked the other).
+      const starting = this.startingIn.get(t.id);
+      const where = starting?.cwd ?? (t.status === 'IN_PROGRESS' ? t.worktree : null);
+      const root = starting ? starting.repoRoot : t.repoRoot;
+      if (t.id === task.id || !where || t.assigneeId === employee.id || NON_CODE_KINDS.has(t.kind)) return false;
       if (this.core.employees.get(t.assigneeId)?.hostId !== employee.hostId) return false;
-      return path.resolve(t.worktree) === here || (!!task.repoRoot && !!t.repoRoot && path.resolve(t.repoRoot) === path.resolve(task.repoRoot));
+      return path.resolve(where) === here || (!!task.repoRoot && !!root && path.resolve(root) === path.resolve(task.repoRoot));
     });
   }
+
+  /** Tasks being handed over right now, and the folder each is being started in (`sharing`). */
+  private readonly startingIn = new Map<string, { cwd: string; repoRoot: string | null }>();
 
   /** A file this task's session wrote (from its hooks). Remembered so that, in a shared folder, its uncommitted work can be told from a colleague's. */
   noteTouched(task: Task, file: string): void {
@@ -989,6 +997,29 @@ export class TaskManager {
     if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || task.touched?.includes(rel)) return;
     task.touched = [...(task.touched ?? []), rel].slice(-2000);
     this.core.put('task', task);
+  }
+
+  /**
+   * A commit this task's session just made, in a folder worked in place: its sha is remembered on the task. Read as the
+   * newest commit there — or, when the command gave its message (-m "…") and a colleague committed in the same moment,
+   * the newest of the last few with that message.
+   */
+  async noteCommit(task: Task, hostId: string, command: string, cwd: string): Promise<void> {
+    const project = this.core.projects.get(task.projectId);
+    if (project?.workspace !== 'in_place' || task.status !== 'IN_PROGRESS' || !this.core.agents.isOnline(hostId)) return;
+    try {
+      const recent: Array<{ sha: string; subject: string }> = (await this.core.agents.rpc(hostId, { method: 'git.log', params: { cwd, range: 'HEAD', max: 5 } }, 8000)).commits ?? [];
+      const said = /\s-m\s+(?:"((?:[^"\\]|\\.)*)"|'([^']*)')/.exec(command);
+      const message = said ? (said[1] ?? said[2] ?? '').split('\n')[0]!.trim() : null;
+      const mine = (message && recent.find((c) => c.subject.trim() === message)) || recent[0];
+      if (!mine) return;
+      const fresh = this.core.tasks.get(task.id);
+      if (!fresh || fresh.ownCommits?.includes(mine.sha)) return;
+      fresh.ownCommits = [...(fresh.ownCommits ?? []), mine.sha].slice(-200);
+      this.core.put('task', fresh);
+    } catch {
+      // The machine did not answer: the task's commits are told as before (everything since it started).
+    }
   }
 
   /** A task whose folder somebody else is working in: say so once, on the task itself, and leave it ready. */
@@ -1102,6 +1133,7 @@ export class TaskManager {
       }
       // Colleagues who are changing the same folder (or the same repository) right now.
       const sharing = codeTask ? this.sharing(task, employee, cwd) : [];
+      if (codeTask) this.startingIn.set(task.id, { cwd, repoRoot: task.repoRoot ?? null });
       if (sharing.length && project.policy.oneAtATime) {
         // This project asked for one at a time: the task waits its turn. It stays ready, no session is started for it,
         // and the scheduler hands it over when the folder is free.
@@ -1171,6 +1203,8 @@ export class TaskManager {
     } catch (e) {
       if (takenBack()) return;
       this.fail(task, (e as Error).message);
+    } finally {
+      this.startingIn.delete(task.id);
     }
   }
 
@@ -1410,12 +1444,21 @@ export class TaskManager {
         const base = task.baseSha ?? project.integrationBranch;
         const log = await this.core.agents.rpc(hostId, { method: 'git.log', params: { cwd, range: `${base}..HEAD`, max: 100 } });
         task.evidence.commits = log.commits ?? [];
+        // In place: only the commits its own session made (colleagues commit on the same branch meanwhile; on the live
+        // office 45% of the commits recorded on tickets were another ticket's).
+        const own = this.ownOf(task, project);
+        if (own) {
+          const mine = task.evidence.commits.filter((c: any) => own.includes(c.sha));
+          if (mine.length) task.evidence.commits = mine;
+          else this.history(task, 'Which of the commits since it started are its own could not be told (rewritten since?): all of them are listed', 'orchestrator');
+        }
         // Where the branch stands now: this is what is checked, reviewed and merged.
         task.evidence.headSha = task.evidence.commits[0]?.sha ?? null;
         if (!task.evidence.commits.length && codeTask && !args.no_code_changes) {
           return { text: `Not complete: there are no commits on "${task.branch}" since the task started. Commit your work, or — only if the task truly needed no repository changes here, or the commits it needed were already made elsewhere (before it started, on another branch, by a colleague) — call complete_task with no_code_changes=true and say why in the summary, naming those commits.`, isError: true };
         }
-        const diff = await this.core.agents.rpc(hostId, { method: 'git.diff', params: { cwd, base, maxBytes: 2000 } });
+        const ownShown = own && task.evidence.commits.every((c: any) => own.includes(c.sha)) ? task.evidence.commits.map((c: any) => c.sha) : null;
+        const diff = await this.core.agents.rpc(hostId, { method: 'git.diff', params: { cwd, base, maxBytes: 2000, ...(ownShown ? { commits: ownShown } : {}) } });
         task.evidence.filesChanged = diff.files ?? [];
         task.evidence.diffStat = diff.stat || null;
       }
@@ -2385,6 +2428,11 @@ export class TaskManager {
 
   // ───────────────────────────── views ─────────────────────────────
 
+  /** In a folder worked in place, the commits a task's own session made (null: not in place, or none recorded). */
+  private ownOf(task: Task, project: Project | undefined): string[] | null {
+    return project?.workspace === 'in_place' && task.ownCommits?.length ? task.ownCommits : null;
+  }
+
   /** Live git state of a task's (or an employee's) working tree, read from the host. */
   async gitView(ref: { taskId?: string; employeeId?: string }): Promise<{ cwd: string; status: unknown; diff: unknown; base: string | null }> {
     const task = ref.taskId ? this.core.tasks.require(ref.taskId) : this.currentTask(ref.employeeId);
@@ -2398,7 +2446,7 @@ export class TaskManager {
     const base = task?.baseSha ?? (project?.repoPath ? project.integrationBranch : null);
     const [status, diff] = await Promise.all([
       this.core.agents.rpc(hostId, { method: 'git.status', params: { cwd } }),
-      this.core.agents.rpc(hostId, { method: 'git.diff', params: { cwd, base, maxBytes: 300_000 } }),
+      this.core.agents.rpc(hostId, { method: 'git.diff', params: { cwd, base, maxBytes: 300_000, ...(task && this.ownOf(task, project) ? { commits: this.ownOf(task, project)! } : {}) } }),
     ]);
     return { cwd, status, diff, base };
   }

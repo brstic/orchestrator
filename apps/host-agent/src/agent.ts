@@ -1360,7 +1360,7 @@ export class HostAgent {
       case 'git.status':
         return gitStatus(this.assertAllowed(rpc.params.cwd));
       case 'git.diff':
-        return gitDiff(this.assertAllowed(rpc.params.cwd), rpc.params.base ?? null, rpc.params.maxBytes);
+        return gitDiff(this.assertAllowed(rpc.params.cwd), rpc.params.base ?? null, rpc.params.maxBytes, rpc.params.commits);
       case 'git.log':
         return { commits: await gitLog(this.assertAllowed(rpc.params.cwd), rpc.params.range, rpc.params.max) };
       case 'git.worktree.ensure':
