@@ -1,6 +1,6 @@
 import { useTick } from './company-shared.tsx';
 import { useEffect, useState, type ReactNode } from 'react';
-import { ACTIVITY_LABEL, SURROUNDINGS, reviewDefaultOf, surroundingsOf, type AuditEntry, type ForemanSettings, type ForemanStatus, type OwnerSettings, type ReviewBy, type SelfImprovementSettings, type Surroundings } from '@orchestrator/contracts';
+import { releaseRulesOf, ACTIVITY_LABEL, SURROUNDINGS, reviewDefaultOf, surroundingsOf, type AuditEntry, type ForemanSettings, type ForemanStatus, type OwnerSettings, type ReviewBy, type SelfImprovementSettings, type Surroundings } from '@orchestrator/contracts';
 import { Badge, Button, Field, Window } from '@orchestrator/ui';
 import { api, forgetToken } from '../../lib/api.ts';
 import { DEFAULT_KEYS, setPrefs, usePrefs, type ClientPrefs, type PrefsPatch } from '../../lib/prefs.ts';
@@ -609,6 +609,43 @@ function roundDid(a: ForemanStatus['rounds'][number]): string {
  * Sleep: how long a session on the office's own machines may sit without work before it is stopped to free memory.
  * Saved when the field is left (or Enter is pressed); what the office keeps is shown back.
  */
+/**
+ * The release gate (docs/RELEASE-GATE.md): nothing reaches the protected branches or a production server before an
+ * owner approved the work. The switch, the branches and the production servers — one per line.
+ */
+function ReleaseGateSetting({ settings }: { settings: OwnerSettings }) {
+  const g = releaseRulesOf(settings);
+  const [branches, setBranches] = useState(g.branches.join('\n'));
+  const [hosts, setHosts] = useState(g.hosts.join('\n'));
+  useEffect(() => setBranches(g.branches.join('\n')), [g.branches.join('\n')]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => setHosts(g.hosts.join('\n')), [g.hosts.join('\n')]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lines = (v: string) => v.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean);
+  const commit = (key: 'branches' | 'hosts', v: string) => {
+    const next = lines(v);
+    if (JSON.stringify(next) === JSON.stringify(g[key])) return;
+    void save({ releaseGate: { ...g, [key]: next } } as SettingsPatch, key === 'hosts' ? 'Production servers saved' : 'Protected branches saved');
+  };
+  return (
+    <div className="col" style={{ gap: 8 }} data-release-gate>
+      <Toggle checked={g.on} onChange={(on) => void save({ releaseGate: { ...g, on } } as SettingsPatch, on ? 'The release gate is on' : 'The release gate is off')} title="Nothing is released before I approve it (the release gate)">
+        On: employees work and try things freely — their own branches, the development servers — but a push to a protected branch, merging a pull request, or a change on a production server is <b>refused until an owner approves the ticket</b>. They
+        hand the work in with a release plan, you read it in review with what they did, and your approval opens the release for its author and the colleagues on the ticket for a few hours; they report it out when it is done. For a fix that cannot wait, an
+        employee's Talk has <i>Let release</i>. Holds from the next command of every running session (on a member's computer, once its app is new enough). A command is read for what it says: see the page on the release gate for what it does not see.
+      </Toggle>
+      {g.on && (
+        <>
+          <Field label="Protected branches" hint="One per line. Nothing is pushed to these before approval.">
+            <textarea rows={2} value={branches} aria-label="Protected branches" onChange={(ev) => setBranches(ev.target.value)} onBlur={() => commit('branches', branches)} style={{ maxWidth: 360 }} />
+          </Field>
+          <Field label="Production servers" hint="One per line: a host name, an address, or a folder on one (app.example.com, 203.0.113.7, /var/www/app). A command that names one and changes something there is a release; reading is free. Development servers do not go here.">
+            <textarea rows={3} value={hosts} aria-label="Production servers" onChange={(ev) => setHosts(ev.target.value)} onBlur={() => commit('hosts', hosts)} style={{ maxWidth: 360 }} />
+          </Field>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SleepSetting({ settings }: { settings: OwnerSettings }) {
   // An office running an older server does not have the setting yet: shown as off.
   const current = settings.sleepAfterMinutes ?? 0;
@@ -1014,6 +1051,7 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                     Off: they wait. Accounts are added in Company → Claude.
                   </Toggle>
                   <SleepSetting settings={settings} />
+                  <ReleaseGateSetting settings={settings} />
                 </div>
               )}
               {section === 'foreman' && <ForemanSection settings={settings} readOnly={readOnly} />}

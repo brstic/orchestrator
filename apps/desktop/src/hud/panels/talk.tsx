@@ -1,6 +1,6 @@
 import { cloneElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import type { Message, OrchestratorEvent, SaidFile } from '@orchestrator/contracts';
-import { ACTIVITY_LABEL, ROUTINE_LIMITS, isTalkEvent, isTalkMessage, talkReply } from '@orchestrator/contracts';
+import { ACTIVITY_LABEL, ROUTINE_LIMITS, isTalkEvent, isTalkMessage, releaseRulesOf, talkReply } from '@orchestrator/contracts';
 import { useFoundMarks, useSettled } from '../../lib/found.tsx';
 import { Avatar, Badge, Button, Markdown, Window, clock } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
@@ -165,6 +165,40 @@ function dayLabel(iso: string): string {
 /** A line with its id on it (to go to it from a search), outlined when it is the one found. */
 function marked(id: string, found: boolean, el: ReactElement<{ className?: string }>) {
   return cloneElement(el as ReactElement<Record<string, unknown>>, { 'data-line-id': id, className: `${el.props.className ?? ''}${found ? ' talk-found-line' : ''}` });
+}
+
+/**
+ * The release gate, by hand (docs/RELEASE-GATE.md): an owner lets this employee release for an hour — a fix that cannot
+ * wait for a ticket — and sees, while it stands open, until when; a click closes it again. Owners only, gate on only.
+ */
+function LetRelease({ employeeId, name }: { employeeId: string; name: string }) {
+  const s = useOffice();
+  const owner = s.me?.role === 'owner';
+  const on = releaseRulesOf(s.settings ?? {}).on;
+  const [until, setUntil] = useState<string | null>(null);
+  const load = useCallback(() => {
+    if (!owner || !on) return;
+    api<{ passes: Array<{ employeeId: string; until: string }> }>('GET', '/release').then(
+      (r) => setUntil(r.passes.filter((p) => p.employeeId === employeeId).map((p) => p.until).sort().at(-1) ?? null),
+      () => undefined,
+    );
+  }, [employeeId, owner, on]);
+  useEffect(() => {
+    load();
+    const t = window.setInterval(load, 30_000);
+    return () => window.clearInterval(t);
+  }, [load]);
+  if (!owner || !on) return null;
+  const time = until ? new Date(until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  return until ? (
+    <Button small variant="ghost" title={`${name} may push to the protected branches and change production until ${time}. Click to close it now.`} onClick={() => void act(() => api('DELETE', `/employees/${employeeId}/release`), `${name} may not release any more`).then(() => setUntil(null))} data-talk-release="open">
+      Release open · {time}
+    </Button>
+  ) : (
+    <Button small title={`Let ${name} push to the protected branches and change production for an hour, without an approved ticket — for a fix that cannot wait. Everything they release is on the record.`} onClick={() => void act(() => api<{ until: string }>('POST', `/employees/${employeeId}/release`, { minutes: 60 }), `${name} may release for an hour`).then((r) => r && setUntil(r.until))} data-talk-release="closed">
+      Let release
+    </Button>
+  );
 }
 
 function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }) {
@@ -421,6 +455,7 @@ function TalkPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
               Documents ({docCount})
             </Button>
           )}
+          <LetRelease employeeId={e.id} name={e.name} />
           <Button small onClick={() => (finding ? closeFind() : (setFinding(true), window.setTimeout(() => findBox.current?.focus(), 0)))} title="Search the whole conversation (Ctrl/⌘ F)" data-talk-search-open>
             Search
           </Button>

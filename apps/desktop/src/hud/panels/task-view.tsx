@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { REVIEW_WORD, reviewsOf } from '../../lib/reviews.ts';
 import type { Employee, ReviewBy, Task, TaskAttachment, TaskComment, TaskPriority, TaskStatus } from '@orchestrator/contracts';
-import { reviewByOf } from '@orchestrator/contracts';
+import { releaseRulesOf, reviewByOf } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Markdown, Progress, Tabs, timeAgo } from '@orchestrator/ui';
 import { api } from '../../lib/api.ts';
 import { useAccess } from '../../lib/access.ts';
@@ -369,6 +369,7 @@ function Verdict({ task }: { task: Task }) {
     setNote('');
   }, [task.id, task.status]);
   const who = s.employees[task.assigneeId ?? '']?.name ?? 'its author';
+  const gateOn = releaseRulesOf(s.settings ?? {}).on;
   const said = note.trim();
   const close = (res: unknown) => {
     if (res === undefined) return;
@@ -384,6 +385,12 @@ function Verdict({ task }: { task: Task }) {
   return (
     <section className="tk-verdict" data-verdict={mode ?? 'closed'} aria-label="Your verdict">
       <div className="tk-meta-label">Your verdict</div>
+      {task.release?.plan && (
+        <div className="tk-release-plan" data-release-plan>
+          <div className="small muted">Where it goes once you approve it</div>
+          <div className="pre small">{task.release.plan}</div>
+        </div>
+      )}
       {mode === null && (
         <>
           <div className="small muted">Talk it over with {who} in the conversation first; decide here once it is settled.</div>
@@ -409,7 +416,7 @@ function Verdict({ task }: { task: Task }) {
             placeholder={mode === 'back' ? `What should change — ${who} gets exactly this` : 'A note with your approval (optional)'}
             onChange={(e) => setNote(e.target.value)}
           />
-          <div className="small faint">{mode === 'back' ? `It goes back to ${who}, is done again, checked and reviewed again.` : `It is finished${task.branch ? ' and merged' : ''}.`}</div>
+          <div className="small faint">{mode === 'back' ? `It goes back to ${who}, is done again, checked and reviewed again.` : gateOn ? `It is finished${task.branch ? ' and merged' : ''}, and the release opens: ${who} (and the colleagues on the ticket) may release it${task.release?.plan ? ' as planned' : ''} for the next 3 hours.` : `It is finished${task.branch ? ' and merged' : ''}.`}</div>
           <div className="tk-verdict-row">
             {mode === 'approve' ? (
               <Button variant="success" small disabled={busy} onClick={() => void approve()}>
@@ -425,6 +432,35 @@ function Verdict({ task }: { task: Task }) {
             </Button>
           </div>
         </>
+      )}
+    </section>
+  );
+}
+
+/** After approval, where its release stands (docs/RELEASE-GATE.md): open until when, or out — by whom, and what they did. */
+function ReleaseState({ task }: { task: Task }) {
+  const r = task.release!;
+  const open = !r.releasedAt && !!r.openUntil && Date.parse(r.openUntil) > Date.now();
+  return (
+    <section className="tk-release" data-release-state={r.releasedAt ? 'released' : open ? 'open' : 'closed'}>
+      <div className="tk-meta-label">Release</div>
+      {r.releasedAt ? (
+        <>
+          <div className="small">
+            Released by {r.releasedBy ?? 'its author'} · {new Date(r.releasedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </div>
+          {r.note && <div className="pre small muted">{r.note}</div>}
+        </>
+      ) : open ? (
+        <div className="small">Approved by {r.approvedBy ?? 'an owner'}; open for release until {new Date(r.openUntil!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Not reported out yet.</div>
+      ) : (
+        <div className="small muted">Approved by {r.approvedBy ?? 'an owner'}; the release window has closed and nobody reported it out. If it still has to go out, let its author release from their Talk.</div>
+      )}
+      {r.plan && (
+        <details className="small">
+          <summary>The plan</summary>
+          <div className="pre">{r.plan}</div>
+        </details>
       )}
     </section>
   );
@@ -820,6 +856,7 @@ export function TicketView({ task, tab, onTab }: { task: Task; tab: TicketTab; o
         </div>
         <div className="tk-line">{need.line}</div>
         {task.status === 'REVIEW' && task.kind !== 'review' && mayWork && <Verdict task={task} />}
+        {task.status === 'DONE' && task.release?.approvedAt && <ReleaseState task={task} />}
         {!task.released && task.status === 'BACKLOG' && (
           <Button variant="success" small disabled={busy} onClick={() => run(() => api('POST', '/tasks/release', { ids: [task.id] }), `${task.key} released`)}>
             Release

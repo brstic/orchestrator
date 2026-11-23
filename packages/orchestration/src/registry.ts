@@ -2176,7 +2176,7 @@ export class SessionRegistry {
       permissions: { allow: perms.allow, deny: [...perms.deny, ...this.eng.rent.denyRulesFor(employee)], ask: perms.ask },
       allowedTools: [],
       disallowedTools: [],
-      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available(), !codex && this.eng.attachments.available(), !codex && this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser, asksHighRisk(this.core.settings, employee.autonomy)),
+      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available(), !codex && this.eng.attachments.available(), !codex && this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser, asksHighRisk(this.core.settings, employee.autonomy)) + (this.eng.release.instructions(employee) ? `\n\n${this.eng.release.instructions(employee)}` : ''),
       mcp: { url: `${this.core.publicUrl}/mcp`, token: mcpToken },
       browser: !codex && this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser,
       strictMcp: !this.core.settings.workersInheritMcp,
@@ -2191,6 +2191,8 @@ export class SessionRegistry {
       addDirs: [...new Set([...(project && (!project.hostId || project.hostId === session.hostId) ? (project.extraRepos ?? []).map((x) => x.path) : []), ...this.eng.rent.extraDirsFor(employee)])].filter((p) => p !== cwd),
       // Rented: the folders they may reach and what they may do there, enforced on their machine (rent.ts).
       fence: this.eng.rent.fenceFor(employee, cwd),
+      // The release gate: what would reach a protected branch or production is held for the office (release.ts).
+      release: this.eng.release.rulesFor(employee),
       // What every employee always knows: handed to the model by their machine at the start, after a compaction, and as a change (context.ts).
       context: this.eng.context.forLaunch(employee, session.id),
       env: {

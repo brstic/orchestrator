@@ -2,6 +2,9 @@
 
 Newest first. One line per change that someone using or developing the office would notice.
 
+## 2026-11-23
+- **The release gate: review is where work is let go** (the owner: "review itself must be the gate: I see what they did, and if it is good I let it go on to where it has to go"). On (Settings → Employees), employees work, push their own branches and use the development servers freely, but a push to `main`/`master`, merging a pull request, or a change on a listed production server is refused until an owner approves the ticket. They hand in with a release plan, which you read in *Your verdict* beside what they did; work with a plan always waits for an owner. Your approval opens the release for its author and the colleagues on the ticket for 3 hours and tells them; `report_released` says it is out, on the ticket. Talk → *Let release* lets one employee release for an hour by hand. RELEASE-GATE.md
+
 ## 2026-11-22
 - **Talk shows the whole conversation, and searches it** (the owner: "in Talk (F) I must see the whole history of the conversation, and search through it — now it shows only as much as the current session"). The window showed only what the office's state still carried (the newest 300 messages of the whole office, 400 events of the employee, at most 120 lines), so a busy office cut it to a day or so. Now it reads from where everything is kept: the newest 200 lines, and the ones before as you scroll up, back to the first; a line for each day. *Search* (or Ctrl/⌘ F) finds words in the whole of it — what you said, their answers, files, notes — and goes to the line, older ones too. UI.md, "Talk"
 

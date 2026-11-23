@@ -1,0 +1,81 @@
+import { test, before } from 'node:test';
+import assert from 'node:assert/strict';
+import type { Host } from '@orchestrator/contracts';
+import { Store } from '@orchestrator/database';
+import { Engine, type AgentLink } from '../src/index.ts';
+
+/**
+ * The release gate (`release.ts`, docs/RELEASE-GATE.md; the owner, 2026-11-23: "review must be the gate — I see what
+ * they did, and if it is good I let it go on to where it has to go"): a release their machine held is refused until an
+ * owner approved the work; approving opens it for those who release it, and nobody else; reporting it out closes it.
+ */
+const link: AgentLink = { rpc: async () => ({ ok: true }) as any, isOnline: () => true, respondHook: () => false, disconnect: () => undefined };
+let eng: Engine;
+let shop = '';
+const ids: Record<string, string> = {};
+
+before(async () => {
+  eng = new Engine({ store: new Store(':memory:'), agents: link, publicUrl: 'http://127.0.0.1:1' }, { send: () => undefined });
+  const host: Host = { id: 'box', name: 'box', status: 'online', info: null, resources: null, enrolledAt: new Date().toISOString(), lastSeenAt: null, revokedAt: null, local: true };
+  eng.core.put('host', host);
+  shop = (await eng.tasks.createProject({ name: 'Shop' })).id;
+  for (const [name, role] of [['Ava', 'backend'], ['Ops', 'devops'], ['Rita', 'reviewer'], ['Zed', 'frontend']] as const) ids[name] = eng.employees.create({ name, roleKey: role, projectId: shop, hostId: 'box', workingDir: `/tmp/${name}` }).id;
+});
+
+const emp = (name: string) => eng.core.employees.get(ids[name]!)!;
+const toldTo = (name: string) => eng.core.messages.filter((m) => m.toEmployeeId === ids[name] && m.from.kind === 'system').map((m) => m.body);
+
+test('off: nothing is held, nothing is said', () => {
+  assert.equal(eng.release.on(), false);
+  assert.equal(eng.release.rulesFor(emp('Ava')), null);
+  assert.equal(eng.release.instructions(emp('Ava')), '');
+});
+
+test('on: a release before approval is refused, in words that say what to do instead', () => {
+  eng.core.updateSettings({ releaseGate: { on: true, hosts: ['64.0.2.10'] } } as any);
+  assert.deepEqual(eng.release.rulesFor(emp('Ava')), { on: true, branches: ['main', 'master'], hosts: ['64.0.2.10'] });
+  assert.match(eng.release.instructions(emp('Ava')), /nothing reaches main \/ master or the production servers \(64\.0\.2\.10\)/);
+  const d = eng.release.decide(emp('Ava'), 'git push origin master', 'it pushes to master');
+  assert.equal(d.allow, false);
+  assert.match(d.reason, /release gate: this command releases work \(it pushes to master\)/);
+  assert.match(d.reason, /hand it in with complete_task|release_plan/);
+  assert.ok(eng.core.store.recentAudit(20).some((a) => a.action === 'release.held'));
+});
+
+test('an owner approves: the author and the colleagues on the ticket may release — not its reviewer, not anybody else — and are told', () => {
+  const t = eng.tasks.createTask({ projectId: shop, title: 'Fix the checkout', description: 'x', assigneeId: ids.Ava, released: false }, 'owner');
+  t.authorId = ids.Ava!;
+  t.comments = [
+    { id: 'c1', ts: new Date().toISOString(), from: { kind: 'employee', id: ids.Ops!, name: 'Ops' }, body: 'I can pull production when it is approved.', kind: 'note', mentions: [] },
+    { id: 'c2', ts: new Date().toISOString(), from: { kind: 'employee', id: ids.Rita!, name: 'Rita' }, body: 'Approved.', kind: 'approved', mentions: [] },
+  ];
+  t.evidence.peerReview = { reviewerId: ids.Rita!, comments: 'ok', ts: new Date().toISOString() };
+  t.release = { plan: 'Push master; Ops pulls production; check /health.' };
+  eng.release.approved(t, 'Branko');
+  assert.equal(eng.release.decide(emp('Ava'), 'git push origin master', 'it pushes to master').allow, true);
+  assert.equal(eng.release.decide(emp('Ops'), "ssh 64.0.2.10 'git pull'", 'production').allow, true);
+  assert.equal(eng.release.decide(emp('Rita'), 'git push origin master', 'it pushes to master').allow, false, 'the reviewer judged it; releasing is not hers');
+  assert.equal(eng.release.decide(emp('Zed'), 'git push origin master', 'it pushes to master').allow, false);
+  assert.match(toldTo('Ava').at(-1)!, /Branko approved T-\d+ .*Release it now, as you planned:\nPush master; Ops pulls production; check \/health\.[\s\S]*Ops may help you[\s\S]*report_released/);
+  assert.match(toldTo('Ops').at(-1)!, /Ava releases it/);
+  assert.equal(toldTo('Rita').length, 0);
+  const stored = eng.core.tasks.get(t.id)!;
+  assert.equal(stored.release?.approvedBy, 'Branko');
+  assert.ok(stored.release?.openUntil);
+
+  // Reported out: written on the ticket, and the gate closes for it.
+  assert.throws(() => eng.release.reported(emp('Ava'), t.key, 'done'), /a sentence at least/);
+  assert.match(eng.release.reported(emp('Ava'), t.key, 'Pushed master 1a2b3c4; Ops pulled production; /health answers 200.'), /recorded as released/);
+  assert.equal(eng.core.tasks.get(t.id)!.release?.releasedBy, 'Ava');
+  assert.ok(eng.core.tasks.get(t.id)!.comments?.some((c) => /^Released\./.test(c.body)));
+  assert.equal(eng.release.decide(emp('Ava'), 'git push origin master', 'it pushes to master').allow, false);
+  assert.equal(eng.release.decide(emp('Ops'), 'git push origin master', 'it pushes to master').allow, false);
+});
+
+test('by hand: an owner lets one employee release for a while, and can close it again', () => {
+  const { until } = eng.release.grant(ids.Zed!, 30, 'Branko');
+  assert.ok(Date.parse(until) - Date.now() > 29 * 60_000);
+  assert.equal(eng.release.decide(emp('Zed'), 'git push origin main', 'it pushes to main').allow, true);
+  eng.release.close({ employeeId: ids.Zed! }, 'Branko');
+  assert.equal(eng.release.decide(emp('Zed'), 'git push origin main', 'it pushes to main').allow, false);
+});

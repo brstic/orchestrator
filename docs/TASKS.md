@@ -207,6 +207,10 @@ The owner, 2026-11-20: "the assignee fields in tasks, everywhere — making, edi
 
 The owner, 2026-11-20: "in the agents' tools there is no cancelling a task; we must have that too". `cancel_task { task, reason }`, one of the board tools (shown while employees manage the board): the task is **closed as cancelled, not deleted** — DONE, with who cancelled it and why (`Task.cancelled`), in its history and in the feed; what was on its way to anybody for it is taken back; **the boss is told** (a notification) and can **reopen** it by moving it back on the board (it is then no longer cancelled). The board and the task's window say *Cancelled by … : why*. Refused: a reason that says nothing, a task somebody else is in the middle of (tell them, or the boss), one in review (its review decides), one being checked, one the boss blocked, a person's task (`Task.personId`: theirs to close). The foreman is not offered it: it escalates to the boss instead. Test: `tests/e2e/20-employees-manage.test.ts` ("an employee cancels a task that is no longer wanted…").
 
+## 4d. The release gate
+
+With the release gate on, work handed in with a `release_plan` always waits for an owner (`peer` becomes `both`, `none` becomes `boss`), the owner reads the plan in *Your verdict*, and the approval opens the release for its author and the colleagues on the ticket; `report_released` closes it. Nothing reaches a protected branch or production before that. [RELEASE-GATE.md](RELEASE-GATE.md).
+
 ## 5. The windows
 
 The first version of this work replaced the board with one window that listed tickets by "what they need". The owner

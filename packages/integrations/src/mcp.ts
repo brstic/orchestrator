@@ -237,8 +237,18 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
         summary: str('What you did and how it meets the acceptance criteria'),
         tests_run: str('Exact test commands you ran and their real outcome'),
         no_code_changes: { type: 'boolean', description: 'Set true only if the task legitimately required no changes to the repository (research, review, planning)' },
+        release_plan: str("Where this work goes once it is approved, and how: the branches to push to (e.g. master), the servers to update (e.g. production), the steps and checks, and who does which part. Leave it out only if nothing goes anywhere. With the office's release gate on, nothing reaches the protected branches or production before an owner approves the work; your own branches and the development servers are free before that."),
       },
       required: ['summary'],
+    },
+  },
+  {
+    name: 'report_released',
+    description: 'Say that work an owner approved is released — pushed and deployed where its release plan said. Written on the ticket; the release gate closes again for it.',
+    inputSchema: {
+      type: 'object',
+      properties: { task: str('The task key, e.g. T-12'), note: str('What you released, where, and how you checked it is live') },
+      required: ['task', 'note'],
     },
   },
   {

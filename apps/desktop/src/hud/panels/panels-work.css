@@ -1250,3 +1250,31 @@ button.tk-person-chip:hover {
   outline: none;
   border-color: var(--accent);
 }
+
+/* The release gate on a ticket (task-view.tsx, docs/RELEASE-GATE.md): the plan in the verdict, and where the release stands after. */
+.tk-release-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid #ffd166;
+  border-radius: 8px;
+  background: rgba(255, 209, 102, 0.05);
+  max-height: 220px;
+  overflow: auto;
+}
+.tk-release {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.tk-release[data-release-state='open'] {
+  border-color: rgba(255, 209, 102, 0.55);
+}
+.tk-release[data-release-state='released'] {
+  border-color: rgba(61, 220, 132, 0.45);
+}

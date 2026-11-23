@@ -33,6 +33,7 @@ import type {
   Task,
   XpEntry,
 } from './entities.ts';
+import type { ReleaseRules } from './release.ts';
 import type { OrchestratorEvent, RawHookEvent } from './events.ts';
 import type { ContextPack } from './context.ts';
 import type { ArcadeButton, ArcadeGame, ArcadeMediaKind, ArcadeTable } from './arcade.ts';
@@ -137,6 +138,8 @@ export interface LaunchSpec {
   continueLast?: boolean;
   /** A rented employee: the folders they may reach and what they may do there (`docs/RENT.md`). Changed live with `session.fence`. */
   fence?: RentFence | null;
+  /** The release gate's rules (docs/RELEASE-GATE.md): a command that releases is held for the office to decide. Changed live with `session.release`. */
+  release?: ReleaseRules | null;
   /** The central context this employee holds (`docs/CONTEXT.md`); changed live with `session.context`. */
   context?: ContextPack | null;
   env: Record<string, string>;
@@ -155,6 +158,7 @@ export type AgentRpc =
   /** The owner allowed one exact tool call that Claude Code had refused: the next identical call from this session is let through, once, within `ttlMs`. */
   | { method: 'session.grant'; params: { sessionId: ID; tool: string; input: unknown; ttlMs: number } }
   | { method: 'session.fence'; params: { sessionId: ID; fence: RentFence | null } }
+  | { method: 'session.release'; params: { sessionId: ID; release: ReleaseRules | null } }
   | { method: 'session.context'; params: { sessionId: ID; context: ContextPack | null } }
   | { method: 'term.subscribe'; params: { sessionId: ID } }
   | { method: 'term.unsubscribe'; params: { sessionId: ID } }

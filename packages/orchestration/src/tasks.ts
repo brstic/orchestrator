@@ -1151,7 +1151,7 @@ export class TaskManager {
         const fb: string[] = [];
         if (task.evidence.review?.verdict === 'changes_requested') fb.push(`Review (${task.evidence.review.by === 'owner' ? 'the boss' : (this.core.employees.get(task.evidence.review.reviewerId)?.name ?? 'reviewer')}): ${task.evidence.review.comments}`);
         if (task.evidence.merge && !task.evidence.merge.ok) fb.push(`Merge into ${task.evidence.merge.into} conflicted: ${task.evidence.merge.detail}\nIn your worktree run "git merge ${project.integrationBranch}", resolve the conflicts, commit, re-run the tests and call complete_task again.`);
-        text = taskPrompt(task, project, deps, fb.length ? fb.join('\n\n') : null, [this.eng.improver.capture.onboardingBlock(employee, project), this.eng.improver.playbookBlock(employee, project.id, true, task)].filter(Boolean).join('\n\n'), sharing.map((t) => `${this.core.employees.get(t.assigneeId)?.name ?? 'a colleague'} (${t.key})`), this.eng.talk.promptLines(task, employee));
+        text = taskPrompt(task, project, deps, fb.length ? fb.join('\n\n') : null, [this.eng.improver.capture.onboardingBlock(employee, project), this.eng.improver.playbookBlock(employee, project.id, true, task)].filter(Boolean).join('\n\n'), sharing.map((t) => `${this.core.employees.get(t.assigneeId)?.name ?? 'a colleague'} (${t.key})`), [...this.eng.talk.promptLines(task, employee), ...[this.eng.release.instructions(employee)].filter(Boolean)]);
         // What people attached to the task, copied to this machine: where each file is, for the Read tool.
         const files = await this.eng.attachments.deliver(task, employee).catch(() => []);
         const missing = (task.attachments ?? []).filter((a) => a.kind === 'input').length - files.length;
@@ -1337,7 +1337,7 @@ export class TaskManager {
    * An agent called complete_task. Returns the text the agent receives; a
    * failed check comes back as a tool error so the agent keeps working.
    */
-  async completeFromAgent(employee: Employee, args: { summary: string; tests_run?: string; no_code_changes?: boolean }): Promise<{ text: string; isError?: boolean }> {
+  async completeFromAgent(employee: Employee, args: { summary: string; tests_run?: string; no_code_changes?: boolean; release_plan?: string }): Promise<{ text: string; isError?: boolean }> {
     const task = this.currentTask(employee.id);
     if (!task) return { text: 'You have no task in progress. Use get_current_task or get_available_tasks.', isError: true };
     if (this.verifying.has(task.id)) return { text: `Verification of ${task.key} is already running; wait for its result.`, isError: true };
@@ -1354,6 +1354,9 @@ export class TaskManager {
     try {
       task.evidence.summary = args.summary;
       task.evidence.reportedTests = args.tests_run ?? null;
+      // Where it goes once approved (the release gate, release.ts): the plan the owner reads in review.
+      const plan = typeof args.release_plan === 'string' && args.release_plan.trim() ? truncate(args.release_plan.trim(), 4000) : null;
+      task.release = plan ? { plan } : null;
       const codeTask = !NON_CODE_KINDS.has(task.kind);
       const cwd = task.worktree;
 
@@ -1470,6 +1473,16 @@ export class TaskManager {
       }
 
       task.progress = { percent: 100, note: 'Completion reported', ts: nowIso() };
+      // With the release gate on, work that goes somewhere is approved by an owner, always: a colleague's review is the
+      // first step of it, and work nobody was to review goes to the boss (the owner, 2026-11-23: "always the owner").
+      if (task.release?.plan && this.eng.release.on() && task.kind !== 'review') {
+        const was = reviewByOf(task);
+        if (was === 'none' || was === 'peer') {
+          task.requiresReview = true;
+          task.reviewBy = was === 'none' ? 'boss' : 'both';
+          this.history(task, `It goes somewhere once approved (a release plan): an owner approves it${was === 'peer' ? ' after the colleague' : ''} (the release gate)`, 'orchestrator');
+        }
+      }
       if (task.requiresReview && task.kind !== 'review' && task.evidence.review?.verdict !== 'approved') {
         task.status = 'REVIEW';
         // Whoever handed it in is its author for this review, also if the task is given to somebody else meanwhile.
@@ -1964,6 +1977,8 @@ export class TaskManager {
       this.history(task, `Review approved by ${reviewerName}`, reviewerName);
       this.eng.talk.add(task, { from, body: comments.trim() || 'Approved.', kind: 'approved', mentions: [] }, { store: false, quiet: true });
       await this.finalize(task);
+      // A person approved it: the gate opens for those who release it (release.ts). A colleague's approval does not.
+      if (by === 'owner' && (task.status as string) === 'DONE') this.eng.release.approved(task, who?.name ?? 'The boss');
     } else {
       this.eng.talk.add(task, { from, body: comments, kind: 'sent_back', mentions: [] }, { store: false, quiet: true });
       task.reviewStage = null;

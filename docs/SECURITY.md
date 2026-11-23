@@ -131,6 +131,10 @@ The foreman is the office's supervisor: one Claude Code session, on one of the o
 - *A wrong answer is still an answer.* The foreman can answer a question you would have answered differently. The answer is on the record with its author; turn off *the foreman answers employees' questions* if you want every question yourself.
 - *Each round uses Claude usage* on the account the foreman runs on. The office starts a round only for something new, never while one is running, and never sooner than the gap you set.
 
+## The release gate
+
+With the gate on (Settings → Employees), an employee's machine holds every command that would reach a protected branch (`main`, `master`, or as set) or change something on a listed production server, and the office lets it through only for somebody an owner let release: the author of a ticket an owner approved and the colleagues on it, for three hours, or one employee an owner let release by hand (Talk → *Let release*). Refusals and passes are audited (`release.held`, `release.allowed`, `release.opened`, `release.granted`, `release.closed`). It stands in front of every level, Unrestricted included, and is independent of the high-risk switches. It is a reading of the command's text, not a wall: a branch or a host the command builds itself, a script or a pipeline that deploys on its own is not seen ([RELEASE-GATE.md](RELEASE-GATE.md), "Limits").
+
 ## Repository safety
 
 - Each employee works in its own git worktree on its own branch. Orchestrator refuses to switch branches over uncommitted work.

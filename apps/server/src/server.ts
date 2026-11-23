@@ -815,8 +815,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           ...(changed.includes('foreman') ? { foreman: after.foreman } : {}),
           ...(changed.includes('autoAsksHighRisk') ? { autoAsksHighRisk: after.autoAsksHighRisk } : {}),
           ...(changed.includes('unrestrictedAsksHighRisk') ? { unrestrictedAsksHighRisk: after.unrestrictedAsksHighRisk } : {}),
+          ...(changed.includes('releaseGate') ? { releaseGate: after.releaseGate } : {}),
         });
       }
+      // The release gate holds from every running session's next command (release.ts).
+      if (changed.includes('releaseGate')) engine.release.push();
       if (changed.includes('autoAsksHighRisk') || changed.includes('unrestrictedAsksHighRisk')) engine.sessions.highRiskSwitched();
       return after;
     });
@@ -880,6 +883,14 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       if (!e) throw new EngineError('unknown employee', 404);
       const b = body(req);
       return talkSearch(talkOf(req), e.id, b.q, Number(b.limit) || 300);
+    });
+    // The release gate (docs/RELEASE-GATE.md): who may release now, and an owner letting one employee release by hand.
+    // (Not in access.ts's rules: owners only.)
+    api.get('/release', async () => ({ rules: engine.release.rules(), passes: engine.release.passes() }));
+    api.post('/employees/:id/release', async (req) => engine.release.grant(param(req, 'id'), Number(body(req).minutes) || 60, whoOf(req).name || 'The boss'));
+    api.delete('/employees/:id/release', async (req) => {
+      engine.release.close({ employeeId: param(req, 'id') }, whoOf(req).name || 'The boss');
+      return { ok: true };
     });
     api.post('/employees/:id/message', async (req) => {
       const b = body(req);

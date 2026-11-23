@@ -21,6 +21,8 @@ export interface HostInfo {
   saysHeldFor?: boolean;
   /** This machine's agent fences a rented employee to their folders (`LaunchSpec.fence`, `session.fence`; docs/RENT.md). Absent from older agents. */
   rentFence?: boolean;
+  /** This machine's agent holds a release for the office to decide (`LaunchSpec.release`, `session.release`; docs/RELEASE-GATE.md). Absent from older agents. */
+  releaseGate?: boolean;
   hostname: string;
   platform: string;
   arch: string;
@@ -764,6 +766,18 @@ export interface TaskHistoryEntry {
   by: string;
 }
 
+/** A task's release (`Task.release`, docs/RELEASE-GATE.md). */
+export interface TaskRelease {
+  plan: string | null;
+  approvedAt?: ISODate | null;
+  approvedBy?: string | null;
+  /** The gate stands open for those who release it until then. */
+  openUntil?: ISODate | null;
+  releasedAt?: ISODate | null;
+  releasedBy?: string | null;
+  note?: string | null;
+}
+
 export interface Task {
   id: ID;
   /** Short human key, e.g. "T-12". */
@@ -789,6 +803,12 @@ export interface Task {
    * on the board by a person, it is not cancelled any more. Null (or absent): not cancelled.
    */
   cancelled?: { at: ISODate; by: string; reason: string } | null;
+  /**
+   * Where the work goes once approved, and how far it got (docs/RELEASE-GATE.md): the plan the author handed in with
+   * it (`complete_task` `release_plan`), when an owner approved it and so opened the gate (until when), and the
+   * author's word that it is out (`report_released`).
+   */
+  release?: TaskRelease | null;
   /** Preferred role when unassigned (used by the scheduler). */
   roleHint: string | null;
   dependsOn: ID[];
@@ -2046,6 +2066,11 @@ export interface OwnerSettings {
    * stay fenced off either way.
    */
   unrestrictedAsksHighRisk?: boolean;
+  /**
+   * The release gate (docs/RELEASE-GATE.md): on, nothing reaches the protected branches or a production server before
+   * an owner approved the work. Absent: off. Read with `releaseRulesOf`.
+   */
+  releaseGate?: { on?: boolean; branches?: string[]; hosts?: string[] } | null;
   /**
    * Claude Code's own questions at the start of a session are answered "yes" by the office itself — the owner's
    * decision of 2026-11-13 ("make it say yes and trust the folder by itself instead of getting stuck", and of the

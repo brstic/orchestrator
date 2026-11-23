@@ -107,6 +107,12 @@ export class HookReceiver {
         return;
       }
       case 'PreToolUse': {
+        // The release gate: the machine held a command that would release work; let through only for somebody an owner
+        // let release (docs/RELEASE-GATE.md). Decided at once — nobody is asked.
+        if (payload.orch_policy === 'high_risk_held' && payload.orch_held_for === 'release') {
+          const d = this.eng.release.decide(employee, redactSecrets(describeTool(payload.tool_name ?? 'tool', payload.tool_input, payload.cwd)), String(payload.orch_release ?? 'it releases work'));
+          return void respond({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: d.allow ? 'allow' : 'deny', permissionDecisionReason: d.reason } });
+        }
         if (payload.orch_policy === 'high_risk_held') {
           // An employee in bypass mode ran into the high-risk list: Claude Code would ask nobody, so the machine
           // holds the call and the owner decides here.

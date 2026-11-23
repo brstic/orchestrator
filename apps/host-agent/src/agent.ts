@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -22,7 +22,7 @@ import type {
   ContextPack,
   AccountProvider,
 } from '@orchestrator/contracts';
-import { HOOKS_VERSION, PROTOCOL_VERSION, redactSecrets, renderContext, renderContextChange, slugify } from '@orchestrator/contracts';
+import { HOOKS_VERSION, PROTOCOL_VERSION, redactSecrets, releaseOf, renderContext, renderContextChange, slugify, type ReleaseRules } from '@orchestrator/contracts';
 import type { AccountInfo, AccountLogin } from '@orchestrator/contracts';
 import {
   NESTED_SESSION_ENV,
@@ -105,6 +105,8 @@ interface Tracked {
   spec: LaunchSpec | null;
   /** A rented employee's fence as the office last sent it (`session.fence`); absent: the one in `spec`. */
   fence?: RentFence | null;
+  /** The release gate's rules as last changed live (`session.release`); undefined: as the launch spec says. */
+  release?: ReleaseRules | null;
   /** The central context as the office last sent it (`session.context`); absent: the one in `spec` (docs/CONTEXT.md). */
   context?: ContextPack | null;
   /** The pack this session's model was last given (whole, or as a change): what the next change is measured against. */
@@ -185,6 +187,16 @@ export function grantKey(tool: string, input: unknown): string {
   if (tool === 'Bash' && typeof i.command === 'string') return `Bash\u0000${i.command.trim()}`;
   const { description: _d, ...rest } = i;
   return `${tool}\u0000${JSON.stringify(rest, Object.keys(rest).sort())}`;
+}
+
+/** The branch checked out in a folder (for a push that names none), or null. */
+function branchOf(dir: string): string | null {
+  try {
+    const b = execFileSync('git', ['-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return b && b !== 'HEAD' ? b : null;
+  } catch {
+    return null;
+  }
 }
 
 export class HostAgent {
@@ -316,6 +328,7 @@ export class HostAgent {
       hooksVersion: HOOKS_VERSION,
       saysHeldFor: true,
       rentFence: true,
+      releaseGate: true,
       tmuxVersion: await this.tmux.version(),
       claudeVersion: await claudeVersion(this.cfg.claudeBin),
       claudeEffortLevels: await claudeEffortLevels(this.cfg.claudeBin),
@@ -1233,6 +1246,13 @@ export class HostAgent {
         this.saveState();
         return { ok: true };
       }
+      case 'session.release': {
+        // The release gate was switched or changed: it holds from the next command on (docs/RELEASE-GATE.md).
+        const t = this.requireTracked(rpc.params.sessionId);
+        t.release = rpc.params.release ?? null;
+        this.saveState();
+        return { ok: true };
+      }
       case 'session.fence': {
         // A rental changed: what this session may reach changes now, not at its next start (docs/RENT.md).
         const t = this.requireTracked(rpc.params.sessionId);
@@ -1606,6 +1626,13 @@ export class HostAgent {
     if (reach.mentioned(command)) {
       if (t.spec?.permissionMode === 'bypassPermissions') return { orchHold: true, fence: true, pattern: "the office's own files on this machine" };
       return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: "Orchestrator policy: this command names the office's own files on this machine (another session's folder, the agent's records, or the office's data) and needs the owner's approval." } };
+    }
+    // The release gate: what would reach a protected branch or a production server is held for the office, which lets
+    // it through only for work an owner approved (docs/RELEASE-GATE.md).
+    const gate = t.release !== undefined ? t.release : (t.spec?.release ?? null);
+    if (gate?.on) {
+      const why = releaseOf(command, gate, payload.cwd ?? t.cwd, branchOf);
+      if (why) return { orchHold: true, release: why };
     }
     // A rented employee the owner let never wait for the office: the high-risk list does not hold them (docs/RENT.md).
     const rented = t.fence !== undefined ? t.fence : (t.spec?.fence ?? null);
@@ -2185,11 +2212,13 @@ export class HostAgent {
     let local = this.localPolicy(tracked, payload);
     // Bypass mode and a high-risk command: wait for the owner's decision; without one, the call is refused.
     let held: string | null = null;
+    let releasing: string | null = null;
     if (local?.orchHold) {
       held = String(local.pattern ?? '');
+      releasing = local.release ? String(local.release) : null;
       // Which of the two it is held for: the office's own files (always the owner's to decide), or the high-risk
       // list (which the owner may have switched off for this level since the session was started).
-      payload = { ...payload, orch_policy: 'high_risk_held', orch_held_for: local.fence === true ? 'office_files' : 'pattern' };
+      payload = { ...payload, orch_policy: 'high_risk_held', orch_held_for: local.release ? 'release' : local.fence === true ? 'office_files' : 'pattern', ...(local.release ? { orch_release: String(local.release) } : {}) };
       local = null;
     }
     if (local) {
@@ -2229,7 +2258,7 @@ export class HostAgent {
       }
     }
     if (held !== null) event.payload = payload;
-    const refuse = (why: string) => JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Orchestrator policy: this command matches a high-risk pattern (${held}) and needs the owner's approval. ${why} Do not try it another way: wait, or ask the boss (ask_boss).` } });
+    const refuse = (why: string) => JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: releasing ? `Orchestrator release gate: this command releases work (${releasing}), which the office lets through only for work an owner approved. ${why} Do not try it another way.` : `Orchestrator policy: this command matches a high-risk pattern (${held}) and needs the owner's approval. ${why} Do not try it another way: wait, or ask the boss (ask_boss).` } });
     // The office went away a moment ago and may be back in a moment (a restart): a request for a decision waits for it.
     const waitsForOffice = !this.connected && !!this.linkGrace && payload.hook_event_name !== 'Stop';
     if (held !== null && !this.connected && !waitsForOffice) {

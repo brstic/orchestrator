@@ -27,7 +27,7 @@ import type {
   XpEntry,
   EventSourceKind,
 } from '@orchestrator/contracts';
-import { REVIEW_BY, SURROUNDINGS, defaultLayout, newId, nowIso } from '@orchestrator/contracts';
+import { releaseRulesOf, REVIEW_BY, SURROUNDINGS, defaultLayout, newId, nowIso } from '@orchestrator/contracts';
 import type { Collection, Storage } from '@orchestrator/database';
 import { deriveCompanyStats, emptyCompanyStats, initialMilestones } from '@orchestrator/game-systems';
 import type { TerminalGateway } from '@orchestrator/terminal';
@@ -490,6 +490,8 @@ export class Core {
       // A switch is on or off (anything that is not a plain "off" keeps the hold).
       ...(patch.unrestrictedAsksHighRisk === undefined ? {} : { unrestrictedAsksHighRisk: patch.unrestrictedAsksHighRisk !== false }),
       ...(patch.acceptStartPrompts === undefined ? {} : { acceptStartPrompts: patch.acceptStartPrompts !== false }),
+      // The release gate: on or off, the protected branches and the production servers, as `releaseRulesOf` reads them.
+      ...(patch.releaseGate === undefined ? {} : { releaseGate: releaseRulesOf({ releaseGate: { ...releaseRulesOf(this._settings), ...(patch.releaseGate ?? {}) } }) }),
       // A place the office knows, or the one it had.
       ...(patch.surroundings === undefined ? {} : { surroundings: (SURROUNDINGS as readonly unknown[]).includes(patch.surroundings) ? patch.surroundings : this._settings.surroundings }),
       // Who reviews a finished task when nobody chose: one of the four, or what it was.
