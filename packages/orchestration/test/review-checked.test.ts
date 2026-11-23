@@ -40,6 +40,13 @@ test('a colleague approves code nothing of the office tested only by saying what
   assert.ok(done.comments?.some((c) => c.kind === 'approved' && /Checked: Ran php -l/.test(c.body)), 'said on the ticket too');
 });
 
+test('a session whose tool has no "checked" yet says it in the comments', async () => {
+  const o = await office();
+  o.handIn();
+  const t = await o.eng.tasks.submitReview(o.sarah, o.task().key, 'approve', 'Looks right.\n\nChecked: ran the price test on dev, 4 of 4 pass.');
+  assert.equal(t.evidence.peerReview?.checked, 'ran the price test on dev, 4 of 4 pass.');
+});
+
 test('code the office tested with the project\'s own command needs no "checked"; a syntax check alone is not that', async () => {
   const o = await office();
   const measured = (kind: 'command' | 'syntax') => ({ evidence: { ...o.task().evidence, verification: { ts: new Date().toISOString(), command: kind === 'command' ? 'npm test' : 'syntax check of the changed files', exitCode: 0, passed: true, outputTail: '', durationMs: 5, provenance: 'measured' as const, kind } } });

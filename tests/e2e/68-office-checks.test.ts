@@ -2,7 +2,7 @@
  * The office checks what it can (`docs/TASKS.md`, "The office checks what it can"), in a real office with a real
  * session (the scripted stand-in for Claude Code): in a project with no verification command, a hand-in whose changed
  * file does not parse is refused by the office itself; fixed, it goes to review with that check on record; and the
- * colleague approves it only by saying what they checked.
+ * colleague's approval carries what they checked (an approval without it is refused: review-checked.test.ts).
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,7 +23,7 @@ after(async () => {
 });
 
 test('no verification command: a changed file that does not parse is refused; fixed, it goes on with the check on record', async () => {
-  const project = (await h.state()).projects.find((p: any) => p.id === ava.projectId);
+  const project = (await h.state()).projects.find((p: any) => p.id === ava.projectId)!;
   assert.equal(project.verifyCommand, null, 'the project has no command of its own');
   const task = await h.task({
     projectId: ava.projectId,
@@ -41,7 +41,7 @@ test('no verification command: a changed file that does not parse is refused; fi
     const t = await h.getTask(task.id);
     return t.status === 'REVIEW' ? t : null;
   }, { label: 'handed in', timeout: 30_000 });
-  const v = inReview.evidence.verification;
+  const v = inReview.evidence.verification!;
   assert.equal(v.kind, 'syntax');
   assert.equal(v.passed, true);
   assert.equal(v.provenance, 'measured');
@@ -49,16 +49,14 @@ test('no verification command: a changed file that does not parse is refused; fi
   assert.equal(inReview.friction.failedVerifications, 1);
 });
 
-test('the colleague approves it only by saying what they checked', async () => {
-  const t = await h.getTask((await h.state()).tasks.find((x: any) => x.title === 'Add the price helper').id);
-  await waitFor(async () => !!(await h.session(rita.id)), { label: 'Rita has a session (her review was handed to her)', timeout: 30_000 });
-  await waitFor(async () => (await h.session(rita.id))?.inTurn === false, { label: 'Rita between turns' });
-  await h.api('POST', `/employees/${rita.id}/message`, { body: `@@fake: mcp submit_review {"task":"${t.key}","verdict":"approve","comments":"Fine."}; mcp submit_review {"task":"${t.key}","verdict":"approve","comments":"Fine.","checked":"Ran node price.js and node --check price.js, both exit 0."}; say reviewed@@` });
+test('the colleague\'s approval carries what they checked, through the real tool', async () => {
+  const t = (await h.state()).tasks.find((x: any) => x.title === 'Add the price helper')!;
+  // Rita's session gets the review and answers it (the stand-in reads the diff and says so in "checked").
   const done = await waitFor(async () => {
     const x = await h.getTask(t.id);
     return x.status === 'DONE' ? x : null;
   }, { label: 'approved', timeout: 40_000 });
-  assert.match(done.evidence.review.checked, /node --check price\.js/);
-  const events = await h.api<any[]>('GET', `/events?taskId=${t.id}&limit=200`);
-  assert.equal(events.filter((e) => e.type === 'task.review_completed').length, 1, 'the approval without "checked" was refused, not recorded');
+  assert.equal(done.evidence.review?.reviewerId, rita.id);
+  assert.match(done.evidence.review?.checked ?? '', /Read the diff/);
+  assert.ok(done.comments?.some((c: any) => c.kind === 'approved' && /Checked: Read the diff/.test(c.body)), 'on the ticket');
 });

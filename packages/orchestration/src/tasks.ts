@@ -1970,15 +1970,18 @@ export class TaskManager {
     if (!approved && !comments.trim()) throw new EngineError('say what should change: it is what the author reads');
     // What the reviewer ran or opened to reach the verdict. Code nothing of the office's tested is approved only on
     // a check somebody made and named (measured on the live office: half of the reviews ran nothing).
-    const checked = typeof opts.checked === 'string' && opts.checked.trim() ? truncate(opts.checked.trim(), 2000) : null;
+    // A session started before "checked" was a field of submit_review has the tool without it: a "Checked: …" line in
+    // the comments is the same.
+    const inComments = /(?:^|\n)\s*\**checked\**\s*:\s*([\s\S]+)$/i.exec(comments)?.[1]?.trim();
+    const checked = typeof opts.checked === 'string' && opts.checked.trim() ? truncate(opts.checked.trim(), 2000) : inComments ? truncate(inComments, 2000) : null;
     if (approved && by !== 'owner' && !NON_CODE_KINDS.has(task.kind) && !testedByOffice(task) && (checked ?? '').length < 12)
       throw new EngineError(
-        `nothing the office ran tests ${task.key}, so an approval says what you checked: run what shows it works (the test that covers it, the page or the request on the development server, the query) and give "checked" — what you ran and what it showed. Nothing was recorded.`,
+        `nothing the office ran tests ${task.key}, so an approval says what you checked: run what shows it works (the test that covers it, the page or the request on the development server, the query) and give "checked" — what you ran and what it showed (if your submit_review has no "checked", end the comments with a line "Checked: …"). Nothing was recorded.`,
       );
     if (!approved && by !== 'owner' && task.friction.reviewRejections >= REVIEW_SEND_BACKS) return this.contest(task, by, comments);
     task.evidence.contested = null;
     task.evidence.review = { reviewerId: by === 'owner' ? null : by.id, verdict: approved ? 'approved' : 'changes_requested', comments, ts: nowIso(), by: by === 'owner' ? 'owner' : 'employee', checked };
-    const said = (text: string) => (checked ? `${text}\n\nChecked: ${checked}` : text);
+    const said = (text: string) => (checked && !/(?:^|\n)\s*\**checked\**\s*:/i.test(text) ? `${text}\n\nChecked: ${checked}` : text);
     this.core.company.reviewsCompleted++;
     this.core.saveCompany();
     const reviewerName = by === 'owner' ? (who && who.kind !== 'owner' ? who.name : 'The boss') : by.name;

@@ -93,7 +93,9 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
      review, research, planning) that the office did not test with the project's own command (`testedByOffice`) is
      refused without it: "run what shows it works … and give checked". The reviewer is told so in `reviewPrompt`; a
      Codex reviewer, who reads and runs nothing, is asked what it read and compared. Kept in `evidence.peerReview.checked`
-     / `evidence.review.checked`, and on the ticket ("Checked: …"). Sending back needs no "checked".
+     / `evidence.review.checked`, and on the ticket ("Checked: …"). Sending back needs no "checked". A session started
+     before the field existed has `submit_review` without it (Claude Code reads the tools at start): a last line
+     "Checked: …" in the comments counts the same, and the refusal says so.
   3. **Who worked on a ticket does not review it**: its helpers (`helperIds`) are never picked, a named one gives way,
      and their `submit_review` is refused ("you worked on T-… with its author").
 
