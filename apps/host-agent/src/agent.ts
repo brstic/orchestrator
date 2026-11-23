@@ -53,6 +53,7 @@ import {
   readProcessTable,
   toolShells,
   runVerify,
+  detectChecks,
   startBranch,
   commitWip,
 } from '@orchestrator/execution';
@@ -1378,6 +1379,10 @@ export class HostAgent {
         return integrationStatus({ ...rpc.params, repo: this.assertAllowed(rpc.params.repo) });
       case 'git.promote':
         return this.gitExclusive(() => promoteIntegration({ ...rpc.params, repo: this.assertAllowed(rpc.params.repo) }));
+      case 'repo.checks': {
+        const insp = await inspectPath(this.assertAllowed(rpc.params.path));
+        return { candidates: detectChecks(insp.repoRoot ?? insp.path) };
+      }
       case 'verify.run':
         if (!this.cfg.allowVerify) throw new Error('verification commands are disabled on this host (allowVerify=false)');
         return runVerify({ cwd: this.assertAllowed(rpc.params.cwd), command: rpc.params.command, timeoutMs: rpc.params.timeoutMs });

@@ -7,6 +7,7 @@ import { useOffice } from '../../lib/store.ts';
 import { registerPanel } from './index.tsx';
 import { activeEmployees, plural, stamp, useAction } from './tasks.tsx';
 import './panels-work.css';
+import { CheckFinder } from './check-finder.tsx';
 
 type PanelProps = { arg: string | null; onClose: () => void };
 type Dial = SelfImprovementSettings['autopilot'];
@@ -201,6 +202,7 @@ function Proposal({ imp }: { imp: Improvement }) {
           </Button>
         </div>
       )}
+      {setsCommand && owner && <CheckFinder projectId={imp.projectId!} value={command} onPick={setCommand} />}
       <div className="row">
         <Button variant={widens ? 'default' : 'primary'} disabled={busy || !owner} title={owner ? undefined : 'Only an owner of this office decides this'} onClick={() => run(() => api('POST', `/improvements/${imp.id}/apply`, {}), advice ? 'Noted' : `Done: ${imp.title}`)}>
           {advice ? 'Got it' : widens ? 'Yes, allow it' : 'Yes, do it'}

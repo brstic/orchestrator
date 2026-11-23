@@ -13,6 +13,7 @@ import { scoped, whoseLabel, whoseProject } from '../../lib/mine.ts';
 import { ScopeSwitch, WhoseBadge, useScope } from '../mine.tsx';
 import { TaskChip, activeEmployees, plural, stamp, useAction } from './tasks.tsx';
 import { REVIEW_CHOICES } from './task-shared.tsx';
+import { CheckFinder } from './check-finder.tsx';
 import './panels-work.css';
 
 type PanelProps = { arg: string | null; onClose: () => void };
@@ -397,6 +398,7 @@ function ProjectPolicyTab({ project }: { project: Project }) {
         <div className="pw-form">
           <Field label="Verification command" hint="Run by the office on the machine after an employee says a task is complete. Empty: nothing is run.">
             <input className="mono" value={draft.verifyCommand} placeholder="npm test" spellCheck={false} onChange={(e) => set({ verifyCommand: e.target.value })} />
+            <CheckFinder projectId={project.id} value={draft.verifyCommand} onPick={(command) => set({ verifyCommand: command })} />
           </Field>
           <Field label="Verification timeout (seconds)" hint={timeoutOk ? 'The command is stopped and counted as failed after this long.' : 'Enter a whole number of seconds greater than zero.'}>
             <input type="number" min={1} step={1} value={draft.verifyTimeoutSec} onChange={(e) => set({ verifyTimeoutSec: e.target.value })} />

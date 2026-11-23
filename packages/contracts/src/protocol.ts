@@ -214,6 +214,8 @@ export type AgentRpc =
   | { method: 'git.integration.status'; params: { repo: string; base: string; integration: string } }
   | { method: 'git.promote'; params: { repo: string; base: string; integration: string } }
   | { method: 'verify.run'; params: { cwd: string; command: string; timeoutMs: number } }
+  /** What could check the work in this repository (`detectChecks`): read only, nothing run. */
+  | { method: 'repo.checks'; params: { path: string } }
   | { method: 'usage.read'; params: { sessionId: ID } }
   | { method: 'claude.headless'; params: { cwd: string; prompt: string; jsonSchema?: unknown; timeoutMs: number } };
 

@@ -1340,3 +1340,42 @@ button.tk-person-chip:hover {
 .tk-release[data-release-state='released'] {
   border-color: rgba(61, 220, 132, 0.45);
 }
+
+/* Beside a verification command: what the repository offers, and one tried (check-finder.tsx). */
+.check-finder {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.check-finder-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.check-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+.check-chip:hover {
+  border-color: var(--accent);
+}
+.check-ok {
+  color: #3ddc84;
+}
+.check-bad {
+  color: #ff6b6b;
+}
+.check-output pre {
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  margin: 4px 0 0;
+}

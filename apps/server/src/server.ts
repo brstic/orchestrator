@@ -785,6 +785,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.get('/projects/:id/integration', async (req) => engine.tasks.integrationView(param(req, 'id')));
     api.post('/projects/:id/integration/sync', async (req) => engine.tasks.syncIntegration(param(req, 'id')));
     api.post('/projects/:id/integration/test', async (req) => engine.tasks.runIntegrationTests(param(req, 'id')));
+    // What could check a project, read from its repository, and one tried there — owners only (not in access.ts's rules).
+    api.get('/projects/:id/checks', async (req) => engine.tasks.checksFor(param(req, 'id')));
+    api.post('/projects/:id/checks/try', async (req) => engine.tasks.tryCheck(param(req, 'id'), String(body(req).command ?? ''), actorOf(req)));
     api.post('/projects/:id/promote', async (req) => engine.tasks.promote(param(req, 'id'), { force: body(req).force === true }));
     api.get('/radio/now', async (req) => {
       const station = engine.core.settings.radio.stations.find((s) => s.id === String(query(req).station ?? ''));

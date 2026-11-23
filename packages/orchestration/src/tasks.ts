@@ -1622,6 +1622,38 @@ export class TaskManager {
     return { ...res, lastTest };
   }
 
+  /** The machine and folder of a project's repository, for what is read or tried there (in place or not). */
+  private projectHome(project: Project): { hostId: string; repo: string } {
+    if (!project.repoPath || !project.hostId) throw new EngineError(`${project.name} has no repository on a machine`);
+    if (!this.core.agents.isOnline(project.hostId)) throw new EngineError(`the machine that holds ${project.name} is offline`, 502);
+    return { hostId: project.hostId, repo: project.repoPath };
+  }
+
+  /**
+   * What could check this project's work, read from its repository on its machine (`detectChecks`): offered beside the
+   * verification command (on the live office no project had one, and the owner did not know what to give).
+   */
+  async checksFor(projectId: string): Promise<{ current: string | null; candidates: Array<{ command: string; why: string; kind: string }> }> {
+    const project = this.core.projects.require(projectId);
+    const { hostId, repo } = this.projectHome(project);
+    const res = await this.core.agents.rpc(hostId, { method: 'repo.checks', params: { path: repo } }, 15_000);
+    return { current: project.verifyCommand, candidates: res.candidates ?? [] };
+  }
+
+  /** Run a command once where the project's work is, to see that it passes before it is made the project's check. */
+  async tryCheck(projectId: string, command: string, actor = 'owner'): Promise<{ command: string; passed: boolean; exitCode: number | null; timedOut: boolean; durationMs: number; outputTail: string }> {
+    const project = this.core.projects.require(projectId);
+    const cmd = String(command ?? '').trim();
+    if (!cmd || cmd.length > 500) throw new EngineError('give the command to try (at most 500 characters)');
+    const { hostId, repo } = this.projectHome(project);
+    const insp = await this.core.agents.rpc(hostId, { method: 'fs.inspect', params: { path: repo } });
+    const timeoutMs = Math.max(5, project.verifyTimeoutSec) * 1000;
+    const res = await this.core.agents.rpc(hostId, { method: 'verify.run', params: { cwd: insp.repoRoot ?? repo, command: cmd, timeoutMs } }, timeoutMs + 20_000);
+    const passed = res.exitCode === 0 && !res.timedOut;
+    this.core.audit(actor, 'project.check_tried', projectId, { command: truncate(cmd, 200), passed, exitCode: res.exitCode, durationMs: res.durationMs });
+    return { command: cmd, passed, exitCode: res.exitCode, timedOut: !!res.timedOut, durationMs: res.durationMs, outputTail: truncate(res.outputTail ?? '', 3000) };
+  }
+
   /** Run the integration tests now, on the owner's request. */
   async runIntegrationTests(projectId: string): Promise<unknown> {
     const project = this.core.projects.require(projectId);
