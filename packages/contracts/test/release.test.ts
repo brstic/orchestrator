@@ -48,3 +48,45 @@ test('merging a pull request is a release; nothing is one while the gate is off'
   assert.equal(releaseOf('git push origin master', releaseRulesOf({ releaseGate: { on: false } }), '/w', on('x')), null);
   assert.deepEqual(releaseRulesOf({}), { on: false, branches: ['main', 'master'], hosts: [] });
 });
+
+/*
+ * Read from a week of the live office's own commands (19 771 of them, replayed through the rule): 241 were held, and
+ * most of those only read production — they wrote their findings to a file here, or a probe into /tmp there. Only
+ * what runs there is read now, and what it writes outside /tmp.
+ */
+test('reading production is free even when the command writes here, or into /tmp there', () => {
+  assert.equal(r("mkdir -p /work/out && ssh -p 22 deploy@64.0.2.10 'cd /home/x/www/app && git log -1 && git status --short' > /work/out/before.txt"), null);
+  assert.equal(r("ssh deploy@64.0.2.10 'rm -rf /tmp/t1; mkdir -m 700 /tmp/t1; cp /home/x/www/app/.env.example /tmp/t1/'"), null);
+  assert.equal(r('mkdir -p /work/out && curl -s https://app.example.net/health > /work/out/h.txt'), null, 'a request to the site is not a change on the server');
+  assert.equal(r('scp deploy@64.0.2.10:/var/log/app.log /work/out/'), null, 'copied from production: read');
+  assert.equal(r("ssh deploy@64.0.2.10 'crontab -l'"), null);
+  assert.equal(r("ssh deploy@64.0.2.10 'bash -s' <<'EOF'\ncd /home/x/www/app\ncat > /tmp/q.php <<'PHP'\n<?php $r = $db->query(\"SELECT id, plan FROM users WHERE id = 5\");\nPHP\nphp /tmp/q.php\nEOF"), null);
+});
+
+test('production is changed: by what runs there, also through variables, in a heredoc, or uploaded', () => {
+  assert.match(r('S="ssh -p 22 -i ~/.ssh/k"; P=deploy@64.0.2.10; $S $P \'cd /srv/app && git pull --ff-only\'')!, /64\.0\.2\.10/);
+  assert.match(r("ssh deploy@64.0.2.10 'bash -s' <<'EOF'\ncd /srv/app\ncat > /tmp/t.php <<'PHP'\n<?php $db->query(\"UPDATE users SET plan = 2 WHERE id = 5\");\nPHP\nphp /tmp/t.php\nEOF")!, /64\.0\.2\.10/);
+  assert.match(r('scp dist/app.js deploy@64.0.2.10:/home/x/www/app/js/')!, /64\.0\.2\.10/);
+  assert.match(r("ssh deploy@64.0.2.10 '(crontab -l; echo \"*/5 * * * * php /srv/app/index.php cron\") | crontab -'")!, /64\.0\.2\.10/);
+  assert.match(r("ssh deploy@64.0.2.10 'cat > /home/x/www/app/config.php' < /work/config.php")!, /64\.0\.2\.10/);
+  // A program sent from here: what it does is read when the file can be, and held when it cannot.
+  const probe = "ssh deploy@64.0.2.10 'cd /srv/app && php /dev/stdin' < /work/probe.php";
+  assert.match(r(probe)!, /runs a program from this machine on 64\.0\.2\.10/);
+  const read = (text: string) => (p: string) => (p === '/work/probe.php' ? text : null);
+  assert.equal(releaseOf(probe, rules, '/work', on('x'), read('<?php echo $db->query("SELECT count(*) FROM users")->fetch_row()[0];')), null);
+  assert.match(releaseOf(probe, rules, '/work', on('x'), read('<?php $db->query("DELETE FROM sessions WHERE expired = 1");'))!, /64\.0\.2\.10/);
+});
+
+test('what only looks like a change: a comparison in awk, a word in a message, a file mktemp made', () => {
+  assert.equal(r(`ssh deploy@64.0.2.10 'awk "\\$4 >= \\"[19/Nov/2026:19:34:19\\"" /var/log/apache2/app-access.log | wc -l'`), null);
+  assert.equal(r(`ssh deploy@64.0.2.10 'echo "== crontab lines that fire at 03:10"; crontab -l | grep -v "^#"'`), null);
+  assert.equal(r(`ssh deploy@64.0.2.10 'redis-cli --scan --pattern "sess:*" > $(mktemp /tmp/k.XXXX); git log -1'`), null);
+  assert.equal(r(`ssh deploy@64.0.2.10 'cd /srv/app && git merge-base --is-ancestor 1a2b3c HEAD && echo in'`), null);
+  assert.match(r(`ssh deploy@64.0.2.10 'cd /srv/app && cat > application/controllers/Probe.php' < /work/Probe.php`)!, /64\.0\.2\.10/);
+  assert.match(r(`ssh deploy@64.0.2.10 'crontab /home/deploy/new.cron'`)!, /64\.0\.2\.10/);
+});
+
+test('a deploy script run on production is held: what it does is not read here', () => {
+  assert.match(r("ssh deploy@64.0.2.10 bash -s <<'REMOTE'\ncd /home/x/www/studio\n./scripts/deploy.sh --verify 2>&1 | tail -5\nREMOTE")!, /64\.0\.2\.10/);
+  assert.equal(r("ssh deploy@64.0.2.10 'ls -l scripts/deploy.sh; cat scripts/deploy.sh | head'"), null, 'looking at it is not running it');
+});

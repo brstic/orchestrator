@@ -23,10 +23,20 @@ With **Settings → Employees → "Nothing is released before I approve it (the 
   - a `git push` to a **protected branch** (`main`, `master` by default; *Protected branches*) — also `git push` with no
     branch named made from one, `HEAD:master`, `--all`, `--mirror`;
   - merging a pull request (`gh pr merge`, `glab mr merge`);
-  - a command that names a **production server** (*Production servers*: a host name, an address, or a folder on one)
-    **and changes something there**: `git pull/merge/reset/checkout/…`, `rsync`/`scp`, a database write
-    (`mysql … ALTER/UPDATE/…`), installs and builds, restarting services, migrations, `sed -i`, `rm`/`mv`/`cp`/`tee`,
-    writing a file with `>`; and a `git push` to a remote on a production server.
+  - a change on a **production server** (*Production servers*: a host name, an address, or a folder on one). What is
+    read is **what runs there** — the command given to `ssh` (also when the ssh and the host sit in variables,
+    `S="ssh -p …"; $S user@host '…'`, and the heredoc it is fed) — and what is **copied onto it** (`scp`/`rsync`/`sftp`
+    to it; from it is reading): `git pull/merge/reset/checkout/…`, SQL that writes (`UPDATE … SET`, `INSERT INTO`,
+    `ALTER TABLE`, …, also inside a PHP or a `mysql -e` there), installs and builds, restarting services, migrations,
+    a crontab put in, a deploy script run, `rm`/`mv`/`cp`/`tee`/`mkdir`/`sed -i`/`>` on anything **outside `/tmp`**;
+    a program sent from this machine to run there (`php /dev/stdin < probe.php`, `bash -s < x.sh`) is read from its
+    file when the machine can, and held when it cannot; and a `git push` to a remote on a production server.
+    **Not a change:** what the command does here (its findings written to a file, a request to the site), probes
+    written into `/tmp` there, and reading — logs, `git log`/`status`, `crontab -l`, `SELECT`s. (Measured on a week of
+    the live office's own commands, 19 771 of them: the first version held 241, most of them reads; this one holds 71
+    — 28 pushes to `master`/`main`, and on production `git pull`s, files written into the application or the home
+    folder, scripts sent to run there, crontab backups — and of the 174 it lets through none was found to change
+    production by these rules. `packages/contracts/test/release.test.ts`.)
 
   The employee's machine holds such a command and the office answers at once: refused, with what to do instead
   ("hand it in with complete_task and a release_plan; when an owner approves it you are told, and this goes through").
@@ -66,6 +76,8 @@ Not for a rented employee while rented (a client's work has its own terms, `docs
 
 ## Limits, plainly
 
+- **A request to a production site is not read** (`curl -X POST https://…/api/…`): what an application's own API
+  changes is the application's to guard.
 - **A command is read for what it says**, like the fence of a rented employee. A push whose branch the command builds
   itself, a script that deploys on its own (`./deploy.sh` with no production server in its words), a CI pipeline that
   deploys on a push to a branch that is not protected, an HTTP call to a Git host's API that merges — none of these is

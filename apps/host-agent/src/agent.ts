@@ -199,6 +199,23 @@ function branchOf(dir: string): string | null {
   }
 }
 
+/**
+ * A file a command sends to a production server to run there (`< probe.php`), for the release gate to read what it
+ * does (`releaseOf`): a plain file of at most 256 KB, relative to where the command runs. Null: it cannot be read here,
+ * and the command is held.
+ */
+function readSmall(cwd: string): (file: string) => string | null {
+  return (file) => {
+    try {
+      const at = path.resolve(cwd, file.replace(/^~(?=\/)/, os.homedir()));
+      const st = fs.statSync(at);
+      return st.isFile() && st.size <= 256 * 1024 ? fs.readFileSync(at, 'utf8') : null;
+    } catch {
+      return null;
+    }
+  };
+}
+
 export class HostAgent {
   readonly cfg: AgentConfig;
   readonly home: string;
@@ -1631,7 +1648,7 @@ export class HostAgent {
     // it through only for work an owner approved (docs/RELEASE-GATE.md).
     const gate = t.release !== undefined ? t.release : (t.spec?.release ?? null);
     if (gate?.on) {
-      const why = releaseOf(command, gate, payload.cwd ?? t.cwd, branchOf);
+      const why = releaseOf(command, gate, payload.cwd ?? t.cwd, branchOf, readSmall(payload.cwd ?? t.cwd));
       if (why) return { orchHold: true, release: why };
     }
     // A rented employee the owner let never wait for the office: the high-risk list does not hold them (docs/RENT.md).

@@ -51,11 +51,40 @@ function segments(s: string): string[] {
   return out;
 }
 
-/** Pieces of a command line, joined where quotes hold them together (good enough to read arguments). */
+/**
+ * The words of a command line as the shell makes them: quotes taken off, pieces quoted differently but written
+ * together (`'a'"'"'b'`) one word, a backslash outside quotes and before ", $, \ or ` inside double quotes taken off.
+ */
 function words(s: string): string[] {
   const out: string[] = [];
-  const re = /"((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+)/g;
-  for (let m = re.exec(s); m; m = re.exec(s)) out.push(m[1] ?? m[2] ?? m[3] ?? '');
+  let cur = '';
+  let has = false;
+  let q: string | null = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]!;
+    if (q === "'") {
+      if (c === "'") q = null;
+      else cur += c;
+    } else if (q === '"') {
+      if (c === '\\' && i + 1 < s.length && '"\\$`'.includes(s[i + 1]!)) cur += s[++i];
+      else if (c === '"') q = null;
+      else cur += c;
+    } else if (c === "'" || c === '"') {
+      q = c;
+      has = true;
+    } else if (c === '\\' && i + 1 < s.length) {
+      cur += s[++i];
+      has = true;
+    } else if (/\s/.test(c)) {
+      if (has) out.push(cur);
+      cur = '';
+      has = false;
+    } else {
+      cur += c;
+      has = true;
+    }
+  }
+  if (has) out.push(cur);
   return out;
 }
 
@@ -96,16 +125,22 @@ export function pushTargets(args: string[], current: () => string | null): { rem
   return { remote, branches, all, dryRun };
 }
 
+/** What changes something where it runs (read on what runs on a production server, not on the whole command). */
 const CHANGES_THERE = [
-  /\bgit\b(?:\s+-[cC]\s+\S+)*\s+(?:pull|merge|reset|checkout|switch|rebase|cherry-pick|am|apply|restore|push|stash\s+(?:pop|apply))\b/,
-  /\b(?:rsync|scp|sftp)\b/,
-  /\bmysql\b[\s\S]*\b(?:insert|update|delete|alter|drop|create|truncate|rename|replace|grant)\b/i,
+  /\bgit\b(?:\s+-[cC]\s+\S+)*\s+(?:pull|merge|reset|checkout|switch|rebase|cherry-pick|am|apply|restore|push|stash\s+(?:pop|apply))(?![\w-])/,
+  /\bmysql\b[\s\S]*\b(?:insert|update|delete|alter|drop|create|truncate|rename|replace|grant|revoke)\b/i,
+  // SQL that writes, wherever it is written (a PHP or a Python probe run there, a client's -e).
+  /\b(?:INSERT\s+(?:IGNORE\s+)?INTO|UPDATE\s+[`"\w.]+\s+SET|DELETE\s+FROM|ALTER\s+TABLE|DROP\s+(?:TABLE|DATABASE|INDEX|VIEW|USER)|CREATE\s+(?:TABLE|DATABASE|INDEX|VIEW|USER|TRIGGER|PROCEDURE)|TRUNCATE\s+(?:TABLE\s+)?[`"\w]|REPLACE\s+INTO|GRANT\s+\w|REVOKE\s+\w|RENAME\s+TABLE)\b/i,
   /\b(?:composer\s+(?:install|update|require)|npm\s+(?:ci|install|run\s+build)|yarn\s+(?:install|build)|pnpm\s+(?:install|build))\b/,
-  /\b(?:pm2\s+(?:restart|reload|start|stop|delete)|systemctl\s+(?:restart|reload|start|stop)|service\s+\S+\s+(?:restart|reload|start|stop))\b/,
+  /\b(?:pm2\s+(?:restart|reload|start|stop|delete)|systemctl\s+(?:restart|reload|start|stop|enable|disable)|service\s+\S+\s+(?:restart|reload|start|stop))\b/,
   /\b(?:artisan|index\.php)\b[^'"]*\bmigrat/,
-  /\bsed\s+(?:-[a-zA-Z]*i|--in-place)/,
-  /(?:^|[\s;&|'"(])(?:rm|mv|cp|chmod|chown|ln|tee|mkdir|touch|truncate|unzip|tar\s+-?x)\b/,
-  /(?:^|[^0-9&>])>>?\s*(?!\/dev\/null|&)[^\s|;&]/,
+  // A crontab put in (from a file, from standard input, edited, removed) — not `crontab -l`.
+  /\bcrontab\s+(?:-[rei]\b|-(?=\s|$|\))|[~.$\/][^\s|;&)]*|\S+\.(?:txt|cron|bak|tab)\b)/,
+  // PHP or Python that writes files (outside /tmp).
+  /\b(?:file_put_contents|unlink|rename|rmdir|fwrite)\s*\(\s*(?!['"]\/tmp\/)/,
+  // A redirect into a file that is not under /tmp (or /dev/null, or another descriptor).
+  // (Not PHP's -> and =>, not a comparison >=, not a file made by mktemp.)
+  /(?:^|[^0-9&>=-])>>?(?!=)\s*(?!\/dev\/null|&|['"]?\/tmp\/|['"]?\/dev\/(?:stdout|stderr)\b|\$\(mktemp\b)[^\s|;&)]/,
 ];
 
 /** Whether a command names one of the production servers (a host, an address, or a folder on it). */
@@ -114,16 +149,136 @@ function namesHost(command: string, host: string): boolean {
   return new RegExp(`(^|[^A-Za-z0-9.-])${h}($|[^A-Za-z0-9-])`, 'i').test(command);
 }
 
+/** The patterns above read in a program's text too, quotes and all (SQL, PHP's file writes). */
+const IN_TEXT = new Set([1, 2, 7]);
+
+/** File commands whose arguments are what they change (all of them, or the last one: where a copy goes). */
+const CHANGES_FILES: Record<string, 'all' | 'last'> = { rm: 'all', mkdir: 'all', touch: 'all', chmod: 'all', chown: 'all', truncate: 'all', tee: 'all', unzip: 'all', mv: 'all', cp: 'last', ln: 'last', install: 'last', sed: 'all' };
+
+const underTmp = (a: string) => /^\/(?:tmp|dev\/null)(?:\/|$)|^\$\(mktemp\b/.test(a);
+
+/** Does this script — what runs on a production server — change something there (outside /tmp)? */
+function changesThere(script: string): boolean {
+  for (const seg of segments(script)) {
+    const w = words(beforeRedirect(seg).trim());
+    // Past what only starts a command: sudo, a timeout, nice, assignments.
+    let i = 0;
+    while (i < w.length && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(w[i]!) || ['sudo', 'nice', 'nohup', 'time', 'command', 'exec'].includes(w[i]!) || (w[i] === 'timeout' && ++i))) i++;
+    const cmd = w[i]?.replace(/^.*\//, '').replace(/^\(+/, '');
+    // A deploy script run there (scripts/deploy.sh, deploy): what it does is not read here, and deploying is a release.
+    if (cmd && /^deploy\b/i.test(cmd)) return true;
+    const how = cmd ? CHANGES_FILES[cmd] : undefined;
+    if (how && !(cmd === 'sed' && !w.slice(i + 1).some((a) => /^(?:-[a-zA-Z]*i|--in-place)/.test(a))) && !(cmd === 'tar')) {
+      const args = w.slice(i + 1).filter((a) => !a.startsWith('-') && !/^\d+$/.test(a) && !(cmd === 'sed' && /^s(.).*\1/.test(a)));
+      const targets = how === 'last' ? args.slice(-1) : args;
+      if (targets.some((a) => !underTmp(a))) return true;
+    }
+    if (/^\s*tar\s+-?[a-zA-Z]*x/.test(seg) && !/-C\s+['"]?\/tmp\//.test(seg)) return true;
+    // SQL and file writes in a program's text are read as they stand (they sit in quotes: php -r '…', mysql -e "…");
+    // the shell's own (git, a redirect, a crontab…) only outside quotes, where they are commands and not words.
+    const bare = seg.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, 'Q');
+    if (CHANGES_THERE.some((re, k) => (IN_TEXT.has(k) ? re.test(seg) : re.test(bare)))) return true;
+  }
+  return false;
+}
+
+/** Simple assignments (NAME=value, NAME="…", NAME='…') put into the $NAME and ${NAME} after them: how a command often names its ssh and its host. */
+function expand(command: string): string {
+  const vars = new Map<string, string>();
+  const re = /(?:^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=("(?:[^"\\]|\\.)*"|'[^']*'|[^\s;&|'"]*)/g;
+  for (let m = re.exec(command); m; m = re.exec(command)) vars.set(m[1]!, m[2]!.replace(/^"([\s\S]*)"$|^'([\s\S]*)'$/, (_a, d, q) => d ?? q));
+  if (!vars.size) return command;
+  return command.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (all, a, b) => vars.get(a ?? b) ?? all);
+}
+
+/** The body of a heredoc that starts in this text at or after `from` and before the end of that line, if one does. */
+function heredocAfter(text: string, from: number): string | null {
+  const lineEnd = text.indexOf('\n', from);
+  const head = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(text.slice(from, lineEnd < 0 ? undefined : lineEnd));
+  if (!head || lineEnd < 0) return null;
+  const rest = text.slice(lineEnd + 1);
+  const end = new RegExp(`^\\s*${head[2]}\\s*$`, 'm').exec(rest);
+  return end ? rest.slice(0, end.index) : rest;
+}
+
+/** A statement up to its first redirect outside quotes (`>`, `<`, `2>`): what stands before it is the command. */
+function beforeRedirect(stmt: string): string {
+  let q: string | null = null;
+  for (let i = 0; i < stmt.length; i++) {
+    const c = stmt[i]!;
+    if (q) {
+      if (c === '\\' && q === '"') i++;
+      else if (c === q) q = null;
+    } else if (c === '"' || c === "'") q = c;
+    else if (c === '>' || c === '<') return stmt.slice(0, i).replace(/\s\d$/, '');
+  }
+  return stmt;
+}
+
+const SSH_OPT_WITH_VALUE = new Set(['-p', '-i', '-o', '-l', '-F', '-J', '-L', '-R', '-D', '-E', '-c', '-m', '-b', '-e', '-S', '-O', '-w', '-W', '-Q', '-B', '-P']);
+
+/**
+ * What a command changes on a production server, or null. Read: what it runs there over ssh (with a heredoc it feeds
+ * it, or the file it sends it — read with `readFile` where the machine can, held where it cannot), and copies onto it
+ * (scp, rsync, sftp). What it does here — writing its findings to a file, a request to the site — is not a change
+ * there; nor are probes written into /tmp there.
+ */
+function productionChange(command: string, host: string, readFile?: (path: string) => string | null): string | null {
+  const text = expand(command);
+  if (!namesHost(text, host)) return null;
+  // Copied onto it.
+  for (const seg of segments(text)) {
+    const w = words(seg.trim());
+    const at = w.findIndex((x) => /^(?:scp|rsync|sftp)$/.test(x.replace(/^.*\//, '')));
+    if (at < 0) continue;
+    const args = w.slice(at + 1).filter((a) => !a.startsWith('-'));
+    const dest = args.at(-1);
+    if (dest && namesHost(dest, host)) return `it copies onto ${host}, a production server`;
+  }
+  // Run on it over ssh.
+  for (const m of text.matchAll(/(?:^|[\s;&|(`$"'])ssh(?=\s)/g)) {
+    const from = m.index! + m[0].length;
+    // The ssh statement: to the end of its segment (quotes kept together).
+    const stmt = segments(text.slice(from))[0] ?? '';
+    // What goes to the server is what stands before this machine's own redirects (`> out.txt`, `< file`).
+    const w = words(beforeRedirect(stmt));
+    let i = 0;
+    while (i < w.length && w[i]!.startsWith('-')) i += SSH_OPT_WITH_VALUE.has(w[i]!) ? 2 : 1;
+    const dest = w[i];
+    if (!dest || !namesHost(dest, host)) continue;
+    let remote = w.slice(i + 1).join(' ');
+    const body = heredocAfter(text, from);
+    if (body !== null) remote += `\n${body}`;
+    // A program sent from this machine on its standard input: read it where it can be read.
+    const fed = /(?:^|\s)<\s*(?!<)(['"]?)([^\s'"|;&]+)\1/.exec(stmt.replace(/<<-?\s*\S+/, ''));
+    const runsInput = /\/dev\/stdin|\b(?:bash|sh)\s+-s\b|\bphp\s+-(?:\s|$)|\bpython3?\s+-(?:\s|$)|\bmysql\b(?![^|;&]*\s-e\s)/.test(remote);
+    if (fed && (runsInput || /\bcat\s*>/.test(remote))) {
+      const content = readFile?.(fed[2]!) ?? null;
+      if (/\bcat\s*>\s*(?!['"]?\/tmp\/)/.test(remote)) return `it changes something on ${host}, a production server`;
+      if (runsInput) {
+        if (content === null) return `it runs a program from this machine on ${host}, a production server (what it does cannot be read here)`;
+        remote += `\n${content}`;
+      }
+    }
+    if (changesThere(remote)) return `it changes something on ${host}, a production server`;
+  }
+  // A database on it, written to from here.
+  if (/\bmysql\b/.test(text) && CHANGES_THERE[1]!.test(text) && /\bmysql\b[^|;&\n]*\s-h\s*\S*/.test(text)) return `it changes something on ${host}, a production server`;
+  return null;
+}
+
 /**
  * Whether this command releases something, and what (`null`: it does not). `cwd`: where it runs; `branchOf(dir)`:
- * the branch checked out in a folder (for a push that names none), or null when not known.
+ * the branch checked out in a folder (for a push that names none), or null when not known; `readFile(path)`: a file on
+ * this machine a command sends to a production server to run (null: it cannot be read, and the command is held).
  */
-export function releaseOf(command: string, rules: ReleaseRules, cwd: string, branchOf: (dir: string) => string | null): string | null {
+export function releaseOf(command: string, rules: ReleaseRules, cwd: string, branchOf: (dir: string) => string | null, readFile?: (path: string) => string | null): string | null {
   if (!rules.on || !command.trim()) return null;
   const protectedBranch = new Set(rules.branches);
-  // Production: a command that names a production server and changes something there.
+  // Production: what the command runs on a production server, or copies onto it, changes something there.
   for (const host of rules.hosts) {
-    if (namesHost(command, host) && CHANGES_THERE.some((re) => re.test(command))) return `it changes something on ${host}, a production server`;
+    const why = productionChange(command, host, readFile);
+    if (why) return why;
   }
   // Merging a pull request merges into a protected branch.
   if (/\b(?:gh\s+pr\s+merge|glab\s+mr\s+merge)\b/.test(command)) return 'it merges a pull request (into the protected branch)';
