@@ -55,6 +55,8 @@ With **Settings → Employees → "Nothing is released before I approve it (the 
 - **`report_released { task, note }`**: the author says it is out and how it was checked. It is written on the ticket
   ("Released. …"), the ticket shows *Released by … · when*, and the gate closes again for that ticket. A window that
   ran out with nothing reported says so on the ticket.
+- **A development server that follows a protected branch** (it pulls `master`): employees are told to try their work
+  there from their own branch (push it, check it out there — free), not by pushing `master`.
 - **No separate release tickets:** employees are told not to open a ticket only to release work that is handed in or
   approved — its release is the `release_plan` of the ticket whose work it is (on the live office a manager made
   "release … to production" tickets, which were done first and reviewed afterwards).
