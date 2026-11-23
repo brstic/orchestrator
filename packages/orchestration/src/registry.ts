@@ -2039,7 +2039,10 @@ export class SessionRegistry {
         .rpc(s.hostId, { method: 'session.keys', params: { sessionId: s.id, keys } })
         .then(() => {
           this.core.audit('system', 'trust.auto_accepted', s.id, { employee: employee.name, cwd: folder });
-          this.core.event({ type: 'session.started', source: 'server', summary: `The folder ${folder} was trusted for Claude Code without asking you (${employee.name} was put there)`, sessionId: s.id, employeeId: employee.id, hostId: s.hostId, data: { trust: 'auto', cwd: folder } });
+          // The session's own folder: chosen by whoever put them there. The folder added to it for the files given to
+          // employees (asked about at every start of some sessions): said so, and kept out of the feed.
+          const added = folder !== s.cwd;
+          this.core.event({ type: 'session.started', source: 'server', summary: added ? `The folder ${folder}, where files given to ${employee.name} are kept, was trusted for Claude Code without asking you` : `The folder ${folder} was trusted for Claude Code without asking you (${employee.name} was put there)`, sessionId: s.id, employeeId: employee.id, hostId: s.hostId, data: { trust: 'auto', cwd: folder, ...(added ? { quiet: true } : {}) } });
           // Asked already while the question could not be read yet: answered now, nothing is left for anybody.
           for (const q of this.core.questions.filter((x) => x.sessionId === s.id && x.kind === 'trust_prompt' && x.status === 'open' && !x.tool)) this.eng.comms.supersede(q.id, 'The office answered it by itself.');
         })
