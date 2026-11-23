@@ -32,7 +32,7 @@ The tab is shown to whoever may *work* with that employee (an owner; a colleague
   a question is still open, or a message still unread (and under two hours old), it is sent to their Telegram then
   (looked at every 30 s, `Telegram.sendHeld`); answered or read in the office, it is not. Per person: somebody else
   paired with the same bot who is not here gets it at once. **Not held back:** the answer to something you wrote *on
-  Telegram* — you asked there, it comes back there. The bot's tab says whether the office counts *you* as here right now (`here` in `GET /api/employees/:id/telegram`).
+  Telegram* — you asked there, it comes back there. The bot's tab says in one line whether the office counts *you* as here right now (`here` in `GET /api/employees/:id/telegram`).
 - **Work waiting for an owner's verdict** (the owner, 2026-11-23, asked whether a ticket waiting for their Approve should
   come to Telegram when they are away: "yes, when I am not there"; one had waited five days). The Inbox line "T-… needs
   your review" / "needs your decision" is sent to the **owners** paired with a bot — its author's own, or else a

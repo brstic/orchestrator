@@ -62,7 +62,7 @@ export function TaskEvidence({ task }: { task: Task }) {
             {v.command ? <div className="code">$ {v.command}</div> : <div className="small muted">No verification command is configured, so nothing was run.</div>}
             {v.kind === 'syntax' && (
               <div className="small muted" data-syntax-check>
-                The project has no verification command, so the office checked that the files this task changed still parse (php -l, node --check and the like). It did not run any tests.
+                Only parsed: the project has no verification command, so no tests ran.
               </div>
             )}
             {v.outputTail && (

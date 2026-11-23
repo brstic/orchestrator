@@ -332,9 +332,7 @@ export function TelegramTab({ e }: { e: Employee }) {
             <div className="k-title-sm">Questions and approvals</div>
             <div className="k-sub">Sent to the people above, with buttons to answer. Never to a group.</div>
             <div className="k-sub" data-tg-here={view.here ? 'yes' : 'no'}>
-              {view.here
-                ? 'You are in the office now, so they — and what employees write to you — stay here. If you leave this window (another one in front, or 10 minutes untouched) while one is still open, it comes to Telegram then.'
-                : 'While you are in the office (this window in front and used) they stay here, and come to Telegram only if you leave with one still open.'}
+              {view.here ? 'You are in the office now: nothing comes to your Telegram.' : 'Not while you are in the office.'}
             </div>
           </div>
           <input type="checkbox" role="switch" checked={view.questions} onChange={(ev) => void act(() => api<View>('PATCH', `/employees/${e.id}/telegram`, { questions: ev.target.checked }).then(setView))} />

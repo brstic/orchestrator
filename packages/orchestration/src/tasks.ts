@@ -2005,7 +2005,7 @@ export class TaskManager {
       this.history(task, `Approved by ${reviewerName}; waiting for the boss`, reviewerName);
       this.eng.talk.add(task, { from, body: said(comments.trim() || 'Approved.'), kind: 'approved', mentions: [] }, { store: false, quiet: true });
       this.core.put('task', task);
-      this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your review`, body: `${this.core.employees.get(task.authorId ?? task.assigneeId)?.name ?? 'An employee'} finished "${task.title}" and ${reviewerName} approved it${comments.trim() ? `: ${truncate(comments, 200)}` : '.'}${checked ? `\nChecked: ${truncate(checked, 300)}` : testedByOffice(task) || NON_CODE_KINDS.has(task.kind) ? '' : `\n${reviewerName} did not say what they checked, and the office ran no tests on it.`}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
+      this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your review`, body: `${this.core.employees.get(task.authorId ?? task.assigneeId)?.name ?? 'An employee'} finished "${task.title}" and ${reviewerName} approved it${comments.trim() ? `: ${truncate(comments, 200)}` : '.'}${checked ? `\nChecked: ${truncate(checked, 120)}` : testedByOffice(task) || NON_CODE_KINDS.has(task.kind) ? '' : `\n${reviewerName} did not say what they checked, and the office ran no tests on it.`}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
       this.closeStaleReviews();
       return task;
     }
