@@ -99,6 +99,10 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   3. **Who worked on a ticket does not review it**: its helpers (`helperIds`) are never picked, a named one gives way,
      and their `submit_review` is refused ("you worked on T-… with its author").
 
+  *Seen on the live office the same evening:* a code reviewer's first approval without "checked" was refused; nine
+  seconds later it approved with what it had run — DNS lookups, the sites fetched publicly and from the team's own
+  machine, the served certificate read — and what it could not check, and why.
+
   The owner sees it in **Your verdict → What was checked**: what the office ran ("The changed files parse — the office
   ran no tests"; "`npm test` passed"; "Nothing") and what the colleague says they ran — or that they approved it
   without saying. `packages/orchestration/test/review-checked.test.ts`, `tests/e2e/68-office-checks.test.ts`.
