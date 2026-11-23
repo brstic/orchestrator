@@ -38,6 +38,8 @@ test('a colleague approves code nothing of the office tested only by saying what
   assert.equal(done.reviewStage, 'boss');
   assert.match(done.evidence.peerReview?.checked ?? '', /opened \/prices on dev/);
   assert.ok(done.comments?.some((c) => c.kind === 'approved' && /Checked: Ran php -l/.test(c.body)), 'said on the ticket too');
+  const note = o.eng.core.notifications.filter((n) => n.kind === 'review' && n.taskId === done.id).at(-1)!;
+  assert.match(note.body, /Sarah approved it: Looks right\.\nChecked: Ran php -l on both files/, 'and in the Inbox line the owner decides from');
 });
 
 test('a session whose tool has no "checked" yet says it in the comments', async () => {

@@ -103,7 +103,7 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   seconds later it approved with what it had run — DNS lookups, the sites fetched publicly and from the team's own
   machine, the served certificate read — and what it could not check, and why.
 
-  The owner sees it in **Your verdict → What was checked**: what the office ran ("The changed files parse — the office
+  The owner sees it in **Your verdict → What was checked**, and in the Inbox line "T-… needs your review" ("Checked: …", or that the colleague did not say and the office ran no tests): what the office ran ("The changed files parse — the office
   ran no tests"; "`npm test` passed"; "Nothing") and what the colleague says they ran — or that they approved it
   without saying. `packages/orchestration/test/review-checked.test.ts`, `tests/e2e/68-office-checks.test.ts`.
 - **Two rounds between colleagues, then the boss** (`REVIEW_SEND_BACKS` = 2, `TaskManager.contest`): a colleague
