@@ -80,3 +80,19 @@ test('in a project that assigns nothing by itself, what the manager puts on the 
   }, { label: 'staffed and handed in', timeout: 40_000 });
   assert.equal(t.assigneeId, ids.Alex);
 });
+
+test("a colleague's question about the manager's work is the manager's to answer first — through the real tools", async () => {
+  const t = await h.task({ projectId: shop, title: 'Price page', assigneeId: ids.Alex, description: 'Wait for what is said on the ticket.', reviewBy: 'boss' });
+  (h.server.engine.core.tasks.get(t.id) as any).createdBy = 'employee:Mia';
+  await waitFor(async () => (await byTitle('Price page')).status === 'IN_PROGRESS', { label: 'Alex is on it' });
+  const asking = tool('Alex', 'ask_boss', { question: 'Show prices with VAT or without?' });
+  const q = await waitFor(async () => (await h.state()).questions.find((x) => /prices with VAT/.test(x.text) && x.status === 'open'), { label: 'asked' });
+  assert.equal(q.managerId, ids.Mia);
+  assert.equal((await h.state()).notifications.filter((n) => n.questionId === q.id).length, 0, 'not in the boss\'s Inbox');
+  const answered = await tool('Mia', 'answer_team_question', { question_id: q.id, answer: 'With VAT, as on the old site.' });
+  assert.equal(answered.isError, false, answered.text);
+  await asking;
+  const after = (await h.state()).questions.find((x) => x.id === q.id)!;
+  assert.notEqual(after.status, 'open');
+  assert.equal(after.answeredBy?.kind, 'manager');
+});

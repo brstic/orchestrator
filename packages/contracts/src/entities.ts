@@ -978,8 +978,15 @@ export interface Question {
   status: QuestionStatus;
   answer: string | null;
   decision: 'allow' | 'deny' | null;
-  /** Who answered, when it was not the owner's own reply: a foreman answering on the owner's behalf. */
-  answeredBy?: { kind: 'owner' | 'foreman'; id: ID | null; name: string } | null;
+  /** Who answered, when it was not the owner's own reply: a foreman, or a project manager, answering on the owner's behalf. */
+  answeredBy?: { kind: 'owner' | 'foreman' | 'manager'; id: ID | null; name: string } | null;
+  /**
+   * Asked about work a Project Manager put on the board: it waits for that manager's answer first, not the boss's (the
+   * owner, 2026-11-23: "autonomy — and it asks me when it is not sure"). Null once the manager hands it to the boss.
+   */
+  managerId?: ID | null;
+  /** The manager handed it to the boss: why. */
+  escalated?: { by: string; why: string; ts: ISODate } | null;
   createdAt: ISODate;
   answeredAt: ISODate | null;
   deliveredAt: ISODate | null;

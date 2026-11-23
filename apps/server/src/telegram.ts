@@ -737,6 +737,8 @@ export class Telegram {
       return;
     }
     if (!b.questions) return;
+    // Waiting for a project manager's answer first: not the boss's yet (it comes here if the manager passes it on).
+    if (q.managerId) return;
     const name = this.nameOf(q.employeeId);
     let text: string;
     let buttons: Array<Array<{ text: string; callback_data: string }>> = [];

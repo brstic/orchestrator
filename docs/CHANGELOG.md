@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-23
+- **A project manager answers its team's questions first**: a question an employee asks about work the manager put on the board goes to the manager, not your Inbox or Telegram; it answers in your place or passes it to you with why. Deployments stay yours.
 - **A project manager's plan starts at once**: what it puts on the board is released and staffed without waiting for you to release it (where employees keep the board); other employees' proposals wait as before.
 - **Autonomy: a project manager approves its team's work, and drives the job** (the owner: "I tell the project manager what I need, it breaks it down and builds it with the others — it may approve from review itself, and asks me when it is not sure"). Work a Project Manager put on the board waits for its verdict instead of yours (it says what it checked); unsure, it hands it to you with `escalate_review` and why. It is told when each task it put on the board is done or blocked, with what is still open, and its role is to own a request until it is delivered. Releases with the gate on stay yours. Settings → Employees → *Project managers approve their team's work for me*.
 - **The release gate shows what it refused lately** (Settings → Employees): who, why, when, the command on a click.

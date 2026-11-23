@@ -4,6 +4,7 @@ import { xpForAssist } from '@orchestrator/game-systems';
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
 import { answerPrompt, messagePrompt } from './prompts.ts';
+import { MANAGER_ANSWERS } from './tasks.ts';
 
 /**
  * Keys that select the affirmative option of Claude Code's workspace-trust
@@ -388,6 +389,10 @@ export class Comms {
     };
     // Asked before in this project? The earlier answer is shown with it; the question stays open for a person.
     const answeredBefore = this.eng.improver.capture.repeatedQuestion(question);
+    // About work a Project Manager put on the board: its to answer first (set before it is stored, so that nothing —
+    // Telegram included — takes it to the boss meanwhile).
+    const manager = q.channel === 'mcp_tool' ? this.eng.tasks.managerForQuestion(question) : null;
+    if (manager) question.managerId = manager.id;
     this.core.put('question', question);
     if (question.taskId && q.channel !== 'system' && q.kind !== 'permission' && q.kind !== 'trust_prompt') {
       const t = this.core.tasks.get(question.taskId);
@@ -398,7 +403,17 @@ export class Comms {
     }
     const who = q.employee?.name ?? 'Orchestrator';
     const isPermission = q.kind === 'permission';
-    this.notify({
+    if (manager) {
+      const task = question.taskId ? this.core.tasks.get(question.taskId) : undefined;
+      const choices = question.options.length ? `\nChoices: ${question.options.map((o) => o.label).join(' / ')}` : '';
+      this.sendMessage({
+        from: { kind: 'system', id: null, name: 'the office' },
+        toEmployeeId: manager.id,
+        kind: 'system',
+        taskId: question.taskId,
+        body: `${who} asks about ${task ? `${task.key} "${truncate(task.title, 80)}"` : 'their task'}, work you put on the board — it waits for your answer, in the boss's place:\n${truncate(q.text, 1500)}${choices}${answeredBefore ? `\n${answeredBefore}` : ''}\nAnswer it with answer_team_question (question_id "${question.id}"). If it needs the boss — the direction of the work, money, anything that cannot be undone, or you are not sure — escalate_question with why: the boss answers it then.`,
+      });
+    } else this.notify({
       kind: isPermission ? 'permission' : q.kind === 'merge_conflict' ? 'merge_conflict' : 'question',
       severity: 'warning',
       title: isPermission ? `${who} needs approval` : `${who} needs a decision`,
@@ -674,9 +689,31 @@ export class Comms {
    * The owner's reply to a question or approval — or, for an employee's question only, a foreman's
    * reply on the owner's behalf (`by`). A permission request is never decided by anyone but the owner.
    */
-  async answer(questionId: string, input: { answer?: string | null; decision?: 'allow' | 'deny' | null; answers?: Record<string, string> | null }, actor = 'owner', by: { kind: 'foreman'; id: string; name: string } | null = null): Promise<Question> {
+  /** A project manager answers a question about work it put on the board, in the boss's place. */
+  async answerAsManager(manager: Employee, questionId: string, input: { answer?: string | null; answers?: Record<string, string> | null }): Promise<Question> {
+    const q = this.core.questions.get(questionId);
+    if (!q || q.managerId !== manager.id) throw new EngineError('That question is not waiting for your answer.');
+    return this.answer(q.id, input, `employee:${manager.name}`, { kind: 'manager', id: manager.id, name: manager.name });
+  }
+
+  /** A project manager hands a question to the boss: it needs the boss, or it is not sure. */
+  escalateQuestion(manager: Employee, questionId: string, why: string): Question {
+    const q = this.core.questions.get(questionId);
+    if (!q || q.managerId !== manager.id || q.status !== 'open') throw new EngineError('That question is not waiting for your answer.');
+    const reason = String(why ?? '').trim();
+    if (reason.length < 8) throw new EngineError('say why the boss should answer it (a sentence)');
+    q.managerId = null;
+    q.escalated = { by: manager.name, why: truncate(reason, 600), ts: nowIso() };
+    this.core.put('question', q);
+    const asker = this.core.employees.get(q.employeeId);
+    this.notify({ kind: 'question', severity: 'warning', title: `${asker?.name ?? 'An employee'} needs a decision`, body: `${truncate(q.text, 240)}\n${manager.name} passes it to you: ${truncate(reason, 200)}`, employeeId: q.employeeId, sessionId: q.sessionId, taskId: q.taskId, projectId: q.projectId, questionId: q.id });
+    this.core.audit(`employee:${manager.name}`, 'question.escalated', q.id, { employee: asker?.name, why: truncate(reason, 300) });
+    return q;
+  }
+
+  async answer(questionId: string, input: { answer?: string | null; decision?: 'allow' | 'deny' | null; answers?: Record<string, string> | null }, actor = 'owner', by: { kind: 'foreman' | 'manager'; id: string; name: string } | null = null): Promise<Question> {
     const q = this.core.questions.require(questionId);
-    if (by && q.kind !== 'question') throw new EngineError('Only the owner can decide this.', 403);
+    if (by && (by.kind === 'manager' ? !MANAGER_ANSWERS.has(q.kind) : q.kind !== 'question')) throw new EngineError('Only the owner can decide this.', 403);
     if (q.status !== 'open') throw new EngineError(`this ${q.kind === 'permission' ? 'request' : 'question'} is no longer open (${q.status})`, 409);
     const employee = this.core.employees.get(q.employeeId);
     if (q.kind === 'permission') {

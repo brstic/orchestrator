@@ -12,6 +12,8 @@ import { routingPreference } from './learning/detect.ts';
 const PRIORITY_ORDER: Record<TaskPriority, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
 const PROJECT_COLORS = ['#4f8cff', '#ff8c5a', '#5ad67d', '#c58cff', '#f5c542', '#ff5d73', '#3fd0c9', '#ff9ecb'];
 /** Task kinds that produce documents or verdicts rather than commits. */
+/** What a colleague asks that a project manager may answer in the boss's place. */
+export const MANAGER_ANSWERS = new Set(['question', 'decision', 'priority']);
 const NON_CODE_KINDS = new Set<TaskKind>(['review', 'research', 'planning']);
 
 const GENERIC = new Set(['engineer', 'developer', 'senior', 'junior', 'full', 'stack', 'fullstack', 'full-stack', 'backend', 'frontend', 'project', 'manager', 'team', 'work', 'task', 'with', 'from', 'that', 'this', 'the', 'and', 'for', 'code', 'server', 'admin', 'test', 'tests', 'docs', 'home', 'users', 'projects', 'src', 'app', 'apps', 'office', 'claude']);
@@ -2036,6 +2038,18 @@ export class TaskManager {
     if (this.core.settings.employeesManageBoard === false || !/^employee:/.test(task.createdBy ?? '')) return false;
     const name = task.createdBy!.slice('employee:'.length);
     return this.core.employees.filter((e) => e.name === name && !e.archived && e.roleKey === 'pm').length > 0;
+  }
+
+  /** The Project Manager who answers this question first, in the boss's place: the one who put its task on the board. */
+  managerForQuestion(q: { taskId: string | null; employeeId: string | null; kind: string }): Employee | null {
+    // (A deployment is a release: the boss's. Permissions and the like are never a manager's.)
+    if (this.core.settings.managersApprove === false || !MANAGER_ANSWERS.has(q.kind) || !q.taskId) return null;
+    const task = this.core.tasks.get(q.taskId);
+    if (!task || !/^employee:/.test(task.createdBy ?? '')) return null;
+    const name = task.createdBy!.slice('employee:'.length);
+    const project = this.core.projects.get(task.projectId);
+    const candidates = [this.core.employees.find((e) => e.name === name && !e.archived), project?.ownerEmployeeId ? this.core.employees.get(project.ownerEmployeeId) : undefined];
+    return candidates.find((e): e is Employee => !!e && !e.archived && e.roleKey === 'pm' && !!e.hostId && e.id !== q.employeeId && this.canSee(e, task)) ?? null;
   }
 
   managerFor(task: Task): Employee | null {

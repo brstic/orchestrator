@@ -90,3 +90,28 @@ test("what a project manager puts on the board starts at once; another employee'
   const theirs = o.eng.tasks.propose(o.zed, o.shop, [{ title: 'Refactor the footer', description: 'x' }], undefined, 'planning').created;
   assert.equal(theirs[0]!.released, false, 'the project does not assign by itself: the boss releases it');
 });
+
+test("a colleague's question about the manager's work goes to the manager first; it answers, or passes it to the boss", async () => {
+  const o = await office();
+  const t = o.eng.tasks.createTask({ projectId: o.shop, title: 'Price page', description: 'x', assigneeId: o.alex.id, released: false }, 'employee:Mia');
+  const ask = (text: string, kind: 'decision' | 'deployment' = 'decision') => o.eng.comms.createQuestion({ kind, channel: 'mcp_tool', employee: o.alex, session: null, text, taskId: t.id });
+  const ownerTold = (qid: string) => o.eng.core.notifications.filter((n) => n.questionId === qid).length;
+
+  const q1 = ask('Show prices with VAT or without?');
+  assert.equal(q1.managerId, o.mia.id);
+  assert.equal(ownerTold(q1.id), 0, 'the boss is not asked');
+  assert.match(o.toldMia().at(-1)!, new RegExp(`Alex asks about ${t.key}[\\s\\S]*Show prices with VAT[\\s\\S]*answer_team_question \\(question_id "${q1.id}"\\)[\\s\\S]*escalate_question`));
+  await assert.rejects(o.eng.comms.answerAsManager(o.zed, q1.id, { answer: 'with' }), /not waiting for your answer/);
+  const answered = await o.eng.comms.answerAsManager(o.mia, q1.id, { answer: 'With VAT, as on the old site.' });
+  assert.equal(answered.status === 'open', false);
+  assert.deepEqual(answered.answeredBy, { kind: 'manager', id: o.mia.id, name: 'Mia' });
+
+  const q2 = ask('May I drop the old coupons table?');
+  o.eng.comms.escalateQuestion(o.mia, q2.id, 'Dropping a table cannot be undone; that is the boss\'s call.');
+  assert.equal(o.eng.core.questions.get(q2.id)!.managerId, null);
+  assert.match(o.eng.core.notifications.find((n) => n.questionId === q2.id)!.body, /Mia passes it to you: Dropping a table cannot be undone/);
+
+  const q3 = ask('Pull it on production now?', 'deployment');
+  assert.equal(q3.managerId ?? null, null, 'a deployment is the boss\'s');
+  assert.equal(ownerTold(q3.id), 1);
+});

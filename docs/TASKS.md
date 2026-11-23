@@ -126,6 +126,14 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   while the release gate is on (a release is an owner's to open), work colleagues could not agree on, and work the
   manager wrote or helped with. The board shows "*<manager>* gives the verdict for you"; the operations wall's "waits
   for you" leaves it out. (Also closed then: a colleague finishing work that waited for the boss alone.)
+- **A colleague's question about a manager's work goes to the manager first** (`TaskManager.managerForQuestion`,
+  `Comms.answerAsManager`/`escalateQuestion`; MCP `answer_team_question`, `escalate_question` — shown to the `pm` role
+  only). A question (also a decision or a priority) an employee asks about a task a Project Manager put on the board
+  waits for that manager's answer (`Question.managerId`): the manager is told it with its id in its session, and the
+  boss's Inbox and Telegram do not get it. The manager answers it (`answeredBy: { kind: 'manager' }`), or passes it to
+  the boss with why — direction, money, what cannot be undone, or not sure — and then it is in the boss's Inbox ("Mia
+  passes it to you: …"). A deployment question is always the boss's. The same switch as the verdicts
+  (`managersApprove`).
 - **What a Project Manager puts on the board starts at once** where employees keep the board: its proposals are released
   (not left in the backlog for the boss), and what it asked for a role rather than a person is staffed by the scheduler
   even in a project that assigns nothing by itself (`propose`, `byManager`). Other employees' proposals wait as before.

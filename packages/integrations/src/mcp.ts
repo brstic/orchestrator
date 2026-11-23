@@ -266,6 +266,16 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
     inputSchema: { type: 'object', properties: { reviewer: str('Teammate name or role, optional'), notes: str('What the reviewer should focus on') } },
   },
   {
+    name: 'answer_team_question',
+    description: "Answer a colleague's question about work you put on the board, in the boss's place (you are told of each, with its question_id). Answer only what you know the boss would; anything about direction, money or what cannot be undone, or that you are not sure of: escalate_question.",
+    inputSchema: { type: 'object', properties: { question_id: str('The id you were given with the question'), answer: str('Your answer, as the colleague should read it'), answers: { type: 'object', description: 'For a question in several parts: one answer per part, keyed by the part\'s exact text' } }, required: ['question_id', 'answer'] },
+  },
+  {
+    name: 'escalate_question',
+    description: "Hand a colleague's question that waits for your answer to the boss: it needs the boss, or you are not sure. Say why.",
+    inputSchema: { type: 'object', properties: { question_id: str('The id you were given with the question'), why: str('Why the boss should answer it') }, required: ['question_id', 'why'] },
+  },
+  {
     name: 'escalate_review',
     description: "Hand the verdict on a task that waits for yours, in the boss's place, to the boss: you are not sure it is what the boss wants. Say why — the boss reads it and decides.",
     inputSchema: { type: 'object', properties: { task: str('Key of the task, e.g. "T-12"'), why: str('Why the boss should decide it: what you are unsure of') }, required: ['task', 'why'] },

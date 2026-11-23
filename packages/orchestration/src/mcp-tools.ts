@@ -235,6 +235,16 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       return `${task.key} will go to review${task.reviewerId ? ` by ${core.employees.get(task.reviewerId)?.name}` : ''} once you call complete_task and it passes verification.${a.notes ? ' Put your notes for the reviewer in the complete_task summary.' : ''}`;
     },
 
+    answer_team_question: async (a, { employee }) => {
+      const answers = a.answers && typeof a.answers === 'object' && !Array.isArray(a.answers) ? (Object.fromEntries(Object.entries(a.answers as Record<string, unknown>).map(([k, v]) => [k, String(v)])) as Record<string, string>) : null;
+      const q = await eng.comms.answerAsManager(employee, String(a.question_id ?? ''), { answer: String(a.answer ?? ''), answers });
+      return `Answered ${core.employees.get(q.employeeId)?.name ?? 'the colleague'}'s question, in the boss's place. It is on the record as answered by you.`;
+    },
+    escalate_question: async (a, { employee }) => {
+      eng.comms.escalateQuestion(employee, String(a.question_id ?? ''), String(a.why ?? ''));
+      return "It is the boss's to answer now; they are told why.";
+    },
+
     escalate_review: async (a, { employee }) => {
       const task = eng.tasks.escalateReview(employee, String(a.task ?? ''), String(a.why ?? ''));
       return `${task.key} is the boss's to decide now; they are told why.`;
@@ -767,6 +777,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     handlers,
     // Only a foreman is shown the foreman's tools; everyone else's tool list (and prompt) stays as small as before.
     // The board tools are shown while the owner leaves the board to the employees (a foreman assigns with its own tool).
-    listed: (tool, { employee, session }) => (session?.mode !== 'codex_managed' || !codexUnavailable.has(tool.name)) && eng.rent.toolAllowed(employee, tool.name) !== false && (employee.roleKey === LEAD_ROLE ? leadTools.has(tool.name) || LEAD_ALSO.has(tool.name) : !leadTools.has(tool.name)) && tool.name !== 'vault_read' && (tool.name !== 'message_client' || eng.rent.isRented(employee.id)) && (tool.name !== 'report_released' || eng.release.on()) && (tool.name !== 'escalate_review' || employee.roleKey === 'pm') && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && (tool.name === 'give_task' || tool.name === 'cancel_task')) : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
+    listed: (tool, { employee, session }) => (session?.mode !== 'codex_managed' || !codexUnavailable.has(tool.name)) && eng.rent.toolAllowed(employee, tool.name) !== false && (employee.roleKey === LEAD_ROLE ? leadTools.has(tool.name) || LEAD_ALSO.has(tool.name) : !leadTools.has(tool.name)) && tool.name !== 'vault_read' && (tool.name !== 'message_client' || eng.rent.isRented(employee.id)) && (tool.name !== 'report_released' || eng.release.on()) && (!['escalate_review', 'answer_team_question', 'escalate_question'].includes(tool.name) || employee.roleKey === 'pm') && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && (tool.name === 'give_task' || tool.name === 'cancel_task')) : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
   };
 }

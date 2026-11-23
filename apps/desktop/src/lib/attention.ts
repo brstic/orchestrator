@@ -12,7 +12,8 @@ export function needsYou(questions: Record<string, Question>, notifications: Rec
   // `mine`: only what waits for this person (the Inbox on "Mine"); absent: the whole office's.
   const keep = mine ?? (() => true);
   const open = Object.values(questions)
-    .filter((q) => q.status === 'open' && keep(q))
+    // (One waiting for a project manager's answer first is not the boss's yet.)
+    .filter((q) => q.status === 'open' && !q.managerId && keep(q))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const stuck = Object.values(notifications)
     .filter((n) => !n.resolvedAt && NEEDS_KINDS.has(n.kind) && keep(n))
