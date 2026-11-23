@@ -30,6 +30,9 @@ const APPROVALS_BEFORE_SUGGESTING = 3;
  * widen what agents may do without asking wait for the owner unless the dial is
  * on `trusted`, and then only under evidence thresholds and on probation.
  */
+/** A proposal about a situation is taken back undecided when the record has not shown it again this long after. */
+export const WITHDRAW_AFTER_MS = 3 * 86_400_000;
+
 export class Improver {
   private eng: Engine;
   /** Retrospective in progress per employee: lessons they record are tied to that task. */
@@ -317,6 +320,8 @@ export class Improver {
   }
 
   private propose(p: { kind: ImprovementKind; key: string; title: string; rationale: string; evidence: EvidenceRef[]; projectId?: string | null; employeeId?: string | null; action: ImprovementAction }): Improvement | null {
+    // Found again in this reading of the record: what an open proposal of this key said still holds (`withdrawStale`).
+    this.found?.add(p.key);
     // Not while an earlier one is undecided, nor soon after it was decided (learning/detect.ts, mayPropose).
     if (!mayPropose(this.core.improvements.filter((i) => i.dedupeKey === p.key), p.evidence)) return null;
     const imp: Improvement = { id: newId().slice(0, 8), kind: p.kind, title: p.title, rationale: p.rationale, evidence: p.evidence.slice(0, 12), projectId: p.projectId ?? null, employeeId: p.employeeId ?? null, action: p.action, status: 'proposed', dedupeKey: p.key, createdAt: nowIso(), decidedAt: null };
@@ -344,9 +349,43 @@ export class Improver {
     });
   }
 
+  /** The keys of what this reading of the record found (null outside `analyze`). */
+  private found: Set<string> | null = null;
+
+  /**
+   * Proposals about a situation — work going quiet, people with nothing to do, routing, a project with no verification
+   * command — that the record no longer shows a few days on are taken back, undecided, and said why. (On the live office
+   * suggestions of a week and more stood in "Waiting for you" about things long past.) Lessons, rules and the like stay
+   * until somebody decides.
+   */
+  private withdrawStale(found: Set<string>): void {
+    const SITUATIONS = new Set<ImprovementKind>(['stall', 'idle_capacity', 'routing', 'verify_command', 'verify_timeout', 'sequencing']);
+    const old = Date.now() - WITHDRAW_AFTER_MS;
+    for (const imp of this.core.improvements.filter((i) => i.status === 'proposed' && SITUATIONS.has(i.kind) && Date.parse(i.createdAt) < old && !found.has(i.dedupeKey))) {
+      imp.status = 'dismissed';
+      imp.decidedAt = nowIso();
+      imp.withdrawn = 'What it was about no longer shows in the record.';
+      this.core.put('improvement', imp);
+      this.eng.comms.resolveNotifications((n) => n.kind === 'improvement' && n.title === `Suggestion: ${imp.title}`);
+      this.core.event({ type: 'improvement.withdrawn', source: 'server', summary: `Orchestrator took back a suggestion that no longer holds: ${imp.title}`, projectId: imp.projectId, employeeId: imp.employeeId, data: { improvementId: imp.id, kind: imp.kind, quiet: true } });
+    }
+  }
+
   /** Read the record and propose changes it supports. Idempotent: each finding is proposed once. */
   analyze(): Improvement[] {
     if (!this.on) return [];
+    const found = (this.found = new Set<string>());
+    try {
+      const out = this.analyzeNow();
+      // Only a whole reading tells what no longer holds (one that failed half-way found less than there is).
+      this.withdrawStale(found);
+      return out;
+    } finally {
+      this.found = null;
+    }
+  }
+
+  private analyzeNow(): Improvement[] {
     const out: Improvement[] = [];
     const add = (i: Improvement | null) => {
       if (i) out.push(i);

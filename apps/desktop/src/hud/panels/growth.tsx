@@ -318,7 +318,7 @@ const DECIDED: Record<string, { label: string; tone: Tone }> = { applied: { labe
 function DecidedRow({ imp }: { imp: Improvement }) {
   const s = useOffice();
   const [busy, run] = useAction();
-  const status = DECIDED[imp.status] ?? { label: String(imp.status), tone: 'muted' as Tone };
+  const status = imp.withdrawn ? { label: 'taken back', tone: 'muted' as Tone } : (DECIDED[imp.status] ?? { label: String(imp.status), tone: 'muted' as Tone });
   const undoable = imp.status === 'applied' && imp.action.type !== 'advice' && s.me?.role === 'owner';
   return (
     <tr>
@@ -328,6 +328,7 @@ function DecidedRow({ imp }: { imp: Improvement }) {
       <td title={imp.rationale}>
         {imp.title}
         {imp.action.type !== 'advice' && <div className="small muted">{describeAction(imp.action, s.projects, s.employees, s.tasks).text}</div>}
+        {imp.withdrawn && <div className="small muted">Taken back by the office: {imp.withdrawn}</div>}
       </td>
       <td className="small faint" style={{ whiteSpace: 'nowrap' }}>
         {imp.decidedAt ? stamp(imp.decidedAt) : '—'}

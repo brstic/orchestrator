@@ -1493,6 +1493,8 @@ export interface Improvement {
   outcomesRevertOf?: ID | null;
   /** autopilot: who applied it, how to undo it, its probation and whether it was taken back. Absent on records from before the autopilot. */
   autopilot?: ImprovementAutopilot | null;
+  /** The office took it back undecided (status `dismissed`): what it said no longer held when the record was read again. */
+  withdrawn?: string | null;
   /** What applying replaced, kept so the change can be reversed (set when applied; shape depends on the action). */
   previous?: unknown;
 }

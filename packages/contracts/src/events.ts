@@ -118,6 +118,7 @@ export type EventType =
   | 'improvement.lesson_updated'
   | 'improvement.retrospective_requested'
   | 'improvement.proposed'
+  | 'improvement.withdrawn'
   | 'improvement.applied'
   | 'improvement.dismissed'
   | 'foreman.round.started'

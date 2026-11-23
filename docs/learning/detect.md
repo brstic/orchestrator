@@ -74,6 +74,16 @@ Before: a `dedupeKey` that had ever been proposed was never proposed again — a
 
 So a "no" stays a "no" until the record has really grown. Detectors with a precise action also check the state first (dependency already there, note already written, preference already set).
 
+### Taking back what no longer holds (`withdrawStale`)
+
+Added 2026-11-23, after suggestions of a week and more stood in "Waiting for you" on the live office about situations
+long past. Every reading of the record (`analyze`) notes the keys of what it found, also those it does not propose again
+because one is open. A proposal about a **situation** — `stall`, `idle_capacity`, `routing`, `verify_command`,
+`verify_timeout`, `sequencing` — that is still undecided `WITHDRAW_AFTER_MS` (3 days) after it was made, and was not found
+in this reading, is taken back: `status: 'dismissed'`, `withdrawn` says why, its Inbox line goes, `improvement.withdrawn`
+is recorded, and Growth lists it as *taken back*. Rules, lessons and the like wait for a person. Only a reading that ran
+to the end takes anything back. `packages/orchestration/test/improvement-withdraw.test.ts`.
+
 ## Part B — the Growth window
 
 One line at the top, then four tabs. The old tabs (Suggestions, Playbooks, Team knowledge, Track record, Teach) are gone; everything they did is still there.
