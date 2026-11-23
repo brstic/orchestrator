@@ -126,6 +126,9 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   while the release gate is on (a release is an owner's to open), work colleagues could not agree on, and work the
   manager wrote or helped with. The board shows "*<manager>* gives the verdict for you"; the operations wall's "waits
   for you" leaves it out. (Also closed then: a colleague finishing work that waited for the boss alone.)
+- **What a Project Manager puts on the board starts at once** where employees keep the board: its proposals are released
+  (not left in the backlog for the boss), and what it asked for a role rather than a person is staffed by the scheduler
+  even in a project that assigns nothing by itself (`propose`, `byManager`). Other employees' proposals wait as before.
 - **The one who put work on the board hears how it went** (`follow-up.ts`): when a task an employee made is done or
   blocked, that employee is told — with what is still open of the work it put on the board, and to take the next step
   (or that all of it is done, and to tell the boss). Not for a task it does itself, reviews, or parts of a divided

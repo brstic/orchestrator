@@ -69,3 +69,14 @@ test('not sure, the manager hands it to the boss', async () => {
   await h.api('POST', `/tasks/${t.id}/review`, { verdict: 'approve', comments: '30 days is right.' });
   await waitFor(async () => (await byTitle('Change the refund window')).status === 'DONE', { label: 'the boss decided' });
 });
+
+test('in a project that assigns nothing by itself, what the manager puts on the board for a role is staffed and started', async () => {
+  await h.api('PATCH', `/projects/${shop}`, { policy: { autoAssign: false } });
+  const put = await tool('Mia', 'propose_tasks', { tasks: [{ title: 'Write the changelog entry', description: '@@fake: write CHANGES.txt banner; commit changes; complete changelog written@@', role: 'backend', kind: 'docs' }] });
+  assert.match(put.text, /scheduled automatically/, put.text);
+  const t = await waitFor(async () => {
+    const x = await byTitle('Write the changelog entry');
+    return x.status === 'REVIEW' || x.status === 'DONE' ? x : null;
+  }, { label: 'staffed and handed in', timeout: 40_000 });
+  assert.equal(t.assigneeId, ids.Alex);
+});

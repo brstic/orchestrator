@@ -82,3 +82,11 @@ test('the manager hears when work it put on the board is done, and what is still
   assert.match(said, /1 task is still open: T-\d+ \(backlog\)/);
   assert.match(said, /Take the next step/);
 });
+
+test("what a project manager puts on the board starts at once; another employee's proposal still waits to be released", async () => {
+  const o = await office();
+  const { created } = o.eng.tasks.propose(o.mia, o.shop, [{ title: 'Build the API', description: 'x', assignee: 'Alex' }], 'The boss asked for an API.', 'planning');
+  assert.equal(created[0]!.released, true);
+  const theirs = o.eng.tasks.propose(o.zed, o.shop, [{ title: 'Refactor the footer', description: 'x' }], undefined, 'planning').created;
+  assert.equal(theirs[0]!.released, false, 'the project does not assign by itself: the boss releases it');
+});

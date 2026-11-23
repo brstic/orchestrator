@@ -924,7 +924,8 @@ export class TaskManager {
         let assignee = this.core.employees.get(t.assigneeId);
         if (assignee && !this.isFree(assignee)) continue;
         if (!assignee) {
-          if (!project.policy.autoAssign) continue;
+          // (What a Project Manager put on the board for a role, not a person, is given to whoever fits, as it planned.)
+          if (!project.policy.autoAssign && !this.byManager(t)) continue;
           assignee = this.pickEmployee(t);
           if (!assignee) continue;
           t.assigneeId = assignee.id;
@@ -2030,6 +2031,13 @@ export class TaskManager {
    * release plan while the release gate is on (a release is an owner's to open), nor for work colleagues could not agree
    * on, nor once the manager handed it to the boss. Null: the boss.
    */
+  /** Was this task put on the board by a Project Manager, where employees keep the board? */
+  private byManager(task: Task): boolean {
+    if (this.core.settings.employeesManageBoard === false || !/^employee:/.test(task.createdBy ?? '')) return false;
+    const name = task.createdBy!.slice('employee:'.length);
+    return this.core.employees.filter((e) => e.name === name && !e.archived && e.roleKey === 'pm').length > 0;
+  }
+
   managerFor(task: Task): Employee | null {
     if (this.core.settings.managersApprove === false) return null;
     if ((task.release?.plan && this.eng.release.on()) || task.evidence.contested || task.escalated) return null;
@@ -2383,7 +2391,9 @@ export class TaskManager {
     const existing: Task[] = [];
     // By position in the proposal, so "after the second task" still means that one when another was already there.
     const at: Task[] = [];
-    const auto = project.policy.autoAssign;
+    // A Project Manager plans and hands out work where employees keep the board: what it puts on the board starts as its
+    // dependencies allow, without waiting for the boss to release it (the owner, 2026-11-23: "autonomy").
+    const auto = project.policy.autoAssign || (by.roleKey === 'pm' && this.core.settings.employeesManageBoard !== false);
     // Everybody named must exist and be able to take work here — checked before anything is created.
     const whom = specs.map((spec, i) => {
       const name = String(spec?.assignee ?? '').trim();
