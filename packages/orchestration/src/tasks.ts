@@ -4,7 +4,8 @@ import { GATHER_SEC_MAX, REVIEW_BY, REVIEW_SEND_BACKS, matchRole, newId, nowIso,
 import { applyXp, evaluateMilestones, xpForCompletedTask, xpForReview } from '@orchestrator/game-systems';
 import { EngineError, within } from './core.ts';
 import type { Engine } from './engine.ts';
-import { reviewPrompt, taskPrompt } from './prompts.ts';
+import { reviewPrompt, taskPrompt, testedByOffice } from './prompts.ts';
+import { SYNTAX_LABEL, syntaxChecked, syntaxCheckScript } from './syntax-check.ts';
 import type { Person } from './task-talk.ts';
 import { routingPreference } from './learning/detect.ts';
 
@@ -1419,21 +1420,38 @@ export class TaskManager {
         task.evidence.diffStat = diff.stat || null;
       }
 
-      const command = codeTask ? (task.verifyCommand ?? project.verifyCommand) : null;
-      if (command && cwd) {
+      const own = codeTask ? (task.verifyCommand ?? project.verifyCommand) : null;
+      // No command of the project's own: the office checks what it can — that the files the task changed still parse
+      // (syntax-check.ts). In the owner's folder, where colleagues commit on the same branch, only the files this
+      // task's session wrote. Paths are the repository's; the check runs in the task's folder.
+      const changed = project.workspace === 'in_place' && task.touched?.length ? task.evidence.filesChanged.filter((f) => task.touched!.includes(f)) : task.evidence.filesChanged;
+      const root = task.repoRoot ?? cwd;
+      const fromHere = (f: string) => (root && cwd && path.resolve(root) !== path.resolve(cwd) ? path.relative(cwd, path.join(root, f)) : f);
+      const syntax = !own && codeTask && cwd && project.policy.syntaxCheck !== false ? syntaxCheckScript(changed.map(fromHere)) : null;
+      const command = own ?? syntax?.script ?? null;
+      const label = own ?? (syntax ? SYNTAX_LABEL : null);
+      const kind = own ? ('command' as const) : ('syntax' as const);
+      let res: any = null;
+      if (command && label && cwd) {
         this.core.put('task', task);
-        this.core.event({ type: 'task.verifying', source: 'server', summary: `Verifying ${task.key}: ${command}`, taskId: task.id, projectId: project.id, employeeId: employee.id, data: { key: task.key, command } });
+        this.core.event({ type: 'task.verifying', source: 'server', summary: `Verifying ${task.key}: ${label}`, taskId: task.id, projectId: project.id, employeeId: employee.id, data: { key: task.key, command: label } });
         const timeoutMs = Math.max(5, project.verifyTimeoutSec) * 1000;
-        let res: any;
         try {
           res = await this.core.agents.rpc(hostId, { method: 'verify.run', params: { cwd, command, timeoutMs } }, timeoutMs + 20000);
         } catch (e) {
-          task.evidence.verification = { ts: nowIso(), command, exitCode: null, passed: null, outputTail: (e as Error).message, durationMs: null, provenance: 'unavailable' };
+          task.evidence.verification = { ts: nowIso(), command: label, exitCode: null, passed: null, outputTail: (e as Error).message, durationMs: null, provenance: 'unavailable', kind };
           this.core.put('task', task);
-          return { text: `Orchestrator could not run the verification command (${(e as Error).message}). Tell the boss with report_blocker if this persists.`, isError: true };
+          // The office's own syntax check is a help, not the project's rule: when it cannot run, the work goes on unchecked.
+          if (kind === 'command') return { text: `Orchestrator could not run the verification command (${(e as Error).message}). Tell the boss with report_blocker if this persists.`, isError: true };
+          res = null;
         }
+      }
+      if (command && label && cwd && res && kind === 'syntax' && res.exitCode === 0 && !res.timedOut && syntaxChecked(res.outputTail) === 0) {
+        // Nothing it knows how to check could be checked on that machine (the tools are not there): not measured.
+        task.evidence.verification = { ts: nowIso(), command: label, exitCode: null, passed: null, outputTail: res.outputTail, durationMs: res.durationMs, provenance: 'unavailable', kind };
+      } else if (command && label && cwd && res) {
         const passed = res.exitCode === 0 && !res.timedOut;
-        task.evidence.verification = { ts: nowIso(), command, exitCode: res.exitCode, passed, outputTail: res.outputTail, durationMs: res.durationMs, provenance: 'measured' };
+        task.evidence.verification = { ts: nowIso(), command: label, exitCode: res.exitCode, passed, outputTail: res.outputTail, durationMs: res.durationMs, provenance: 'measured', kind };
         this.core.company.verificationsRun++;
         if (!passed) {
           task.attempts++;
@@ -1441,13 +1459,17 @@ export class TaskManager {
           this.history(task, `Verification failed (${res.timedOut ? 'timed out' : `exit ${res.exitCode}`})`, 'orchestrator');
           this.core.put('task', task);
           this.core.saveCompany();
-          this.core.event({ type: 'task.verification_failed', source: 'server', summary: `${task.key} failed verification (${res.timedOut ? 'timeout' : `exit ${res.exitCode}`})`, taskId: task.id, projectId: project.id, employeeId: employee.id, data: { key: task.key, command, exitCode: res.exitCode, timedOut: res.timedOut, outputTail: truncate(res.outputTail, 1500) } });
+          this.core.event({ type: 'task.verification_failed', source: 'server', summary: `${task.key} failed verification (${kind === 'syntax' ? 'a changed file does not parse' : res.timedOut ? 'timeout' : `exit ${res.exitCode}`})`, taskId: task.id, projectId: project.id, employeeId: employee.id, data: { key: task.key, command: label, exitCode: res.exitCode, timedOut: res.timedOut, outputTail: truncate(res.outputTail, 1500) } });
           // The same failure on another task of this project is a fact about the project, not about this task.
-          this.eng.improver.capture.onVerificationFailed(task, project, command, res);
+          this.eng.improver.capture.onVerificationFailed(task, project, label, res);
           this.eng.comms.resolveNotifications((n) => n.kind === 'test_failure' && n.taskId === task.id);
-          this.eng.comms.notify({ kind: 'test_failure', severity: 'warning', title: `${task.key} failed verification`, body: `${employee.name}'s work did not pass "${command}". They have been told to fix it.`, taskId: task.id, projectId: project.id, employeeId: employee.id });
+          this.eng.comms.notify({ kind: 'test_failure', severity: 'warning', title: `${task.key} failed verification`, body: `${employee.name}'s work did not pass "${label}". They have been told to fix it.`, taskId: task.id, projectId: project.id, employeeId: employee.id });
+          const timeoutMs = Math.max(5, project.verifyTimeoutSec) * 1000;
           return {
-            text: `Verification FAILED for ${task.key}. Orchestrator ran "${command}" in your worktree: ${res.timedOut ? `timed out after ${Math.round(timeoutMs / 1000)}s` : `exit code ${res.exitCode}`}.\n\nOutput (tail):\n${res.outputTail}\n\nThe task is not complete. Fix the problem, commit, and call complete_task again.`,
+            text:
+              kind === 'syntax'
+                ? `Not complete: a file ${task.key} changed does not parse. The office checked the changed files where it runs (${res.timedOut ? `timed out after ${Math.round(timeoutMs / 1000)}s` : 'php -l, node --check and the like'}):\n\n${res.outputTail}\n\nFix it, commit, and call complete_task again. If the check itself is wrong here (for example this machine's PHP is older than the one the project runs on), say so with report_blocker — the boss can switch the check off for the project.`
+                : `Verification FAILED for ${task.key}. Orchestrator ran "${label}" in your worktree: ${res.timedOut ? `timed out after ${Math.round(timeoutMs / 1000)}s` : `exit code ${res.exitCode}`}.\n\nOutput (tail):\n${res.outputTail}\n\nThe task is not complete. Fix the problem, commit, and call complete_task again.`,
             isError: true,
           };
         }
@@ -1455,7 +1477,7 @@ export class TaskManager {
         this.core.saveCompany();
         this.eng.comms.resolveNotifications((n) => n.kind === 'test_failure' && n.taskId === task.id);
         // It passed — by its own tests, if the task rewrote them. That is said, and somebody else looks at it.
-        const touched = checksTouched(task.evidence.filesChanged, command);
+        const touched = kind === 'command' ? checksTouched(task.evidence.filesChanged, command) : [];
         if (touched.length) {
           task.evidence.verification.touchedChecks = touched;
           this.history(task, `Verification passed, but the task changed what it is checked by: ${touched.slice(0, 6).join(', ')}${touched.length > 6 ? ` and ${touched.length - 6} more` : ''}`, 'orchestrator');
@@ -1468,7 +1490,7 @@ export class TaskManager {
             this.core.event({ type: 'task.updated', source: 'server', summary: `${task.key} passed its checks after changing them (${touched[0]}${touched.length > 1 ? ` and ${touched.length - 1} more` : ''}): it goes to review`, taskId: task.id, projectId: project.id, employeeId: employee.id, data: { key: task.key, touchedChecks: touched } });
           }
         }
-      } else {
+      } else if (!(command && label && cwd)) {
         task.evidence.verification = { ts: nowIso(), command: null, exitCode: null, passed: null, outputTail: '', durationMs: null, provenance: 'unavailable' };
       }
 
@@ -1815,7 +1837,7 @@ export class TaskManager {
     const tier = (e: Employee) => (e.projectId === task.projectId || e.alsoProjectIds?.includes(task.projectId) ? 0 : e.projectId === null ? 1 : 2);
     const pool = this.core.employees.filter(
       (e) =>
-        !e.archived && e.id !== task.assigneeId && preferred.includes(e.roleKey) && !!e.hostId && e.schedule.available && this.canSee(e, task) &&
+        !e.archived && e.id !== task.assigneeId && !task.helperIds?.includes(e.id) && preferred.includes(e.roleKey) && !!e.hostId && e.schedule.available && this.canSee(e, task) &&
         (e.executionMode !== 'codex_managed' || !this.eng.sessions.cannotStart(e)) &&
         (tier(e) < 2 || (this.isCodeReviewer(e, task) && (!project?.hostId || project.hostId === e.hostId))),
     );
@@ -1837,7 +1859,7 @@ export class TaskManager {
     // author, never a foreman or a person's own session, never across the line to a member's own computer.
     const author = this.core.employees.get(task.assigneeId);
     const peers = this.core.employees.filter(
-      (e) => !e.archived && e.id !== task.assigneeId && !directsOthers(e.roleKey) && !e.selfDriven && !!e.hostId && e.schedule.available && this.canSee(e, task) && (e.projectId === task.projectId || !!e.alsoProjectIds?.includes(task.projectId)),
+      (e) => !e.archived && e.id !== task.assigneeId && !task.helperIds?.includes(e.id) && !directsOthers(e.roleKey) && !e.selfDriven && !!e.hostId && e.schedule.available && this.canSee(e, task) && (e.projectId === task.projectId || !!e.alsoProjectIds?.includes(task.projectId)),
     );
     const rank = (e: Employee) => {
       const does = roleByKey(e.roleKey)?.handles.includes(task.kind) ? 0 : 2;
@@ -1875,7 +1897,7 @@ export class TaskManager {
       if (reviewerRef && author) reviewer = this.eng.comms.resolveTeammate(author, reviewerRef);
       reviewer = reviewer ?? this.core.employees.get(task.reviewerId) ?? this.pickReviewer(task);
       // Whoever was named: not the author, not the foreman, not somebody on the other side of the line.
-      if (reviewer && (reviewer.id === task.assigneeId || directsOthers(reviewer.roleKey) || reviewer.archived || !this.canSee(reviewer, task))) reviewer = this.pickReviewer(task);
+      if (reviewer && (reviewer.id === task.assigneeId || task.helperIds?.includes(reviewer.id) || directsOthers(reviewer.roleKey) || reviewer.archived || !this.canSee(reviewer, task))) reviewer = this.pickReviewer(task);
       if (reviewer && reviewer.id === task.assigneeId) reviewer = undefined;
       // A code reviewer comes first: a colleague named by the author (or the one of an earlier round) who is not one
       // gives way to a code reviewer who can take it.
@@ -1927,12 +1949,15 @@ export class TaskManager {
   }
 
   /** `who`: the person, when it is one (their name stands on the verdict; `by` is then 'owner'). */
-  async submitReview(by: Employee | 'owner', taskRef: string, verdict: 'approve' | 'request_changes', comments: string, who?: Person): Promise<Task> {
+  async submitReview(by: Employee | 'owner', taskRef: string, verdict: 'approve' | 'request_changes', comments: string, who?: Person, opts: { checked?: string | null } = {}): Promise<Task> {
     const task = this.taskByKey(taskRef, by === 'owner' ? null : by.projectId);
     if (!task) throw new EngineError(`no task "${taskRef}"`);
     if (task.status !== 'REVIEW') throw new EngineError(`${task.key} is not waiting for review (status ${task.status})`);
     if (by !== 'owner') {
       if (by.id === task.assigneeId || by.id === task.authorId) throw new EngineError('you cannot review your own task');
+      // Measured on the live office: reviewers who had done part of the work themselves approved it ("not an
+      // independent review", in their own words). Who worked on it does not judge it.
+      if (task.helperIds?.includes(by.id)) throw new EngineError(`you worked on ${task.key} with its author: somebody who did not do the work reviews it`);
       const assigned = task.reviewerId === by.id || !!this.core.tasks.find((t) => t.reviewOf === task.id && t.assigneeId === by.id);
       // With the board in the employees' hands, any colleague may review finished work — never its own author.
       if (!assigned && this.core.settings.employeesManageBoard === false) throw new EngineError(`you were not asked to review ${task.key}`);
@@ -1943,9 +1968,17 @@ export class TaskManager {
     }
     const approved = verdict === 'approve';
     if (!approved && !comments.trim()) throw new EngineError('say what should change: it is what the author reads');
+    // What the reviewer ran or opened to reach the verdict. Code nothing of the office's tested is approved only on
+    // a check somebody made and named (measured on the live office: half of the reviews ran nothing).
+    const checked = typeof opts.checked === 'string' && opts.checked.trim() ? truncate(opts.checked.trim(), 2000) : null;
+    if (approved && by !== 'owner' && !NON_CODE_KINDS.has(task.kind) && !testedByOffice(task) && (checked ?? '').length < 12)
+      throw new EngineError(
+        `nothing the office ran tests ${task.key}, so an approval says what you checked: run what shows it works (the test that covers it, the page or the request on the development server, the query) and give "checked" — what you ran and what it showed. Nothing was recorded.`,
+      );
     if (!approved && by !== 'owner' && task.friction.reviewRejections >= REVIEW_SEND_BACKS) return this.contest(task, by, comments);
     task.evidence.contested = null;
-    task.evidence.review = { reviewerId: by === 'owner' ? null : by.id, verdict: approved ? 'approved' : 'changes_requested', comments, ts: nowIso(), by: by === 'owner' ? 'owner' : 'employee' };
+    task.evidence.review = { reviewerId: by === 'owner' ? null : by.id, verdict: approved ? 'approved' : 'changes_requested', comments, ts: nowIso(), by: by === 'owner' ? 'owner' : 'employee', checked };
+    const said = (text: string) => (checked ? `${text}\n\nChecked: ${checked}` : text);
     this.core.company.reviewsCompleted++;
     this.core.saveCompany();
     const reviewerName = by === 'owner' ? (who && who.kind !== 'owner' ? who.name : 'The boss') : by.name;
@@ -1963,11 +1996,11 @@ export class TaskManager {
     if (by !== 'owner') this.awardXp(xpForReview(by.id, task));
     if (approved && by !== 'owner' && reviewByOf(task) === 'both') {
       // A colleague's approval is the first of two: the work goes on to the boss.
-      task.evidence.peerReview = { reviewerId: by.id, comments, ts: nowIso() };
+      task.evidence.peerReview = { reviewerId: by.id, comments, ts: nowIso(), checked };
       task.evidence.review = null;
       task.reviewStage = 'boss';
       this.history(task, `Approved by ${reviewerName}; waiting for the boss`, reviewerName);
-      this.eng.talk.add(task, { from, body: comments.trim() || 'Approved.', kind: 'approved', mentions: [] }, { store: false, quiet: true });
+      this.eng.talk.add(task, { from, body: said(comments.trim() || 'Approved.'), kind: 'approved', mentions: [] }, { store: false, quiet: true });
       this.core.put('task', task);
       this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your review`, body: `${this.core.employees.get(task.authorId ?? task.assigneeId)?.name ?? 'An employee'} finished "${task.title}" and ${reviewerName} approved it${comments.trim() ? `: ${truncate(comments, 200)}` : '.'}`, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
       this.closeStaleReviews();
@@ -1975,12 +2008,12 @@ export class TaskManager {
     }
     if (approved) {
       this.history(task, `Review approved by ${reviewerName}`, reviewerName);
-      this.eng.talk.add(task, { from, body: comments.trim() || 'Approved.', kind: 'approved', mentions: [] }, { store: false, quiet: true });
+      this.eng.talk.add(task, { from, body: said(comments.trim() || 'Approved.'), kind: 'approved', mentions: [] }, { store: false, quiet: true });
       await this.finalize(task);
       // A person approved it: the gate opens for those who release it (release.ts). A colleague's approval does not.
       if (by === 'owner' && (task.status as string) === 'DONE') this.eng.release.approved(task, who?.name ?? 'The boss');
     } else {
-      this.eng.talk.add(task, { from, body: comments, kind: 'sent_back', mentions: [] }, { store: false, quiet: true });
+      this.eng.talk.add(task, { from, body: said(comments), kind: 'sent_back', mentions: [] }, { store: false, quiet: true });
       task.reviewStage = null;
       task.evidence.peerReview = null;
       task.status = 'READY';

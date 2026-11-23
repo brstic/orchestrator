@@ -131,7 +131,7 @@ export function outcomeOf(task: Task, questions: readonly Question[] = []): Task
     startedAt: task.startedAt,
     completedAt: task.completedAt,
     firstPass: task.status === 'DONE' && f.failedVerifications === 0 && f.reviewRejections === 0,
-    verified: task.evidence?.verification?.provenance === 'measured' && task.evidence.verification.passed === true,
+    verified: task.evidence?.verification?.provenance === 'measured' && task.evidence.verification.passed === true && task.evidence.verification.kind !== 'syntax',
     failedVerifications: f.failedVerifications,
     reviewRejections: f.reviewRejections,
     mergeConflicts: f.mergeConflicts,

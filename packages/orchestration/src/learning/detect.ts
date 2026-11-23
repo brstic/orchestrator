@@ -747,7 +747,7 @@ function verificationQuality(eng: Engine, now: number): Proposal[] {
     const byCommand = new Map<string, Task[]>();
     for (const t of tasks) {
       const v = t.evidence.verification;
-      if (v?.provenance === 'measured' && v.passed === true && v.command) byCommand.set(v.command, [...(byCommand.get(v.command) ?? []), t]);
+      if (v?.provenance === 'measured' && v.passed === true && v.command && v.kind !== 'syntax') byCommand.set(v.command, [...(byCommand.get(v.command) ?? []), t]);
     }
     for (const [command, passed] of byCommand) {
       const everFailed = failures.some((e) => e.data.command === command) || tasks.some((t) => t.friction.failedVerifications > 0 && (t.verifyCommand ?? project.verifyCommand) === command);

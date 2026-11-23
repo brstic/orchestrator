@@ -270,7 +270,12 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
     description: 'Give your verdict on a task that is waiting for review: one you were asked to review, or — where employees manage the board — any teammate\'s finished work. Never your own. Read the change before you approve it; "approve" lets it be merged.',
     inputSchema: {
       type: 'object',
-      properties: { task: str('Key of the task under review, e.g. "T-12"'), verdict: { type: 'string', enum: ['approve', 'request_changes'], description: 'Your verdict' }, comments: str('Specific, actionable review comments') },
+      properties: {
+        task: str('Key of the task under review, e.g. "T-12"'),
+        verdict: { type: 'string', enum: ['approve', 'request_changes'], description: 'Your verdict' },
+        comments: str('Specific, actionable review comments'),
+        checked: str('What you ran or opened to reach the verdict, and what it showed: commands and their result, the page or request on the development server, the query. Needed to approve code the office did not test itself; the owner reads it.'),
+      },
       required: ['task', 'verdict', 'comments'],
     },
   },

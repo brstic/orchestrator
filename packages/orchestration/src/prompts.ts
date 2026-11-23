@@ -295,6 +295,12 @@ export function taskPrompt(task: Task, project: Project, deps: Task[], feedback:
   return lines.join('\n');
 }
 
+/** The office itself ran the project's own check on this work and it passed (a syntax check alone is not that). */
+export function testedByOffice(task: Task): boolean {
+  const v = task.evidence.verification;
+  return v?.provenance === 'measured' && v.passed === true && v.kind !== 'syntax';
+}
+
 export function reviewPrompt(review: Task, target: Task, project: Project, authorName: string, suppliedContextOnly = false): string {
   return [
     `${correlationMarker('TASK', review.id)} Review request — ${review.key}: review ${target.key} "${target.title}" by ${authorName}`,
@@ -310,14 +316,19 @@ export function reviewPrompt(review: Task, target: Task, project: Project, autho
     `What it was supposed to do: ${target.description.trim() || target.title}`,
     target.acceptance.trim() ? `Acceptance criteria: ${target.acceptance.trim()}` : '',
     target.evidence.summary ? `Author's summary: ${target.evidence.summary}` : '',
-    target.evidence.verification ? `Orchestrator verification: ${target.evidence.verification.command} → ${target.evidence.verification.passed ? 'passed' : 'failed'}` : '',
+    target.evidence.verification?.provenance === 'measured' ? `Orchestrator verification: ${target.evidence.verification.command} → ${target.evidence.verification.passed ? 'passed' : 'failed'}` : '',
+    testedByOffice(target)
+      ? ''
+      : suppliedContextOnly
+        ? `Nothing the office ran tests this work${target.evidence.verification?.kind === 'syntax' && target.evidence.verification.passed ? ' (it only checked that the changed files parse)' : ''}: whether it works rests on your review. Say in "checked" what you read and what you compared it against (the files and lines, the acceptance criteria, the cases you traced through). An approval of code with nothing in "checked" is refused.`
+        : `Nothing the office ran tests this work${target.evidence.verification?.kind === 'syntax' && target.evidence.verification.passed ? ' (it only checked that the changed files parse)' : ''}: whether it works rests on your review. Before you approve, check it yourself — run what shows it works (the test that covers it, the page or the request on the development server, the query, the script) — and say in "checked" what you ran and what it showed. An approval of code with nothing in "checked" is refused.`,
     target.evidence.verification?.touchedChecks?.length
       ? `Look at this first: the task changed what it is checked by (${target.evidence.verification.touchedChecks.slice(0, 8).join(', ')}). The checks passed with those changes in place. Were the tests changed because the behaviour was meant to change, or weakened so that they pass? Request changes if you cannot tell.`
       : '',
     '',
     `Review one thing: does this diff do what the task asked, and is it safe to use? Ask for changes only for what would make it wrong in use: a bug, a case the task names that does not work, a security hole, a test weakened so that it passes. For each, name the file and say what goes wrong.`,
-    `Not grounds to send it back: style, naming, how you would have built it, more tests "for completeness", and anything outside this task. Leave those out, or put at most three under "Not blocking:" beside an approval — the author may take them or not. Do not redo the author's work${target.evidence.verification?.passed ? ', and do not run the whole check again: the office ran it, above' : ''}.`,
-    `Then call submit_review with task "${target.key}", your verdict (approve or request_changes) and short comments, and finally complete_task with no_code_changes=true.`,
+    `Not grounds to send it back: style, naming, how you would have built it, more tests "for completeness", and anything outside this task. Leave those out, or put at most three under "Not blocking:" beside an approval — the author may take them or not. Do not redo the author's work${testedByOffice(target) ? ', and do not run the whole check again: the office ran it, above' : ''}.`,
+    `Then call submit_review with task "${target.key}", your verdict (approve or request_changes), short comments and "checked" (what you ran or opened, and what it showed), and finally complete_task with no_code_changes=true.`,
   ]
     .filter((l) => l !== '')
     .join('\n');

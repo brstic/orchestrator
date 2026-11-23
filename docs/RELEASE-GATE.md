@@ -43,6 +43,9 @@ With **Settings → Employees → "Nothing is released before I approve it (the 
 - **`report_released { task, note }`**: the author says it is out and how it was checked. It is written on the ticket
   ("Released. …"), the ticket shows *Released by … · when*, and the gate closes again for that ticket. A window that
   ran out with nothing reported says so on the ticket.
+- **No separate release tickets:** employees are told not to open a ticket only to release work that is handed in or
+  approved — its release is the `release_plan` of the ticket whose work it is (on the live office a manager made
+  "release … to production" tickets, which were done first and reviewed afterwards).
 - **By hand:** in an employee's Talk, an owner has **Let release** (an hour, for a fix that cannot wait for a ticket);
   while it stands open the button reads *Release open · 14:20*, and a click closes it. On the record
   (`release.granted`, `release.closed`).

@@ -575,6 +575,11 @@ export interface ProjectPolicy {
   /** After each merge, run the verification command on the integration branch itself (default: on). */
   integrationTests?: boolean;
   /**
+   * With no verification command: the office checks that the files a task changed still parse (`php -l`,
+   * `node --check`, …) when it is handed in, and refuses it while one does not (default: on; false switches it off).
+   */
+  syntaxCheck?: boolean;
+  /**
    * Who reviews this project's finished work, when nobody chose for the task. Absent or null: as the office does
    * (`OwnerSettings.reviewDefault`). Set, it stands in for the office's setting for this project alone (`reviewUsualOf`).
    */
@@ -657,6 +662,12 @@ export interface VerificationResult {
    * verification command runs. A check that passes after the task edited the check proves less; such work is reviewed.
    */
   touchedChecks?: string[];
+  /**
+   * What was run: the project's (or the task's) own verification command, or — where there is none — the office's
+   * syntax check of the files the task changed (`syntax-check.ts`). A syntax check says what was changed still
+   * parses, not that the work is right. Absent: a command (older records).
+   */
+  kind?: 'command' | 'syntax';
 }
 
 export interface TaskEvidence {
@@ -670,9 +681,9 @@ export interface TaskEvidence {
   filesChanged: string[];
   diffStat: string | null;
   verification: VerificationResult | null;
-  review: { reviewerId: ID | null; verdict: 'approved' | 'changes_requested'; comments: string; ts: ISODate; by: 'employee' | 'owner' } | null;
+  review: { reviewerId: ID | null; verdict: 'approved' | 'changes_requested'; comments: string; ts: ISODate; by: 'employee' | 'owner'; checked?: string | null } | null;
   /** `reviewBy: 'both'`: the colleague's approval that sent the work on to the boss. Cleared when the work is handed in again. */
-  peerReview?: { reviewerId: ID; comments: string; ts: ISODate } | null;
+  peerReview?: { reviewerId: ID; comments: string; ts: ISODate; checked?: string | null } | null;
   /** A colleague asked for changes after the task had been sent back `REVIEW_SEND_BACKS` times: it was not sent back again, and waits for the boss with what they asked for. */
   contested?: { reviewerId: ID; comments: string; ts: ISODate } | null;
   merge: { ts: ISODate; ok: boolean; sha: string | null; into: string; detail: string } | null;

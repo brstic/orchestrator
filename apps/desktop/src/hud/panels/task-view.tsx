@@ -356,6 +356,39 @@ function Composer({ task }: { task: Task }) {
 }
 
 /**
+ * What was checked before the owner decides: what the office itself ran on the work, and what the colleague who
+ * approved it says they ran (measured on the live office, 2026-11-23: nothing was ever run by the office, half of the
+ * colleagues' reviews ran nothing, and owners approved almost always without a word — this is what an approval rests on).
+ */
+function Checks({ task }: { task: Task }) {
+  const s = useOffice();
+  const v = task.evidence.verification;
+  const peer = task.evidence.peerReview;
+  const office =
+    v?.provenance === 'measured' && v.passed === true
+      ? v.kind === 'syntax'
+        ? 'The changed files parse — the office ran no tests (the project has no verification command).'
+        : `${v.command} passed.`
+      : v?.provenance === 'measured' && v.passed === false
+        ? `${v.command} failed.`
+        : 'Nothing: the project has no verification command, and nothing could be checked.';
+  return (
+    <div className="tk-checks" data-checks>
+      <div className="small muted">What was checked</div>
+      <div className="small" data-checks-office>
+        <b>The office:</b> {office}
+      </div>
+      {peer && (
+        <div className="small" data-checks-peer>
+          <b>{s.employees[peer.reviewerId]?.name ?? 'The colleague'}:</b>{' '}
+          {peer.checked ? <span className="pre">{peer.checked}</span> : <span className="muted">approved it without saying what they ran.</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * The verdict on work in review, at the side of the task — apart from the conversation, so that talking it over
  * never presses it. Each is two steps: the button opens its own small form, and only that form's button acts.
  */
@@ -385,6 +418,7 @@ function Verdict({ task }: { task: Task }) {
   return (
     <section className="tk-verdict" data-verdict={mode ?? 'closed'} aria-label="Your verdict">
       <div className="tk-meta-label">Your verdict</div>
+      <Checks task={task} />
       {task.release?.plan && (
         <div className="tk-release-plan" data-release-plan>
           <div className="small muted">Where it goes once you approve it</div>

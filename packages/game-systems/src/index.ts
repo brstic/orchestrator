@@ -33,7 +33,7 @@ export function xpForCompletedTask(task: Task): XpEntry[] {
   const mult = PRIORITY_MULTIPLIER[task.priority] ?? 1;
   out.push(entry(task.assigneeId, 'task_completed', XP_VALUES.task_completed * mult, task.id, `Completed ${task.key}: ${task.title}`));
   const v = task.evidence.verification;
-  if (v && v.provenance === 'measured' && v.passed === true) out.push(entry(task.assigneeId, 'tests_passed', XP_VALUES.tests_passed, task.id, `Verification passed for ${task.key} (${v.command})`));
+  if (v && v.provenance === 'measured' && v.passed === true && v.kind !== 'syntax') out.push(entry(task.assigneeId, 'tests_passed', XP_VALUES.tests_passed, task.id, `Verification passed for ${task.key} (${v.command})`));
   if (task.kind === 'bug') out.push(entry(task.assigneeId, 'bug_fixed', XP_VALUES.bug_fixed, task.id, `Fixed bug ${task.key}`));
   if (task.evidence.review?.verdict === 'approved') out.push(entry(task.assigneeId, 'deliverable_accepted', XP_VALUES.deliverable_accepted, task.id, `Deliverable for ${task.key} accepted in review`));
   return out;

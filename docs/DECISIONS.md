@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-23 — The office checks what it can, and a reviewer says what they checked
+
+Measured on the live office (its own record, read only): of 320 hand-ins in twelve days the office had checked none —
+no project had a verification command, so every "tests passed" was the employee's word; half of the colleagues'
+reviews said they had run nothing; eight reviewers had done part of the work themselves; owners approved 108 of 118
+times, 103 of them without a word. Decided: where a project has no command, the office runs a **syntax check of the
+changed files** — not a test, but it can run anywhere without knowing the project, and a file that does not parse is
+plainly not ready (it refuses the hand-in; a project can switch it off, for a machine whose tools are older than the
+project's). It is kept apart from a real command everywhere ("tests passed" XP, what the office learns, the improver's
+advice), so it never passes for testing. And a colleague approves code the office did not test only by **naming what
+they checked** — required, not merely asked for, because asking was already in the prompt and half did not — and who
+worked on a ticket does not review it. The owner reads both beside the verdict. Not chosen: guessing a project's test
+command (a wrong one would refuse every hand-in), and refusing approvals by the owner without a word (that is theirs).
+
 ## 2026-11-23 — Review is the gate: nothing is released before an owner approves it
 
 The live office released work before review: in place the office merges nothing and pushes nothing, so the employees pushed `master` and the development branch themselves, and production was pulled when the boss said "go" in a chat — the ticket's Approve came after and only closed it. The owner: "review itself must be the gate: I see what they did, and if it is good I let it go on to where it has to go"; their choices: development servers free, really refused (not only asked), always an owner. **The machine holds, the office decides** (`releaseOf` on the host agent, `Release.decide` in the office): the host is where the command is seen and the hook is held; whether somebody may release is the office's state (passes), so one switch or one approval changes it everywhere at once, with no restart (`session.release`). **A pass is per employee, not per command**: a command cannot be tied to a ticket from its text, so an approval opens a window (3 hours) for the author and the colleagues on the ticket, closed again by `report_released`. **A plan sends the work to an owner**, whatever review it had: the colleague's review is the first step. **Refused, not asked**: an owner asked at the moment of the push could only approve what they had not looked at; the place to look is the review. Rejected: asking per command (the high-risk gate does that, and the owner switched it off for Unrestricted as noise); blocking every push (the development branch and server are how reviewers try the work); parsing deploy scripts. A **Let release** by hand stays for fixes that cannot wait. The reading is of a command's text: see the page's limits.

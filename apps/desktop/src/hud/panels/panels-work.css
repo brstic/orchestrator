@@ -1264,6 +1264,17 @@ button.tk-person-chip:hover {
   max-height: 220px;
   overflow: auto;
 }
+.tk-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.tk-checks .pre {
+  white-space: pre-wrap;
+}
 .tk-release {
   display: flex;
   flex-direction: column;

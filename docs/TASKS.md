@@ -75,6 +75,31 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   or leave. Where the office ran the project's check and it passed, the reviewer is told not to run it again.
   (Before, the prompt said "correctness, tests, security and maintainability", and a reviewer asked that widely
   always finds something.)
+- **What was checked, said** (2026-11-23, after measuring the live office: of 320 hand-ins the office had checked
+  none — no project had a verification command — half of the colleagues' reviews ran nothing, a few reviewers had
+  done part of the work themselves, and owners approved almost always without a word). Three rules:
+  1. **The office checks what it can** (`syntax-check.ts`). A project with no verification command of its own gets,
+     at every code hand-in, a **syntax check of the files the task changed**: `php -l`, `node --check`, plain JSON
+     parsed, Python parsed with `ast` (nothing is written into the folder), `bash -n`; other kinds are passed over.
+     In the owner's folder (`in_place`) only the files this task's session wrote (`Task.touched`) — colleagues commit
+     on the same branch. It runs on the employee's machine through `verify.run`, like a command. A file that does not
+     parse **refuses the hand-in** ("Not complete: a file … does not parse", with what the checker said; counted in
+     `friction.failedVerifications`); a checker not installed there is skipped and said so; when nothing could be
+     checked, or the check could not run at all, the work goes on unchecked (`provenance: 'unavailable'`). On record as
+     `VerificationResult.kind: 'syntax'`. It is not a test: it gives no "tests passed" XP, does not count as verified
+     in what the office learns, and the improver still proposes a verification command for the project. Off for a
+     project with `policy.syntaxCheck: false`.
+  2. **A colleague's approval says what they checked** (`submit_review.checked`). Approving code (any kind but
+     review, research, planning) that the office did not test with the project's own command (`testedByOffice`) is
+     refused without it: "run what shows it works … and give checked". The reviewer is told so in `reviewPrompt`; a
+     Codex reviewer, who reads and runs nothing, is asked what it read and compared. Kept in `evidence.peerReview.checked`
+     / `evidence.review.checked`, and on the ticket ("Checked: …"). Sending back needs no "checked".
+  3. **Who worked on a ticket does not review it**: its helpers (`helperIds`) are never picked, a named one gives way,
+     and their `submit_review` is refused ("you worked on T-… with its author").
+
+  The owner sees it in **Your verdict → What was checked**: what the office ran ("The changed files parse — the office
+  ran no tests"; "`npm test` passed"; "Nothing") and what the colleague says they ran — or that they approved it
+  without saying. `packages/orchestration/test/review-checked.test.ts`, `tests/e2e/68-office-checks.test.ts`.
 - **Two rounds between colleagues, then the boss** (`REVIEW_SEND_BACKS` = 2, `TaskManager.contest`): a colleague
   may send the same task back twice (`friction.reviewRejections`). The next "request changes" from a colleague does
   not send it back and is not counted as a rejection: the task stays in REVIEW with stage `'boss'`, what was asked

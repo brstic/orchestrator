@@ -568,7 +568,7 @@ async function defaultBehaviour(text) {
       diff = r.response?.stdout ?? '';
     }
     const bad = /NEEDS-WORK/.test(diff);
-    await orchestrator('submit_review', { task: review[1], verdict: bad ? 'request_changes' : 'approve', comments: bad ? 'The change still contains a NEEDS-WORK marker; remove it.' : 'Looks correct and is covered by the checks.' });
+    await orchestrator('submit_review', { task: review[1], verdict: bad ? 'request_changes' : 'approve', comments: bad ? 'The change still contains a NEEDS-WORK marker; remove it.' : 'Looks correct and is covered by the checks.', checked: 'Read the diff and searched it for a NEEDS-WORK marker: ' + (bad ? 'found one.' : 'none.') });
     await orchestrator('complete_task', { summary: `Reviewed ${review[1]}`, no_code_changes: true });
     return 'Review submitted.';
   }

@@ -93,7 +93,7 @@ for await (const line of input) {
       assert.match(forbidden.content[0].text, /cannot access host files/);
       const review = /Review request .*?review (\S+) "/.exec(prompt);
       if (review) {
-        const result = await tool('submit_review', { task: review[1], verdict: 'approve', comments: 'Reviewed the supplied material.' });
+        const result = await tool('submit_review', { task: review[1], verdict: 'approve', comments: 'Reviewed the supplied material.', checked: 'Read the supplied change against the acceptance criteria.' });
         assert.equal(result.isError, false, JSON.stringify(result));
       }
       event('item/completed', { threadId, turnId, item: { type: 'agentMessage', text: 'Codex reached the office tools.' } });

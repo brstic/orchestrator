@@ -182,6 +182,7 @@ export class Release {
       `The release gate of this office: nothing reaches ${r.branches.join(' / ')}${r.hosts.length ? ` or the production servers (${r.hosts.join(', ')})` : ' or production'} before an owner has approved the work.`,
       'Before that, work and try freely: commit, push your own branches, put it on the development servers. A push to a protected branch, merging a pull request, or a change on a production server is refused by the office until then.',
       'Hand the work in with complete_task and give release_plan: where it goes once approved and how — branches, servers, steps, checks, and who does which part. The owner reads it in review. When an owner approves it you are told, and the release is open for you (and the colleagues on the ticket) for a few hours: do what the plan says, then call report_released with what you did and how you checked it.',
+      'Do not open a separate ticket only to release work that is handed in or approved: its release is the release_plan of the ticket whose work it is, and goes out when that ticket is approved.',
     ].join(' ');
   }
 

@@ -435,7 +435,7 @@ export class Improver {
     for (const project of this.core.projects.filter((p) => p.status !== 'archived')) {
       const tasks = this.core.tasks.filter((t) => t.projectId === project.id);
       // 4. Code tasks are being completed with nothing to verify them against.
-      const unverified = tasks.filter((t) => t.status === 'DONE' && t.kind !== 'review' && t.kind !== 'research' && t.kind !== 'planning' && t.evidence.commits.length > 0 && t.evidence.verification?.provenance !== 'measured');
+      const unverified = tasks.filter((t) => t.status === 'DONE' && t.kind !== 'review' && t.kind !== 'research' && t.kind !== 'planning' && t.evidence.commits.length > 0 && (t.evidence.verification?.provenance !== 'measured' || t.evidence.verification.kind === 'syntax'));
       if (!project.verifyCommand && unverified.length >= 3) {
         add(
           this.propose({
