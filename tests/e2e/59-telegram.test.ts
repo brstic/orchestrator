@@ -138,6 +138,17 @@ test('while the boss is in the office nothing of hers goes to their Telegram; on
   office.close();
 });
 
+test('work that waits for the boss is told on Telegram while they are away — through a colleague\'s bot on the project when its author has none', async () => {
+  const state = await h.state();
+  const shop = state.employees.find((e) => e.id === kira.id)!.projectId!;
+  const bo = await h.employee('Bo', 'frontend', { projectId: shop });
+  const rita = await h.employee('Rita', 'reviewer', { projectId: shop });
+  const t = await h.task({ projectId: shop, title: 'Add the receipt footer', assigneeId: bo.id, reviewBy: 'both', reviewerId: rita.id, description: '@@fake: write footer.txt ok; commit footer; complete footer added@@' });
+  const said = await tg.waitSent(textTo(ME.id, new RegExp(`🔎 ${t.key} needs your review\\n[^\\n]*Rita approved it[\\s\\S]*Checked: Read the diff`)), 60_000);
+  assert.equal(said.body.chat_id, ME.id);
+  assert.equal(tg.sent.filter(textTo(ME.id, new RegExp(`${t.key} needs your review`))).length, 1, 'once');
+});
+
 test('a permission request comes with Allow and Deny; a button decides it, as the person who paired', async () => {
   const project = (await h.state()).projects.find((p) => p.name === 'Shop')!;
   const standard = await h.employee('Lio', 'devops', { autonomy: 'standard', projectId: project.id });

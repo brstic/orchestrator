@@ -33,6 +33,12 @@ The tab is shown to whoever may *work* with that employee (an owner; a colleague
   (looked at every 30 s, `Telegram.sendHeld`); answered or read in the office, it is not. Per person: somebody else
   paired with the same bot who is not here gets it at once. **Not held back:** the answer to something you wrote *on
   Telegram* — you asked there, it comes back there. The bot's tab says whether the office counts *you* as here right now (`here` in `GET /api/employees/:id/telegram`).
+- **Work waiting for an owner's verdict** (the owner, 2026-11-23, asked whether a ticket waiting for their Approve should
+  come to Telegram when they are away: "yes, when I am not there"; one had waited five days). The Inbox line "T-… needs
+  your review" / "needs your decision" is sent to the **owners** paired with a bot — its author's own, or else a
+  colleague's on the ticket's or the author's project, one who leads first (`botForTask`) — as `🔎 T-… needs your
+  review`, with what the colleague checked, and that it is decided in the office. Like everything else: not while they
+  are here, sent if they leave with it still unread. None of the team has a bot: it stays in the office.
 - **In a group**, set per group:
   - **When talked to** (the default): the employee answers when somebody mentions the bot (`@bot`), says the employee's **name as a word** (any alphabet: "Đorđe, look" counts, "Đorđević" does not), **replies** to one of the bot's messages, or writes a **follow-up** within three minutes of being answered by it. Everything else is only remembered.
   - **Everything (they decide)**: every message goes to them. What is said is gathered until the conversation pauses (8 s), then handed over at once with the instruction to answer only if it is for them or they have something useful to add — otherwise to reply exactly `NO_REPLY`, which the office does not post. Each pause is a turn of their Claude: this costs usage in a busy group.

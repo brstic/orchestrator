@@ -774,26 +774,53 @@ export class Telegram {
    * people it is for who talk to it there. A reply in that chat goes to the employee, as everything said there does.
    */
   private async personMessage(n: Notification, late = false): Promise<void> {
-    if (n.kind !== 'message' || !n.employeeId || !n.for?.length || n.readAt) return;
+    // What an employee wrote to a person; or work that waits for an owner's verdict (the owner, 2026-11-23: "yes, when
+    // I am not there" — a ticket had waited five days).
+    const review = n.kind === 'review' && !!n.taskId && / needs your (?:review|decision)$/.test(n.title);
+    if ((n.kind !== 'message' || !n.for?.length) && !review) return;
+    if (!n.employeeId || n.readAt || n.resolvedAt) return;
     // (Only as it is written — or, kept back while its person was in the office, when they leave: not again when the
     // office starts, or when it is read.)
     if (!late && Date.now() - Date.parse(n.createdAt) > 120_000) return;
-    const b = this.bots.get(n.employeeId);
+    const b = review ? this.botForTask(n.taskId!, n.employeeId) : this.bots.get(n.employeeId);
     if (!b) return;
     if (this.toldPeople.size > 2000) this.toldPeople.clear();
     for (const p of b.people) {
       const key = `${n.id}:${p.chatId}`;
       if (this.toldPeople.has(key)) continue;
-      const who = this.deps.mayWork(p.as.id, n.employeeId);
-      if (!who || !notificationFor(n, { id: who.id, owner: who.owner })) continue;
+      const who = this.deps.mayWork(p.as.id, b.employeeId);
+      if (!who || !notificationFor(n, { id: who.id, owner: who.owner }) || (review && !who.owner)) continue;
       if (this.isHere(p.as.id)) {
         this.heldMessages.add(n.id);
         continue;
       }
       this.toldPeople.add(key);
-      await this.call(this.token(b), 'sendMessage', { chat_id: p.chatId, text: `${n.severity === 'warning' ? '❗ ' : ''}${n.body}`.slice(0, TELEGRAM_LIMITS.textChars) }).catch(() => undefined);
+      const text = review ? `🔎 ${n.title}\n${n.body}\n\nDecide it in the office (Tasks → ${this.deps.engine.core.tasks.get(n.taskId!)?.key ?? 'the ticket'}).` : `${n.severity === 'warning' ? '❗ ' : ''}${n.body}`;
+      await this.call(this.token(b), 'sendMessage', { chat_id: p.chatId, text: text.slice(0, TELEGRAM_LIMITS.textChars) }).catch(() => undefined);
     }
   }
+  /**
+   * The bot a ticket waiting for an owner is told through: its author's own, or else a colleague's on its project (or on
+   * the author's) — the one who leads first, as an owner talks to a team's manager. None: it stays in the office.
+   */
+  private botForTask(taskId: string, authorId: string): Bot | undefined {
+    const own = this.bots.get(authorId);
+    if (own) return own;
+    const core = this.deps.engine.core;
+    const task = core.tasks.get(taskId);
+    const author = core.employees.get(authorId);
+    const projects = new Set([task?.projectId, author?.projectId, ...(author?.alsoProjectIds ?? [])].filter((x): x is string => !!x));
+    const on = [...this.bots.values()].filter((b) => {
+      const e = core.employees.get(b.employeeId);
+      return !!e && !e.archived && [e.projectId, ...(e.alsoProjectIds ?? [])].some((p) => !!p && projects.has(p));
+    });
+    const leads = (b: Bot) => {
+      const e = core.employees.get(b.employeeId)!;
+      return /lead|manager|pm\b/i.test(`${e.roleKey} ${e.title ?? ''} ${e.name}`) ? 0 : 1;
+    };
+    return on.sort((a, b) => leads(a) - leads(b))[0];
+  }
+
   /** The messages to people already sent on (`personMessage`). */
   private readonly toldPeople = new Set<string>();
 
