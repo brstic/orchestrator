@@ -445,17 +445,32 @@ export class CentralContext {
     this.timer.unref?.();
   }
 
+  /**
+   * Sessions whose machine's agent is older than the central context (it answers "unsupported rpc method"): not asked
+   * again while they run. Before, a failed push was forgotten and tried at the next change — on the live office some
+   * 60 000 times a day for one member's computer with an older app, each a warning in the log.
+   */
+  private unable = new Set<string>();
+
   /** Send each running session's pack to its machine when it differs from what was sent. */
   pushAll(): void {
-    for (const s of this.core.sessions.filter((x) => x.status === 'running' || x.status === 'starting')) {
+    const running = this.core.sessions.filter((x) => x.status === 'running' || x.status === 'starting');
+    for (const id of this.unable) if (!running.some((s) => s.id === id)) this.unable.delete(id);
+    for (const s of running) {
       const e = s.employeeId ? this.core.employees.get(s.employeeId) : undefined;
-      if (!e || !this.core.agents.isOnline(s.hostId)) continue;
+      if (!e || this.unable.has(s.id) || !this.core.agents.isOnline(s.hostId)) continue;
       const pack = this.packFor(e);
       if (this.sent.get(s.id) === pack.rev) continue;
       this.sent.set(s.id, pack.rev);
       void this.core.agents.rpc(s.hostId, { method: 'session.context', params: { sessionId: s.id, context: pack } }, 8000).catch((err) => {
+        const message = (err as Error).message;
+        if (/unsupported rpc method/.test(message)) {
+          this.unable.add(s.id);
+          this.core.log('warn', `the central context does not reach ${e.name}'s session: their machine runs an older app (it gets the central context once it is updated)`);
+          return;
+        }
         this.sent.delete(s.id);
-        this.core.log('warn', `the central context did not reach ${e.name}'s machine: ${(err as Error).message}`);
+        this.core.log('warn', `the central context did not reach ${e.name}'s machine: ${message}`);
       });
     }
   }

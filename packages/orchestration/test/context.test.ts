@@ -138,3 +138,23 @@ test('the import offers what the office already knows — standing instructions,
   assert.match(eng.context.list().find((f) => f.title === 'About Shop')!.text, /The online shop\.\nGoals: Launch in December\./);
   assert.equal(eng.context.importExisting('owner'), 0, 'not offered twice');
 });
+
+test("a machine whose agent does not know the central context is not asked again and again (the live office: 60 000 tries a day)", async () => {
+  const calls: string[] = [];
+  const old: AgentLink = { rpc: async (_h, rpc) => (calls.push((rpc as { method: string }).method), Promise.reject(new Error(`unsupported rpc method ${(rpc as { method: string }).method}`))), isOnline: () => true, respondHook: () => true, disconnect: () => undefined };
+  const eng = new Engine({ store: new Store(':memory:'), agents: old, publicUrl: 'http://127.0.0.1:1', timings: { deliverySettleMs: 0, sleepIdleMs: 1 } }, { send: () => undefined });
+  eng.core.put('host', host);
+  const kira = eng.employees.create({ name: 'Kira', roleKey: 'backend', hostId: host.id, workingDir: '/work/kira' });
+  eng.core.put('session', { id: 's-old', employeeId: kira.id, hostId: host.id, origin: 'managed', mode: 'interactive_cli', tmuxSession: 'k', tmuxPane: null, cwd: '/work/kira', repoRoot: null, branch: null, claudeSessionId: 'c', status: 'running', activity: 'idle', activityDetail: null, activitySince: now(), inTurn: false, control: 'AGENT_CONTROLLED', controllerId: null, capabilities: { terminal: true, hooks: true, mcp: true, structuredApproval: true, structuredMessaging: true, usage: false }, permissionMode: null, model: null, cols: 1, rows: 1, pid: null, usage: null, startedAt: now(), endedAt: null, lastEventAt: null, exitReason: null } as never);
+  const warned: string[] = [];
+  const log = eng.core.log.bind(eng.core);
+  eng.core.log = ((level: string, msg: string) => (msg.includes('central context') && warned.push(msg), log(level as never, msg))) as never;
+  for (let i = 0; i < 5; i++) {
+    eng.context.add({ layer: 'office', title: `Fact ${i}`, text: 'Something new.' }, 'owner');
+    eng.context.pushAll();
+    await new Promise((r) => setImmediate(r));
+  }
+  assert.equal(calls.filter((m) => m === 'session.context').length, 1, 'asked once, not at every change');
+  assert.equal(warned.length, 1);
+  assert.match(warned[0]!, /older/);
+});
