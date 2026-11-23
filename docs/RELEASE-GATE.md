@@ -57,6 +57,9 @@ With **Settings → Employees → "Nothing is released before I approve it (the 
   ran out with nothing reported says so on the ticket.
 - **A development server that follows a protected branch** (it pulls `master`): employees are told to try their work
   there from their own branch (push it, check it out there — free), not by pushing `master`.
+- **A project of worktrees** (each employee a branch of their own): they push only their task branch (to try it on the
+  development server), and once approved release it by fast-forwarding the base branch to the integration branch and
+  pushing it (`Release.branchRelease`; `docs/plans/BRANCHES-FOR-A-TEAM-IN-PLACE.md`).
 - **No separate release tickets:** employees are told not to open a ticket only to release work that is handed in or
   approved — its release is the `release_plan` of the ticket whose work it is (on the live office a manager made
   "release … to production" tickets, which were done first and reviewed afterwards).

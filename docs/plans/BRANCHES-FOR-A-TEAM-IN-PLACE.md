@@ -1,6 +1,6 @@
 # Plan: a team that works in place moves to branches of its own
 
-_Status: proposed 2026-11-23, waiting for the owner's choices (below). Nothing of it is built or switched on._
+_Status: the owner chose on 2026-11-23 (below); what the office needed is built; the pilot is in "The pilot"._
 
 The owner asked for it after the measurements of 2026-11-23 (`docs/TASKS.md` §1, "What was checked, said"; the
 release gate, `docs/RELEASE-GATE.md`): every ticket of the live office's biggest team was worked **in place** — several
@@ -31,15 +31,25 @@ in which work landed, and the release gate has to read command text to keep `mas
   or by the author as the first step of the approved release plan (the gate is open for them) — then pushed, pulled on
   development and on production, and reported with `report_released`.
 
-## What has to be decided first
+## What was decided (the owner, 2026-11-23)
 
-1. **Trying on the development server** from the task's branch (checked out there), not from `master` — acceptable?
-   Two employees trying at the same time take turns on the one development checkout (today they share `master` there).
-2. **Who moves `master`:** the owner with *Promote* after approving, or the author as part of the release plan.
-3. **Long-lived feature branches** (a redesign, a consolidation branch): a project has one base branch. Either such a
-   branch becomes its own project for its lifetime, or its work stays in place until it lands.
-4. **A pilot:** one repository first — the one with the fewest branches and the least shared work — for a week, then
-   the measurements again (`checkHealth` on the operations wall; conflicts; time from approval to release).
+1. **Trying on the development server from the task's branch** (checked out there), not from `master`: yes.
+2. **Who moves `master`:** the author, as the approved release plan says (`git merge --ff-only` of the integration
+   branch in the repository, then `git push origin master`; the gate is open for them after the approval).
+3. **Long-lived feature branches:** not in the pilot (its repository has only `master`).
+4. **The pilot:** the repository with the fewest branches and the least shared work, for a week; then the
+   measurements again (`checkHealth` on the operations wall; conflicts; time from approval to release).
+
+## What was built for it
+
+- With the gate on, in a project of worktrees, an employee is told (standing, and with each task —
+  `Release.branchRelease`, `systemPromptFor(… branchPush)`, `taskPrompt(… branchPush)`): push only your task branch, to
+  try it on the development server (check it out there); when approved, the office merges it into the integration
+  branch; then release as planned — `git merge --ff-only <integration>` in the repository (on its base branch),
+  `git push origin <base>`, the development server back on the base branch and pulled, then production, then
+  `report_released`. Without the gate, or in place, nothing changes ("never push" stands).
+- `tests/e2e/69-branches-and-gate.test.ts`: a real remote — the task branch pushed, `main` refused before approval, the
+  approval merges into integration, the author fast-forwards `main` and pushes it, reported out.
 
 ## How the switch is made (once decided)
 
