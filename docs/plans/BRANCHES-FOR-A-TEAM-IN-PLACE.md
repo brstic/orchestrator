@@ -40,6 +40,15 @@ in which work landed, and the release gate has to read command text to keep `mas
 4. **The pilot:** the repository with the fewest branches and the least shared work, for a week; then the
    measurements again (`checkHealth` on the operations wall; conflicts; time from approval to release).
 
+## Measuring it
+
+`node --no-warnings scripts/measure-work.mjs <the office's orchestrator.db> --days 14 --project <the pilot's project>`
+(read-only; on the server, with its Node). The baseline, read on the live office on 2026-11-23 for all projects over 14
+days: 173 work tickets (147 code), checked by the office with its tests 0 (2 only parsed, the syntax check being new
+that evening); colleagues' approvals 131, 3 saying what they checked (the rule being new that evening); owners'
+approvals 107, 4 with a word; sent back at least once 12%; work 18 min median (1.9 h p90), in review 19 min median
+(2.6 h p90); merged by the office 0; released and reported 0. The pilot's project had no tickets yet.
+
 ## What was built for it
 
 - With the gate on, in a project of worktrees, an employee is told (standing, and with each task —

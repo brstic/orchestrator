@@ -122,6 +122,9 @@ employees, a rented employee's fence, the high-risk switches) — once per machi
 (`hostLacks` in `packages/contracts`, `Registry.olderApp`); the machine's *Agent* line in the machines window says it too.
 Every build reports version 0.1.0, so this is read from what the machine's agent says it can do.
 
+**How the work went** (tickets, checks, reviews, times — read-only): `node --no-warnings scripts/measure-work.mjs
+~/.orchestrator-office/server/orchestrator.db --days 14 [--project <name>]` on the server (its Node has `node:sqlite`).
+
 ### 3. Both
 When a change touches the protocol between the app's own agent and the server (rare; `packages/contracts/src/protocol.ts`, `PROTOCOL_VERSION`): update the server first, then the clients. An older client can still open the office; its own room may not connect until it is updated.
 
