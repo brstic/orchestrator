@@ -160,6 +160,10 @@ function describeAction(a: ImprovementAction, projects: Record<string, Project>,
 function Proposal({ imp }: { imp: Improvement }) {
   const s = useOffice();
   const [busy, run] = useAction();
+  // Advice to set a project's verification command: set here, not only noted (on the live office it was "Got it"-ed and
+  // nothing was set — the advice had nowhere to put the command).
+  const [command, setCommand] = useState('');
+  const setsCommand = imp.kind === 'verify_command' && !!imp.projectId && !!s.projects[imp.projectId];
   const owner = s.me?.role === 'owner';
   const { text, widens } = describeAction(imp.action, s.projects, s.employees, s.tasks);
   const advice = imp.action.type === 'advice';
@@ -177,6 +181,24 @@ function Proposal({ imp }: { imp: Improvement }) {
           <span className="strong">If you say yes: </span>
           {text}
           {widens && ' This lets employees do more without asking you.'}
+        </div>
+      )}
+      {setsCommand && owner && (
+        <div className="row" data-set-verify>
+          <input className="mono grow" value={command} placeholder="npm test" spellCheck={false} onChange={(e) => setCommand(e.target.value)} aria-label={`Verification command for ${about ?? 'the project'}`} />
+          <Button
+            variant="primary"
+            disabled={busy || !command.trim()}
+            title="The office runs it in the employee's folder on every hand-in of code"
+            onClick={() =>
+              run(async () => {
+                await api('PATCH', `/projects/${imp.projectId}`, { verifyCommand: command.trim() });
+                return api('POST', `/improvements/${imp.id}/apply`, {});
+              }, `${about ?? 'The project'} is verified by "${command.trim()}" now`)
+            }
+          >
+            Set it
+          </Button>
         </div>
       )}
       <div className="row">

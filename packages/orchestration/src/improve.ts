@@ -442,7 +442,7 @@ export class Improver {
             kind: 'verify_command',
             key: `verify:${project.id}`,
             title: `Set a verification command for ${project.name}`,
-            rationale: `${unverified.length} tasks with code changes were completed in ${project.name} without any measured verification, because the project has no verification command. Setting one (for example its test script) lets Orchestrator check completed work itself.`,
+            rationale: `${unverified.length} tasks with code changes were completed in ${project.name} without the office running the project's tests, because it has no verification command — the office only checks that the changed files parse. Set the command that runs its tests (for example "npm test" or "vendor/bin/phpunit"): the office runs it on every hand-in, and work that fails it is not handed in.`,
             evidence: unverified.slice(-8).map((t) => ({ kind: 'task' as const, id: t.id, note: `${t.key} ${t.title}` })),
             projectId: project.id,
             action: { type: 'advice' },
