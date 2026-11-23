@@ -2198,7 +2198,7 @@ export class SessionRegistry {
       permissions: { allow: perms.allow, deny: [...perms.deny, ...this.eng.rent.denyRulesFor(employee)], ask: perms.ask },
       allowedTools: [],
       disallowedTools: [],
-      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available(), !codex && this.eng.attachments.available(), !codex && this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser, asksHighRisk(this.core.settings, employee.autonomy)) + (this.eng.release.instructions(employee) ? `\n\n${this.eng.release.instructions(employee)}` : ''),
+      appendSystemPrompt: systemPromptFor(employee, project, this.core.settings.companyName, true, this.eng.improver.playbookBlock(employee, project?.id ?? null, false), this.core.settings.employeesManageBoard !== false, this.eng.memory.available(), !codex && this.eng.attachments.available(), !codex && this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser, asksHighRisk(this.core.settings, employee.autonomy), this.eng.release.branchPush(employee, project)) + (this.eng.release.instructions(employee) ? `\n\n${this.eng.release.instructions(employee)}` : ''),
       mcp: { url: `${this.core.publicUrl}/mcp`, token: mcpToken },
       browser: !codex && this.core.settings.employeesBrowser !== false && !!this.core.hosts.get(session.hostId)?.info?.browser,
       strictMcp: !this.core.settings.workersInheritMcp,

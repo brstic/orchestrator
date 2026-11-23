@@ -1,4 +1,4 @@
-import { nowIso, releaseRulesOf, truncate, type Employee, type ReleaseRules, type Task } from '@orchestrator/contracts';
+import { nowIso, releaseRulesOf, truncate, type Employee, type Project, type ReleaseRules, type Task } from '@orchestrator/contracts';
 import { EngineError, type Core } from './core.ts';
 import type { Engine } from './engine.ts';
 
@@ -178,6 +178,27 @@ export class Release {
     this.close({ taskId: task.id }, `employee:${employee.name}`);
     this.core.event({ type: 'task.released', source: 'mcp', summary: `${employee.name} released ${task.key}`, taskId: task.id, projectId: task.projectId, employeeId: employee.id, data: { key: task.key, note: truncate(words, 600) } });
     return `${task.key} is recorded as released. The gate is closed again for it.`;
+  }
+
+  /** The gate is on and this project gives each employee a branch of their own: they push it, and release approved work. */
+  branchPush(employee: Employee, project: Project | undefined | null): boolean {
+    return !!this.rulesFor(employee) && project?.workspace === 'worktrees';
+  }
+
+  /**
+   * In a project of worktrees, with the gate on (the owner, 2026-11-23: try on the development server from the task's
+   * branch; the author moves master as the approved plan says): how this task is tried and released.
+   */
+  branchRelease(employee: Employee, task: Task, project: Project): string {
+    if (!this.branchPush(employee, project) || !task.branch) return '';
+    const base = project.baseBranch;
+    const integration = project.integrationBranch;
+    const repo = task.repoRoot ?? project.repoPath ?? 'the repository';
+    return [
+      `How this task is tried and released (this project gives you a branch of your own):`,
+      `- To try it on the development server: \`git push origin ${task.branch}\`, and check that branch out there (free). Push no other branch.`,
+      `- When an owner approves it, the office merges it into ${integration}. Then release it as your plan says — and write these steps into release_plan: in ${repo} (on ${base}) \`git merge --ff-only ${integration}\` and \`git push origin ${base}\`; put the development server back on ${base} and pull it there, then on production; check; call report_released.`,
+    ].join('\n');
   }
 
   /** What an employee is told about the gate, in their standing instructions and with every task (empty while it is off). */

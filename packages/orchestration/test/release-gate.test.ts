@@ -83,3 +83,16 @@ test('by hand: an owner lets one employee release for a while, and can close it 
   eng.release.close({ employeeId: ids.Zed! }, 'Branko');
   assert.equal(eng.release.decide(emp('Zed'), 'git push origin main', 'it pushes to main').allow, false);
 });
+
+test('a project of worktrees with the gate on: the task says how it is tried (its branch) and released (main moved to integration)', async () => {
+  const p = eng.core.put('project', { ...eng.core.projects.require(shop), id: 'p-market', name: 'Market', repoPath: '/work/market', workspace: 'worktrees', baseBranch: 'main', integrationBranch: 'orchestrator/integration' });
+  const t = { ...eng.tasks.createTask({ projectId: p.id, title: 'Banner', description: 'x', assigneeId: ids.Ava, released: false }, 'owner'), branch: 'orch/ava/t-9-banner', repoRoot: '/work/market' };
+  const text = eng.release.branchRelease(emp('Ava'), t, eng.core.projects.require(p.id));
+  assert.match(text, /git push origin orch\/ava\/t-9-banner`, and check that branch out there/);
+  assert.match(text, /in \/work\/market \(on main\) `git merge --ff-only orchestrator\/integration` and `git push origin main`/);
+  assert.equal(eng.release.branchRelease(emp('Ava'), t, { ...eng.core.projects.require(p.id), workspace: 'in_place' }), '', 'a project worked in place: nothing of it');
+  const { systemPromptFor, taskPrompt } = await import('../src/prompts.ts');
+  assert.match(systemPromptFor(emp('Ava'), eng.core.projects.require(p.id), 'Co', true, '', false, false, false, false, true, true), /Push only your task branch/);
+  assert.match(systemPromptFor(emp('Ava'), eng.core.projects.require(p.id), 'Co', true), /Never push, never switch/);
+  assert.match(taskPrompt(t, eng.core.projects.require(p.id), [], null, '', [], [], true), /push only this branch, and do not switch branches/);
+});
