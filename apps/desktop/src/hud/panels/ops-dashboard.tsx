@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Badge, timeAgo } from '@orchestrator/ui';
 import { useOffice } from '../../lib/store.ts';
+import { checkHealth } from '../../lib/check-health.ts';
 import { fmtBytes, hostDotClass } from './company-shared.tsx';
 
 const NONE = <div className="small faint">Nothing recorded yet.</div>;
@@ -19,6 +20,8 @@ export function OpsDashboard() {
   const sessions = useOffice((s) => s.sessions);
   const notifications = useOffice((s) => s.notifications);
   const openPanel = useOffice((s) => s.openPanel);
+  // What waits for an owner, and how owners approve, is theirs to read (a visitor's tasks carry no evidence anyway).
+  const owner = useOffice((s) => s.me?.role === 'owner');
 
   const builds = useMemo(
     () =>
@@ -61,8 +64,50 @@ export function OpsDashboard() {
     [notifications],
   );
 
+  const health = useMemo(() => checkHealth(tasks), [tasks]);
+  const of = (n: number, total: number) => (total ? `${n} of ${total}` : '—');
+
   return (
     <div className="ops-grid">
+      {owner && (
+        <section className="card ops-card" data-check-health>
+          <div className="section-title">How work is checked — the last {health.days} days</div>
+          {health.handedIn === 0 && health.waiting.length === 0 ? (
+            NONE
+          ) : (
+            <>
+              <div className="ops-row" title="Code handed in: what the office itself ran on it">
+                <span className="grow">Code handed in</span>
+                <span className="small muted">
+                  {health.handedIn} · tested by the office {health.tested} · only parsed {health.syntaxOnly} · nothing run {health.unchecked}
+                </span>
+              </div>
+              <div className="ops-row" title="A colleague's approval says what they ran or opened (submit_review checked)">
+                <span className="grow">Colleagues' approvals that say what was checked</span>
+                <span className="small muted">{of(health.peerChecked, health.peerApprovals)}</span>
+              </div>
+              <div className="ops-row">
+                <span className="grow">Sent back at least once</span>
+                <span className="small muted">{of(health.sentBack, health.handedIn)}</span>
+              </div>
+              <div className="ops-row">
+                <span className="grow">Approved by an owner with a word said</span>
+                <span className="small muted">{of(health.ownerSaid, health.ownerApprovals)}</span>
+              </div>
+              {health.waiting.map((w) => (
+                <button key={w.id} className="ops-row" onClick={() => openPanel('task', w.id)} data-check-waiting={w.key}>
+                  <Badge tone={Date.now() - Date.parse(w.since) > 86_400_000 ? 'warn' : 'neutral'}>waits for you</Badge>
+                  <span className="grow truncate">
+                    <span className="mono muted">{w.key}</span> {w.title}
+                  </span>
+                  <span className="small faint ops-when">{timeAgo(w.since)}</span>
+                </button>
+              ))}
+            </>
+          )}
+        </section>
+      )}
+
       <section className="card ops-card">
         <div className="section-title">Build results — verification runs by the office</div>
         {builds.length === 0

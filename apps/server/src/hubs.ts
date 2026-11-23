@@ -354,7 +354,15 @@ interface ClientConn {
   voice?: { since: number; frames: number; on: boolean };
   /** When they last spoke (for the rate limit). */
   said: number[];
+  /**
+   * When this window last said its person is here — in front of it, using it (`here`, every minute while so). Absent:
+   * not here (another window in front, hidden, or nothing touched for a while). Read by `isHere`.
+   */
+  hereAt?: number;
 }
+
+/** A window that said its person is here counts for this long without saying it again (it says it every minute). */
+export const HERE_FOR_MS = 150_000;
 
 /** Connections from office UIs (the desktop app or a browser). */
 export class ClientHub {
@@ -450,6 +458,16 @@ export class ClientHub {
         }
       }
     }
+  }
+
+  /**
+   * Is this person (a member's id, or "owner") in the office now — a window of theirs open, in front, and used in the
+   * last minutes? While so, what employees send them goes to the office only, not to their Telegram (the owner,
+   * 2026-11-23: "when I am present in the office, the agents must not send me messages on Telegram").
+   */
+  isHere(personId: string, now = Date.now()): boolean {
+    for (const c of this.clients.values()) if (c.who.id === personId && !c.dropped && c.ws.readyState === 1 && c.hereAt && now - c.hereAt < HERE_FOR_MS) return true;
+    return false;
   }
 
   /** Everyone present, for a client that asks over HTTP. */
@@ -617,6 +635,10 @@ export class ClientHub {
       const fail = (e: unknown, ref?: string) => this.send(id, { t: 'error', message: (e as Error).message, ref });
       try {
         switch (msg.t) {
+          case 'here':
+            // Its person is in front of this window and using it, or no longer (`isHere`; Telegram waits while so).
+            conn.hereAt = msg.active === true ? Date.now() : undefined;
+            break;
           case 'presence': {
             const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-500, Math.min(500, v)) : 0);
             const first = !conn.presence;

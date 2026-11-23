@@ -382,6 +382,8 @@ export type ClientToServer =
   | { t: 'control.release'; sessionId: ID }
   | { t: 'screens.focus'; sessionId: ID | null }
   /** Where this person's character is, so the others in the office can see them. */
+  /** Its person is in front of this window and using it (or no longer): while so, nothing goes to their Telegram (`ClientHub.isHere`). */
+  | { t: 'here'; active: boolean }
   | { t: 'presence'; x: number; z: number; rot: number; moving: boolean; at?: number; sit?: boolean; out?: OutsideAt }
   /** This person's character jumped (the interact key with nothing to act on in front of them): everyone sees it. */
   | { t: 'jump' }

@@ -204,7 +204,19 @@ export interface TelegramDeps {
   pollSeconds: number;
   /** May this person (an id as in `TelegramPerson`) still work with this employee? Asked on every message. */
   mayWork: (personId: string, employeeId: string) => TelegramPerson | null;
+  /**
+   * Is this person in the office now (a window of theirs in front and used)? Then questions, requests and messages to
+   * them stay in the office; if they leave while one is still open or unread, it is sent then. Absent: never.
+   */
+  here?: (personId: string) => boolean;
+  /** How often what was kept back is looked at again (default `HELD_SWEEP_MS`). */
+  heldSweepMs?: number;
 }
+
+/** How often what was kept back while somebody was in the office is looked at again. */
+const HELD_SWEEP_MS = 30_000;
+/** A message to a person kept back while they were in the office goes to Telegram later only while this fresh. */
+const HELD_MESSAGE_MS = 2 * 3600_000;
 
 export class Telegram {
   private bots = new Map<string, Bot>();
@@ -242,10 +254,39 @@ export class Telegram {
 
   start(): void {
     for (const id of this.bots.keys()) this.listen(id);
+    this.sweep = setInterval(() => this.sendHeld(), this.deps.heldSweepMs ?? HELD_SWEEP_MS);
+    this.sweep.unref?.();
+  }
+
+  /** Questions and messages kept back while somebody was in the office (`here`), to send once they have left. */
+  private readonly heldQuestions = new Set<string>();
+  private readonly heldMessages = new Set<string>();
+  private sweep: NodeJS.Timeout | null = null;
+
+  private isHere(personId: string): boolean {
+    return this.deps.here?.(personId) === true;
+  }
+
+  /** Whoever left the office meanwhile gets on Telegram what is still open, or still unread, for them. */
+  sendHeld(): void {
+    const core = this.deps.engine.core;
+    const questions = [...this.heldQuestions];
+    this.heldQuestions.clear();
+    for (const id of questions) {
+      const q = core.questions.get(id);
+      if (q && q.status === 'open') void this.question(q);
+    }
+    const messages = [...this.heldMessages];
+    this.heldMessages.clear();
+    for (const id of messages) {
+      const n = core.notifications.get(id);
+      if (n && !n.readAt && !n.resolvedAt && Date.now() - Date.parse(n.createdAt) < HELD_MESSAGE_MS) void this.personMessage(n, true);
+    }
   }
 
   close(): void {
     this.closed = true;
+    if (this.sweep) clearInterval(this.sweep);
     for (const c of this.loops.values()) c.abort();
     for (const w of this.waiting.values()) clearInterval(w.timer);
   }
@@ -695,7 +736,7 @@ export class Telegram {
       for (const s of already) await this.call(this.token(b), 'editMessageText', { chat_id: s.chatId, message_id: s.messageId, text: `${s.text}\n\n${how}` }).catch(() => undefined);
       return;
     }
-    if (already || !b.questions) return;
+    if (!b.questions) return;
     const name = this.nameOf(q.employeeId);
     let text: string;
     let buttons: Array<Array<{ text: string; callback_data: string }>> = [];
@@ -712,31 +753,44 @@ export class Telegram {
     }
     const out: Array<{ employeeId: string; chatId: number; messageId: number; text: string }> = [];
     for (const p of b.people) {
+      if (already?.some((s) => s.chatId === p.chatId)) continue;
       if (!this.deps.mayWork(p.as.id, q.employeeId)) continue;
+      // In the office now: they see it there. Sent here if they leave while it is still open.
+      if (this.isHere(p.as.id)) {
+        this.heldQuestions.add(q.id);
+        continue;
+      }
       const r = await this.call<{ message_id: number }>(this.token(b), 'sendMessage', { chat_id: p.chatId, text: text.slice(0, TELEGRAM_LIMITS.textChars), ...(buttons.length ? { reply_markup: { inline_keyboard: buttons } } : {}) }).catch(() => null);
       if (r) {
         out.push({ employeeId: q.employeeId, chatId: p.chatId, messageId: r.message_id, text: text.slice(0, 3500) });
         this.replyTo.set(`${p.chatId}:${r.message_id}`, q.id);
       }
     }
-    if (out.length) this.sent.set(q.id, out);
+    if (out.length) this.sent.set(q.id, [...(already ?? []), ...out]);
   }
 
   /**
    * What an employee wrote to a person (`message_person`): also sent by that employee's own bot, privately, to the
    * people it is for who talk to it there. A reply in that chat goes to the employee, as everything said there does.
    */
-  private async personMessage(n: Notification): Promise<void> {
-    if (n.kind !== 'message' || !n.employeeId || !n.for?.length || n.readAt || this.toldPeople.has(n.id)) return;
-    // (Only as it is written: not again when the office starts, or when it is read.)
-    if (Date.now() - Date.parse(n.createdAt) > 120_000) return;
+  private async personMessage(n: Notification, late = false): Promise<void> {
+    if (n.kind !== 'message' || !n.employeeId || !n.for?.length || n.readAt) return;
+    // (Only as it is written — or, kept back while its person was in the office, when they leave: not again when the
+    // office starts, or when it is read.)
+    if (!late && Date.now() - Date.parse(n.createdAt) > 120_000) return;
     const b = this.bots.get(n.employeeId);
     if (!b) return;
-    this.toldPeople.add(n.id);
     if (this.toldPeople.size > 2000) this.toldPeople.clear();
     for (const p of b.people) {
+      const key = `${n.id}:${p.chatId}`;
+      if (this.toldPeople.has(key)) continue;
       const who = this.deps.mayWork(p.as.id, n.employeeId);
       if (!who || !notificationFor(n, { id: who.id, owner: who.owner })) continue;
+      if (this.isHere(p.as.id)) {
+        this.heldMessages.add(n.id);
+        continue;
+      }
+      this.toldPeople.add(key);
       await this.call(this.token(b), 'sendMessage', { chat_id: p.chatId, text: `${n.severity === 'warning' ? '❗ ' : ''}${n.body}`.slice(0, TELEGRAM_LIMITS.textChars) }).catch(() => undefined);
     }
   }

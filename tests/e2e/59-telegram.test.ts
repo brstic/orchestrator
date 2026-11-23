@@ -118,6 +118,23 @@ test('what she writes to the boss (message_person) comes to Telegram as well, fr
   assert.equal(tg.sent.filter(textTo(ME.id, /release notes are ready/)).length, before);
 });
 
+test('while the boss is in the office nothing of hers goes to their Telegram; once they leave, what is still open or unread does', async () => {
+  const office = await h.client();
+  office.send({ t: 'here', active: true });
+  await sleep(300);
+  tg.message(TOKEN, ME, 'Ask me in the office @@fake: mcp message_person {"to":"boss","message":"The beta build is ready."}; ask Ship the beta to everyone?; say asked-in-office@@');
+  const q = await waitFor(async () => (await h.state()).questions.find((x) => x.employeeId === kira.id && /Ship the beta/.test(x.text) && x.status === 'open'), { label: 'her question', timeout: 30_000 });
+  await sleep(1500);
+  assert.equal(tg.sent.filter(textTo(ME.id, /Ship the beta|beta build is ready/)).length, 0, 'kept off Telegram while the boss is in the office');
+  // The boss goes away from the window: what is still open, and unread, comes now.
+  office.send({ t: 'here', active: false });
+  const asked = await tg.waitSent(textTo(ME.id, /Kira asks:\nShip the beta to everyone\?/), 10_000);
+  await tg.waitSent(textTo(ME.id, /The beta build is ready\./), 10_000);
+  tg.message(TOKEN, ME, 'Not yet.', { replyTo: { message_id: asked.messageId!, from: { id: 9001 } } });
+  await waitFor(async () => (await h.state()).questions.find((x) => x.id === q.id)?.status !== 'open', { label: 'answered' });
+  office.close();
+});
+
 test('a permission request comes with Allow and Deny; a button decides it, as the person who paired', async () => {
   const project = (await h.state()).projects.find((p) => p.name === 'Shop')!;
   const standard = await h.employee('Lio', 'devops', { autonomy: 'standard', projectId: project.id });

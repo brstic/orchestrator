@@ -148,7 +148,7 @@ test("a machine whose agent does not know the central context is not asked again
   eng.core.put('session', { id: 's-old', employeeId: kira.id, hostId: host.id, origin: 'managed', mode: 'interactive_cli', tmuxSession: 'k', tmuxPane: null, cwd: '/work/kira', repoRoot: null, branch: null, claudeSessionId: 'c', status: 'running', activity: 'idle', activityDetail: null, activitySince: now(), inTurn: false, control: 'AGENT_CONTROLLED', controllerId: null, capabilities: { terminal: true, hooks: true, mcp: true, structuredApproval: true, structuredMessaging: true, usage: false }, permissionMode: null, model: null, cols: 1, rows: 1, pid: null, usage: null, startedAt: now(), endedAt: null, lastEventAt: null, exitReason: null } as never);
   const warned: string[] = [];
   const log = eng.core.log.bind(eng.core);
-  eng.core.log = ((level: string, msg: string) => (msg.includes('central context') && warned.push(msg), log(level as never, msg))) as never;
+  (eng.core as { log: unknown }).log = (level: string, msg: string) => (msg.includes('central context') && warned.push(msg), log(level as never, msg));
   for (let i = 0; i < 5; i++) {
     eng.context.add({ layer: 'office', title: `Fact ${i}`, text: 'Something new.' }, 'owner');
     eng.context.pushAll();

@@ -2,6 +2,15 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-23 — In the office means in front of a window and using it, not a window open
+
+The owner asked that employees not write to their Telegram while they are in the office. Their desktop app is open all
+day (it opens the office at start), so "a window is connected" would have kept everything off Telegram for good. Here
+means: a window of theirs is visible, in front, and was touched in the last 10 minutes; said by the window when it
+changes and every minute (a window that stops saying it counts for 150 s). What is kept back is not dropped: if they
+leave while a question is open or a message unread, it goes to Telegram then. The answer to something they wrote on
+Telegram is not held — they asked there.
+
 ## 2026-11-23 — The office checks what it can, and a reviewer says what they checked
 
 Measured on the live office (its own record, read only): of 320 hand-ins in twelve days the office had checked none —

@@ -98,6 +98,8 @@ export interface ServerOptions {
   telegramApi?: string;
   /** How long one wait for a bot's messages lasts (s). */
   telegramPollSeconds?: number;
+  /** How often what was kept off Telegram while somebody was in the office is looked at again (tests make it short). */
+  telegramHeldSweepMs?: number;
 }
 
 /**
@@ -256,6 +258,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       if (closedTo(engine, who, member) || !allowed(who, 'work', member)) return null;
       return { id: who.id, name: who.name, owner: who.kind === 'owner' };
     },
+    here: (personId) => clients.isHere(personId),
+    heldSweepMs: opts.telegramHeldSweepMs,
   });
   telegram.start();
   // Whom an employee may write to (`message_person`): the owners and colleagues who are in now.

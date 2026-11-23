@@ -7,6 +7,7 @@ import { api, connection, serverBase, setToken } from './lib/api.ts';
 import { askStateOf, loadAccounts, loadDocs, onScreen, sessionOfEmployee, startConnection, useOffice, type PanelId } from './lib/store.ts';
 import { loadPrefs, usePrefs } from './lib/prefs.ts';
 import { useCoveredOffice, usePowerSaving } from './lib/power.ts';
+import { startHere } from './lib/here.ts';
 import { awardView } from './lib/award.ts';
 import { boardView, ceoView, foremanView, leadViews, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
 import { ChatBox, CommandBar, ConfirmDialog, DoorBell, Replies, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
@@ -134,6 +135,8 @@ function useStable<T extends Record<string, (...args: any[]) => any>>(fns: T): T
 }
 
 function usePresence(): void {
+  // In front of the window and using it: what employees send stays off this person's Telegram (lib/here.ts).
+  useEffect(() => startHere((msg) => connection.send(msg), () => useOffice.getState().conn === 'online'), []);
   useEffect(() => {
     let last = { x: NaN, z: NaN, rot: NaN, moving: false, sit: false, out: '', at: null as OutsideAt | null };
     let still = 0;
