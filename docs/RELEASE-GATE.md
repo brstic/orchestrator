@@ -39,7 +39,9 @@ With **Settings → Employees → "Nothing is released before I approve it (the 
     production by these rules. `packages/contracts/test/release.test.ts`.)
 
   The employee's machine holds such a command and the office answers at once: refused, with what to do instead
-  ("hand it in with complete_task and a release_plan; when an owner approves it you are told, and this goes through").
+  ("hand it in with complete_task and a release_plan; when an owner approves it you are told, and this goes through"),
+  and what is free meanwhile, by what was refused: for production, that reading it and probes in /tmp there are free;
+  for a program sent from the machine, to put it in the command (a heredoc) so the office can read it.
   The refusal is in the feed ("… tried to release work before it was approved") and the audit log (`release.held`).
 - **The hand-in:** `complete_task` takes **`release_plan`** — where the work goes once approved and how: branches,
   servers, steps, checks, who does which part. Work handed in with a plan **always waits for an owner**: a ticket

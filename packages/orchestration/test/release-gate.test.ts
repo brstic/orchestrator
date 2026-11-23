@@ -40,6 +40,10 @@ test('on: a release before approval is refused, in words that say what to do ins
   assert.match(d.reason, /release gate: this command releases work \(it pushes to master\)/);
   assert.match(d.reason, /hand it in with complete_task|release_plan/);
   assert.ok(eng.core.store.recentAudit(20).some((a) => a.action === 'release.held'));
+  // What is free instead, by what was refused.
+  assert.match(eng.release.decide(emp('Ava'), "ssh 64.0.2.10 'rm /srv/x'", 'it changes something on 64.0.2.10, a production server').reason, /Reading production is free, and so are probes written into \/tmp there/);
+  assert.match(eng.release.decide(emp('Ava'), "ssh 64.0.2.10 'php /dev/stdin' < p.php", 'it runs a program from this machine on 64.0.2.10, a production server (what it does cannot be read here)').reason, /put it in the command itself \(a heredoc to ssh\)/);
+  assert.doesNotMatch(d.reason, /Reading production/, 'a push to master is told nothing about production');
 });
 
 test('an owner approves: the author and the colleagues on the ticket may release — not its reviewer, not anybody else — and are told', () => {

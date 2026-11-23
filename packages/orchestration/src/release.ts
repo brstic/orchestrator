@@ -83,9 +83,15 @@ export class Release {
         ? `${task.key} is in review: wait for an owner's approval — you are told when it comes, and then this goes through.`
         : `Finish ${task.key}, commit, and hand it in with complete_task — say in release_plan where it goes and how (branches, servers, steps). When an owner approves it you are told, and then this goes through.`
       : 'Release only work an owner approved: hand the work in on its ticket with complete_task and a release_plan, or ask the boss to let you release (they can, by hand).';
+    // What is free instead, for what was refused (seen on the live office: the employee went on at once when it knew).
+    const instead = /cannot be read here/.test(why)
+      ? 'If what you send there only reads, put it in the command itself (a heredoc to ssh) so the office can read it: reading production is free.'
+      : /production server/.test(why)
+        ? 'Reading production is free, and so are probes written into /tmp there; anything else you change there waits for the approval. A development server is free.'
+        : '';
     return {
       allow: false,
-      reason: `Orchestrator release gate: this command releases work (${why}). Nothing goes to ${this.rules().branches.join(' / ')} or to production before an owner approved it; your own branches and the development servers are free. ${next} Do not try it another way.`,
+      reason: `Orchestrator release gate: this command releases work (${why}). Nothing goes to ${this.rules().branches.join(' / ')} or to production before an owner approved it; your own branches and the development servers are free. ${instead ? `${instead} ` : ''}${next} Do not try it another way.`,
     };
   }
 
