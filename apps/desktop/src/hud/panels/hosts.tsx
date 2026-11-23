@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { AgentSession, Employee, Host } from '@orchestrator/contracts';
+import { hostLacks } from '@orchestrator/contracts';
 import { Avatar, Badge, Button, Field, Window, timeAgo } from '@orchestrator/ui';
 import { useAccess } from '../../lib/access.ts';
 import { api, serverBase } from '../../lib/api.ts';
@@ -338,6 +339,12 @@ function Machine({ host, link, reload, startOpen }: { host: Host; link: Link | n
                 <Fact name="tmux">{info!.tmuxVersion ? <span className="k-mono">{info!.tmuxVersion}</span> : <span className="k-warn">not found</span>}</Fact>
                 <Fact name="Agent">
                   <span className="k-mono">{info!.agentVersion}</span>
+                  {hostLacks(info).length > 0 && (
+                    <span className="k-warn" data-older-app title={`Its app is from before ${hostLacks(info).join(', ')}: update it on that machine`}>
+                      {' '}
+                      · older app — without {hostLacks(info).join(', ')}
+                    </span>
+                  )}
                 </Fact>
                 {info!.runtimes && (
                   <Fact name="SDK-managed workers" title={info!.runtimes.includes('managed_sdk') ? 'The Claude Agent SDK is installed on this machine: employees can be driven through it' : 'Install it on that machine with: orchestrator-agent sdk install (then restart the agent)'}>

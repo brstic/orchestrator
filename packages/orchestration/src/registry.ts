@@ -17,7 +17,7 @@ import type {
   ActivityState,
 } from '@orchestrator/contracts';
 import type { ServiceProvider } from '@orchestrator/contracts';
-import { AUTONOMY_LEVELS, EFFORT_CHOICES, HOOKS_VERSION, isAutonomyLevel, memberSeatOf, modelFamily, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, directsOthers, LEAD_ROLE, LEAD_MODEL, LEAD_EFFORT, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd, MEMBER_ROOM_LIMITS, memberSeatId } from '@orchestrator/contracts';
+import { AUTONOMY_LEVELS, EFFORT_CHOICES, FOR_OWNERS, HOOKS_VERSION, hostLacks, isAutonomyLevel, memberSeatOf, modelFamily, ROLE_CATALOGUE, matchRole, newId, nowIso, roleByKey, directsOthers, LEAD_ROLE, LEAD_MODEL, LEAD_EFFORT, sanitizeMemberRoom, slugify, truncate, type EffortLevel, stripEnd, MEMBER_ROOM_LIMITS, memberSeatId } from '@orchestrator/contracts';
 import { generateToken } from '@orchestrator/database';
 import { inputBox, menuKeys, permissionPrompt, plainScreen, trustPromptKeys } from './comms.ts';
 import { EngineError, within } from './core.ts';
@@ -273,6 +273,7 @@ export class HostRegistry {
     clearTimeout(this.offlineAlarms.get(hostId));
     this.offlineAlarms.delete(hostId);
     this.eng.comms.resolveNotifications((n) => n.kind === 'host_disconnected' && n.hostId === hostId);
+    this.olderApp(host);
     // Who is signed in to its Claude accounts: asked now, so that each is known by its name.
     // (A moment after it has been welcomed, and once more if it did not answer: a machine that has just connected is
     // still starting.)
@@ -284,6 +285,27 @@ export class HostRegistry {
       t.unref?.();
     };
     ask(true);
+  }
+
+  /**
+   * A machine whose app is older than the office's lacks what came since (`hostLacks`): the owners are told once, in
+   * words, and the notice goes once it is updated. (On the live office two members' computers ran without the release
+   * gate and the central context, and only the server's log said so — some 61 000 times a day.)
+   */
+  private olderApp(host: Host): void {
+    const lacks = hostLacks(host.info);
+    const title = `${host.name} runs an older Orchestrator`;
+    const mine = (n: { kind: string; hostId?: string | null; title: string }) => n.kind === 'info' && n.hostId === host.id && n.title === title;
+    if (!lacks.length) return this.eng.comms.resolveNotifications(mine);
+    if (this.core.notifications.filter((n) => mine(n) && !n.resolvedAt).length) return;
+    this.eng.comms.notify({
+      kind: 'info',
+      severity: 'warning',
+      title,
+      body: `Its app is from before ${lacks.join(', ')} — none of that works there until it is updated${host.memberName ? `: ${host.memberName} opens the new version of the desktop app on that computer` : ': update the program on that machine'}.`,
+      hostId: host.id,
+      for: [FOR_OWNERS],
+    });
   }
 
   disconnected(hostId: string): void {

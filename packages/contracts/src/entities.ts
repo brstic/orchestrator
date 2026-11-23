@@ -45,6 +45,23 @@ export interface HostInfo {
   runtimes?: ExecutionMode[];
 }
 
+/**
+ * What a machine's agent says it can do, newest last, and what an owner loses where it does not: an agent from an older
+ * app leaves these out of its `HostInfo` (`hostLacks`). The version number does not tell — every build says 0.1.0.
+ */
+export const HOST_FEATURES: ReadonlyArray<{ key: 'saysHeldFor' | 'rentFence' | 'moves' | 'releaseGate'; what: string }> = [
+  { key: 'saysHeldFor', what: 'the high-risk switches for Auto and Unrestricted' },
+  { key: 'rentFence', what: "a rented employee's fence" },
+  { key: 'moves', what: 'moving employees to and from it' },
+  { key: 'releaseGate', what: 'the release gate (and the central context)' },
+];
+
+/** What this machine's agent cannot do that this office can (empty: it is up to date, or nothing is known yet). */
+export function hostLacks(info: HostInfo | null | undefined): string[] {
+  if (!info) return [];
+  return HOST_FEATURES.filter((f) => info[f.key] !== true).map((f) => f.what);
+}
+
 /** Every number here is measured on the host. Absent means "not available". */
 export interface HostResources {
   ts: ISODate;
