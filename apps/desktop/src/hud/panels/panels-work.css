@@ -1379,3 +1379,26 @@ button.tk-person-chip:hover {
   white-space: pre-wrap;
   margin: 4px 0 0;
 }
+
+/* A page an employee made, shown as the page (file-view.tsx PageViewer): white, like paper, in its own frame. */
+.tf-page {
+  width: min(1200px, 100%);
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  cursor: auto;
+}
+.tf-page-frame {
+  flex: 1 1 auto;
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
+.tf-reader-bar a.btn {
+  text-decoration: none;
+  color: inherit;
+}

@@ -153,3 +153,24 @@ Tried by hand on the server after installing: the tool started as a session star
 - That a session reads a file under `--add-dir <agent home>/files` without a permission prompt in every permission mode.
 - That an employee, told to, really opens an attached picture before starting, and really leaves a screenshot when the work is visual.
 - The browser tools inside a real session (they were tried by hand over the same protocol, not through Claude Code), and how much of a session's context a page snapshot takes.
+
+## Pages
+
+The owner, 2026-11-24: "the accountant sent me HTML; we need a way to see the HTML pages and the like that agents
+make." A file named `.html`, `.htm` or `.svg` — given in the conversation (`attach_file` with no task) or left on a task —
+opens **as the page it is**: *Open* (in the conversation, on the ticket's file list, and on its tile under "Left by the
+employee to look at") shows it over the window on white, with *Source* (its HTML, in the text reader), *Open in browser*
+and *Download* (`PageViewer` in `apps/desktop/src/hud/panels/file-view.tsx`; `isPageFile` in `lib/readable.ts`).
+
+How it is kept apart from the office (`apps/server/src/page-view.ts`): a person who may open the file asks for it
+(`POST /api/employees/:id/files/:fid/page` — owners, like the file itself; `POST /api/tasks/:id/attachments/:aid/page` —
+whoever may see the task's details) and gets a **ticket** for that one file, good for ten minutes; the page is loaded
+from `/view/<ticket>/<name>` — no sign-in, the ticket is the key — in a frame. Its response carries its own policy: a
+**sandbox** without `allow-same-origin` (an origin of its own: no token, no storage, nothing of the window around it, and
+the office's API answers it as a stranger), scripts, styles, pictures, fonts and requests inline or over https (agents'
+pages use CDNs), popups out to the browser, no forms posted, framed only by the office's own window
+(`frame-ancestors 'self'`), `no-referrer`, `no-store`. The frame has the same `sandbox` attribute. *Open in browser* opens
+the same ticket in the computer's browser. The office's own downloads of these files stay `application/octet-stream`
+under `sandbox` as before. Employees are told (`attach_file`) that a page is shown as a page. Tests:
+`tests/e2e/73-page-view.test.ts`; seen in a development office (a page with a heading, an amount and squares drawn in
+SVG, opened from the ticket's tile).

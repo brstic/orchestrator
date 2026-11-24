@@ -6,8 +6,8 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import type { SaidFile } from '@orchestrator/contracts';
 import { api, apiBlob } from '../../lib/api.ts';
-import { familyOf, playableAs, readableAs } from '../../lib/readable.ts';
-import { TextViewer, VideoViewer } from './file-view.tsx';
+import { familyOf, isPageFile, playableAs, readableAs } from '../../lib/readable.ts';
+import { PageViewer, TextViewer, VideoViewer } from './file-view.tsx';
 
 export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 export const MAX_SAID_FILES = 10;
@@ -246,7 +246,8 @@ async function saveSaid(employeeId: string, file: SaidFile): Promise<void> {
 /** A file an employee gave in the conversation: a picture is shown (a click looks closer), a video plays, text is read, anything can be downloaded. */
 export function GivenFile({ employeeId, file, caption, onError }: { employeeId: string; file: SaidFile; caption: string | null; onError: (why: string) => void }) {
   const [open, setOpen] = useState(false);
-  const reading = readableAs(file.name, file.mime, file.size);
+  const page = isPageFile(file.name);
+  const reading = page ? 'text' : readableAs(file.name, file.mime, file.size);
   const media = playableAs(file.name, file.mime);
   const video = !!media;
   const save = () => void saveSaid(employeeId, file).catch(() => onError('The office no longer keeps this file (a file given in a conversation is kept for a few days).'));
@@ -270,7 +271,8 @@ export function GivenFile({ employeeId, file, caption, onError }: { employeeId: 
           </button>
         )}
       </div>
-      {open && reading && <TextViewer name={file.name} note={caption} as={reading} load={() => apiBlob(`/employees/${employeeId}/files/${file.id}`)} onDownload={save} onClose={() => setOpen(false)} />}
+      {open && page && <PageViewer name={file.name} note={caption} ticket={() => api<{ url: string }>('POST', `/employees/${employeeId}/files/${file.id}/page`, {})} load={() => apiBlob(`/employees/${employeeId}/files/${file.id}`)} onDownload={save} onClose={() => setOpen(false)} />}
+      {open && reading && !page && <TextViewer name={file.name} note={caption} as={reading} load={() => apiBlob(`/employees/${employeeId}/files/${file.id}`)} onDownload={save} onClose={() => setOpen(false)} />}
       {open && video && <VideoViewer name={file.name} note={caption} size={fileSize(file.size)} audio={media === 'audio'} load={() => apiBlob(`/employees/${employeeId}/files/${file.id}`)} onDownload={save} onClose={() => setOpen(false)} />}
       {caption && <div className="small">{caption}</div>}
     </div>

@@ -99,6 +99,7 @@ const RULES: Rule[] = [
   rule('GET', '/tasks/:id/git', 'detail', path('task')),
   // Files on a task: whoever works here and may see the task may open them; whoever may work with it may add and remove them.
   rule('GET', '/tasks/:id/attachments/:id', 'detail', path('task')),
+  rule('POST', '/tasks/:id/attachments/:id/page', 'detail', path('task')),
   rule('GET', '/projects/:id/integration', 'detail', path('project')),
   rule('GET', '/sessions/:id/history', 'read', path('session')),
   // ── a member's own computer ──

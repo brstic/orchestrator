@@ -2,6 +2,9 @@
 
 Newest first. One line per change that someone using or developing the office would notice.
 
+## 2026-11-24
+- **Pages agents make open as pages** (the owner: "the accountant sent me HTML; we need a way to see the HTML pages agents make"): an `.html` or `.svg` file given in a conversation or left on a task opens over the window as the page it is — scripts and all, in a sandbox that reaches nothing of the office — with its source, *Open in browser* and *Download*. `docs/ATTACHMENTS.md`, "Pages".
+
 ## 2026-11-23
 - **A project manager drove a request end to end with real Claude Code**: one message from the boss; it planned two tasks, gave them to two colleagues, approved both in the boss's place, checked the merged result and reported to the Inbox — in about five minutes (`tests/real/manager.ts`, 7/7). It now reports with `message_person`.
 - **Fixed: a person's message did not start an employee who was not at their desk** unless the office had put them to sleep — found in the first real run of a project manager: the boss's request waited thirty minutes for nobody. Whatever a person says to an employee now starts them; a colleague's message still wakes only someone asleep, as before.

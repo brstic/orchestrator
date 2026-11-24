@@ -73,3 +73,11 @@ export function familyOf(name: string, mime?: string | null): FileFamily {
 export function shownOf(text: string): { text: string; cut: boolean } {
   return text.length > SHOW_MAX_CHARS ? { text: text.slice(0, SHOW_MAX_CHARS), cut: true } : { text, cut: false };
 }
+
+/**
+ * Is this a page — HTML, or an SVG — that the window shows as the page it is (`PageViewer`: in a sandbox of its own,
+ * from a ticket the office gives for that one file; `apps/server/src/page-view.ts`)? By the name.
+ */
+export function isPageFile(name: string): boolean {
+  return /\.(html?|svg)$/i.test(name);
+}

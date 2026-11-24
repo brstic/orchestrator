@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Markdown } from '@orchestrator/ui';
 import { shownOf, type Reading } from '../../lib/readable.ts';
+import { serverBase } from '../../lib/api.ts';
 
 export function TextViewer({ name, note, as, load, onDownload, onClose }: { name: string; note?: string | null; as: Reading; load: () => Promise<Blob>; onDownload: () => void; onClose: () => void }) {
   const [text, setText] = useState<string | null>(null);
@@ -144,6 +145,72 @@ export function VideoViewer({ name, note, size, audio = false, load, onDownload,
           {size ?? ''}
         </span>
         <span className="grow" />
+        <Button small onClick={onDownload}>
+          Download
+        </Button>
+        <Button small variant="ghost" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A page an employee made (HTML, an SVG) shown as the page it is: in a frame of its own, sandboxed — it runs as itself
+ * but reaches nothing of the office — loaded from a ticket the office gives for that one file (`page-view.ts`). Its
+ * source on a click; in the computer's browser on another (the ticket works there for a few minutes, without signing in).
+ */
+export function PageViewer({ name, note, ticket, load, onDownload, onClose }: { name: string; note?: string | null; ticket: () => Promise<{ url: string }>; load: () => Promise<Blob>; onDownload: () => void; onClose: () => void }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [source, setSource] = useState(false);
+  useEffect(() => {
+    let live = true;
+    ticket().then(
+      (t) => live && setUrl(`${serverBase}${t.url}`),
+      (e) => live && setFailed((e as Error).message || 'It could not be opened.'),
+    );
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (source) return;
+    const key = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Escape') return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      onClose();
+    };
+    window.addEventListener('keydown', key, true);
+    return () => window.removeEventListener('keydown', key, true);
+  }, [onClose, source]);
+  if (source) return <TextViewer name={name} note={note ? `${note} · source` : 'source'} as="text" load={load} onDownload={onDownload} onClose={() => setSource(false)} />;
+  return (
+    <div className="tf-lightbox tf-reader-box" role="dialog" aria-label={name} onClick={onClose} data-page-view={name} data-esc-first>
+      <div className="tf-page" onClick={(ev) => ev.stopPropagation()}>
+        {failed ? (
+          <div className="muted" style={{ padding: 16 }}>{failed}</div>
+        ) : !url ? (
+          <div className="muted" style={{ padding: 16 }}>loading…</div>
+        ) : (
+          <iframe className="tf-page-frame" title={name} src={url} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-forms" referrerPolicy="no-referrer" />
+        )}
+      </div>
+      <div className="tf-lightbox-bar tf-reader-bar" onClick={(ev) => ev.stopPropagation()}>
+        <span className="strong truncate">{name}</span>
+        {note && <span className="muted truncate">{note}</span>}
+        <span className="grow" />
+        <Button small onClick={() => setSource(true)} title="The page's HTML">
+          Source
+        </Button>
+        {url && (
+          <a className="btn btn-default btn-sm" href={url} target="_blank" rel="noopener noreferrer" title="Open the page in this computer's browser (for a few minutes)">
+            Open in browser
+          </a>
+        )}
         <Button small onClick={onDownload}>
           Download
         </Button>

@@ -1,3 +1,4 @@
+import { PageViews } from './page-view.ts';
 import { Characters } from './characters.ts';
 import { Door, inviteCode } from './door.ts';
 import { Guests, whoIs, type Who } from './guests.ts';
@@ -342,6 +343,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   }
 
   app.get('/healthz', async () => ({ ok: true, name: 'orchestrator', version: '0.1.0' }));
+  // Pages employees made, shown as pages, in a sandbox of their own (page-view.ts).
+  const pageViews = new PageViews();
+  pageViews.register(app);
 
   // ───────────── Knocking at the door (no credential: nothing is granted here) ─────────────
   /** How long someone let in from a browser may stay before they have to knock again. */
@@ -923,6 +927,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     // Files for a message to an employee: begun, sent in pieces, then named in the message (`fileIds`). Only the one who began a file adds to it and sends it.
     api.post('/employees/:id/files', async (req) => engine.saidFiles.begin(param(req, 'id'), { name: String(body(req).name ?? ''), size: Number(body(req).size) }, whoOf(req).id));
     api.post('/employees/:id/files/:fid/data', async (req) => engine.saidFiles.append(param(req, 'id'), param(req, 'fid'), Number(body(req).offset) || 0, Buffer.from(String(body(req).dataBase64 ?? ''), 'base64'), whoOf(req).id));
+    // A page given in the conversation, opened as a page: a ticket for it (page-view.ts).
+    api.post('/employees/:id/files/:fid/page', async (req) => {
+      const { file, path: where } = engine.saidFiles.open(param(req, 'id'), param(req, 'fid'));
+      return pageViews.issue(where, file.name);
+    });
     api.get('/employees/:id/files/:fid', async (req, reply) => {
       const { file, path: where } = engine.saidFiles.open(param(req, 'id'), param(req, 'fid'));
       // As for a task's files: only the picture formats a browser shows safely are sent as what they are.
@@ -1117,6 +1126,10 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/tasks/:id/attachments/:aid/data', async (req) => {
       const b = body(req);
       return engine.attachments.append(param(req, 'id'), param(req, 'aid'), Number(b.offset) || 0, Buffer.from(String(b.dataBase64 ?? ''), 'base64'));
+    });
+    api.post('/tasks/:id/attachments/:aid/page', async (req) => {
+      const { attachment, file } = engine.attachments.open(param(req, 'id'), param(req, 'aid'));
+      return pageViews.issue(file, attachment.name);
     });
     api.get('/tasks/:id/attachments/:aid', async (req, reply) => {
       const { attachment, file } = engine.attachments.open(param(req, 'id'), param(req, 'aid'));
