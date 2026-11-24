@@ -34,7 +34,11 @@ export interface DoorStatus {
 
 /** What may pass. Everything else is answered 404 at the door. */
 // `/mcp` is how a worker on a member's own computer talks to the office; it answers only to a session's own token.
-const ALLOWED = [/^\/$/, /^\/index\.html$/, /^\/assets\/[A-Za-z0-9._-]+$/, /^\/favicon\.[a-z]+$/, /^\/healthz$/, /^\/api\/[^?#]*$/, /^\/mcp$/, /^\/knock(\/[A-Za-z0-9-]{1,64})?$/, /^\/join(\/[A-Za-z0-9.-]{1,80})?$/, /^\/login$/, /^\/rent(\/[^?#]*)?$/, /^\/r\/[A-Za-z0-9.-]{1,80}$/];
+const ALLOWED = [/^\/$/, /^\/index\.html$/, /^\/assets\/[A-Za-z0-9._-]+$/, /^\/favicon\.[a-z]+$/, /^\/healthz$/, /^\/api\/[^?#]*$/, /^\/mcp$/, /^\/knock(\/[A-Za-z0-9-]{1,64})?$/, /^\/join(\/[A-Za-z0-9.-]{1,80})?$/, /^\/login$/, /^\/rent(\/[^?#]*)?$/, /^\/r\/[A-Za-z0-9.-]{1,80}$/, /^\/view\/[A-Za-z0-9_-]{20,64}\/[^/?#]{1,300}$/];
+/** May this path be asked for through the door? */
+export function doorAllows(pathname: string): boolean {
+  return ALLOWED.some((re) => re.test(pathname)) && !pathname.includes('..');
+}
 // `/ws/agent`: the office accepts only a member's own computer there when the connection comes through the door.
 const ALLOWED_UPGRADE = /^\/ws\/(client|agent)$/;
 
@@ -137,7 +141,7 @@ export class Door {
 
   private forward(req: http.IncomingMessage, res: http.ServerResponse): void {
     const pathname = (req.url ?? '/').split('?')[0]!;
-    if (!ALLOWED.some((re) => re.test(pathname)) || pathname.includes('..')) {
+    if (!doorAllows(pathname)) {
       res.writeHead(404, { 'content-type': 'application/json' });
       return void res.end(JSON.stringify({ error: 'not available through the guest door' }));
     }

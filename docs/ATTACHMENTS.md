@@ -172,7 +172,9 @@ from `/view/<ticket>/<name>` — no sign-in, the ticket is the key — in a fram
 the office's API answers it as a stranger), scripts, styles, pictures, fonts and requests inline or over https (agents'
 pages use CDNs), popups out to the browser, no forms posted, framed only by the office's own window
 (`frame-ancestors 'self'`), `no-referrer`, `no-store`. The frame has the same `sandbox` attribute. *Open in browser* opens
-the same ticket in the computer's browser. The office's own downloads of these files stay `application/octet-stream`
+the same ticket in the computer's browser. Through the TLS door (members' apps, the domain) `/view/<ticket>/<name>` is let
+through like the other pages (`doorAllows` in `apps/server/src/door.ts`) — the first build forgot it, and the owner's app
+showed the door's JSON refusal as a white page. The office's own downloads of these files stay `application/octet-stream`
 under `sandbox` as before. Employees are told (`attach_file`) that a page is shown as a page. Tests:
 `tests/e2e/73-page-view.test.ts`; seen in a development office (a page with a heading, an amount and squares drawn in
 SVG, opened from the ticket's tile).
