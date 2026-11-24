@@ -160,7 +160,9 @@ The owner, 2026-11-24: "the accountant sent me HTML; we need a way to see the HT
 make." A file named `.html`, `.htm` or `.svg` — given in the conversation (`attach_file` with no task) or left on a task —
 opens **as the page it is**: *Open* (in the conversation, on the ticket's file list, and on its tile under "Left by the
 employee to look at") shows it over the window on white, with *Source* (its HTML, in the text reader), *Open in browser*
-and *Download* (`PageViewer` in `apps/desktop/src/hud/panels/file-view.tsx`; `isPageFile` in `lib/readable.ts`).
+and *Download* (`PageViewer` in `apps/desktop/src/hud/panels/file-view.tsx`; `isPageFile` in `lib/readable.ts`). In the
+conversation the page is also **shown right where it was given**: a small live view of it (`PagePreview`, half size), a
+click on which opens it — the owner, the same day: "I don't see it in Talk" (it was only a name to click).
 
 How it is kept apart from the office (`apps/server/src/page-view.ts`): a person who may open the file asks for it
 (`POST /api/employees/:id/files/:fid/page` — owners, like the file itself; `POST /api/tasks/:id/attachments/:aid/page` —

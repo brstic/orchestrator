@@ -221,3 +221,31 @@ export function PageViewer({ name, note, ticket, load, onDownload, onClose }: { 
     </div>
   );
 }
+
+/**
+ * A page shown in the conversation itself — the owner, 2026-11-24, of an HTML an employee gave: "I don't see it in
+ * Talk" (it was a name to click). A small live view of the page (the same sandbox and ticket as `PageViewer`); a click
+ * on it opens it over the window.
+ */
+export function PagePreview({ name, ticket, onOpen }: { name: string; ticket: () => Promise<{ url: string }>; onOpen: () => void }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    ticket().then(
+      (t) => live && setUrl(`${serverBase}${t.url}`),
+      () => live && setFailed(true),
+    );
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (failed) return null;
+  return (
+    <div className="tf-page-preview" data-page-preview={name}>
+      {url ? <iframe title={name} src={url} sandbox="allow-scripts" referrerPolicy="no-referrer" tabIndex={-1} /> : <div className="small muted" style={{ padding: 12 }}>loading the page…</div>}
+      <button type="button" className="tf-page-preview-open" onClick={onOpen} aria-label={`Open ${name}`} title="Open the page" />
+    </div>
+  );
+}

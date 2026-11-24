@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from
 import type { SaidFile } from '@orchestrator/contracts';
 import { api, apiBlob } from '../../lib/api.ts';
 import { familyOf, isPageFile, playableAs, readableAs } from '../../lib/readable.ts';
-import { PageViewer, TextViewer, VideoViewer } from './file-view.tsx';
+import { PagePreview, PageViewer, TextViewer, VideoViewer } from './file-view.tsx';
 
 export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 export const MAX_SAID_FILES = 10;
@@ -258,6 +258,7 @@ export function GivenFile({ employeeId, file, caption, onError }: { employeeId: 
           <SaidPicture employeeId={employeeId} file={file} />
         </div>
       )}
+      {page && <PagePreview name={file.name} ticket={() => api<{ url: string }>('POST', `/employees/${employeeId}/files/${file.id}/page`, {})} onOpen={() => setOpen(true)} />}
       <div className="said-given-row">
         <button type="button" className={`tp-doc tp-doc-${familyOf(file.name, file.mime)}`} title={`${file.name} · ${fileSize(file.size)} — ${video ? 'play it here' : reading ? 'open it here' : 'download'}`} onClick={() => (reading || video ? setOpen(true) : save())} data-file={file.name} data-file-reads={reading ? 'yes' : media ?? 'no'}>
           <span className="tf-ext">{(file.name.split('.').pop() ?? 'file').slice(0, 5)}</span>

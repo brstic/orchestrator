@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-24
+- **A page shows in Talk itself** (the owner: "I don't see that HTML in Talk"): a small live view of it where it was given; a click opens it.
 - **Pages agents make open as pages** (the owner: "the accountant sent me HTML; we need a way to see the HTML pages agents make"): an `.html` or `.svg` file given in a conversation or left on a task opens over the window as the page it is — scripts and all, in a sandbox that reaches nothing of the office — with its source, *Open in browser* and *Download*. `docs/ATTACHMENTS.md`, "Pages".
 
 ## 2026-11-23
