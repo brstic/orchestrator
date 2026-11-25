@@ -372,12 +372,17 @@ export function messagePrompt(msg: Message, collab: CollabRequest | undefined): 
 
 export function answerPrompt(q: Question): string {
   const answer = q.answers && Object.keys(q.answers).length ? Object.entries(q.answers).map(([k, v]) => `${k} → ${v}`).join('; ') : (q.answer ?? '');
-  return `${correlationMarker('ANSWER', q.id)} ${q.answeredBy?.kind === 'foreman' ? `${q.answeredBy.name} (the foreman) answered your question "${q.text}" on the boss's behalf` : `The boss answered your question "${q.text}"`}: ${answer}`;
+  return `${correlationMarker('ANSWER', q.id)} ${q.answeredBy?.kind === 'foreman' ? `${q.answeredBy.name} (the foreman) answered your question "${q.text}" on the boss's behalf` : `The boss answered your question "${q.text}"`}: ${answer}${releaseNote(q)}`;
+}
+
+/** An owner's yes to a release opened the gate: said with the answer. */
+function releaseNote(q: Question): string {
+  return q.releaseOpened ? `\n(The office: the release gate is open for you until ${q.releaseOpened.slice(11, 16)} UTC — release what you asked about now, exactly that.)` : '';
 }
 
 /** What an employee is told when a question of theirs is answered through a tool call. */
 export function answerLine(q: Question): string {
-  return `${q.answeredBy?.kind === 'foreman' ? `${q.answeredBy.name} (the foreman) answered on the boss's behalf` : 'The boss answered'}: ${q.answer ?? ''}`;
+  return `${q.answeredBy?.kind === 'foreman' ? `${q.answeredBy.name} (the foreman) answered on the boss's behalf` : 'The boss answered'}: ${q.answer ?? ''}${releaseNote(q)}`;
 }
 
 export function meetingPrompt(meeting: Meeting, employee: Employee, round: 'proposal' | 'response' | 'synthesis', others: Array<{ name: string; title: string; body: string; disagreements: string[] }>): string {

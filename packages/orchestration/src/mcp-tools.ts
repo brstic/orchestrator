@@ -148,7 +148,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
         const many = tooMany(employee, 'question to the boss', 30);
         if (many) return err(many);
       }
-      const options = Array.isArray(a.options) ? a.options.filter((o: any) => o && typeof o.label === 'string').map((o: any) => ({ label: String(o.label), description: o.description ? String(o.description) : undefined, consequence: o.consequence ? String(o.consequence) : undefined })) : [];
+      const options = Array.isArray(a.options) ? a.options.filter((o: any) => o && typeof o.label === 'string').map((o: any) => ({ label: String(o.label), description: o.description ? String(o.description) : undefined, consequence: o.consequence ? String(o.consequence) : undefined, release: o.release === true })) : [];
       // The same question once more — the call that was waiting for the answer was cut off (the office restarted, a
       // connection dropped) and the employee asks again: it is the question the boss already has, not a second one.
       const asked = eng.comms.sameQuestion(employee.id, String(a.question), eng.tasks.currentTask(employee.id)?.id ?? null);

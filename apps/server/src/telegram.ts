@@ -486,7 +486,7 @@ export class Telegram {
     if (repliedTo && text) {
       const q = this.deps.engine.core.questions.get(repliedTo);
       if (q?.status === 'open' && q.kind !== 'permission' && !q.parts.length) {
-        await this.deps.engine.comms.answer(q.id, { answer: text }, this.actor(as));
+        await this.deps.engine.comms.answer(q.id, { answer: text }, this.actor(as), null, { owner: as.owner });
         await this.send(b, p.chatId, '✓ Answered.');
         return;
       }
@@ -751,7 +751,9 @@ export class Telegram {
       text = `❓ ${name} asks:\n${q.parts.map((p) => `• ${p.question}`).join('\n')}\n\n(Several answers are needed: answer in the office.)`;
     } else {
       text = `❓ ${name} asks:\n${q.text}${q.context ? `\n\n${q.context.slice(0, 800)}` : ''}${q.options.length ? '' : '\n\n(Reply to this message to answer.)'}`;
-      buttons = q.options.slice(0, 8).map((o, i) => [{ text: o.label.slice(0, 60), callback_data: `q:${q.id}:${i}` }]);
+      // (The choice that opens the release gate says so here too: a button has no room for its consequence.)
+      buttons = q.options.slice(0, 8).map((o, i) => [{ text: `${o.releases ? '🚀 ' : ''}${o.label}`.slice(0, 60), callback_data: `q:${q.id}:${i}` }]);
+      if (q.options.some((o) => o.releases)) text += `\n\n🚀 = lets ${name} release for an hour.`;
     }
     const out: Array<{ employeeId: string; chatId: number; messageId: number; text: string }> = [];
     for (const p of b.people) {
@@ -837,7 +839,7 @@ export class Telegram {
     if (q.status !== 'open') return void (await reply('Already answered.'));
     try {
       if (kind === 'p' && (choice === 'allow' || choice === 'deny')) await this.deps.engine.comms.answer(q.id, { decision: choice }, this.actor(as));
-      else if (kind === 'q' && q.options[Number(choice)]) await this.deps.engine.comms.answer(q.id, { answer: q.options[Number(choice)]!.label }, this.actor(as));
+      else if (kind === 'q' && q.options[Number(choice)]) await this.deps.engine.comms.answer(q.id, { answer: q.options[Number(choice)]!.label }, this.actor(as), null, { owner: as.owner });
       else return void (await reply('That button does not fit this question.'));
       await reply('Done.');
     } catch (e) {

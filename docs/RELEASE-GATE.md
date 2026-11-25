@@ -71,6 +71,26 @@ With **Settings → Employees → "Nothing is released before I approve it (the 
 
 Not for a rented employee while rented (a client's work has its own terms, `docs/RENT.md`).
 
+## Asked and answered
+
+The owner, 2026-11-26: "it would not let it through even with my permission". An employee working without a ticket
+(a security fix asked for in Talk) was held pushing to master, asked the boss with `ask_boss` (kind `deployment`), the
+owner picked "yes, publish" — and the next push was held again: an answer opened nothing; only an approved ticket or
+*Let release* did.
+
+Now a `deployment` question from an employee the gate holds carries the yes as a choice the office knows
+(`Comms.releaseChoices`, `QuestionOption.releases`):
+- the employee marks the choice that lets it release (`release: true` on the option); none marked, the office puts its
+  own first: *Yes, let them release it*;
+- that choice says what it does, in the office's words, in its `consequence` ("Opens the release gate for … for an
+  hour") — shown under it in the Inbox and on the task; on Telegram its button carries 🚀 and the message says what 🚀 means;
+- **an owner** choosing it (in the office, on a task, on Telegram) calls `Release.grant` for an hour, before the answer
+  reaches the employee, and the answer says until when (`Question.releaseOpened`, `releaseNote` in `prompts.ts`).
+  A colleague's choice, a foreman's or a project manager's opens nothing; nor does a typed answer — the click is the yes.
+- The refusal tells an employee with no ticket in review how to ask this way.
+
+`packages/orchestration/test/release-gate.test.ts` ("the boss says yes…", failed before).
+
 ## How
 
 | | |

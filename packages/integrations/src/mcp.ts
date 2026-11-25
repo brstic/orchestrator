@@ -163,7 +163,7 @@ export const ORCHESTRATOR_TOOLS: McpToolSpec[] = [
         options: {
           type: 'array',
           description: 'Suggested answers, if any',
-          items: { type: 'object', properties: { label: str('Short option label'), description: str('What this option means'), consequence: str('Known consequence of choosing it') }, required: ['label'] },
+          items: { type: 'object', properties: { label: str('Short option label'), description: str('What this option means'), consequence: str('Known consequence of choosing it'), release: { type: 'boolean', description: 'kind "deployment", when the release gate holds you: true on the choice that lets you release. An owner choosing it opens the gate for you for an hour' } }, required: ['label'] },
         },
       },
       required: ['question'],

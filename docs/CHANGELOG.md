@@ -2,6 +2,9 @@
 
 Newest first. One line per change that someone using or developing the office would notice.
 
+## 2026-11-26
+- **Fixed: the release gate held a release the owner had said yes to.** A `deployment` question from a held employee now carries a release choice (marked by the employee, or the office's own); an owner picking it opens the gate for that employee for an hour (`docs/RELEASE-GATE.md`, "Asked and answered"; `release-gate.test.ts`, failed before).
+
 ## 2026-11-24
 - **Fixed: a page opened white in the owner's app** — the TLS door every member's app and the domain come through did not let `/view/…` through, and the page was its JSON refusal. `apps/server/test/door.test.ts` (failed before).
 - **A page shows in Talk itself** (the owner: "I don't see that HTML in Talk"): a small live view of it where it was given; a click opens it.

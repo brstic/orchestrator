@@ -202,7 +202,7 @@ export class TaskTalk {
     const question = open?.questionId ? this.core.questions.get(open.questionId) : undefined;
     // Asked of the boss through the office's own question: answering here is answering that (one answer, one place).
     if (open && question?.status === 'open') {
-      await this.eng.comms.answer(question.id, { answer: raw }, actorOf(who));
+      await this.eng.comms.answer(question.id, { answer: raw }, actorOf(who), null, { owner: who.kind === 'owner' });
       const now = this.core.tasks.require(taskId);
       const written = attachmentIds.length ? (now.comments ?? []).find((c) => c.answerTo === open.id) : undefined;
       if (written) {

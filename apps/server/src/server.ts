@@ -1190,7 +1190,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     api.post('/questions/:id/answer', async (req) => {
       // Whoever may work with this employee may answer it and decide its requests (`access.ts`); the record says who did.
       const who = whoOf(req);
-      return engine.comms.answer(param(req, 'id'), body(req), who.id === 'owner' ? 'owner' : `member:${who.name}`);
+      return engine.comms.answer(param(req, 'id'), body(req), who.id === 'owner' ? 'owner' : `member:${who.name}`, null, { owner: who.kind === 'owner' });
     });
     // (Only what is for this person: "Mark all read" in one Inbox leaves somebody else's messages unread in theirs.)
     const forThem = (req: FastifyRequest) => {

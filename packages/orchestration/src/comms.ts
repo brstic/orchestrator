@@ -349,7 +349,8 @@ export class Comms {
     text: string;
     context?: string;
     why?: string;
-    options?: QuestionOption[];
+    /** `release`: the employee's mark on the choice that lets it release (a deployment question, the gate on). */
+    options?: Array<QuestionOption & { release?: boolean }>;
     tool?: Question['tool'];
     parts?: Question['parts'];
     taskId?: string | null;
@@ -387,6 +388,7 @@ export class Comms {
       confirmedAt: null,
       deliveryDetail: null,
     };
+    question.options = this.releaseChoices(question, q.options ?? [], q.employee);
     // Asked before in this project? The earlier answer is shown with it; the question stays open for a person.
     const answeredBefore = this.eng.improver.capture.repeatedQuestion(question);
     // About work a Project Manager put on the board: its to answer first (set before it is stored, so that nothing —
@@ -711,7 +713,25 @@ export class Comms {
     return q;
   }
 
-  async answer(questionId: string, input: { answer?: string | null; decision?: 'allow' | 'deny' | null; answers?: Record<string, string> | null }, actor = 'owner', by: { kind: 'foreman' | 'manager'; id: string; name: string } | null = null): Promise<Question> {
+  /**
+   * A question about a release from an employee the gate holds (`docs/RELEASE-GATE.md`, "Asked and answered"): the
+   * choice the employee marked as the one that lets it release says so, in the office's words — or, none marked, the
+   * office puts its own in — so that the owner's yes is one click, and the owner sees what the click does. Anything
+   * else: the choices as given (and no mark of the employee's survives).
+   */
+  private releaseChoices(question: Question, given: Array<QuestionOption & { release?: boolean }>, employee: Employee | null): QuestionOption[] {
+    const plain = question.options.map((o) => {
+      const { release: _r, releases: _rs, ...rest } = o as QuestionOption & { release?: boolean };
+      return rest as QuestionOption;
+    });
+    if (question.kind !== 'deployment' || !employee || !this.eng.release.rulesFor(employee)) return plain;
+    const says = `Opens the release gate for ${employee.name} for an hour: what they asked about goes through.`;
+    const marked = new Set(given.filter((o) => o.release === true).map((o) => o.label));
+    if (!marked.size) return [{ label: 'Yes, let them release it', description: `${employee.name} may push to the protected branches and change production for an hour.`, consequence: says, releases: true }, ...plain];
+    return plain.map((o) => (marked.has(o.label) ? { ...o, releases: true, consequence: o.consequence ? `${says} ${o.consequence}` : says } : o));
+  }
+
+  async answer(questionId: string, input: { answer?: string | null; decision?: 'allow' | 'deny' | null; answers?: Record<string, string> | null }, actor = 'owner', by: { kind: 'foreman' | 'manager'; id: string; name: string } | null = null, caller: { owner: boolean } = { owner: actor === 'owner' }): Promise<Question> {
     const q = this.core.questions.require(questionId);
     if (by && (by.kind === 'manager' ? !MANAGER_ANSWERS.has(q.kind) : q.kind !== 'question')) throw new EngineError('Only the owner can decide this.', 403);
     if (q.status !== 'open') throw new EngineError(`this ${q.kind === 'permission' ? 'request' : 'question'} is no longer open (${q.status})`, 409);
@@ -733,6 +753,10 @@ export class Comms {
     q.answeredAt = nowIso();
     q.status = 'answered';
     if (by) q.answeredBy = by;
+    // An owner chose the release: it goes through, for an hour (set before the answer reaches them).
+    if (q.kind === 'deployment' && !by && caller.owner && q.employeeId && this.eng.release.on() && q.options.some((o) => o.releases && o.label === q.answer)) {
+      q.releaseOpened = this.eng.release.grant(q.employeeId, 60, actor === 'owner' ? 'The boss' : actor.replace(/^[a-z]+:/, '')).until;
+    }
     this.core.put('question', q);
     this.core.audit(actor, q.kind === 'permission' ? 'approval.decide' : 'question.answer', q.id, { decision: q.decision, employee: employee?.name, ...(by ? { onBehalfOfOwner: true } : {}) });
     this.core.company.questionsAnswered++;

@@ -952,6 +952,12 @@ export interface QuestionOption {
   label: string;
   description?: string;
   consequence?: string;
+  /**
+   * Set by the office, on a question about a release from an employee the release gate holds: an owner choosing this
+   * lets them release for an hour (`docs/RELEASE-GATE.md`, "Asked and answered"; the owner, 2026-11-26: "it would not
+   * let it through even with my permission"). The office says so in `consequence`.
+   */
+  releases?: boolean;
 }
 
 export interface Question {
@@ -987,6 +993,8 @@ export interface Question {
   managerId?: ID | null;
   /** The manager handed it to the boss: why. */
   escalated?: { by: string; why: string; ts: ISODate } | null;
+  /** An owner chose the option that `releases`: until when the asker may release. */
+  releaseOpened?: ISODate | null;
   createdAt: ISODate;
   answeredAt: ISODate | null;
   deliveredAt: ISODate | null;

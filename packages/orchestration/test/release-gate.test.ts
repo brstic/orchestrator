@@ -104,3 +104,36 @@ test('what the gate refused lately, newest first, for an owner to see whether it
   assert.match(held.at(-1)!.why, /pushes to master/);
   assert.ok(held.every((h, i) => i === 0 || h.ts <= held[i - 1]!.ts));
 });
+
+test("the boss says yes to a release they were asked about: it goes through (the owner: it would not, even with my permission)", async () => {
+  eng.core.updateSettings({ releaseGate: { on: true, hosts: ['64.0.2.10'] } } as any);
+  eng.release.close({ employeeId: ids.Zed }, 'test');
+  const ask = (options: Array<{ label: string; release?: boolean }>) => eng.comms.createQuestion({ kind: 'deployment', channel: 'mcp_tool', employee: emp('Zed'), session: null, text: 'Push the fix to master and publish 2.0.1?', options });
+  assert.match(eng.release.decide(emp('Zed'), 'git push origin master', 'it pushes to master').reason, /ask_boss with kind "deployment"[\s\S]*release: true/, 'the refusal says how to ask');
+  // The employee marks the choice that lets it release: the office says on it what choosing it does.
+  const q = ask([{ label: 'Yes, publish 2.0.1', release: true }, { label: 'Wait' }]);
+  assert.equal(q.options[0]!.releases, true);
+  assert.match(q.options[0]!.consequence ?? '', /Opens the release gate for Zed for an hour/);
+  assert.equal(q.options[1]!.releases, undefined);
+  // "Wait" opens nothing; a colleague's yes opens nothing either.
+  const waited = ask([{ label: 'Yes, publish it', release: true }, { label: 'Wait' }]);
+  await eng.comms.answer(waited.id, { answer: 'Wait' }, 'owner');
+  assert.equal(eng.release.decide(emp('Zed'), 'git push origin master', 'it pushes to master').allow, false);
+  const colleague = ask([{ label: 'Yes, ship it', release: true }]);
+  await eng.comms.answer(colleague.id, { answer: 'Yes, ship it' }, 'member:Kim', null, { owner: false });
+  assert.equal(eng.release.decide(emp('Zed'), 'git push origin master', 'it pushes to master').allow, false);
+  // The owner's yes: it goes through, for an hour.
+  await eng.comms.answer(q.id, { answer: 'Yes, publish 2.0.1' }, 'member:Branko', null, { owner: true });
+  const d = eng.release.decide(emp('Zed'), 'git push origin master', 'it pushes to master');
+  assert.equal(d.allow, true, d.reason);
+  const until = Date.parse(eng.release.openUntil(ids.Zed!)!);
+  assert.ok(until > Date.now() + 55 * 60_000 && until <= Date.now() + 61 * 60_000);
+  eng.release.close({ employeeId: ids.Zed }, 'test');
+  // Not marked by the employee: the office puts its own choice in, so the yes is still one click.
+  const plain = ask([{ label: 'Publish' }, { label: 'Wait' }]);
+  const own = plain.options.find((o) => o.releases);
+  assert.ok(own && /release/i.test(own.label), JSON.stringify(plain.options));
+  // Not held by the gate, or not a deployment: options are left as they are.
+  const other = eng.comms.createQuestion({ kind: 'decision', channel: 'mcp_tool', employee: emp('Zed'), session: null, text: 'Blue or green?', options: [{ label: 'Blue', release: true } as any] });
+  assert.equal(other.options[0]!.releases, undefined);
+});
