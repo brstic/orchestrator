@@ -26,7 +26,9 @@ HOST="${ORCH_DEPLOY_HOST:?set ORCH_DEPLOY_HOST=user@host (or put it in scripts/d
 PORT="${ORCH_DEPLOY_PORT:-22}"
 DIR="${ORCH_DEPLOY_DIR:-orchestrator-office}"
 UNIT="${ORCH_DEPLOY_UNIT:-orchestrator-office}"
-remote() { ssh -o BatchMode=yes -p "$PORT" "$HOST" "$@"; }
+# (`systemctl --user` needs the user's runtime folder; a non-interactive ssh session is sometimes started without it —
+# 2026-11-27 a deploy swapped the files and then could not restart the office.)
+remote() { ssh -o BatchMode=yes -p "$PORT" "$HOST" 'export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"; '"$*"; }
 # What the service reports, and the office's own view of itself (run on the server, with its own token).
 # After a restart: wait until the office answers (it takes a few seconds, more when the machine is busy), three minutes at most.
 UP='n=0; until curl -s -o /dev/null -m 2 http://127.0.0.1:4600/; do n=$((n+1)); [ $n -ge 90 ] && break; sleep 2; done'
