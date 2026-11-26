@@ -263,6 +263,20 @@ export class Comms {
 
   // ───────────────────────── notifications ─────────────────────────
 
+  /**
+   * An employee gave the boss a file in their conversation: one line in the Inbox for the files given one after another
+   * until the boss looked, not one each (2026-11-27: 89 "gave you a file" lines in a week from one employee, a picture
+   * at a time). The files themselves are in the conversation.
+   */
+  noteGivenFile(employee: Employee, name: string, caption: string | null): Notification {
+    const line = `${name}${caption ? ` — ${caption}` : ''}`;
+    const since = Date.now() - 3 * 3600_000;
+    const open = this.core.notifications.find((n) => n.kind === 'info' && n.employeeId === employee.id && !n.readAt && !n.resolvedAt && /^.+ gave you (a file|\d+ files)$/.test(n.title) && Date.parse(n.createdAt) > since);
+    if (!open) return this.notify({ kind: 'info', severity: 'info', title: `${employee.name} gave you a file`, body: line, employeeId: employee.id });
+    const lines = [...open.body.split('\n').filter(Boolean), line];
+    return this.core.put('notification', { ...open, title: `${employee.name} gave you ${lines.length} files`, body: lines.slice(-12).join('\n'), createdAt: nowIso() });
+  }
+
   notify(n: {
     kind: NotificationKind;
     severity: Notification['severity'];

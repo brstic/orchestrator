@@ -154,6 +154,9 @@ Tried by hand on the server after installing: the tool started as a session star
 - That an employee, told to, really opens an attached picture before starting, and really leaves a screenshot when the work is visual.
 - The browser tools inside a real session (they were tried by hand over the same protocol, not through Claude Code), and how much of a session's context a page snapshot takes.
 
+Files given in the conversation (not on a task) put **one line in the Inbox** per run of files: the next file before
+the boss read it adds to that line ("gave you 3 files", the names under it) instead of a new one (`Comms.noteGivenFile`).
+
 ## Pages
 
 The owner, 2026-11-24: "the accountant sent me HTML; we need a way to see the HTML pages and the like that agents

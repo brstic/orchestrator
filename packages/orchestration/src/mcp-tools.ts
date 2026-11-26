@@ -567,7 +567,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
             return `${given.name} (${size(given.size)}) is in your conversation with ${client.name} on the portal${caption ? `: ${caption}` : ''}. Say in your reply what it is.`;
           }
           core.event({ type: 'agent.file_given', source: 'mcp', summary: `${employee.name} gave the boss a file: ${given.name}`, employeeId: employee.id, projectId: employee.projectId, data: { file: given, caption } });
-          eng.comms.notify({ kind: 'info', severity: 'info', title: `${employee.name} gave you a file`, body: `${given.name}${caption ? ` — ${caption}` : ''}`, employeeId: employee.id });
+          eng.comms.noteGivenFile(employee, given.name, caption);
           return `${given.name} (${size(given.size)}) is in your conversation with the boss${/^image\//.test(given.mime) ? ', where they see it' : ', where they can download it'}${caption ? `: ${caption}` : ''}. Say in your reply what it is.`;
         } catch (e) {
           return err((e as Error).message);
