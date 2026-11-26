@@ -102,7 +102,9 @@ The `get_team` tool now shows it to colleagues ("delivered: bug 1/2 first pass, 
 
 1. **Which candidates become active.** Capture adds no policy of its own (`Capture.statusFor`):
    - words that read as a rule, for one employee → active in that employee's playbook, as their own lessons always were;
-   - anything for the project or the company → proposed, unless `autoApproveSharedLessons` is on;
+   - anything for the project or the company → proposed, unless `autoApproveSharedLessons` is on; switched on (and on
+     every start while it is on), the team's retrospective lessons that were waiting go in too
+     (`Improver.takeInWaitingTeamLessons`, event `learning.lessons_taken_in`; 2026-11-27 — before, they waited for good);
    - words that do *not* evidently state a rule (a review comment, a denial note) → **always proposed**, even for one employee. A comment like "the empty state is missing" is true of one task; putting it into every future prompt without a person saying it generalises would be noise. *The owner may want this different* (for example: activate after the same comment twice).
 2. **A correction from an invited colleague counts like the owner's** when it is for one employee (they are allowed to instruct that employee). For the project it is proposed like everything shared. Messages between employees, and the foreman's, are never treated as corrections.
 3. **Corrections are captured whether or not a task is in progress.** "From now on…" said to an idle employee is still a standing rule. The brief said "during a task"; the task is cited when there is one.

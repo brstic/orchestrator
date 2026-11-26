@@ -53,6 +53,25 @@ export class Improver {
     this.capture = new Capture(eng);
     this.outcomes = new Outcomes(eng);
     this.autopilot = new Autopilot(eng);
+    // Team lessons switched to go in by themselves: those that were waiting for the owner go in too — the switch says
+    // what the owner wants of them (2026-11-27: switched on with 17 waiting, some for two weeks).
+    // (And so, on start: with the switch on, nothing that would go in by itself waits.)
+    let auto = eng.core.settings.selfImprovement.autoApproveSharedLessons;
+    if (auto) queueMicrotask(() => this.takeInWaitingTeamLessons());
+    eng.core.bus.on('entity', (kind, op) => {
+      if (kind !== 'settings' || op !== 'upsert') return;
+      const now = this.core.settings.selfImprovement.autoApproveSharedLessons;
+      if (now && !auto) this.takeInWaitingTeamLessons();
+      auto = now;
+    });
+  }
+
+  /** The team's lessons that waited for the owner (retrospectives, project or office), taken in. Returns how many. */
+  takeInWaitingTeamLessons(): number {
+    const waiting = this.core.lessons.filter((l) => l.status === 'proposed' && l.source === 'retrospective' && l.scope !== 'employee');
+    for (const l of waiting) this.core.put('lesson', { ...l, status: 'active', updatedAt: nowIso() });
+    if (waiting.length) this.core.event({ type: 'learning.lessons_taken_in', source: 'server', summary: `${waiting.length} team lesson${waiting.length === 1 ? '' : 's'} that waited for the boss went in (team lessons now go in by themselves)`, data: { lessonIds: waiting.map((l) => l.id) } });
+    return waiting.length;
   }
 
   private get core() {

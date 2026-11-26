@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-27
+- **Team lessons switched to go in by themselves: those already waiting go in too** (they waited for good — the switch applied only to new ones); on the live office the owner switched it on, and the autopilot to *Apply what is safe* (`team-lessons-switch.test.ts`).
 - **The Project Manager lets low-risk releases out** (the owner's choice): a release that touches no database, payments, security, server configuration or public publishing is the manager's verdict, and its approval opens the release; the rest stays the boss's, with why (`docs/RELEASE-GATE.md`, "Who lets a release out"; `manager-approves.test.ts`, `release.test.ts`).
 - **@boss on a manager's ticket goes to the manager first**, as a question there already did; the manager tags the boss when it is the boss's (`docs/TASKS.md`; `manager-approves.test.ts`, failed before).
 - **Files given one after another are one Inbox line** ("… gave you 3 files") until the boss reads it — 89 single lines in a week from one employee (`Comms.noteGivenFile`; `given-files-note.test.ts`).
