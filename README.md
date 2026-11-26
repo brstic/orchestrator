@@ -6,6 +6,8 @@ https://github.com/user-attachments/assets/6e5bbd27-3d4d-46e3-a719-cef76400f557
 
 <p align="center"><b>Real Claude Code agents. Real colleagues. One server. Played like a game — shipped like a company.</b></p>
 
+<p align="center">👥 Made by <a href="https://www.linkedin.com/in/marko-jevtic-75247368/"><b>Marko Jevtić</b></a> and <a href="https://www.linkedin.com/in/bste/"><b>Branko</b></a></p>
+
 <p align="center">
   <a href="https://office-demo.sparkcan.com"><img height="44" src="https://img.shields.io/badge/%E2%96%B6%20Try%20it-live%20demo-22C55E?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Try the live demo"></a> &nbsp; <a href="https://www.facebook.com/groups/orchestrator"><img height="44" src="https://img.shields.io/badge/Join%20the-community-1877F2?style=for-the-badge&logo=facebook&logoColor=white" alt="Join the community on Facebook"></a> &nbsp; <a href="#-quick-start"><img height="44" src="https://img.shields.io/badge/Quick-start-6E56CF?style=for-the-badge&logo=rocket&logoColor=white" alt="Quick start"></a>
 </p>
@@ -495,4 +497,4 @@ Working and verified on macOS (Apple silicon) with Claude Code 2.1.321–2.1.323
   <img src="docs/assets/logo.svg" width="72" alt="The Orchestrator logo: a conductor's baton over a terminal prompt"><br>
   <sub><b>ORCHESTRATOR</b> — the baton conducts, the prompt plays.<br>No employees were harmed by the whip. It only wakes the sleepers.</sub>
 </p>
-<p align="center"><sub>Made by <a href="https://www.linkedin.com/in/bste/">Branko</a> and <a href="https://www.linkedin.com/in/marko-jevtic-75247368/">Marko Jevtić</a> · LinkedIn</sub></p>
+<p align="center">Made by <a href="https://www.linkedin.com/in/marko-jevtic-75247368/"><b>Marko Jevtić</b></a> and <a href="https://www.linkedin.com/in/bste/"><b>Branko</b></a> · <sub>LinkedIn</sub></p>
