@@ -64,7 +64,9 @@ With **Settings → Employees → "Nothing is released before I approve it (the 
   approved — its release is the `release_plan` of the ticket whose work it is (on the live office a manager made
   "release … to production" tickets, which were done first and reviewed afterwards).
 - **What it refused lately** — Settings → Employees, under the gate's fields: one line each (who, why, when), the
-  command on a click (`Release.recentHeld`, `held` in `GET /api/release`), to see whether it errs.
+  command on a click (`Release.recentHeld`, `held` in `GET /api/release`), to see whether it errs. That shows the
+  first 300 characters; the audit record (`release.held`, owners only) keeps the whole command, up to 4,000 characters,
+  secrets hidden — a refused read could not be judged from its beginning (2026-11-27).
 - **By hand:** in an employee's Talk, an owner has **Let release** (an hour, for a fix that cannot wait for a ticket);
   while it stands open the button reads *Release open · 14:20*, and a click closes it. On the record
   (`release.granted`, `release.closed`).

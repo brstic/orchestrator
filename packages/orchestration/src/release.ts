@@ -1,4 +1,4 @@
-import { nowIso, releaseRulesOf, truncate, type Employee, type Project, type ReleaseRules, type Task } from '@orchestrator/contracts';
+import { nowIso, redactSecrets, releaseRulesOf, truncate, type Employee, type Project, type ReleaseRules, type Task } from '@orchestrator/contracts';
 import { EngineError, type Core } from './core.ts';
 import type { Engine } from './engine.ts';
 
@@ -75,7 +75,9 @@ export class Release {
       this.core.audit('office', 'release.allowed', employee.id, { employee: employee.name, why, what: truncate(what, 300), task: task?.key ?? null });
       return { allow: true, reason: `Release gate: open for ${employee.name} until ${until.slice(11, 16)} UTC (${task ? `${task.key} was approved` : 'let through by an owner'}).` };
     }
-    this.core.audit('office', 'release.held', employee.id, { employee: employee.name, why, what: truncate(what, 300) });
+    // (The record keeps the whole command, secrets hidden — owners only: whether the gate erred cannot be told from its
+    // first 300 characters, which is all the feed line carries. 2026-11-27: a refused read could not be judged.)
+    this.core.audit('office', 'release.held', employee.id, { employee: employee.name, why, what: truncate(redactSecrets(what), 4000) });
     this.core.event({ type: 'release.held', source: 'server', summary: `${employee.name} tried to release work before it was approved (${why}): refused`, employeeId: employee.id, data: { why, what: truncate(what, 300) } });
     const task = this.eng.tasks.currentTask(employee.id);
     const next = task

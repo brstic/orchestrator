@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-27
+- **A refused release keeps its whole command in the audit record** (secrets hidden, owners only), not only its first 300 characters.
 - **No rule is suggested for a variable set before a command** ("Pre-approve S=/tmp/…/scratchpad" was offered: one session's folder, and a rule that would let anything after it run). The suggestions read shapes with the autopilot's reader — they had their own copy, which differed; one offered wrongly is taken back (`learning-autopilot.test.ts`, failed before).
 - **Team lessons switched to go in by themselves: those already waiting go in too** (they waited for good — the switch applied only to new ones); on the live office the owner switched it on, and the autopilot to *Apply what is safe* (`team-lessons-switch.test.ts`).
 - **The Project Manager lets low-risk releases out** (the owner's choice): a release that touches no database, payments, security, server configuration or public publishing is the manager's verdict, and its approval opens the release; the rest stays the boss's, with why (`docs/RELEASE-GATE.md`, "Who lets a release out"; `manager-approves.test.ts`, `release.test.ts`).
