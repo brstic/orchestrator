@@ -2,6 +2,9 @@
 
 Newest first. One line per change that someone using or developing the office would notice.
 
+## 2026-11-27
+- **A visitor who walks in is not given the chat's last hour** (the owner: "the chat history must not be seen by visitors when they come in"); what is said while they are in, they still hear. `tests/e2e/24-people-acts.test.ts` (failed before).
+
 ## 2026-11-26
 - **Fixed: the release gate held a release the owner had said yes to.** A `deployment` question from a held employee now carries a release choice (marked by the employee, or the office's own); an owner picking it opens the gate for that employee for an hour (`docs/RELEASE-GATE.md`, "Asked and answered"; `release-gate.test.ts`, failed before).
 

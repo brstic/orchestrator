@@ -615,9 +615,10 @@ export class ClientHub {
       return false;
     };
     if (this.clients.size > 1) this.send(id, { t: 'people', people: this.people() });
-    // What was said in the last hour, so the chat is not empty for someone who has just walked in.
+    // What was said in the last hour, so the chat is not empty for someone who has just walked in — someone who works
+    // here: a visitor hears what is said while they are in, not what was said before they came (the owner, 2026-11-27).
     const since = Date.now() - 3600_000;
-    const lines = this.recent.filter((l) => Date.parse(l.ts) > since);
+    const lines = who.role === 'visitor' ? [] : this.recent.filter((l) => Date.parse(l.ts) > since);
     if (lines.length) this.send(id, { t: 'chat.history', lines });
     if (this.atDoor.length && this.answers(conn)) this.send(id, { t: 'knocks', knocks: this.atDoor });
     // Always said, also when it is off: a window that comes back after the office restarted must not go on playing.

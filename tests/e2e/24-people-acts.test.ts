@@ -133,9 +133,14 @@ test('people crack the whip at each other: only at someone standing next to them
     assert.deepEqual([m.from.name, m.employeeId ?? null, m.approved ?? null], ['Ana', null, null]);
   }
   // In the chat, as what it is.
-  const late = await join('Mila');
+  const late = await join('Jovan');
   assert.ok((await late.until('chat.history')).lines.some((l) => l.emote && l.text === 'cracks the whip at Jovan' && l.from.name === 'Ana'));
   late.ws.close();
+  // A visitor who walks in afterwards is not given what was said before they came (the owner, 2026-11-27).
+  const visitor = await join('Mila');
+  await visitor.until('radio');
+  assert.equal(visitor.got.filter((m) => m.t === 'chat.history').length, 0, 'a visitor gets no chat history');
+  visitor.ws.close();
   // Too far, oneself, nobody: nothing happens.
   await sleep(700);
   const seen = mila.got.length;
@@ -272,7 +277,7 @@ test('the whip is for show — unless the owners switch it on: then it approves 
   assert.equal(decided.decision, 'allow');
   const audit = await h.api<any[]>('GET', '/audit');
   assert.ok(audit.some((a) => a.action === 'approval.decide' && a.actor === 'member:Ana' && a.target === q1.id), 'on the record as Ana\'s decision');
-  assert.ok((await join('Mila').then(async (late) => ((await late.until('chat.history')).lines.some((l) => /cracks the whip at Dana — and approves what was asked/.test(l.text)) ? (late.ws.close(), true) : (late.ws.close(), false)))), 'the chat says what the crack did');
+  assert.ok((await join('Jovan').then(async (late) => ((await late.until('chat.history')).lines.some((l) => /cracks the whip at Dana — and approves what was asked/.test(l.text)) ? (late.ws.close(), true) : (late.ws.close(), false)))), 'the chat says what the crack did');
 
   // The next request waits like any other: one crack approves what is open then, not what comes after.
   const q2 = await waitFor(async () => {

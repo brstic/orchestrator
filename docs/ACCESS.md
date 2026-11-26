@@ -148,7 +148,7 @@ A visitor is in the office to look at it. What they may know is decided on the s
 | Questions, messages, requests between employees, notifications, reports, lessons, improvements, performance, routines | Nothing |
 | Settings | The office's name, the scene, the keys, the hi-fi and TV lists. The two switches that say whether high-risk requests are held are sent as "held" whatever they are |
 | Terminals | The shared ones, to watch — **the owners' word of 2026-11-12**. A terminal shows whatever Claude Code prints, which can include the model, the account and folders: that is the one place a visitor can still read them. Invite visitors accordingly |
-| Chat, voice, gestures, the hi-fi, who is here | As everyone |
+| Chat, voice, gestures, the hi-fi, who is here | As everyone, while they are in — **not** the chat's last hour on walking in (`chat.history`; the owner, 2026-11-27) |
 
 The page follows: a visitor's menu holds only the windows they are sent something for (`lib/visitor-panels.ts` — Tasks, Team, Access, Map, Terminals, Hi-fi, TV, Settings, Help; a task's card on the board is all there is of it, so it opens nothing), the other windows do not open from the keys either, there is no Inbox, Command or feed, and an employee's window is one card (who they are, what they are on, *Watch terminal*).
 
