@@ -1054,7 +1054,7 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                     Off: the folder is still trusted for employees on Auto and Unrestricted, and everything else waits for your answer in the Inbox.
                   </Toggle>
                   <Toggle checked={settings.managersApprove !== false} onChange={(managersApprove) => void save({ managersApprove })} title="Project managers approve their team's work for me">
-                    Work a <b>Project Manager</b> put on the board waits for its verdict instead of yours: it approves it or sends it back, and hands it to you when it is not sure. Releases with the gate on stay yours. Off: you decide all of it.
+                    Work a <b>Project Manager</b> put on the board waits for its verdict instead of yours: it approves it or sends it back, and hands it to you when it is not sure. With the release gate on it lets out low-risk releases too; a release that touches the database, payments, security, server configuration or public publishing stays yours. Off: you decide all of it.
                   </Toggle>
                   <div className="field" data-review-default>
                     <span className="field-label">Finished work is reviewed by</span>

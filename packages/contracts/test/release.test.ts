@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { releaseOf, releaseRulesOf } from '../src/index.ts';
+import { releaseOf, releaseRisks, releaseRulesOf } from '../src/index.ts';
 
 /** The release gate's reading of a command (`release.ts`, docs/RELEASE-GATE.md): what reaches master/main or production. */
 const rules = releaseRulesOf({ releaseGate: { on: true, hosts: ['64.0.2.10', 'app.example.net'] } });
@@ -89,4 +89,14 @@ test('what only looks like a change: a comparison in awk, a word in a message, a
 test('a deploy script run on production is held: what it does is not read here', () => {
   assert.match(r("ssh deploy@64.0.2.10 bash -s <<'REMOTE'\ncd /home/x/www/studio\n./scripts/deploy.sh --verify 2>&1 | tail -5\nREMOTE")!, /64\.0\.2\.10/);
   assert.equal(r("ssh deploy@64.0.2.10 'ls -l scripts/deploy.sh; cat scripts/deploy.sh | head'"), null, 'looking at it is not running it');
+});
+
+test('what makes a release the boss\'s to let out, and what was said to be left out', () => {
+  assert.deepEqual(releaseRisks('Push master; pull on the app server. No SQL, no cron, no switch.'), []);
+  assert.deepEqual(releaseRisks('Code only: no SQL, cron or credential. Push the branch to master.'), []);
+  assert.deepEqual(releaseRisks('Run the migration, then push master.'), ['the database']);
+  assert.deepEqual(releaseRisks('Stripe webhook: push master'), ['payments']);
+  assert.deepEqual(releaseRisks('Publish 2.0.1 to WordPress.org (svn tag)'), ['public publishing']);
+  assert.deepEqual(releaseRisks('Reload nginx with the new vhost'), ['server configuration']);
+  assert.deepEqual(releaseRisks('Fix the stored XSS'), ['security']);
 });

@@ -59,12 +59,29 @@ test('not sure: the manager hands it to the boss, with why', async () => {
   await assert.rejects(o.eng.tasks.submitReview(o.mia, task().key, 'approve', 'ok', undefined, { checked: 'read it all through' }), /waits for the boss/);
 });
 
-test("the boss's still: a release with the gate on, and with the switch off", async () => {
+test("a release: the manager's when it is low-risk — and its approval lets the author release; the boss's when it touches what is risky, and with the switch off", async () => {
   const o = await office();
   o.eng.core.updateSettings({ releaseGate: { on: true, hosts: [] } } as never);
-  const released = o.handedIn('Ship the cart', { release: { plan: 'Push master.' } } as Partial<Task>);
-  assert.equal(released().approverId, null);
-  assert.equal(o.ownerAsked(released().id).length, 1);
+  // (18 of 19 reviews in four days went to the boss: nearly every ticket has a release plan. The owner, 2026-11-27:
+  // the manager approves low-risk releases.)
+  const plain = o.handedIn('Ship the cart badge', { release: { plan: 'Push master; pull on the app server. No SQL, no cron, no switch.' } } as Partial<Task>);
+  assert.equal(plain().approverId, o.mia.id);
+  assert.equal(o.ownerAsked(plain().id).length, 0);
+  await o.eng.tasks.submitReview(o.mia, plain().key, 'approve', 'Good.', undefined, { checked: 'Opened the cart on dev: the badge counts 3.' });
+  assert.equal(plain().status, 'DONE');
+  assert.equal(o.eng.release.decide(o.alex, 'git push origin master', 'it pushes to master').allow, true, "the manager's approval opens the release for the author");
+  o.eng.release.close({ employeeId: o.alex.id }, 'test');
+  for (const [title, plan, why] of [
+    ['Add the orders column', 'Run the migration (ALTER TABLE orders ADD paid_at), then push master.', /database/],
+    ['Charge in EUR', 'Push master; Stripe prices switch to EUR.', /payments/],
+    ['Publish 2.0.1', 'Commit to SVN trunk and tag 2.0.1 on WordPress.org.', /public/],
+    ['Fix the stored XSS', 'Push master: the CVE fix.', /security/],
+    ['New vhost', 'Reload nginx on the app server with the new vhost.', /server/],
+  ] as const) {
+    const t = o.handedIn(title, { release: { plan } } as Partial<Task>);
+    assert.equal(t().approverId, null, title);
+    assert.match(o.ownerAsked(t().id).at(-1)!.body, why, title);
+  }
   o.eng.core.updateSettings({ releaseGate: { on: false }, managersApprove: false } as never);
   const off = o.handedIn('Tidy the footer');
   assert.equal(off().approverId, null);

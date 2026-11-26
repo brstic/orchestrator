@@ -305,3 +305,23 @@ export function releaseOf(command: string, rules: ReleaseRules, cwd: string, bra
   }
   return null;
 }
+
+/**
+ * What in a release makes it the boss's to let out, not a project manager's (the owner, 2026-11-27: the manager approves
+ * low-risk releases; `docs/RELEASE-GATE.md`, "Who lets a release out"). Read from the ticket's words and its release
+ * plan; what is said to be left out ("no SQL, no cron") does not count. Empty: low-risk. When in doubt it names a risk:
+ * a manager sending one more to the boss costs a click, one too few is the point of the gate.
+ */
+const RISKS: Array<[string, RegExp]> = [
+  ['the database', /\b(sql|migrat\w*|schema|alter\s+table|drop\s+(table|column|database)|create\s+table|truncate|database|mysql|postgres\w*|psql|sqlite|mongo\w*)\b/i],
+  ['payments', /\b(stripe|paypal|payments?|billing|invoic\w*|refunds?|charg(e|es|ed|ing)|checkout\s+price|prices?|subscriptions?|webhooks?)\b/i],
+  ['security', /\b(security|cve-?\d*|vulnerab\w*|xss|csrf|injection|auth\w*|log-?in|passwords?|credentials?|secrets?|tokens?|api[\s_-]?keys?|permissions?|firewall|ssh[\s_-]?keys?|root|sudo|encrypt\w*|certificates?|tls|ssl)\b/i],
+  ['server configuration', /\b(nginx|apache|httpd|vhost|systemd|systemctl|crontab|cron|dns|iptables|ufw|\.env\b|php\.ini|my\.cnf|docker[\s-]?compose|kubernetes|k8s|hestia|reboot|restart\s+the\s+server)\b/i],
+  ['public publishing', /\b(wordpress\.org|svn|npm\s+publish|pypi|app\s+store|play\s+store|marketplace\s+listing|publish(ed|ing)?\s+(the\s+)?(plugin|package|version|release)|tag\s+\d+\.\d+)/i],
+];
+
+export function releaseRisks(text: string): string[] {
+  // What is said to be left out: "no SQL, cron or credential", "without a migration", "nothing on the database".
+  const said = text.replace(/\b(no|without|nothing\s+(on|in|to)|not\s+touch\w*|never)\b[^.;:\n]*/gi, ' ');
+  return RISKS.filter(([, re]) => re.test(said)).map(([name]) => name);
+}

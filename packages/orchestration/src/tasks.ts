@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { DeliveryState, Employee, Message, Project, ProjectPolicy, ReviewBy, Task, TaskKind, TaskPriority, TaskStatus, XpEntry } from '@orchestrator/contracts';
-import { GATHER_SEC_MAX, REVIEW_BY, REVIEW_SEND_BACKS, matchRole, newId, nowIso, redactSecrets, reviewByOf, reviewDefaultOf, reviewUsualOf, roleByKey, slugify, truncate, stripEnd, LEAD_ROLE, directsOthers } from '@orchestrator/contracts';
+import { GATHER_SEC_MAX, REVIEW_BY, releaseRisks, REVIEW_SEND_BACKS, matchRole, newId, nowIso, redactSecrets, reviewByOf, reviewDefaultOf, reviewUsualOf, roleByKey, slugify, truncate, stripEnd, LEAD_ROLE, directsOthers } from '@orchestrator/contracts';
 import { applyXp, evaluateMilestones, xpForCompletedTask, xpForReview } from '@orchestrator/game-systems';
 import { EngineError, within } from './core.ts';
 import type { Engine } from './engine.ts';
@@ -2052,9 +2052,15 @@ export class TaskManager {
     return candidates.find((e): e is Employee => !!e && !e.archived && e.roleKey === 'pm' && !!e.hostId && e.id !== q.employeeId && this.canSee(e, task)) ?? null;
   }
 
+  /** A release that is the boss's to let out (`releaseRisks`): what of it is risky. Empty when nothing is, or nothing is released. */
+  releaseRisksOf(task: Task): string[] {
+    if (!task.release?.plan || !this.eng.release.on()) return [];
+    return releaseRisks(`${task.title}\n${task.description}\n${task.release.plan}`);
+  }
+
   managerFor(task: Task): Employee | null {
     if (this.core.settings.managersApprove === false) return null;
-    if ((task.release?.plan && this.eng.release.on()) || task.evidence.contested || task.escalated) return null;
+    if (this.releaseRisksOf(task).length || task.evidence.contested || task.escalated) return null;
     const project = this.core.projects.get(task.projectId);
     const maker = /^employee:/.test(task.createdBy ?? '') ? this.core.employees.find((e) => e.name === task.createdBy!.slice('employee:'.length) && !e.archived) : undefined;
     const candidates = [maker, project?.ownerEmployeeId ? this.core.employees.get(project.ownerEmployeeId) : undefined];
@@ -2076,7 +2082,8 @@ export class TaskManager {
     task.approverId = manager?.id ?? null;
     this.core.put('task', task);
     if (!manager) {
-      this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your review`, body, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
+      const risks = this.releaseRisksOf(task);
+      this.eng.comms.notify({ kind: 'review', severity: 'warning', title: `${task.key} needs your review`, body: risks.length ? `${body}\nYours, not a manager's: its release touches ${risks.join(', ')}.` : body, taskId: task.id, projectId: task.projectId, employeeId: task.assigneeId });
       return;
     }
     this.history(task, `${manager.name} gives the verdict, in the boss's place (and hands it to the boss when unsure)`, 'orchestrator');
@@ -2085,7 +2092,7 @@ export class TaskManager {
       toEmployeeId: manager.id,
       kind: 'system',
       taskId: task.id,
-      body: `${task.key} "${truncate(task.title, 100)}" — work you put on the board — waits for your verdict, in the boss's place. ${body}\nLook at it (get_task ${task.key}: the summary, the change, what was checked) against what the boss asked for. Then submit_review: approve — with "checked", what you looked at or ran — or request_changes, saying what to change. If you are not sure it is what the boss wants, call escalate_review with why: the boss decides it then.`,
+      body: `${task.key} "${truncate(task.title, 100)}" — work you put on the board — waits for your verdict, in the boss's place. ${body}\nLook at it (get_task ${task.key}: the summary, the change, what was checked) against what the boss asked for. Then submit_review: approve — with "checked", what you looked at or ran — or request_changes, saying what to change. If you are not sure it is what the boss wants, call escalate_review with why: the boss decides it then.${task.release?.plan && this.eng.release.on() ? `\nIt has a release plan: your approval lets its author release it as planned — read the plan too, and hand it to the boss if anything in it is not low-risk.` : ''}`,
     });
   }
 
@@ -2175,7 +2182,8 @@ export class TaskManager {
       this.eng.talk.add(task, { from, body: said(comments.trim() || 'Approved.'), kind: 'approved', mentions: [] }, { store: false, quiet: true });
       await this.finalize(task);
       // A person approved it: the gate opens for those who release it (release.ts). A colleague's approval does not.
-      if (by === 'owner' && (task.status as string) === 'DONE') this.eng.release.approved(task, who?.name ?? 'The boss');
+      // So does the manager's verdict in the boss's place: it is given one only for a low-risk release (`managerFor`).
+      if ((by === 'owner' || inBossPlace) && (task.status as string) === 'DONE') this.eng.release.approved(task, by === 'owner' ? (who?.name ?? 'The boss') : `${by.name} (the manager, in the boss's place)`);
     } else {
       this.eng.talk.add(task, { from, body: said(comments), kind: 'sent_back', mentions: [] }, { store: false, quiet: true });
       task.reviewStage = null;

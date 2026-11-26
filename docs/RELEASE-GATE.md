@@ -71,6 +71,23 @@ With **Settings → Employees → "Nothing is released before I approve it (the 
 
 Not for a rented employee while rented (a client's work has its own terms, `docs/RENT.md`).
 
+## Who lets a release out
+
+The owner, 2026-11-27: the Project Manager approves **low-risk releases** too. Before, a ticket with a release plan
+always waited for the boss — and since the gate asks for a plan on nearly every ticket, 18 of 19 reviews in four days
+ended with the boss while the manager decided one.
+
+Now `TaskManager.releaseRisksOf` reads the ticket's title, description and release plan (`releaseRisks` in
+`packages/contracts/src/release.ts`): **the database** (SQL, migrations, schema), **payments** (Stripe, billing,
+charges, prices, webhooks), **security** (auth, logins, passwords, tokens, certificates, CVE/XSS fixes), **server
+configuration** (nginx, vhosts, systemd, cron, DNS, .env) or **public publishing** (WordPress.org/SVN, npm, app stores).
+What the plan says is left out ("no SQL, no cron") does not count. None of these: the manager gives the verdict, and
+its approval opens the release for the author and the colleagues on the ticket exactly as an owner's does
+(`Release.approved`, "by <manager> (the manager, in the boss's place)"). Any of them: the boss decides, and the Inbox
+says why ("Yours, not a manager's: its release touches payments"). The manager is told to read the plan and hand it to
+the boss if anything in it is not low-risk. Word lists err towards the boss: run over the 33 release plans of the live
+office (2026-11-20..27), 4 were low-risk.
+
 ## Asked and answered
 
 The owner, 2026-11-26: "it would not let it through even with my permission". An employee working without a ticket
