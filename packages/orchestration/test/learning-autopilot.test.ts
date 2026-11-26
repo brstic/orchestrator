@@ -601,4 +601,21 @@ test('command shapes read the way the analyser names its rules', () => {
   assert.deepEqual(['docker build -t x .', 'npm run test:unit', 'git --version', 'wget https://x', 'node -e "1"', '$(whoami)', '  ls   -la  && rm x'].map(commandShape), ['docker build', 'npm run', 'git', 'wget', 'node', null, 'ls']);
   // A program named by its path is no shape to write a rule for: `Bash(/bin/bash:*)` would allow everything, and the list of words never to allow alone does not know paths.
   assert.deepEqual(["/bin/bash -c 'ls'", '/usr/bin/env ls', './run.sh --all', '~/bin/tool x', 'C:\\tools\\x.exe y'].map(commandShape), [null, null, null, null, null]);
+  // A variable set before the command is no command (the live office was offered "Pre-approve S=/tmp/…/scratchpad": a
+  // rule for one session's folder that would let anything after it run).
+  assert.deepEqual(['S=/tmp/claude-1000/x/scratchpad; curl -s https://x', 'FOO=1 npm test', 'export P=x'].map(commandShape), [null, null, 'export']);
+});
+
+test('the suggestions name rules by the same reading (it differed: paths and assignments were offered as rules)', () => {
+  const eng = new Engine({ store: new Store(':memory:'), agents: { rpc: () => Promise.reject(new Error('no')), isOnline: () => true, respondHook: () => false, disconnect: () => undefined }, publicUrl: 'http://127.0.0.1:1' }, { send: () => undefined });
+  const shape = (c: string) => (eng.improver as any).commandShape(c);
+  assert.deepEqual(['S=/tmp/x/scratchpad; curl x', '/bin/bash -c ls', 'npm run build'].map(shape), [null, null, 'npm run']);
+  // One offered before, read wrongly, is taken back; a right one stays.
+  const now = new Date().toISOString();
+  const offer = (id: string, rule: string) => eng.core.put('improvement', { id, kind: 'allow_rule', title: id, rationale: '', evidence: [], projectId: null, employeeId: null, action: { type: 'project.policy.allow', projectId: 'p', rule }, status: 'proposed', dedupeKey: id, createdAt: now, decidedAt: null } as never);
+  offer('bad', 'Bash(S=/tmp/claude-1000/x/scratchpad:*)');
+  offer('good', 'Bash(cd:*)');
+  eng.improver.analyze();
+  assert.equal(eng.core.improvements.get('bad')!.status, 'dismissed');
+  assert.equal(eng.core.improvements.get('good')!.status, 'proposed');
 });

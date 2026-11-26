@@ -72,7 +72,10 @@ One table in code, `AUTOPILOT_TABLE`, classifies every `ImprovementKind` (which 
 The numbers are `Timings` (so tests can lower them); the defaults:
 
 **An allow rule** (`autopilotAllowApprovals: 5`, `autopilotAllowSpreadMs: 24 h`) — all of:
-- the rule is `Bash(<shape>:*)` for a shape of one or two plain words;
+- the rule is `Bash(<shape>:*)` for a shape of one or two plain words — never a program named by its path, nor a
+  variable set before the command (`S=/tmp/…; curl …`). The suggestions read shapes with this same `commandShape`
+  (they had a copy of their own that knew neither, and offered "Pre-approve S=/tmp/…/scratchpad" on the live office);
+  a suggestion already offered for a shape it refuses is taken back at the next reading;
 - at least **5 approvals** of commands that read to exactly that shape, in that project — by the owner or by a colleague (whoever may decide that employee's requests);
 - **no denial, ever**, of any command in that project that contains that shape — also as one part of a chained command;
 - the approvals come from **at least 2 different tasks, or span at least a day** from first to last;

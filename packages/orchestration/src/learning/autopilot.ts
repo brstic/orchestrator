@@ -120,6 +120,8 @@ export function commandShape(command: string): string | null {
   // A program named by its path (`/bin/bash`, `./run.sh`, `~/bin/x`) is no shape to write a rule for: the block
   // list below knows words, and a path to the same program is not one of them.
   if (/[\/~\\]/.test(words[0]!)) return null;
+  // Nor a variable set before the command (`S=/tmp/…; curl …`, `FOO=1 npm test`): not a program at all.
+  if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0]!)) return null;
   const two = ['npm', 'pnpm', 'yarn', 'git', 'docker', 'cargo', 'go', 'make', 'npx', 'python', 'python3', 'php', 'composer', 'kubectl', 'pip', 'bundle'].includes(words[0]!) && words[1] && !words[1].startsWith('-');
   return two ? `${words[0]} ${words[1]}` : words[0]!;
 }

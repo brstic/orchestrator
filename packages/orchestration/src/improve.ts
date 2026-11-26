@@ -2,7 +2,7 @@ import type { Employee, EvidenceRef, Improvement, ImprovementAction, Improvement
 import { correlationMarker, newId, nowIso, truncate } from '@orchestrator/contracts';
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
-import { Autopilot, AUTOPILOT_ACTOR } from './learning/autopilot.ts';
+import { Autopilot, AUTOPILOT_ACTOR, commandShape } from './learning/autopilot.ts';
 import { DEFAULT_HIGH_RISK_PATTERNS } from './prompts.ts';
 import { Playbook } from './learning/playbook.ts';
 import { Capture, type LessonArgs } from './learning/capture.ts';
@@ -352,12 +352,9 @@ export class Improver {
     return imp;
   }
 
+  /** One reading of a command's shape, the autopilot's (it was a copy here that knew neither paths nor assignments). */
   private commandShape(command: string): string | null {
-    const first = (command.split(/&&|\|\||;|\|/)[0] ?? '').trim();
-    const words = first.split(/\s+/).filter(Boolean);
-    if (!words.length || /[`$(){}<>]/.test(words.slice(0, 2).join(' '))) return null;
-    const two = ['npm', 'pnpm', 'yarn', 'git', 'docker', 'cargo', 'go', 'make', 'npx', 'python', 'python3', 'php', 'composer', 'kubectl', 'pip', 'bundle'].includes(words[0]!) && words[1] && !words[1].startsWith('-');
-    return two ? `${words[0]} ${words[1]}` : words[0]!;
+    return commandShape(command);
   }
 
   private isHighRisk(command: string, project: Project | undefined): boolean {
@@ -389,6 +386,19 @@ export class Improver {
       this.core.put('improvement', imp);
       this.eng.comms.resolveNotifications((n) => n.kind === 'improvement' && n.title === `Suggestion: ${imp.title}`);
       this.core.event({ type: 'improvement.withdrawn', source: 'server', summary: `Orchestrator took back a suggestion that no longer holds: ${imp.title}`, projectId: imp.projectId, employeeId: imp.employeeId, data: { improvementId: imp.id, kind: imp.kind, quiet: true } });
+    }
+    // A rule the office would no longer offer at all (a shape read wrongly before: a path, a variable set before the
+    // command): taken back at once, whatever its age.
+    for (const imp of this.core.improvements.filter((i) => i.status === 'proposed' && i.kind === 'allow_rule')) {
+      const rule = String((imp.action as { rule?: unknown } | null)?.rule ?? '');
+      const shape = /^Bash\(([^()]+):\*\)$/.exec(rule)?.[1]?.trim();
+      if (!shape || commandShape(shape) !== null) continue;
+      imp.status = 'dismissed';
+      imp.decidedAt = nowIso();
+      imp.withdrawn = 'It names no command the office would write a rule for.';
+      this.core.put('improvement', imp);
+      this.eng.comms.resolveNotifications((n) => n.kind === 'improvement' && n.title === `Suggestion: ${imp.title}`);
+      this.core.event({ type: 'improvement.withdrawn', source: 'server', summary: `Orchestrator took back a suggestion that was read wrongly: ${imp.title}`, projectId: imp.projectId, employeeId: imp.employeeId, data: { improvementId: imp.id, kind: imp.kind, quiet: true } });
     }
   }
 
