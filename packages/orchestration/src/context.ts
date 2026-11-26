@@ -39,6 +39,8 @@ export interface ContextChange {
 }
 
 /** An answer that sounds like it holds from now on — in English or in Serbian. */
+/** A lesson kept from the boss's answer that holds for that once, not as a rule ("Deploy T-187 now?": "yes"). */
+const oneOff = (l: Pick<Lesson, 'source' | 'text'>): boolean => l.source === 'owner_answer' && !STANDING.test(l.text.replace(/^Decided by the boss — "[\s\S]*?": /, ''));
 const STANDING = /\b(always|never|from now on|every time|whenever|by default|in future|going forward|uvek|uvijek|nikad|nikada|od sada|ubudu[cć]e|svaki put|uvek kad|po defaultu|standardno)\b/i;
 
 const clean = (s: unknown, max: number) => String(s ?? '').replace(/\r\n/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, max);
@@ -60,6 +62,7 @@ export class CentralContext {
   }
 
   start(): void {
+    this.healOneOffs();
     // What anybody holds can change with who works where, on what, for whom: looked at again when that changes.
     this.core.bus.on('entity', (kind, op, data) => {
       if (kind === 'session' && op === 'upsert' && (data as { status?: string }).status === 'running' && !this.sent.has((data as { id: string }).id)) this.later();
@@ -81,6 +84,31 @@ export class CentralContext {
       else if (kind === 'question') this.noticeAnswer(data as Question);
       else if (kind === 'lesson') this.noticeLesson(data as Lesson);
     });
+  }
+
+  /**
+   * Once: what the office took in before from the boss's one-off answers is put away (2026-11-27: 63 of the 70 facts
+   * that came from lessons on the live office were "Decided by the boss — deploy T-187 now?: yes" and the like, given to
+   * every employee of the project as a rule). The lessons stay, for their project (`learning/`); a yes to a release is
+   * retired — it was for that release only.
+   */
+  private healOneOffs(): void {
+    const MARK = 'context.healed.oneOffAnswers';
+    if (this.core.store.kvGet<boolean>(MARK, false)) return;
+    let put = 0;
+    for (const l of this.core.lessons.filter((x) => x.source === 'owner_answer' && x.status === 'active' && x.evidence.some((e) => e.kind === 'question' && this.core.questions.get(e.id)?.kind === 'deployment'))) {
+      this.core.put('lesson', { ...l, status: 'retired', updatedAt: nowIso() });
+    }
+    for (const f of [...this.facts.values()]) {
+      const l = f.createdBy.startsWith('lesson:') ? this.core.lessons.get(f.createdBy.slice(7)) : undefined;
+      if (!l || l.source !== 'owner_answer' || (l.status === 'active' && !oneOff(l))) continue;
+      if (f.status === 'active') this.archive(f.id, 'office');
+      else if (f.status === 'proposed') this.drop(f.id, 'office');
+      else continue;
+      put++;
+    }
+    this.core.store.kvSet(MARK, true);
+    if (put) this.core.log('info', `context: ${put} facts made from the boss's one-off answers put away`);
   }
 
   private save(): void {
@@ -307,7 +335,7 @@ export class CentralContext {
 
   /** A lesson for the whole office or a project, taken in: offered as a fact (it is a rule the office already follows). */
   private noticeLesson(l: Lesson, quiet = false): void {
-    if (l.status !== 'active' || l.scope === 'employee') return;
+    if (l.status !== 'active' || l.scope === 'employee' || oneOff(l)) return;
     if (l.scope === 'project' && (!l.projectId || this.personal(l.projectId))) return;
     this.offer(`lesson:${l.id}`, { layer: l.scope === 'project' ? 'project' : 'office', scope: l.scope === 'project' ? l.projectId : null, title: `Lesson: ${l.text.replace(/\s+/g, ' ')}`, text: `${l.text}${l.appliesWhen ? ` (${l.appliesWhen})` : ''}` }, 'a lesson', quiet);
   }

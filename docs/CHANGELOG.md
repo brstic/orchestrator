@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-27
+- **A one-off answer is no longer a rule for everyone.** A yes to a release is not kept as a lesson; a lesson kept from the boss's answer is offered for the central context only when the answer is standing; the facts already taken in that way (63 of 70 lesson facts on the live office) are put away once, at start (`docs/CONTEXT.md`; `context.test.ts`, failed before).
 - **A visitor who walks in is not given the chat's last hour** (the owner: "the chat history must not be seen by visitors when they come in"); what is said while they are in, they still hear. `tests/e2e/24-people-acts.test.ts` (failed before).
 
 ## 2026-11-26

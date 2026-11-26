@@ -47,7 +47,13 @@ Each fact: a title, the text (Markdown, short), **Always** (in the pack) or **On
 3. **The office notices** — each offered once as a proposal, never put in by itself, and never what is on a member's own computer:
    - a meeting that reached a decision → its project (or the office);
    - **the boss's answer that sounds standing** — "always", "never", "from now on", "every time", "by default", or in Serbian "uvek", "nikad", "od sada", "ubuduće", "svaki put", "standardno" (`STANDING`) → the asker's project (or the office); an answer for this once is not offered, nor the foreman's;
-   - **a lesson for the office or a project**, once it is active (`noticeLesson`).
+   - **a lesson for the office or a project**, once it is active (`noticeLesson`) — but a lesson kept from the boss's
+     answer only when the answer is standing, by the same words as above (`oneOff`). On 2026-11-27, 63 of the 70 facts
+     that came from lessons on the live office were one-off answers ("Deploy T-187 to production now?" — "yes") given
+     to every employee of the project as rules, a yes to a release among them — read as a standing permission to
+     publish while the release gate held the same thing. Once, when the office starts, such facts are put away (archived;
+     unaccepted proposals dropped) and a lesson kept from a yes to a release is retired (`healOneOffs`); a yes to a
+     release (a `deployment` question) is no longer kept as a lesson at all (`captureOwnerAnswer`).
 4. **The import**: *Import what the office knows* (Office tab) offers, once, what already exists — each employee's standing instructions as their own notes, each project's description, goals and notes, the active lessons of the office and the projects. One line in the Inbox for all of them; *Take in all* in Proposals, after looking through them. A dropped proposal is not offered again (the history remembers where it came from).
 
 ## The window

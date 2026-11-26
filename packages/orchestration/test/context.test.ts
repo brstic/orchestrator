@@ -158,3 +158,47 @@ test("a machine whose agent does not know the central context is not asked again
   assert.equal(warned.length, 1);
   assert.match(warned[0]!, /older/);
 });
+
+test("a yes for this once is not a rule for everyone: a release the boss allowed is no lesson, and an answer is offered only when it is standing — also as a lesson (63 of 70 live facts were one-off answers)", () => {
+  const { eng, shop, kira } = office();
+  eng.context.start();
+  const ask = (id: string, kind: string, text: string, answer: string) => {
+    const q = eng.core.put('question', { id, kind, channel: 'mcp_tool', employeeId: kira.id, sessionId: null, taskId: null, projectId: shop.id, text, context: '', why: '', options: [], parts: [], answers: null, status: 'answered', answer, answeredBy: null, answeredAt: now(), createdAt: now() } as never);
+    eng.improver.captureOwnerAnswer(q as never);
+  };
+  ask('d1', 'deployment', 'Push 7.1.0.56 to master and publish it?', 'Yes, publish 7.1.0.56');
+  assert.equal(eng.core.lessons.filter((l) => l.evidence.some((e) => e.id === 'd1')).length, 0, 'a release allowed once is not knowledge');
+  ask('d2', 'decision', 'Deploy T-187 to production now?', 'Yes, go ahead.');
+  ask('d3', 'decision', 'Which currency do prices show in?', 'Always in EUR, from now on.');
+  const offered = eng.context.list().filter((f) => f.createdBy.startsWith('lesson:')).map((f) => f.text);
+  assert.equal(offered.length, 1, JSON.stringify(offered));
+  assert.match(offered[0]!, /Always in EUR/);
+});
+
+test('what the office took in before from one-off answers is put away when it starts (a lesson stays where it was)', () => {
+  const { eng, shop } = office();
+  const mk = (id: string, qkind: string, text: string) => {
+    eng.core.put('question', { id: `q-${id}`, kind: qkind, channel: 'mcp_tool', employeeId: null, sessionId: null, taskId: null, projectId: shop.id, text: 'x', context: '', why: '', options: [], parts: [], answers: null, status: 'confirmed', answer: 'y', answeredAt: now(), createdAt: now() } as never);
+    eng.core.put('lesson', { id, scope: 'project', employeeId: null, projectId: shop.id, text, appliesWhen: '', source: 'owner_answer', evidence: [{ kind: 'question', id: `q-${id}`, note: '' }], status: 'active', authoredBy: { kind: 'owner', id: null, name: 'boss' }, appliedCount: 0, createdAt: now(), updatedAt: now() } as never);
+  };
+  mk('l-deploy', 'deployment', 'Decided by the boss — "Publish 2.0?": Yes, publish');
+  mk('l-once', 'decision', 'Decided by the boss — "Deploy T-187 now?": Yes');
+  mk('l-rule', 'decision', 'Decided by the boss — "Currency?": Always EUR');
+  const fact = (lesson: string, status: 'active' | 'proposed') => {
+    const f = eng.context.add({ layer: 'project', scope: shop.id, title: `Lesson: ${lesson}`, text: lesson }, `lesson:${lesson}`, status);
+    return f.id;
+  };
+  const a = fact('l-deploy', 'active');
+  const b = fact('l-once', 'active');
+  const c = fact('l-rule', 'active');
+  const d = fact('l-once', 'proposed');
+  eng.context.start();
+  const st = (id: string) => eng.context.get(id)?.status ?? 'gone';
+  assert.deepEqual([st(a), st(b), st(c), st(d)], ['archived', 'archived', 'active', 'gone']);
+  assert.equal(eng.core.lessons.get('l-deploy')!.status, 'retired', 'a release allowed once is retired');
+  assert.equal(eng.core.lessons.get('l-once')!.status, 'active', 'a decision stays a lesson, for its project');
+  // Once: what a person takes in again afterwards stays.
+  eng.core.put('lesson', { ...eng.core.lessons.get('l-once')!, updatedAt: now() } as never);
+  eng.context.start();
+  assert.equal(st(c), 'active');
+});

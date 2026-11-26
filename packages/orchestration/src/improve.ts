@@ -228,7 +228,9 @@ export class Improver {
    * own words, so no employee has to ask it again.
    */
   captureOwnerAnswer(q: Question): void {
-    if (!this.on || q.kind === 'permission' || q.kind === 'trust_prompt' || q.kind === 'merge_conflict' || q.kind === 'priority') return;
+    // (A release the boss allowed is allowed that once — the release gate opens it for an hour; as a lesson it read as
+    // a standing permission to publish. 22 such lessons were active on the live office, 2026-11-27.)
+    if (!this.on || q.kind === 'permission' || q.kind === 'trust_prompt' || q.kind === 'merge_conflict' || q.kind === 'priority' || q.kind === 'deployment') return;
     const answer = q.answers && Object.keys(q.answers).length ? Object.entries(q.answers).map(([k, v]) => `${k} → ${v}`).join('; ') : q.answer;
     if (!answer?.trim()) return;
     const asker = this.core.employees.get(q.employeeId);
