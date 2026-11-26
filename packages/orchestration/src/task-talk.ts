@@ -336,7 +336,20 @@ export class TaskTalk {
     const comment = this.add(task, { from, body, kind: 'note', mentions, attachmentIds });
     const told: string[] = [];
     const reached = new Set<string>();
+    // Work a Project Manager runs: what is said to the boss on it is the manager's to read first, as a question on it is
+    // (2026-11-27: 102 of the 117 tags of the boss in a week were on a manager's tickets). The manager tags the boss
+    // itself when it is the boss's to see.
+    const manager = this.eng.tasks.managerForQuestion({ taskId: task.id, employeeId: employee.id, kind: 'question' });
+    const toManager = (what: string) => {
+      this.tell(manager!, task, from, `${employee.name} (${employee.title}) ${what} on ${task.key} "${truncate(task.title, 100)}" — work you put on the board, so it is yours to read first, in the boss's place:\n${comment.body}\n\nAnswer it if you can (comment_on_task with task "${task.key}", tagging @${employee.name}). If it is the boss's to see or decide, tag @boss yourself and say why.`);
+      told.push(`${manager!.name} (who runs this work, in the boss's place)`);
+      reached.add(manager!.id);
+    };
     for (const m of mentions) {
+      if (m.kind === 'boss' && manager) {
+        if (!reached.has(manager.id)) toManager('tagged the boss');
+        continue;
+      }
       if (m.kind === 'boss') {
         this.eng.comms.notify({ kind: 'mention', severity: 'info', title: `${employee.name} tagged you on ${task.key}`, body: truncate(comment.body, 400), employeeId: employee.id, taskId: task.id, projectId: task.projectId });
         told.push('the boss');
@@ -354,7 +367,12 @@ export class TaskTalk {
       told.push(assignee.name);
     }
     // Its author, on a ticket that waits for the boss's verdict: they are talking it over with the boss.
-    if (task.status === 'REVIEW' && task.reviewStage === 'boss' && task.assigneeId === employee.id && !told.includes('the boss')) {
+    const approver = task.status === 'REVIEW' && task.reviewStage === 'boss' && task.approverId ? this.core.employees.get(task.approverId) : undefined;
+    if (approver && task.assigneeId === employee.id && !reached.has(approver.id)) {
+      this.tell(approver, task, from, `${employee.name} (${employee.title}) commented on ${task.key} "${truncate(task.title, 100)}", which waits for your verdict:\n${comment.body}`);
+      told.push(approver.name);
+      reached.add(approver.id);
+    } else if (task.status === 'REVIEW' && task.reviewStage === 'boss' && task.assigneeId === employee.id && !told.includes('the boss')) {
       this.eng.comms.notify({ kind: 'mention', severity: 'info', title: `${employee.name} answered on ${task.key}`, body: truncate(comment.body, 400), employeeId: employee.id, taskId: task.id, projectId: task.projectId });
       told.push('the boss');
     }

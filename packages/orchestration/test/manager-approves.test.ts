@@ -115,3 +115,22 @@ test("a colleague's question about the manager's work goes to the manager first;
   assert.equal(q3.managerId ?? null, null, 'a deployment is the boss\'s');
   assert.equal(ownerTold(q3.id), 1);
 });
+
+test("@boss on work the manager runs is the manager's to read first (102 of 117 tags of the boss in a week were on a manager's tickets); the manager's own tag reaches the boss", async () => {
+  const o = await office();
+  const t = o.eng.tasks.createTask({ projectId: o.shop, title: 'Checkout page', description: 'x', assigneeId: o.alex.id, released: false }, 'employee:Mia');
+  o.eng.core.put('task', { ...o.eng.core.tasks.require(t.id), status: 'IN_PROGRESS' } as Task);
+  const session = (e: Employee) => ({ id: `s-${e.id}`, employeeId: e.id, hostId: 'host-1' }) as any;
+  const tags = () => o.eng.core.notifications.filter((n) => n.kind === 'mention' && n.taskId === t.id);
+  const r = await o.eng.talk.byEmployee(o.alex, session(o.alex), { task: t.key, text: '@boss The checkout works on dev; the coupon field is next.' });
+  assert.equal(tags().length, 0, 'the boss is not told');
+  assert.match(r.text, /Mia/);
+  assert.match(o.eng.core.messages.filter((m) => m.toEmployeeId === o.mia.id).at(-1)!.body, /tagged the boss on T-\d+[\s\S]*coupon field[\s\S]*@boss yourself/);
+  await o.eng.talk.byEmployee(o.mia, session(o.mia), { task: t.key, text: '@boss Coupons: percent or fixed amount? The ticket does not say.' });
+  assert.equal(tags().length, 1, "the manager's tag reaches the boss");
+  // In review with the manager deciding: the author talks it over with the manager, not the boss.
+  o.eng.core.put('task', { ...o.eng.core.tasks.require(t.id), status: 'REVIEW', reviewStage: 'boss', approverId: o.mia.id } as Task);
+  await o.eng.talk.byEmployee(o.alex, session(o.alex), { task: t.key, text: 'Added the screenshot of the empty cart.' });
+  assert.equal(tags().length, 1);
+  assert.match(o.eng.core.messages.filter((m) => m.toEmployeeId === o.mia.id).at(-1)!.body, /empty cart/);
+});

@@ -134,6 +134,10 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   the boss with why — direction, money, what cannot be undone, or not sure — and then it is in the boss's Inbox ("Mia
   passes it to you: …"). A deployment question is always the boss's. The same switch as the verdicts
   (`managersApprove`).
+- **So does a tag of the boss on it** (`TaskTalk.byEmployee`): "@boss …" from a colleague on a manager's ticket goes to
+  the manager, who answers it or tags @boss itself, saying why; the manager's own tag reaches the boss. While such a
+  ticket waits for the manager's verdict, what its author adds there goes to the manager, not the boss's Inbox. (On
+  the live office, 102 of the 117 tags of the boss in a week, 2026-11-27, were on a manager's tickets.)
 - **What a Project Manager puts on the board starts at once** where employees keep the board: its proposals are released
   (not left in the backlog for the boss), and what it asked for a role rather than a person is staffed by the scheduler
   even in a project that assigns nothing by itself (`propose`, `byManager`). Other employees' proposals wait as before.
