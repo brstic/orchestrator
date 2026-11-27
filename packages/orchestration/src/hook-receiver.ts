@@ -225,6 +225,17 @@ export class HookReceiver {
       }));
   }
 
+  /** It stopped on its task again after every nudge: told to whoever can do something about it. */
+  private stalled(task: Task, employee: Employee, nudges: number): void {
+    const what = `${employee.name} stopped working on ${task.key} "${truncate(task.title, 100)}" without finishing, after being nudged on ${nudges === 1 ? 'once' : `${nudges} times`}.`;
+    const manager = this.eng.tasks.managerForQuestion({ taskId: task.id, employeeId: employee.id, kind: 'question' });
+    if (manager) {
+      this.eng.comms.sendMessage({ from: { kind: 'system', id: null, name: 'the office' }, toEmployeeId: manager.id, kind: 'system', taskId: task.id, body: `${what} It is work you put on the board. Find out what stands in the way (get_task ${task.key}; ask ${employee.name}), then unblock it, give it to somebody else, or tell the boss.` });
+      return;
+    }
+    this.eng.comms.notify({ kind: 'blocked', severity: 'warning', title: `${employee.name} stopped on ${task.key} without finishing`, body: what, employeeId: employee.id, taskId: task.id, projectId: task.projectId });
+  }
+
   /**
    * Stop hook: Claude finished a turn. We may keep it going — to hand over
    * queued messages/tasks without touching the terminal, or to nudge an
@@ -255,7 +266,16 @@ export class HookReceiver {
     const task = this.eng.tasks.currentTask(employee.id);
     if (!task || task.delivery.status !== 'confirmed') return null;
     const limit = NUDGE_LIMIT[employee.autonomy] ?? 0;
-    if (task.nudges >= limit) return null;
+    if (task.nudges >= limit) {
+      // The nudges spent and it stops again: somebody is told, once — the project manager whose work it is, or else the
+      // owner (the foreman used to notice an idle employee; since it is gone nobody did, and the ticket stood "in progress").
+      if (limit > 0 && task.nudges === limit) {
+        task.nudges++;
+        this.core.put('task', task);
+        this.stalled(task, employee, limit);
+      }
+      return null;
+    }
     task.nudges++;
     this.core.put('task', task);
     this.core.event({ type: 'task.updated', source: 'server', summary: `Orchestrator nudged ${employee.name} to continue ${task.key} (${task.nudges}/${limit})`, taskId: task.id, projectId: task.projectId, employeeId: employee.id, sessionId: session.id, data: { key: task.key, nudge: task.nudges, quiet: true } });

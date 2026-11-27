@@ -117,7 +117,7 @@ For `PreToolUse`, `PermissionRequest` and `Stop` the same `curl` stands inside a
 | `PermissionRequest` | approval held open until the owner decides | **yes** |
 | `PermissionDenied` | denial confirmed; the owner gets a security notification saying what was refused | no |
 | `Notification` | `permission_prompt` (terminal fallback is showing), `idle_prompt` | no |
-| `Stop` | turn ended; queued messages delivered as `{"decision":"block","reason":…}`; a goal sends it on (see "Goals"); bounded nudges | briefly |
+| `Stop` | turn ended; queued messages delivered as `{"decision":"block","reason":…}`; a goal sends it on (see "Goals"); bounded nudges (1 on Standard, 3 on Auto and Unrestricted) — spent, and it stops again with the task unfinished: the project manager whose work it is is told once, or else the owner (a `blocked` line) | briefly |
 | `StopFailure`, `SubagentStart`, `SubagentStop` | error state; delegating | no |
 | `TaskCreated`, `TaskCompleted` | a step of Claude Code's own task list was planned / finished (`agent.step_planned`, `agent.step_completed`). These are steps inside a turn: an Orchestrator task is only ever completed by verification | no |
 | `TeammateIdle` | a teammate of a Claude Code agent team went idle (`agent.teammate_idle`) | no |
