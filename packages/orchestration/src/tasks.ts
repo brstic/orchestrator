@@ -2094,7 +2094,8 @@ export class TaskManager {
   /** A release that is the boss's to let out (`releaseRisks`): what of it is risky. Empty when nothing is, or nothing is released. */
   releaseRisksOf(task: Task): string[] {
     if (!task.release?.plan || !this.eng.release.on()) return [];
-    return releaseRisks(`${task.title}\n${task.description}\n${task.release.plan}`);
+    const theirs = new Set(this.core.settings.managerReleases ?? []);
+    return releaseRisks(`${task.title}\n${task.description}\n${task.release.plan}`).filter((r) => !theirs.has(r));
   }
 
   managerFor(task: Task): Employee | null {

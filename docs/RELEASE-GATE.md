@@ -75,6 +75,12 @@ With **Settings → Employees → "Nothing is released before I approve it (the 
 
 Not for a rented employee while rented (a client's work has its own terms, `docs/RENT.md`).
 
+**Which kinds are the manager's too is the owner's choice** (Settings → Employees, "Managers may also let out releases
+that touch", `OwnerSettings.managerReleases`): a ticked kind no longer makes a release the boss's. The office suggests
+one from the boss's own verdicts (`Improver.managerReleaseTrust`): ten approvals or more in 30 days of releases of
+managers' work whose only risk was that kind, none sent back → a Growth suggestion; applying it ticks the kind. It is
+never applied by itself (it lets managers release more).
+
 ## Text is not a command
 
 An ssh written as text here is not one that runs there: the body of a heredoc written to a file (`cat >> crons/http1

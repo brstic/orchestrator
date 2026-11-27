@@ -2067,6 +2067,11 @@ export interface OwnerSettings {
    */
   managersApprove?: boolean;
   /**
+   * What of a release a project manager may let out too, besides low-risk ones (`RELEASE_RISK_NAMES`: 'the database',
+   * 'payments', …). Empty or absent: none — those stay the boss's (`docs/RELEASE-GATE.md`, "Who lets a release out").
+   */
+  managerReleases?: string[];
+  /**
    * Where the office stands: what is seen around the building, from above and through its windows. The office's own
    * (the same for everybody in it), chosen by an owner. Not set: `studio`, the building by itself in the dark, as it
    * was before there was a choice.

@@ -174,3 +174,27 @@ test("work a manager runs is reported by the manager: no \"completed\" line for 
   assert.equal(o.eng.core.notifications.filter((n) => n.kind === 'task_completed' && n.taskId === task().id).length, 0);
   assert.ok(o.toldMia().some((b) => /Cart icon[\s\S]*is done/.test(b)), 'the manager hears it, and reports to the boss');
 });
+
+test("a kind of risk the boss lets managers release is the manager's; and the boss's own approvals suggest which", async () => {
+  const o = await office();
+  o.eng.core.updateSettings({ releaseGate: { on: true, hosts: [] } } as never);
+  const secure = () => o.handedIn('Login rate limit', { release: { plan: 'Push master; the login form limits tries.' } } as Partial<Task>);
+  assert.equal(secure()().approverId, null, 'security: the boss\'s');
+  o.eng.core.updateSettings({ managerReleases: ['security', 'nonsense'] } as never);
+  assert.deepEqual(o.eng.core.settings.managerReleases, ['security'], 'only kinds there are');
+  assert.equal(secure()().approverId, o.mia.id, "now the manager's");
+  assert.equal(o.handedIn('Charge in EUR', { release: { plan: 'Push master; Stripe prices in EUR.' } } as Partial<Task>)().approverId, null, 'payments: still the boss\'s');
+  // Learned: ten approvals of one kind of risk on managers' work, none sent back → suggested.
+  o.eng.core.updateSettings({ managerReleases: [] } as never);
+  for (let i = 0; i < 10; i++) {
+    const t = o.eng.tasks.createTask({ projectId: o.shop, title: `Webhook ${i}`, description: 'x', released: false }, 'employee:Mia');
+    o.eng.core.put('task', { ...o.eng.core.tasks.require(t.id), status: 'DONE', completedAt: new Date().toISOString(), release: { plan: 'Push master; Stripe webhook.' }, evidence: { ...o.eng.core.tasks.require(t.id).evidence, review: { by: 'owner', verdict: 'approved', comments: '', reviewerId: null, ts: new Date().toISOString() } } } as Task);
+  }
+  o.eng.improver.analyze();
+  const s = o.eng.core.improvements.find((i) => i.dedupeKey === 'manager-release:payments');
+  assert.ok(s, 'suggested');
+  assert.match(s!.rationale, /approved 10 releases/);
+  assert.equal(s!.status, 'proposed', 'a person decides');
+  o.eng.improver.apply(s!.id, 'owner');
+  assert.deepEqual(o.eng.core.settings.managerReleases, ['payments'], 'applying it ticks it');
+});

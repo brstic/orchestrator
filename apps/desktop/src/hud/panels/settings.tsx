@@ -1,6 +1,6 @@
 import { useTick } from './company-shared.tsx';
 import { useEffect, useState, type ReactNode } from 'react';
-import { releaseRulesOf, SURROUNDINGS, reviewDefaultOf, surroundingsOf, type AuditEntry, type OwnerSettings, type ReviewBy, type SelfImprovementSettings, type Surroundings } from '@orchestrator/contracts';
+import { RELEASE_RISK_NAMES, releaseRulesOf, SURROUNDINGS, reviewDefaultOf, surroundingsOf, type AuditEntry, type OwnerSettings, type ReviewBy, type SelfImprovementSettings, type Surroundings } from '@orchestrator/contracts';
 import { Badge, Button, Field, Window, timeAgo } from '@orchestrator/ui';
 import './panels-work.css';
 import { api, forgetToken } from '../../lib/api.ts';
@@ -905,6 +905,23 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                   <Toggle checked={settings.managersApprove !== false} onChange={(managersApprove) => void save({ managersApprove })} title="Project managers approve their team's work for me">
                     Work a <b>Project Manager</b> put on the board waits for its verdict instead of yours: it approves it or sends it back, and hands it to you when it is not sure. With the release gate on it lets out low-risk releases too; a release that touches the database, payments, security, server configuration or public publishing stays yours. Off: you decide all of it.
                   </Toggle>
+                  {settings.managersApprove !== false && (
+                    <div className="field" data-manager-releases>
+                      <span className="field-label">Managers may also let out releases that touch</span>
+                      <div className="row" style={{ flexWrap: 'wrap', gap: 12 }}>
+                        {RELEASE_RISK_NAMES.map((risk) => {
+                          const on = (settings.managerReleases ?? []).includes(risk);
+                          return (
+                            <label key={risk} className="small" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                              <input type="checkbox" checked={on} onChange={() => void save({ managerReleases: on ? (settings.managerReleases ?? []).filter((r) => r !== risk) : [...(settings.managerReleases ?? []), risk] })} />
+                              {risk}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <span className="small muted">Unticked: such a release waits for you. Growth suggests one when you have approved many of a kind and sent none back.</span>
+                    </div>
+                  )}
                   <div className="field" data-review-default>
                     <span className="field-label">Finished work is reviewed by</span>
                     <select aria-label="Finished work is reviewed by" value={reviewDefaultOf(settings)} onChange={(e) => void save({ reviewDefault: e.target.value as ReviewBy })} style={{ width: 'auto', alignSelf: 'flex-start' }}>

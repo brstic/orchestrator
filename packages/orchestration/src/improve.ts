@@ -1,5 +1,5 @@
 import type { Employee, EvidenceRef, Improvement, ImprovementAction, ImprovementKind, Lesson, LessonSource, PerformanceStat, Project, Question, Task, TaskKind } from '@orchestrator/contracts';
-import { correlationMarker, newId, nowIso, truncate } from '@orchestrator/contracts';
+import { correlationMarker, newId, nowIso, releaseRisks, truncate } from '@orchestrator/contracts';
 import { EngineError } from './core.ts';
 import type { Engine } from './engine.ts';
 import { Autopilot, AUTOPILOT_ACTOR, commandShape } from './learning/autopilot.ts';
@@ -456,6 +456,42 @@ export class Improver {
     }
   }
 
+  /**
+   * The boss approved, in the last 30 days, ten releases or more of one kind of risk on work a project manager put on the
+   * board — the only risk in them, none sent back: suggested that managers let that kind out too (Settings → Employees;
+   * a person decides — it is never applied by itself: it lets managers release more). Learned from the boss's own
+   * verdicts (2026-11-27: on the live office nearly every release came to the boss).
+   */
+  private managerReleaseTrust(): Improvement[] {
+    if (this.core.settings.managersApprove === false || !this.eng.release.on()) return [];
+    const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    const theirs = new Set(this.core.settings.managerReleases ?? []);
+    const pm = (createdBy: string | undefined) => /^employee:/.test(createdBy ?? '') && this.core.employees.find((e) => e.name === createdBy!.slice(9) && e.roleKey === 'pm');
+    const byRisk = new Map<string, { approved: Task[]; sentBack: number }>();
+    for (const t of this.core.tasks.filter((x) => !!x.release?.plan && (x.completedAt ?? x.updatedAt) >= since && !!pm(x.createdBy))) {
+      const risks = releaseRisks(`${t.title}\n${t.description}\n${t.release!.plan}`).filter((r) => !theirs.has(r));
+      if (risks.length !== 1) continue;
+      const g = byRisk.get(risks[0]!) ?? { approved: [], sentBack: 0 };
+      if (t.evidence.review?.by === 'owner' && t.evidence.review.verdict === 'approved' && !(t.friction?.reviewRejections ?? 0)) g.approved.push(t);
+      else if ((t.friction?.reviewRejections ?? 0) > 0) g.sentBack++;
+      byRisk.set(risks[0]!, g);
+    }
+    const out: Improvement[] = [];
+    for (const [risk, g] of byRisk) {
+      if (g.approved.length < 10 || g.sentBack) continue;
+      const i = this.propose({
+        kind: 'review_policy',
+        key: `manager-release:${risk}`,
+        title: `Let project managers let out releases that touch ${risk}`,
+        rationale: `In the last 30 days you approved ${g.approved.length} releases of managers' work whose only risk was ${risk}, and sent none back. Project managers could let those out themselves: Settings → Employees → "Managers may also let out releases that touch", tick ${risk}. The rest stays yours.`,
+        evidence: g.approved.slice(-8).map((t) => ({ kind: 'task' as const, id: t.id, note: `${t.key} ${truncate(t.title, 80)}` })),
+        action: { type: 'advice' },
+      });
+      if (i) out.push(i);
+    }
+    return out;
+  }
+
   private analyzeNow(): Improvement[] {
     const out: Improvement[] = [];
     const add = (i: Improvement | null) => {
@@ -612,6 +648,8 @@ export class Improver {
     }
     // Further findings (learning/detect.ts): task size, dependencies, routing, repeated questions, stalls, weak verification, machine load, idle capacity.
     for (const i of runDetectors(this.eng, (p) => this.propose(p))) add(i);
+    // What the boss lets out themselves, time after time, on a manager's work: offered to the managers.
+    for (const i of this.managerReleaseTrust()) add(i);
     // 8. Did what was learned help? Retire lessons the record is against, mark the proven ones, suggest undoing a change that made things worse.
     for (const i of this.outcomes.act()) add(i);
     if (out.length) this.core.broadcast('performance', this.performance());
@@ -649,6 +687,13 @@ export class Improver {
       case 'advice':
         // "Take back the change that made things worse" (learning/outcomes.ts): accepting the suggestion does it.
         if (imp.kind === 'revert_improvement' && imp.outcomesRevertOf && this.core.improvements.get(imp.outcomesRevertOf)?.status === 'applied') this.autopilot.revert(imp.outcomesRevertOf, actor);
+        // "Let managers let out releases that touch X" (`managerReleaseTrust`): a person's click ticks it. (Never the
+        // autopilot's: it lets managers release more, so it counts as widening.)
+        if (imp.dedupeKey.startsWith('manager-release:')) {
+          if (actor === AUTOPILOT_ACTOR) throw new EngineError('only a person lets managers release more');
+          const risk = imp.dedupeKey.slice('manager-release:'.length);
+          this.core.updateSettings({ managerReleases: [...new Set([...(this.core.settings.managerReleases ?? []), risk])] });
+        }
         break;
       case 'task.dependsOn':
       case 'project.routing':

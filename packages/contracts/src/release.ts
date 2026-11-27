@@ -379,6 +379,9 @@ const RISKS: Array<[string, RegExp]> = [
   ['public publishing', /\b(wordpress\.org|svn|npm\s+publish|pypi|app\s+store|play\s+store|marketplace\s+listing|publish(ed|ing)?\s+(the\s+)?(plugin|package|version|release)|tag\s+\d+\.\d+)/i],
 ];
 
+/** The kinds of risk a release can carry, by name (`releaseRisks`). */
+export const RELEASE_RISK_NAMES: readonly string[] = RISKS.map(([name]) => name);
+
 export function releaseRisks(text: string): string[] {
   // What is said to be left out: "no SQL, cron or credential", "without a migration", "nothing on the database".
   const said = text.replace(/\b(no|without|nothing\s+(on|in|to)|not\s+touch\w*|never)\b[^.;:\n]*/gi, ' ');

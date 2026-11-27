@@ -26,7 +26,7 @@ import type {
   XpEntry,
   EventSourceKind,
 } from '@orchestrator/contracts';
-import { releaseRulesOf, REVIEW_BY, SURROUNDINGS, defaultLayout, newId, nowIso } from '@orchestrator/contracts';
+import { RELEASE_RISK_NAMES, releaseRulesOf, REVIEW_BY, SURROUNDINGS, defaultLayout, newId, nowIso } from '@orchestrator/contracts';
 import type { Collection, Storage } from '@orchestrator/database';
 import { deriveCompanyStats, emptyCompanyStats, initialMilestones } from '@orchestrator/game-systems';
 import type { TerminalGateway } from '@orchestrator/terminal';
@@ -452,6 +452,8 @@ export class Core {
       ...(patch.unrestrictedAsksHighRisk === undefined ? {} : { unrestrictedAsksHighRisk: patch.unrestrictedAsksHighRisk !== false }),
       ...(patch.acceptStartPrompts === undefined ? {} : { acceptStartPrompts: patch.acceptStartPrompts !== false }),
       ...(patch.managersApprove === undefined ? {} : { managersApprove: patch.managersApprove !== false }),
+      // Only the kinds of risk there are, each once.
+      ...(patch.managerReleases === undefined ? {} : { managerReleases: Array.isArray(patch.managerReleases) ? [...new Set(patch.managerReleases.filter((x): x is string => typeof x === 'string' && RELEASE_RISK_NAMES.includes(x)))] : [] }),
       // The release gate: on or off, the protected branches and the production servers, as `releaseRulesOf` reads them.
       ...(patch.releaseGate === undefined ? {} : { releaseGate: releaseRulesOf({ releaseGate: { ...releaseRulesOf(this._settings), ...(patch.releaseGate ?? {}) } }) }),
       // A place the office knows, or the one it had.
