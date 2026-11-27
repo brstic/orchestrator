@@ -298,7 +298,12 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
         for: to.for,
       });
       core.event({ type: 'agent.message_to_person', source: 'mcp', summary: `${employee.name} wrote to ${to.name}`, employeeId: employee.id, taskId: task?.id ?? null, projectId: employee.projectId, data: { to: to.name, notificationId: note.id, urgent } });
-      return `Sent to ${to.name}: it is in their Inbox${urgent ? ', marked urgent' : ''}, and on Telegram if they talk to you there. If they answer, it comes to you as a message — carry on meanwhile.`;
+      // A question put as a message: its answer comes back as a loose message, and a project manager who answers questions
+      // about its work in the boss's place never sees it. Sent all the same; said what to use next time.
+      const asks = to.for.includes(FOR_OWNERS) && /\?\s*$/m.test(text);
+      const manager = asks && task ? eng.tasks.managerForQuestion({ taskId: task.id, employeeId: employee.id, kind: 'question' }) : null;
+      const hint = asks ? ` It reads as a question: for one, use ask_boss (or comment_on_task with ask: true) next time — the answer then comes back to you as its answer${manager ? `, and ${manager.name}, who runs this work, answers it first` : ''}.` : '';
+      return `Sent to ${to.name}: it is in their Inbox${urgent ? ', marked urgent' : ''}, and on Telegram if they talk to you there. If they answer, it comes to you as a message — carry on meanwhile.${hint}`;
     },
 
     message_client: async (a, { employee }) => {

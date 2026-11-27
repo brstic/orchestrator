@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-27
+- **A question put to the boss as a message is sent, and the employee is told to use ask_boss for one** — so the answer comes back as an answer, and the project manager sees it first (`message-person.test.ts`).
 - **What Telegram puts on a person's phone is recorded** (`telegram.sent`: who, which kind, never the text; not in the feed), so how often it interrupts somebody away can be counted (`59-telegram.test.ts`).
 - **Fixed: employees that stopped while the office was out of reach stood still after it was back** (one for eight hours, after an update): when their machine connects again, whoever stands still on a task is told to go on (`back-after-outage.test.ts`, failed before).
 - **Fixed: a reviewer that stopped after its verdict held its review ticket, and the reviews queued behind it, for hours** — the verdict now finishes the reviewer's own ticket (`verdict-closes-review.test.ts`, failed before; `docs/DECISIONS.md`).

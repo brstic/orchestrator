@@ -85,3 +85,13 @@ test('twenty in an hour, then no more', async () => {
   assert.match(refused, /more than 20 in an hour \(message to a person\)/);
   assert.equal(messages().filter((n) => n.employeeId === id.Ava).length, 20, `${before} were written before this test, the rest up to twenty here`);
 });
+
+test('a question to the boss put as a message is sent, and the employee is told to ask it with ask_boss next time', async () => {
+  // (Somebody whose twenty an hour are not spent by the test before.)
+  id.Ivo = eng.employees.create({ name: 'Ivo', roleKey: 'backend', projectId: eng.core.employees.require(id.Ava!).projectId, hostId: 'box', workingDir: '/tmp/ivo' }).id;
+  const asked = await call('Ivo', { to: 'boss', message: 'Support asks: may we offer the customer a bigger server instead?' });
+  assert.equal(asked.isError, false);
+  assert.match(asked.text, /reads as a question: for one, use ask_boss/);
+  const said = await call('Ivo', { to: 'boss', message: 'The release notes are ready for you to read.' });
+  assert.doesNotMatch(said.text, /ask_boss/);
+});

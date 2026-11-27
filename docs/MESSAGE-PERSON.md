@@ -19,6 +19,11 @@ Read this before touching `message_person` in `packages/orchestration/src/mcp-to
 - **At most 20 in an hour** per employee (`tooMany`, "message to a person"): an employee that something it read steered is otherwise a way to flood somebody's Inbox and phone.
 - Given to every employee, a team lead (`LEAD_ALSO`) and a rented employee too (`RENT_TOOLS` — it waits for nothing, so also on a rental that never waits for the office).
 
+
+A message to the boss that reads as a question (a line ending in "?") is sent all the same, and the employee is told to
+use `ask_boss` for one next time: the answer then comes back as its answer, and a project manager who answers questions
+about its work in the boss's place sees it first (2026-11-27: questions put as messages went past both).
+
 ## What the person gets
 
 - **A notification of the kind `message`**, addressed (`Notification.for`: member ids, or `'#owners'` = `FOR_OWNERS`): title `Ava: <the first line>` (`Ava · urgent: …` when `urgent`, severity *warning*; otherwise *info*), the whole message as its body (up to 4,000 characters), the employee and the task they were on.
