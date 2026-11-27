@@ -100,7 +100,7 @@ On the owner's Mac — the app is built next to the one that runs, checked, and 
 ```sh
 node scripts/package.mjs --out release-next         # builds release-next/Orchestrator.app; release/ is not touched
 node scripts/smoke-package.mjs --out release-next   # 15/15
-node scripts/update-mac-app.mjs                     # closes the app, swaps the build in, opens it
+node scripts/update-mac-app.mjs                     # closes the app, swaps the build in, opens it again — only if it was running
 ```
 
 `update-mac-app.mjs` never kills the app. A build since 2026-11-12 quits without its "Leave this office?" question when it gets SIGUSR2 from the same user (`main.cjs`); an older build is asked to quit and shows the question, which the script answers where the terminal is allowed to (macOS Accessibility) and which otherwise waits for the person — if the app is still running after a minute and a half, nothing is replaced. The build that was in `release/` is kept as `release-next/Orchestrator.app.previous-HHMM` (each is a whole app; delete old ones by hand). Employees' sessions keep running in tmux; the Mac is back in the office when the app is.

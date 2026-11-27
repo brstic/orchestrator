@@ -4,7 +4,7 @@
  * and opening the new one after. For the owner's own Mac, where the app runs from `release/Orchestrator.app`.
  *
  *   node scripts/package.mjs --out release-next && node scripts/smoke-package.mjs --out release-next
- *   node scripts/update-mac-app.mjs            # close → swap → open
+ *   node scripts/update-mac-app.mjs            # close → swap → open (only if it was running)
  *   node scripts/update-mac-app.mjs --no-open  # close → swap
  *
  * The app is closed the way a person closes it, never killed: first by the signal a build since 2026-11-12 answers
@@ -46,6 +46,8 @@ if (process.platform !== 'darwin') throw new Error('this replaces the macOS app;
 if (!fs.existsSync(path.join(next, 'Contents', 'MacOS'))) throw new Error(`no build waits in ${next} — package one first: node scripts/package.mjs --out release-next`);
 
 let pids = running();
+// (Opened again only if it was running: an app the owner had closed stays closed — their word of 2026-11-27.)
+const wasRunning = pids.length > 0;
 if (pids.length) {
   say(`The app is running (pid ${pids.join(', ')}): closing it.`);
   for (const pid of pids) process.kill(pid, 'SIGUSR2');
@@ -80,7 +82,9 @@ const now = new Date();
 fs.utimesSync(current, now, now);
 spawnSync('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', ['-f', current], { stdio: 'ignore' });
 say(`Replaced. The build that was there is kept as ${path.relative(root, kept)}.`);
-if (!process.argv.includes('--no-open')) {
+if (!process.argv.includes('--no-open') && wasRunning) {
   execFileSync('open', [current]);
   say('The new app is open.');
+} else if (!wasRunning) {
+  say('The new app is in place; it was not running, so it was left closed.');
 }

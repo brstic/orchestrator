@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-27
+- **`update-mac-app.mjs` opens the new app only if the old one was running** (the owner: one they had closed stays closed).
 - **"Decided without you" on the operations wall** (owners): reviews and questions decided by project managers in the boss's place against the owners' own over 7 days, and the releases managers let out — autonomy kept measurable (`check-health.test.ts`).
 - **A release let out on the boss's word can be reported** (`report_released` refused it: "not approved for release"); the pass closes once it is out (`release-gate.test.ts`, failed before).
 - **An office tool given a required text under another name takes it as meant** (`body` for `text`, `summary` for `note`) when it can only be that — about one in five failed calls of the office's tools failed on that alone (`namedAsMeant`, `packages/integrations`).
