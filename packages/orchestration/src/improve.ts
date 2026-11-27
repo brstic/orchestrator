@@ -33,6 +33,16 @@ const APPROVALS_BEFORE_SUGGESTING = 3;
 /** A proposal about a situation is taken back undecided when the record has not shown it again this long after. */
 export const WITHDRAW_AFTER_MS = 3 * 86_400_000;
 
+/** Mistakes whose cause and remedy are known: what a failed command shows, and what to do instead. */
+const KNOWN_PITFALLS: Array<{ name: string; matches: (command: string, error: string) => boolean; lesson: string; when: string }> = [
+  {
+    name: 'pkill -f killing its own shell',
+    matches: (command, error) => /\bpkill\b[^\n;|&]*\s-f\b/.test(command) && /^Exit code 14[34]\b/.test(error),
+    lesson: 'pkill -f matches the whole command line of every process — also the shell running your own command, whose line contains the same pattern — and kills it (exit code 144, the rest of the command never runs). Write the pattern so that it cannot match itself, e.g. pkill -f "[p]hp -S 127.0.0.1:8791", or kill the PID you started (save $! when you start it).',
+    when: 'when stopping a process with pkill -f or pgrep -f',
+  },
+];
+
 export class Improver {
   private eng: Engine;
   /** Retrospective in progress per employee: lessons they record are tied to that task. */
@@ -410,9 +420,39 @@ export class Improver {
       const out = this.analyzeNow();
       // Only a whole reading tells what no longer holds (one that failed half-way found less than there is).
       this.withdrawStale(found);
+      this.knownPitfalls();
       return out;
     } finally {
       this.found = null;
+    }
+  }
+
+  /**
+   * Known pitfalls (`KNOWN_PITFALLS`): a mistake whose cause and remedy are known, which two employees or more fell into in
+   * the last 30 days, is taught to the whole office as a lesson — once, as the office's own (it goes in by itself where
+   * team lessons do, and is judged by outcomes like any). 2026-11-27: `pkill -f` killing its own shell, 15 times in a
+   * week by five employees, each finding it out alone.
+   */
+  private knownPitfalls(): void {
+    const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    const failures = this.core.store.queryEvents({ types: ['agent.tool_failed'], since, limit: 5000 });
+    for (const p of KNOWN_PITFALLS) {
+      if (this.core.lessons.find((l) => l.scope === 'company' && l.text.startsWith(p.lesson.slice(0, 60)))) continue;
+      const hits = failures.filter((e) => e.data?.tool === 'Bash' && p.matches(String((e.data?.input as { command?: unknown } | undefined)?.command ?? ''), String(e.data?.error ?? '')));
+      const who = new Set(hits.map((e) => e.employeeId).filter(Boolean));
+      if (who.size < 2) continue;
+      this.saveLesson({
+        scope: 'company',
+        employeeId: null,
+        projectId: null,
+        text: p.lesson,
+        appliesWhen: p.when,
+        source: 'orchestrator',
+        evidence: hits.slice(-5).map((e) => ({ kind: 'event' as const, id: e.id, note: truncate(String((e.data?.input as { command?: unknown } | undefined)?.command ?? ''), 100) })),
+        status: this.core.settings.selfImprovement.autoApproveSharedLessons ? 'active' : 'proposed',
+        authoredBy: { kind: 'orchestrator', id: null, name: 'Orchestrator' },
+      });
+      this.core.event({ type: 'learning.pitfall_taught', source: 'server', summary: `The office taught everybody a pitfall ${who.size} employees fell into: ${p.name}`, data: { pitfall: p.name, employees: who.size, times: hits.length } });
     }
   }
 

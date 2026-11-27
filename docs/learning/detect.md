@@ -27,6 +27,15 @@ All thresholds are the constants in `DETECT` at the top of the module.
 | 7 | Machine load | ≥ 2 separate resource warnings of one machine during which a session stopped mid-task or a verification timed out (10 minutes of slack either side) | `machine_load`, key `load:<host>` | advice |
 | 8 | Idle capacity | an employee with no event and no assigned work for ≥ 3 days, while ≥ 2 unreleased backlog tasks of a kind they take have waited ≥ 1 day in a project they can work on | `idle_capacity`, key `idle:<project>` | advice |
 
+### Known pitfalls
+
+Besides the detectors, every reading of the record (`Improver.knownPitfalls`, after `analyze`) looks for mistakes whose
+cause and remedy are known (`KNOWN_PITFALLS` in `improve.ts`): when **two employees or more** fell into one in the last
+30 days, the office records a **company lesson** with the remedy — once, `source: 'orchestrator'`, active where team
+lessons go in by themselves, else proposed — and the event `learning.pitfall_taught`. The first: `pkill -f` whose pattern
+is in the shell's own command line kills that shell (exit code 144) — 15 times in a week by five employees on the live
+office, 2026-11-27. A pitfall is added to the list with the words of its remedy; the list knows nothing it was not told.
+
 ### Stall causes (detector 5)
 
 A stall is only counted when the record shows it need not have happened; a ready task waiting because everyone suitable is busy is a queue, not a stall.
