@@ -116,6 +116,13 @@ export class Release {
     helpers.delete(authorId);
     if (task.evidence.peerReview?.reviewerId) helpers.delete(task.evidence.peerReview.reviewerId);
     for (const r of this.core.tasks.filter((t) => t.reviewOf === task.id)) if (r.assigneeId) helpers.delete(r.assigneeId);
+    // Whoever the approved plan names does that part (it says who does which): "then Ops pulls on production". They were
+    // left out unless they had written on the ticket, and a ticket only to release followed, for a second approval.
+    const planned = task.release?.plan ?? '';
+    if (planned) {
+      const named = (name: string) => new RegExp(`(^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'iu').test(planned);
+      for (const e of this.core.employees.filter((x) => !x.archived && x.id !== authorId && named(x.name))) helpers.add(e.id);
+    }
     const until = new Date(Date.now() + RELEASE_OPEN_MS).toISOString();
     const holders = [authorId, ...[...helpers].filter((id) => {
       const e = this.core.employees.get(id);
@@ -217,7 +224,7 @@ export class Release {
       `The release gate of this office: nothing reaches ${r.branches.join(' / ')}${r.hosts.length ? ` or the production servers (${r.hosts.join(', ')})` : ' or production'} before an owner has approved the work.`,
       'Before that, work and try freely: commit, push your own branches, put it on the development servers. A push to a protected branch, merging a pull request, or a change on a production server is refused by the office until then.',
       'Where a development server follows a protected branch (it pulls master), try your work there from your own branch instead: push your branch and check it out on the development server — that is free — and put the development server back on the protected branch once it is released.',
-      'Hand the work in with complete_task and give release_plan: where it goes once approved and how — branches, servers, steps, checks, and who does which part. The owner reads it in review. When an owner approves it you are told, and the release is open for you (and the colleagues on the ticket) for a few hours: do what the plan says, then call report_released with what you did and how you checked it.',
+      'Hand the work in with complete_task and give release_plan: where it goes once approved and how — branches, servers, steps, checks, and who does which part (whoever it names by name may do that part once it is approved). The owner reads it in review. When an owner approves it you are told, and the release is open for you (and the colleagues on the ticket) for a few hours: do what the plan says, then call report_released with what you did and how you checked it.',
       'Do not open a separate ticket only to release work that is handed in or approved: its release is the release_plan of the ticket whose work it is, and goes out when that ticket is approved.',
     ].join(' ');
   }

@@ -165,3 +165,15 @@ test("released on the boss's word (a pass by hand or by a yes to a question): it
   assert.equal(r.releasedBy, 'Ava');
   assert.equal(eng.release.openUntil(ids.Ava!), null, 'the pass is closed once it is out');
 });
+
+test('who the approved release plan names may release it too — the plan says who does which part (they were left out, and a ticket only to release followed, for a second approval)', () => {
+  eng.core.updateSettings({ releaseGate: { on: true, hosts: ['64.0.2.10'] } } as any);
+  for (const id of [ids.Ava, ids.Ops, ids.Zed]) eng.release.close({ employeeId: id }, 'test');
+  const t = eng.tasks.createTask({ projectId: shop, title: 'Webhook fix', description: 'x', assigneeId: ids.Ava, released: false }, 'owner');
+  t.authorId = ids.Ava!;
+  t.release = { plan: 'Ava pushes master; then Ops pulls on production and checks /health.' };
+  eng.release.approved(t, 'Branko');
+  assert.equal(eng.release.decide(emp('Ops'), "ssh 64.0.2.10 'git pull'", 'production').allow, true, 'named in the plan');
+  assert.equal(eng.release.decide(emp('Zed'), 'git push origin master', 'it pushes to master').allow, false, 'not named, not on the ticket');
+  assert.match(toldTo('Ops').at(-1)!, /Webhook fix/);
+});

@@ -2439,7 +2439,7 @@ export class TaskManager {
         const text = `${spec?.title ?? ''}\n${spec?.description ?? ''}`;
         if (!/^\s*(release|deploy|ship|publish|roll\s*out|push)\b/i.test(String(spec?.title ?? ''))) continue;
         const open = [...new Set(text.match(/\bT-\d+\b/g) ?? [])].map((k) => this.core.tasks.find((t) => t.key === k && t.projectId === projectId)).filter((t): t is Task => !!t && t.status !== 'DONE');
-        if (open.length) throw new EngineError(`task ${i} ("${truncate(String(spec.title), 60)}") only releases ${open.map((t) => t.key).join(', ')}, which ${open.length === 1 ? 'is' : 'are'} not approved yet. Do not open a ticket for that: its steps go in the release_plan of ${open.map((t) => t.key).join(' / ')} (comment_on_task to its author with the steps and who does which part). When it is approved, its author and the colleagues on it may release it.`);
+        if (open.length) throw new EngineError(`task ${i} ("${truncate(String(spec.title), 60)}") only releases ${open.map((t) => t.key).join(', ')}, which ${open.length === 1 ? 'is' : 'are'} not approved yet. Do not open a ticket for that: its steps go in the release_plan of ${open.map((t) => t.key).join(' / ')} (comment_on_task to its author with the steps and who does which part). When it is approved, its author, the colleagues on it and whoever its release plan names may release it.`);
       }
     }
     for (const [i, spec] of specs.entries()) {

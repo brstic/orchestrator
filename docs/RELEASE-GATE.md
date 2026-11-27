@@ -50,7 +50,9 @@ With **Settings → Employees → "Nothing is released before I approve it (the 
 - **In review** the owner sees what was done — the summary, the tests, the commits and the changed files (the
   *Changes* tab), the colleague's verdict — and, in **Your verdict**, *Where it goes once you approve it*.
 - **Approve opens the gate** for its **author** and the **colleagues who worked on the ticket** (wrote on it, were
-  named on it, helpers) — not its reviewers — for **3 hours**. Each is told: the author "Release it now, as you planned:
+  named on it, helpers) and **whoever its release plan names** ("then Ops pulls on production" — they were left out
+  unless they had written on the ticket, and a ticket only to release followed, for a second approval) — not its
+  reviewers unless the plan names them — for **3 hours**. Each is told: the author "Release it now, as you planned:
   …", the others that they may help. An approval by a colleague (the first step) opens nothing.
 - **`report_released { task, note }`**: the author says it is out and how it was checked. It is written on the ticket
   ("Released. …"), the ticket shows *Released by … · when*, and the gate closes again for that ticket. A window that
