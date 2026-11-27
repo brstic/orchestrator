@@ -2226,6 +2226,9 @@ export class SessionRegistry {
       context: this.eng.context.forLaunch(employee, session.id),
       env: {
         ORCH_EMPLOYEE: slugify(employee.name),
+        // git's own fallback for an author's address: used only where the folder and the machine set none (a commit was
+        // refused there, "Author identity unknown" — 13 times by 9 employees in a month); a configured identity wins.
+        EMAIL: `${slugify(employee.name)}@orchestrator.local`,
         // Their own Claude login, if they were given one.
         ...(!codex && employee.claudeConfigDir ? { CLAUDE_CONFIG_DIR: employee.claudeConfigDir } : {}),
         // Let ask_boss hold a tool call open while the owner decides, and a wait for a colleague while they work.

@@ -138,6 +138,8 @@ The Orchestrator MCP server is an HTTP endpoint on the server (`POST /mcp`, JSON
 
 `ask_boss` holds the tool call open for up to four minutes (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` and `MCP_TOOL_TIMEOUT` are raised in the worker's environment). If you answer later, the answer is delivered into the session as a message, and `wait_for_answer` lets the agent keep waiting.
 
+The worker's environment also carries `EMAIL=<employee>@orchestrator.local`: git's own fallback for an author's address, used only where the folder and the machine set no `user.email` — commits there were refused ("Author identity unknown", 13 times by 9 employees in a month). A configured identity still wins (checked with git).
+
 ### The long memory (MemPalace)
 Where MemPalace is installed beside the office program (`<install folder>/mempalace-venv`, or `ORCH_MEMPALACE_BIN`), the office keeps a long memory in it (`packages/orchestration/src/memory.ts`) and every employee is shown two more tools (`MEMORY_TOOLS`):
 
