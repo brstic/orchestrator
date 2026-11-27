@@ -1,4 +1,4 @@
-import type { Task } from '@orchestrator/contracts';
+import type { Question, Task } from '@orchestrator/contracts';
 
 /**
  * How the office's work was checked lately — the figures an owner measured by hand on 2026-11-23 (`docs/TASKS.md` §1,
@@ -68,5 +68,41 @@ export function checkHealth(tasks: Record<string, Task> | Task[], now = Date.now
     }
   }
   out.waiting.sort((a, b) => a.since.localeCompare(b.since));
+  return out;
+}
+
+/**
+ * What the office decided without its owner, against what came to them — the owner's principle of 2026-11-27,
+ * "autonomy, learning, self-improvement", kept measurable on the operations wall. Reviews: given by a project manager in
+ * the boss's place, or by an owner; questions: answered by a project manager, or by an owner (permission requests and
+ * the like are not questions). From what the window holds.
+ */
+export interface Autonomy {
+  days: number;
+  reviewsByManagers: number;
+  reviewsByOwners: number;
+  /** Of the managers' approvals: those that let a release out. */
+  releasesByManagers: number;
+  questionsByManagers: number;
+  questionsByOwners: number;
+}
+
+const ANSWERABLE = new Set(['question', 'decision', 'priority', 'deployment']);
+
+export function autonomy(tasks: Record<string, Task> | Task[], questions: Record<string, Question> | Question[], now = Date.now(), days = 7): Autonomy {
+  const from = new Date(now - days * 86_400_000).toISOString();
+  const out: Autonomy = { days, reviewsByManagers: 0, reviewsByOwners: 0, releasesByManagers: 0, questionsByManagers: 0, questionsByOwners: 0 };
+  for (const t of Array.isArray(tasks) ? tasks : Object.values(tasks)) {
+    const verdict = [...(t.history ?? [])].reverse().find((h) => h.ts >= from && /^Review approved by /.test(h.note));
+    if (verdict && /in the boss's place/.test(verdict.note)) {
+      out.reviewsByManagers++;
+      if (t.release?.approvedBy && /the manager/.test(t.release.approvedBy)) out.releasesByManagers++;
+    } else if (t.evidence?.review?.by === 'owner' && t.evidence.review.verdict === 'approved' && (t.evidence.review.ts || '') >= from) out.reviewsByOwners++;
+  }
+  for (const q of Array.isArray(questions) ? questions : Object.values(questions)) {
+    if (!ANSWERABLE.has(q.kind) || !q.answeredAt || q.answeredAt < from) continue;
+    if (q.answeredBy?.kind === 'manager') out.questionsByManagers++;
+    else if (!q.answeredBy || q.answeredBy.kind === 'owner') out.questionsByOwners++;
+  }
   return out;
 }

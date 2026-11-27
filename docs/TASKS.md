@@ -126,7 +126,9 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   low-risk while the release gate is on (database, payments, security, server configuration, public publishing —
   `docs/RELEASE-GATE.md`, "Who lets a release out"; a low-risk one is the manager's, and its approval opens the release),
   work colleagues could not agree on, and work the manager wrote or helped with. The board shows "*<manager>* gives the verdict for you"; the operations wall's "waits
-  for you" leaves it out. (Also closed then: a colleague finishing work that waited for the boss alone.)
+  for you" leaves it out, and its card **Decided without you** (owners) counts over the last 7 days the verdicts and
+  answers managers gave in the boss's place against the owners' own, and the releases managers let out (`autonomy` in
+  `apps/desktop/src/lib/check-health.ts`). (Also closed then: a colleague finishing work that waited for the boss alone.)
 - **A colleague's question about a manager's work goes to the manager first** (`TaskManager.managerForQuestion`,
   `Comms.answerAsManager`/`escalateQuestion`; MCP `answer_team_question`, `escalate_question` — shown to the `pm` role
   only). A question (also a decision or a priority) an employee asks about a task a Project Manager put on the board

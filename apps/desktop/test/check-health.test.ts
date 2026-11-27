@@ -38,3 +38,23 @@ test('what waits for an owner, oldest first — also long ago handed in', () => 
   );
   assert.deepEqual(h.waiting.map((w) => [w.key, w.since]), [['T-176', '2026-11-18T13:05:00Z'], ['T-400', '2026-11-23T08:00:00Z']]);
 });
+
+test('what was decided without the owner, against what came to them', async () => {
+  const { autonomy } = await import('../src/lib/check-health.ts');
+  const byMia = { ts: '2026-11-22T10:00:00Z', status: 'DONE', note: "Review approved by Mia, the manager, in the boss's place", by: 'Mia' };
+  const a = autonomy(
+    [
+      task('m1', { history: [byMia], release: { plan: 'x', approvedBy: "Mia (the manager, in the boss's place)" } }),
+      task('m2', { history: [byMia] }),
+      task('o1', { evidence: { review: { by: 'owner', verdict: 'approved', comments: '', reviewerId: null, ts: '2026-11-22T11:00:00Z' } } }),
+      task('old', { history: [{ ...byMia, ts: '2026-10-01T10:00:00Z' }] }),
+    ],
+    [
+      { id: 'q1', kind: 'decision', answeredAt: '2026-11-22T10:00:00Z', answeredBy: { kind: 'manager', id: 'm', name: 'Mia' } },
+      { id: 'q2', kind: 'deployment', answeredAt: '2026-11-22T10:00:00Z', answeredBy: null },
+      { id: 'q3', kind: 'permission', answeredAt: '2026-11-22T10:00:00Z', answeredBy: null },
+    ] as any,
+    NOW,
+  );
+  assert.deepEqual(a, { days: 7, reviewsByManagers: 2, reviewsByOwners: 1, releasesByManagers: 1, questionsByManagers: 1, questionsByOwners: 1 });
+});

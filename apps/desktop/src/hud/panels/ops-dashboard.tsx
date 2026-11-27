@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Badge, timeAgo } from '@orchestrator/ui';
 import { useOffice } from '../../lib/store.ts';
-import { checkHealth } from '../../lib/check-health.ts';
+import { autonomy, checkHealth } from '../../lib/check-health.ts';
 import { fmtBytes, hostDotClass } from './company-shared.tsx';
 
 const NONE = <div className="small faint">Nothing recorded yet.</div>;
@@ -19,6 +19,7 @@ export function OpsDashboard() {
   const hostsById = useOffice((s) => s.hosts);
   const sessions = useOffice((s) => s.sessions);
   const notifications = useOffice((s) => s.notifications);
+  const questions = useOffice((s) => s.questions);
   const openPanel = useOffice((s) => s.openPanel);
   // What waits for an owner, and how owners approve, is theirs to read (a visitor's tasks carry no evidence anyway).
   const owner = useOffice((s) => s.me?.role === 'owner');
@@ -65,10 +66,34 @@ export function OpsDashboard() {
   );
 
   const health = useMemo(() => checkHealth(tasks), [tasks]);
+  const self = useMemo(() => autonomy(tasks, questions), [tasks, questions]);
   const of = (n: number, total: number) => (total ? `${n} of ${total}` : '—');
 
   return (
     <div className="ops-grid">
+      {owner && (
+        <section className="card ops-card" data-autonomy>
+          <div className="section-title">Decided without you — the last {self.days} days</div>
+          {self.reviewsByManagers + self.reviewsByOwners + self.questionsByManagers + self.questionsByOwners === 0 ? (
+            NONE
+          ) : (
+            <>
+              <div className="ops-row" title="Verdicts a project manager gave in your place, against yours">
+                <span className="grow">Reviews</span>
+                <span className="small muted">
+                  {self.reviewsByManagers} by managers{self.releasesByManagers ? ` (${self.releasesByManagers} let out)` : ''} · {self.reviewsByOwners} by you
+                </span>
+              </div>
+              <div className="ops-row" title="Questions and decisions a project manager answered in your place, against yours">
+                <span className="grow">Questions</span>
+                <span className="small muted">
+                  {self.questionsByManagers} by managers · {self.questionsByOwners} by you
+                </span>
+              </div>
+            </>
+          )}
+        </section>
+      )}
       {owner && (
         <section className="card ops-card" data-check-health>
           <div className="section-title">How work is checked — the last {health.days} days</div>
