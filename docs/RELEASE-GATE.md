@@ -90,6 +90,12 @@ says why ("Yours, not a manager's: its release touches payments"). The manager i
 the boss if anything in it is not low-risk. Word lists err towards the boss: run over the 33 release plans of the live
 office (2026-11-20..27), 4 were low-risk.
 
+## Reported on the boss's word
+
+A release let out by an owner's pass (*Let release* by hand, or their yes to a question about it) is reported with
+`report_released` like an approved one: the pass counts as its approval (`approvedBy` the owner who gave it), and the pass
+closes once it is out. It was refused ("was not approved for release") and the release went unrecorded.
+
 ## No ticket only to release
 
 A ticket proposed only to release work that is not approved yet ("Release T-462", or "Deploy …" naming a ticket still

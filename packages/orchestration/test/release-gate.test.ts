@@ -152,3 +152,16 @@ test("a ticket only to release work not yet approved is refused — its steps be
   // Work that is not a release, naming a ticket in review, is not refused.
   assert.equal(eng.tasks.propose(pm, shop, [{ title: `Write the docs for ${inReview.key}`, description: 'x' }], undefined, 'planning').created.length, 1);
 });
+
+test("released on the boss's word (a pass by hand or by a yes to a question): it can be reported, and the pass closes (it was refused: not approved for release)", () => {
+  eng.core.updateSettings({ releaseGate: { on: true, hosts: [] } } as any);
+  const t = eng.tasks.createTask({ projectId: shop, title: 'Image fix', description: 'x', assigneeId: ids.Ava, released: false }, 'owner');
+  assert.throws(() => eng.release.reported(emp('Ava'), t.key, 'Pushed master and pulled on production; checked the page.'), /was not approved for release/);
+  eng.release.grant(ids.Ava!, 60, 'Branko');
+  const said = eng.release.reported(emp('Ava'), t.key, 'Pushed master and pulled on production; checked the page.');
+  assert.match(said, /recorded as released/);
+  const r = eng.core.tasks.require(t.id).release!;
+  assert.equal(r.approvedBy, 'Branko');
+  assert.equal(r.releasedBy, 'Ava');
+  assert.equal(eng.release.openUntil(ids.Ava!), null, 'the pass is closed once it is out');
+});

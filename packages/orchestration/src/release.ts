@@ -171,6 +171,10 @@ export class Release {
   reported(employee: Employee, taskRef: string, note: string): string {
     const task = this.eng.tasks.taskByKey(taskRef, null) ?? this.core.tasks.get(taskRef);
     if (!task) throw new EngineError(`no task "${taskRef}"`);
+    // Let out on an owner's word — a pass by hand, or their yes to a question about it — not by approving the ticket: that
+    // is its approval (it was refused here, and the release went unrecorded).
+    const byHand = !task.release?.approvedAt ? this.passes().filter((p) => p.employeeId === employee.id && !p.taskId).sort((a, b) => (a.at < b.at ? 1 : -1))[0] : undefined;
+    if (byHand) task.release = { plan: task.release?.plan ?? null, ...task.release, approvedAt: byHand.at, approvedBy: byHand.by, openUntil: byHand.until, releasedAt: null, releasedBy: null, note: null };
     if (!task.release?.approvedAt) throw new EngineError(`${task.key} was not approved for release`);
     if (task.release.releasedAt) return `${task.key} was already reported released (${task.release.releasedAt.slice(0, 16)}).`;
     const words = note.trim();
@@ -179,6 +183,7 @@ export class Release {
     this.core.put('task', task);
     this.eng.talk.add(task, { from: { kind: 'employee', id: employee.id, name: employee.name }, body: `Released.\n\n${words}`, kind: 'note', mentions: [] }, { store: true, quiet: true });
     this.close({ taskId: task.id }, `employee:${employee.name}`);
+    if (byHand) this.close({ employeeId: employee.id }, `employee:${employee.name}`);
     this.core.event({ type: 'task.released', source: 'mcp', summary: `${employee.name} released ${task.key}`, taskId: task.id, projectId: task.projectId, employeeId: employee.id, data: { key: task.key, note: truncate(words, 600) } });
     return `${task.key} is recorded as released. The gate is closed again for it.`;
   }

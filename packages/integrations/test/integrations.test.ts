@@ -124,3 +124,11 @@ test('a command is shown by what Claude Code says it is for; the sentence before
   assert.equal(interpretHook({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' } as any, ctx).said, null);
   assert.equal(interpretHook({ hook_event_name: 'Stop', last_assistant_message: 'Done.' } as any, ctx).said, null);
 });
+
+test('a required text argument under another name is taken as meant, when it can only be that', async () => {
+  const { namedAsMeant } = await import('../src/mcp.ts');
+  const schema = { type: 'object', properties: { task: { type: 'string' }, text: { type: 'string' } }, required: ['text'] };
+  assert.deepEqual(namedAsMeant(schema, { task: 'T-1', body: 'Done.' }), { task: 'T-1', text: 'Done.' });
+  assert.deepEqual(namedAsMeant(schema, { task: 'T-1', body: 'a', comment: 'b' }), { task: 'T-1', body: 'a', comment: 'b' }, 'two candidates: not guessed');
+  assert.deepEqual(namedAsMeant(schema, { text: 'x', body: 'y' }), { text: 'x', body: 'y' }, 'nothing missing: as given');
+});

@@ -47,6 +47,22 @@ function rpcError(id: unknown, code: number, message: string) {
   return { jsonrpc: '2.0', id: id ?? null, error: { code, message } };
 }
 
+/**
+ * A required text argument given under another name (`body` for `text`, `summary` for `note`): taken as meant when it is
+ * the only text the call carries that the tool does not know. On the live office about one in five calls of the office's tools
+ * that failed, failed on that alone, and the employee lost a turn to it.
+ */
+export function namedAsMeant(schema: any, args: Record<string, any>): Record<string, any> {
+  if (!schema || schema.type !== 'object') return args;
+  const props = schema.properties ?? {};
+  const missing = (schema.required ?? []).filter((k: string) => props[k]?.type === 'string' && (args[k] === undefined || args[k] === null || args[k] === ''));
+  if (missing.length !== 1) return args;
+  const strangers = Object.keys(args).filter((k) => !(k in props) && typeof args[k] === 'string' && args[k].trim());
+  if (strangers.length !== 1) return args;
+  const { [strangers[0]!]: value, ...rest } = args;
+  return { ...rest, [missing[0]]: value };
+}
+
 function validateArgs(schema: any, args: Record<string, any>): string | null {
   if (!schema || schema.type !== 'object') return null;
   for (const key of schema.required ?? []) {
@@ -92,7 +108,7 @@ async function handleOne<Ctx>(req: JsonRpcRequest, opts: McpServerOptions<Ctx>, 
       const spec = opts.tools.find((t) => t.name === name);
       const handler = opts.handlers[name];
       if (!spec || !handler) return rpcError(req.id, -32602, `Unknown tool: ${name}`);
-      const args = (req.params?.arguments ?? {}) as Record<string, any>;
+      const args = namedAsMeant(spec.inputSchema, (req.params?.arguments ?? {}) as Record<string, any>);
       const invalid = validateArgs(spec.inputSchema, args);
       if (invalid) return { jsonrpc: '2.0', id: req.id, result: { content: [{ type: 'text', text: `Invalid arguments: ${invalid}` }], isError: true } };
       try {

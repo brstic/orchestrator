@@ -3,6 +3,8 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-27
+- **A release let out on the boss's word can be reported** (`report_released` refused it: "not approved for release"); the pass closes once it is out (`release-gate.test.ts`, failed before).
+- **An office tool given a required text under another name takes it as meant** (`body` for `text`, `summary` for `note`) when it can only be that — about one in five failed calls of the office's tools failed on that alone (`namedAsMeant`, `packages/integrations`).
 - **No ticket only to release work not yet approved**: refused when proposed, with where its steps go (that ticket's release plan); releasing approved work together still is a ticket (`release-gate.test.ts`, failed before).
 - **The foreman is removed** (the owner: "useless"). No `foreman` role, rounds, Settings → Foreman, `GET /api/foreman`, foreman tools, owners-only rule or walking foreman; the entrance page loses its foreman section. Nothing replaces what it did: answering operational questions before the owner, nudging idle or stalled people, handing out ready work, pointing at a wait on an idle colleague. An office from before: whoever still has the role is archived at start, their session stopped the normal way first (`retireForemen`; `packages/orchestration/test/retired-role.test.ts`); its stored settings are dropped; questions it answered still read as they did. A team lead's walk keeps the foreman's code, renamed (`Walker.tsx`, `walker-route.ts`). DECISIONS "The foreman is removed".
 - **A refused release keeps its whole command in the audit record** (secrets hidden, owners only), not only its first 300 characters.
