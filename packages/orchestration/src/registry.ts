@@ -285,10 +285,31 @@ export class HostRegistry {
       t.unref?.();
     };
     ask(true);
+    // Back in reach: whoever stopped on a task while the office could not be reached (it was being updated) is told to
+    // go on — one wrote "I'll pick it up once the office is back" and stood eight hours. (A moment later: its sessions
+    // have said what they are doing by then.)
+    const back = setTimeout(() => this.goOnAfterOutage(hostId), this.core.timings.resumeAfterReconnectMs);
+    back.unref?.();
     // A foreman from before it was removed whose session runs here: stopped and archived once the machine has said what it runs.
     if (this.core.employees.find((e) => !e.archived && e.roleKey === 'foreman' && e.hostId === hostId)) {
       const t = setTimeout(() => void this.eng.employees.retireForemen(), 4000);
       t.unref?.();
+    }
+  }
+
+  /** Those on this machine standing still with a task in progress — not in a turn, not waiting for anybody — are told to go on. */
+  private goOnAfterOutage(hostId: string): void {
+    if (this.core.hosts.get(hostId)?.status !== 'online') return;
+    for (const s of this.core.sessions.filter((x) => x.hostId === hostId && x.status === 'running' && x.inTurn !== true && !x.waitingOn && ['idle', 'waiting_input', 'unknown'].includes(x.activity))) {
+      const employee = this.core.employees.get(s.employeeId);
+      if (!employee || employee.archived || this.eng.background.busy(s.id)) continue;
+      const task = this.eng.tasks.currentTask(employee.id);
+      if (!task || task.status !== 'IN_PROGRESS' || task.delivery.status !== 'confirmed') continue;
+      if (this.core.questions.find((q) => q.employeeId === employee.id && q.status === 'open' && q.channel !== 'system')) continue;
+      // (Machines connect again often: told at most once in half an hour.)
+      const lately = new Date(Date.now() - 30 * 60_000).toISOString();
+      if (this.core.messages.find((m) => m.toEmployeeId === employee.id && m.createdAt > lately && m.body.startsWith('The office is back'))) continue;
+      this.eng.comms.sendMessage({ from: { kind: 'system', id: null, name: 'the office' }, toEmployeeId: employee.id, kind: 'system', taskId: task.id, wake: true, body: `The office is back: it was out of reach for a moment. Go on with ${task.key} "${truncate(task.title, 100)}" where you left off — look at what is already done first (git status, the ticket).` });
     }
   }
 

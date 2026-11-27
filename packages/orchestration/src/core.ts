@@ -91,6 +91,8 @@ export interface Timings {
   sleepIdleMs: number | null;
   /** After a session that would not start when it was needed: no further attempt for this long. */
   wakeRetryMs: number;
+  /** How long after a machine connects again those standing still on a task are told the office is back. */
+  resumeAfterReconnectMs: number;
 }
 
 export const DEFAULT_TIMINGS: Timings = {
@@ -114,6 +116,7 @@ export const DEFAULT_TIMINGS: Timings = {
   workTickMs: 30_000,
   sleepIdleMs: null,
   wakeRetryMs: 30_000,
+  resumeAfterReconnectMs: 20_000,
 };
 
 export interface EngineOptions {

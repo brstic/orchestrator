@@ -143,6 +143,8 @@ After every merge the project's verification command also runs in the `_integrat
 
 ### Hosts under pressure
 
+When a machine connects again (the office was restarted or updated, or the connection dropped), whoever on it stands still with a task in progress — not in a turn, not waiting for a colleague, a question or a command — is told, about 20 seconds later, that the office is back and to go on (`goOnAfterOutage` in `registry.ts`; at most once in half an hour each). An employee that found its tools gone wrote "I'll pick it up once the office is back" and stood eight hours: its turn had ended while the office could not hear it, so it was not nudged on either.
+
 A host that stays at or above 95% memory or CPU for 30 seconds is exhausted (`checkPressure` in `registry.ts`): a `host.resource_warning` event is raised — and a notification only when it holds something of the office back (sessions running there, or work waiting to start there: a person's own computer busy with their own things put 14 lines a week in their Inbox) — and the scheduler starts no new work there (`isFree`). Sessions already running are left alone. When the figures drop, the warning resolves and held-back work is scheduled.
 
 ### Security alerts
