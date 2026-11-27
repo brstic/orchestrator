@@ -165,3 +165,12 @@ test("a blocker on the manager's work is the manager's to clear first: the boss'
   o.eng.tasks.blockFromAgent(o.zed, 'No design for the footer.', undefined);
   assert.equal(o.eng.core.notifications.filter((n) => n.kind === 'blocked' && n.taskId === own.id).length, 1);
 });
+
+test("work a manager runs is reported by the manager: no \"completed\" line for each of its tickets (34 a week, beside the manager's own reports)", async () => {
+  const o = await office();
+  const task = o.handedIn('Cart icon');
+  await o.eng.tasks.submitReview(o.mia, task().key, 'approve', 'Good.', undefined, { checked: 'Opened the cart on dev: the icon shows.' });
+  assert.equal(task().status, 'DONE');
+  assert.equal(o.eng.core.notifications.filter((n) => n.kind === 'task_completed' && n.taskId === task().id).length, 0);
+  assert.ok(o.toldMia().some((b) => /Cart icon[\s\S]*is done/.test(b)), 'the manager hears it, and reports to the boss');
+});

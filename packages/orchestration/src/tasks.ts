@@ -1831,7 +1831,9 @@ export class TaskManager {
       data: { key: task.key, verified: v?.provenance === 'measured' ? v.passed : null, commits: task.evidence.commits.length, merged: task.evidence.merge?.ok ?? null },
     });
     this.eng.comms.resolveNotifications((n) => n.taskId === task.id && n.kind !== 'task_completed');
-    if (task.kind !== 'review') {
+    // (Work a project manager runs is reported by the manager — it hears each piece is done, `follow-up.ts`, and tells the
+    // boss when the whole is delivered: a line for each ticket as well was 34 a week on the live office.)
+    if (task.kind !== 'review' && !this.managerForQuestion({ taskId: task.id, employeeId: task.assigneeId, kind: 'question' })) {
       this.eng.comms.notify({
         kind: 'task_completed',
         severity: 'success',

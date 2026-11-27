@@ -137,6 +137,9 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   the boss with why — direction, money, what cannot be undone, or not sure — and then it is in the boss's Inbox ("Mia
   passes it to you: …"). A deployment question is always the boss's. The same switch as the verdicts
   (`managersApprove`).
+- **And its news**: a ticket of a manager's that is done puts no "completed" line in the boss's Inbox — the manager
+  hears it and reports the whole when it is delivered (34 such lines a week on the live office, beside the managers'
+  own reports).
 - **So does a blocker on it**: a colleague blocked on a manager's ticket is the manager's to clear (it is told, with
   `unblock_task` or `ask_boss` as the way on); the boss's Inbox no longer gets a "blocked" line for it as well.
 - **So does a tag of the boss on it** (`TaskTalk.byEmployee`): "@boss …" from a colleague on a manager's ticket goes to
