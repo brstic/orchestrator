@@ -68,6 +68,10 @@ The system prompt tells them when (`prompts.ts`, the `longMemory` lines): ask be
 
 **A task's hand-over** (`tasks.ts`, where the task prompt is built): the office searches for the task's title and the start of its description and appends up to three records at or above `RELEVANT` under "From the office's memory — earlier work, answers and decisions that look related. They may be out of date…". It waits at most twelve seconds (`timings.memoryRecallMs`); if the memory has nothing, is slow or is down, the task goes out without the block. Not done for projects on a member's own computer.
 
+An employee on a member's own computer cannot write into the shared memory (`remember` refuses: what is said there
+stays there); the refusal points it to its own notes instead — `propose_context` with layer `self`, which go in at once
+and come with it at every start (`docs/CONTEXT.md`).
+
 ## How MemPalace is run
 
 Everything goes through `Memory.run` — read it first.

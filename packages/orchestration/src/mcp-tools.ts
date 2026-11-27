@@ -724,7 +724,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       if (note.length < 20) return err('Write the note so that it can be understood without this conversation: what, and why.');
       // A credential in a note goes where credentials go.
       const kept = eng.vault.capture(note, { kind: 'employee', id: employee.id, name: employee.name }, [employee.name]);
-      return eng.memory.note(employee, String(a.about ?? ''), kept.text) ? 'Written down. It can be found with recall from now on (give it a moment to be filed).' : err("What is said on a member's own computer stays there: it is not written into the office's memory.");
+      return eng.memory.note(employee, String(a.about ?? ''), kept.text) ? 'Written down. It can be found with recall from now on (give it a moment to be filed).' : err("What is said on a member's own computer stays there: it is not written into the office's shared memory. To keep it for yourself, call propose_context with layer \"self\" — your own notes, which you are given at every start.");
     },
 
     // A member's team lead's tools (each refuses a caller who is not one).
