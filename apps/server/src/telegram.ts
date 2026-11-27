@@ -766,6 +766,7 @@ export class Telegram {
       }
       const r = await this.call<{ message_id: number }>(this.token(b), 'sendMessage', { chat_id: p.chatId, text: text.slice(0, TELEGRAM_LIMITS.textChars), ...(buttons.length ? { reply_markup: { inline_keyboard: buttons } } : {}) }).catch(() => null);
       if (r) {
+        this.noteSent(q.employeeId, p.as.id, 'question');
         out.push({ employeeId: q.employeeId, chatId: p.chatId, messageId: r.message_id, text: text.slice(0, 3500) });
         this.replyTo.set(`${p.chatId}:${r.message_id}`, q.id);
       }
@@ -800,8 +801,18 @@ export class Telegram {
       }
       this.toldPeople.add(key);
       const text = review ? `🔎 ${n.title}\n${n.body}\n\nDecide it in the office (Tasks → ${this.deps.engine.core.tasks.get(n.taskId!)?.key ?? 'the ticket'}).` : `${n.severity === 'warning' ? '❗ ' : ''}${n.body}`;
-      await this.call(this.token(b), 'sendMessage', { chat_id: p.chatId, text: text.slice(0, TELEGRAM_LIMITS.textChars) }).catch(() => undefined);
+      const ok = await this.call(this.token(b), 'sendMessage', { chat_id: p.chatId, text: text.slice(0, TELEGRAM_LIMITS.textChars) }).then(() => true, () => false);
+      if (ok) this.noteSent(b.employeeId, p.as.id, review ? 'review' : 'message');
     }
+  }
+
+  /**
+   * What the office put on a person's phone by itself (a question, a message, work waiting for them) — recorded, quietly,
+   * so that how often it interrupts somebody away from the office can be counted (it could not: nothing was kept).
+   * Who and what kind; never the text.
+   */
+  private noteSent(employeeId: string | null, personId: string, what: 'question' | 'message' | 'review'): void {
+    this.deps.engine.core.event({ type: 'telegram.sent', source: 'server', summary: `Telegram: a ${what} went to a person's phone`, employeeId, data: { what, person: personId, quiet: true } });
   }
   /**
    * The bot a ticket waiting for an owner is told through: its author's own, or else a colleague's on its project (or on

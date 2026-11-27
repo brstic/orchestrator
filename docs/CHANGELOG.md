@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-27
+- **What Telegram puts on a person's phone is recorded** (`telegram.sent`: who, which kind, never the text; not in the feed), so how often it interrupts somebody away can be counted (`59-telegram.test.ts`).
 - **Fixed: employees that stopped while the office was out of reach stood still after it was back** (one for eight hours, after an update): when their machine connects again, whoever stands still on a task is told to go on (`back-after-outage.test.ts`, failed before).
 - **Fixed: a reviewer that stopped after its verdict held its review ticket, and the reviews queued behind it, for hours** — the verdict now finishes the reviewer's own ticket (`verdict-closes-review.test.ts`, failed before; `docs/DECISIONS.md`).
 - **A project with no check gets one by itself** (the owner's choice): the first of its own checks that passes when tried — types, lint, tests — is set at a hand-in and said in the feed; a person removing it keeps it removed (`adopt-check.test.ts`). The office had tested none of 133 pieces of work in two weeks.

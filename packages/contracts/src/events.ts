@@ -87,6 +87,7 @@ export type EventType =
   | 'project.created'
   | 'project.updated'
   | 'project.check_adopted'
+  | 'telegram.sent'
   | 'project.deleted'
   | 'account.switched'
   | 'task.attachment_added'

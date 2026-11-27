@@ -111,6 +111,10 @@ test('what she writes to the boss (message_person) comes to Telegram as well, fr
   const n = (await h.state()).notifications.find((x) => x.kind === 'message' && x.employeeId === kira.id)!;
   assert.deepEqual([n.for, n.severity, n.title], [['#owners'], 'warning', 'Kira · urgent: The release notes are ready for you to read.']);
   await tg.waitSent(textTo(ME.id, /wrote-to-the-boss/));
+  // What went to the phone is on the record — the kind, never the text — and out of the feed.
+  const sent = (await h.api<any[]>('GET', `/events?employeeId=${kira.id}&limit=200`)).filter((e) => e.type === 'telegram.sent');
+  assert.ok(sent.some((e) => e.data?.what === 'message' && e.data?.quiet === true), JSON.stringify(sent));
+  assert.ok(sent.every((e) => !/release notes/.test(JSON.stringify(e))));
   // Read in the office, it is not sent again.
   const before = tg.sent.filter(textTo(ME.id, /release notes are ready/)).length;
   await h.api('POST', '/notifications/read', { ids: [n.id] });

@@ -63,6 +63,11 @@ The tab is shown to whoever may *work* with that employee (an owner; a colleague
   - A group the bot was added to **without** a group link is told the bot is private, and the bot leaves.
 - **Rights are checked on every message**, not only at pairing: a colleague who loses access to the employee (removed from the office, or the employee closed to them) is refused at their next message; so is a group connected by them.
 
+- **What went to a phone is on the record**: each question, message or waiting work the office puts on a person's
+  Telegram by itself is an event `telegram.sent` — the employee, the person, the kind (`question`, `message`,
+  `review`); never the text, and not in the feed (`quiet`). So how often a person away from the office is interrupted
+  can be counted (2026-11-27: nothing was kept).
+
 ## Security
 
 - **The token** is kept sealed with the office's vault key (AES-256-GCM, `Vault.seal`, kv `telegram.bots`), sent once from the window and **never** returned to a window, an event, an error or a log (errors from Telegram are redacted). `tests/e2e/59-telegram.test.ts` checks that it is nowhere in what a window gets — the tab's answer, the state, the events. (The database file holds it only sealed; that is by construction, not checked by a test.)
