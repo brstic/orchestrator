@@ -113,15 +113,14 @@ test('approved for good by somebody else, sent back, or stopped: the open review
   assert.equal(o.eng.core.tasks.get(d.review.id), undefined);
 });
 
-test('the reviewer who gave the verdict finishes their own ticket, as before', async () => {
+test("the reviewer's verdict finishes her own ticket; a complete_task after it is told so (2026-11-27: it was left to her, and a reviewer that stopped held its queue for hours)", async () => {
   const o = await office();
   const { target, review } = o.inReview('Compare the hosts', 'both');
   await o.eng.tasks.submitReview(o.sarah, target.key, 'approve', 'Good.');
-  // Hers is the verdict: the ticket is hers to complete.
-  assert.equal(o.task(review.id).status, 'IN_PROGRESS');
+  assert.equal(o.task(review.id).status, 'DONE');
   const done = await o.tool(o.sarah, 'complete_task', { summary: 'Reviewed it', no_code_changes: true });
   assert.equal(done.isError, false, done.text);
-  assert.equal(o.task(review.id).status, 'DONE');
+  assert.match(done.text, /already finished with your verdict/);
 });
 
 test('complete_task on a review does not ask for a verdict the task no longer waits for', async () => {

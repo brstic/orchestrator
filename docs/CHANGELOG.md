@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-27
+- **Fixed: a reviewer that stopped after its verdict held its review ticket, and the reviews queued behind it, for hours** — the verdict now finishes the reviewer's own ticket (`verdict-closes-review.test.ts`, failed before; `docs/DECISIONS.md`).
 - **A project with no check gets one by itself** (the owner's choice): the first of its own checks that passes when tried — types, lint, tests — is set at a hand-in and said in the feed; a person removing it keeps it removed (`adopt-check.test.ts`). The office had tested none of 133 pieces of work in two weeks.
 - **A commit no longer fails for want of an author**: sessions carry git's fallback address (`EMAIL`), which a configured identity still overrides (`git-identity.test.ts`, failed before).
 - **Known pitfalls are taught to everybody, by themselves**: a known mistake two employees fell into becomes a company lesson with its remedy — first `pkill -f` killing its own shell (15 times in a week, five employees) (`known-pitfalls.test.ts`).

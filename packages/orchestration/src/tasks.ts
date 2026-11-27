@@ -1380,7 +1380,13 @@ export class TaskManager {
    */
   async completeFromAgent(employee: Employee, args: { summary: string; tests_run?: string; no_code_changes?: boolean; release_plan?: string }): Promise<{ text: string; isError?: boolean }> {
     const task = this.currentTask(employee.id);
-    if (!task) return { text: 'You have no task in progress. Use get_current_task or get_available_tasks.', isError: true };
+    if (!task) {
+      // A reviewer's ticket is finished by its verdict: a complete_task after it is no mistake to refuse.
+      const since = new Date(Date.now() - 6 * 3600_000).toISOString();
+      const reviewed = this.core.tasks.filter((t) => t.kind === 'review' && t.assigneeId === employee.id && t.status === 'DONE' && (t.completedAt ?? '') >= since && /^Finished with .*'s verdict/.test(t.evidence.summary ?? '')).sort((a, b) => ((a.completedAt ?? '') < (b.completedAt ?? '') ? 1 : -1))[0];
+      if (reviewed) return { text: `${reviewed.key} was already finished with your verdict — nothing more to do for it.` };
+      return { text: 'You have no task in progress. Use get_current_task or get_available_tasks.', isError: true };
+    }
     if (this.verifying.has(task.id)) return { text: `Verification of ${task.key} is already running; wait for its result.`, isError: true };
     // Divided into parts that are not all done: it is not finished, it waits for them.
     if (this.eng.talk.partsOf(task).some((p) => p.status !== 'DONE')) {
@@ -2293,7 +2299,6 @@ export class TaskManager {
       const target = this.core.tasks.get(r.reviewOf);
       if (!target || this.waitsForPeer(target) || this.verifying.has(r.id)) continue;
       const theirs = !!r.assigneeId && (target.evidence.review?.reviewerId === r.assigneeId || target.evidence.peerReview?.reviewerId === r.assigneeId);
-      if (theirs && r.status === 'IN_PROGRESS') continue;
       n++;
       this.eng.comms.cancelFor({ kind: 'task', id: r.id });
       if (!r.startedAt && (r.status === 'READY' || r.status === 'BACKLOG')) {
@@ -2308,8 +2313,10 @@ export class TaskManager {
       r.blockedReason = null;
       r.waitingFor = null;
       r.completedAt = nowIso();
-      r.evidence.summary = `Not needed any more: ${why}${theirs ? '' : ' before this review was finished'}.`;
-      this.history(r, `Closed by the office: ${why}`, 'orchestrator');
+      // The reviewer whose verdict it was: their verdict finishes it (it was left to their complete_task, and a reviewer
+      // that stopped after its verdict held its ticket — and the reviews queued behind it — for eight hours).
+      r.evidence.summary = theirs ? `Finished with ${reviewer?.name ?? 'the reviewer'}'s verdict on ${target.key}.` : `Not needed any more: ${why} before this review was finished.`;
+      this.history(r, theirs ? `Finished with the verdict on ${target.key}` : `Closed by the office: ${why}`, 'orchestrator');
       this.core.put('task', r);
       this.eng.comms.resolveNotifications((x) => x.taskId === r.id);
       this.core.event({ type: 'task.updated', source: 'server', summary: `${r.key} was closed: ${why}`, taskId: r.id, projectId: r.projectId, employeeId: r.assigneeId, data: { key: r.key, status: 'DONE', reviewOf: target.id, closedByOffice: true } });

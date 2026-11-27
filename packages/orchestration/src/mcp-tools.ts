@@ -252,7 +252,9 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       const late = eng.tasks.secondOpinion(employee, String(a.task), a.verdict, String(a.comments ?? ''));
       if (late) return late;
       const task = await eng.tasks.submitReview(employee, String(a.task), a.verdict, String(a.comments), undefined, { checked: typeof a.checked === 'string' ? a.checked : null });
-      return a.verdict === 'approve' ? `Approved. ${task.key} is now ${task.status}.` : `Changes requested. ${task.key} goes back to ${core.employees.get(task.assigneeId)?.name ?? 'its author'} with your comments.`;
+      const mine = core.tasks.find((t) => t.kind === 'review' && t.reviewOf === task.id && t.assigneeId === employee.id && t.status === 'DONE' && /^Finished with .*'s verdict/.test(t.evidence.summary ?? ''));
+      const closed = mine ? ` Your review ticket ${mine.key} is finished with this verdict — no complete_task needed.` : '';
+      return (a.verdict === 'approve' ? `Approved. ${task.key} is now ${task.status}.` : `Changes requested. ${task.key} goes back to ${core.employees.get(task.assigneeId)?.name ?? 'its author'} with your comments.`) + closed;
     },
 
     message_person: async (a, { employee }) => {
