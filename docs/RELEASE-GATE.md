@@ -90,6 +90,13 @@ says why ("Yours, not a manager's: its release touches payments"). The manager i
 the boss if anything in it is not low-risk. Word lists err towards the boss: run over the 33 release plans of the live
 office (2026-11-20..27), 4 were low-risk.
 
+## No ticket only to release
+
+A ticket proposed only to release work that is not approved yet ("Release T-462", or "Deploy …" naming a ticket still
+open) is refused when it is proposed (`TaskManager.propose`): its steps go in that ticket's `release_plan`, and once it
+is approved its author and the colleagues on it release it. A project manager opened three in a week although the
+gate's instructions say not to. A ticket that releases work already approved — several tickets at once — is allowed.
+
 ## Asked and answered
 
 The owner, 2026-11-26: "it would not let it through even with my permission". An employee working without a ticket

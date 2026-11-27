@@ -2427,6 +2427,17 @@ export class TaskManager {
       const cannot = to ? this.lend(to, projectId) : null;
       if (cannot) throw new EngineError(`task ${i}: ${cannot}`);
     }
+    // A ticket only to release work that is not approved yet (the gate's own words say not to; a project manager did
+    // it anyway, 3 in a week): its steps are that ticket's release plan, done once it is approved — by its author and the
+    // colleagues on it. Releasing work already approved, several at once, is a ticket of its own.
+    if (this.eng.release.on()) {
+      for (const [i, spec] of specs.entries()) {
+        const text = `${spec?.title ?? ''}\n${spec?.description ?? ''}`;
+        if (!/^\s*(release|deploy|ship|publish|roll\s*out|push)\b/i.test(String(spec?.title ?? ''))) continue;
+        const open = [...new Set(text.match(/\bT-\d+\b/g) ?? [])].map((k) => this.core.tasks.find((t) => t.key === k && t.projectId === projectId)).filter((t): t is Task => !!t && t.status !== 'DONE');
+        if (open.length) throw new EngineError(`task ${i} ("${truncate(String(spec.title), 60)}") only releases ${open.map((t) => t.key).join(', ')}, which ${open.length === 1 ? 'is' : 'are'} not approved yet. Do not open a ticket for that: its steps go in the release_plan of ${open.map((t) => t.key).join(' / ')} (comment_on_task to its author with the steps and who does which part). When it is approved, its author and the colleagues on it may release it.`);
+      }
+    }
     for (const [i, spec] of specs.entries()) {
       if (!spec?.title?.trim()) throw new EngineError(`task ${i} has no title`);
       const key = dedupeKeyOf(spec.dedupe_key);

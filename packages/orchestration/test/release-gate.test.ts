@@ -137,3 +137,18 @@ test("the boss says yes to a release they were asked about: it goes through (the
   const other = eng.comms.createQuestion({ kind: 'decision', channel: 'mcp_tool', employee: emp('Zed'), session: null, text: 'Blue or green?', options: [{ label: 'Blue', release: true } as any] });
   assert.equal(other.options[0]!.releases, undefined);
 });
+
+test("a ticket only to release work not yet approved is refused — its steps belong in that ticket's release plan; releasing approved work together is not", () => {
+  eng.core.updateSettings({ releaseGate: { on: true, hosts: [] } } as any);
+  const pm = eng.employees.create({ name: 'Pia', roleKey: 'pm', projectId: shop, hostId: 'box', workingDir: '/tmp/Pia' });
+  const inReview = eng.tasks.createTask({ projectId: shop, title: 'Sub-account names', description: 'x', released: false }, 'owner');
+  eng.core.put('task', { ...eng.core.tasks.require(inReview.id), status: 'REVIEW' } as any);
+  const done = eng.tasks.createTask({ projectId: shop, title: 'Footer', description: 'x', released: false }, 'owner');
+  eng.core.put('task', { ...eng.core.tasks.require(done.id), status: 'DONE' } as any);
+  assert.throws(() => eng.tasks.propose(pm, shop, [{ title: `Release ${inReview.key} (sub-account names)`, description: 'Push master, pull on production.' }], undefined, 'planning'), new RegExp(`release_plan of ${inReview.key}`));
+  assert.throws(() => eng.tasks.propose(pm, shop, [{ title: 'Deploy the names fix', description: `Ship ${inReview.key} to production once reviewed.` }], undefined, 'planning'), /release_plan/);
+  const ok = eng.tasks.propose(pm, shop, [{ title: `Release: pull master onto production (${done.key}, approved)`, description: 'Guarded pull.' }], undefined, 'planning');
+  assert.equal(ok.created.length, 1);
+  // Work that is not a release, naming a ticket in review, is not refused.
+  assert.equal(eng.tasks.propose(pm, shop, [{ title: `Write the docs for ${inReview.key}`, description: 'x' }], undefined, 'planning').created.length, 1);
+});
