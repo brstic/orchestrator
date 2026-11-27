@@ -596,6 +596,8 @@ export interface ProjectPolicy {
    * `node --check`, …) when it is handed in, and refuses it while one does not (default: on; false switches it off).
    */
   syntaxCheck?: boolean;
+  /** With no verification command: the office sets one by itself when the project's own check script passes (`adoptCheck`; default: on). */
+  adoptCheck?: boolean;
   /**
    * Who reviews this project's finished work, when nobody chose for the task. Absent or null: as the office does
    * (`OwnerSettings.reviewDefault`). Set, it stands in for the office's setting for this project alone (`reviewUsualOf`).

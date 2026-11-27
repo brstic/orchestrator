@@ -86,6 +86,7 @@ export type EventType =
   | 'meeting.concluded'
   | 'project.created'
   | 'project.updated'
+  | 'project.check_adopted'
   | 'project.deleted'
   | 'account.switched'
   | 'task.attachment_added'

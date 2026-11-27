@@ -106,6 +106,13 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
      one click puts it in the field; **Try** runs what is in the field once in the project's folder and says in one line
      whether it passed and how long it took (the output on a click when it failed). Nothing is set by trying.
      `packages/execution/test/checks.test.ts`, `tests/e2e/70-project-checks.test.ts`.
+  5. **The office sets one by itself** (the owner, 2026-11-27: "yes, when it is clear" — of 133 pieces of work handed in
+     over two weeks it had tested none: 17 parsed, 116 nothing run). When code is handed in to a project with no
+     command, `TaskManager.adoptCheck` tries the project's own checks from `repo.checks` — types, then lint, then tests —
+     and sets the first that passes, said in the feed (`project.check_adopted`); the next hand-in runs it. Not over a
+     command already set, not on a member's own computer, at most one try a week per project; `policy.adoptCheck: false`
+     switches it off, and a person removing the command switches it off for that project (it is not set again).
+     `packages/orchestration/test/adopt-check.test.ts`.
 
   *Seen on the live office the same evening:* a code reviewer's first approval without "checked" was refused; nine
   seconds later it approved with what it had run — DNS lookups, the sites fetched publicly and from the team's own

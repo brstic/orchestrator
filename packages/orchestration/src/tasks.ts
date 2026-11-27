@@ -257,6 +257,8 @@ export class TaskManager {
 
   updateProject(id: string, patch: Partial<ProjectInput> & { status?: Project['status']; milestones?: Project['milestones'] }, actor = 'owner'): Project {
     const p = this.core.projects.require(id);
+    // A person took the check away: the office does not set one again by itself (`adoptCheck`).
+    const checkRemoved = actor !== 'office' && patch.verifyCommand !== undefined && !String(patch.verifyCommand ?? '').trim() && !!p.verifyCommand;
     // What is stored is what every window renders: a field of the wrong kind (a name that is an object) would be
     // kept, and blank every window that shows it, at every reload.
     shaped(patch as Record<string, unknown>, { name: 'text', description: 'string', goals: 'string', requirements: 'string', docs: 'string', verifyCommand: 'string?', verifyTimeoutSec: 'number', color: 'string?', baseBranch: 'text', status: 'text', milestones: 'list', workspace: 'text', ownerEmployeeId: 'string?' });
@@ -266,6 +268,7 @@ export class TaskManager {
     within(patch as Record<string, unknown>, { name: 120, baseBranch: 200, extraRepos: 20, dependsOn: 100 });
     policyShaped(patch.policy);
     if (patch.policy) p.policy = { ...p.policy, ...patch.policy };
+    if (checkRemoved && patch.policy?.adoptCheck === undefined) p.policy = { ...p.policy, adoptCheck: false };
     if (patch.extraRepos !== undefined) p.extraRepos = this.cleanRepos(patch.extraRepos, p.repoPath);
     if (patch.dependsOn !== undefined) p.dependsOn = this.cleanDependencies(id, patch.dependsOn);
     this.core.put('project', p);
@@ -1467,6 +1470,8 @@ export class TaskManager {
       }
 
       const own = codeTask ? (task.verifyCommand ?? project.verifyCommand) : null;
+      // No check of the project's own: the office looks for one to set, for the next hand-in (`adoptCheck`).
+      if (codeTask && !project.verifyCommand) void this.adoptCheck(project.id).catch((e) => this.core.log('warn', `no check adopted for ${project.name}: ${(e as Error).message}`));
       // No command of the project's own: the office checks what it can — that the files the task changed still parse
       // (syntax-check.ts). In the owner's folder, where colleagues commit on the same branch, only the files this
       // task's session wrote. Paths are the repository's; the check runs in the task's folder.
@@ -1700,6 +1705,32 @@ export class TaskManager {
     const passed = res.exitCode === 0 && !res.timedOut;
     this.core.audit(actor, 'project.check_tried', projectId, { command: truncate(cmd, 200), passed, exitCode: res.exitCode, durationMs: res.durationMs });
     return { command: cmd, passed, exitCode: res.exitCode, timedOut: !!res.timedOut, durationMs: res.durationMs, outputTail: truncate(res.outputTail ?? '', 3000) };
+  }
+
+  /**
+   * A project with no check of its own gets one by itself (the owner, 2026-11-27: "yes, when it is clear" — of 133
+   * pieces of work in two weeks the office had tested none): of the checks its own files name (`repo.checks`), types
+   * before lint before tests, the first that passes when tried is set, and said in the feed; the owner can remove it in
+   * the project. Not over one already set, not on a member's own computer, and tried at most once a week. Returns the
+   * command set, or null.
+   */
+  async adoptCheck(projectId: string): Promise<string | null> {
+    const project = this.core.projects.get(projectId);
+    if (!project || project.verifyCommand || project.status !== 'active' || project.policy.adoptCheck === false || this.eng.hosts.memberOfHost(project.hostId)) return null;
+    const mark = `check.adopt.tried.${project.id}`;
+    if (Date.now() - this.core.store.kvGet<number>(mark, 0) < 7 * 86_400_000) return null;
+    this.core.store.kvSet(mark, Date.now());
+    const rank: Record<string, number> = { types: 0, lint: 1, tests: 2 };
+    const { candidates } = await this.checksFor(project.id);
+    for (const c of [...candidates].sort((a, b) => (rank[a.kind] ?? 3) - (rank[b.kind] ?? 3))) {
+      const tried = await this.tryCheck(project.id, c.command, 'office');
+      if (!tried.passed) continue;
+      if (this.core.projects.get(project.id)?.verifyCommand) return null;
+      this.updateProject(project.id, { verifyCommand: c.command }, 'office');
+      this.core.event({ type: 'project.check_adopted', source: 'server', summary: `${project.name} has a check now: the office set "${c.command}" (${c.why}), which passed when it tried it. Handed-in work is run against it; remove it in the project if it should not be.`, projectId: project.id, data: { command: c.command, why: c.why, durationMs: tried.durationMs } });
+      return c.command;
+    }
+    return null;
   }
 
   /** Run the integration tests now, on the owner's request. */

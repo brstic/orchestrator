@@ -17,6 +17,8 @@ before(async () => {
   const repo = h.makeRepo('shop');
   ava = await h.api('POST', '/employees', { name: 'Ava', roleKey: 'backend', hostId: h.hostId, workingDir: repo });
   rita = await h.api('POST', '/employees', { name: 'Rita', roleKey: 'backend', hostId: h.hostId, projectId: ava.projectId, workingDir: repo });
+  // (What is checked here is the office's own check with no command; one set by itself would take its place: adopt-check.test.ts.)
+  await h.api('PATCH', `/projects/${ava.projectId}`, { policy: { adoptCheck: false } });
 });
 after(async () => {
   await h.cleanup();
