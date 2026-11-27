@@ -430,7 +430,7 @@ test('the report is the same whatever order the records come in, and whenever it
 
 const link: AgentLink = { rpc: () => Promise.reject(new Error('this test host runs nothing')), isOnline: () => true, respondHook: () => false, disconnect: () => undefined };
 async function office() {
-  const eng = new Engine({ store: new Store(':memory:'), agents: link, publicUrl: 'http://127.0.0.1:1', timings: { foremanSettleMs: 0, deliverySettleMs: 0 } }, { send: () => undefined });
+  const eng = new Engine({ store: new Store(':memory:'), agents: link, publicUrl: 'http://127.0.0.1:1', timings: { deliverySettleMs: 0 } }, { send: () => undefined });
   const host: Host = { id: 'host-1', name: 'box', status: 'online', info: null, resources: null, enrolledAt: new Date().toISOString(), lastSeenAt: null, revokedAt: null, local: true };
   eng.core.put('host', host);
   const shop = (await eng.tasks.createProject({ name: 'Shop', policy: { autoAssign: false } })).id;

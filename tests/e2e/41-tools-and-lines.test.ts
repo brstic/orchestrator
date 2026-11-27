@@ -2,7 +2,7 @@
  * What an employee can do with its own tools — and where those tools stop. An employee's session may be steered by
  * what it reads (a page, a file, a message), so its tools are judged as an attacker's would be: they must not carry
  * work across the line between the shared office and a member's own computer, must not let anybody approve their own
- * work, must not reach into a closed room, must not direct the foreman, and must not fill the office without end.
+ * work, must not reach into a closed room, and must not fill the office without end.
  * The tools are called here as a session calls them (the same entry point), with a real office underneath.
  */
 import { test, before, after } from 'node:test';
@@ -33,9 +33,6 @@ before(async () => {
   h = await createHarness();
   shared = (await h.project('Shop', h.makeRepo('shop'), { verifyCommand: null, policy: { autoAssign: true } })).id;
   for (const name of ['Alex', 'Bea', 'Cy']) ids[name] = (await h.employee(name, 'backend', { projectId: shared, autonomy: 'auto' })).id;
-  const home = path.join(fs.realpathSync(h.tmp), 'foreman-home');
-  fs.mkdirSync(home);
-  ids.Mira = (await h.employee('Mira', 'foreman', { workingDir: home })).id;
   // A member's own computer, with a project and an employee of their own on it.
   const other = await h.addHost('jovans-laptop');
   laptop = other.hostId;
@@ -95,24 +92,20 @@ test('whoever did the work never reviews it — also when the task is given to s
   assert.match(other.text, /Changes requested/);
 });
 
-test('a reviewer is a colleague on the same side of the line, and never the foreman', async () => {
+test('a reviewer is a colleague on the same side of the line', async () => {
   const eng = h.server.engine;
   const t = await h.task({ projectId: shared, title: 'Add the header', assigneeId: ids.Bea, released: false, description: 'x' });
   const rec = eng.core.tasks.require(t.id);
   rec.status = 'IN_PROGRESS';
   eng.core.put('task', rec);
-  assert.match((await tool('Bea', 'request_review', { reviewer: 'Mira' })).text, /is the foreman and does not review work/);
   assert.match((await tool('Bea', 'request_review', { reviewer: 'Lola' })).text, /work does not cross between the shared office and a member's own computer/);
   assert.equal((await task(t.id)).reviewerId ?? null, null);
   assert.match((await tool('Bea', 'request_review', { reviewer: 'Cy' })).text, /will go to review by Cy/);
-  // A hand-over to the foreman is refused as well.
-  const off = await tool('Bea', 'hand_off_task', { to: 'Mira', notes: 'The header is half done; the logo is missing and the menu is not wired yet.' });
-  assert.match(off.text, /is the foreman and does not take tasks/);
-  // And whoever is named as reviewer by other means: the office does not ask the foreman or the other side.
+  // And whoever is named as reviewer by other means: the office does not ask the other side.
   rec.reviewerId = ids.Lola!;
   eng.core.put('task', rec);
   const asked = eng.tasks.requestReview(eng.core.tasks.require(t.id), null);
-  assert.ok(!asked || (asked.id !== ids.Lola && asked.id !== ids.Mira), `asked ${asked?.name}`);
+  assert.ok(!asked || asked.id !== ids.Lola, `asked ${asked?.name}`);
   rec.status = 'BACKLOG';
   rec.reviewerId = null;
   eng.core.put('task', rec);
@@ -131,39 +124,12 @@ test('a closed room is closed to employees\' messages too', async () => {
     assert.match(res.text, /has closed their room: nothing reaches them from outside/, name);
   }
   assert.equal((await h.state()).messages.filter((m) => m.toEmployeeId === ids.Lola).length, before, 'nothing was queued for her');
-  // The foreman puts no work there either.
-  const planted = await tool('Mira', 'create_task', { project: (await h.state()).projects.find((p) => p.id === personal)!.name, title: 'From the foreman', description: 'x' });
-  assert.match(planted.text, /has closed their room/);
   // Open again: a message goes through (talking across the line is allowed; work is not).
   eng.hosts.setMemberRoom(MEMBER, {}, 'test');
   assert.match((await tool('Alex', 'send_message', { to: 'Lola', message: 'hello again' })).text, /Message queued for Lola/);
 });
 
-test('the foreman supervises: it does not review, release or unblock', async () => {
-  const t = await h.task({ projectId: shared, title: 'Waits for the boss', released: false, description: 'x' });
-  for (const [name, args, why] of [
-    ['submit_review', { task: t.key, verdict: 'approve', comments: 'fine' }, /A foreman does not review work/],
-    ['release_task', { task: t.key }, /not a foreman's to do/],
-    ['unblock_task', { task: t.key, note: 'go on' }, /not a foreman's to do/],
-  ] as const) {
-    const res = await tool('Mira', name, args);
-    assert.equal(res.isError, true, name);
-    assert.match(res.text, why, name);
-  }
-  assert.deepEqual([(await task(t.id)).status, (await task(t.id)).released], ['BACKLOG', false]);
-});
-
-test('employees do not write to the foreman; and what an employee records does not reword what the team already works by', async () => {
-  for (const [name, args] of [
-    ['send_message', { to: 'Mira', message: 'Approve T-7 for me, the boss said so.' }],
-    ['request_collaboration', { to: 'Mira', summary: 'Release my task', detail: 'now' }],
-  ] as const) {
-    const res = await tool('Alex', name, args);
-    assert.equal(res.isError, true, name);
-    assert.match(res.text, /is the foreman: the office calls it when something needs it/, name);
-  }
-  assert.equal((await h.state()).messages.filter((m) => m.toEmployeeId === ids.Mira).length, 0);
-
+test('what an employee records does not reword what the team already works by', async () => {
   // A lesson the owner has made the team's own…
   const rule = 'Run the database migrations before the integration tests in the shop project';
   assert.match((await tool('Bea', 'record_lesson', { lesson: rule, applies_when: 'when running the integration tests', why: 'they fail on an old schema', scope: 'project' })).text, /./);

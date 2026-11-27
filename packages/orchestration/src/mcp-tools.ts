@@ -1,9 +1,8 @@
 import type { AgentSession, Employee, Task } from '@orchestrator/contracts';
 import { ACTIVITY_LABEL, FOR_OWNERS, reviewByOf, truncate } from '@orchestrator/contracts';
 import type { McpServerOptions, McpToolHandler } from '@orchestrator/integrations';
-import { BOARD_TOOLS, FILE_TOOLS, FOREMAN_TOOLS, LEAD_TOOLS, MEMORY_TOOLS, ORCHESTRATOR_TOOLS, VAULT_TOOLS } from '@orchestrator/integrations';
+import { BOARD_TOOLS, FILE_TOOLS, LEAD_TOOLS, MEMORY_TOOLS, ORCHESTRATOR_TOOLS, VAULT_TOOLS } from '@orchestrator/integrations';
 import type { Engine } from './engine.ts';
-import { FOREMAN_ROLE } from './foreman.ts';
 import { LEAD_ROLE } from '@orchestrator/contracts';
 import { answerLine } from './prompts.ts';
 import { GOAL_IDLE_TURNS } from './goals.ts';
@@ -199,7 +198,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     split_task: async (a, { employee }) => {
-      if (employee.roleKey === FOREMAN_ROLE) return err('A foreman does not hold tasks, so it has none to split.');
       const many = tooMany(employee, 'part of a ticket', 24, Array.isArray(a.parts) ? Math.max(1, a.parts.length) : 1);
       if (many) return err(many);
       return eng.talk.split(employee, a.parts);
@@ -223,7 +221,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       if (!task.reviewBy || task.reviewBy === 'none') task.reviewBy = 'peer';
       if (a.reviewer) {
         const r = eng.comms.resolveTeammate(employee, String(a.reviewer));
-        if (r && r.roleKey === FOREMAN_ROLE) return err(`${r.name} is the foreman and does not review work. Name a colleague, or leave the reviewer out and one is chosen.`);
         if (r && !eng.tasks.canSee(r, task)) return err(`${r.name} cannot review ${task.key}: work does not cross between the shared office and a member's own computer.`);
         if (r && r.id !== employee.id) task.reviewerId = r.id;
       }
@@ -251,7 +248,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     submit_review: async (a, { employee }) => {
-      if (employee.roleKey === FOREMAN_ROLE) return err('A foreman does not review work: a colleague who did not do it does, or the boss.');
       // A verdict that comes after the task went on without it (a colleague was quicker) is kept as a second opinion.
       const late = eng.tasks.secondOpinion(employee, String(a.task), a.verdict, String(a.comments ?? ''));
       if (late) return late;
@@ -319,13 +315,9 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       if (!to) return { text: `No teammate matches "${a.to}". Use get_team.`, isError: true };
       const shut = closedTo(employee, to);
       if (shut) return err(shut);
-      // The foreman is called by the office, in rounds the owner sets the pace of: a message would be a turn of its
-      // own outside them, with whatever the message says.
-      if (to.roleKey === FOREMAN_ROLE && employee.roleKey !== FOREMAN_ROLE) return err(`${to.name} is the foreman: the office calls it when something needs it. If it should look at something, tell the boss (ask_boss) or report a blocker.`);
       const many = tooMany(employee, 'message', 120);
       if (many) return err(many);
       eng.comms.sendMessage({ from: { kind: 'employee', id: employee.id, name: `${employee.name} (${employee.title})` }, toEmployeeId: to.id, body: String(a.message), taskId: eng.tasks.currentTask(employee.id)?.id ?? null });
-      eng.foreman.noteMessage(employee);
       return `Message queued for ${to.name}. It is delivered to their session when they can read it.`;
     },
 
@@ -339,7 +331,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       if (no) return { text: `${no} Nothing was sent. If they only need to know, send it without wait.`, isError: true };
       const shut = target ? closedTo(employee, target) : null;
       if (shut) return err(shut);
-      if (target?.roleKey === FOREMAN_ROLE) return err(`${target.name} is the foreman: the office calls it when something needs it. Ask a colleague who does the work, or the boss (ask_boss).`);
       const many = tooMany(employee, 'request', 60);
       if (many) return err(many);
       const collab = eng.comms.requestCollaboration(employee, target ?? String(a.to), String(a.summary), a.detail ? String(a.detail) : '', { waited: wait });
@@ -364,7 +355,7 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       const task = eng.tasks.currentTask(employee.id);
       const roleOrder = ['architect', 'fullstack', 'backend', 'frontend', 'qa', 'security', 'devops'];
       const helper = core.employees
-        .filter((e) => !e.archived && e.id !== employee.id && e.roleKey !== FOREMAN_ROLE && !!core.runningSessionOf(e.id) && (e.projectId === employee.projectId || !e.projectId) && sameSide(employee, e) && !closedTo(employee, e) && eng.rent.reaches(employee, e))
+        .filter((e) => !e.archived && e.id !== employee.id && !!core.runningSessionOf(e.id) && (e.projectId === employee.projectId || !e.projectId) && sameSide(employee, e) && !closedTo(employee, e) && eng.rent.reaches(employee, e))
         .sort((x, y) => roleOrder.indexOf(x.roleKey) - roleOrder.indexOf(y.roleKey))
         .find((e) => roleOrder.includes(e.roleKey));
       if (helper) {
@@ -415,7 +406,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       if (!to || to.archived) return err(`No teammate matches "${name}". Use get_team.`);
       const self = to.id === employee.id;
       if (to.executionMode === 'codex_managed') return err(`${to.name} uses the Codex runtime’s default model and effort.`);
-      if (!self && to.roleKey === FOREMAN_ROLE) return err(`${to.name} is the foreman: what it thinks with is the owner's to set.`);
       if (!self && to.roleKey === LEAD_ROLE) return err(`${to.name} is a member's team lead: what it thinks with is that member's to set.`);
       if (!sameSide(employee, to)) return err(`${to.name} works on ${personal(to.hostId) ? "a member's own computer" : 'the shared office'} and you do not: their settings are not yours to change.`);
       const closed = closedTo(employee, to);
@@ -585,7 +575,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     release_task: async (a, { employee }) => {
-      if (employee.roleKey === FOREMAN_ROLE) return err('Releasing work is not a foreman\'s to do: tell the boss it is ready (escalate_to_owner).');
       if (!managing()) return OFF;
       const task = seen(employee, a.task);
       if (!task) return noTask(a.task);
@@ -600,7 +589,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     unblock_task: async (a, { employee }) => {
-      if (employee.roleKey === FOREMAN_ROLE) return err('Unblocking a task is not a foreman\'s to do: tell whoever has it what is wanted (tell_employee), or the boss.');
       if (!managing()) return OFF;
       const task = seen(employee, a.task);
       if (!task) return noTask(a.task);
@@ -616,7 +604,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     },
 
     cancel_task: async (a, { employee }) => {
-      if (employee.roleKey === FOREMAN_ROLE) return err('Cancelling work is not a foreman\'s to do: tell the boss what is no longer wanted and why (escalate_to_owner).');
       if (!managing()) return OFF;
       const task = seen(employee, a.task);
       if (!task) return noTask(a.task);
@@ -643,7 +630,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       const name = String(a.employee ?? '').trim();
       const to = name.toLowerCase() === employee.name.toLowerCase() ? employee : eng.comms.resolveTeammate(employee, name);
       if (!to || to.archived) return err(`No teammate matches "${name}". Use get_team.`);
-      if (to.roleKey === FOREMAN_ROLE) return err(`${to.name} is the foreman and does not take tasks. Give it to someone who does the work.`);
       if (!eng.tasks.canSee(to, task)) return err(`${to.name} cannot take ${task.key}: work does not cross between the shared office and a member's own computer.`);
       // Work that is in review is decided by its review: given to somebody else now, its author would no longer be
       // "the assignee" and could approve it themselves.
@@ -667,7 +653,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       if (!to || to.archived) return err(`No teammate matches "${a.employee}". Use get_team.`);
       const reason = String(a.reason ?? '').trim();
       if (reason.length < 8) return err('Say in "reason" what they are needed for: it is the first thing they read.');
-      if (to.roleKey === FOREMAN_ROLE) return err(`${to.name} is the foreman: the office calls it when something needs it. Tell the boss if it should look at something (ask_boss).`);
       if (!sameSide(employee, to)) return err(`${to.name} works on ${personal(to.hostId) ? "a member's own computer" : 'the shared office'} and you do not. Work does not cross between the two.`);
       const running = core.runningSessionOf(to.id);
       if (running && core.gateway.isPaused(running.id)) return err(`${to.name} is paused by the owner and stays so until the owner resumes them.`);
@@ -742,8 +727,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       return eng.memory.note(employee, String(a.about ?? ''), kept.text) ? 'Written down. It can be found with recall from now on (give it a moment to be filed).' : err("What is said on a member's own computer stays there: it is not written into the office's memory.");
     },
 
-    // Foreman-only tools (each refuses a caller who is not a foreman).
-    ...eng.foreman.handlers(),
     // A member's team lead's tools (each refuses a caller who is not one).
     ...eng.lead.handlers(),
   };
@@ -761,7 +744,6 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
       return handler(a, ctx);
     };
   }
-  const foremanTools = new Set(FOREMAN_TOOLS.map((t) => t.name));
   const leadTools = new Set(LEAD_TOOLS.map((t) => t.name));
   // What a lead is shown besides its own tools: how it asks its boss and hears back, and how colleagues reach it. Nothing
   // about tasks of its own — it has none — so that its every turn carries as little as possible.
@@ -773,10 +755,9 @@ export function buildMcpServer(eng: Engine): McpServerOptions<McpContext> {
     version: '0.1.0',
     instructions:
       'Orchestrator connects you to the virtual office you work in. Use these tools to learn your task, report real progress, ask the boss for decisions, collaborate with teammates and declare work complete. Completion is verified independently, so report honestly.',
-    tools: [...ORCHESTRATOR_TOOLS, ...BOARD_TOOLS, ...FILE_TOOLS, ...VAULT_TOOLS, ...MEMORY_TOOLS, ...FOREMAN_TOOLS, ...LEAD_TOOLS],
+    tools: [...ORCHESTRATOR_TOOLS, ...BOARD_TOOLS, ...FILE_TOOLS, ...VAULT_TOOLS, ...MEMORY_TOOLS, ...LEAD_TOOLS],
     handlers,
-    // Only a foreman is shown the foreman's tools; everyone else's tool list (and prompt) stays as small as before.
-    // The board tools are shown while the owner leaves the board to the employees (a foreman assigns with its own tool).
-    listed: (tool, { employee, session }) => (session?.mode !== 'codex_managed' || !codexUnavailable.has(tool.name)) && eng.rent.toolAllowed(employee, tool.name) !== false && (employee.roleKey === LEAD_ROLE ? leadTools.has(tool.name) || LEAD_ALSO.has(tool.name) : !leadTools.has(tool.name)) && tool.name !== 'vault_read' && (tool.name !== 'message_client' || eng.rent.isRented(employee.id)) && (tool.name !== 'report_released' || eng.release.on()) && (!['escalate_review', 'answer_team_question', 'escalate_question'].includes(tool.name) || employee.roleKey === 'pm') && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (boardTools.has(tool.name) ? managing() && !(employee.roleKey === FOREMAN_ROLE && (tool.name === 'give_task' || tool.name === 'cancel_task')) : employee.roleKey === FOREMAN_ROLE || !foremanTools.has(tool.name)),
+    // The board tools are shown while the owner leaves the board to the employees.
+    listed: (tool, { employee, session }) => (session?.mode !== 'codex_managed' || !codexUnavailable.has(tool.name)) && eng.rent.toolAllowed(employee, tool.name) !== false && (employee.roleKey === LEAD_ROLE ? leadTools.has(tool.name) || LEAD_ALSO.has(tool.name) : !leadTools.has(tool.name)) && tool.name !== 'vault_read' && (tool.name !== 'message_client' || eng.rent.isRented(employee.id)) && (tool.name !== 'report_released' || eng.release.on()) && (!['escalate_review', 'answer_team_question', 'escalate_question'].includes(tool.name) || employee.roleKey === 'pm') && (tool.name !== 'attach_file' || eng.attachments.available()) && (!memoryTools.has(tool.name) || eng.memory.available()) && (!boardTools.has(tool.name) || managing()),
   };
 }

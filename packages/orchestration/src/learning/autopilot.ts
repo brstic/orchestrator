@@ -283,7 +283,6 @@ export class Autopilot {
     const project = 'projectId' in a ? this.core.projects.get(a.projectId) : undefined;
     const employee = 'employeeId' in a ? this.core.employees.get(a.employeeId) : undefined;
     if (('projectId' in a && (!project || project.status === 'archived')) || ('employeeId' in a && (!employee || employee.archived))) return no('What it would change no longer exists.');
-    if (employee?.roleKey === 'foreman') return no('The foreman is changed by an owner only.');
     const personal = this.personal(project ? project.hostId : employee?.hostId);
 
     if (!cls.widening) {
@@ -466,7 +465,7 @@ export class Autopilot {
 
   /**
    * safe: a lesson that is scoped to one employee and still "proposed" is switched on — it reaches
-   * that employee's prompts only. Lessons somebody else wrote about them, and the foreman's, wait.
+   * that employee's prompts only. Lessons somebody else wrote about them wait.
    * Undo is the lesson's own switch (`PATCH /api/lessons/:id`); a lesson is switched on by itself once only.
    */
   private activateOwnLessons(): void {
@@ -475,7 +474,7 @@ export class Autopilot {
     const before = new Set(this.automaticEvents(365 * 86400_000).map((e) => e.data.lessonId).filter(Boolean));
     for (const l of waiting) {
       const e = this.core.employees.get(l.employeeId);
-      if (!e || e.archived || e.roleKey === 'foreman' || before.has(l.id)) continue;
+      if (!e || e.archived || before.has(l.id)) continue;
       if (l.authoredBy.kind === 'employee' && l.authoredBy.id !== l.employeeId) continue;
       const bucket = this.bucketOf(null, e.id);
       if (this.allowance(bucket) <= 0) continue;

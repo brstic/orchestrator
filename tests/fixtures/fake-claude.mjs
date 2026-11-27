@@ -527,31 +527,6 @@ async function defaultBehaviour(text) {
     else await orchestrator('record_lesson', { none: true, reason: 'Nothing in the recorded facts would be prevented by a rule' });
     return 'Retrospective done.';
   }
-  if (/\[ORCH:ROUND:/.test(text)) {
-    // A foreman's round: look at the office, then deal with each item of the digest the way the prompt asks.
-    // A question marked [escalate] stands for "a matter of direction": it goes to the owner instead of being answered.
-    await orchestrator('office_overview', {});
-    const now = text.split('Already seen in earlier rounds')[0];
-    let handled = 0;
-    for (const m of now.matchAll(/^\d+\. QUESTION (\S+) from (.+?) \([^)]*\): "(.*)" — waiting/gm)) {
-      await orchestrator('look_at', { employee: m[2] });
-      if (/\[escalate\]/.test(m[3])) await orchestrator('escalate_to_owner', { summary: `${m[2]} needs a decision that is yours`, detail: `${who} did not answer this: it is a matter of direction.`, question_id: m[1] });
-      else await orchestrator('answer_question', { question_id: m[1], answer: 'Go with the simplest option that meets the task, and note it in your summary.' });
-      handled++;
-    }
-    // Someone who stopped and is doing nothing: go and look, and tell them to carry on.
-    for (const m of now.matchAll(/^\d+\. IDLE (\S+) \(/gm)) {
-      await orchestrator('look_at', { employee: m[1] });
-      await orchestrator('tell_employee', { employee: m[1], message: 'Carry on with what you were asked to do, and report when it is done. @@fake: say carried-on@@' });
-      handled++;
-    }
-    for (const m of now.matchAll(/^\d+\. UNASSIGNED (\S+) .* free now: ([^ (,]+)/gm)) {
-      await orchestrator('assign_task', { task: m[1], employee: m[2] });
-      handled++;
-    }
-    await orchestrator('finish_round', { summary: `Handled ${handled} item${handled === 1 ? '' : 's'}.` });
-    return 'Round finished.';
-  }
   const request = /request id ([0-9a-f]+)/i.exec(text)?.[1];
   if (/\[ORCH:MSG:/.test(text) && request && /respond_to_request/.test(text)) {
     const action = /\[new_task\]/.test(text) ? 'new_task' : /\[decision\]/.test(text) ? 'needs_decision' : 'incorporated';

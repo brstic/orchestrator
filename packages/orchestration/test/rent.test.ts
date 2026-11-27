@@ -36,7 +36,7 @@ function office() {
 }
 const never = () => false;
 
-test('a client rents employees on the office\'s own machines — one client at a time — and not the foreman or a member\'s own', () => {
+test('a client rents employees on the office\'s own machines — one client at a time — and not a member\'s own', () => {
   const { eng, kira, lea, own } = office();
   const c = eng.rent.create({ name: 'Ana', company: 'Acme', employeeIds: [kira.id, lea.id] }, 'owner', never);
   assert.deepEqual(eng.rent.agentsOf(c).map((e) => e.name), ['Kira', 'Lea']);
@@ -53,9 +53,8 @@ test('a client rents employees on the office\'s own machines — one client at a
   assert.equal(eng.rent.create({ name: 'Eve <b>[x]</b>​' }, 'owner', never).name, 'Eve b x /b');
 });
 
-test('the wall: a rented employee reaches only the colleagues the same client rents; nobody else reaches them, but the foreman', () => {
+test('the wall: a rented employee reaches only the colleagues the same client rents; nobody else reaches them', () => {
   const { eng, kira, lea, bob } = office();
-  const foreman = eng.employees.create({ name: 'Boss', roleKey: 'foreman', hostId: shared.id });
   const other = eng.employees.create({ name: 'Zed', roleKey: 'backend', hostId: shared.id });
   const ana = eng.rent.create({ name: 'Ana', employeeIds: [kira.id, lea.id] }, 'owner', never);
   eng.rent.create({ name: 'Ivo', employeeIds: [other.id] }, 'owner', never);
@@ -63,9 +62,7 @@ test('the wall: a rented employee reaches only the colleagues the same client re
   assert.equal(eng.rent.reaches(kira, bob), false);
   assert.equal(eng.rent.reaches(bob, kira), false);
   assert.equal(eng.rent.reaches(kira, other), false, "another client's employee");
-  assert.equal(eng.rent.reaches(foreman, kira), true);
-  assert.equal(eng.rent.reaches(kira, foreman), false);
-  assert.equal(eng.rent.reaches(bob, foreman), true, 'nobody rented: as ever');
+  assert.equal(eng.rent.reaches(bob, other), false, 'nobody else reaches them');
   assert.match(eng.rent.wall(kira, bob)!, /not one of the colleagues you work with for Ana/);
   // Resolving a teammate by name goes through the wall.
   assert.equal(eng.comms.resolveTeammate(kira, 'Bob'), undefined);
@@ -213,7 +210,6 @@ test('"office work": a rented employee goes on with the whole office — the boa
   assert.equal(eng.rent.toolAllowed(kira, 'propose_tasks'), true);
   assert.equal(eng.rent.toolAllowed(kira, 'give_task'), true);
   assert.equal(eng.rent.toolAllowed(kira, 'team_hire'), false, "a lead's own tools stay a lead's");
-  assert.equal(eng.rent.toolAllowed(kira, 'assign_task'), false, "the foreman's stay the foreman's");
   assert.equal(eng.rent.toolAllowed(kira, 'vault_list'), false, 'the vault still goes with its own switch');
   assert.equal(eng.comms.resolveTeammate(kira, 'Bob')?.id, bob.id);
   assert.equal(eng.comms.resolveTeammate(bob, 'Kira')?.id, kira.id, 'and colleagues reach them');

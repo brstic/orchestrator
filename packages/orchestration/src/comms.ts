@@ -147,10 +147,10 @@ const RETURNED = 'Returned as the result of the tool call that was waiting for i
 export interface Delivery {
   id: string;
   employeeId: string;
-  marker: 'TASK' | 'MSG' | 'ANSWER' | 'MEETING' | 'REVIEW' | 'REPORT' | 'RETRO' | 'ROUND';
+  marker: 'TASK' | 'MSG' | 'ANSWER' | 'MEETING' | 'REVIEW' | 'REPORT' | 'RETRO';
   /** Id embedded in the correlation marker; a UserPromptSubmit hook carrying it confirms delivery. */
   markerId: string;
-  ref: { kind: 'task' | 'message' | 'question' | 'meeting' | 'report' | 'retro' | 'round'; id: string };
+  ref: { kind: 'task' | 'message' | 'question' | 'meeting' | 'report' | 'retro'; id: string };
   text: string;
   createdAt: number;
   attempts: number;
@@ -602,10 +602,9 @@ export class Comms {
       if (!this.core.agents.respondHook(pending.hostId, pending.requestId, output)) this.setStatus(q, 'failed', 'The host is offline; the decision could not be delivered.');
       return;
     }
-    const by = q.answeredBy?.kind === 'foreman' ? q.answeredBy : null;
     const answers = q.answers ?? (q.parts[0] ? { [q.parts[0].question]: q.answer ?? '' } : {});
     const ok = this.core.agents.respondHook(pending.hostId, pending.requestId, {
-      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: by ? `Answered by ${by.name} (the foreman) on the boss's behalf` : 'Answered by the boss in Orchestrator', updatedInput: { ...(pending.toolInput ?? {}), answers } },
+      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: q.answeredBy?.kind === 'foreman' ? `Answered by ${q.answeredBy.name} (the foreman) on the boss's behalf` : 'Answered by the boss in Orchestrator', updatedInput: { ...(pending.toolInput ?? {}), answers } },
     });
     if (!ok) this.setStatus(q, 'failed', 'The host is offline; the answer could not be delivered.');
   }
@@ -702,8 +701,8 @@ export class Comms {
   }
 
   /**
-   * The owner's reply to a question or approval — or, for an employee's question only, a foreman's
-   * reply on the owner's behalf (`by`). A permission request is never decided by anyone but the owner.
+   * The owner's reply to a question or approval — or a project manager's reply on the owner's behalf (`by`,
+   * `answerAsManager`). A permission request is never decided by anyone but the owner.
    */
   /** A project manager answers a question about work it put on the board, in the boss's place. */
   async answerAsManager(manager: Employee, questionId: string, input: { answer?: string | null; answers?: Record<string, string> | null }): Promise<Question> {
@@ -745,9 +744,9 @@ export class Comms {
     return plain.map((o) => (marked.has(o.label) ? { ...o, releases: true, consequence: o.consequence ? `${says} ${o.consequence}` : says } : o));
   }
 
-  async answer(questionId: string, input: { answer?: string | null; decision?: 'allow' | 'deny' | null; answers?: Record<string, string> | null }, actor = 'owner', by: { kind: 'foreman' | 'manager'; id: string; name: string } | null = null, caller: { owner: boolean } = { owner: actor === 'owner' }): Promise<Question> {
+  async answer(questionId: string, input: { answer?: string | null; decision?: 'allow' | 'deny' | null; answers?: Record<string, string> | null }, actor = 'owner', by: { kind: 'manager'; id: string; name: string } | null = null, caller: { owner: boolean } = { owner: actor === 'owner' }): Promise<Question> {
     const q = this.core.questions.require(questionId);
-    if (by && (by.kind === 'manager' ? !MANAGER_ANSWERS.has(q.kind) : q.kind !== 'question')) throw new EngineError('Only the owner can decide this.', 403);
+    if (by && !MANAGER_ANSWERS.has(q.kind)) throw new EngineError('Only the owner can decide this.', 403);
     if (q.status !== 'open') throw new EngineError(`this ${q.kind === 'permission' ? 'request' : 'question'} is no longer open (${q.status})`, 409);
     const employee = this.core.employees.get(q.employeeId);
     if (q.kind === 'permission') {
@@ -794,7 +793,7 @@ export class Comms {
       summary:
         q.kind === 'permission'
           ? `Boss ${q.decision === 'allow' ? 'approved' : 'denied'} ${employee?.name ?? 'employee'}'s request`
-          : `${by ? `${by.name} (foreman)` : 'Boss'} answered ${employee?.name ?? 'employee'}: ${truncate(q.answer ?? '', 100)}`,
+          : `${by ? by.name : 'Boss'} answered ${employee?.name ?? 'employee'}: ${truncate(q.answer ?? '', 100)}`,
       employeeId: q.employeeId,
       sessionId: q.sessionId,
       taskId: q.taskId,
@@ -1507,8 +1506,6 @@ export class Comms {
       }
     } else if (d.ref.kind === 'meeting') {
       this.eng.meetings.onDeliveryState(d.ref.id, d.employeeId, state);
-    } else if (d.ref.kind === 'round') {
-      this.eng.foreman.onDeliveryState(d.ref.id, state);
     }
   }
 

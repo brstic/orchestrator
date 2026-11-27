@@ -10,7 +10,7 @@
  *     conversation — not to the owner's Talk. The owner's own conversation stays the owner's. The employee is one session
  *     and knows all of it; each person sees only their own conversation (the owner can read the client's in Access → Rent).
  *   - **A wall between employees.** A rented employee talks to and works with only the other employees the same client
- *     rents (with teamwork on) — and nobody else in the office reaches them, but the foreman (`reaches`).
+ *     rents (with teamwork on) — and nobody else in the office reaches them (`reaches`).
  *   - **A fence on their machine.** They reach only their own folder and their co-rented colleagues' folders, and run
  *     commands, change files and use the web only as far as the owner allows (`fenceFor` → `LaunchSpec.fence`, enforced
  *     by the host agent on every tool call, and pushed live when a rental changes).
@@ -76,8 +76,8 @@ const RENT_TOOLS = new Set([
   'get_context',
   'propose_context',
 ]);
-/** The foreman's and a team lead's own tools: never a rented employee's (their handlers refuse other callers anyway). */
-const FOREIGN_ROLE_TOOLS = /^(team_|office_overview$|look_at$|answer_question$|assign_task$|create_task$|tell_employee$|escalate_to_owner$|finish_round$)/;
+/** A team lead's own tools: never a rented employee's (their handlers refuse other callers anyway). */
+const FOREIGN_ROLE_TOOLS = /^team_/;
 /** Tools that go with a permission. */
 const PERM_TOOLS: Record<string, keyof RentPerms> = { attach_file: 'files', vault_list: 'vault', vault_store: 'vault', vault_read: 'vault', recall: 'memory', remember: 'memory' };
 /** Tools that reach another employee: given only with teamwork. */
@@ -229,7 +229,6 @@ export class Rent {
   rentable(e: Employee, by: string | null, clientId: string | null = null): string | null {
     if (e.archived) return `${e.name} is archived.`;
     if (e.executionMode === 'codex_managed' || this.core.runningSessionOf(e.id)?.mode === 'codex_managed') return `${e.name} runs Codex and cannot be rented.`;
-    if (e.roleKey === 'foreman') return `${e.name} is the foreman: it supervises the office and is not rented out.`;
     if (e.roleKey === LEAD_ROLE) return `${e.name} is a member's team lead.`;
     const member = this.eng.hosts.memberOfHost(e.hostId);
     if (member && member !== by) return `${e.name} works on ${this.core.hosts.get(e.hostId ?? '')?.memberName ?? 'a member'}'s own computer: only they can rent them out.`;
@@ -354,12 +353,11 @@ export class Rent {
   /**
    * May `from` reach `to` (a message, a request, waiting for them, waking them)? Between two employees nobody rents:
    * as ever. A rented one reaches only those the same client rents, both with teamwork on; nobody else reaches a rented
-   * one — but the foreman, which supervises the office for the owner.
+   * one.
    */
   reaches(from: Employee, to: Employee): boolean {
     // (One let do office work is not walled in: as far as reaching goes, they are the office's.)
     if (!this.isWalled(from.id) && !this.isWalled(to.id)) return true;
-    if (!this.isRented(from.id) && from.roleKey === 'foreman') return true;
     // Walled: only colleagues a client of theirs rents too, with teamwork on in both rentals.
     return this.rentalsOf(from.id).some(({ client, rental }) => rental.perms.teamwork && !!this.rentalBy(client.id, to.id)?.perms.teamwork);
   }
@@ -381,7 +379,7 @@ export class Rent {
     if (TEAM_TOOLS.has(tool) && !p.teamwork && !p.office) return false;
     // Never waiting for the office: nothing is asked of the owner — the client is asked, in the conversation.
     if (p.autonomous && (tool === 'ask_boss' || tool === 'wait_for_answer')) return false;
-    // Office work: the office's tools as before (the board, handing work out, lessons) — but the foreman's and a lead's.
+    // Office work: the office's tools as before (the board, handing work out, lessons) — but a lead's.
     if (p.office) return !FOREIGN_ROLE_TOOLS.test(tool);
     return RENT_TOOLS.has(tool);
   }

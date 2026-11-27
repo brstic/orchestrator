@@ -156,40 +156,12 @@ export function systemPromptFor(employee: Employee, project: Project | undefined
   if (employee.specialization) lines.push(`Specialisation: ${employee.specialization}.`);
   if (employee.skills.length) lines.push(`Skills you are expected to apply: ${employee.skills.join(', ')}.`);
   lines.push(STYLE_GUIDE[employee.style] ?? '');
-  // A foreman's limits are the role's, not the autonomy level's (see below): it never edits files.
+  // A lead's limits are the role's, not the autonomy level's (see below): it never edits files.
   // Where the owner switched the high-risk hold off for Unrestricted, nothing "still goes to the boss by itself".
   if (employee.executionMode === 'codex_managed') lines.push('Use workspace tools to list, read and edit text files inside the selected working directory. Check the tools available to you before reporting a limitation. Shell commands, Git commands, browser and credential access are unavailable. Report any checks or commits you could not make.');
-  else if (employee.roleKey !== 'foreman' && employee.roleKey !== 'lead') lines.push(employee.autonomy === 'unrestricted' && !heldHighRisk ? UNRESTRICTED_UNHELD : AUTONOMY_GUIDE[employee.autonomy]);
+  else if (employee.roleKey !== 'lead') lines.push(employee.autonomy === 'unrestricted' && !heldHighRisk ? UNRESTRICTED_UNHELD : AUTONOMY_GUIDE[employee.autonomy]);
   if (project) lines.push(`Current project: ${project.name}${project.description ? ` — ${project.description}` : ''}.`);
   if (employee.instructions.trim()) lines.push(`Standing instructions from the boss:\n${employee.instructions.trim()}`);
-  if (employee.roleKey === 'foreman') {
-    // A foreman gets no tasks and no worktree: its work is rounds, and its tools are the foreman's.
-    lines.push(`## How your work happens here`);
-    lines.push(
-      [
-        `- You are called for a "round" by a prompt tagged [ORCH:ROUND:…] when something in the office needs attention; the prompt lists what. The boss may also talk to you directly ([ORCH:MSG:…] "Message from the boss"). Keep those tags out of your own writing.`,
-        hasMcp
-          ? [
-              `- You act through the "orchestrator" MCP tools:`,
-              `  • office_overview — everyone and every project at a glance.`,
-              `  • look_at — one employee in detail, including what is on their terminal screen right now.`,
-              `  • answer_question — answer an employee's operational question on the boss's behalf.`,
-              `  • assign_task / create_task — hand out ready work, or add follow-up work inside what the boss already asked for.`,
-              `  • tell_employee — tell an employee what to do next: continue, how a blocker is resolved, what to pick up.`,
-              `  • escalate_to_owner — put something in front of the boss.`,
-              `  • finish_round — end the round with a short summary.`,
-            ].join('\n')
-          : `- This session has no Orchestrator tools, so you can only report what you see in plain text.`,
-        `- Decide operational things yourself — how to do something, which of two reasonable options, who takes a ready task. Go to the boss only with direction, product or policy; with anything destructive, irreversible or outside the project; and with anything you are not sure about. When in doubt, escalate rather than guess.`,
-        `- You cannot approve permission requests and you must not try: approving an action is always the boss's.`,
-        `- You do not write code and you do not change files. If something needs doing, it is a task for someone.`,
-        `- Be truthful: report what you saw, not what you assume. If a screen or a fact is not available, say so.`,
-        `- One round is one pass: act on what the prompt lists, call finish_round, and stop. Never wait, poll or start another round yourself — the office calls you when something new needs you.`,
-      ].join('\n'),
-    );
-    if (playbook) lines.push(`## What you have learned here so far\n${playbook}`);
-    return lines.filter(Boolean).join('\n\n');
-  }
   if (employee.roleKey === 'lead') {
     // A lead gets no tasks: it is spoken to, and hands on. Kept short — it is read on every turn of a small model.
     lines.push(`## How your work happens here`);

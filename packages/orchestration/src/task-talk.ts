@@ -163,7 +163,6 @@ export class TaskTalk {
     if (to.archived) return `${to.name} no longer works here.`;
     if (!this.eng.tasks.canSee(to, task)) return `${to.name} cannot be brought into ${task.key}: work does not cross between the shared office and a member's own computer.`;
     if (!from) return null;
-    if (to.roleKey === 'foreman' && from.roleKey !== 'foreman') return `${to.name} is the foreman: the office calls it when something needs it. Tag the boss instead.`;
     const member = this.eng.hosts.memberOfHost(to.hostId);
     if (member && this.eng.hosts.memberOfHost(from.hostId) !== member && this.eng.hosts.isClosed(member)) return `${to.name} works on a member's own computer, and that member has closed their room: nothing reaches them from outside until it is open again.`;
     return null;
@@ -329,7 +328,6 @@ export class TaskTalk {
         const asker = this.core.employees.get(asked.from.id);
         if (asker && !asker.archived) this.tell(asker, task, from, `${employee.name} answered your question on ${task.key}:\n${answer.body}`);
       }
-      this.eng.foreman.noteMessage(employee);
       return { text: `Your answer is on ${task.key}${parked ? `, and the ticket is back with ${this.core.employees.get(task.assigneeId)?.name ?? 'its employee'}` : ''}.${notes.length ? ` ${notes.join(' ')}` : ''}` };
     }
 
@@ -376,7 +374,6 @@ export class TaskTalk {
       this.eng.comms.notify({ kind: 'mention', severity: 'info', title: `${employee.name} answered on ${task.key}`, body: truncate(comment.body, 400), employeeId: employee.id, taskId: task.id, projectId: task.projectId });
       told.push('the boss');
     }
-    if (told.length) this.eng.foreman.noteMessage(employee);
     return { text: `Comment added to ${task.key}${told.length ? ` — ${told.join(', ')} ${told.length === 1 ? 'is' : 'are'} told` : ' (nobody was tagged, so nobody is told; tag @boss or a colleague when somebody should read it)'}.${notes.length ? ` ${notes.join(' ')}` : ''}` };
   }
 
@@ -484,7 +481,7 @@ export class TaskTalk {
   }
 
   /**
-   * One of the office's questions was answered (in the Inbox, on the ticket, by the foreman): the answer is written
+   * One of the office's questions was answered (in the Inbox, on the ticket, by a project manager): the answer is written
    * on the task it was asked on. If the task was parked on it, it goes back to its employee with the answer —
    * `true`, and the answer is not also delivered on its own.
    */

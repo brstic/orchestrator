@@ -24,7 +24,6 @@ before(async () => {
   const project = (await h.project('Shop', h.makeRepo('shop'))).id;
   ids.Pat = (await h.employee('Pat', 'pm', { projectId: project, autonomy: 'auto' })).id;
   ids.Alex = (await h.employee('Alex', 'backend', { projectId: project, autonomy: 'auto', model: 'fable', effort: 'high' })).id;
-  ids.Mira = (await h.employee('Mira', 'foreman', {})).id;
 });
 after(async () => {
   await h?.cleanup();
@@ -49,11 +48,10 @@ test('the project manager puts a colleague on a lighter model and less effort; i
   assert.deepEqual([(await emp('Alex')).model, (await emp('Alex')).effort], [null, null]);
 });
 
-test('what is refused: not a model of the list, not the foreman, no reason, nothing to change — and not at all when the owner says so', async () => {
+test('what is refused: not a model of the list, no reason, nothing to change — and not at all when the owner says so', async () => {
   for (const [args, said] of [
     [{ employee: 'Alex', model: 'gpt-5', reason: 'Because it is cheaper.' }, /is not a model to choose/],
     [{ employee: 'Alex', effort: 'extreme', reason: 'Because it is cheaper.' }, /is not an effort/],
-    [{ employee: 'Mira', model: 'haiku', reason: 'Because it is cheaper.' }, /foreman: what it thinks with is the owner's/],
     [{ employee: 'Alex', model: 'haiku', reason: 'cheap' }, /Say in "reason" why/],
     [{ employee: 'Alex', reason: 'Nothing to change at all.' }, /Say the model, the effort, or both/],
     [{ employee: 'Nobody', model: 'haiku', reason: 'Because it is cheaper.' }, /No teammate matches/],

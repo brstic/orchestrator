@@ -172,20 +172,6 @@ export const ROLE_CATALOGUE: RoleProfile[] = [
     color: '#ff9ecb',
   },
   {
-    key: 'foreman',
-    title: 'Foreman',
-    department: 'Management',
-    specialization: 'Supervising the office: keeping everyone working and unblocked',
-    skills: ['Supervision', 'Triage', 'Delegation', 'Escalation'],
-    instructions:
-      "You are the foreman. You run the day-to-day work of the office on the boss's behalf: you go round, look at what each employee is really doing, keep everyone working, answer their operational questions, and hand out work that is ready. You supervise; you do not write code and you do not take tasks yourself. The boss does not want to be asked anything that is not a matter of direction: decide operational things yourself, and go to the boss only with questions of direction, product or policy, with anything destructive or irreversible, and with anything you are not sure about. You never approve permission requests: those are always the boss's.",
-    // Whatever level the owner picks, a foreman's session cannot edit files.
-    disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'],
-    // No task kinds: the scheduler never routes work to a foreman.
-    handles: [],
-    color: '#e0a13a',
-  },
-  {
     key: 'lead',
     title: 'Team Lead',
     department: 'Management',
@@ -220,8 +206,8 @@ export const LEAD_HIRE_LIMIT = 5;
 /** What a lead thinks with unless its member chooses otherwise: it reads and hands on, so the lightest model, working lightly. */
 export const LEAD_MODEL = 'haiku';
 export const LEAD_EFFORT = 'low';
-/** Roles that direct others and are never given work themselves: the office's foreman and a member's lead. */
-export const directsOthers = (roleKey: string | null | undefined): boolean => roleKey === 'foreman' || roleKey === LEAD_ROLE;
+/** Roles that direct others and are never given work themselves: a member's lead. */
+export const directsOthers = (roleKey: string | null | undefined): boolean => roleKey === LEAD_ROLE;
 
 export function roleByKey(key: string): RoleProfile | undefined {
   return ROLE_CATALOGUE.find((r) => r.key === key);
@@ -243,7 +229,6 @@ export function matchRole(text: string): RoleProfile | undefined {
     [/\breverse\b/, 'reverse'],
     [/\bresearch/, 'researcher'],
     [/\bdoc(s|umentation)?\b/, 'docs'],
-    [/\bforeman\b|\bsupervisor\b/, 'foreman'],
     [/\bproject manager\b|\bpm\b/, 'pm'],
     [/\breview(er)?\b/, 'reviewer'],
   ];

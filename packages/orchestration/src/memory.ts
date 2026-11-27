@@ -391,7 +391,7 @@ export class Memory {
 
 const ROOM_ABOUT: Record<MemoryRoom, string> = {
   tasks: 'Finished tasks of this office: what was asked, what was done, how it was verified and reviewed, what went wrong on the way.',
-  answers: 'Questions employees asked and the answers the owner (or the foreman) gave.',
+  answers: 'Questions employees asked and the answers they were given.',
   blockers: 'What work was blocked on, and what resolved it.',
   lessons: 'Lessons the office and its employees learned and use.',
   meetings: 'What meetings decided.',

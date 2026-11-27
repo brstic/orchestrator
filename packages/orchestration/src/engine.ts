@@ -5,7 +5,6 @@ import { TerminalGateway, type GatewayDeps } from '@orchestrator/terminal';
 import { CommandCenter } from './commands.ts';
 import { Comms } from './comms.ts';
 import { Core, EngineError, type EngineOptions } from './core.ts';
-import { Foreman } from './foreman.ts';
 import { Lead } from './lead.ts';
 import { SaidFiles } from './said-files.ts';
 import { HookReceiver } from './hook-receiver.ts';
@@ -36,7 +35,6 @@ import { CentralContext } from './context.ts';
  *   hosts ─ sessions ─ employees      who exists and where they really run
  *   hooks ─ comms                     what they are doing, asking and being told
  *   tasks ─ meetings ─ commands       what work exists and how it moves
- *   foreman                           an employee who supervises the rest, in rounds
  *   routines ─ sleep                  what is repeated by the clock, and who rests meanwhile
  *   waits                             who cannot go on until a colleague has answered or finished
  *
@@ -55,7 +53,6 @@ export class Engine {
   readonly meetings: MeetingManager;
   readonly commands: CommandCenter;
   readonly improver: Improver;
-  readonly foreman: Foreman;
   /** Files that go with a message to an employee: a pasted screenshot, a document (said-files.ts). */
   readonly saidFiles: SaidFiles;
   /** Members' team leads: what one may see and do (lead.ts). */
@@ -92,7 +89,6 @@ export class Engine {
     this.meetings = new MeetingManager(this);
     this.commands = new CommandCenter(this);
     this.improver = new Improver(this);
-    this.foreman = new Foreman(this);
     this.lead = new Lead(this);
     this.routines = new Routines(this);
     this.sleeper = new Sleeper(this);
@@ -233,8 +229,7 @@ export class Engine {
     // An account's figures arrive only while a session on it reports; a look every minute catches the rest.
     this.accountsTimer = setInterval(() => void this.sessions.failover(), this.core.timings.accountFailoverMs ?? 60_000);
     this.accountsTimer.unref?.();
-    this.employees.unseatForemen();
-    this.foreman.start();
+    void this.employees.retireForemen();
     this.routines.start();
     this.sleeper.start();
     // (A move that went half way before failed moves were taken back: put right, once, at start — `Moves.heal`.)
@@ -246,7 +241,6 @@ export class Engine {
   stop(): void {
     if (this.housekeeping) clearInterval(this.housekeeping);
     if (this.accountsTimer) clearInterval(this.accountsTimer);
-    this.foreman.stop();
     this.routines.stop();
     this.sleeper.stop();
     this.work.stop();
@@ -293,10 +287,9 @@ export class Engine {
    */
   async hire(input: EmployeeInput & { ownFolderProject?: boolean; verifyCommand?: string | null }, actor = 'owner', by: { hiredBy?: string | null } = {}): Promise<Employee> {
     const folder = input.workingDir?.trim();
-    // (The foreman's folder is only where its session runs: it is not a project, and a refused hire must leave nothing behind.)
-    // (Nor is a lead's: it hands work on from there.)
-    const foreman = !!input.roleKey && directsOthers((roleByKey(input.roleKey) ?? matchRole(input.roleKey))?.key);
-    if (!folder || input.projectId || input.ownFolderProject === false || foreman) return this.employees.create(input, actor, by);
+    // (A lead's folder is only where its session runs: it is not a project, and a refused hire must leave nothing behind.)
+    const lead = !!input.roleKey && directsOthers((roleByKey(input.roleKey) ?? matchRole(input.roleKey))?.key);
+    if (!folder || input.projectId || input.ownFolderProject === false || lead) return this.employees.create(input, actor, by);
     const hostId = input.hostId ?? this.core.hosts.find((h) => h.local && h.status !== 'revoked')?.id ?? this.core.hosts.find((h) => h.status === 'online')?.id ?? null;
     if (!hostId || !this.core.agents.isOnline(hostId)) return this.employees.create({ ...input, hostId }, actor, by);
     const { project, root } = await this.projectOfFolder(hostId, folder, input.name.trim(), actor, input.verifyCommand ?? null);
@@ -332,7 +325,7 @@ export class Engine {
   /**
    * Change an employee — and, when the change names a folder (`folder`), give them that folder to live in the way
    * hiring does: the folder becomes their own project, worked in place (or they join the project that already
-   * lives there). A foreman's or a lead's folder is only where their session runs. The folder is on the machine
+   * lives there). A lead's folder is only where their session runs. The folder is on the machine
    * they are on, or on the one the same change puts them on. It takes effect when their session next starts.
    */
   async updateEmployee(id: string, patch: Record<string, unknown>, actor = 'owner'): Promise<Employee> {
@@ -778,8 +771,8 @@ export class Engine {
     }
     this.core.setLayout({ ...layout, version: (this.core.layout.version ?? 1) + 1 });
     this.core.audit(actor, 'office.layout_updated', 'office', { desks: layout.desks.length });
-    // (Not the foreman, who has no desk, and not someone on a member's own computer, who sits in that member's room.)
-    for (const e of this.core.employees.filter((x) => !x.archived && !x.deskId && x.roleKey !== 'foreman' && !this.hosts.memberOfHost(x.hostId))) {
+    // (Not someone on a member's own computer, who sits in that member's room.)
+    for (const e of this.core.employees.filter((x) => !x.archived && !x.deskId && !this.hosts.memberOfHost(x.hostId))) {
       const desk = this.employees.freeDesk();
       if (!desk) break;
       e.deskId = desk;

@@ -180,7 +180,7 @@ function handlesKind(e: Employee, task: Task): boolean {
 }
 /** The scheduler's own rule for who may be given a project's tasks: on it, lent to it, or on no project at all. */
 const onProject = (e: Employee, projectId: string): boolean => e.projectId === projectId || e.projectId === null || !!e.alsoProjectIds?.includes(projectId);
-const worker = (e: Employee): boolean => !e.archived && e.roleKey !== 'foreman';
+const worker = (e: Employee): boolean => !e.archived;
 
 /**
  * "At the same hour": the window of `DETECT.stallHourWindow` hours (server time) in which most of the
@@ -470,7 +470,7 @@ function missingContext(eng: Engine, now: number): Proposal[] {
     for (const q of asked) {
       const known = clusters.find((c) => at(c.source.answeredAt) < at(q.createdAt) && questionSimilarity(c.source.text, q.text) >= DETECT.questionSimilarity);
       if (known) known.repeats.push(q);
-      // (Only what a person answered is "decided": the foreman's answers are operational, and are its own.)
+      // (Only what a person answered is "decided": the answers of the foreman — removed 2026-11-27 — in old records were its own.)
       else if (q.answeredAt && answerOf(q) && q.answeredBy?.kind !== 'foreman') clusters.push({ source: q, repeats: [] });
     }
     for (const { source, repeats } of clusters) {
@@ -661,7 +661,7 @@ function stallText(cause: StallCause, found: Stall[], project: Project): { title
     case 'assignee_unavailable':
       return { title: `Tasks in ${project.name} are assigned to someone who is not available`, why: `${plural(n, 'ready task')} of ${project.name} wait (typically ${typical}) for ${list(subjects)}, who ${subjects.length === 1 ? 'is' : 'are'} marked as not available for work.`, remedy: 'Give the tasks to someone else, or switch "Available for work" back on in their profile.' };
     case 'unassigned_no_auto':
-      return { title: `Ready tasks in ${project.name} wait for someone to assign them`, why: `${n} times ${days} a ready task of ${project.name} waited (typically ${typical}) with nobody assigned, while someone suitable had nothing in progress (${list(subjects, 3)}). The project does not assign work by itself.`, remedy: `Switch on "auto-assign" for ${project.name}, or let a foreman hand out ready work.` };
+      return { title: `Ready tasks in ${project.name} wait for someone to assign them`, why: `${n} times ${days} a ready task of ${project.name} waited (typically ${typical}) with nobody assigned, while someone suitable had nothing in progress (${list(subjects, 3)}). The project does not assign work by itself.`, remedy: `Switch on "auto-assign" for ${project.name}.` };
     case 'nobody_qualified':
       return { title: `Nobody on ${project.name} takes ${list(subjects, 3)} tasks`, why: `${n} times ${days} a ready task of ${project.name} waited (typically ${typical}) because no employee on the project has a role that is given that kind of task (${list(subjects)}).`, remedy: 'Hire or lend someone with a suitable role, or assign these tasks by hand.' };
     case 'ready_unexplained':
@@ -669,7 +669,7 @@ function stallText(cause: StallCause, found: Stall[], project: Project): { title
     case 'waiting_approval':
       return { title: `Approvals in ${project.name} wait a long time for you`, why: `${plural(n, 'permission request')} in ${project.name} waited more than ${DETECT.stallAnswerMinutes} minutes for a decision ${days} (typically ${typical}). The employee's task stands still until you decide.`, remedy: "Give these employees working hours that match yours, so work is not started when nobody can approve. For routine commands, a suggestion to pre-approve them appears here once you have approved the same kind three times." };
     case 'waiting_answer':
-      return { title: `Questions in ${project.name} wait a long time for an answer`, why: `${plural(n, 'question')} from employees in ${project.name} waited more than ${DETECT.stallAnswerMinutes} minutes for an answer ${days} (typically ${typical}). The task stands still until the answer comes.`, remedy: 'A foreman can answer employees\' questions first and pass on only what needs you (Settings → Foreman; each round uses Claude usage). Or give these employees working hours that match yours.' };
+      return { title: `Questions in ${project.name} wait a long time for an answer`, why: `${plural(n, 'question')} from employees in ${project.name} waited more than ${DETECT.stallAnswerMinutes} minutes for an answer ${days} (typically ${typical}). The task stands still until the answer comes.`, remedy: 'Give these employees working hours that match yours.' };
     case 'session_down':
       return { title: `Sessions in ${project.name} stop mid-task and stay down`, why: `${n} times ${days} a session stopped while its employee had a task of ${project.name} in progress and stayed down (typically ${typical})${subjects.length ? ` — on ${list(subjects.map((s) => `"${s}"`))}` : ''}.`, remedy: 'Start the employee again from their menu when it happens; the conversation resumes. If it is always the same machine, look at what stops sessions there (a restart, sleep, or running out of memory).' };
     default: {

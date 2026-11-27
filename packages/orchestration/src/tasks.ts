@@ -341,12 +341,10 @@ export class TaskManager {
 
   /**
    * May this employee be given this task at all? Not across the line between the shared office and a member's own
-   * computer (whoever asks: the task's text, its files and its project would go with it), and never the foreman,
-   * who supervises and does not take tasks — a review is the one kind of task that is not "work" in that sense,
-   * and it is not given to the foreman either.
+   * computer (whoever asks: the task's text, its files and its project would go with it), and never a team lead,
+   * who hands work on and does not take tasks.
    */
   mayTake(e: Employee, task: Pick<Task, 'projectId' | 'key'> & { kind?: string }): void {
-    if (e.roleKey === 'foreman') throw new EngineError(`${e.name} is the foreman and does not take tasks.`);
     if (e.roleKey === LEAD_ROLE) throw new EngineError(`${e.name} is a team lead and does not take tasks: tell them what you want, and they hand it to the right one.`);
     if (!this.canSee(e, task as Task)) throw new EngineError(`${e.name} cannot take ${task.key}: work does not cross between the shared office and a member's own computer.`);
   }
@@ -879,7 +877,7 @@ export class TaskManager {
     const pool = this.core.employees.filter((e) => !e.selfDriven && !this.eng.rent.isWalled(e.id) && this.isFree(e) && sameComputer(e) && (e.projectId === task.projectId || e.projectId === null || !!e.alsoProjectIds?.includes(task.projectId)));
     let best: { e: Employee; score: number; reason: string | null } | undefined;
     for (const e of pool) {
-      // A foreman supervises; work is never routed to one.
+      // A team lead hands work on; work is never routed to one.
       if (directsOthers(e.roleKey)) continue;
       const role = roleByKey(e.roleKey);
       let score = 0;
@@ -1278,7 +1276,7 @@ export class TaskManager {
     const to = this.eng.comms.resolveTeammate(from, toRef);
     if (!to || to.archived) return { text: `No teammate matches "${toRef}". Use get_team.`, isError: true };
     if (!to.hostId) return { text: `${to.name} has no machine to work on; choose someone else or tell the boss.`, isError: true };
-    if (directsOthers(to.roleKey)) return { text: `${to.name} is ${to.roleKey === 'foreman' ? 'the foreman' : 'a team lead'} and does not take tasks. Hand it to someone who does the work.`, isError: true };
+    if (directsOthers(to.roleKey)) return { text: `${to.name} is a team lead and does not take tasks. Hand it to someone who does the work.`, isError: true };
     // Someone from another project (the specialist for this, in an office of small projects) is lent to this one.
     const cannot = this.lend(to, task.projectId);
     if (cannot) return { text: cannot, isError: true };
@@ -1936,7 +1934,7 @@ export class TaskManager {
     if (pool[0] || this.core.settings.employeesManageBoard === false) return pool[0];
     // No reviewer by trade on the team. Where employees keep the board themselves, a colleague who does this kind of
     // work reviews it — a second pair of eyes from the team, instead of the task waiting for the boss. Never the
-    // author, never a foreman or a person's own session, never across the line to a member's own computer.
+    // author, never a team lead or a person's own session, never across the line to a member's own computer.
     const author = this.core.employees.get(task.assigneeId);
     const peers = this.core.employees.filter(
       (e) => !e.archived && e.id !== task.assigneeId && !task.helperIds?.includes(e.id) && !directsOthers(e.roleKey) && !e.selfDriven && !!e.hostId && e.schedule.available && this.canSee(e, task) && (e.projectId === task.projectId || !!e.alsoProjectIds?.includes(task.projectId)),
@@ -1976,7 +1974,7 @@ export class TaskManager {
     if (!bossOnly) {
       if (reviewerRef && author) reviewer = this.eng.comms.resolveTeammate(author, reviewerRef);
       reviewer = reviewer ?? this.core.employees.get(task.reviewerId) ?? this.pickReviewer(task);
-      // Whoever was named: not the author, not the foreman, not somebody on the other side of the line.
+      // Whoever was named: not the author, not a team lead, not somebody on the other side of the line.
       if (reviewer && (reviewer.id === task.assigneeId || task.helperIds?.includes(reviewer.id) || directsOthers(reviewer.roleKey) || reviewer.archived || !this.canSee(reviewer, task))) reviewer = this.pickReviewer(task);
       if (reviewer && reviewer.id === task.assigneeId) reviewer = undefined;
       // A code reviewer comes first: a colleague named by the author (or the one of an earlier round) who is not one
@@ -2422,7 +2420,7 @@ export class TaskManager {
       if (!name) return null;
       const to = name.toLowerCase() === by.name.toLowerCase() ? by : this.eng.comms.resolveTeammate(by, name);
       if (!to || to.archived) throw new EngineError(`task ${i} ("${truncate(String(spec?.title ?? ''), 40)}"): no teammate matches "${name}". Use get_team for exact names.`);
-      if (directsOthers(to.roleKey)) throw new EngineError(`task ${i}: ${to.name} is ${to.roleKey === 'foreman' ? 'the foreman' : 'a team lead'} and does not take tasks.`);
+      if (directsOthers(to.roleKey)) throw new EngineError(`task ${i}: ${to.name} is a team lead and does not take tasks.`);
       return to;
     });
     for (const [i, to] of whom.entries()) {

@@ -412,7 +412,7 @@ export class CentralContext {
   /** What the office knows by itself, never typed: who is here and on what, and the projects. */
   private derived(e: Employee): ContextItem[] {
     const team = this.core.employees
-      .filter((x) => !x.archived && x.id !== e.id && x.roleKey !== 'foreman' && this.eng.rent.reaches(e, x))
+      .filter((x) => !x.archived && x.id !== e.id && this.eng.rent.reaches(e, x))
       .slice(0, 40)
       .map((x) => `${x.name} (${x.title}${x.projectId ? `, ${this.core.projects.get(x.projectId)?.name ?? ''}` : ''})`);
     const projects = this.core.projects.filter((p) => p.status !== 'archived' && (!this.eng.hosts.memberOfHost(p.hostId) || this.eng.hosts.memberOfHost(p.hostId) === this.eng.hosts.memberOfHost(e.hostId))).slice(0, 30).map((p) => p.name);

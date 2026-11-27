@@ -560,8 +560,6 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     // The percentages are for everyone in the office (the clocks on the walls); the account's e-mail and organisation
     // only for those who may work on the machine it lives on — its member and owners, or colleagues for a shared machine.
     api.get('/usage', async (req) => engine.sessions.accountUsage().map((a) => (allowed(whoOf(req), 'work', engine.hosts.memberOfHost(a.hostId)) && !closedTo(engine, whoOf(req), engine.hosts.memberOfHost(a.hostId)) ? a : { ...a, email: null, organization: null })));
-    // The foreman: who it is, the round in flight and the last ones, and what needs attention right now (owner only).
-    api.get('/foreman', async () => engine.foreman.status());
     // `hasPassword`: may this member sign in with a name and password; `passwordSession`: is this very session such a sign-in.
     // One's own character: kept for the person, drawn for them in every window (docs/CHARACTER.md).
     api.get('/me/character', async (req) => ({ look: characters.get(whoOf(req).id) }));
@@ -823,7 +821,6 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           changed,
           ...(changed.includes('workersInheritMcp') ? { workersInheritMcp: after.workersInheritMcp } : {}),
           ...(changed.includes('selfImprovement') ? { selfImprovement: after.selfImprovement } : {}),
-          ...(changed.includes('foreman') ? { foreman: after.foreman } : {}),
           ...(changed.includes('autoAsksHighRisk') ? { autoAsksHighRisk: after.autoAsksHighRisk } : {}),
           ...(changed.includes('unrestrictedAsksHighRisk') ? { unrestrictedAsksHighRisk: after.unrestrictedAsksHighRisk } : {}),
           ...(changed.includes('releaseGate') ? { releaseGate: after.releaseGate } : {}),

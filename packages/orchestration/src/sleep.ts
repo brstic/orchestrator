@@ -1,6 +1,5 @@
 import type { AgentSession, Employee } from '@orchestrator/contracts';
 import type { Engine } from './engine.ts';
-import { FOREMAN_ROLE } from './foreman.ts';
 
 /** What a session may be doing and still be put to sleep: between turns with nothing going on. */
 const RESTING = new Set(['idle', 'waiting_input', 'task_complete', 'blocked']);
@@ -16,7 +15,7 @@ const RESTING = new Set(['idle', 'waiting_input', 'task_complete', 'blocked']);
  *
  * A session is only put to sleep when nothing can be lost by it: it is between turns, has no task in hand, no
  * question or approval open, is not waiting for a colleague, nothing on its way to it, nobody at its terminal, is
- * not in a meeting, and (the foreman's) is not in the middle of a round.
+ * and is not in a meeting.
  */
 export class Sleeper {
   private eng: Engine;
@@ -81,7 +80,6 @@ export class Sleeper {
     if (s.waitingOn) return 'they are waiting for a colleague';
     if (this.eng.comms.pending(employee.id)) return 'something is on its way to them';
     if (this.eng.meetings.isBusy(employee.id) || this.eng.meetings.activeFor(employee.id)) return 'they are in a meeting';
-    if (employee.roleKey === FOREMAN_ROLE && this.eng.foreman.inRound()) return 'a round is in progress';
     const since = Math.max(Date.parse(s.activitySince) || 0, Date.parse(s.lastEventAt ?? '') || 0, Date.parse(s.startedAt) || 0);
     if (now - since < idle) return 'it has not been idle long enough';
     return null;

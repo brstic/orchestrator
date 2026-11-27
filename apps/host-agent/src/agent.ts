@@ -1633,7 +1633,7 @@ export class HostAgent {
       }
     }
     // The office's own files on this machine — other sessions' folders (each holds that session's token for the
-    // office's tools: the foreman's among them), this agent's records, and the office's data where it runs here (its
+    // office's tools), this agent's records, and the office's data where it runs here (its
     // owner token, the vault's key). Every session runs as the same user and could open them; none has a reason to.
     const reach = this.officeFiles(t);
     const named = ['file_path', 'path', 'notebook_path'].map((k) => payload.tool_input?.[k]).find((v): v is string => typeof v === 'string' && !!v);

@@ -5,7 +5,7 @@
  * enrolled the way that part ends: with the one-time token the office gave the member). The server is theirs like
  * their computer until they share it; shared, it is a machine of the office that colleagues work on, and it stays
  * theirs to take back or remove. And a member can close their room: then what is on their own computers is theirs
- * alone — the owners of the office and the foreman are kept out like everyone else.
+ * alone — the owners of the office are kept out like everyone else.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';

@@ -40,12 +40,12 @@ const task = (id: string, projectId: string, assigneeId: string | null) => ({
 });
 
 const hosts = [host('h-shared', null), host('h-jovan', 'jovan')];
-const employees = [employee('e-shared', 'h-shared'), employee('e-jovan', 'h-jovan'), employee('e-foreman', 'h-shared', 'foreman')];
+const employees = [employee('e-shared', 'h-shared'), employee('e-jovan', 'h-jovan')];
 const sessions = [session('s-shared', 'h-shared', 'e-shared'), session('s-jovan', 'h-jovan', 'e-jovan')];
 const projects = [project('p-shared', 'h-shared'), project('p-jovan', 'h-jovan')];
 const tasks = [task('t-shared', 'p-shared', 'e-shared'), task('t-jovan', 'p-jovan', 'e-jovan')];
 const settings = {
-  tv: { bookmarks: [] }, radio: { stations: [] }, companyName: 'Acme', ownerName: 'Boss', gamification: true, nlFallback: true, selfImprovement: { enabled: true }, foreman: { enabled: true }, workersInheritMcp: true, employeesManageBoard: true, employeesBrowser: true, longMemory: true,
+  tv: { bookmarks: [] }, radio: { stations: [] }, companyName: 'Acme', ownerName: 'Boss', gamification: true, nlFallback: true, selfImprovement: { enabled: true }, workersInheritMcp: true, employeesManageBoard: true, employeesBrowser: true, longMemory: true,
   whipApproves: true, accountFailover: true, autoAsksHighRisk: false, unrestrictedAsksHighRisk: false, projectZones: true, approachZoom: true, sleepAfterMinutes: 45, quality: 'high', keybindings: { tasks: 'T' }, lastSeenAt: 'yesterday',
 };
 const event = (over: Record<string, unknown>) => ({ id: 'ev', seq: 1, ts: 't', type: 'agent.message', source: { kind: 'hook', hostId: 'h-shared', detail: SECRET }, correlationId: SECRET, hostId: 'h-shared', sessionId: 's-shared', employeeId: 'e-shared', taskId: 't-shared', projectId: 'p-shared', summary: `${SECRET} said`, data: { text: SECRET, fromEmployeeId: 'e-shared', toEmployeeId: 'e-jovan' }, ...over });
@@ -87,7 +87,7 @@ test('the state a visitor is sent holds nothing of the machines, the Claude that
 
 test('what a visitor does see: who is here, what they are, what state they are in, and how the shared work stands', () => {
   const seen = stateFor(engine, mila, state);
-  // Everyone is in the scene — members' own employees too, and the foreman — as a person at a desk.
+  // Everyone is in the scene — members' own employees too — as a person at a desk.
   assert.deepEqual(seen.employees.map((e) => [e.id, e.name, e.title, e.roleKey, e.deskId, e.projectId]), employees.map((e) => [e.id, e.name, e.title, e.roleKey, e.deskId, e.projectId]));
   assert.deepEqual(seen.sessions.map((s) => [s.id, s.employeeId, s.hostId, s.status, s.activity]), sessions.map((s) => [s.id, s.employeeId, s.hostId, s.status, s.activity]));
   // Machines only as the rooms they make: whose they are and whether they are there.

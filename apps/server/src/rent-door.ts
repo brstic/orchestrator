@@ -284,7 +284,7 @@ export class RentDoor {
         // Whom this owner can rent out: those who do the work on the office's own machines, and on this owner's own
         // computer (they work while it is connected).
         employees: engine.core.employees
-          .filter((e) => !e.archived && e.roleKey !== 'foreman' && e.roleKey !== LEAD_ROLE && !e.selfDriven && (!engine.hosts.memberOfHost(e.hostId) || engine.hosts.memberOfHost(e.hostId) === me))
+          .filter((e) => !e.archived && e.roleKey !== LEAD_ROLE && !e.selfDriven && (!engine.hosts.memberOfHost(e.hostId) || engine.hosts.memberOfHost(e.hostId) === me))
           .map((e) => ({
             id: e.id,
             name: e.name,

@@ -126,6 +126,7 @@ test('it finds where things are on its member’s machines, and hires there — 
 
   for (const [args, said] of [
     [{ name: 'Cy', role: 'backend', why: 'billing work' }, /Say where they work/],
+    // (The foreman is no longer a role at all: removed 2026-11-27.)
     [{ name: 'Cy', role: 'foreman', folder: path.join(mine.root, 'billing-api'), why: 'x' }, /is not a role you can hire/],
     [{ name: 'Cy', role: 'lead', folder: path.join(mine.root, 'billing-api'), why: 'x' }, /is not a role you can hire/],
     [{ name: 'Cy', role: 'backend', folder: path.join(mine.root, 'billing-api') }, /Say in "why"/],

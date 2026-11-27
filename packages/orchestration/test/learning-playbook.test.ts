@@ -205,7 +205,7 @@ test('settings: on by default, the budget kept within bounds', () => {
 
 // ───────────────────────── with an office ─────────────────────────
 
-/** An engine whose one host is "online" but runs nothing (as in foreman.test.ts): no session is ever started. */
+/** An engine whose one host is "online" but runs nothing: no session is ever started. */
 const link: AgentLink = { rpc: () => Promise.reject(new Error('this test host runs nothing')), isOnline: () => true, respondHook: () => false, disconnect: () => undefined };
 
 interface Office {

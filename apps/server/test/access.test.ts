@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { OWNERS_ONLY, allowed, closedTo, eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, maySee, memberOf, outcomesScopeFor, stateFor, type Who, mayReadRoutine } from '../src/access.ts';
+import { allowed, closedTo, eventFor, mayCall, mayDrive, mayReadMessage, mayReadQuestion, maySee, memberOf, outcomesScopeFor, stateFor, type Who, mayReadRoutine } from '../src/access.ts';
 
 /** An office with one shared machine and Jovan's own computer, and one employee, session, project, task and question on each. */
 const table = <T extends { id: string }>(rows: T[]) => ({ get: (id: string) => rows.find((r) => r.id === id) });
@@ -11,12 +11,12 @@ const engine = {
   hosts: { isClosed: (id: string | null | undefined) => !!id && closed.has(id), closedMembers: () => [...closed] },
   core: {
     hosts: table([{ id: 'h-shared', memberId: null }, { id: 'h-jovan', memberId: 'jovan' }, { id: 'h-jovan-server', memberId: 'jovan', ownerId: 'jovan' }, { id: 'h-jovan-lent', memberId: null, ownerId: 'jovan' }]),
-    employees: table([{ id: 'e-shared', hostId: 'h-shared' }, { id: 'e-jovan', hostId: 'h-jovan' }, { id: 'e-on-server', hostId: 'h-jovan-server' }, { id: 'e-on-lent', hostId: 'h-jovan-lent' }, { id: 'e-foreman', hostId: 'h-shared', roleKey: 'foreman' }]),
-    sessions: table([{ id: 's-shared', hostId: 'h-shared', employeeId: 'e-shared' }, { id: 's-jovan', hostId: 'h-jovan', employeeId: 'e-jovan' }, { id: 's-foreman', hostId: 'h-shared', employeeId: 'e-foreman' }]),
+    employees: table([{ id: 'e-shared', hostId: 'h-shared' }, { id: 'e-jovan', hostId: 'h-jovan' }, { id: 'e-on-server', hostId: 'h-jovan-server' }, { id: 'e-on-lent', hostId: 'h-jovan-lent' }]),
+    sessions: table([{ id: 's-shared', hostId: 'h-shared', employeeId: 'e-shared' }, { id: 's-jovan', hostId: 'h-jovan', employeeId: 'e-jovan' }]),
     projects: table([{ id: 'p-shared', hostId: 'h-shared' }, { id: 'p-jovan', hostId: 'h-jovan' }, { id: 'p-nohost', hostId: null }]),
     tasks: table([{ id: 't-shared', projectId: 'p-shared', assigneeId: null }, { id: 't-jovan', projectId: 'p-jovan', assigneeId: 'e-jovan' }, { id: 't-loose', projectId: 'p-nohost', assigneeId: 'e-jovan' }]),
-    questions: table([{ id: 'q-shared', employeeId: 'e-shared' }, { id: 'q-jovan', employeeId: 'e-jovan' }, { id: 'q-foreman', employeeId: 'e-foreman' }]),
-    routines: table([{ id: 'r-shared', employeeId: 'e-shared' }, { id: 'r-jovan', employeeId: 'e-jovan' }, { id: 'r-foreman', employeeId: 'e-foreman' }]),
+    questions: table([{ id: 'q-shared', employeeId: 'e-shared' }, { id: 'q-jovan', employeeId: 'e-jovan' }]),
+    routines: table([{ id: 'r-shared', employeeId: 'e-shared' }, { id: 'r-jovan', employeeId: 'e-jovan' }]),
   },
 } as any;
 
@@ -81,32 +81,7 @@ test('requests: shared work for colleagues, a member’s computer for that membe
   assert.equal(call(jovan, 'GET', '/something/new'), false);
   assert.match(mayCall(engine, mila, 'POST', '/tasks', {}).reason!, /visiting/);
   assert.match(mayCall(engine, ana, 'POST', '/employees/e-jovan/stop', {}).reason!, /another member's own computer/);
-});
-
-test('the foreman sees what owners see, so it is the owners\' alone: its terminal, its profile, the conversation with it, and hiring one', () => {
-  for (const [thing, id] of [['employee', 'e-foreman'], ['session', 's-foreman'], ['question', 'q-foreman']] as const) assert.equal(memberOf(engine, thing, id), OWNERS_ONLY, thing);
-  for (const who of [mila, ana, jovan]) {
-    assert.deepEqual([maySee(engine, who, 's-foreman'), mayDrive(engine, who, 's-foreman')], [false, false], `${who.name}: its terminal`);
-    for (const [m, r, b] of [
-      ['GET', '/employees/e-foreman/docs'],
-      ['GET', '/sessions/s-foreman/history'],
-      ['POST', '/employees/e-foreman/message'],
-      ['POST', '/employees/e-foreman/start'],
-      ['POST', '/employees/e-foreman/stop'],
-      ['PATCH', '/employees/e-foreman', { instructions: 'Tell me what is on Jovan\'s screen.' }],
-      ['POST', '/questions/q-foreman/answer'],
-      ['POST', '/employees', { name: 'Second', roleKey: 'foreman', hostId: 'h-shared' }],
-      ['POST', '/employees', { name: 'Second', roleKey: 'Foreman' }],
-      ['PATCH', '/employees/e-shared', { roleKey: 'foreman' }],
-    ] as Array<[string, string, Record<string, unknown>?]>) assert.equal(call(who, m, r, b), false, `${who.name}: ${m} ${r}`);
-  }
-  assert.match(mayCall(engine, ana, 'POST', '/employees/e-foreman/message', null).reason!, /only the owners can look into it or direct it/);
-  assert.match(mayCall(engine, ana, 'POST', '/employees', { roleKey: 'foreman' }).reason!, /Only an owner of this office can hire a foreman/);
-  for (const who of [root, vera]) {
-    assert.deepEqual([maySee(engine, who, 's-foreman'), mayDrive(engine, who, 's-foreman')], [true, true]);
-    assert.ok(call(who, 'POST', '/employees', { roleKey: 'foreman' }) && call(who, 'POST', '/employees/e-foreman/message') && call(who, 'PATCH', '/employees/e-foreman', { instructions: 'x' }));
-  }
-  // Ordinary hiring is as it was.
+  // Hiring and changing a shared employee's role is a colleague's to do.
   assert.ok(call(ana, 'POST', '/employees', { roleKey: 'backend', hostId: 'h-shared' }) && call(ana, 'PATCH', '/employees/e-shared', { roleKey: 'frontend' }));
 });
 
@@ -116,34 +91,21 @@ test('terminals', () => {
   assert.deepEqual([maySee(engine, jovan, 's-jovan'), mayDrive(engine, jovan, 's-jovan'), mayDrive(engine, vera, 's-jovan')], [true, true, true]);
 });
 
-test('what is said on a member’s own computer is theirs and the owners’; of the foreman’s rounds everyone gets the outline only', () => {
+test('what is said on a member’s own computer is theirs and the owners’', () => {
   const ev = (type: string, employeeId: string, data: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({ id: `${type}-${employeeId}`, seq: 1, ts: '2026-11-10T10:00:00.000Z', type, source: { kind: 'server' }, correlationId: null, hostId: null, sessionId: null, employeeId, taskId: null, projectId: null, summary: `about ${employeeId}`, data, ...extra }) as any;
   const turn = (id: string) => ev('agent.turn_finished', id, { lastMessage: 'secret reply' });
   assert.deepEqual([root, vera, jovan, ana, mila].map((who) => !!eventFor(engine, who, turn('e-jovan'))), [true, true, true, false, false]);
   assert.deepEqual([jovan, ana, mila].map((who) => !!eventFor(engine, who, turn('e-shared'))), [true, true, true]);
   assert.equal(eventFor(engine, ana, ev('host.offline', 'x', {}, { employeeId: null, hostId: 'h-jovan' })), null, 'also by machine');
-  // The foreman: where it is, for everyone; what the round is about, for owners.
-  const started = ev('foreman.round.started', 'e-foreman', { roundId: 'r1', reason: 'attention', counts: { question: 1 }, items: [{ kind: 'question', text: 'Jovan’s employee asks: which key?' }] });
-  assert.equal(eventFor(engine, vera, started), started);
-  for (const who of [jovan, ana, mila]) assert.deepEqual(eventFor(engine, who, started)!.data, { roundId: 'r1', reason: 'attention', counts: { question: 1 } });
-  const visit = ev('foreman.visit', 'e-foreman', { fromEmployeeId: 'e-foreman', toEmployeeId: 'e-jovan', roundId: 'r1', action: 'answer', answer: 'use the staging key' }, { sessionId: 's-jovan', projectId: 'p-jovan' });
-  const seen = eventFor(engine, mila, visit)!;
-  assert.deepEqual([seen.data.toEmployeeId, seen.data.action, 'answer' in seen.data, seen.sessionId, seen.projectId], ['e-jovan', 'answer', false, null, null]);
-  const finished = ev('foreman.round.finished', 'e-foreman', { roundId: 'r1', summary: 'told Lola the key' });
-  assert.ok(!JSON.stringify(eventFor(engine, ana, finished)).includes('told Lola'));
-  assert.equal(eventFor(engine, ana, ev('foreman.escalated', 'e-foreman', { text: 'x' })), null, 'the rest of what it does is the owners’');
   // Messages and questions.
   const msg = (to: string, from: { kind: string; id: string | null }) => ({ id: 'm', toEmployeeId: to, from: { ...from, name: 'x' } }) as any;
   const reads = (m: any) => [vera, jovan, ana, mila].map((who) => mayReadMessage(engine, who, m));
   assert.deepEqual(reads(msg('e-jovan', { kind: 'owner', id: null })), [true, true, false, false], 'to a member’s employee');
-  assert.deepEqual(reads(msg('e-jovan', { kind: 'employee', id: 'e-foreman' })), [true, true, false, false], 'what the foreman told a member’s employee is that member’s to read');
-  assert.deepEqual(reads(msg('e-shared', { kind: 'employee', id: 'e-foreman' })), [true, true, true, true], 'and what it told a shared one is everyone’s');
-  assert.deepEqual(reads(msg('e-foreman', { kind: 'owner', id: null })), [true, false, false, false], 'what is said to the foreman is the owners’');
   assert.deepEqual(reads(msg('e-shared', { kind: 'employee', id: 'e-jovan' })), [true, true, false, false], 'a member’s employee writing to a shared one');
-  assert.deepEqual([vera, jovan, ana].map((who) => mayReadQuestion(engine, who, { employeeId: 'e-foreman' } as any)), [true, false, false]);
-  const state = { events: [turn('e-jovan'), turn('e-shared'), started], messages: [msg('e-jovan', { kind: 'owner', id: null }), msg('e-shared', { kind: 'owner', id: null })], questions: [{ employeeId: 'e-jovan' }, { employeeId: 'e-shared' }], employees: ['kept'] } as any;
+  assert.deepEqual([vera, jovan, ana].map((who) => mayReadQuestion(engine, who, { employeeId: 'e-jovan' } as any)), [true, true, false]);
+  const state = { events: [turn('e-jovan'), turn('e-shared')], messages: [msg('e-jovan', { kind: 'owner', id: null }), msg('e-shared', { kind: 'owner', id: null })], questions: [{ employeeId: 'e-jovan' }, { employeeId: 'e-shared' }], employees: ['kept'] } as any;
   const forAna = stateFor(engine, ana, state);
-  assert.deepEqual([forAna.events.length, forAna.messages.length, forAna.questions.length, forAna.employees], [2, 1, 1, ['kept']]);
+  assert.deepEqual([forAna.events.length, forAna.messages.length, forAna.questions.length, forAna.employees], [1, 1, 1, ['kept']]);
   assert.equal(stateFor(engine, vera, state), state);
 });
 
@@ -168,7 +130,7 @@ test('measured outcomes: everyone may ask, and what is on a member’s own compu
   }) as any;
   const tasks = [done('t-shared', 'p-shared', 'e-shared', 2), done('t-jovan', 'p-jovan', 'e-jovan', 3, 2), done('t-loose', 'p-nohost', 'e-jovan', 4, 1)];
   const lesson = (id: string, scope: string, employeeId: string | null, projectId: string | null) => ({ id, scope, employeeId, projectId, text: employeeId || projectId === 'p-jovan' ? `Use the staging key from the vault (${id})` : `Run the tests before completing (${id})`, appliesWhen: '', source: 'retrospective', evidence: [], status: 'active', authoredBy: { kind: 'employee', id: employeeId, name: 'x' }, appliedCount: 0, createdAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z' }) as any;
-  const lessons = [lesson('l-company', 'company', null, null), lesson('l-shared', 'project', null, 'p-shared'), lesson('l-jovan-project', 'project', null, 'p-jovan'), lesson('l-jovan-own', 'employee', 'e-jovan', null), lesson('l-foreman', 'employee', 'e-foreman', null)];
+  const lessons = [lesson('l-company', 'company', null, null), lesson('l-shared', 'project', null, 'p-shared'), lesson('l-jovan-project', 'project', null, 'p-jovan'), lesson('l-jovan-own', 'employee', 'e-jovan', null)];
   const applied = (id: string, projectId: string | null, employeeId: string | null, action: any) => ({ id, kind: 'allow_rule', title: `Change ${id}`, rationale: '', evidence: [], projectId, employeeId, action, status: 'applied', dedupeKey: id, createdAt: '2026-11-01T00:00:00.000Z', decidedAt: '2026-11-01T12:00:00.000Z' }) as any;
   const improvements = [applied('i-shared', 'p-shared', null, { type: 'project.policy.allow', projectId: 'p-shared', rule: 'Bash(ls:*)' }), applied('i-jovan', 'p-jovan', null, { type: 'project.policy.allow', projectId: 'p-jovan', rule: 'Bash(ls:*)' }), applied('i-jovan-autonomy', null, 'e-jovan', { type: 'employee.autonomy', employeeId: 'e-jovan', level: 'standard' })];
   const names = { project: (id: string) => id, employee: (id: string) => id };
@@ -177,17 +139,17 @@ test('measured outcomes: everyone may ask, and what is on a member’s own compu
     const r = reportFor(who);
     return { tasks: r.tasks, employees: r.trends.byEmployee.map((x) => x.key).sort(), projects: r.trends.byProject.map((x) => x.key).sort(), lessons: r.lessons.map((l) => l.lessonId), improvements: r.improvements.map((i) => i.improvementId), firstPassRate: r.trends.overall.firstPassRate };
   };
-  const everything = { tasks: 3, employees: ['e-jovan', 'e-shared'], projects: ['p-jovan', 'p-nohost', 'p-shared'], lessons: ['l-company', 'l-shared', 'l-jovan-project', 'l-jovan-own', 'l-foreman'], improvements: ['i-shared', 'i-jovan', 'i-jovan-autonomy'], firstPassRate: 0.333 };
+  const everything = { tasks: 3, employees: ['e-jovan', 'e-shared'], projects: ['p-jovan', 'p-nohost', 'p-shared'], lessons: ['l-company', 'l-shared', 'l-jovan-project', 'l-jovan-own'], improvements: ['i-shared', 'i-jovan', 'i-jovan-autonomy'], firstPassRate: 0.333 };
   assert.equal(outcomesScopeFor(engine, root), null);
   assert.equal(outcomesScopeFor(engine, vera), null);
   assert.deepEqual(seen(vera), everything);
-  // Jovan sees the office's and his own — everything here except what is the foreman's.
-  assert.deepEqual(seen(jovan), { ...everything, lessons: everything.lessons.filter((l) => l !== 'l-foreman') });
+  // Jovan sees the office's and his own — everything here.
+  assert.deepEqual(seen(jovan), everything);
   // A colleague and a visitor: only what is shared. Jovan's failures are not in their figures, his lessons and changes not in their lists.
   for (const who of [ana, mila]) {
     assert.deepEqual(seen(who), { tasks: 1, employees: ['e-shared'], projects: ['p-shared'], lessons: ['l-company', 'l-shared'], improvements: ['i-shared'], firstPassRate: 1 }, who.name);
     const text = JSON.stringify(reportFor(who));
-    assert.ok(!/e-jovan|p-jovan|p-nohost|t-jovan|t-loose|l-jovan|i-jovan|e-foreman|vault|Private title/i.test(text), `${who.name}: nothing of Jovan's computer leaks`);
+    assert.ok(!/e-jovan|p-jovan|p-nohost|t-jovan|t-loose|l-jovan|i-jovan|vault|Private title/i.test(text), `${who.name}: nothing of Jovan's computer leaks`);
   }
   // The company lesson is judged, for Ana, from the one task she may see.
   assert.deepEqual([reportFor(ana).lessons[0]!.given, reportFor(vera).lessons[0]!.given], [1, 3]);
@@ -238,18 +200,14 @@ test('routines: set by whoever may work with the employee, read by whoever may r
     assert.equal(call(jovan, m, r, b), true, `Jovan: ${m} ${r}`);
     assert.equal(call(vera, m, r, b), true, `Vera: ${m} ${r}`);
   }
-  // The foreman's are the owners' alone.
-  for (const who of [ana, jovan]) assert.equal(call(who, 'POST', '/routines', { employeeId: 'e-foreman' }) || call(who, 'DELETE', '/routines/r-foreman'), false);
-  assert.ok(call(vera, 'POST', '/routines', { employeeId: 'e-foreman' }) && call(root, 'DELETE', '/routines/r-foreman'));
   assert.equal(memberOf(engine, 'routine', 'r-jovan'), 'jovan');
-  assert.equal(memberOf(engine, 'routine', 'r-foreman'), OWNERS_ONLY);
   // What an employee on a member's computer is told to repeat is content of that computer.
-  const routines = [{ id: 'r-shared', employeeId: 'e-shared' }, { id: 'r-jovan', employeeId: 'e-jovan' }, { id: 'r-foreman', employeeId: 'e-foreman' }];
+  const routines = [{ id: 'r-shared', employeeId: 'e-shared' }, { id: 'r-jovan', employeeId: 'e-jovan' }];
   const seen = (who: Who) => routines.filter((r) => mayReadRoutine(engine, who, r)).map((r) => r.id);
   assert.deepEqual(seen(mila), ['r-shared']);
   assert.deepEqual(seen(ana), ['r-shared']);
   assert.deepEqual(seen(jovan), ['r-shared', 'r-jovan']);
-  assert.deepEqual(seen(vera), ['r-shared', 'r-jovan', 'r-foreman']);
+  assert.deepEqual(seen(vera), ['r-shared', 'r-jovan']);
   const state = { events: [], messages: [], questions: [], routines } as any;
   assert.deepEqual(stateFor(engine, ana, state).routines.map((r: any) => r.id), ['r-shared']);
   assert.equal(stateFor(engine, root, state), state);
@@ -281,7 +239,6 @@ test('a closed room: what is on the member\'s own computers is theirs alone — 
   try {
     assert.deepEqual([root, vera, jovan].map((who) => closedTo(engine, who, 'jovan')), [true, true, false]);
     assert.equal(closedTo(engine, vera, null), false, 'what is shared is never closed');
-    assert.equal(closedTo(engine, ana, OWNERS_ONLY), false, 'nor is the foreman, which is no member\'s');
     // Terminals: nobody but Jovan watches or types — on his computer and on a server he keeps to himself.
     for (const sid of ['s-jovan']) assert.deepEqual(others.map((who) => maySee(engine, who, sid) || mayDrive(engine, who, sid)), [false, false, false, false]);
     assert.deepEqual([maySee(engine, jovan, 's-jovan'), mayDrive(engine, jovan, 's-jovan')], [true, true]);
@@ -307,7 +264,7 @@ test('a closed room: what is on the member\'s own computers is theirs alone — 
     assert.deepEqual(stateFor(engine, jovan, state).events.length, 2);
     // Figures: an owner's are counted without his computers while the room is closed.
     const scope = outcomesScopeFor(engine, vera)!;
-    assert.ok(scope && scope.employee('e-shared') && !scope.employee('e-jovan') && !scope.project('p-jovan') && scope.employee('e-foreman'));
+    assert.ok(scope && scope.employee('e-shared') && !scope.employee('e-jovan') && !scope.project('p-jovan'));
   } finally {
     closed.delete('jovan');
   }

@@ -7,7 +7,7 @@ import type { AgentRequest, AgentRpc, AgentToServer, ClientToServer, EntityKind,
 import type { Characters } from './characters.ts';
 import { hueOf, type Who } from './guests.ts';
 import { AUTONOMY_LEVELS, PROTOCOL_VERSION, ROLE_CATALOGUE, apart, cleanOutside, isAutonomyLevel, isEmote, matchRole, notificationFor, nowIso, roleByKey } from '@orchestrator/contracts';
-import { EngineError, FOREMAN_ROLE, type AgentLink, type Engine } from '@orchestrator/orchestration';
+import { EngineError, type AgentLink, type Engine } from '@orchestrator/orchestration';
 
 interface AgentConn {
   ws: WebSocket;
@@ -275,16 +275,15 @@ export class AgentHub implements AgentLink {
       let result: unknown;
       // A member's own computer asks for itself only. Its agent may name an employee who already lives on that
       // computer, or a new one — never one of the shared office or of another member (their messages and the
-      // office's tools would follow them to this machine), never the foreman, and never the level only an owner gives.
+      // office's tools would follow them to this machine), and never the level only an owner gives.
       const personal = eng.hosts.memberOfHost(c.hostId);
       const mine = (name: unknown) => {
         if (!personal || typeof name !== 'string' || !name) return;
         const existing = eng.core.employeeByName(name);
         if (!existing) return;
-        if (existing.hostId !== c.hostId || existing.roleKey === FOREMAN_ROLE) throw new Error(`"${existing.name}" is not an employee on this computer. From a member's own computer only its own employees can be named; choose another name for a new one.`);
+        if (existing.hostId !== c.hostId) throw new Error(`"${existing.name}" is not an employee on this computer. From a member's own computer only its own employees can be named; choose another name for a new one.`);
       };
       if (personal && req.method === 'create' && req.params.autonomy === 'unrestricted') throw new Error('Unrestricted is an owner\'s level to give, in the office (the employee\'s profile).');
-      if (personal && (req.method === 'bind' || req.method === 'create') && (roleByKey((req.params as { role?: string }).role ?? '') ?? matchRole((req.params as { role?: string }).role ?? ''))?.key === FOREMAN_ROLE) throw new Error('The foreman belongs to the office; it cannot be created from a member\'s own computer.');
       switch (req.method) {
         case 'bind': {
           const session = eng.core.sessions.get(req.params.sessionId);
@@ -420,8 +419,7 @@ export class ClientHub {
   }
 
   /**
-   * What is said on a member's own computer goes to that member and the owners only, and the foreman's rounds to
-   * everyone only in outline (see `access.ts`): the message as this connection gets it, or null for not at all.
+   * What is said on a member's own computer goes to that member and the owners only (see `access.ts`): the message as this connection gets it, or null for not at all.
    */
   private heardBy(c: ClientConn, msg: ServerToClient): ServerToClient | null {
     // A notification addressed to some people reaches their windows only (an owner's too).

@@ -522,7 +522,7 @@ test('undo only undoes its own change: a rule that was already there stays, a va
   assert.equal(oldLevel.status, 'applied');
 });
 
-test("a member's own computer: permissions change only on that member's own decisions; the foreman never", async () => {
+test("a member's own computer: permissions change only on that member's own decisions", async () => {
   const o = await office('trusted');
   const auto = o.eng.improver.autopilot;
   o.eng.core.put('host', hostOf({ id: 'pc', name: "Jovan's computer", local: false, memberId: 'm-jovan', memberName: 'Jovan' }));
@@ -562,12 +562,6 @@ test("a member's own computer: permissions change only on that member's own deci
   assert.match((auto.verdict(down) as any).why, /member's own computer/);
   assert.match((auto.verdict(reviewOff) as any).why, /member's own computer/);
 
-  // The foreman is an owner's alone, in either direction.
-  const mira = o.eng.employees.create({ name: 'Mira', roleKey: 'foreman', hostId: 'host-1', workingDir: '/tmp/x' });
-  const lower = proposal(o.eng, 'autonomy', { type: 'employee.autonomy', employeeId: mira.id, level: 'standard' });
-  o.eng.improver.autopilot.run();
-  assert.equal(lower.status, 'proposed');
-  assert.match((auto.verdict(lower) as any).why, /foreman is changed by an owner only/);
 });
 
 test('"safe" switches on a lesson that is scoped to one employee — once, and only their own', async () => {

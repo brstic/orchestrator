@@ -123,7 +123,7 @@ export interface MemberRoomPrefs {
   furniture?: MemberRoomFurniture[] | null;
   /**
    * The member closed their room: what is on their own computers and servers is theirs alone — nobody else, the
-   * owners of the office and the foreman included, looks into it or directs it, and nobody else walks in. Others
+   * owners of the office included, looks into it or directs it, and nobody else walks in. Others
    * still see that the employees are there and what state they are in.
    */
   locked?: boolean | null;
@@ -984,7 +984,10 @@ export interface Question {
   status: QuestionStatus;
   answer: string | null;
   decision: 'allow' | 'deny' | null;
-  /** Who answered, when it was not the owner's own reply: a foreman, or a project manager, answering on the owner's behalf. */
+  /**
+   * Who answered, when it was not the owner's own reply: a project manager answering on the owner's behalf.
+   * 'foreman' is only in records from before the foreman was removed (2026-11-27).
+   */
   answeredBy?: { kind: 'owner' | 'foreman' | 'manager'; id: ID | null; name: string } | null;
   /**
    * Asked about work a Project Manager put on the board: it waits for that manager's answer first, not the boss's (the
@@ -1330,7 +1333,7 @@ export interface XpEntry {
 /**
  * Who has worked the most in a calendar month (UTC), and for how long: the employee whose session spent the most
  * time in a working state (`isWorking`). It is this month's leader as soon as anybody has worked this month, and
- * last month's until then. Never a foreman or a team lead: they keep others working.
+ * last month's until then. Never a team lead: it keeps others working.
  */
 export interface EmployeeOfMonth {
   employeeId: ID;
@@ -1784,88 +1787,6 @@ export interface ImprovementAutopilot {
   history: Array<{ ts: ISODate; what: 'applied' | 'reverted' | 'kept'; by: string; note: string }>;
 }
 
-// ──────────────────────────── Foreman ────────────────────────────
-
-/**
- * Rounds of the foreman: the office's one supervisor (an employee with the `foreman` role, on one of the
- * office's own machines, with no desk). A round is one prompt delivered to the foreman's own Claude Code
- * session, so each one uses that account's Claude usage; the office decides when one is due without any model.
- */
-export interface ForemanSettings {
-  /** Nothing is ever delivered to a foreman while this is off. Hiring a foreman switches it on; the owner can pause it. */
-  enabled: boolean;
-  /** The shortest time between the end of one round and the start of the next. */
-  minGapSeconds: number;
-  /** With nothing waiting, one look around at most this often, and only if the office changed. 0 = never. */
-  quietCheckMinutes: number;
-  /** Employees' questions go to the foreman first. Permission requests never do. */
-  answersQuestions: boolean;
-  /** Someone whose session has sat between turns this long with nothing in progress is put in front of the foreman, once. 0 = never. */
-  idleMinutes: number;
-}
-
-/**
- * question: an employee asked and nobody answered. blocked: a blocked task. stalled: idle with a task in progress.
- * unassigned: ready work next to someone free. idle: a live session with nothing in progress, doing nothing.
- * waiting: an employee who cannot go on until a colleague answers or finishes, while that colleague is doing nothing.
- */
-export type ForemanAttentionKind = 'question' | 'blocked' | 'stalled' | 'unassigned' | 'idle' | 'waiting';
-
-/** One thing that calls for the foreman, computed from recorded state. */
-export interface ForemanAttentionItem {
-  /** Stable while the thing stays as it is; a round is only started for keys the foreman has not seen. */
-  key: string;
-  kind: ForemanAttentionKind;
-  text: string;
-  employeeId: ID | null;
-  taskId: ID | null;
-  questionId: ID | null;
-  projectId: ID | null;
-  since: ISODate;
-  /** Already put in front of the foreman in an earlier round. */
-  seen: boolean;
-  /** A question the foreman passed on to the owner. */
-  escalated: boolean;
-}
-
-export interface ForemanRound {
-  id: ID;
-  reason: 'attention' | 'quiet_check';
-  startedAt: ISODate;
-  finishedAt: ISODate | null;
-  /** finished = the foreman called finish_round; turn_ended = its turn ended without one. */
-  outcome: 'running' | 'finished' | 'turn_ended' | 'timed_out' | 'failed' | 'interrupted';
-  summary: string | null;
-  /** New items the round was started for, by kind. */
-  counts: Record<ForemanAttentionKind, number>;
-  fresh: number;
-  /** Items listed again that an earlier round had already shown. */
-  stillOpen: number;
-  /** Employees the foreman looked at during the round. */
-  visited: ID[];
-  actions: { answered: number; assigned: number; created: number; escalated: number; messaged: number };
-}
-
-export interface ForemanStatus {
-  settings: ForemanSettings;
-  /** The employee who does the rounds, if there is one. */
-  foreman: { id: ID; name: string; session: SessionStatus | null; activity: ActivityState | null } | null;
-  /** Further employees with the foreman role, from before there could only be one: they have the tools, but rounds go to one. */
-  otherForemen: string[];
-  /** Who the foreman is with right now (it looked at them, answered them, told them something) while a round runs. */
-  visiting: ID | null;
-  /** A round could be handed over right now. */
-  available: boolean;
-  problem: string | null;
-  round: ForemanRound | null;
-  lastRound: ForemanRound | null;
-  rounds: ForemanRound[];
-  attention: ForemanAttentionItem[];
-  /** The gap between rounds actually in force. */
-  minGapSeconds: number;
-  earliestNextRoundAt: ISODate | null;
-}
-
 // ───────────────────────── Office layout ─────────────────────────
 
 export interface Desk {
@@ -2063,8 +1984,6 @@ export interface OwnerSettings {
   /** Let a headless Claude run interpret commands the rule-based parser cannot. Uses tokens. */
   nlFallback: boolean;
   selfImprovement: SelfImprovementSettings;
-  /** The foreman's rounds (off by default). */
-  foreman: ForemanSettings;
   /**
    * false (default): workers load only the Orchestrator MCP server. true: they also load the
    * owner's own MCP servers and connectors — more tools, more tokens per request, and autonomous
@@ -2074,7 +1993,7 @@ export interface OwnerSettings {
   /**
    * true (default): any employee may keep the task board moving — release a task, unblock one (saying how), give a
    * task to a colleague, review a colleague's finished work, and start a colleague who is needed. false: those are
-   * the owner's (and, for assigning, the foreman's). Either way no employee approves a permission request, marks
+   * the owner's. Either way no employee approves a permission request, marks
    * work done without verification, or deletes anything.
    */
   employeesManageBoard?: boolean;
@@ -2083,7 +2002,7 @@ export interface OwnerSettings {
    * themselves or other agents, so that e.g. the project manager can put the others on a cheaper model when the
    * work does not need the most expensive"): an employee may set the model and the effort of their own and of a
    * colleague's sessions (the `set_model` tool), each change on the record with its reason. Not the level, not the
-   * account, not across to or from a member's own computer, never the foreman. false: those stay the owner's.
+   * account, not across to or from a member's own computer. false: those stay the owner's.
    */
   employeesSetModels?: boolean;
   /** Who reviews a finished task when nobody chose for it (`reviewDefaultOf`: a colleague, then the boss). */

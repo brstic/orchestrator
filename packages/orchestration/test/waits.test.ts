@@ -99,7 +99,7 @@ function move(t: Task, status: Task['status'], more: Partial<Task> = {}): void {
 
 before(async () => {
   store = new Store(':memory:');
-  eng = new Engine({ store, agents: link, publicUrl: 'http://127.0.0.1:1', timings: { deliverySettleMs: 0, deliveryConfirmMs: 50, wakeRetryMs: 40, colleagueWaitMs: 60_000, waitGoneGraceMs: 30, foremanSettleMs: 0, foremanWaitingMs: 60_000, sleepIdleMs: 60_000 } }, { send: () => undefined });
+  eng = new Engine({ store, agents: link, publicUrl: 'http://127.0.0.1:1', timings: { deliverySettleMs: 0, deliveryConfirmMs: 50, wakeRetryMs: 40, colleagueWaitMs: 60_000, waitGoneGraceMs: 30, sleepIdleMs: 60_000 } }, { send: () => undefined });
   const host: Host = { id: 'host-1', name: 'box', status: 'online', info: null, resources: null, enrolledAt: new Date().toISOString(), lastSeenAt: null, revokedAt: null, local: true };
   eng.core.put('host', host);
   eng.core.put('host', { ...host, id: 'host-2', name: 'far box', local: false });
@@ -110,8 +110,6 @@ before(async () => {
   for (const name of ['Ava', 'Ben', 'Cy', 'Dee', 'Eve']) id[name] = eng.employees.create({ name, roleKey: 'backend', projectId: id.shop, hostId: host.id, workingDir: `/tmp/${name.toLowerCase()}` }).id;
   id.Far = eng.employees.create({ name: 'Far', roleKey: 'backend', projectId: id.shop, hostId: 'host-2', workingDir: '/tmp/far' }).id;
   id.Mil = eng.employees.create({ name: 'Mil', roleKey: 'backend', projectId: id.private, hostId: 'pc', workingDir: '/tmp/mil' }).id;
-  id.Mira = eng.employees.create({ name: 'Mira', roleKey: 'foreman', hostId: host.id, workingDir: '/tmp/mira' }).id;
-  eng.core.updateSettings({ foreman: { enabled: false } } as any);
   for (const who of ['Ava', 'Ben', 'Cy']) await atDesk(who);
 });
 
@@ -279,10 +277,6 @@ test('no deadlocks: oneself, and a circle through one or more colleagues, are re
   // One's own task.
   const mine = taskFor('Ava', 'Ava builds the importer');
   assert.equal((await call('Ava', 'wait_for_colleague', { task: mine.key })).text, `${mine.key} is your own task: there is nobody to wait for.`);
-  // A foreman works in rounds and never waits; nobody waits for a foreman's answer.
-  await eng.sessions.start(id.Mira!);
-  assert.match((await call('Mira', 'wait_for_colleague', { task: mine.key })).text, /^A foreman does not wait for anyone/);
-  assert.match((await call('Ava', 'request_collaboration', { to: 'Mira', summary: 'x', wait: true })).text, /^Mira is the foreman and does not take requests\. Ask the boss \(ask_boss\)\. Nothing was sent\./);
   for (const who of ['Ava', 'Ben', 'Cy']) {
     await delivered(who);
     rested(sessionOf(who));
@@ -542,70 +536,6 @@ test('a session that waits is not put to sleep, gets no routine run, and is not 
   eng.routines.remove(r.id);
   eng.routines.remove(r2.id);
   for (const who of ['Ava', 'Ben', 'Cy']) {
-    await delivered(who);
-    rested(sessionOf(who));
-  }
-});
-
-test('the foreman: someone who waits is not "idle" or "stalled"; a colleague who does nothing while awaited is shown', async () => {
-  const kinds = (now: number) => eng.foreman.attention(now).map((i) => `${i.kind}:${i.text}`);
-  // Ava has a task in progress and stops to wait for Ben, who is at work on what she asked.
-  const hers = taskFor('Ava', 'Checkout page');
-  move(hers, 'IN_PROGRESS', { startedAt: new Date().toISOString(), delivery: { status: 'confirmed', via: 'terminal_paste', ts: new Date().toISOString(), detail: null } });
-  eng.core.timings.colleagueWaitMs = 1;
-  const first = await held('Ava', 'request_collaboration', { to: 'Ben', summary: 'Need the price API', wait: true }).result;
-  eng.core.timings.colleagueWaitMs = 60_000;
-  const rid = requestId(first.text);
-  await delivered('Ben');
-  const ava = sessionOf('Ava');
-  const ben = sessionOf('Ben');
-  ava.inTurn = false;
-  eng.sessions.setActivity(ava, 'waiting_input', "Waiting for Ben's answer");
-  ben.inTurn = true;
-  eng.sessions.setActivity(ben, 'coding', 'Edit price.ts');
-  const later = Date.now() + 30 * 60_000;
-  assert.deepEqual(kinds(later).filter((k) => /^(stalled|idle|waiting):Ava/.test(k)), [], 'neither stalled nor idle nor waiting: her colleague is working on it');
-
-  // Ben stops without answering and sits there.
-  rested(ben);
-  assert.deepEqual(kinds(Date.now() + 30_000).filter((k) => /^waiting:/.test(k)), [], 'not before both have lasted a while');
-  const [item] = eng.foreman.attention(later).filter((i) => i.kind === 'waiting');
-  assert.match(item!.text, new RegExp(`^Ava has been waiting 30m( \\d+s)? for Ben, who is doing nothing: an answer to "Need the price API" \\(request ${rid}\\)$`));
-  assert.equal(item!.key, `waiting:${id.Ava}:${rid}`);
-  assert.deepEqual(kinds(later).filter((k) => /^(stalled|idle):Ava/.test(k)), [], 'and still not as stalled: that would be the wrong thing to act on');
-  // The foreman is called for it once: its round lists it and says what to do about it.
-  rested(sessionOf('Mira'));
-  eng.core.updateSettings({ foreman: { enabled: true, quietCheckMinutes: 0 } } as any);
-  const withWaiting = () => eng.core.store.queryEvents({ types: ['foreman.round.started'] as any }).filter((e) => (e.data as any).counts.waiting > 0);
-  await eng.foreman.tick(later);
-  assert.equal(withWaiting().length, 1);
-  assert.match(withWaiting()[0]!.summary, /1 waiting for a colleague/);
-  await delivered('Mira');
-  const round = pasted.find((t) => /\[ORCH:ROUND:/.test(t) && /WAITING Ava/.test(t))!;
-  assert.match(round, new RegExp(`\\d+\\. WAITING Ava has been waiting 30m( \\d+s)? for Ben, who is doing nothing: an answer to "Need the price API" \\(request ${rid}\\)\\n`));
-  assert.match(round, /- WAITING: someone cannot go on until a colleague has answered or finished, and that colleague is not at it\. look_at the colleague, then tell_employee/);
-  await call('Mira', 'finish_round', { summary: 'Told Ben to answer.' });
-  // Ben picks it up, then sits again: the same wait does not call the foreman a second time.
-  ben.inTurn = true;
-  eng.sessions.setActivity(ben, 'coding', 'Edit price.ts');
-  await eng.foreman.tick(later + 5 * 60_000);
-  rested(ben);
-  await eng.foreman.tick(later + 15 * 60_000);
-  assert.equal(eng.foreman.attention(later + 15 * 60_000).filter((i) => i.kind === 'waiting').length, 1, 'still there to see');
-  assert.equal(withWaiting().length, 1, 'but no second round for it');
-  eng.core.updateSettings({ foreman: { enabled: false } } as any);
-  await call('Mira', 'finish_round', { summary: 'done' });
-
-  // Asleep or without a session is said as such.
-  await eng.sessions.stop(id.Ben!, { actor: 'office', asleep: true, reason: 'asleep after 30 min without work' });
-  assert.match(eng.foreman.attention(later).find((i) => i.kind === 'waiting')!.text, /for Ben, who is asleep:/);
-  await atDesk('Ben');
-
-  // Once it is answered nobody is waiting, and the ordinary rules apply to Ava again.
-  await call('Ben', 'respond_to_request', { request_id: rid, action: 'declined', note: 'no' });
-  assert.deepEqual(eng.foreman.attention(later).filter((i) => i.kind === 'waiting'), []);
-  move(hers, 'DONE', { completedAt: new Date().toISOString() });
-  for (const who of ['Ava', 'Ben']) {
     await delivered(who);
     rested(sessionOf(who));
   }

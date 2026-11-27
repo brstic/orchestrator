@@ -10,9 +10,8 @@ import type { McpContext } from './mcp-tools.ts';
  * A member's team lead: one employee, in that member's own room, who is told what the member wants and sees that
  * the right one of the member's employees gets it.
  *
- * It is not a second foreman. The foreman is the office's: one for everybody, called by the office in rounds, the
- * owners' alone. A lead is a member's: called only when its member (or an owner) speaks to it, it looks only at
- * that member's team, and it answers to that member. It does nothing by itself and is never woken by a timer —
+ * A lead is a member's: called only when its member (or an owner) speaks to it, it looks only at that member's team,
+ * and it answers to that member. It does nothing by itself and is never woken by a timer —
  * a lead costs tokens only when somebody talks to it.
  *
  * What it may do is these tools and nothing else (its session cannot edit files): see the team, look at one of
@@ -33,8 +32,8 @@ const KINDS: unknown[] = ['feature', 'bug', 'test', 'research', 'planning', 'sec
 const SCREEN_LINES = 25;
 const OPEN: Task['status'][] = ['IN_PROGRESS', 'READY', 'BLOCKED', 'REVIEW', 'BACKLOG'];
 
-/** Roles nobody is hired into by a lead: the office's foreman, and another lead. */
-const NOT_HIRED = new Set(['foreman', LEAD_ROLE]);
+/** Roles nobody is hired into by a lead: another lead. */
+const NOT_HIRED = new Set([LEAD_ROLE]);
 
 export class Lead {
   private eng: Engine;
@@ -71,7 +70,7 @@ export class Lead {
     return its === member || (!its && this.wide(lead));
   }
 
-  /** The people a lead directs: everyone within its reach who does work — not itself, not the foreman, not another lead. */
+  /** The people a lead directs: everyone within its reach who does work — not itself, not another lead. */
   team(lead: Employee): Employee[] {
     const member = this.memberOf(lead);
     const rank = (e: Employee) => (this.memberOf(e) ? 0 : e.keptBy?.id === member ? 1 : 2);

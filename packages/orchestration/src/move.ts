@@ -117,7 +117,6 @@ export class Moves {
     if (!from) return no(`${e.name} is not on any machine yet: give them one instead.`);
     if (!to || to.status === 'revoked') return no('That machine is not in the office.');
     if (to.id === from.id) return no(`${e.name} is on ${to.name} already.`);
-    if (e.roleKey === 'foreman') return no('The foreman stays on the office’s machine.');
     if (e.roleKey === 'lead') return no('A team lead stays on its member’s computer.');
     if (e.selfDriven) return no('A desk somebody sits at with their own Claude Code is theirs, not the office’s: it is not moved.');
     if (this.eng.rent.rentalOf(e.id)) return no(`${e.name} is rented out: end the rental first.`);

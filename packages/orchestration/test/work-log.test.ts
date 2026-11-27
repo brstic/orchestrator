@@ -85,14 +85,16 @@ test('a session nobody has heard from for a quarter of an hour is not at work, a
   log.stop();
 });
 
-test('a foreman, a team lead and somebody archived are not in it; a tie stays with whoever leads', () => {
+test('a team lead and somebody archived are not in it; a tie stays with whoever leads', () => {
   const o = office();
-  const [mira, alex, sarah] = [o.hire('Mira', 'foreman'), o.hire('Alex'), o.hire('Sarah')];
+  const [mira, alex, sarah] = [o.hire('Mira'), o.hire('Alex'), o.hire('Sarah')];
+  // (A lead is hired onto a member's own computer; here she only needs the role.)
+  o.eng.core.put('employee', { ...mira, roleKey: 'lead' });
   const log = new WorkLog(o.eng);
   log.start(T0);
   o.session(mira.id, 'reviewing', T0);
   let now = o.pass(log, T0, 120);
-  assert.equal(o.eng.core.company.employeeOfMonth ?? null, null, 'the foreman keeps others working');
+  assert.equal(o.eng.core.company.employeeOfMonth ?? null, null, 'a team lead keeps others working');
   o.session(mira.id, 'idle', now, { inTurn: false });
   o.session(alex.id, 'coding', now);
   now = o.pass(log, now, 10);

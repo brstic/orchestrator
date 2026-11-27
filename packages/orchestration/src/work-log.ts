@@ -16,7 +16,7 @@ import type { Engine } from './engine.ts';
  * function, and a count hung on all of them would be wrong the first time one was missed; a look cannot be.
  *
  * **The month** is the calendar month in UTC. The leader is this month's as soon as anybody has worked a minute in
- * it; until then last month's stays up. A foreman and a team lead are not in it — they keep others working — and
+ * it; until then last month's stays up. A team lead is not in it — it keeps others working — and
  * neither is somebody archived.
  *
  * The first time an office runs this in a month, the month so far is estimated from the record of state changes

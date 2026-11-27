@@ -7,7 +7,6 @@ import type {
   CompanyStats,
   Employee,
   EntityKind,
-  ForemanSettings,
   EventType,
   Host,
   Improvement,
@@ -64,26 +63,12 @@ export interface Timings {
   /** Default verification command timeout. */
   verifyTimeoutMs: number;
   scheduleDebounceMs: number;
-  /** How often the office looks at what would need the foreman (no model involved). */
-  foremanTickMs: number;
-  /** A question or a ready task must have waited this long before it calls the foreman. */
-  foremanSettleMs: number;
-  /** Idle with a task in progress for this long counts as stalled. */
-  foremanStalledMs: number;
-  /** Overrides the owner's "idle for … minutes" setting (tests run on faster clocks). */
-  foremanIdleMs: number | null;
-  /** Someone has waited this long for a colleague who has been doing nothing for as long: the foreman is called. */
-  foremanWaitingMs: number;
   /** How long records wait before the long memory files them (one run for everything that came in meanwhile). */
   memoryMineDelayMs?: number;
   /** How long a task's hand-over waits for the long memory before going without it. */
   memoryRecallMs?: number;
   /** How often the office looks for employees on a Claude account that has run out. */
   accountFailoverMs?: number;
-  /** The shortest gap between two foreman rounds, whatever the owner's setting says. */
-  foremanMinGapMs: number;
-  /** A round that was neither finished nor ended with its turn is given up on after this long. */
-  foremanRoundTimeoutMs: number;
   /** autopilot (trusted): approvals of one command shape, with no denial, before its allow rule is applied by itself. */
   autopilotAllowApprovals: number;
   /** autopilot (trusted): those approvals must span at least this long, unless they come from two different tasks. */
@@ -118,13 +103,6 @@ export const DEFAULT_TIMINGS: Timings = {
   deliveryConfirmMs: 20_000,
   verifyTimeoutMs: 240_000,
   scheduleDebounceMs: 120,
-  foremanTickMs: 5000,
-  foremanSettleMs: 4000,
-  foremanStalledMs: 5 * 60_000,
-  foremanIdleMs: null,
-  foremanWaitingMs: 2 * 60_000,
-  foremanMinGapMs: 30_000,
-  foremanRoundTimeoutMs: 10 * 60_000,
   autopilotAllowApprovals: 5,
   autopilotAllowSpreadMs: 24 * 3600_000,
   autopilotReviewOffTasks: 10,
@@ -186,25 +164,6 @@ export function sanitizeRadio(input: Partial<OwnerSettings['radio']>, current: O
   return { stations, volume, lastStationId: last && stations.some((s) => s.id === last) ? last : null };
 }
 
-/**
- * Foreman settings come from the owner's typing: booleans stay booleans and the two intervals are
- * whole numbers inside sane bounds. `minGapFloorSeconds` is the shortest gap the office allows.
- */
-export function sanitizeForeman(input: unknown, current: ForemanSettings, minGapFloorSeconds = 30): ForemanSettings {
-  const i = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
-  const int = (v: unknown, lo: number, hi: number, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : fallback);
-  const quiet = int(i.quietCheckMinutes, 0, 24 * 60, current.quietCheckMinutes);
-  return {
-    enabled: typeof i.enabled === 'boolean' ? i.enabled : current.enabled,
-    minGapSeconds: int(i.minGapSeconds, minGapFloorSeconds, 3600, Math.max(minGapFloorSeconds, current.minGapSeconds)),
-    // 0 switches quiet checks off; anything else is at least five minutes.
-    quietCheckMinutes: quiet === 0 ? 0 : Math.max(5, quiet),
-    answersQuestions: typeof i.answersQuestions === 'boolean' ? i.answersQuestions : current.answersQuestions,
-    // 0 switches it off; settings stored before this existed get the default.
-    idleMinutes: int(i.idleMinutes, 0, 24 * 60, current.idleMinutes ?? 10),
-  };
-}
-
 /** The autopilot's dial and its daily limit come from the owner's typing: one of three words, and a whole number from 1 to 20. */
 export function sanitizeAutopilot(si: SelfImprovementSettings, fallback: Pick<SelfImprovementSettings, 'autopilot' | 'autopilotMaxPerDay'>): SelfImprovementSettings {
   const n = si.autopilotMaxPerDay;
@@ -252,7 +211,6 @@ const DEFAULT_SETTINGS: OwnerSettings = {
     lastStationId: null,
   },
   selfImprovement: { enabled: true, retrospectives: 'friction', autoApproveSharedLessons: false, learnedRouting: true, outcomesAutoRetire: true, autopilot: 'safe', autopilotMaxPerDay: 3 },
-  foreman: { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true, idleMinutes: 10 },
   quality: 'high',
   keybindings: {
     forward: 'KeyW',
@@ -360,7 +318,8 @@ export class Core {
     this._settings.keybindings = { ...DEFAULT_SETTINGS.keybindings, ...(this._settings.keybindings ?? {}) };
     this._settings.selfImprovement = { ...DEFAULT_SETTINGS.selfImprovement, ...(this._settings.selfImprovement ?? {}) };
     this._settings.selfImprovement = sanitizeAutopilot(this._settings.selfImprovement, DEFAULT_SETTINGS.selfImprovement);
-    this._settings.foreman = sanitizeForeman(this._settings.foreman, DEFAULT_SETTINGS.foreman, this.foremanGapFloor);
+    // Offices from before the foreman was removed kept its settings: they are dropped.
+    delete (this._settings as { foreman?: unknown }).foreman;
     this._settings.sleepAfterMinutes = sanitizeSleep(this._settings.sleepAfterMinutes, DEFAULT_SETTINGS.sleepAfterMinutes);
     this._layout = s.kvGet<OfficeLayout | null>('layout', null) ?? defaultLayout();
     this._milestones = s.kvGet<Milestone[] | null>('milestones', null) ?? initialMilestones();
@@ -471,13 +430,13 @@ export class Core {
     return this._settings;
   }
 
-  /** The shortest gap between foreman rounds the owner can ask for, in seconds. */
-  private get foremanGapFloor(): number {
-    return Math.max(1, Math.ceil(this.timings.foremanMinGapMs / 1000));
-  }
-
   updateSettings(patch: Partial<OwnerSettings>): OwnerSettings {
     const autopilotBefore = this._settings.selfImprovement;
+    // A client from before the foreman was removed may still send its settings: they are ignored.
+    if ('foreman' in patch) {
+      patch = { ...patch };
+      delete (patch as { foreman?: unknown }).foreman;
+    }
     this._settings = {
       ...this._settings,
       ...patch,
@@ -485,7 +444,6 @@ export class Core {
       ...(patch.radio ? { radio: sanitizeRadio(patch.radio, this._settings.radio) } : {}),
       ...(patch.tv ? { tv: sanitizeTv(patch.tv, this._settings.tv) } : {}),
       selfImprovement: { ...this._settings.selfImprovement, ...(patch.selfImprovement ?? {}) },
-      foreman: patch.foreman === undefined ? this._settings.foreman : sanitizeForeman(patch.foreman, this._settings.foreman, this.foremanGapFloor),
       sleepAfterMinutes: patch.sleepAfterMinutes === undefined ? this._settings.sleepAfterMinutes : sanitizeSleep(patch.sleepAfterMinutes, this._settings.sleepAfterMinutes),
       // A switch is on or off (anything that is not a plain "off" keeps the hold).
       ...(patch.unrestrictedAsksHighRisk === undefined ? {} : { unrestrictedAsksHighRisk: patch.unrestrictedAsksHighRisk !== false }),

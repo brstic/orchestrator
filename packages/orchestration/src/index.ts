@@ -10,7 +10,6 @@ export * from './hook-receiver.ts';
 export * from './mcp-tools.ts';
 export * from './prompts.ts';
 export * from './improve.ts';
-export * from './foreman.ts';
 export * from './lead.ts';
 export * from './said-files.ts';
 export * from './learning/outcomes.ts';

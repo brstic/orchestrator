@@ -42,9 +42,9 @@ test('whoever is hired without a level is on Standard, whatever their role; nobo
     const e = eng.employees.create({ name: `E ${role.key}`, roleKey: role.key, hostId: host.id, workingDir: '/tmp/x' });
     assert.equal(e.autonomy, 'standard', role.key);
   }
-  // The two roles that hand work on cannot edit files at any level: that is the role's, not a level's.
-  const foreman = eng.core.employees.find((e) => e.roleKey === 'foreman')!;
-  assert.deepEqual(permissionsFor('unrestricted', undefined, foreman, '2.1.200').deny, ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+  // The role that hands work on cannot edit files at any level: that is the role's, not a level's.
+  const lead = { ...eng.core.employees.all()[0]!, roleKey: 'lead', disallowedTools: ROLE_CATALOGUE.find((r) => r.key === 'lead')!.disallowedTools };
+  assert.deepEqual(permissionsFor('unrestricted', undefined, lead, '2.1.200').deny, ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
   const alex = eng.employees.create({ name: 'Alex', roleKey: 'backend', hostId: host.id, workingDir: '/tmp/x', autonomy: 'auto' });
   for (const gone of ['restricted', 'supervised', 'autonomous', 'everything']) {
     assert.throws(() => eng.employees.create({ name: `New ${gone}`, roleKey: 'backend', hostId: host.id, workingDir: '/tmp/x', autonomy: gone as any }), /is not a level: it is one of standard, auto, unrestricted/, gone);

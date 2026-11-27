@@ -2,7 +2,6 @@ import type { AgentSession, CollabRequest, Employee, SessionWait, Task } from '@
 import { ACTIVITY_LABEL, nowIso, truncate } from '@orchestrator/contracts';
 import type { McpToolResult } from '@orchestrator/integrations';
 import type { Engine } from './engine.ts';
-import { FOREMAN_ROLE } from './foreman.ts';
 
 /** A tool call that is being held open for someone who waits. */
 interface Held {
@@ -47,7 +46,7 @@ const ANSWERED: Record<string, string> = {
  *   own computer                         → refused before anything is held
  *
  * What a session waits for is on its own record (`AgentSession.waitingOn`): that is what the office shows, what the
- * foreman, the sleeper and routines read, and what survives a restart of the office (the held call does not).
+ * sleeper and routines read, and what survives a restart of the office (the held call does not).
  */
 export class Waits {
   private eng: Engine;
@@ -121,24 +120,6 @@ export class Waits {
     return [...this.held.values()].some((h) => h.wait.requestId === requestId);
   }
 
-  /**
-   * For the foreman: the colleague a wait is on, when they are not working on it — no session, or between turns
-   * with nothing going on — and since when. Null while they are at work (or nobody in particular has it).
-   */
-  idleTarget(w: SessionWait): { who: Employee; words: string; since: string } | null {
-    const who = this.awaited(w);
-    if (!who || who.archived) return null;
-    const s = this.core.runningSessionOf(who.id);
-    if (!s) {
-      const last = this.core.sessionOf(who.id);
-      return { who, words: this.eng.sessions.asleep(who.id) ? 'is asleep' : 'has no running session', since: last?.endedAt ?? w.since };
-    }
-    if (s.status !== 'running' || s.inTurn !== false) return null;
-    if (s.activity === 'blocked') return { who, words: 'is blocked', since: s.activitySince };
-    if (s.activity === 'idle' || s.activity === 'waiting_input' || s.activity === 'task_complete') return { who, words: 'is doing nothing', since: s.activitySince };
-    return null;
-  }
-
   // ─────────────────────────── may one wait? ───────────────────────────
 
   /** Is this host a member's own computer? */
@@ -181,7 +162,6 @@ export class Waits {
 
   /** Why this employee may not begin to wait for anything right now; null when they may. */
   private cannotWait(waiter: Employee): string | null {
-    if (waiter.roleKey === FOREMAN_ROLE) return 'A foreman does not wait for anyone: finish the round, and you are called again when something changes.';
     const mine = this.held.get(waiter.id);
     return mine ? `You are already waiting for ${this.words(mine.wait)} in another call. Wait for one thing at a time.` : null;
   }
@@ -196,7 +176,6 @@ export class Waits {
     if (never) return never;
     if (target.id === waiter.id) return task ? `${task.key} is your own task: there is nobody to wait for.` : 'That is you: there is nobody to wait for.';
     if (target.archived) return `${target.name} no longer works here, so nothing will come from them.`;
-    if (!task && target.roleKey === FOREMAN_ROLE) return `${target.name} is the foreman and does not take requests. Ask the boss (ask_boss).`;
     if (!this.sameSide(waiter, target)) {
       const host = this.personal(target.hostId) ? this.core.hosts.get(target.hostId!) : undefined;
       return `${host ? `${target.name} works on ${host.memberName ?? 'a member'}'s own computer` : `You work on a member's own computer and ${target.name} in the shared office`}. Work does not cross between the shared office and a member's own computer, so you cannot wait for them. Ask the boss (ask_boss) if you need something from there.`;

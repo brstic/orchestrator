@@ -263,18 +263,17 @@ test('a member’s own computer joins through the door; what is on it is theirs'
   assert.deepEqual([host.memberId, host.memberName, host.local, host.status, host.name], [guestIds.Jovan, 'Jovan', false, 'online', "Jovan's computer"]);
   await assert.rejects(h.addHost('again', {}, { serverUrl: doorUrl, enrollToken: enrollment.body.token }), /already used|invalid/);
   // His computer asks for itself only: its agent cannot take an employee of the shared office to this machine by
-  // naming them (their messages and the office's tools would follow), nor make a foreman, nor give the owner's level.
+  // naming them (their messages and the office's tools would follow), nor give the owner's level.
   const before = (await h.state()).employees.find((e) => e.id === alex)!;
   for (const req of [
     { method: 'create', params: { name: before.name, project: jovanHost.root } },
     { method: 'create', params: { name: 'Brand New', project: jovanHost.root, autonomy: 'unrestricted' } },
-    { method: 'create', params: { name: 'A Foreman', project: jovanHost.root, role: 'foreman' } },
   ] as const) {
-    await assert.rejects(jovanHost.agent.request(req as any, 15000), /not an employee on this computer|owner's level to give|belongs to the office/, JSON.stringify(req));
+    await assert.rejects(jovanHost.agent.request(req as any, 15000), /not an employee on this computer|owner's level to give/, JSON.stringify(req));
   }
   const after = (await h.state()).employees.find((e) => e.id === alex)!;
   assert.deepEqual([after.hostId, after.projectId, after.workingDir], [before.hostId, before.projectId, before.workingDir], 'the shared employee is where they were');
-  assert.ok(!(await h.state()).employees.some((e) => /Brand New|A Foreman/.test(e.name)));
+  assert.ok(!(await h.state()).employees.some((e) => /Brand New/.test(e.name)));
   // He adds a folder on his computer as an employee there. No desk in the shared office: his room is where they sit.
   const folder = path.join(jovanHost.root, 'side-project');
   fs.mkdirSync(folder);

@@ -289,7 +289,6 @@ export class HookReceiver {
     } else {
       this.eng.sessions.setActivity(session, 'idle', null);
     }
-    this.eng.foreman.onTurnFinished(employee.id);
     this.eng.comms.schedulePump(employee.id);
     this.eng.tasks.schedule();
   }

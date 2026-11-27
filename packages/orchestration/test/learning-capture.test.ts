@@ -7,7 +7,7 @@ import { Engine, type AgentLink } from '../src/index.ts';
 import { ONBOARDING_BUDGET, checkLesson, detectCorrection, failureSignature, questionSimilarity, sameFailure } from '../src/learning/capture.ts';
 
 /**
- * An engine whose one host is "online" but runs nothing (as in foreman.test.ts): pasting into a
+ * An engine whose one host is "online" but runs nothing: pasting into a
  * session succeeds, every other request to the host fails. Enough to exercise what capture learns
  * from the record, without any session.
  */

@@ -53,7 +53,6 @@ export class Goals {
   set(employeeId: string, input: { condition: unknown; check?: unknown }, by: GoalSetter): EmployeeGoal {
     const e = this.core.employees.require(employeeId);
     if (e.archived) throw new EngineError(`${e.name} has left the team`, 409);
-    if (e.roleKey === 'foreman') throw new EngineError('The foreman works in rounds; it does not take a goal.', 400);
     const condition = typeof input.condition === 'string' ? input.condition.trim() : '';
     if (!condition) throw new EngineError('Say what has to be true for the goal to be met.', 400);
     if (condition.length > CONDITION_MAX) throw new EngineError(`A goal is said in at most ${CONDITION_MAX} characters.`, 400);
