@@ -52,7 +52,7 @@ export function TicketNew({ employeeId, onCreated, onCancel }: { employeeId: str
   const [more, setMore] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
 
-  const everyone = activeEmployees(s.employees).filter((e) => e.roleKey !== 'foreman');
+  const everyone = activeEmployees(s.employees);
   const candidates = Object.values(s.tasks)
     .filter((t) => t.projectId === projectId && t.kind !== 'review')
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));

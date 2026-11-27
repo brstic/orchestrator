@@ -82,7 +82,7 @@ function RoomEditor({ current, minDesks, memberName }: { current: MemberRoomPref
       <label className="check small room-lock" style={{ alignItems: 'flex-start' }}>
         <input type="checkbox" checked={prefs.locked === true} onChange={(ev) => change({ locked: ev.target.checked })} aria-label="Close my room" />
         <span>
-          <span className="strong">Close my room.</span> Nobody but you — the owners of the office and the foreman included — can then open your employees' terminals, read what they say, talk to them, start or stop them, or walk in. Everyone still sees that they are there and whether they work. It covers your computer and the servers you keep to yourself, not a server you shared.
+          <span className="strong">Close my room.</span> Nobody but you — the owners of the office included — can then open your employees' terminals, read what they say, talk to them, start or stop them, or walk in. Everyone still sees that they are there and whether they work. It covers your computer and the servers you keep to yourself, not a server you shared.
         </span>
       </label>
       <div className="k-actions">

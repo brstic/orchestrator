@@ -21,11 +21,8 @@ export const memberOfHost = (hosts: Hosts, hostId: string | null | undefined): s
   return host?.memberId ? (host.room?.locked ? `${CLOSED}${host.memberId}` : host.memberId) : null;
 };
 
-/** In place of a member's id: the foreman's own things, which only owners may look into or direct (as the office's `access.ts` has it). */
-export const OWNERS_ONLY = '#owners';
-
-/** Whose an employee is: a member's (their own computer), the owners' alone (the foreman), or null — shared. */
-export const memberOfEmployee = (hosts: Hosts, e: Pick<Employee, 'hostId' | 'roleKey'> | undefined): string | null => (e?.roleKey === 'foreman' ? OWNERS_ONLY : memberOfHost(hosts, e?.hostId));
+/** Whose an employee is: a member's (their own computer), or null — shared. */
+export const memberOfEmployee = (hosts: Hosts, e: Pick<Employee, 'hostId'> | undefined): string | null => memberOfHost(hosts, e?.hostId);
 
 export function may(me: Me | null, need: 'read' | 'work' | 'admin', member: string | null): boolean {
   if (!me) return false;
@@ -42,7 +39,6 @@ export function whyNot(me: Me | null, need: 'read' | 'work' | 'admin', member: s
   if (may(me, need, member)) return null;
   if (member?.startsWith(CLOSED)) return 'Their room is closed: what is on their own computers is theirs alone until they open it again.';
   if (need === 'admin') return 'Only an owner of this office can do this.';
-  if (member === OWNERS_ONLY) return 'The foreman supervises the whole office: only its owners can look into it or direct it.';
   if (member) return "This is on another member's own computer.";
   return 'You are visiting this office: you can look, not change anything.';
 }

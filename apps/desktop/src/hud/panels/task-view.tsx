@@ -134,7 +134,7 @@ function MentionBox({ value, onChange, placeholder, disabled, onSubmit, onFiles 
   const options = useMemo(() => {
     if (!at) return [];
     const w = at.word.toLowerCase();
-    const names = ['boss', ...activeEmployees(employees).filter((e) => e.roleKey !== 'foreman').map((e) => e.name)];
+    const names = ['boss', ...activeEmployees(employees).map((e) => e.name)];
     return [...names.filter((n) => n.toLowerCase().startsWith(w)), ...names.filter((n) => !n.toLowerCase().startsWith(w) && n.toLowerCase().includes(w))].slice(0, 7);
   }, [at, employees]);
   const look = (text: string, caret: number) => {
@@ -532,7 +532,7 @@ function People({ task }: { task: Task }) {
   // (A person's task in progress is theirs to hand on: nothing runs that a change would cut off.)
   const editable = mayWork && task.status !== 'DONE' && (task.status !== 'IN_PROGRESS' || !!task.personId);
   const helpers = (task.helperIds ?? []).map((id) => s.employees[id]).filter((e): e is Employee => !!e);
-  const everyone = activeEmployees(s.employees).filter((e) => e.roleKey !== 'foreman');
+  const everyone = activeEmployees(s.employees);
   const people = useAssignablePeople();
   const canHelp = mayWork && task.status !== 'DONE' && !task.parentId && task.kind !== 'review' && !!task.assigneeId;
   const review = reviewByOf(task);

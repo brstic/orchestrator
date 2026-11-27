@@ -77,7 +77,7 @@ test('a shared employee I look after is listed among mine, and stays shared', ()
   // Who is offered the button: a member, for a shared employee who does work.
   const row = (over: object) => ({ hostId: 'office', roleKey: 'backend', archived: false, ...over });
   assert.deepEqual([fenix, lazar, root, visitor, null].map((me) => mayKeep(hosts, me, row({}))), [true, true, false, false, false]);
-  assert.deepEqual([row({ hostId: 'mine' }), row({ hostId: 'janca' }), row({ roleKey: 'foreman' }), row({ roleKey: 'lead' }), row({ archived: true }), row({ hostId: null })].map((e) => mayKeep(hosts, fenix, e)), [false, false, false, false, false, false]);
+  assert.deepEqual([row({ hostId: 'mine' }), row({ hostId: 'janca' }), row({ roleKey: 'lead' }), row({ archived: true }), row({ hostId: null })].map((e) => mayKeep(hosts, fenix, e)), [false, false, false, false, false]);
 });
 
 test('the Inbox on "Mine": what my employees ask, what is stuck on my tasks, projects and machines — the rest is the office’s', () => {

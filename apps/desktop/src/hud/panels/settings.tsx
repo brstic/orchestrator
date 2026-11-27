@@ -1,6 +1,6 @@
 import { useTick } from './company-shared.tsx';
 import { useEffect, useState, type ReactNode } from 'react';
-import { releaseRulesOf, ACTIVITY_LABEL, SURROUNDINGS, reviewDefaultOf, surroundingsOf, type AuditEntry, type ForemanSettings, type ForemanStatus, type OwnerSettings, type ReviewBy, type SelfImprovementSettings, type Surroundings } from '@orchestrator/contracts';
+import { releaseRulesOf, SURROUNDINGS, reviewDefaultOf, surroundingsOf, type AuditEntry, type OwnerSettings, type ReviewBy, type SelfImprovementSettings, type Surroundings } from '@orchestrator/contracts';
 import { Badge, Button, Field, Window, timeAgo } from '@orchestrator/ui';
 import './panels-work.css';
 import { api, forgetToken } from '../../lib/api.ts';
@@ -15,7 +15,7 @@ import { LoadState, fmtDateTime, keyLabel, useLoad, type PanelProps } from './co
 import { AutopilotDial } from './growth.tsx';
 import { REVIEW_CHOICES } from './task-shared.tsx';
 
-type SectionId = 'company' | 'surroundings' | 'graphics' | 'controls' | 'sound' | 'account' | 'improve' | 'workers' | 'foreman' | 'audit';
+type SectionId = 'company' | 'surroundings' | 'graphics' | 'controls' | 'sound' | 'account' | 'improve' | 'workers' | 'audit';
 
 /** 'mine': kept on this computer, for whoever sits at it. 'office': the office's own settings, which its owners change. */
 const SECTIONS: Array<{ id: SectionId; label: string; group: 'mine' | 'office'; ownerOnly?: boolean; memberOnly?: boolean }> = [
@@ -29,7 +29,6 @@ const SECTIONS: Array<{ id: SectionId; label: string; group: 'mine' | 'office'; 
   { id: 'surroundings', label: 'Surroundings', group: 'office' },
   { id: 'improve', label: 'Growth', group: 'office' },
   { id: 'workers', label: 'Employees', group: 'office' },
-  { id: 'foreman', label: 'Foreman', group: 'office' },
   // The audit log is read from the office on request, and only owners may read it.
   { id: 'audit', label: 'Audit log', group: 'office', ownerOnly: true },
 ];
@@ -38,7 +37,7 @@ const GROUPS: Array<{ id: 'mine' | 'office'; label: string }> = [
   { id: 'office', label: 'The office' },
 ];
 
-type SettingsPatch = Partial<Omit<OwnerSettings, 'selfImprovement' | 'foreman'>> & { selfImprovement?: Partial<SelfImprovementSettings>; foreman?: Partial<ForemanSettings> };
+type SettingsPatch = Partial<Omit<OwnerSettings, 'selfImprovement'>> & { selfImprovement?: Partial<SelfImprovementSettings> };
 
 /** The office's settings are saved one change at a time; the server merges the partial and broadcasts the result. */
 function save(patch: SettingsPatch, ok = 'Saved'): Promise<OwnerSettings | undefined> {
@@ -591,21 +590,6 @@ function ImproveSection({ settings }: { settings: OwnerSettings }) {
   );
 }
 
-const ATTENTION_LABEL: Record<string, string> = { question: 'question', blocked: 'blocked', stalled: 'stalled', unassigned: 'unassigned', idle: 'idle' };
-const ROUND_OUTCOME: Record<string, string> = { running: 'in progress', finished: 'finished', turn_ended: 'ended without a summary', timed_out: 'gave up waiting', failed: 'could not be delivered', interrupted: 'interrupted' };
-
-function roundDid(a: ForemanStatus['rounds'][number]): string {
-  const parts = [
-    a.visited.length ? `looked at ${a.visited.length}` : '',
-    a.actions.answered ? `answered ${a.actions.answered}` : '',
-    a.actions.assigned ? `assigned ${a.actions.assigned}` : '',
-    a.actions.created ? `created ${a.actions.created}` : '',
-    a.actions.messaged ? `messaged ${a.actions.messaged}` : '',
-    a.actions.escalated ? `escalated ${a.actions.escalated} to you` : '',
-  ].filter(Boolean);
-  return parts.join(' · ');
-}
-
 /**
  * Sleep: how long a session on the office's own machines may sit without work before it is stopped to free memory.
  * Saved when the field is left (or Enter is pressed); what the office keeps is shown back.
@@ -696,141 +680,6 @@ function SleepSetting({ settings }: { settings: OwnerSettings }) {
     >
       <input type="number" min={0} max={1440} step={5} value={minutes} style={{ maxWidth: 120 }} aria-label="Put idle sessions to sleep after (minutes)" onChange={(ev) => setMinutes(ev.target.value)} onBlur={commit} onKeyDown={(ev) => ev.key === 'Enter' && (ev.target as HTMLInputElement).blur()} />
     </Field>
-  );
-}
-
-function ForemanSection({ settings, readOnly }: { settings: OwnerSettings; readOnly: boolean }) {
-  // An office running an older server has no foreman settings yet: show them as off.
-  const f: ForemanSettings = settings.foreman ? { ...settings.foreman, idleMinutes: settings.foreman.idleMinutes ?? 10 } : { enabled: false, minGapSeconds: 120, quietCheckMinutes: 15, answersQuestions: true, idleMinutes: 10 };
-  const set = (patch: Partial<ForemanSettings>, ok?: string) => void save({ foreman: patch }, ok);
-  const [gap, setGap] = useState(String(f.minGapSeconds));
-  const [quiet, setQuiet] = useState(String(f.quietCheckMinutes));
-  const [idle, setIdle] = useState(String(f.idleMinutes));
-  useEffect(() => setIdle(String(f.idleMinutes)), [f.idleMinutes]);
-  useEffect(() => setGap(String(f.minGapSeconds)), [f.minGapSeconds]);
-  useEffect(() => setQuiet(String(f.quietCheckMinutes)), [f.quietCheckMinutes]);
-  // The status is read again on a slow clock; what is shown stays in place while it loads.
-  const [st, setSt] = useState<ForemanStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const tick = useTick(5000);
-  useEffect(() => {
-    // The live status is the owners' to read; everyone else sees the settings alone.
-    if (readOnly) return;
-    let alive = true;
-    api<ForemanStatus>('GET', '/foreman').then(
-      (data) => {
-        if (!alive) return;
-        setSt(data);
-        setError(null);
-      },
-      (e: Error) => alive && setError(e.message),
-    );
-    return () => {
-      alive = false;
-    };
-  }, [tick, readOnly, f.enabled, f.minGapSeconds, f.quietCheckMinutes, f.answersQuestions]);
-
-  const gapN = Number(gap);
-  const quietN = Number(quiet);
-  const idleN = Number(idle);
-  const numbersValid = Number.isFinite(gapN) && gap.trim() !== '' && Number.isFinite(quietN) && quiet.trim() !== '' && Number.isFinite(idleN) && idle.trim() !== '';
-  const dirty = numbersValid && (Math.round(gapN) !== f.minGapSeconds || Math.round(quietN) !== f.quietCheckMinutes || Math.round(idleN) !== f.idleMinutes);
-  const off = !f.enabled;
-  const last = st?.lastRound ?? null;
-  const fresh = st?.attention.filter((i) => !i.seen) ?? [];
-  const older = st?.attention.filter((i) => i.seen) ?? [];
-
-  return (
-    <div className="col" style={{ gap: 14, maxWidth: 680 }}>
-      <Toggle checked={f.enabled} onChange={(enabled) => set({ enabled }, enabled ? 'Foreman rounds are on' : 'Foreman rounds are off')} title="Foreman rounds">
-        The foreman (hire one with the role <b>Foreman</b>; there is one for the whole office) has no desk: it walks the office — the shared floor and every member's room that is open — and keeps the work going. When something needs it — a
-        question nobody has answered, a blocked or stalled task, ready work next to someone free, someone who has stopped and is doing nothing — it is given one round: it goes over, looks at what they are really doing, answers, assigns, tells them
-        how to continue, and comes to you only with what is yours to decide. Hiring a foreman switches this on. Off: nothing is ever sent to the foreman automatically.
-      </Toggle>
-      <div className="pc-info">
-        Each round is a real turn in the foreman's own Claude Code session, so it uses Claude usage on the account the foreman runs on. Whether a round is due is worked out by the office itself, without any model: a quiet office starts no round and costs
-        nothing.
-      </div>
-      <Toggle checked={f.answersQuestions} onChange={(answersQuestions) => set({ answersQuestions })} title="The foreman answers employees' questions" disabled={off}>
-        An employee's question goes to the foreman as well as to you; whoever answers first counts, and the record says who it was. Approving or denying an action is never the foreman's — permission requests always wait for you. Off: questions wait for
-        you alone, and the foreman only deals with blocked, stalled and unassigned work.
-      </Toggle>
-      <form
-        className="col"
-        style={{ gap: 10 }}
-        onSubmit={(ev) => {
-          ev.preventDefault();
-          if (dirty) set({ minGapSeconds: Math.round(gapN), quietCheckMinutes: Math.round(quietN), idleMinutes: Math.round(idleN) });
-        }}
-      >
-        <div className="grid2">
-          <Field label="Shortest gap between rounds (seconds)" hint={`However much is going on, a new round starts no sooner than this after the previous one ended.${st && st.minGapSeconds !== f.minGapSeconds ? ` In force right now: ${st.minGapSeconds} s.` : ''}`}>
-            <input type="number" min={30} max={3600} step={10} value={gap} disabled={off} onChange={(ev) => setGap(ev.target.value)} />
-          </Field>
-          <Field label="Quiet check every (minutes)" hint="With nothing waiting, the foreman still takes one look around this often — but only if tasks or sessions changed since its last round. 0 = never.">
-            <input type="number" min={0} max={1440} step={5} value={quiet} disabled={off} onChange={(ev) => setQuiet(ev.target.value)} />
-          </Field>
-          <Field label="Someone idle for (minutes)" hint="A running session that has done nothing this long, with no task in progress, is put in front of the foreman once: it looks, and gets them going again or leaves them be. 0 = never.">
-            <input type="number" min={0} max={1440} step={1} value={idle} disabled={off} onChange={(ev) => setIdle(ev.target.value)} aria-label="Someone idle for (minutes)" />
-          </Field>
-        </div>
-        <div className="row">
-          <Button variant="primary" type="submit" disabled={!dirty || off}>
-            Save
-          </Button>
-        </div>
-      </form>
-
-      <div style={readOnly ? { display: 'none' } : undefined}>
-        <div className="section-title">Right now</div>
-        {error && !st && <div className="small bad">Could not load the foreman's status: {error}</div>}
-        {st && (
-          <div className="col small" style={{ gap: 6 }}>
-            <div>
-              <span className="muted">Foreman: </span>
-              {st.foreman ? (
-                <>
-                  <span className="strong">{st.foreman.name}</span> <Badge tone={st.foreman.session === 'running' ? 'good' : 'muted'}>{st.foreman.session === 'running' && st.foreman.activity ? (ACTIVITY_LABEL[st.foreman.activity] ?? st.foreman.activity).toLowerCase() : 'no session running'}</Badge>
-                  {st.visiting && <span className="muted"> — with {useOffice.getState().employees[st.visiting]?.name ?? 'someone'} right now</span>}
-                  {st.otherForemen.length > 0 && <span className="faint"> — rounds go to {st.foreman.name}; {st.otherForemen.join(', ')} also {st.otherForemen.length === 1 ? 'has' : 'have'} the role</span>}
-                </>
-              ) : (
-                <span className="muted">nobody yet</span>
-              )}
-            </div>
-            {st.problem && <div className="pc-note">{st.problem}</div>}
-            <div>
-              <span className="muted">{st.round ? 'Round in progress' : 'Last round'}: </span>
-              {st.round ? (
-                <span>started {fmtDateTime(st.round.startedAt)}</span>
-              ) : last ? (
-                <span>
-                  {fmtDateTime(last.finishedAt ?? last.startedAt)} — {last.reason === 'quiet_check' ? 'quiet check, ' : ''}
-                  {ROUND_OUTCOME[last.outcome] ?? last.outcome}
-                  {roundDid(last) ? ` · ${roundDid(last)}` : ''}
-                </span>
-              ) : (
-                <span className="muted">none yet</span>
-              )}
-            </div>
-            {!st.round && last?.summary && <div className="faint">“{last.summary}”</div>}
-            <div>
-              <span className="muted">Needs attention: </span>
-              {fresh.length === 0 && older.length === 0 && <span className="muted">nothing</span>}
-            </div>
-            {[...fresh, ...older].map((i) => (
-              <div key={i.key} className="row" style={{ alignItems: 'baseline', gap: 6 }}>
-                <Badge tone={i.seen ? 'muted' : 'warn'}>{ATTENTION_LABEL[i.kind] ?? i.kind}</Badge>
-                <span className="grow">
-                  {i.text}
-                  {i.escalated ? <span className="faint"> — escalated to you</span> : i.seen ? <span className="faint"> — the foreman has seen it</span> : off || !st.foreman ? null : <span className="faint"> — waiting for the next round</span>}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -1046,7 +895,7 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                   </Toggle>
                   <Toggle checked={settings.employeesSetModels !== false} onChange={(employeesSetModels) => void save({ employeesSetModels })} title="Employees may change models and effort">
                     An employee may set the <b>model</b> and the <b>effort</b> of their own and their colleagues' sessions — a project manager putting routine work on a lighter model, say — with a reason that is in the feed and the audit log.
-                    Never the level, never the Claude account, never the foreman, and not across to or from a member's own computer. Off: only you change them.
+                    Never the level, never the Claude account, never a member's team lead, and not across to or from a member's own computer. Off: only you change them.
                   </Toggle>
                   <Toggle checked={settings.acceptStartPrompts !== false} onChange={(acceptStartPrompts) => void save({ acceptStartPrompts })} title="Answer Claude Code's start-up questions for me">
                     When a session starts in a folder for the first time, Claude Code asks whether to <b>trust the folder</b>; the first time an account runs an <b>Unrestricted</b> employee it shows its <b>Bypass Permissions warning</b> ("you accept
@@ -1090,7 +939,6 @@ function SettingsPanel({ arg, onClose }: PanelProps) {
                   <ReleaseGateSetting settings={settings} />
                 </div>
               )}
-              {section === 'foreman' && <ForemanSection settings={settings} readOnly={readOnly} />}
               {section === 'audit' && <AuditSection />}
             </fieldset>
           )}

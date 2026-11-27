@@ -235,7 +235,6 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
 
   const custom = roleKey === 'custom';
   const role = custom ? undefined : roleByKey(roleKey);
-  const existingForeman = useOffice((s) => Object.values(s.employees).find((e) => !e.archived && e.roleKey === 'foreman'));
   // Default: they work on their own and come to the owner only for decisions.
   // The owner's default since 2026-11-11: everybody runs Unrestricted unless put back on Auto. It is an owner's to give; a colleague's hires start on Auto.
   const codex = executionMode === 'codex_managed';
@@ -244,7 +243,7 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
   const project = projectId ? projectsById[projectId] : undefined;
   const hasCwd = !!workingDir.trim() || !!project?.repoPath;
   const canStart = !!host && host.status === 'online' && hasCwd;
-  const allowCodex = !self && roleKey !== 'foreman';
+  const allowCodex = !self;
   const valid = !!name.trim() && (!custom || !!title.trim()) && (!self || hasCwd)
     && (!codex || (allowCodex && !!host?.info?.runtimes?.includes('codex_managed')));
 
@@ -257,7 +256,7 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
         roleKey: custom ? null : roleKey,
         ...(custom ? { title: title.trim(), department: department.trim() || undefined, specialization: specialization.trim(), skills: parseSkills(skills) } : {}),
         hostId,
-        ...(deskId && roleKey !== 'foreman' ? { deskId } : {}),
+        ...(deskId ? { deskId } : {}),
         projectId: projectId || null,
         // A folder with no shared project becomes this employee's own in-place project (server side).
         workingDir: projectId ? null : workingDir.trim() || null,
@@ -298,7 +297,7 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
           <Field label="Role">
             <select value={roleKey} onChange={(ev) => setRoleKey(ev.target.value)}>
               {ROLE_CATALOGUE.map((r) => (
-                <option key={r.key} value={r.key} disabled={codex && r.key === 'foreman'}>
+                <option key={r.key} value={r.key}>
                   {r.title}
                 </option>
               ))}
@@ -335,14 +334,7 @@ function HireForm({ onDone, place, desk, self }: { onDone: (createdId?: string) 
         <FolderField value={workingDir} onChange={setWorkingDir} host={host} disabled={!!projectId} />
       </Field>
 
-      {roleKey === 'foreman' ? (
-        <div className="card small" data-foreman-note>
-          <span className="strong">A foreman has no desk.</span> It walks the office — the shared floor and every member's room that is open — goes to whoever needs something, and keeps the work going: it answers operational questions, hands out
-          ready work and gets people who stopped moving again. There is one for the whole office and it runs on the office's own machine. Hiring it switches its rounds on (Settings → Foreman pauses them); each round uses that machine's Claude account.
-          {place.mine && <div className="bad" style={{ marginTop: 6 }}>Choose the shared office in step 1: the foreman cannot run on your own computer.</div>}
-          {existingForeman && <div className="bad" style={{ marginTop: 6 }}>The office already has a foreman ({existingForeman.name}).</div>}
-        </div>
-      ) : self ? null : (
+      {self ? null : (
         <>
           <div className="section-title" style={{ margin: 0 }}>
             3 · Their desk {place.mine ? 'in your room' : 'in the office'}
@@ -472,10 +464,7 @@ function TeamPanel({ arg, onClose }: PanelProps) {
   };
 
   const all = useMemo(() => Object.values(employeesById).sort(byName), [employeesById]);
-  // The foreman is not one of the seated employees: it is shown on its own, above the list.
-  const foreman = all.find((e) => !e.archived && e.roleKey === 'foreman');
-  const foremanOn = useOffice((s) => !!s.settings?.foreman?.enabled);
-  const active = all.filter((e) => !e.archived && e.id !== foreman?.id);
+  const active = all.filter((e) => !e.archived);
   const archived = all.filter((e) => e.archived);
   const needle = search.trim().toLowerCase();
   // One's own employees alone, or everyone with one's own first.
@@ -618,32 +607,6 @@ function TeamPanel({ arg, onClose }: PanelProps) {
           </select>
           <ScopeSwitch what="employees" />
         </div>
-
-        {foreman && scope === 'all' && (
-          <div className="k-group team-foreman" data-foreman={foreman.id}>
-            <div className="k-row">
-              <Avatar appearance={foreman.appearance} size={36} offline={!isLive(sessionOfEmployee(sessions, foreman.id))} />
-              <div className="k-main">
-                <div className="k-title">
-                  {foreman.name}
-                  <span className="k-title-note">the foreman — no desk: walks the whole office and keeps the work going</span>
-                </div>
-                <div className="k-line">
-                  <State {...employeeState(activityOf(sessionOfEmployee(sessions, foreman.id)), openQuestionsOf(questions, foreman.id).length > 0)} />
-                  <span className="k-sub">
-                    {foremanOn ? 'rounds are on' : 'rounds are paused'} · on {foreman.hostId ? (hosts[foreman.hostId]?.name ?? 'no machine') : 'no machine'}
-                  </span>
-                </div>
-              </div>
-              <Button small variant="ghost" className="k-quiet" onClick={() => st.openPanel('settings', 'foreman')} title="When it goes round, and to whom">
-                Rounds
-              </Button>
-              <Button small variant="ghost" className="k-quiet" onClick={() => st.openPanel('employee', foreman.id)}>
-                Profile
-              </Button>
-            </div>
-          </div>
-        )}
 
         {active.length === 0 ? (
           <div className="k-empty">
@@ -956,7 +919,7 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
   const patch = patchOf(e, d, projectsById);
   const dirty = Object.keys(patch).length > 0;
   const codex = d.executionMode === 'codex_managed';
-  const allowCodex = !e.selfDriven && d.roleKey !== 'foreman';
+  const allowCodex = !e.selfDriven;
   const session = sessionOfEmployee(sessions, e.id);
   const live = isLive(session);
   const role = roleByKey(d.roleKey);
@@ -1015,7 +978,7 @@ function ProfileTab({ e, onClose }: { e: Employee; onClose: () => void }) {
           <Field label="Role">
             <select value={role ? d.roleKey : 'custom'} onChange={(ev) => pickRole(ev.target.value)}>
               {ROLE_CATALOGUE.map((r) => (
-                <option key={r.key} value={r.key} disabled={codex && r.key === 'foreman'}>
+                <option key={r.key} value={r.key}>
                   {r.title}
                 </option>
               ))}
@@ -1864,7 +1827,7 @@ function VisitorCard({ e, session }: { e: Employee; session: AgentSession | unde
   const projects = useOffice((s) => s.projects);
   const tasks = useOffice((s) => s.tasks);
   const task = currentTaskOf(tasks, e.id);
-  const watch = !!session && isLive(session) && e.roleKey !== 'foreman' && can.read(e.hostId);
+  const watch = !!session && isLive(session) && can.read(e.hostId);
   return (
     <div className="col" style={{ gap: 14, padding: 18 }} data-visitor-card>
       <dl className="kv">
@@ -1884,7 +1847,7 @@ function VisitorCard({ e, session }: { e: Employee; session: AgentSession | unde
         <dd>{e.level}</dd>
       </dl>
       <div className="row row-wrap">
-        <Button small disabled={!watch} onClick={() => useOffice.getState().enterWorkstation(e.id)} title={watch ? 'Watch what they are doing' : e.roleKey === 'foreman' || !can.read(e.hostId) ? 'This terminal is not a shared one.' : 'They have no session running.'}>
+        <Button small disabled={!watch} onClick={() => useOffice.getState().enterWorkstation(e.id)} title={watch ? 'Watch what they are doing' : !can.read(e.hostId) ? 'This terminal is not a shared one.' : 'They have no session running.'}>
           Watch terminal
         </Button>
       </div>
@@ -2179,8 +2142,7 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
           ...(can.work(e.hostId) && !st.showcase ? [{ id: 'telegram' as const, label: 'Telegram' }] : []),
           { id: 'message', label: 'Messages' },
           { id: 'history', label: 'History' },
-          // The foreman has no desk to choose.
-          ...(e.roleKey === 'foreman' ? [] : [{ id: 'desk' as const, label: 'Desk and hours' }]),
+          { id: 'desk' as const, label: 'Desk and hours' },
         ]}
       />
       <div className="k-body pf-body" key={e.id} ref={body} data-profile-tab={tab}>
@@ -2197,7 +2159,7 @@ function EmployeePanel({ arg, onClose }: PanelProps) {
         {tab === 'telegram' && <TelegramTab e={e} />}
         {tab === 'message' && <MessageTab e={e} />}
         {tab === 'history' && <HistoryTab e={e} />}
-        {tab === 'desk' && e.roleKey !== 'foreman' && <DeskTab e={e} />}
+        {tab === 'desk' && <DeskTab e={e} />}
       </div>
     </Window>
   );

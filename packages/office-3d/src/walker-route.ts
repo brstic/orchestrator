@@ -1,9 +1,9 @@
 import { deskSeat, type World } from './world.ts';
 
-/** How long the foreman stands at each desk on its walk through the office before moving on. */
-export const FOREMAN_STOP_MS = 16_000;
+/** How long a walker (a member's team lead) stands at each desk on its walk before moving on. */
+export const WALK_STOP_MS = 16_000;
 
-export interface ForemanStop {
+export interface WalkStop {
   /** The employee whose desk this is. */
   id: string;
   x: number;
@@ -28,16 +28,16 @@ export function standAt(world: World, deskId: string | null | undefined): { x: n
 }
 
 /**
- * The route of the foreman's walk: everyone who has a desk that can be walked to, in the order the desks stand —
- * the shared floor first, then each member's room. A member's room that is locked (they are away) has no door and
- * is passed by.
+ * The stops a walk can make: everyone who has a desk that can be walked to, in the order the desks stand — the
+ * shared floor first, then each member's room. A member's room that is locked (they are away) has no door and is
+ * passed by. (A walker keeps to its own team's among these: `WalkerView.stopsOf`.)
  */
-export function foremanStops(world: World, seated: Array<{ id: string; deskId: string | null }>): ForemanStop[] {
+export function walkStops(world: World, seated: Array<{ id: string; deskId: string | null }>): WalkStop[] {
   const order = new Map(world.layout.desks.map((d, i) => [d.id, i]));
   const desks = new Map(world.layout.desks.map((d) => [d.id, d]));
   const shut = new Set(world.memberRooms.filter((r) => r.locked || r.closed).flatMap((r) => r.desks));
   const reachable = world.nav.reach(world.spawn.x, world.spawn.z);
-  const out: Array<ForemanStop & { n: number }> = [];
+  const out: Array<WalkStop & { n: number }> = [];
   for (const p of seated) {
     const desk = p.deskId ? desks.get(p.deskId) : undefined;
     if (!desk || shut.has(desk.id)) continue;
@@ -49,6 +49,6 @@ export function foremanStops(world: World, seated: Array<{ id: string; deskId: s
 }
 
 /** Which stop of the walk it is time for. The same on every computer looking at the office, since it only depends on the clock. */
-export function foremanStopAt(stops: number, now: number): number {
-  return stops > 0 ? Math.floor(now / FOREMAN_STOP_MS) % stops : -1;
+export function walkStopAt(stops: number, now: number): number {
+  return stops > 0 ? Math.floor(now / WALK_STOP_MS) % stops : -1;
 }

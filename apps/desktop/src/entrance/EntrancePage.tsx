@@ -6,7 +6,6 @@ import logo from './logo.svg';
 import shotBoard from './shots/board.webp';
 import shotCommand from './shots/command.webp';
 import shotDesks from './shots/desks.webp';
-import shotForeman from './shots/foreman.webp';
 import shotHand from './shots/hand.webp';
 import shotLounge from './shots/lounge.webp';
 import shotRoom from './shots/room.webp';
@@ -467,24 +466,9 @@ export default function EntrancePage({ office, onOwnToken, showcase = false }: {
             </div>
           </section>
 
-          <section className="ent-row" aria-labelledby="ent-h-foreman">
-            <div className="ent-col">
-              <p className="ent-kicker">05 — The foreman</p>
-              <h2 id="ent-h-foreman">One supervisor keeps the floor moving.</h2>
-              <p>
-                The foreman has no desk. It walks the office, looks at people’s real terminals, answers the operational questions and hands out work that is ready — so you are asked only about direction. It never approves anything: permission requests stay with you.
-              </p>
-              <p className="ent-aside">A quiet office starts no round and costs nothing.</p>
-              <Shot src={shotForeman} w={1800} h={1125} alt="The foreman standing at an employee’s desk, beside a colleague with a hand up; its tag reads FOREMAN, whole office, and what it is doing: checking that employee." caption="The foreman on a round. Its tag says who it is with." />
-            </div>
-            <div className="ent-lane">
-              <Place id="foreman" w={3.9} h={3} r={2.4} />
-            </div>
-          </section>
-
           <section className="ent-row" aria-labelledby="ent-h-command">
             <div className="ent-col">
-              <p className="ent-kicker">06 — Command center</p>
+              <p className="ent-kicker">05 — Command center</p>
               <h2 id="ent-h-command">Top-down, like a proper strategy game.</h2>
               <p>Who needs you, who is blocked, which machine is sweating: the whole office from above, with everybody’s state beside it.</p>
               <Shot src={shotCommand} w={1800} h={1125} tilt="right" alt="The office seen from above, beside a panel that lists who needs the owner, everybody’s state and the machines." caption="From above: who needs an answer, what everybody is doing, and the machines." />
@@ -494,7 +478,7 @@ export default function EntrancePage({ office, onOwnToken, showcase = false }: {
 
           <section className="ent-row" aria-labelledby="ent-h-together">
             <div className="ent-col">
-              <p className="ent-kicker">07 — Multiplayer</p>
+              <p className="ent-kicker">06 — Multiplayer</p>
               <h2 id="ent-h-together">Bring people. Their computers come too.</h2>
               <p>
                 Invite people with a link that works once. Owners, colleagues, visitors: the office enforces each role for every request. A colleague’s own computer becomes a room of its own while they are in, and what runs there stays theirs.
@@ -508,7 +492,7 @@ export default function EntrancePage({ office, onOwnToken, showcase = false }: {
 
           <section className="ent-row" aria-labelledby="ent-h-break">
             <div className="ent-col">
-              <p className="ent-kicker">08 — The break room</p>
+              <p className="ent-kicker">07 — The break room</p>
               <h2 id="ent-h-break">A hi-fi, a television, and a whip.</h2>
               <p>
                 Internet radio for the whole office. A television with a real browser in it. And <b>R</b>, next to an employee: a crack, a flinch, a “jao!”. It sends nothing to anybody’s session. It stays in.

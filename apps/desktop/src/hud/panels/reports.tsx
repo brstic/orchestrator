@@ -19,7 +19,7 @@ function AskForReport({ onClose }: { onClose: () => void }) {
   const [who, setWho] = useState('');
   const [busy, setBusy] = useState(false);
   const askable = Object.values(employees)
-    .filter((e) => !e.archived && e.roleKey !== 'foreman' && can.work(e.hostId))
+    .filter((e) => !e.archived && can.work(e.hostId))
     .sort(byName);
   const ask = async () => {
     const e = employees[who];

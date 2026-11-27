@@ -328,7 +328,7 @@ function OfficePanel({ arg, onClose }: { arg: string | null; onClose: () => void
   const free = s.layout.desks.filter((d) => !occupied.has(d.id));
   const refresh = () => void qc.invalidateQueries({ queryKey: ['layout-capacity'] });
   const unlocked = new Set(unlockedUpgrades(s.milestones));
-  const unseated = employees.filter((e) => !e.deskId && e.roleKey !== 'foreman' && !s.hosts[e.hostId ?? '']?.memberId).length;
+  const unseated = employees.filter((e) => !e.deskId && !s.hosts[e.hostId ?? '']?.memberId).length;
   const earned = s.milestones.filter((m) => m.unlocks);
   return (
     <Window kit title="Floor plan" subtitle={`${s.layout.desks.length} desks, ${free.length} free${unseated ? ` · ${unseated} without a desk` : ''}`} onClose={onClose} width={940} flush>

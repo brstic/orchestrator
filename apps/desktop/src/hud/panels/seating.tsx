@@ -32,7 +32,7 @@ export function Seating({ layout }: { layout: OfficeLayout }) {
   const [drag, setDrag] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [labels, setLabels] = useState<Record<string, string>>({});
-  const people = Object.values(employees).filter((e) => !e.archived && e.roleKey !== 'foreman');
+  const people = Object.values(employees).filter((e) => !e.archived);
   const at = new Map(people.filter((e) => e.deskId).map((e) => [e.deskId!, e]));
   const pods = new Map<string, OfficeLayout['desks']>();
   for (const d of layout.desks) {

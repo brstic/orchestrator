@@ -195,7 +195,7 @@ try {
   await guestPage.until('the chosen quality', `window.__orchPrefs.getState().prefs.quality === 'low'`, 8000);
   await guestPage.js(`${button('Controls', win)}.click()`);
   await guestPage.until('the key bindings', `${win}.querySelector('.pc-keyrow .pc-key')`, 8000);
-  await guestPage.js(`${button('Foreman', win)}.click()`);
+  await guestPage.js(`${button('Employees', win)}.click()`);
   await guestPage.until('the office’s settings, read-only', `${win}.querySelector('[data-settings-scope=office-readonly]')`, 8000);
   const locked = await guestPage.js(`(() => { const all = [...${win}.querySelectorAll('.split-main input, .split-main button')]; return all.length + ' controls, ' + all.filter((e) => e.matches(':disabled')).length + ' disabled; ' + ${win}.querySelector('[data-settings-scope=office-readonly]').textContent.trim(); })()`);
   const lockedN = /^(\d+) controls, (\d+) disabled/.exec(locked);

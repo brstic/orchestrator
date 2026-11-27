@@ -9,7 +9,7 @@ import { loadPrefs, usePrefs } from './lib/prefs.ts';
 import { useCoveredOffice, usePowerSaving } from './lib/power.ts';
 import { startHere } from './lib/here.ts';
 import { awardView } from './lib/award.ts';
-import { boardView, ceoView, foremanView, leadViews, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
+import { boardView, ceoView, leadViews, memberClocks, hostViews, officeWithRooms, personViews, walkRequests, wallView, whiteboardView, zoneViews } from './lib/views.ts';
 import { ChatBox, CommandBar, ConfirmDialog, DoorBell, Replies, CommandCenter, ContextMenu, EmployeeCard, Feed, Prompt, Toasts, TopBar, Welcome, Workstation, interact, seatAt, talk, type ContextMenuState } from './hud/core.tsx';
 import { onTvFrame } from './lib/tv.ts';
 import { startRadio } from './lib/radio.ts';
@@ -326,10 +326,7 @@ export function App() {
   }, [roomless]);
   const people = useMemo(() => personViews(s, office), [s.employees, s.sessions, s.tasks, s.questions, s.meetings, s.projects, s.filter, s.control, office]); // eslint-disable-line react-hooks/exhaustive-deps
   const walks = useMemo(() => walkRequests(s, Date.now()), [s.events, tick]); // eslint-disable-line react-hooks/exhaustive-deps
-  // The foreman has no desk: who it is with, and what it is doing, comes from its rounds.
-  const foremanNow = foremanView(s, Date.now());
-  const foreman = useMemo(() => foremanNow, [JSON.stringify(foremanNow)]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Members' team leads walk too, each among its own team.
+  // Members' team leads have no desk: they walk, each among its own team.
   const leadsNow = leadViews(s, office, Date.now());
   const leads = useMemo(() => leadsNow, [JSON.stringify(leadsNow)]); // eslint-disable-line react-hooks/exhaustive-deps
   const hosts = useMemo(() => hostViews(s), [s.hosts, s.sessions]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -378,7 +375,6 @@ export function App() {
   // really be working on it — a wait whose turn ended some other way shows nothing and is ended (`lib/asks.ts`).
   const talkMarks = useMemo(() => {
     const drawn = new Set(people.map((p) => p.id));
-    if (foreman) drawn.add(foreman.id);
     for (const l of leads) drawn.add(l.id);
     return [
       ...Object.keys(s.replies)
@@ -388,7 +384,7 @@ export function App() {
         .filter((id) => !s.replies[id] && drawn.has(id) && askStateOf(s, id) === 'working')
         .map((id) => ({ id, kind: 'waiting' as const })),
     ];
-  }, [s.asks, s.replies, s.sessions, s.messages, s.employees, people, foreman, leads]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [s.asks, s.replies, s.sessions, s.messages, s.employees, people, leads]); // eslint-disable-line react-hooks/exhaustive-deps
   // What I said myself: the same bubble, over my own character.
   const selfSaying = useMemo(() => {
     const last = [...s.chat].reverse().find((c) => c.fromId === s.clientId && !c.emote);
@@ -428,7 +424,6 @@ export function App() {
           unlocked={unlocked}
           people={people}
           humans={humans}
-          foreman={foreman}
           leads={leads}
           selfSaying={selfSaying}
           talkMarks={talkMarks}

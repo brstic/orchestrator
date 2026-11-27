@@ -1,5 +1,5 @@
 import { ACTIVITY_LABEL, formatDuration, memberSeatOf, roleByKey, type Host } from '@orchestrator/contracts';
-import { deskPods, withMemberRooms, type ForemanView, type MemberOffice, type BoardView, type CeoView, type HostView, type UsageClockView, type PersonView, type WalkRequest, type WallView, type WhiteboardView, type ZoneView } from '@orchestrator/office-3d';
+import { deskPods, withMemberRooms, type WalkerView, type MemberOffice, type BoardView, type CeoView, type HostView, type UsageClockView, type PersonView, type WalkRequest, type WallView, type WhiteboardView, type ZoneView } from '@orchestrator/office-3d';
 import { activityOf, currentTaskOf, sessionOfEmployee, type OfficeState } from './store.ts';
 import { movePercent } from './move.ts';
 
@@ -89,8 +89,6 @@ export function personViews(s: OfficeState, office?: OfficeWithRooms | null): Pe
   const out: PersonView[] = [];
   for (const e of Object.values(s.employees)) {
     if (e.archived) continue;
-    // The foreman has no desk: it walks the floor, drawn on its own (see `foremanView`).
-    if (e.roleKey === 'foreman') continue;
     // A member's team lead does not sit either: it walks between its own team's desks (see `leadViews`).
     if (e.roleKey === 'lead') continue;
     // A member's own employees are in the office only while that member is: in their room, at a desk there.
@@ -141,28 +139,24 @@ export function personViews(s: OfficeState, office?: OfficeWithRooms | null): Pe
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** How long the foreman stands at each desk it looked at, so every visit is seen even when several come at once. */
-const FOREMAN_DWELL_MS = 8000;
-/** While its round is still running, the foreman stays at the last desk it looked at for at most this long. */
-const FOREMAN_STAY_MS = 40_000;
+/** How long a lead stands at each desk it went to, so every visit is seen even when several come at once. */
+const VISIT_DWELL_MS = 8000;
+/** A lead stays at the last desk it went to for this long, then goes back to walking among its team. */
+const VISIT_STAY_MS = 40_000;
 
 /**
- * What the foreman does during a round becomes visits: its character walks to the desk of each employee it
- * really looked at, answered, gave work to or told something, in that order, and goes back to walking the
- * floor when the round is over. Visits that come in quick succession are shown one after the other, not only
- * the last of them.
+ * What a member's team lead does becomes visits (`lead.visit`): its character walks to the desk of each employee it
+ * really looked at, gave work to or told something, in that order. Visits that come in quick succession are shown
+ * one after the other, not only the last of them.
  */
-export function foremanWalks(events: Array<{ id: string; type: string; ts: string; employeeId: string | null; data: Record<string, unknown> }>, now: number): WalkRequest[] {
+export function leadWalks(events: Array<{ id: string; type: string; ts: string; employeeId: string | null; data: Record<string, unknown> }>, now: number): WalkRequest[] {
   const visits = new Map<string, Array<{ id: string; toId: string; at: number }>>();
-  /** When each foreman's latest round ended. */
-  const ended = new Map<string, number>();
   const horizon = now - 3 * 60_000;
   for (let i = events.length - 1; i >= 0 && i > events.length - 600; i--) {
     const e = events[i]!;
     const at = Date.parse(e.ts);
     if (at < horizon) break;
-    if (e.type === 'foreman.round.finished' && e.employeeId && !ended.has(e.employeeId)) ended.set(e.employeeId, at);
-    if (e.type !== 'foreman.visit' && e.type !== 'lead.visit') continue;
+    if (e.type !== 'lead.visit') continue;
     const from = e.data.fromEmployeeId;
     const to = e.data.toEmployeeId;
     if (typeof from !== 'string' || typeof to !== 'string' || from === to) continue;
@@ -176,15 +170,11 @@ export function foremanWalks(events: Array<{ id: string; type: string; ts: strin
     let current: { id: string; toId: string } | null = null;
     for (const [n, v] of list.entries()) {
       // Each desk gets its turn: a visit starts when the look happened, or when the previous desk has had its time.
-      start = n ? Math.max(v.at, start + FOREMAN_DWELL_MS) : v.at;
+      start = n ? Math.max(v.at, start + VISIT_DWELL_MS) : v.at;
       if (start > now) break;
       current = v;
-      if (n === list.length - 1) {
-        // The last desk: until the round ends (but long enough to get there), or for a while when nothing says it ended.
-        const end = ended.get(fromId);
-        const until = end !== undefined && end >= v.at ? Math.min(start + FOREMAN_STAY_MS, Math.max(start + FOREMAN_DWELL_MS, end)) : start + FOREMAN_STAY_MS;
-        if (now >= until) current = null;
-      }
+      // The last desk: for a while.
+      if (n === list.length - 1 && now >= start + VISIT_STAY_MS) current = null;
     }
     if (current) out.push({ id: current.id, fromId, toId: current.toId });
   }
@@ -208,67 +198,22 @@ export function waitingForLines(s: Pick<OfficeState, 'sessions' | 'employees' | 
 }
 
 const VISIT_VERB: Record<string, string> = { look: 'checking', answer: 'answering', assign: 'giving work to', tell: 'talking to' };
-const ROUND_NOUN: Array<[string, string, string]> = [
-  ['question', 'question', 'questions'],
-  ['blocked', 'blocked', 'blocked'],
-  ['stalled', 'stalled', 'stalled'],
-  ['unassigned', 'to assign', 'to assign'],
-  ['idle', 'idle', 'idle'],
-  ['waiting', 'waiting', 'waiting'],
-];
 
 /**
- * The foreman as the scene draws it: who it is, whether it is on its rounds, who it is with right now and what
- * it is doing — all read from recorded state and events. Null while the office has no foreman.
- */
-export function foremanView(s: OfficeState, now: number): ForemanView | null {
-  const e = Object.values(s.employees)
-    .filter((x) => !x.archived && x.roleKey === 'foreman')
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0];
-  if (!e) return null;
-  const session = sessionOfEmployee(s.sessions, e.id);
-  const live = !!session && (session.status === 'running' || session.status === 'starting');
-  const patrolling = !!s.settings?.foreman?.enabled;
-  const visit = foremanWalks(s.events, now).find((w) => w.fromId === e.id);
-  // The round in flight, if any: the latest "started" with no "finished" after it.
-  let round: Record<string, unknown> | null = null;
-  for (let i = s.events.length - 1; i >= 0 && i > s.events.length - 600; i--) {
-    const ev = s.events[i]!;
-    if (ev.employeeId !== e.id) continue;
-    if (ev.type === 'foreman.round.finished') break;
-    if (ev.type === 'foreman.round.started') {
-      if (now - Date.parse(ev.ts) < 15 * 60_000) round = ev.data;
-      break;
-    }
-  }
-  let doing = patrolling ? 'walking the floor' : 'rounds paused';
-  if (visit) {
-    const action = String(s.events.find((x) => x.id === visit.id)?.data.action ?? 'look');
-    doing = `${VISIT_VERB[action] ?? 'with'} ${s.employees[visit.toId]?.name ?? 'someone'}`;
-  } else if (round) {
-    const counts = (round.counts ?? {}) as Record<string, number>;
-    const parts = ROUND_NOUN.filter(([k]) => counts[k]! > 0).map(([k, one, many]) => `${counts[k]} ${counts[k] === 1 ? one : many}`);
-    doing = round.reason === 'quiet_check' || !parts.length ? 'round: a look around' : `round: ${parts.join(', ')}`;
-  }
-  const filtered = (s.filter.projectId && e.projectId !== s.filter.projectId) || (s.filter.hostId && e.hostId !== s.filter.hostId) || (s.filter.employeeId && e.id !== s.filter.employeeId);
-  return { id: e.id, name: e.name, appearance: e.appearance, level: e.level, live, patrolling, visitingId: visit?.toId ?? null, space: 'WHOLE OFFICE', doing, dimmed: !!filtered };
-}
-
-/**
- * Members' team leads as the scene draws them: like the foreman, on their feet — but each among its own team only:
+ * Members' team leads as the scene draws them: on their feet, each among its own team only:
  * its member's own employees, and the shared employees that member looks after. Read from recorded state and events.
  * A lead whose member's computer is away is away with it.
  */
-export function leadViews(s: OfficeState, office: OfficeWithRooms | null | undefined, now: number): ForemanView[] {
-  const walks = foremanWalks(s.events, now);
-  const out: ForemanView[] = [];
+export function leadViews(s: OfficeState, office: OfficeWithRooms | null | undefined, now: number): WalkerView[] {
+  const walks = leadWalks(s.events, now);
+  const out: WalkerView[] = [];
   for (const e of Object.values(s.employees)) {
     if (e.archived || e.roleKey !== 'lead' || office?.away.has(e.id)) continue;
     const host = s.hosts[e.hostId ?? ''];
     const member = host?.memberId;
     if (!member) continue;
     const team = Object.values(s.employees)
-      .filter((x) => !x.archived && x.id !== e.id && x.roleKey !== 'lead' && x.roleKey !== 'foreman' && (s.hosts[x.hostId ?? '']?.memberId === member || x.keptBy?.id === member))
+      .filter((x) => !x.archived && x.id !== e.id && x.roleKey !== 'lead' && (s.hosts[x.hostId ?? '']?.memberId === member || x.keptBy?.id === member))
       .map((x) => x.id);
     const session = sessionOfEmployee(s.sessions, e.id);
     const visit = walks.find((w) => w.fromId === e.id);
@@ -295,7 +240,7 @@ export function leadViews(s: OfficeState, office: OfficeWithRooms | null | undef
 
 /**
  * Recent collaboration events become short walks between desks. The event is real; the walk only shows it.
- * (The foreman's visits are its own: see `foremanView`.)
+ * (A lead's visits are its own: see `leadViews`.)
  */
 export function walkRequests(s: OfficeState, now: number): WalkRequest[] {
   const out: WalkRequest[] = [];

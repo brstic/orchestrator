@@ -29,7 +29,6 @@ const LOOKS = {
   eli: { skin: '#a9745a', hair: '#4a2f1b', hairStyle: 'bald', shirt: '#7fd1ff', pants: '#27364a', accessory: 'glasses', build: 1.05 },
   fay: { skin: '#e0ac69', hair: '#7a3b1d', hairStyle: 'long', shirt: '#ff5d73', pants: '#2d3748', accessory: 'none', build: 0.96 },
   gus: { skin: '#c68642', hair: '#2b1d0e', hairStyle: 'short', shirt: '#f5c542', pants: '#3b3f5c', accessory: 'cap', build: 1.04 },
-  foreman: { skin: '#f1c9a5', hair: '#6b6b6b', hairStyle: 'short', shirt: '#2b3a67', pants: '#1f2937', accessory: 'none', build: 1.06 },
 } satisfies Record<string, Appearance>;
 
 type Emote = 'wave' | 'dance' | 'clap' | 'thumbsUp' | 'shrug' | 'point' | 'cheer' | 'bow';
@@ -346,18 +345,6 @@ const PLACES: Record<string, Place> = {
       <>
         <Model model={trophyCase()} position={[0.2, 0, -0.2]} />
         <Model model={plant(1)} position={[1.55, 0, 0.35]} />
-      </>
-    ),
-  },
-  // The foreman on a round, at the desk of somebody who has nodded off.
-  foreman: {
-    rot: -0.6,
-    reach: 2.8,
-    spot: { x: -1.5, z: 0.5, rot: 1.0, label: 'STAYING OUT OF IT', emote: 'shrug' },
-    render: (live) => (
-      <>
-        <Workplace who={LOOKS.eli} pose="offline" lamp="#4a5261" screen="idle" things={3} live={live} offset={3.3} />
-        <Actor look={LOOKS.foreman} level={9} emote="point" every={6} offset={1} live={live} x={-1.15} z={-0.95} rot={1.45} />
       </>
     ),
   },

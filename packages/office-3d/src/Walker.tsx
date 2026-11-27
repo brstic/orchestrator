@@ -3,28 +3,24 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Character, type PoseName } from './Character.tsx';
-import type { ForemanView, PersonView } from './types.ts';
-import { foremanStopAt, foremanStops, standAt } from './foreman-route.ts';
+import type { WalkerView, PersonView } from './types.ts';
+import { walkStopAt, walkStops, standAt } from './walker-route.ts';
 import type { World } from './world.ts';
 
 /** An unhurried walk from desk to desk: slower than someone going to a colleague's desk. */
 const SPEED = 1.25;
-/** Called to someone during a round, it does not dawdle. */
+/** Called to someone (it looked at them, told them something, gave them work), it does not dawdle. */
 const VISIT_SPEED = 2.0;
 /** Having reached a desk on its walk, it stands there at least this long before going on, however late it is. */
 const MIN_STAND_MS = 6000;
 
 /**
- * The foreman: no desk and no chair. While a round runs it stands with whoever it is looking at, answering or
- * giving work to; between rounds it walks the office desk by desk — the shared floor and the members' rooms that
- * are open — pausing at each. With rounds switched off it waits by the entrance.
- *
- * A member's team lead is drawn by the same component (`foreman.title`): it walks between the desks of its own team
- * only (`stopsOf`) — its member's room, and out on the shared floor to the shared employees that member looks after —
- * and stands at its own seat when it has nobody to walk to.
+ * Somebody with no desk and no chair: a member's team lead. It walks between the desks of its own team (`stopsOf`)
+ * — its member's room, and out on the shared floor to the shared employees that member looks after — pausing at each,
+ * goes straight to whoever it is with (`visitingId`), and stands at its own seat when it has nobody to walk to.
  */
-export function Foreman({
-  foreman,
+export function Walker({
+  walker,
   people,
   world,
   selected,
@@ -34,7 +30,7 @@ export function Foreman({
   onContext,
   positions,
 }: {
-  foreman: ForemanView;
+  walker: WalkerView;
   people: PersonView[];
   world: World;
   selected: boolean;
@@ -48,23 +44,23 @@ export function Foreman({
   const tag = useRef<HTMLDivElement>(null);
   const { camera } = useThree();
   const seatedKey = people.map((p) => `${p.id}:${p.deskId ?? ''}`).join('|');
-  const everyone = useMemo(() => foremanStops(world, people), [world, seatedKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Its walk: everybody's desks, or — a lead — its own team's.
-  const ownKey = foreman.stopsOf?.join('|') ?? '*';
-  const stops = useMemo(() => (foreman.stopsOf ? everyone.filter((s) => foreman.stopsOf!.includes(s.id)) : everyone), [everyone, ownKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const everyone = useMemo(() => walkStops(world, people), [world, seatedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Its walk: its own team's desks (everybody's when it names none).
+  const ownKey = walker.stopsOf?.join('|') ?? '*';
+  const stops = useMemo(() => (walker.stopsOf ? everyone.filter((s) => walker.stopsOf!.includes(s.id)) : everyone), [everyone, ownKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const home = useMemo(() => {
-    const own = standAt(world, foreman.homeDeskId);
+    const own = standAt(world, walker.homeDeskId);
     if (own) return own;
     const [x, z] = world.nav.nearestWalkable(world.spawn.x + 1.8, world.spawn.z - 1.4) ?? [world.spawn.x, world.spawn.z];
     return { x, z, rot: world.spawn.rot };
-  }, [world, foreman.homeDeskId]);
+  }, [world, walker.homeDeskId]);
 
   /** Where it should be right now, and a key that changes exactly when that place does. */
   const want = (now: number): { key: string; x: number; z: number; rot: number } => {
-    // Whoever it is called to, on its walk or not.
-    const visit = foreman.visitingId ? everyone.find((s) => s.id === foreman.visitingId) : undefined;
+    // Whoever it is with, on its walk or not.
+    const visit = walker.visitingId ? everyone.find((s) => s.id === walker.visitingId) : undefined;
     if (visit) return { key: `visit:${visit.id}`, ...visit };
-    const i = foreman.patrolling ? foremanStopAt(stops.length, now) : -1;
+    const i = walker.patrolling ? walkStopAt(stops.length, now) : -1;
     const stop = i >= 0 ? stops[i]! : undefined;
     return stop ? { key: `stop:${stop.id}`, x: stop.x, z: stop.z, rot: stop.rot } : { key: 'home', ...home };
   };
@@ -75,22 +71,15 @@ export function Foreman({
   // An HTML overlay mounted in the scene's very first commit sometimes never appears: added once the character is drawn.
   const [drawn, setDrawn] = useState(false);
 
-  // For the UI tests (see `window.__orchScene`): where the foreman is meant to be and where it is.
+  // For the UI tests (see `window.__orchScene`): where a lead is meant to be and where it is, under `leads`.
   useEffect(() => {
-    // (The foreman's alone: there is one. A lead is found under `leads`.)
     const probe = ((window as unknown as { __orchScene?: Record<string, any> }).__orchScene ??= { detail: {} });
-    if (foreman.title) {
-      const leads = ((probe.leads as Record<string, unknown>) ??= {});
-      leads[foreman.id] = () => ({ id: foreman.id, stops: stops.map((s) => s.id), key: rt.current.key, x: rt.current.x, z: rt.current.z, arrived: rt.current.arrived, visitingId: foreman.visitingId });
-      return () => {
-        delete leads[foreman.id];
-      };
-    }
-    probe.foreman = () => ({ id: foreman.id, stops: stops.map((s) => s.id), key: rt.current.key, x: rt.current.x, z: rt.current.z, arrived: rt.current.arrived, visitingId: foreman.visitingId, patrolling: foreman.patrolling });
+    const leads = ((probe.leads as Record<string, unknown>) ??= {});
+    leads[walker.id] = () => ({ id: walker.id, stops: stops.map((s) => s.id), key: rt.current.key, x: rt.current.x, z: rt.current.z, arrived: rt.current.arrived, visitingId: walker.visitingId });
     return () => {
-      delete probe.foreman;
+      delete leads[walker.id];
     };
-  }, [foreman.id, foreman.visitingId, foreman.patrolling, stops]);
+  }, [walker.id, walker.visitingId, walker.patrolling, stops]);
 
   useFrame((_s, dt) => {
     const g = group.current;
@@ -103,7 +92,7 @@ export function Foreman({
       const moved = w.key === r.key && (Math.abs(w.x - r.tx) > 1e-3 || Math.abs(w.z - r.tz) > 1e-3);
       // On its walk it finishes the way to a desk and stands there a moment before going on to the one it is time
       // for (on a slow computer it may skip a desk; it never turns round half-way or walks without ever stopping).
-      // Only someone it is called to — a visit during a round — is gone to at once.
+      // Only someone it is with — a visit — is gone to at once.
       const settled = r.arrived && now - r.arrivedAt >= MIN_STAND_MS;
       if (moved || (w.key !== r.key && (w.key.startsWith('visit:') || settled))) {
         r.key = w.key;
@@ -150,8 +139,8 @@ export function Foreman({
     }
     g.position.set(r.x, 0, r.z);
     g.rotation.y = r.rot;
-    let p = positions.get(foreman.id);
-    if (!p) positions.set(foreman.id, (p = new THREE.Vector3()));
+    let p = positions.get(walker.id);
+    if (!p) positions.set(walker.id, (p = new THREE.Vector3()));
     p.set(r.x, 0, r.z);
     if (!drawn) setDrawn(true);
     if (r.frame % 3 === 0 && tag.current) {
@@ -159,7 +148,7 @@ export function Foreman({
       tag.current.style.transform = `translateY(-50%) scale(${THREE.MathUtils.clamp((cutaway ? 15 : 9) / d, 0.42, 1.1).toFixed(3)})`;
     }
   });
-  useEffect(() => () => void positions.delete(foreman.id), [foreman.id, positions]);
+  useEffect(() => () => void positions.delete(walker.id), [walker.id, positions]);
 
   const pose: PoseName = moving ? 'walk' : 'stand';
   return (
@@ -167,17 +156,17 @@ export function Foreman({
       <group
         onClick={(e) => {
           e.stopPropagation();
-          onSelect(foreman.id);
+          onSelect(walker.id);
         }}
         onContextMenu={(e) => {
           e.stopPropagation();
           e.nativeEvent.preventDefault();
-          onContext(foreman.id, e.nativeEvent.clientX, e.nativeEvent.clientY);
+          onContext(walker.id, e.nativeEvent.clientX, e.nativeEvent.clientY);
         }}
         onPointerOver={() => (document.body.style.cursor = 'pointer')}
         onPointerOut={() => (document.body.style.cursor = '')}
       >
-        <Character appearance={foreman.appearance} pose={pose} offline={!foreman.live && !foreman.patrolling} level={foreman.level} />
+        <Character appearance={walker.appearance} pose={pose} offline={!walker.live && !walker.patrolling} level={walker.level} />
       </group>
       {selected && (
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
@@ -187,12 +176,12 @@ export function Foreman({
       )}
       {drawn && (
         <Html position={[0, 1.95, 0]} center zIndexRange={[30, 0]} style={{ pointerEvents: 'none', display: hideLabels ? 'none' : 'block' }}>
-          <div ref={tag} className={`tag tag-foreman ${foreman.dimmed ? 'tag-dim' : ''} ${selected ? 'tag-selected' : ''}`}>
-            <div className="tag-name">{foreman.name}</div>
+          <div ref={tag} className={`tag tag-walker ${walker.dimmed ? 'tag-dim' : ''} ${selected ? 'tag-selected' : ''}`}>
+            <div className="tag-name">{walker.name}</div>
             <div className="tag-state">
-              {foreman.title ?? 'FOREMAN'} · {foreman.space}
+              {walker.title} · {walker.space}
             </div>
-            <div className="tag-task tag-foreman-doing">{foreman.doing}</div>
+            <div className="tag-task tag-walker-doing">{walker.doing}</div>
           </div>
         </Html>
       )}

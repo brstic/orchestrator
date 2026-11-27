@@ -3588,14 +3588,14 @@ button.ops-row:hover {
   white-space: nowrap;
 }
 
-/* ───────────── the foreman: no desk, walks the floor ───────────── */
-.tag-foreman {
+/* ───────────── a team lead: no desk, walks among its team ───────────── */
+.tag-walker {
   border-color: rgba(224, 161, 58, 0.7);
 }
-.tag-foreman .tag-state {
+.tag-walker .tag-state {
   color: #e0a13a;
 }
-.tag-foreman-doing {
+.tag-walker-doing {
   font-family: var(--sans);
   text-transform: none;
 }

@@ -1204,7 +1204,7 @@ async function scenario() {
   await step('Office: "Employee of the month" is a decoration like any other, and its frame shows whoever the office says has worked the most', async () => {
     // The office counts by itself: after a minute or two of the scripted employees working, somebody leads.
     const best = await waitFor(`(() => { const s = window.__t.store(); const b = s.company && s.company.employeeOfMonth; const e = b && s.employees[b.employeeId]; return e ? { id: e.id, name: e.name, role: e.roleKey, month: b.month } : null; })()`, 150000);
-    if (best.role === 'foreman' || best.role === 'lead' || !/^\d{4}-\d{2}$/.test(best.month)) throw new Error(`the employee of the month is ${best.name} (${best.role}) for "${best.month}"`);
+    if (best.role === 'lead' || !/^\d{4}-\d{2}$/.test(best.month)) throw new Error(`the employee of the month is ${best.name} (${best.role}) for "${best.month}"`);
     await open('office', `'plan'`);
     await waitFor(`!!window.__t.scope().querySelector('select[aria-label="Decoration to add"]')`, 8000);
     const offered = await js(`[...window.__t.scope().querySelectorAll('select[aria-label="Decoration to add"] option')].filter((o) => o.value === 'employee_of_month').map((o) => [o.textContent, o.disabled])`);
@@ -1962,7 +1962,7 @@ async function scenario() {
     // (Also when this step is run alone: the office may still be opening.)
     await waitFor(`!!window.__office && window.__t.store().ready && !!window.__t.store().me`, 60000);
     // Somebody who is at their desk with nothing to do.
-    const who = await js(`(() => { const st = window.__t.store(); const e = Object.values(st.employees).find((x) => !x.archived && x.roleKey !== 'foreman' && x.projectId && !st.hosts[x.hostId]?.memberId && Object.values(st.sessions).some((q) => q.employeeId === x.id && q.status === 'running' && q.inTurn === false) && !Object.values(st.tasks).some((t) => t.assigneeId === x.id && (t.status === 'IN_PROGRESS' || t.status === 'READY'))); return e ? { id: e.id, name: e.name, projectId: e.projectId } : null; })()`);
+    const who = await js(`(() => { const st = window.__t.store(); const e = Object.values(st.employees).find((x) => !x.archived && x.projectId && !st.hosts[x.hostId]?.memberId && Object.values(st.sessions).some((q) => q.employeeId === x.id && q.status === 'running' && q.inTurn === false) && !Object.values(st.tasks).some((t) => t.assigneeId === x.id && (t.status === 'IN_PROGRESS' || t.status === 'READY'))); return e ? { id: e.id, name: e.name, projectId: e.projectId } : null; })()`);
     if (!who) throw new Error('nobody is free for a ticket');
     await open('task', `'new'`);
     const title = 'Conversation ticket 4471';
@@ -2789,7 +2789,7 @@ async function scenario() {
     const pair = await js(`(() => {
       const st = window.__t.store();
       const busy = new Set(Object.values(st.routines || {}).map((r) => r.employeeId));
-      const free = Object.values(st.employees).filter((e) => !e.archived && !e.paused && e.roleKey !== 'foreman' && !busy.has(e.id) && !(st.hosts[e.hostId || ''] || {}).memberId
+      const free = Object.values(st.employees).filter((e) => !e.archived && !e.paused && !busy.has(e.id) && !(st.hosts[e.hostId || ''] || {}).memberId
         && Object.values(st.sessions).some((x) => x.employeeId === e.id && x.status === 'running' && x.inTurn === false && !x.waitingOn)
         && !Object.values(st.tasks).some((t) => t.assigneeId === e.id && ['IN_PROGRESS', 'ASSIGNED', 'REVIEW', 'BLOCKED'].includes(t.status))
         && !Object.values(st.questions).some((q) => q.employeeId === e.id && q.status === 'open'));
@@ -2841,7 +2841,7 @@ async function scenario() {
     // Somebody on Auto (their Bash is not asked about) between turns, with nothing open.
     const candidate = `(() => {
       const st = window.__t.store();
-      const e = Object.values(st.employees).find((e) => !e.archived && e.autonomy !== 'standard' && e.roleKey !== 'foreman' && e.roleKey !== 'lead'
+      const e = Object.values(st.employees).find((e) => !e.archived && e.autonomy !== 'standard' && e.roleKey !== 'lead'
         && Object.values(st.sessions).some((x) => x.employeeId === e.id && x.status === 'running' && x.inTurn === false && !x.waitingOn)
         && !Object.values(st.questions).some((q) => q.employeeId === e.id && q.status === 'open'));
       return e ? { id: e.id, name: e.name } : null;
@@ -2892,7 +2892,7 @@ async function scenario() {
 
   await step('/goal in Talk: the goal stands over the conversation, over their head and in their profile, they keep at it, and Clear ends it', async () => {
     await close();
-    const free = `(() => { const st = window.__t.store(); const e = Object.values(st.employees).find((e) => !e.archived && e.autonomy !== 'standard' && e.roleKey !== 'foreman' && e.roleKey !== 'lead' && Object.values(st.sessions).some((x) => x.employeeId === e.id && x.status === 'running' && x.inTurn === false && !x.waitingOn) && !Object.values(st.questions).some((q) => q.employeeId === e.id && q.status === 'open')); return e ? { id: e.id, name: e.name } : null; })()`;
+    const free = `(() => { const st = window.__t.store(); const e = Object.values(st.employees).find((e) => !e.archived && e.autonomy !== 'standard' && e.roleKey !== 'lead' && Object.values(st.sessions).some((x) => x.employeeId === e.id && x.status === 'running' && x.inTurn === false && !x.waitingOn) && !Object.values(st.questions).some((q) => q.employeeId === e.id && q.status === 'open')); return e ? { id: e.id, name: e.name } : null; })()`;
     await waitFor(`!!${free}`, 30000).catch(() => undefined);
     const who = await js(free);
     if (!who) throw new Error('nobody on Auto between turns to give a goal to');
@@ -3125,47 +3125,6 @@ async function scenario() {
     // This runs in a hidden window next to a dozen live sessions; the bar is "smooth enough to use", the number is reported as measured.
     if (avg < 24) throw new Error(`the scene averaged ${avg.toFixed(1)} fps (${fps.join(', ')})`);
     return `${avg.toFixed(1)} fps average over 6 s (${fps.join(', ')}); slowest frame ${Math.max(...samples.map((s) => s.worstFrameMs))} ms`;
-  });
-
-  await step('The foreman: hired with no desk, shown apart from the team, and walking the floor from desk to desk', async () => {
-    await close();
-    const hired = await js(`(async () => {
-      const st = window.__office.getState();
-      const folder = Object.values(st.sessions).map((x) => x.cwd).find(Boolean) || '/tmp';
-      const r = await fetch('/api/employees', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + ((window.orchestrator && window.orchestrator.token) || localStorage.getItem('orch.token') || '') }, body: JSON.stringify({ name: 'Mira', roleKey: 'foreman', workingDir: folder }) });
-      return { status: r.status, body: await r.json() };
-    })()`);
-    if (hired.status !== 200 || hired.body.roleKey !== 'foreman') throw new Error(`hiring the foreman: ${JSON.stringify(hired).slice(0, 300)}`);
-    if (hired.body.deskId !== null) throw new Error(`the foreman was given a desk: ${hired.body.deskId}`);
-    const id = hired.body.id;
-    // Hiring it switched its rounds on, so it walks; it is not one of the seated people.
-    await waitFor(`window.__office.getState().settings.foreman.enabled === true && !!window.__orchScene.foreman && window.__orchScene.foreman().stops.length >= 3`, 12000);
-    await waitFor(`[...document.querySelectorAll('.tag-foreman')].some((e) => /Mira/.test(e.textContent) && /FOREMAN · WHOLE OFFICE/.test(e.textContent))`, 12000);
-    const seated = await js(`Object.keys(window.__orchScene.places || {}).includes(${JSON.stringify(id)})`);
-    if (seated) throw new Error('the foreman is among the seated people');
-    // It stands at somebody's desk, then goes on to the next one.
-    // (It may be on its way across the whole office to someone a round called it to: that takes a while.)
-    await waitFor(`(() => { const f = window.__orchScene.foreman(); return f.arrived && /^(stop|visit):/.test(f.key); })()`, 60000).catch(async (e) => {
-      throw new Error(`${e.message} — ${JSON.stringify(await js(`window.__orchScene.foreman()`))}`);
-    });
-    const first = await js(`(() => { const f = window.__orchScene.foreman(); return { key: f.key, x: f.x, z: f.z, stops: f.stops.length }; })()`);
-    await js(`window.__office.getState().setCameraMode('management'); true`);
-    await new Promise((r) => setTimeout(r, 1500));
-    await shot('foreman-walking');
-    await js(`window.__office.getState().setCameraMode('ceo'); true`);
-    await waitFor(`(() => { const f = window.__orchScene.foreman(); return f.arrived && /^(stop|visit):/.test(f.key) && f.key !== ${JSON.stringify(first.key)}; })()`, 75000);
-    const second = await js(`(() => { const f = window.__orchScene.foreman(); return { key: f.key, x: f.x, z: f.z }; })()`);
-    const walked = Math.hypot(second.x - first.x, second.z - first.z);
-    if (walked < 0.5) throw new Error(`the foreman did not move between two desks (${walked.toFixed(2)} m)`);
-    // In Team it has a line of its own, above the list — not a row among the employees.
-    await js(`window.__office.getState().openPanel('team'); true`);
-    await waitFor(`!!document.querySelector('[data-foreman=${JSON.stringify(id)}]')`, 8000);
-    const card = await js(`document.querySelector('[data-foreman]').textContent`);
-    if (!/Mira/.test(card) || !/no desk/.test(card)) throw new Error(`the foreman's line in Team: ${card.slice(0, 200)}`);
-    const inTable = await js(`[...document.querySelectorAll('.tbl tbody tr')].some((r) => /Mira/.test(r.textContent))`);
-    if (inTable) throw new Error('the foreman is also a row of the employee table');
-    await close();
-    return `${first.stops} desks on its walk; went from ${first.key} to ${second.key} (${walked.toFixed(1)} m)`;
   });
 
   await step("an employee's own Telegram bot: three steps, the token, Connect — a code to scan; a phone and a group come in, and the group is set to everything", async () => {

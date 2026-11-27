@@ -35,7 +35,7 @@ function SeatPanel({ arg, onClose }: { arg: string | null; onClose: () => void }
     () =>
       Object.values(employees)
         // Who can sit here: in the office, anyone of the office's own; in a room, the people of that computer.
-        .filter((e) => !e.archived && e.roleKey !== 'foreman' && e.deskId !== arg && (seat ? e.hostId === seat.hostId : !hosts[e.hostId ?? '']?.memberId))
+        .filter((e) => !e.archived && e.deskId !== arg && (seat ? e.hostId === seat.hostId : !hosts[e.hostId ?? '']?.memberId))
         .filter((e) => !needle || `${e.name} ${e.title} ${projects[e.projectId ?? '']?.name ?? ''}`.toLowerCase().includes(needle))
         // People without a desk first, then by name.
         .sort((a, b) => Number(!!a.deskId) - Number(!!b.deskId) || a.name.localeCompare(b.name)),

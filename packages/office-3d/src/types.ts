@@ -89,28 +89,28 @@ export interface ZoneView {
 }
 
 /**
- * The foreman: the office's supervisor. It has no desk; its character walks the floor (see `Foreman.tsx`).
- * Everything here is recorded state: who it is, whether rounds are on, and who it is with during a round.
+ * Somebody who has no desk and walks among the desks: a member's team lead (see `Walker.tsx`).
+ * Everything here is recorded state: who it is and who it is with right now.
  */
-export interface ForemanView {
+export interface WalkerView {
   id: string;
   name: string;
   appearance: Appearance;
   level: number;
   /** Its session is running. */
   live: boolean;
-  /** Rounds are switched on: it walks from desk to desk. Off: it waits by the entrance. */
+  /** It walks from desk to desk. Off: it stands at its home place. */
   patrolling: boolean;
-  /** The employee it is with right now (it looked at them, answered them, gave them work), if any. */
+  /** The employee it is with right now (it looked at them, told them something, gave them work), if any. */
   visitingId: string | null;
-  /** What it supervises, for the name tag: "WHOLE OFFICE". */
+  /** Whose it looks after, for the name tag: "ANA'S TEAM". */
   space: string;
-  /** What it is doing, in a few words: "checking Alex", "round: 2 questions", "walking the floor". */
+  /** What it is doing, in a few words: "checking Alex", "looking after the team". */
   doing: string;
   dimmed: boolean;
-  /** What it is, for the name tag. Absent: the office's foreman. "TEAM LEAD": a member's lead, drawn the same way. */
-  title?: string;
-  /** Whose desks it walks between. Absent: everybody's (the foreman). A lead: its own team's. */
+  /** What it is, for the name tag: "TEAM LEAD". */
+  title: string;
+  /** Whose desks it walks between: its own team's. Absent: everybody's. */
   stopsOf?: string[];
   /** Where it stands when there is nobody to walk to: its own seat. Absent: by the entrance. */
   homeDeskId?: string | null;

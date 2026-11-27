@@ -56,9 +56,8 @@ function MapPanel({ onClose }: PanelProps) {
 
   if (!layout) return null;
   const desksById = new Map(layout.desks.map((d) => [d.id, d]));
-  // (The foreman has no desk and is never "unseated": it walks the floor.)
   const team = Object.values(employees)
-    .filter((e) => !e.archived && e.roleKey !== 'foreman')
+    .filter((e) => !e.archived)
     .sort(byName);
   const people = team.map((e) => {
     const activity = activityOf(sessionOfEmployee(sessions, e.id));

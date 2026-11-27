@@ -54,7 +54,7 @@ export function MoveSection({ e }: { e: Employee }) {
     };
   }, [to, e.id, e.hostId]);
 
-  if (!can.work(e.hostId) || e.archived || e.roleKey === 'foreman' || e.roleKey === 'lead' || e.selfDriven) return null;
+  if (!can.work(e.hostId) || e.archived || e.roleKey === 'lead' || e.selfDriven) return null;
   const toName = (id: string) => hosts[id]?.name ?? 'the other machine';
 
   if (m && m.phase !== 'failed') {

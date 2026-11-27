@@ -11,14 +11,14 @@ import { hifiPosition } from './hifi-sound.ts';
 import { Humans as HumansPart, type HumanView } from './Humans.tsx';
 import { SelfBubble } from './SelfBubble.tsx';
 import { TalkMarks, type TalkMark } from './TalkMarks.tsx';
-import { Foreman } from './Foreman.tsx';
+import { Walker } from './Walker.tsx';
 import { PodLabels as PodLabelsPart } from './PodLabels.tsx';
 import { SeatMarkers } from './Seats.tsx';
 import { TV as TVPart, type TvFrames, type TvView } from './TV.tsx';
 import { Building as BuildingPart, Desks as DesksPart, Lights as LightsPart, Near, Rooms as RoomsPart, Zones as ZonesPart, sceneProbe } from './Environment.tsx';
 import { People as PeoplePart } from './People.tsx';
 import { Rig as RigPart, type Keymap } from './Rig.tsx';
-import type { AwardView, UsageClockView, BoardView, CameraMode, CeoView, HostView, NearbyTarget, PersonView, Quality, RadioView, ScreenSubscribe, WalkRequest, WallView, WhiteboardView, ZoneView, ForemanView } from './types.ts';
+import type { AwardView, UsageClockView, BoardView, CameraMode, CeoView, HostView, NearbyTarget, PersonView, Quality, RadioView, ScreenSubscribe, WalkRequest, WallView, WhiteboardView, ZoneView, WalkerView } from './types.ts';
 import { buildWorld } from './world.ts';
 import { STUDIO, Surroundings as SurroundingsPart } from './surroundings/index.tsx';
 import { CityWalkers } from './city/CityWalkers.tsx';
@@ -62,10 +62,8 @@ export interface OfficeSceneProps {
   /** The employees this person is waiting to hear from, or whose answer is waiting: marks over their heads. */
   talkMarks?: TalkMark[];
   onOpenTalk?: (employeeId: string) => void;
-  /** The office's foreman, if it has one: it has no desk and walks the floor. */
-  foreman?: ForemanView | null;
   /** Members' team leads: each walks between the desks of its own team. */
-  leads?: ForemanView[];
+  leads?: WalkerView[];
   /** What the person at this computer has just said out loud: a bubble over their own character for a few seconds. */
   selfSaying?: string | null;
   /** Ease the camera in when the owner stands at a desk (an owner setting, off by default). */
@@ -196,8 +194,8 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
   const player = useMemo(() => new THREE.Vector3(world.spawn.x, 0, world.spawn.z), []); // eslint-disable-line react-hooks/exhaustive-deps
   const positions = useRef(new Map<string, THREE.Vector3>()).current;
   // Those who walk the floor and have no desk to be met at.
-  const walkersKey = [props.foreman, ...(props.leads ?? [])].map((w) => (w ? `${w.id}:${w.name}` : '')).join('|');
-  const walkers = useMemo(() => [props.foreman, ...(props.leads ?? [])].filter((w): w is NonNullable<typeof w> => !!w).map((w) => ({ id: w.id, name: w.name })), [walkersKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const walkersKey = (props.leads ?? []).map((w) => `${w.id}:${w.name}`).join('|');
+  const walkers = useMemo(() => (props.leads ?? []).map((w) => ({ id: w.id, name: w.name })), [walkersKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // Where everyone stands or sits right now, for tests and captures that look at one person.
   sceneProbe().positions = positions;
   const cutaway = props.cameraMode === 'ceo' || props.cameraMode === 'management' || props.cameraMode === 'command' || props.cameraMode === 'free';
@@ -277,9 +275,8 @@ export const OfficeScene = memo(function OfficeScene(props: OfficeSceneProps) {
       <SceneProbe zones={props.zones} surroundings={surroundings} />
       {props.talkMarks && props.talkMarks.length > 0 && props.cameraMode !== 'workstation' && <TalkMarks marks={props.talkMarks} positions={positions} onOpen={props.onOpenTalk ?? (() => undefined)} />}
       <People people={props.people} whips={props.whips} world={world} walks={props.walks} player={player} selectedId={props.selectedId} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />
-      {props.foreman && <Foreman foreman={props.foreman} people={props.people} world={world} selected={props.selectedId === props.foreman.id} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />}
       {(props.leads ?? []).map((lead) => (
-        <Foreman key={lead.id} foreman={lead} people={props.people} world={world} selected={props.selectedId === lead.id} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />
+        <Walker key={lead.id} walker={lead} people={props.people} world={world} selected={props.selectedId === lead.id} cutaway={cutaway} hideLabels={props.cameraMode === 'workstation'} onSelect={props.onSelect} onContext={props.onContext} positions={positions} />
       ))}
       <Rig positions={positions} walkers={walkers} moving={!!props.freeSeats} whipAt={props.whipAt} ouchAt={props.ouchAt} emote={props.emote} approachZoom={props.approachZoom} seatAsk={props.seatAsk} jumpAsk={props.jumpAsk} onSeated={props.onSeated} onJumped={props.onJumped} world={world} mode={props.cameraMode} people={props.people} workstationId={props.workstationId} focus={props.focus} keymap={props.keymap} player={player} onNearby={props.onNearby} onLeaveWorkstation={props.onLeaveWorkstation} city={surroundings === 'skyline'} outside={props.outside} cityJoin={props.cityJoin} onOutside={props.onOutside} onOutsideHint={props.onOutsideHint} look={props.selfLook} />
       </PartBatches>

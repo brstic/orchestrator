@@ -165,7 +165,7 @@ export function Rig({
   onNearby: (n: NearbyTarget | null) => void;
   /** Where every character really is right now (kept by whoever draws them): somebody who got up is met where they went. */
   positions?: Map<string, THREE.Vector3>;
-  /** Those who have no desk and walk the floor — the foreman, members' team leads: met where they stand. */
+  /** Those who have no desk and walk the floor — members' team leads: met where they stand. */
   walkers?: Array<{ id: string; name: string }>;
   /** Somebody is being moved to another desk: then a desk stands for whoever sits at it, also while they are away from it. */
   moving?: boolean;

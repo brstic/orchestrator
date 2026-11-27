@@ -40,7 +40,7 @@ export function whoseEmployee(hosts: Hosts, me: Me | null, e: Pick<Employee, 'ho
 
 /** May this person take that employee among their own: a shared one, by a member (not at the office's own computer). */
 export const mayKeep = (hosts: Hosts, me: Me | null, e: Pick<Employee, 'hostId' | 'roleKey' | 'archived'>): boolean =>
-  !!me?.id && me.id !== 'owner' && me.role !== 'visitor' && !e.archived && e.roleKey !== 'foreman' && e.roleKey !== 'lead' && !!e.hostId && !!hosts[e.hostId] && !hosts[e.hostId]!.memberId;
+  !!me?.id && me.id !== 'owner' && me.role !== 'visitor' && !e.archived && e.roleKey !== 'lead' && !!e.hostId && !!hosts[e.hostId] && !hosts[e.hostId]!.memberId;
 export const whoseProject = (hosts: Hosts, me: Me | null, p: Pick<Project, 'hostId'> | undefined): Whose => whoseHost(hosts, me, p?.hostId);
 
 /** How the office writes down who made something: `owner` at the office's own computer, `member:<name>` otherwise. */
