@@ -168,9 +168,9 @@ While the office setting *Employees manage the task board themselves* is on (the
 | `get_task { task }` | any task the caller can see: status, assignee, what it is blocked on, review, description | a task on the other side of the shared/personal line reads as "no task" |
 | `release_task { task }` | a task waiting in the backlog is released for scheduling | a project that is paused |
 | `unblock_task { task, note }` | a BLOCKED task goes back to work; the assignee is told by the caller's name, with the note | a note that says nothing; a task the owner blocked by hand |
-| `cancel_task { task, reason }` (2026-11-20) | the task is closed as cancelled — DONE, with who and why (`Task.cancelled`), never deleted; its deliveries taken back; the boss is told (a notification) and moving it back on the board reopens it | a reason that says nothing; a task somebody else is in the middle of, one in review, one being checked, one the boss blocked, a person's task; not offered to the foreman (it escalates instead) |
-| `give_task { task, employee }` | assigns a task to a teammate or to the caller | a task somebody is in the middle of; the foreman; across the shared/personal line |
-| `wake_colleague { employee, reason }` | starts the session of a teammate who has none (asleep or never started) and delivers the reason as the caller's message | the foreman; someone the owner paused; someone whose machine is away |
+| `cancel_task { task, reason }` (2026-11-20) | the task is closed as cancelled — DONE, with who and why (`Task.cancelled`), never deleted; its deliveries taken back; the boss is told (a notification) and moving it back on the board reopens it | a reason that says nothing; a task somebody else is in the middle of, one in review, one being checked, one the boss blocked, a person's task |
+| `give_task { task, employee }` | assigns a task to a teammate or to the caller | a task somebody is in the middle of; a team lead; across the shared/personal line |
+| `wake_colleague { employee, reason }` | starts the session of a teammate who has none (asleep or never started) and delivers the reason as the caller's message | someone the owner paused; someone whose machine is away |
 | `submit_review` (existing) | with the setting on, any teammate may review work that waits for review — not only the appointed reviewer | the author of the work |
 
 Every one of these is recorded under the employee's name (`employee:<name>` in a task's history; `session.woken` says who wanted whom and why). None of them decides a permission request, marks a task DONE without verification, deletes anything, or changes a project's policy. The employee's system prompt names them and says that direction, priorities and anything irreversible stay with the owner. Run with the scripted worker only (`tests/e2e/20-employees-manage.test.ts`); **how real Claude Code uses them — how often, how sensibly — has not been watched.**
@@ -187,7 +187,7 @@ What the session gets back in the other cases:
 | Case | Result of the call |
 | --- | --- |
 | Four minutes pass (`timings.colleagueWaitMs`) | not an error: `Sarah has not answered yet (request 1a2b3c4d): they have your request; Sarah is at work (coding). … call wait_for_colleague with request_id "1a2b3c4d" to keep waiting.` The wait stands; a later answer is typed into the session as a message, the end of a task as a message from the office |
-| Not allowed: oneself, a circle, the foreman, someone archived, paused or out of reach, the other side of the shared / own-computer line, a task that cannot be seen or that nobody has | an error result that says which, and `Nothing was sent.` |
+| Not allowed: oneself, a circle, someone archived, paused or out of reach, the other side of the shared / own-computer line, a task that cannot be seen or that nobody has | an error result that says which, and `Nothing was sent.` |
 | The colleague is paused or archived, their session stops or their machine stays away while the call is open | returned at once (a vanished session or machine after five seconds, `timings.waitGoneGraceMs`), saying so; the request stays open |
 | The office restarts | the HTTP request is cut. The scripted worker sees a failed call; **what the real client reports is not verified.** The wait is on the session's record, so `wait_for_colleague` with no arguments picks it up; an answer that came meanwhile is returned at once |
 | The session closes the call itself (its own time limit, an interrupt) | the office notices the closed connection; the wait stands |
@@ -227,50 +227,6 @@ So the machine's agent looks for those shells below each session's process (`ps 
 
 ## A member's team lead
 A second kind of employee that directs others, for one member, with seven tools of its own (`team_*`) and no rounds: `docs/TEAM-LEAD.md`.
-
-## The foreman: rounds, tools and cost
-
-The foreman is a real Claude Code session with the Orchestrator MCP server, like every employee — but there is **one** for the whole office, it runs on one of the office's own machines (never on a member's own computer), it has **no desk**, and it looks after everyone: the shared office and the employees on members' own computers while those computers are connected. What else is different is what it is sent and which tools it has. Its folder is only where its session runs; it is never made a project.
-
-**Rounds.** Nothing is sent to a foreman unless *Settings → Foreman → Foreman rounds* is on (`settings.foreman.enabled`) and a foreman exists. The setting is off in an office with no foreman; **hiring one switches it on** (that is what hiring one asks for), and the owner can pause it. Every `foremanTickMs` (5 s) the engine computes, from its own records and without any model, what needs attention:
-
-| Item | When |
-| --- | --- |
-| `QUESTION` | an employee's open question of kind `question` (asked with `ask_boss`, `request_help` or `AskUserQuestion`) that has waited a few seconds — only while *the foreman answers employees' questions* is on |
-| `BLOCKED` | a task in `BLOCKED` on an active project |
-| `STALLED` | a task `IN_PROGRESS` whose assignee's session is between turns and reported idle / waiting for five minutes, with no open question and not paused or controlled by you |
-| `UNASSIGNED` | a `READY` task with no assignee while an employee who could take it is free (after the scheduler has had its turn). Only people on the same computer as the task's project are offered: see *Members' computers* below |
-| `WAITING` | an employee waits for a colleague's answer or task (`AgentSession.waitingOn`) while that colleague has no session, or sits between turns idle or blocked — once the wait and that idleness have both lasted two minutes (`timings.foremanWaitingMs`). One item per wait. Someone who waits is never `STALLED` or `IDLE` |
-| `IDLE` | a running session that has been between turns for `idleMinutes` (default 10, `0` = never) with **no** task in progress, no open question, not paused and not controlled by a person. One item per spell of doing nothing (the key carries when the spell began). If nothing but the foreman's own words reached that employee since they were last shown as idle, the wait doubles each time (10, 20, 40 … up to 32×), and goes back to normal as soon as anyone else gives them something — a message, an answer from the owner, a task that starts — so a foreman and an employee with nothing to do never talk in circles |
-
-Permission requests, trust prompts, and questions an employee marked as a decision, a priority or a deployment are never in that list: they are the owner's.
-
-Each item has a key that stays the same while the item does. A round starts only when there is an item whose key the foreman has **not** been shown before, no round is running, and `minGapSeconds` (default 120, at least 30) has passed since the last one ended. Then one prompt, tagged `[ORCH:ROUND:<id>]`, goes through the normal delivery queue (typed into the terminal, as Stop-hook feedback, or through the SDK; the foreman's session is started first if none is running). It contains the digest — each new item with its ids and details, items from earlier rounds that are still open, and one line per employee — so a simple round is: read, one or two tool calls, `finish_round`. A round ends with `finish_round`, or when the foreman's turn ends (`Stop` hook) without one, or after ten minutes; a round that could not be delivered leaves its items unseen. An open item the foreman has already seen never starts another round, so nothing loops.
-
-*Quiet check:* with nothing new, at most once every `quietCheckMinutes` (default 15, `0` = never) the foreman is sent a round that asks it to look around — only if a task changed status or assignee, a session started or stopped, or a question was opened or closed since its last round.
-
-`foreman.round.started` and `foreman.round.finished` events carry the reason, the counts per kind, what the foreman did (looked at, answered, assigned, created, messaged, escalated) and its summary. Every time the foreman deals with one employee a `foreman.visit` event is recorded (`data.action`: `look`, `answer`, `assign` or `tell`; never what was on a screen) — that is what its character in the 3D office walks to. `GET /api/foreman` (owner only) returns the foreman, the round in flight, who it is with right now (`visiting`), the recent rounds and the current attention list.
-
-*Members' computers.* Employees on a member's own computer are in the attention list, the overview and the digest like everyone else, marked "on <member>'s own computer". While that computer is not connected they are passed by: nothing can be seen or delivered there. Work does not cross: `assign_task` and `create_task` refuse to give a shared project's task to an employee on a member's computer, or a task of a project on a member's computer to anyone who is not on that computer (the same rule the scheduler follows).
-
-**Tools** (declared as `FOREMAN_TOOLS` in `packages/integrations/src/mcp.ts`). Only a session whose employee has the `foreman` role is shown them in `tools/list`; a call from anyone else is refused and audited (`foreman.tool_refused`). As with every tool, the caller is the session the bearer token belongs to.
-
-| Tool | What it really does |
-| --- | --- |
-| `office_overview` | reads the registries: every employee (role, project, session activity and for how long, current task, open question) and every project (tasks by status, ready and unassigned, waiting for release, blocked with reasons) |
-| `look_at {employee}` | (anyone in the office, members' own employees included) the last 40 lines of that employee's terminal as last captured by the host (the same monitor frames the 3D office shows; known secret formats redacted), their task with its description, their recent events, their open question. Without a running session or a captured screen it says so. Records `foreman.visit`, which is what makes the foreman's character walk to that desk |
-| `answer_question {question_id, answer}` | answers through the same path as the owner's answer (tool result, hook output or a typed message); the question records `answeredBy: foreman`, the audit actor is `foreman:<name>`, and the employee is told the foreman answered on the boss's behalf. Refused for anything that is not kind `question`, for a question the foreman escalated, and when answering is switched off |
-| `assign_task {task, employee}` | the task board's own update (a task in progress cannot be reassigned; a foreman cannot be the assignee; work stays on the computer its project is on) |
-| `tell_employee {employee, message}` | an ordinary message from "<name> (the foreman)" in the normal delivery queue: how it tells someone to carry on, how a blocker is resolved, what to pick up. Refused for an employee whose member's computer is away. It answers no recorded question and approves nothing |
-| `create_task {project, title, description, …}` | a real task on the board, created by `foreman:<name>` |
-| `escalate_to_owner {summary, detail, question_id?}` | a notification in the owner's inbox; with a `question_id` the question stays open for the owner and the foreman can no longer answer it |
-| `finish_round {summary}` | closes the round and records the summary |
-
-The foreman also has the ordinary tools.
-
-**Cost.** The decision whether a round is due costs no tokens. A round costs what a short Claude Code turn costs on the account the foreman's session runs on: the round prompt (about 1,000 characters for a round with one item, as produced in the tests) plus the tool calls it makes, on top of the session's own context. The foreman's tool definitions are only loaded into the foreman's session. Figures were not measured with the real CLI (see *Status* below); the usage panel shows the foreman's session like any other.
-
-**Status.** Implemented and covered by the scripted end-to-end tests (`tests/e2e/14-foreman.test.ts`) and unit tests (`packages/orchestration/test/foreman.test.ts`; members' own employees there, with a member host in the engine — not with a second real computer). **Not yet run with the real Claude Code CLI**: how a real model weighs "answer or escalate", and what it does with someone idle ("carry on" or "leave them be"), is governed by the role instructions and the round prompt and has not been observed.
 
 ## Usage data
 

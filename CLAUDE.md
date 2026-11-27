@@ -16,7 +16,7 @@ Every change that alters behaviour, finishes or starts a plan item, or changes h
 `pnpm check:changed` is the fast loop while you work: it typechecks (only when a typechecked `.ts` changed) and runs the unit tests *beside* what you touched — the `test/` folder of each workspace a changed file belongs to — plus any changed `tests/e2e` file. It runs the tests of the packages you changed, not of the packages that depend on them, so it is a quick gate, **not** a replacement for `pnpm test:all` before shipping. `--base <ref>` measures a whole branch (e.g. `pnpm check:changed --base origin/main`); `--dry` prints the plan.
 
 **Hit every surface.** A change is not done until you have thought about each of these and said in the work which it touches and how it was checked (or why not):
-- **Roles** — visitor, colleague, owner (and the foreman). A control shown, hidden or disabled per role is checked as each role, not only as owner.
+- **Roles** — visitor, colleague, owner. A control shown, hidden or disabled per role is checked as each role, not only as owner.
 - **Shared vs personal** — a shared employee on the office's machine, and a member's own employee on their own computer (member rooms, privacy of their tasks/feed).
 - **Local vs server office** — one machine, and the office running on the server behind the TLS door (deploy is the owner's call; see `OPERATIONS.md`).
 - **Desktop vs browser** — the Electron app and a plain browser tab (preferences, autoplay, clipboard differ between them).

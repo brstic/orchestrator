@@ -33,7 +33,7 @@ While a move is under way nothing is started for them and no task is handed to t
 ## Who may, and what is refused
 
 - **Who**: whoever may work with the employee *and* on the machine they go to (`access.ts`: `POST /employees/:id/move`, `work` on both). A colleague can take a shared employee onto their own computer, or bring their own to the office; an owner can move anyone, except into or out of a closed room.
-- **Refused**: the foreman, a team lead, a desk somebody sits at with their own Claude Code, a rented employee; someone working on a task (in progress or in review: that work is in a worktree of the old machine — let it finish or stop it); someone in the middle of a turn; when either machine is not connected, or runs an agent too old to move (`HostInfo.moves`); a folder that is a whole allowed root or the home folder (give them a folder of their own first), or holds the office's own files.
+- **Refused**: a team lead, a desk somebody sits at with their own Claude Code, a rented employee; someone working on a task (in progress or in review: that work is in a worktree of the old machine — let it finish or stop it); someone in the middle of a turn; when either machine is not connected, or runs an agent too old to move (`HostInfo.moves`); a folder that is a whole allowed root or the home folder (give them a folder of their own first), or holds the office's own files.
 - **Privacy changes with the machine**: moved onto a member's computer they are that member's (their room, their privacy); moved to the office's machine, what they did and do is seen by everybody who works here. The office's long memory (MemPalace) keeps what was filed while they were shared, and files nothing of a personal employee — as for any personal employee.
 
 ## In the office

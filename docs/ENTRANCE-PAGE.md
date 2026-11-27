@@ -23,10 +23,9 @@ The page **is the floor of a little office at night**. The text and the pictures
 | 02 Walk the floor | `W A S D`, `F`, `Space`, take control | — |
 | 03 A hand goes up | a raised hand is a held request; queued → sent → confirmed | somebody with a hand up, the lamp on their desk pulsing |
 | 04 Quests | done means clean tree, commits, verification, review, merge | the trophy case |
-| 05 The foreman | walks, answers the operational questions, never approves | the foreman pointing at somebody asleep at a desk |
-| 06 Command center | the office from above | — |
-| 07 Multiplayer | invitations, roles, a colleague's computer becomes a room | two people on a rug |
-| 08 The break room | hi-fi, television, the whip | the hi-fi, a sofa, the arcade; the intern dances |
+| 05 Command center | the office from above | — |
+| 06 Multiplayer | invitations, roles, a colleague's computer becomes a room | two people on a rug |
+| 07 The break room | hi-fi, television, the whip | the hi-fi, a sofa, the arcade; the intern dances |
 | The house rules | five of the README's honesty rules | — |
 | Bottom | the three ways in | the door again, ajar, with the light on |
 
@@ -36,7 +35,7 @@ The page **is the floor of a little office at night**. The text and the pictures
 
 ## The pictures
 
-Eight real captures of the real app, `apps/desktop/src/entrance/shots/*.webp` (1800 × 1125, about 1 MB together, loaded as they are reached). They are from a **made-up office** — *Paper Lantern Works*; people called Alex, Sarah, Mike, David, Emma, Ava, Rev, Noor, Zed, Juno, Pip, Odo; members Bea, Dan, Vik; a foreman called Mira; projects *Customer Platform* and *Field notes* — whose employees are the scripted stand-in (`tests/fixtures/fake-claude.mjs`). The terminal picture therefore begins `FAKE CLAUDE — test fixture, not Claude Code`; its caption says so too. Nothing is drawn over them; the page adds a frame and a caption.
+Seven real captures of the real app, `apps/desktop/src/entrance/shots/*.webp` (1800 × 1125, about 1 MB together, loaded as they are reached). They are from a **made-up office** — *Paper Lantern Works*; people called Alex, Sarah, Mike, David, Emma, Ava, Rev, Noor, Zed, Juno, Pip, Odo; members Bea, Dan, Vik; projects *Customer Platform* and *Field notes* — whose employees are the scripted stand-in (`tests/fixtures/fake-claude.mjs`). The terminal picture therefore begins `FAKE CLAUDE — test fixture, not Claude Code`; its caption says so too. Nothing is drawn over them; the page adds a frame and a caption.
 
 **Never take them from a real office.** No real person, company, project, machine or address may appear on this page.
 
@@ -49,7 +48,7 @@ apps/desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron scr
 # Ctrl-C (or SIGTERM) on the office when done.
 ```
 
-`scripts/entrance-shots.cjs` holds the camera at fixed places (`window.__orchScene.cam`), opens panels the way the page's own buttons do, and — last, because it is the one thing it changes in the office — hires a foreman and photographs it on its first round. So it is run once per office; `--foreman-only` takes only that picture, `--png` also keeps the full-size originals. The window is drawn at two device pixels to one through the DevTools protocol, whatever screen the computer has (Electron's own `force-device-scale-factor` is ignored on a Mac whose main screen is an ordinary one; the first set taken that way was 1600 pixels wide blown up to 1800, and was thrown away). Look at every picture before committing it: which desk the foreman happens to be at, and what stands in front of it, differs from run to run.
+`scripts/entrance-shots.cjs` holds the camera at fixed places (`window.__orchScene.cam`), opens panels the way the page's own buttons do, and changes nothing in the office; `--png` also keeps the full-size originals. The window is drawn at two device pixels to one through the DevTools protocol, whatever screen the computer has (Electron's own `force-device-scale-factor` is ignored on a Mac whose main screen is an ordinary one; the first set taken that way was 1600 pixels wide blown up to 1800, and was thrown away). Look at every picture before committing it: who is doing what differs from run to run.
 
 `scripts/entrance-office.ts` is also the office to look at the page in, and to try the door by hand: it prints the door's address (`https://127.0.0.1:<port>/`, a self-signed certificate) and the passwords of its two members. It starts `scripts/dev-office.ts` and adds the open door, the members and — with `--room` — the colleague's "own computer" with three employees.
 

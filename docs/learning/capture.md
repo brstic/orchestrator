@@ -26,7 +26,7 @@ A refused lesson costs the session one more tool call inside the same turn, not 
   | `review` | the reviewer's words, and who it was (the boss or a named reviewer) | reviewer was not named |
   | `merge` | the files that conflicted | as before |
   | `blocked` | the blocker, and the note the boss unblocked it with | the note is new |
-  | `question` | what was asked, and who answered what (boss or foreman) | foreman was not distinguished |
+  | `question` | what was asked, and who answered what (the boss, or — in records from before 2026-11-27 — the foreman) | foreman was not distinguished |
   | `denial` | each denied command and the boss's note | the note is new |
   | `nudge` | stopped without finishing | as before |
   | `told` | up to three messages a person sent the employee while the task ran | new |
@@ -66,7 +66,7 @@ A new question from an employee is compared with the answered questions of the s
 
 - The earlier answer is attached: a line in the notification ("Answered before (asked by Alex), by the boss: "…"") and `Question.captureAnsweredBefore` on the question.
 - If that earlier answer is active project knowledge (a lesson from `captureOwnerAnswer`), the knowledge did not reach — or did not register with — the session that asked: `learning.knowledge_missed` is recorded and the lesson's `captureMustInclude` goes up by one.
-- **The question is never answered automatically.** It stays open for a person (or the foreman, under the foreman's own rules).
+- **The question is never answered automatically.** It stays open for a person (or a project manager, for work it put on the board).
 
 ### 4. Failures, free
 
@@ -106,7 +106,7 @@ The `get_team` tool now shows it to colleagues ("delivered: bug 1/2 first pass, 
      every start while it is on), the team's retrospective lessons that were waiting go in too
      (`Improver.takeInWaitingTeamLessons`, event `learning.lessons_taken_in`; 2026-11-27 — before, they waited for good);
    - words that do *not* evidently state a rule (a review comment, a denial note) → **always proposed**, even for one employee. A comment like "the empty state is missing" is true of one task; putting it into every future prompt without a person saying it generalises would be noise. *The owner may want this different* (for example: activate after the same comment twice).
-2. **A correction from an invited colleague counts like the owner's** when it is for one employee (they are allowed to instruct that employee). For the project it is proposed like everything shared. Messages between employees, and the foreman's, are never treated as corrections.
+2. **A correction from an invited colleague counts like the owner's** when it is for one employee (they are allowed to instruct that employee). For the project it is proposed like everything shared. Messages between employees are never treated as corrections.
 3. **Corrections are captured whether or not a task is in progress.** "From now on…" said to an idle employee is still a standing rule. The brief said "during a task"; the task is cited when there is one.
 4. **`company` is now a real scope for `record_lesson`.** Before, `scope: "company"` was stored as a project lesson when the employee had a project.
 5. **`none=true` needs a reason.** A refusal costs one extra tool call; the reason is what later tells whether retrospectives on this kind of friction are worth sending.

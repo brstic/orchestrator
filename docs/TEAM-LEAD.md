@@ -6,16 +6,13 @@ Asked for by a co-owner (2026-11-12): "one of ours who is in charge of my agents
 
 One more employee in a member's room, with the role **Team Lead** (`lead`). The member talks to it like to anyone (the Talk window); it hands what was asked to the one of the member's employees whose it is.
 
-| | The foreman | A team lead |
-| --- | --- | --- |
-| Whose | the office's; the owners' alone | one member's |
-| How many | one | one for each member who wants one |
-| Where | on a machine of the office, no desk | on the member's own computer or server; on its feet, among its own team's desks |
-| When it works | in rounds the office calls it for | only when somebody speaks to it |
-| What it reaches | everybody, members' rooms included | that member's employees; the shared ones too if the member says so |
-| Hires | no | yes: onto the member's own machines, five people at a time at most |
+- **Whose**: one member's — one for each member who wants one.
+- **Where**: on the member's own computer or server; on its feet, among its own team's desks.
+- **When it works**: only when somebody speaks to it.
+- **What it reaches**: that member's employees; the shared ones too if the member says so.
+- **Hires**: onto the member's own machines, five people at a time at most.
 
-It is not a second foreman on purpose. "One foreman" is a recorded decision (`DECISIONS.md`), the foreman's privacy rules are built on it being nobody's, and a lead needs none of the foreman's machinery (rounds, attention, timers).
+(Until 2026-11-27 the office also had a foreman — the office's own supervisor, called in rounds. It was removed: `DECISIONS.md`, "The foreman is removed".)
 
 ## Getting one, and talking to it
 
@@ -37,21 +34,21 @@ Then **Talk**. What it does with a request (its prompt, `packages/orchestration/
 
 ## In the office
 
-The owner's word, the day it went live: "why does the lead sit at a desk — it should walk about and watch over mine." So a lead is drawn the way the foreman is (`packages/office-3d/src/Foreman.tsx`, with `title`, `stopsOf` and `homeDeskId` on its view), by `leadViews` in `apps/desktop/src/lib/views.ts`:
+The owner's word, the day it went live: "why does the lead sit at a desk — it should walk about and watch over mine." So a lead is drawn on its feet (`packages/office-3d/src/Walker.tsx`, with `title`, `stopsOf` and `homeDeskId` on its view, `WalkerView`), by `leadViews` in `apps/desktop/src/lib/views.ts`:
 
 - **Its walk** is the desks of its own team and no others: its member's own employees in their room, and the shared employees that member looks after, out on the shared floor. The whole shared office is not on it, even with `leadScope: 'office'`.
-- **When it acts** — `team_look`, `team_tell`, `team_task` with an assignee, `team_assign` — the office records a `lead.visit` event and its character goes straight to that desk and stays a while, as the foreman's does. The event is about the lead, so it is sent to whoever may read what happens on that member's computer: other colleagues see the lead walk its round, not whom it was called to.
+- **When it acts** — `team_look`, `team_tell`, `team_task` with an assignee, `team_assign` — the office records a `lead.visit` event and its character goes straight to that desk and stays a while (`leadWalks`). The event is about the lead, so it is sent to whoever may read what happens on that member's computer: other colleagues see the lead walk its round, not whom it was called to.
 - **With nobody to look after** it stands at its own seat in the room. While its member's computer is away it is away with the room.
-- The walking costs nothing: it is drawn from the clock, like the foreman's. A lead still runs only when spoken to.
+- The walking costs nothing: it is drawn from the clock (`walkStopAt`). A lead still runs only when spoken to.
 
 ## What it costs
 
 A lead exists to save its member time, not to spend their Claude account:
 
-- **It never runs by itself.** No rounds, no timer, no nudges; the foreman does not ask about it and the scheduler gives it no work. A lead that nobody talks to uses nothing.
+- **It never runs by itself.** No rounds, no timer, no nudges; the scheduler gives it no work. A lead that nobody talks to uses nothing.
 - **The lightest model, working lightly**: `haiku`, effort `low`, unless the member picks otherwise in its profile (`LEAD_MODEL`, `LEAD_EFFORT` in `packages/contracts/src/roles.ts`).
 - **A short tool list.** A lead is shown its seven tools and six ordinary ones (`ask_boss`, `wait_for_answer`, `report_status`, `send_message`, `check_messages`, `respond_to_request`) instead of the whole list an employee gets; every tool description is read on every turn.
-- **Short answers.** `team_overview` is one line a person; `team_look` shows 25 terminal lines and 8 events, where the foreman's shows 40 and 12.
+- **Short answers.** `team_overview` is one line a person; `team_look` shows 25 terminal lines and 8 events.
 - Its prompt tells it to look only as far as it needs to know whose something is, and not to read code.
 
 Not measured: what a request really costs with real Claude Code (see "Not verified").
@@ -62,10 +59,10 @@ Whatever the model in the lead's session decides, these hold on the server (`pac
 
 - **A member's, one each.** A lead is hired only onto a member's own computer or server (`assertCanBeLead`), and a member has one. Making an existing employee a lead is held to the same.
 - **Its tools refuse anybody else** (`only()`, audited as `lead.tool_refused`), and nobody else is shown them.
-- **The team is worked out, not named**: employees on machines whose member is the lead's member, shared employees that member looks after (`keptBy`), and the other shared ones only with `leadScope: 'office'`. Never the foreman, another lead, or a person's own session. Another member's employees are never in it.
-- **It cannot edit files** (the role's refused tools, as for the foreman) and **is never Unrestricted** — refused at hire and at change.
+- **The team is worked out, not named**: employees on machines whose member is the lead's member, shared employees that member looks after (`keptBy`), and the other shared ones only with `leadScope: 'office'`. Never another lead, or a person's own session. Another member's employees are never in it.
+- **It cannot edit files** (the role's refused tools) and **is never Unrestricted** — refused at hire and at change.
 - **It is not given work**: assigning it a task is refused, the scheduler and the reviewer picker skip it.
-- **Hiring** (`team_hire`): onto the member's own machines only, never a shared one; a role from the catalogue except foreman and lead; a project of the team's or a folder on that machine; a reason, which the member reads. The new employee is on Standard, the least of the three levels (so never Unrestricted through a lead) and no model of the lead's choosing. **Five at a time**: counted from `Employee.hiredBy` over those still here (`LEAD_HIRE_LIMIT`); when one of them is archived or deleted a place is free again. The member's own hiring is not limited by this.
+- **Hiring** (`team_hire`): onto the member's own machines only, never a shared one; a role from the catalogue except lead; a project of the team's or a folder on that machine; a reason, which the member reads. The new employee is on Standard, the least of the three levels (so never Unrestricted through a lead) and no model of the lead's choosing. **Five at a time**: counted from `Employee.hiredBy` over those still here (`LEAD_HIRE_LIMIT`); when one of them is archived or deleted a place is free again. The member's own hiring is not limited by this.
 - **The member is told of every hire** (a notification with the reason, and `lead.hired` in the audit log) — after, not before: the owner's word was "hire, then tell".
 - **Managed runtimes.** `team_hire` accepts an optional `executionMode` and defaults to interactive Claude Code. Codex-managed and Claude SDK-managed hires require an online machine that reports the selected runtime. Team overview highlights machines that report Codex.
 - **Folders** (`team_folders`) are listed by the member's own machine, inside what that machine lets the office into (`fs.browse`), like the folder picker.
@@ -88,6 +85,6 @@ Whatever the model in the lead's session decides, these hold on the server (`pac
 ## Not verified
 
 - **It has never run with real Claude Code.** The test calls the tools as its session would, against a real office with a second machine; and in the development office a scripted session was started for a lead (on `haiku`, effort `low`), was sent a message, called `team_overview` and `team_tell` through the real MCP connection, and the message reached the employee. Whether a real small model picks the right person, asks when it should, and stays short — the whole point — is not known, nor what a request costs.
-- **The walk was not watched.** In the development office the lead was drawn standing at a desk of its team, with its four stops (three of its member's own, one shared employee looked after) and its tag; the browser it was looked at in was not drawing frames, so the walking from desk to desk and to a visit — the foreman's code, used unchanged — was not seen for a lead.
+- **The walk was not watched.** In the development office the lead was drawn standing at a desk of its team, with its four stops (three of its member's own, one shared employee looked after) and its tag; the browser it was looked at in was not drawing frames, so the walking from desk to desk and to a visit was not seen for a lead.
 - A lead on a member's **server** (not their computer) was not tried; nor a lead whose member's computer leaves the office mid-request.
 - The checkbox for the shared employees was exercised through the API in the test, not clicked in a window.

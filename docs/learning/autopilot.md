@@ -63,7 +63,7 @@ One table in code, `AUTOPILOT_TABLE`, classifies every `ImprovementKind` (which 
 - **Review on** — as proposed.
 - **Longer verification timeout** — up to 3600 s, and only when at least two verifications have timed out *since the limit was last raised by an improvement*. (The analyser counts every timeout on record; without this check each new reading would double the limit again on the same old evidence.)
 - **Lower autonomy** — as proposed. (Nothing proposes this today.)
-- **A lesson scoped to one employee** that is still `proposed` is switched to `active`, if that employee, an owner or the office wrote it. A lesson another employee wrote about them waits, and so do the foreman's. Each lesson is switched on by itself once only. (Today workers' own lessons are active from the start, so this mostly matters for lessons other learning modules propose.)
+- **A lesson scoped to one employee** that is still `proposed` is switched to `active`, if that employee, an owner or the office wrote it. A lesson another employee wrote about them waits. Each lesson is switched on by itself once only. (Today workers' own lessons are active from the start, so this mostly matters for lessons other learning modules propose.)
 
 **Advice is not applied.** Proposals whose action is `advice` (set a verification command, sequence work on a file, write acceptance criteria, routing) change nothing when applied — in the UI the button reads "Mark as taken on board". The office marking its own advice as taken on board would hide it from the one person it is meant for and record something that did not happen, so these wait. They become automatic the day they get a real action with a row in the table.
 
@@ -137,7 +137,7 @@ A lesson the office switched on is undone with the lesson's own switch (`PATCH /
 
 - **It never answers a permission request.** There is no call to `comms.answer` in the module; a pending request stays the owner's (tested).
 - Nothing that matches the high-risk list gets an allow rule; a high-risk request of a shape on probation ends the probation.
-- It never raises a level, never touches the foreman, never applies advice, never applies anything the table does not know.
+- It never raises a level, never applies advice, never applies anything the table does not know.
 - It never re-applies what was taken back once.
 
 ### Members' own computers
@@ -182,7 +182,7 @@ And **`trusted` is a real delegation**:
 7. **The member's name comes from `Host.memberName`** (set at enrolment). No server wiring is needed; a member whose access is revoked has their hosts revoked with it.
 8. **The command-shape reading is copied** from `Improver.commandShape` (private there) rather than shared, to keep the edit to `improve.ts` small. If the two ever differ the shapes stop matching and nothing is applied.
 9. **Counter-signals are read from the event bus** (`core.bus`), so `comms.ts` and `tasks.ts` were not touched.
-10. **Thresholds live in `Timings`**, next to the foreman's, because that is how tests inject them. They are not owner settings: the dial and the daily limit are.
+10. **Thresholds live in `Timings`**, because that is how tests inject them. They are not owner settings: the dial and the daily limit are.
 
 ## Not verified
 

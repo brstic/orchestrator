@@ -85,7 +85,7 @@ window ──(pieces of ≤ 384 KB)──▶ office: <data folder>/files-said/<e
 - **Limits:** 100 MB a file, 10 files a message. Names are made safe as for a task's files.
 - **Who:** whoever may talk to that employee (level *work*, and their member's alone on a member's computer). A file is its sender's until it is said: nobody else adds to it or sends it. A visitor neither sends nor sees them.
 - **Sent, and seen to be sent.** A paste that names files is taken in by Claude Code over a moment; the agent presses Enter once it sees the paste in the input box and again while it is still standing there (`DECISIONS.md`, "After Enter, the input box is looked at").
-- **Not for** a repeated instruction (a routine is words), nor for what a team lead or the foreman tells someone.
+- **Not for** a repeated instruction (a routine is words), nor for what a team lead tells someone.
 
 ### The other way: a file from the employee
 

@@ -105,7 +105,7 @@ Now a `deployment` question from an employee the gate holds carries the yes as a
   hour") — shown under it in the Inbox and on the task; on Telegram its button carries 🚀 and the message says what 🚀 means;
 - **an owner** choosing it (in the office, on a task, on Telegram) calls `Release.grant` for an hour, before the answer
   reaches the employee, and the answer says until when (`Question.releaseOpened`, `releaseNote` in `prompts.ts`).
-  A colleague's choice, a foreman's or a project manager's opens nothing; nor does a typed answer — the click is the yes.
+  A colleague's choice or a project manager's opens nothing; nor does a typed answer — the click is the yes.
 - The refusal tells an employee with no ticket in review how to ask this way.
 
 `packages/orchestration/test/release-gate.test.ts` ("the boss says yes…", failed before).

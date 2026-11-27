@@ -36,7 +36,7 @@
 | [SECURITY.md](SECURITY.md) | Threat model and what protects what | Anything security-relevant changes |
 | [SECURITY-REVIEW.md](SECURITY-REVIEW.md) | Review against the original brief's security section | A review is repeated |
 | [INSTALL.md](INSTALL.md) | Installing and running: local office, central server, clients | Setup steps change |
-| [CLAUDE-CODE-INTEGRATION.md](CLAUDE-CODE-INTEGRATION.md) | How workers are launched, hooks, MCP tools, usage, foreman | The integration changes |
+| [CLAUDE-CODE-INTEGRATION.md](CLAUDE-CODE-INTEGRATION.md) | How workers are launched, hooks, MCP tools, usage | The integration changes |
 
 Plans: [plans/UPDATE-central-office.md](plans/UPDATE-central-office.md) (active) · [plans/BRANCHES-FOR-A-TEAM-IN-PLACE.md](plans/BRANCHES-FOR-A-TEAM-IN-PLACE.md) (proposed 2026-11-23, waits for the owner's choices) · [plans/2026-original-brief.md](plans/2026-original-brief.md) (done; what is left is listed there).
 

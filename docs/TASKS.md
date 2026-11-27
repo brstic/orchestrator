@@ -16,8 +16,8 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   `'boss'`; `'peer'` — a colleague, the boss only when there is nobody to review; `'none'`.
   `Task.requiresReview` stays and always equals `reviewBy !== 'none'`. Tasks from before have no `reviewBy`:
   `reviewByOf(task)` reads them as `'peer'`, which is how review worked then.
-- **The default** for every new task, whoever makes it (a person, an employee's `propose_tasks`, a routine, the
-  foreman): `OwnerSettings.reviewDefault`, read with `reviewDefaultOf` — `'both'` when the owner set nothing.
+- **The default** for every new task, whoever makes it (a person, an employee's `propose_tasks`, a routine):
+  `OwnerSettings.reviewDefault`, read with `reviewDefaultOf` — `'both'` when the owner set nothing.
   *Settings → Employees → "Finished work is reviewed by"*. It applies to every kind of task, research and planning
   included. Chosen for one task: `reviewBy` (the New ticket form; "Reviewed by" on the ticket until it is done), or
   the older `requiresReview: false`. Not reviewed, by the office's own decision: a review task itself, the planning
@@ -65,7 +65,7 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   3. **A colleague of the team** (where employees keep the board themselves: `pickReviewer`'s peers, ranked as
      before), or one the author named.
   4. **The boss**, when there is nobody.
-  Never the author, the foreman, a team lead, or somebody across the line to a member's own computer.
+  Never the author, a team lead, or somebody across the line to a member's own computer.
   `packages/orchestration/test/review-goes-to-code-reviewer.test.ts`.
 - **What a reviewer is asked** (`reviewPrompt`, since 2026-11-16): one thing — does the diff do what the task asked,
   and is it safe to use. Changes are asked for only for what would make it wrong in use (a bug, a case the task
@@ -190,7 +190,7 @@ answerTo? }`.
   answer; a tagged boss gets a notification (`NotificationKind: 'mention'`, in the Inbox). **Nobody is told about a
   comment that tags nobody** — except whoever is working on the ticket, who reads everything written on it (a
   person's comment, or a colleague's) when their turn ends.
-- The rules a message between employees has hold for a tag: not the foreman, not into a closed room, not across the
+- The rules a message between employees has hold for a tag: not into a closed room, not across the
   line to a member's own computer, and no more than 120 comments an hour per employee.
 - **Asking instead of blocking.** `ask: true` means "I am not sure, or I cannot go on, without this" and is allowed
   only on the ticket the employee is working on. Without a tag it goes to the boss.
@@ -289,7 +289,7 @@ The owner, 2026-11-20: "the assignee fields in tasks, everywhere — making, edi
 
 ## 4c. Cancelling a task
 
-The owner, 2026-11-20: "in the agents' tools there is no cancelling a task; we must have that too". `cancel_task { task, reason }`, one of the board tools (shown while employees manage the board): the task is **closed as cancelled, not deleted** — DONE, with who cancelled it and why (`Task.cancelled`), in its history and in the feed; what was on its way to anybody for it is taken back; **the boss is told** (a notification) and can **reopen** it by moving it back on the board (it is then no longer cancelled). The board and the task's window say *Cancelled by … : why*. Refused: a reason that says nothing, a task somebody else is in the middle of (tell them, or the boss), one in review (its review decides), one being checked, one the boss blocked, a person's task (`Task.personId`: theirs to close). The foreman is not offered it: it escalates to the boss instead. Test: `tests/e2e/20-employees-manage.test.ts` ("an employee cancels a task that is no longer wanted…").
+The owner, 2026-11-20: "in the agents' tools there is no cancelling a task; we must have that too". `cancel_task { task, reason }`, one of the board tools (shown while employees manage the board): the task is **closed as cancelled, not deleted** — DONE, with who cancelled it and why (`Task.cancelled`), in its history and in the feed; what was on its way to anybody for it is taken back; **the boss is told** (a notification) and can **reopen** it by moving it back on the board (it is then no longer cancelled). The board and the task's window say *Cancelled by … : why*. Refused: a reason that says nothing, a task somebody else is in the middle of (tell them, or the boss), one in review (its review decides), one being checked, one the boss blocked, a person's task (`Task.personId`: theirs to close). Test: `tests/e2e/20-employees-manage.test.ts` ("an employee cancels a task that is no longer wanted…").
 
 ## 4d. The release gate
 

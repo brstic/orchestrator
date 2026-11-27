@@ -49,7 +49,7 @@ A stall is only counted when the record shows it need not have happened; a ready
 
 - **"Answered by the task description"** (part of detector 4) is not built. Whether a description already answers a question cannot be judged from the record without a model; only "this was already answered and was asked again" is measurable.
 - **Machine load is advice.** The office has no setting that limits sessions per machine (`HostRegistry.exhausted` only holds back new work above 95 % memory/CPU for 30 s). The proposal names the number the record supports (the smallest session count at which work was lost, minus one), but nothing can be switched on. The history available is the `host.resource_warning` events; memory/CPU at the moment a task started is not recorded, so "started while the machine was loaded" is approximated as "lost during a warning or within 10 minutes of it".
-- **Stalls do not duplicate the foreman.** The foreman handles live items (this question, this blocked task, this ready task). The detector reports a pattern over weeks and its structural remedy.
+- **Stalls are patterns, not live items.** Nothing in the office handles a single waiting question or ready task by itself (the foreman did, until it was removed on 2026-11-27). The detector reports a pattern over weeks and its structural remedy.
 - **No lowering of anyone's autonomy, no reassignment of work in hand.** Routing is a preference for future tasks; the repeated-questions finding adds context for everyone and says who asked only as information.
 
 ### New actions, what `apply` does, and the inverse

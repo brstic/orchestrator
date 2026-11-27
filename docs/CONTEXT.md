@@ -46,7 +46,7 @@ Each fact: a title, the text (Markdown, short), **Always** (in the pack) or **On
 2. **Employees**: `propose_context { layer, title, text }`. **Straight in** for their own notes (`self`) and their project (`project`) — `CONTEXT_STRAIGHT_IN`; the office's, a role's and a client's (a client's only while answering that client) wait in **Proposals** (and a line in the Inbox): *Take in*, *Edit* then take in, *Drop*. Thirty proposals an hour per employee at most.
 3. **The office notices** — each offered once as a proposal, never put in by itself, and never what is on a member's own computer:
    - a meeting that reached a decision → its project (or the office);
-   - **the boss's answer that sounds standing** — "always", "never", "from now on", "every time", "by default", or in Serbian "uvek", "nikad", "od sada", "ubuduće", "svaki put", "standardno" (`STANDING`) → the asker's project (or the office); an answer for this once is not offered, nor the foreman's;
+   - **the boss's answer that sounds standing** — "always", "never", "from now on", "every time", "by default", or in Serbian "uvek", "nikad", "od sada", "ubuduće", "svaki put", "standardno" (`STANDING`) → the asker's project (or the office); an answer for this once is not offered, nor one the foreman gave in an office from before 2026-11-27;
    - **a lesson for the office or a project**, once it is active (`noticeLesson`) — but a lesson kept from the boss's
      answer only when the answer is standing, by the same words as above (`oneOff`). On 2026-11-27, 63 of the 70 facts
      that came from lessons on the live office were one-off answers ("Deploy T-187 to production now?" — "yes") given

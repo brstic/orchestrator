@@ -25,7 +25,7 @@ A machine (host) is either **shared** or **a member's own computer** (`Host.memb
 
 - The office server's own machine, enrolled machines and SSH-linked servers are shared.
 - A member's own computer joins while their desktop app has the office open, and only through the door. Its employees sit in the member's room.
-- Work does not cross: a personal employee works only on projects on the same computer; a shared employee is never put on a project that lives on someone's computer; the scheduler never routes shared work to a personal employee, and the foreman — which supervises everyone — never assigns across that line either. An employee cannot wait for a colleague on the other side either (`wait: true`, `wait_for_colleague`), and a task on the other side is answered like one that does not exist.
+- Work does not cross: a personal employee works only on projects on the same computer; a shared employee is never put on a project that lives on someone's computer; the scheduler never routes shared work to a personal employee. An employee cannot wait for a colleague on the other side either (`wait: true`, `wait_for_colleague`), and a task on the other side is answered like one that does not exist.
 
 **Moving an employee between machines** (`MOVE.md`) takes whoever may work with them and on the machine they go to; their privacy is the new machine's from then on — moved onto a member's computer, the member's (and their room's); moved to a shared machine, everybody's who works here.
 
@@ -44,16 +44,7 @@ A **server a member brought in themselves** (My room → My servers; `Host.owner
 Other members still see that a personal employee exists and its state (name, activity, in the member's room). They do not get its terminal, monitor frames, documents, diffs or history, and cannot talk to it.
 
 ### A closed room
-A member can close their room (`PUT /me/room` with `locked: true`). Then, for everything on that member's own computers and the servers they keep to themselves, the table above has one line: **that member, and nobody else** — at every level, for owners, the office's own computer and the foreman alike (`closedTo`). Everyone still sees that the employees are there and what state they are in. Not closed: a server the member shared; and what is about the office rather than about what is on a machine — members, machines, settings — so an owner can still revoke that member or their machines. The foreman passes a closed room by: it is not called for what happens there and its tools refuse (`look_at`, `answer_question`, `tell_employee`, `assign_task`).
-
-### The foreman: owners only
-The foreman is neither shared nor a member's. It supervises the whole office — **including members' own employees while their computer is connected**: it is shown the last lines of their terminals, answers their questions and tells them what to do next, as an owner could. So what is the foreman's is for owners alone (`memberOf` answers `OWNERS_ONLY` for its profile, its session and its questions):
-
-- colleagues and visitors cannot watch or type into its terminal, read its documents or history, talk to it, start or stop it, or change its profile;
-- only an owner can hire a foreman or make someone the foreman (`POST`/`PATCH /employees` with the role `foreman`);
-- everyone still sees that it exists, where it walks and what it is doing (its events carry who it visited and why, never what was on a screen).
-
-There is one foreman, on one of the office's own machines, never on a member's computer (the engine refuses both). Work it hands out stays on the computer its project is on, as everywhere else.
+A member can close their room (`PUT /me/room` with `locked: true`). Then, for everything on that member's own computers and the servers they keep to themselves, the table above has one line: **that member, and nobody else** — at every level, for owners and the office's own computer alike (`closedTo`). Everyone still sees that the employees are there and what state they are in. Not closed: a server the member shared; and what is about the office rather than about what is on a machine — members, machines, settings — so an owner can still revoke that member or their machines.
 
 ### What each level covers
 
@@ -75,7 +66,7 @@ There is one foreman, on one of the office's own machines, never on a member's c
 - **work** (the shared office) — the vault's list and adding to it: `GET /vault` (names, what each is for, who put it there and who used it last — never a value), `POST /vault`. A visitor gets neither, not even the names.
 - **admin** — a value out of the vault (`POST /vault/:id/reveal`, recorded), changing what is known about a credential, putting a new value in under the same name (`PUT /vault/:id/value`, recorded as `vault.changed`) and removing one (`PATCH`/`DELETE /vault/:id`).
 - **admin** — a machine's Claude accounts: adding one, checking who is logged in, moving its employees to another, taking it off the list (`POST /hosts/:id/accounts`, `…/accounts/check`, `…/accounts/move`, `DELETE /hosts/:id/accounts`). Everyone still reads the percentages (`GET /usage`).
-- **admin** — everything else, including: **deleting a shared employee** (`DELETE /employees/:id`), **deleting a shared project** (`DELETE /projects/:id`; a member may delete the projects on their own computer, see above), members and the door, settings and policies, layout, machines (enrollment tokens, revoke, rename, remove), SSH links, foreman status, audit log, improvements, promoting to the main branch, executing a command plan.
+- **admin** — everything else, including: **deleting a shared employee** (`DELETE /employees/:id`), **deleting a shared project** (`DELETE /projects/:id`; a member may delete the projects on their own computer, see above), members and the door, settings and policies, layout, machines (enrollment tokens, revoke, rename, remove), SSH links, audit log, improvements, promoting to the main branch, executing a command plan.
 
 A route that is not listed in `access.ts` needs an owner.
 
@@ -84,7 +75,6 @@ Applying an improvement, and undoing one (`POST /api/improvements/:id/apply`, `/
 
 - on **shared** machines, the permission decisions of anyone who may make them (owners and colleagues) count as evidence;
 - on **a member's own computer**, allow rules, deny rules and a higher autonomy level are applied only on decisions that member made themselves (each decision records who made it). An owner's approvals there do not count, and changes that rest on nobody's decision (lower autonomy, review off) are never automatic there;
-- the **foreman** is never changed by it.
 
 ### The vault
 The office's credentials (`packages/orchestration/src/vault.ts`; `docs/SECURITY.md`, "The vault").
@@ -112,7 +102,7 @@ The hi-fi plays for the whole office, so what is on is the office's, not a windo
 ### Talking, gestures and the whip between people
 - **Everyone with a character in the office** — visitors included — may talk (push-to-talk), make gestures and crack the whip at a person nearby. None of it changes anything in the office, so it needs no level; each is rate-limited per window.
 - **A voice is passed only to those in earshot**: within range of the speaker and on the same side of a closed meeting room's walls. The office decides it per frame from where the characters stand; a window without a character neither speaks nor hears.
-- **The whip getting somebody up** (since 2026-11-13): a crack at an employee who is asleep or was never started starts their session, or takes up the one they left — for whoever may press *Start* for that employee anyway (the rule of `POST /employees/:id/start`: level **work**; not a visitor; not in someone's closed room; a personal employee only by its member or an owner; the foreman only by an owner), and only when they can be started. For anyone else, and at somebody who is at work, the crack stays a crack.
+- **The whip getting somebody up** (since 2026-11-13): a crack at an employee who is asleep or was never started starts their session, or takes up the one they left — for whoever may press *Start* for that employee anyway (the rule of `POST /employees/:id/start`: level **work**; not a visitor; not in someone's closed room; a personal employee only by its member or an owner), and only when they can be started. For anyone else, and at somebody who is at work, the crack stays a crack.
 - **The whip approving** (Settings → Employees → *The whip approves*, an owner's setting, off by default) answers only the permission questions the whipper may answer anyway: the same check as the Allow button (level **work**, not a visitor; not in someone's closed room; a personal employee only by its member or an owner). For anyone else the crack stays a crack.
 
 ### A member's team lead
@@ -128,7 +118,7 @@ A member may have one employee with the role **Team Lead** on their own computer
 `GET /context` and `GET /context/pack/:employee` are **detail**; writing facts (`POST`/`PATCH`/`DELETE /context/facts…`, accepting and dropping proposals) is **work**, then by layer: the office's and a role's — owners and colleagues; a project's — whoever may work on the project; an employee's own notes — whoever may work with that employee (and the employee itself, through `propose_context`); a client's — owners only, and only owners are sent them. `docs/CONTEXT.md`.
 
 ### The Rent portal's clients
-A **client** is not a member and is in no table above: they never come into the office. Their credential is of its own kind (`client`) and opens only `/rent/api` — the employees they rent, and nothing of the office (`docs/RENT.md`). Everything about clients — `GET/POST/PATCH/DELETE /api/rent…`, reading their conversations — is **admin** (owners), as is what is said with them: messages with `channel: 'rent'` and events carrying `rentClientId` or of type `rent.*` are sent to owners only (`mayReadMessage`, `eventFor`). A rented employee reaches, and is reached by, only the employees the same client rents (and the foreman); they are fenced to their folders on their machine.
+A **client** is not a member and is in no table above: they never come into the office. Their credential is of its own kind (`client`) and opens only `/rent/api` — the employees they rent, and nothing of the office (`docs/RENT.md`). Everything about clients — `GET/POST/PATCH/DELETE /api/rent…`, reading their conversations — is **admin** (owners), as is what is said with them: messages with `channel: 'rent'` and events carrying `rentClientId` or of type `rent.*` are sent to owners only (`mayReadMessage`, `eventFor`). A rented employee reaches, and is reached by, only the employees the same client rents; they are fenced to their folders on their machine.
 
 ### A shared employee a member looks after
 `POST /employees/:id/keep` and `/give-back` (level **work**; a member, not the office's own computer) set and clear `Employee.keptBy` on a shared employee. It is a mark for lists and for that member's team lead; **it gives and takes no access**. One member at a time: taking over somebody else's, or giving them back for them, is an owner's.
@@ -138,7 +128,7 @@ A visitor is in the office to look at it. What they may know is decided on the s
 
 | Of the office | A visitor is sent |
 | --- | --- |
-| Employees (members' own and the foreman too) | Who they are and how they look, their role and title, skills, project, desk, level. **Not** the model and effort, the autonomy level (a fixed value is sent in its place), instructions, allowed and refused tools, the working folder, the Claude account folder |
+| Employees (members' own too) | Who they are and how they look, their role and title, skills, project, desk, level. **Not** the model and effort, the autonomy level (a fixed value is sent in its place), instructions, allowed and refused tools, the working folder, the Claude account folder |
 | Sessions | That one runs and what state it is in. **Not** the folder, the branch, the tmux name, the process, Claude Code's session id, the permission mode, the model, the tokens and the cost |
 | Machines | That they are there, whose they are, and the member's room. **Not** the host name, the user, versions, what runs on them, the account folders |
 | Shared projects | Name, description, colour, state, milestones. **Not** where the repository is, branches, the check command, what is pre-approved or refused, the integration record. A member's own project: not at all |
@@ -155,7 +145,7 @@ The page follows: a visitor's menu holds only the windows they are sent somethin
 **Not done:** between members nothing changed — a colleague is still sent the tasks, notifications and reports of other members' computers (the last paragraph of the next section).
 
 ### What is said on a member's own computer
-Feed events about a member's own employees (they carry what the employee replied), messages to and from them and their questions are sent only to that member and to owners: filtered in `GET /api/state`, `GET /api/events`, the `ready` state and the live `event` / `entity` messages (`stateFor`, `mayReadEvent`, `mayReadMessage`, `mayReadQuestion` in `access.ts`). The same goes for their **routines** (what they are told to repeat): `mayReadRoutine`, in the state, in `GET /api/routines` and on the live connection. A routine is whose its employee is: a colleague sets routines for shared employees and for those on their own computer; the foreman's are the owners'. The sleep setting (Settings → Employees) is an office setting: owners only. Not yet filtered: their tasks, notifications and artifacts. **A notification addressed to some people** (what an employee writes with `message_person`, `Notification.for`) goes to them only — an owner included — in the state, on the live connection and in *Mark all read* / *Dismiss* (`MESSAGE-PERSON.md`).
+Feed events about a member's own employees (they carry what the employee replied), messages to and from them and their questions are sent only to that member and to owners: filtered in `GET /api/state`, `GET /api/events`, the `ready` state and the live `event` / `entity` messages (`stateFor`, `mayReadEvent`, `mayReadMessage`, `mayReadQuestion` in `access.ts`). The same goes for their **routines** (what they are told to repeat): `mayReadRoutine`, in the state, in `GET /api/routines` and on the live connection. A routine is whose its employee is: a colleague sets routines for shared employees and for those on their own computer; The sleep setting (Settings → Employees) is an office setting: owners only. Not yet filtered: their tasks, notifications and artifacts. **A notification addressed to some people** (what an employee writes with `message_person`, `Notification.for`) goes to them only — an owner included — in the state, on the live connection and in *Mark all read* / *Dismiss* (`MESSAGE-PERSON.md`).
 
 ### Terminals (WebSocket)
 

@@ -6,7 +6,7 @@ apps/server        HTTP + WebSocket hub, owner API, door (TLS for people outside
 apps/host-agent    one per machine: tmux, Claude Code launch, hooks, terminal streaming
 apps/desktop       Electron shell (electron/) and the office UI (src/: HUD panels, store, views)
 packages/contracts       shared types, roles catalogue, protocol messages
-packages/orchestration   the engine: employees, sessions, tasks, comms, meetings, improve, foreman
+packages/orchestration   the engine: employees, sessions, tasks, comms, meetings, improve, team leads
 packages/execution       tmux and Claude Code launch plans (the only layer that touches processes)
 packages/database        document store: SQLite and PostgreSQL behind one interface
 packages/integrations    MCP server and tool declarations

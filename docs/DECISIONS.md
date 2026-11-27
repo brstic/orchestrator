@@ -2,6 +2,21 @@
 
 Newest first. Each entry: what was decided, why, and what was rejected. Add one whenever a later reader would otherwise have to guess.
 
+## 2026-11-27 — The foreman is removed (the owner, 2026-11-27: useless)
+
+The owner: "foremana treba da izbacimo skroz, beskoristan je" — the foreman is to go completely, it is useless. Decided:
+the `foreman` role, its rounds, its settings (`OwnerSettings.foreman`, Settings → Foreman), its timings, its eight MCP
+tools, its events, `GET /api/foreman`, its owners-only access rule (`OWNERS_ONLY`), its walking character and its UI
+are gone; nothing replaces it. What it did that nothing does now: answering employees' operational questions before the
+owner (a project manager still answers questions about work it put on the board), putting idle or stalled employees,
+ready work nobody had, and somebody waiting for an idle colleague in front of a model. Kept for records from before: the
+`'foreman'` kind of `Question.answeredBy`, still read as "… (the foreman) answered"; a stored `foreman` settings key is
+dropped when the office loads, and one sent by an older client is ignored; an employee who still has the role is
+archived when the office starts, their session stopped first the office's normal way (`session.kill` through the host
+agent; while their machine is away, as soon as it is back) — `EmployeeRegistry.retireForemen`. The walking a team lead
+does was the foreman's code: it stays, as `Walker.tsx` / `walker-route.ts` / `WalkerView`. Not chosen: turning the
+role into something else (the owner asked for it to go), or keeping the code switched off.
+
 ## 2026-11-23 — Autonomy: a project manager approves in the boss's place, and hears how its work went
 
 The owner: "the orchestrator must be autonomous, that is the main point: I tell an agent — the project manager — what

@@ -203,7 +203,7 @@ The same names and lines are in **Help**, under *What each window is for* (each 
 
 ## Team
 
-`hud/panels/team.tsx` (`TeamPanel`), `lib/team.ts`. It was a table of eight columns that scrolled sideways. Now: **people as cards under their projects**, three to a row — a face, the name (and whose they are, when not the office's), "● thinking · T-9 Notes, part 1", and *Talk*. Within a project whoever wants somebody comes first. **A card opens that person's window**, where everything else about them is. Above the cards: a box to find by name, title or skill, the two filters (project, machine) and *Mine / Everyone*; the foreman, when there is one, has a line of its own; archived employees are one folded line at the bottom. *Hire* is the one main button.
+`hud/panels/team.tsx` (`TeamPanel`), `lib/team.ts`. It was a table of eight columns that scrolled sideways. Now: **people as cards under their projects**, three to a row — a face, the name (and whose they are, when not the office's), "● thinking · T-9 Notes, part 1", and *Talk*. Within a project whoever wants somebody comes first. **A card opens that person's window**, where everything else about them is. Above the cards: a box to find by name, title or skill, the two filters (project, machine) and *Mine / Everyone*; archived employees are one folded line at the bottom. *Hire* is the one main button.
 
 Looked at with thirty-three employees in four projects (a development office with three members' rooms): three cards to a row, the groups one under the other, the window scrolling inside itself.
 
