@@ -1276,6 +1276,8 @@ export class SessionRegistry {
    * against how reliable the machines are.
    */
   private sessionDied(s: AgentSession, employee: Employee | undefined, reason: string, onPurpose = false): void {
+    // The office starts it again by itself in a new conversation (the earlier one could not be continued).
+    let fresh = false;
     if (this.resumeProbes.has(s.id)) {
       const before = this.resumeProbes.get(s.id) ?? null;
       this.resumeProbes.delete(s.id);
@@ -1290,6 +1292,7 @@ export class SessionRegistry {
         this.core.event({ type: 'session.stopped', source: 'server', summary: `${employee?.name ?? 'A session'}'s earlier conversation could not be continued (Claude Code ended before it started: ${reason}). The next start begins a new conversation.`, hostId: s.hostId, sessionId: s.id, employeeId: s.employeeId, data: { resumeFailed: true, reason } });
         // Whatever they were woken for is still waiting: one more try, from a clean start.
         if (employee) this.eng.comms.schedulePump(employee.id, 300);
+        fresh = !!employee;
       }
     }
     if (!onPurpose) {
@@ -1314,7 +1317,8 @@ export class SessionRegistry {
       // in half an hour at most: a session that keeps ending is looked at by a person.
       const now = Date.now();
       const recent = (this.restartedFor.get(employee.id) ?? []).filter((t) => now - t < RESTART_WINDOW_MS);
-      const again = !!task && !employee.archived && recent.length < RESTARTS_PER_WINDOW;
+      // (A new conversation after a refused one is a different start, not the same one failing again: it is tried.)
+      const again = !!task && !employee.archived && (fresh || recent.length < RESTARTS_PER_WINDOW);
       if (again) {
         recent.push(now);
         this.restartedFor.set(employee.id, recent);
@@ -1334,7 +1338,9 @@ export class SessionRegistry {
         body: !task
           ? `Their session stopped (${reason}).`
           : again
-            ? `Their session stopped while working on ${task.key} (${reason}). The office started it again, with the same conversation, and told them to go on with ${task.key}.`
+            ? fresh
+              ? `Their session stopped while working on ${task.key} (${reason}). The earlier conversation could not be continued, so the office started it again in a new conversation and told them to go on with ${task.key}.`
+              : `Their session stopped while working on ${task.key} (${reason}). The office started it again, with the same conversation, and told them to go on with ${task.key}.`
             : `Their session stopped while working on ${task.key} (${reason}) — it has stopped ${recent.length + 1} times in ${RESTART_WINDOW_MS / 60_000} minutes, so it is not started again by itself. Restart the session to resume the same conversation.`,
         employeeId: employee.id,
         sessionId: s.id,
