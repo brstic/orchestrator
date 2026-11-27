@@ -151,3 +151,17 @@ test("@boss on work the manager runs is the manager's to read first (102 of 117 
   assert.equal(tags().length, 1);
   assert.match(o.eng.core.messages.filter((m) => m.toEmployeeId === o.mia.id).at(-1)!.body, /empty cart/);
 });
+
+test("a blocker on the manager's work is the manager's to clear first: the boss's Inbox does not get it", async () => {
+  const o = await office();
+  const t = o.eng.tasks.createTask({ projectId: o.shop, title: 'Stock sync', description: 'x', assigneeId: o.alex.id, released: false }, 'employee:Mia');
+  o.eng.core.put('task', { ...o.eng.core.tasks.require(t.id), status: 'IN_PROGRESS' } as Task);
+  o.eng.tasks.blockFromAgent(o.alex, 'The supplier API needs a key nobody has given me.', 'an API key for the supplier');
+  assert.equal(o.eng.core.notifications.filter((n) => n.kind === 'blocked' && n.taskId === t.id).length, 0, 'not in the boss\'s Inbox');
+  assert.ok(o.toldMia().some((b) => /Stock sync[\s\S]*blocked/i.test(b)), 'the manager is told');
+  // Work nobody manages: the boss, as before.
+  const own = o.eng.tasks.createTask({ projectId: o.shop, title: 'Footer', description: 'x', assigneeId: o.zed.id, released: false }, 'owner');
+  o.eng.core.put('task', { ...o.eng.core.tasks.require(own.id), status: 'IN_PROGRESS' } as Task);
+  o.eng.tasks.blockFromAgent(o.zed, 'No design for the footer.', undefined);
+  assert.equal(o.eng.core.notifications.filter((n) => n.kind === 'blocked' && n.taskId === own.id).length, 1);
+});

@@ -137,6 +137,8 @@ Tests: `tests/e2e/45-tickets.test.ts`; the task steps of `tests/ui/driver.cjs`.
   the boss with why — direction, money, what cannot be undone, or not sure — and then it is in the boss's Inbox ("Mia
   passes it to you: …"). A deployment question is always the boss's. The same switch as the verdicts
   (`managersApprove`).
+- **So does a blocker on it**: a colleague blocked on a manager's ticket is the manager's to clear (it is told, with
+  `unblock_task` or `ask_boss` as the way on); the boss's Inbox no longer gets a "blocked" line for it as well.
 - **So does a tag of the boss on it** (`TaskTalk.byEmployee`): "@boss …" from a colleague on a manager's ticket goes to
   the manager, who answers it or tags @boss itself, saying why; the manager's own tag reaches the boss. While such a
   ticket waits for the manager's verdict, what its author adds there goes to the manager, not the boss's Inbox. (On

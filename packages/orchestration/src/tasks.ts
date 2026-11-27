@@ -1259,7 +1259,9 @@ export class TaskManager {
     this.eng.talk.blocked(task, employee, needs ? `I cannot go on: ${reason}\nWhat I need: ${needs}` : `I cannot go on: ${reason}`);
     this.core.put('task', task);
     this.core.event({ type: 'task.blocked', source: 'mcp', summary: `${employee.name} is blocked on ${task.key}: ${truncate(reason, 140)}`, taskId: task.id, projectId: task.projectId, employeeId: employee.id, data: { key: task.key, reason, needs: needs ?? null } });
-    this.eng.comms.notify({ kind: 'blocked', severity: 'critical', title: `${employee.name} is blocked on ${task.key}`, body: task.blockedReason, employeeId: employee.id, taskId: task.id, projectId: task.projectId });
+    // Work a project manager runs: its to clear first (it is told, `follow-up.ts`), as a question on it is; it tags the
+    // boss when it cannot. Otherwise the boss's Inbox.
+    if (!this.managerForQuestion({ taskId: task.id, employeeId: employee.id, kind: 'question' })) this.eng.comms.notify({ kind: 'blocked', severity: 'critical', title: `${employee.name} is blocked on ${task.key}`, body: task.blockedReason, employeeId: employee.id, taskId: task.id, projectId: task.projectId });
     this.schedule();
     return task;
   }

@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-27
+- **A blocker on a manager's ticket goes to the manager only** — it was told, and the boss got a critical "blocked" in Needs you as well (`manager-approves.test.ts`, failed before).
 - **Fixed: a session Claude Code could not resume was reported as "not started again by itself — restart it to resume the same conversation"** while the office was starting it in a new conversation (resuming could never work). The note now says what happens, and that new start is tried even after two restarts in half an hour (`fresh-start-note.test.ts`, failed before).
 - **A busy machine tells the Inbox only when it holds work back** (sessions there, or work waiting for it); otherwise the feed alone — the owner's own Mac put 14 lines a week in their Inbox with no employee on it (`host-pressure-note.test.ts`, failed before).
 - **An employee who stops on its task after every nudge is reported**, once: to the project manager whose work it is, or else to the owner — nobody noticed since the foreman went (`stalled-after-nudges.test.ts`, failed before).
