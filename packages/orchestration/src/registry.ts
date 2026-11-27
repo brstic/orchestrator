@@ -392,7 +392,12 @@ export class HostRegistry {
     if (p.warned || Date.now() - p.since < resourcePressureMs()) return;
     p.warned = true;
     this.core.event({ type: 'host.resource_warning', source: 'host', summary: `Host "${host.name}" is running out of resources: ${what}`, hostId: host.id, data: { memUsed: mem, cpuPercent: r.cpuPercent, loadAvg1: r.loadAvg1, sessions: r.sessionCount } });
-    this.eng.comms.notify({ kind: 'host_resources', severity: 'warning', title: `Host "${host.name}" is running out of resources`, body: `Its ${what}. No new work will be started on it until it recovers; the ${r.sessionCount} session${r.sessionCount === 1 ? '' : 's'} already running there are left alone.`, hostId: host.id });
+    // The Inbox only when it holds something of the office back: sessions there, or work waiting to start there (a
+    // person's own computer, busy with their own things, put 14 lines a week in their Inbox with no employee on it).
+    const waiting = !!this.core.tasks.find((t) => t.status === 'READY' && this.core.employees.get(t.assigneeId)?.hostId === host.id);
+    if (!r.sessionCount && !waiting) return;
+    const running = r.sessionCount ? ` the ${r.sessionCount} session${r.sessionCount === 1 ? ' already running there is' : 's already running there are'} left alone.` : '';
+    this.eng.comms.notify({ kind: 'host_resources', severity: 'warning', title: `Host "${host.name}" is running out of resources`, body: `Its ${what}. No new work will be started on it until it recovers;${running || ' work waiting for it waits until then.'}`, hostId: host.id });
   }
 
   revoke(hostId: string, actor = 'owner'): void {

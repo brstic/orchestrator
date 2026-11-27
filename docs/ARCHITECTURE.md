@@ -143,7 +143,7 @@ After every merge the project's verification command also runs in the `_integrat
 
 ### Hosts under pressure
 
-A host that stays at or above 95% memory or CPU for 30 seconds is exhausted (`checkPressure` in `registry.ts`): a `host.resource_warning` event and a notification are raised, and the scheduler starts no new work there (`isFree`). Sessions already running are left alone. When the figures drop, the warning resolves and held-back work is scheduled.
+A host that stays at or above 95% memory or CPU for 30 seconds is exhausted (`checkPressure` in `registry.ts`): a `host.resource_warning` event is raised — and a notification only when it holds something of the office back (sessions running there, or work waiting to start there: a person's own computer busy with their own things put 14 lines a week in their Inbox) — and the scheduler starts no new work there (`isFree`). Sessions already running are left alone. When the figures drop, the warning resolves and held-back work is scheduled.
 
 ### Security alerts
 

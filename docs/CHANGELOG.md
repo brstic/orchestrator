@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-27
+- **A busy machine tells the Inbox only when it holds work back** (sessions there, or work waiting for it); otherwise the feed alone — the owner's own Mac put 14 lines a week in their Inbox with no employee on it (`host-pressure-note.test.ts`, failed before).
 - **An employee who stops on its task after every nudge is reported**, once: to the project manager whose work it is, or else to the owner — nobody noticed since the foreman went (`stalled-after-nudges.test.ts`, failed before).
 - **`update-mac-app.mjs` opens the new app only if the old one was running** (the owner: one they had closed stays closed).
 - **"Decided without you" on the operations wall** (owners): reviews and questions decided by project managers in the boss's place against the owners' own over 7 days, and the releases managers let out — autonomy kept measurable (`check-health.test.ts`).
