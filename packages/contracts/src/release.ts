@@ -215,6 +215,63 @@ function beforeRedirect(stmt: string): string {
   return stmt;
 }
 
+/** Programs that run what they are given: a heredoc fed to one of them is run, not written. */
+const RUNS_INPUT = /^(?:ssh|bash|sh|zsh|dash|ksh|fish|eval|source|\.|xargs|parallel|python\d*(?:\.\d+)?|node|perl|ruby|php|expect|tclsh|osascript|mysql|psql|sqlite3)$/;
+/** Programs whose quoted arguments are only text (said, or written to a file) — unless something is run inside them. */
+const SAYS_TEXT = /^(?:echo|printf|tee|cat|logger)$/;
+
+/** Each statement of a command (as `segments` splits it) with where it starts and ends in the text. */
+function segmentSpans(s: string): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  let start = 0;
+  let q: string | null = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]!;
+    if (q) {
+      if (c === '\\' && q === '"') i++;
+      else if (c === q) q = null;
+      continue;
+    }
+    if (c === '"' || c === "'") q = c;
+    else if (c === ';' || c === '\n' || c === '|' || (c === '&' && s[i + 1] === '&')) {
+      out.push([start, i]);
+      if ((c === '&' || c === '|') && s[i + 1] === c) i++;
+      start = i + 1;
+    }
+  }
+  out.push([start, s.length]);
+  return out;
+}
+
+/**
+ * Where a command only holds text — the body of a heredoc written to a file (`cat > f <<EOF`, `tee`), the quoted words
+ * of `echo`/`printf`, a commit message — so that an ssh written there is not one that runs (2026-11-27: a cron file and
+ * a release plan written into the repository were held as changes on production).
+ */
+function inertSpans(text: string): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (const m of text.matchAll(/<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/g)) {
+    const lineStart = text.lastIndexOf('\n', m.index!) + 1;
+    const lineEnd = text.indexOf('\n', m.index!);
+    if (lineEnd < 0) continue;
+    const head = text.slice(lineStart, m.index!);
+    const seg = segments(head).at(-1) ?? '';
+    if (words(seg.trim()).some((w) => RUNS_INPUT.test(w.replace(/^.*\//, '')))) continue;
+    const rest = text.slice(lineEnd + 1);
+    const end = new RegExp(`^\\s*${m[2]}\\s*$`, 'm').exec(rest);
+    out.push([lineEnd + 1, lineEnd + 1 + (end ? end.index : rest.length)]);
+  }
+  for (const [a, b] of segmentSpans(text)) {
+    const seg = text.slice(a, b);
+    if (/\$\(|`/.test(seg)) continue;
+    const w = words(seg.trim());
+    const prog = (w[0] ?? '').replace(/^.*\//, '');
+    const message = prog === 'git' && w.some((x) => x === 'commit' || x === 'tag' || x === 'notes') && !w.some((x) => /sshCommand/i.test(x));
+    if (SAYS_TEXT.test(prog) || message) out.push([a + seg.search(/\S/) + Math.max(1, (w[0] ?? '').length), b]);
+  }
+  return out;
+}
+
 const SSH_OPT_WITH_VALUE = new Set(['-p', '-i', '-o', '-l', '-F', '-J', '-L', '-R', '-D', '-E', '-c', '-m', '-b', '-e', '-S', '-O', '-w', '-W', '-Q', '-B', '-P']);
 
 /**
@@ -235,9 +292,11 @@ function productionChange(command: string, host: string, readFile?: (path: strin
     const dest = args.at(-1);
     if (dest && namesHost(dest, host)) return `it copies onto ${host}, a production server`;
   }
-  // Run on it over ssh.
+  // Run on it over ssh — not an ssh that is only text here (written into a file, echoed, a commit message).
+  const inert = inertSpans(text);
   for (const m of text.matchAll(/(?:^|[\s;&|(`$"'])ssh(?=\s)/g)) {
     const from = m.index! + m[0].length;
+    if (inert.some(([a, b]) => from > a && from <= b)) continue;
     // The ssh statement: to the end of its segment (quotes kept together).
     const stmt = segments(text.slice(from))[0] ?? '';
     // What goes to the server is what stands before this machine's own redirects (`> out.txt`, `< file`).

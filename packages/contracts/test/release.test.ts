@@ -100,3 +100,20 @@ test('what makes a release the boss\'s to let out, and what was said to be left 
   assert.deepEqual(releaseRisks('Reload nginx with the new vhost'), ['server configuration']);
   assert.deepEqual(releaseRisks('Fix the stored XSS'), ['security']);
 });
+
+test('a command written into a file here, or said in a message, is not run there (a cron file and a plan in the repo were held)', () => {
+  const rules = { on: true, branches: ['main', 'master'], hosts: ['64.0.2.10'] };
+  const r = (c: string) => releaseOf(c, rules, '/tmp/x', () => 'feature');
+  // Text: written into a file, echoed, a commit message.
+  assert.equal(r("cat >> crons/http1 <<'EOF'\n# not installed yet\n*/5 * * * * ssh xagio@64.0.2.10 'systemctl restart nginx'\nEOF"), null);
+  assert.equal(r("tee plan.md > /dev/null <<'EOF'\nOn approval: ssh 64.0.2.10 'rm -rf /srv/old'\nEOF"), null);
+  assert.equal(r("echo \"later: ssh 64.0.2.10 'reboot'\" >> plan.txt"), null);
+  assert.equal(r("printf '%s\\n' \"ssh 64.0.2.10 'git pull'\" > steps.txt"), null);
+  assert.equal(r("git commit -m \"Plan: ssh 64.0.2.10 'git pull' once approved\""), null);
+  // Run: still held.
+  assert.match(r("bash -c \"ssh 64.0.2.10 'rm -rf /srv/old'\"") ?? '', /changes something on 64\.0\.2\.10/);
+  assert.match(r("ssh 64.0.2.10 bash <<'EOF'\nrm -rf /srv/old\nEOF") ?? '', /changes something/);
+  assert.match(r("bash <<'EOF'\nssh 64.0.2.10 'rm -rf /srv/old'\nEOF") ?? '', /changes something/);
+  assert.match(r("echo go && ssh 64.0.2.10 'rm -rf /srv/old'") ?? '', /changes something/);
+  assert.match(r("cat steps.txt; ssh 64.0.2.10 'git pull'") ?? '', /changes something/);
+});

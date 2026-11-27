@@ -75,6 +75,15 @@ With **Settings → Employees → "Nothing is released before I approve it (the 
 
 Not for a rented employee while rented (a client's work has its own terms, `docs/RENT.md`).
 
+## Text is not a command
+
+An ssh written as text here is not one that runs there: the body of a heredoc written to a file (`cat >> crons/http1
+<<'EOF'`, `tee plan.md`), the quoted words of `echo`/`printf`/`logger`, a commit message (`inertSpans` in
+`packages/contracts/src/release.ts`). A cron file and a release plan written into a repository were held as changes on
+production (2026-11-27). A heredoc fed to something that runs it (`bash`, `ssh`, `python`, …) and anything run inside
+(`$(…)`, backticks, `bash -c "…"`) still count. Over the 19,771 real commands the gate was measured on, the held
+ones are the same 71.
+
 ## Who lets a release out
 
 The owner, 2026-11-27: the Project Manager approves **low-risk releases** too. Before, a ticket with a release plan

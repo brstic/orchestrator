@@ -3,6 +3,7 @@
 Newest first. One line per change that someone using or developing the office would notice.
 
 ## 2026-11-27
+- **Fixed: the release gate held text as a command** — an ssh written into a file (a cron file, a plan) or echoed was read as run on production. Same 71 held of 19,771 real commands (`release.test.ts`, failed before).
 - **Whoever an approved release plan names may release that part** (the colleague who pulls on production was left out unless they had written on the ticket, so a manager opened a ticket only to release, and the owner approved twice) (`release-gate.test.ts`, failed before).
 - **No "completed" line for each ticket a manager runs**: the manager reports the whole (`manager-approves.test.ts`, failed before).
 - **A blocker on a manager's ticket goes to the manager only** — it was told, and the boss got a critical "blocked" in Needs you as well (`manager-approves.test.ts`, failed before).
